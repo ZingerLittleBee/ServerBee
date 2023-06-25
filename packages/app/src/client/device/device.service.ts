@@ -1,5 +1,5 @@
-import {PrismaService} from "@/db/prisma.service";
-import {Injectable} from "@nestjs/common";
+import { PrismaService } from '@/db/prisma.service'
+import { Injectable } from '@nestjs/common'
 
 @Injectable()
 export class DeviceService {

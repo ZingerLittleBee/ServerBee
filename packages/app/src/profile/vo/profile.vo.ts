@@ -1,4 +1,4 @@
-import {UserVo} from "@/user/vo/user.vo";
+import { UserVo } from '@/user/vo/user.vo'
 
 export class ProfileVo {
     name?: string

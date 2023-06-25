@@ -2,6 +2,8 @@
 
 import * as React from "react"
 import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { login } from "@/requests/auth/auth"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import useSWR from "swr"
@@ -20,26 +22,37 @@ import {
 import { Input } from "@/components/ui/input"
 import { toast } from "@/components/ui/use-toast"
 import { Icons } from "@/components/icons"
-import {login} from "@/requests/auth/auth";
-import {useRouter} from "next/navigation";
 
 interface UserAuthFormProps extends React.HTMLAttributes<HTMLDivElement> {}
 
 const formSchema = z
   .object({
     email: z.string().email().trim(),
-    username: z.string().regex(/^[a-zA-Z_]+$/,{ message: 'Username must start with letter' }).trim(),
-    password: z.string().min(8, { message: 'Password must be at least 8 characters' }),
+    username: z
+      .string()
+      .regex(/^[a-zA-Z_]+$/, { message: "Username must start with letter" })
+      .trim(),
+    password: z
+      .string()
+      .min(8, { message: "Password must be at least 8 characters" }),
   })
   .or(
     z.object({
-      username: z.string().regex(/^[a-zA-Z].*$/, { message: 'Username must start with letter' }).trim(),
-      password: z.string().min(8, { message: 'Password must be at least 8 characters' }),
+      username: z
+        .string()
+        .regex(/^[a-zA-Z].*$/, { message: "Username must start with letter" })
+        .trim(),
+      password: z
+        .string()
+        .min(8, { message: "Password must be at least 8 characters" }),
     })
-  ).or(
+  )
+  .or(
     z.object({
       email: z.string().email().trim(),
-      password: z.string().min(8, { message: 'Password must be at least 8 characters' }),
+      password: z
+        .string()
+        .min(8, { message: "Password must be at least 8 characters" }),
     })
   )
 
@@ -65,7 +78,7 @@ export function LoginForm({ className, ...props }: UserAuthFormProps) {
   async function onSubmit(data: z.infer<typeof formSchema>) {
     console.log("submit", data.email, data.username, data.password)
     setIsLoading(true)
-    const res = await login(data.password,data.email, data.username)
+    const res = await login(data.password, data.email, data.username)
     if (res?.success) {
       router.push("/dashboard")
     } else {

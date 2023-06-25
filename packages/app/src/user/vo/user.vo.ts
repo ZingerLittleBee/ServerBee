@@ -1,5 +1,5 @@
 export class UserVo {
-    userId: string;
-    username: string;
-    email: string;
+    userId: string
+    username: string
+    email: string
 }

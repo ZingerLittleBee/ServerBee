@@ -2,7 +2,7 @@
 import { Card, Text, Metric, Flex, ProgressBar } from "@tremor/react";
 
 export default () => (
-  <Card className="max-w-xs mx-auto">
+  <Card className="mx-auto max-w-xs">
     <Text>Sales</Text>
     <Metric>$ 71,465</Metric>
     <Flex className="mt-4">

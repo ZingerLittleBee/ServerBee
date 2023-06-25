@@ -1,4 +1,3 @@
-
 export class UpdateClientDto {
     name?: string
     device?: CreateDeviceDto

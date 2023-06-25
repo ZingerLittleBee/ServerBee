@@ -1,10 +1,10 @@
 
-
 # compiled output
 build/**
 dist/**
 .next/**
 node_modules
+*.tsbuildinfo
 
 # Logs
 logs
@@ -39,7 +39,6 @@ lerna-debug.log*
 !.vscode/extensions.json
 
 # IDE
-.idea
 .vscode
 .history
 
