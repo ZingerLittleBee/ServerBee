@@ -9,9 +9,13 @@ import { InjectRedis } from '@liaoliaots/nestjs-redis'
 import Redis from 'ioredis'
 import { JwtService } from '@nestjs/jwt'
 import { ConfigService } from '@nestjs/config'
-import { kClientAccessExpireTime } from '@/utils/JwtUtil'
+import { kClientAccessExpireTime } from '@/utils/jwt.const'
 import { JwtUtilService } from '@/utils/jwt.util.service'
 import { Result, ResultUtil } from '@/utils/ResultUtil'
+import { InjectModel } from '@nestjs/mongoose'
+import { Fusion } from '@/client/schemas/fusion.schema'
+import { Model } from 'mongoose'
+import { CreateFusionDto } from '@/client/dto/create-fusion.dto'
 
 @Injectable()
 export class ClientService {
@@ -23,7 +27,8 @@ export class ClientService {
         private readonly jwtService: JwtService,
         private readonly configService: ConfigService,
         private readonly jwtUtilService: JwtUtilService,
-        @InjectRedis() private readonly redis: Redis
+        @InjectRedis() private readonly redis: Redis,
+        @InjectModel(Fusion.name) private fusionModel: Model<Fusion>
     ) {}
 
     async registerClient(client: CreateClientDto) {
@@ -147,5 +152,10 @@ export class ClientService {
 
     remove(id: number) {
         return `This action removes a #${id} client`
+    }
+
+    async addData(fusion: CreateFusionDto) {
+        const createFusion = new this.fusionModel(fusion)
+        return createFusion.save()
     }
 }

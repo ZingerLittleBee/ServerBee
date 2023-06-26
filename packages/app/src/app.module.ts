@@ -10,9 +10,11 @@ import { ProfileModule } from './profile/profile.module'
 import { InfluxModule } from './influx/influx.module'
 import { RedisModule, RedisModuleOptions } from '@liaoliaots/nestjs-redis'
 import { UtilModule } from '@/utils/util.module'
+import { MongooseModule } from '@nestjs/mongoose'
 
 @Module({
     imports: [
+        MongooseModule.forRoot('mongodb://localhost:27017'),
         RedisModule.forRootAsync({
             imports: [ConfigModule],
             inject: [ConfigService],
