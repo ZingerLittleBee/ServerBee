@@ -5,15 +5,12 @@ import { InfluxService } from '@/influx/influx.service'
 import { PrismaService } from '@/db/prisma.service'
 import { Prisma } from '@prisma/client'
 import { StatusEnum } from '@/enums/status.enum'
-import { InjectRedis } from '@liaoliaots/nestjs-redis'
-import Redis from 'ioredis'
 import { JwtService } from '@nestjs/jwt'
 import { ConfigService } from '@nestjs/config'
 import { JwtUtilService } from '@/utils/jwt.util.service'
-import { InjectModel } from '@nestjs/mongoose'
-import { Fusion } from '@/client/schemas/fusion.schema'
-import { Model } from 'mongoose'
 import { CreateFusionDto } from '@/client/dto/create-fusion.dto'
+import { MongoService } from '@/db/mongo.service'
+import { RedisService } from '@/db/redis.service'
 
 @Injectable()
 export class ClientService {
@@ -25,8 +22,8 @@ export class ClientService {
         private readonly jwtService: JwtService,
         private readonly configService: ConfigService,
         private readonly jwtUtilService: JwtUtilService,
-        @InjectRedis() private readonly redis: Redis,
-        @InjectModel(Fusion.name) private fusionModel: Model<Fusion>
+        private readonly mongoService: MongoService,
+        private readonly redisService: RedisService
     ) {}
 
     async registerClient(client: CreateClientDto) {
@@ -43,10 +40,9 @@ export class ClientService {
             const token = await this.jwtService.signAsync({
                 clientId: clientId
             })
-            this.redis.set(
+            await this.redisService.setWithExpire(
                 clientId,
                 token,
-                'EX',
                 this.jwtUtilService.getClientAccessExpireTime()
             )
             return token
@@ -153,7 +149,6 @@ export class ClientService {
     }
 
     async addData(fusion: CreateFusionDto) {
-        const createFusion = new this.fusionModel(fusion)
-        return createFusion.save()
+        return this.mongoService.createFusion(fusion)
     }
 }

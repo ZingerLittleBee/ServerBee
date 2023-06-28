@@ -1,10 +1,4 @@
-import {
-    Disk,
-    Os,
-    Overview,
-    Realtime,
-    Temp
-} from '@/client/schemas/fusion.schema'
+import { Overview, Os, Realtime, Disk, Temp } from '@/db/schemas/fusion.schema'
 
 export class CreateFusionDto {
     overview?: Overview

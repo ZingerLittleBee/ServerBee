@@ -11,9 +11,12 @@ import { InfluxModule } from './influx/influx.module'
 import { RedisModule, RedisModuleOptions } from '@liaoliaots/nestjs-redis'
 import { UtilModule } from '@/utils/util.module'
 import { MongooseModule } from '@nestjs/mongoose'
+import { TaskModule } from './task/task.module'
+import { ScheduleModule } from '@nestjs/schedule'
 
 @Module({
     imports: [
+        ScheduleModule.forRoot(),
         MongooseModule.forRoot('mongodb://localhost:27017'),
         RedisModule.forRootAsync({
             imports: [ConfigModule],
@@ -37,7 +40,8 @@ import { MongooseModule } from '@nestjs/mongoose'
             isGlobal: true
         }),
         ProfileModule,
-        InfluxModule
+        InfluxModule,
+        TaskModule
     ],
     controllers: [AppController],
     providers: [AppService]
