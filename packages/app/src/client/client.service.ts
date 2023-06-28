@@ -29,24 +29,26 @@ export class ClientService {
     async registerClient(client: CreateClientDto) {
         // if `clientId` not empty, already registered before.
         // just update `status` and `device` field, if it has.
+        let clientId: string
         if (client.clientId) {
             this.logger.verbose(
                 `clientId: ${client.clientId} already registered before`
             )
             await this.mergeClient(client)
+            clientId = client.clientId
         } else {
-            const clientId = await this.create(client)
+            clientId = await this.create(client)
             this.logger.verbose(`new client, id: ${clientId}, info: ${client}`)
-            const token = await this.jwtService.signAsync({
-                clientId: clientId
-            })
-            await this.redisService.setWithExpire(
-                clientId,
-                token,
-                this.jwtUtilService.getClientAccessExpireTime()
-            )
-            return token
         }
+        const token = await this.jwtService.signAsync({
+            clientId: clientId
+        })
+        await this.redisService.setWithExpire(
+            clientId,
+            token,
+            this.jwtUtilService.getClientAccessExpireTime()
+        )
+        return token
     }
 
     private async mergeClient(client: CreateClientDto) {

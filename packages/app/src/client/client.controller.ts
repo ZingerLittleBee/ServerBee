@@ -3,22 +3,25 @@ import {
     Get,
     Post,
     Body,
-    Patch,
     Param,
     Delete,
-    RawBodyRequest,
-    Req, UseGuards
+    UseGuards,
+    Logger
 } from '@nestjs/common'
 import { ClientService } from './client.service'
 import { CreateClientDto } from './dto/create-client.dto'
 import { Result, ResultUtil } from '@/utils/ResultUtil'
 import { CreateFusionDto } from '@/client/dto/create-fusion.dto'
-import { AuthGuard } from '@/auth/auth.guard'
+import { ClientDataGuard } from '@/client/guard/data.guard'
+import { ClientRegisterGuard } from '@/client/guard/register.guard'
 
 @Controller('client')
 export class ClientController {
+    private readonly logger = new Logger(ClientController.name)
+
     constructor(private readonly clientService: ClientService) {}
 
+    @UseGuards(ClientRegisterGuard)
     @Post('register')
     async register(
         @Body() createClientDto: CreateClientDto
@@ -35,25 +38,14 @@ export class ClientController {
         }
     }
 
-    // add data to influxdb
-    // @Post('data')
-    // async data(@Req() req: RawBodyRequest<Request>) {
-    //     console.log(`rawBody: ${req.rawBody}`)
-    //     const data = req.rawBody?.toString('utf-8').split('\n')
-    //     data?.forEach((item, index) => {
-    //         console.log(`item${index}: ${item}`)
-    //     })
-    //     return ResultUtil.ok()
-    // }
-
-    @UseGuards(AuthGuard)
+    @UseGuards(ClientDataGuard)
     @Post('data')
     async data(@Body() fusion: CreateFusionDto) {
         try {
             await this.clientService.addData(fusion)
-            return ResultUtil.ok()
         } catch (e) {
-            ResultUtil.error(e.message)
+            this.logger.error(`add data: ${fusion}, error: ${e.message}`)
+            return ResultUtil.error(e.message)
         }
     }
 
