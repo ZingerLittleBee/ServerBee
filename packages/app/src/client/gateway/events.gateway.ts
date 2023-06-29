@@ -34,7 +34,8 @@ export class EventsGateway implements OnGatewayConnection {
 
     @SubscribeMessage('report')
     findAll(@MessageBody() fusion: CreateFusionDto) {
-        this.clientService.addData(fusion)
+        // this.clientService.addData(fusion)
+        console.log(`report: ${inspect(fusion)}`)
     }
 
     @SubscribeMessage('identity')
