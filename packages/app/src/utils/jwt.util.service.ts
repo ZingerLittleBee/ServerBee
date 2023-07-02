@@ -56,4 +56,18 @@ export class JwtUtilService {
             throw new UnauthorizedException(`token expired`)
         }
     }
+
+    static extractBearerTokenFromRawHeaders(rawHeaders: string[]): string {
+        const authorizationHeader = rawHeaders.find((header) =>
+            header.startsWith('Bearer')
+        )
+        if (!authorizationHeader) {
+            throw new UnauthorizedException('Authorization header not found')
+        }
+        const token = authorizationHeader.split(' ')[1]
+        if (!token) {
+            throw new UnauthorizedException('token not found')
+        }
+        return token
+    }
 }

@@ -1,8 +1,15 @@
 import { Os, Overview, Process, Realtime } from '@/db/schemas/fusion.type'
 
-export class CreateFusionDto {
+export class FusionDto {
     overview?: Overview
+
     os?: Os
+
     realtime?: Realtime
-    full_process?: Process[]
+
+    process?: Process[]
+
+    clientId?: string
+
+    time?: number
 }
