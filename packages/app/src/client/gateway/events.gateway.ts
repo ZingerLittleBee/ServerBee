@@ -1,4 +1,5 @@
 import {
+    ConnectedSocket,
     MessageBody,
     OnGatewayConnection,
     SubscribeMessage,
@@ -12,6 +13,7 @@ import { CreateFusionDto } from '@/client/dto/create-fusion.dto'
 import { Server, Socket } from 'socket.io'
 import { inspect } from 'util'
 import { JwtUtilService } from '@/utils/jwt.util.service'
+import { EventsService } from '@/client/gateway/events.service'
 
 @Injectable()
 @WebSocketGateway(9876, {
@@ -28,7 +30,10 @@ export class EventsGateway implements OnGatewayConnection {
 
     private logger: Logger = new Logger(EventsGateway.name)
 
-    constructor(private readonly clientService: ClientService) {}
+    constructor(
+        private readonly clientService: ClientService,
+        private readonly eventsService: EventsService
+    ) {}
 
     handleConnection(client: Socket, ...args: any[]) {
         // console.log(`handleConnection: ${inspect(client)}`)
@@ -37,6 +42,9 @@ export class EventsGateway implements OnGatewayConnection {
                 args[0].rawHeaders
             )
             // parse token
+            const clientId = this.eventsService.extractClientIdFromToken(token)
+            this.logger.log(`client connected: ${clientId}`)
+            this.clients.set(clientId, client)
         } catch (e) {
             this.logger.error(e)
             throw new WsException('Invalid credentials.')
@@ -48,9 +56,13 @@ export class EventsGateway implements OnGatewayConnection {
     }
 
     @SubscribeMessage('report')
-    findAll(@MessageBody() fusion: CreateFusionDto) {
+    findAll(
+        @MessageBody() fusion: CreateFusionDto,
+        @ConnectedSocket() client: Socket
+    ) {
         // this.clientService.addData(fusion)
         console.log(`report: ${inspect(fusion)}`)
+        client.emit('report', 'ok')
     }
 
     @SubscribeMessage('identity')

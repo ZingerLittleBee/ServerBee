@@ -1,4 +1,7 @@
-class CreateDeviceDto {
+import { DiskDetail, NetworkInfo } from '@/types/device.type'
+
+export class CreateDeviceDto {
+    name: string
     hostname: string
     kernel: string
     cpu_num: number
@@ -7,4 +10,7 @@ class CreateDeviceDto {
     vendor: string
     memory: string
     swap: string
+    version: string
+    disk: DiskDetail[]
+    network: NetworkInfo[]
 }

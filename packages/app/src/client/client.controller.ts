@@ -6,7 +6,8 @@ import {
     Param,
     Delete,
     UseGuards,
-    Logger
+    Logger,
+    Request
 } from '@nestjs/common'
 import { ClientService } from './client.service'
 import { CreateClientDto } from './dto/create-client.dto'
@@ -14,6 +15,7 @@ import { Result, ResultUtil } from '@/utils/ResultUtil'
 import { CreateFusionDto } from '@/client/dto/create-fusion.dto'
 import { ClientDataGuard } from '@/client/guard/data.guard'
 import { ClientRegisterGuard } from '@/client/guard/register.guard'
+import { request } from 'express'
 
 @Controller('client')
 export class ClientController {
@@ -24,12 +26,14 @@ export class ClientController {
     @UseGuards(ClientRegisterGuard)
     @Post('register')
     async register(
-        @Body() createClientDto: CreateClientDto
+        @Body() createClientDto: CreateClientDto,
+        @Request() req: Request & { clientId?: string }
     ): Promise<Result<{ token?: string }>> {
         try {
-            const token = await this.clientService.registerClient(
-                createClientDto
-            )
+            const token = await this.clientService.registerClient({
+                ...createClientDto,
+                clientId: req.clientId
+            })
             return ResultUtil.ok({
                 token
             })
