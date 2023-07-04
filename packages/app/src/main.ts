@@ -13,7 +13,7 @@ async function bootstrap() {
     app.use(helmet())
     app.use(cookieParser())
     app.enableCors({
-        origin: 'http://localhost:3000',
+        origin: true,
         credentials: true
     })
     await app.listen(3001)

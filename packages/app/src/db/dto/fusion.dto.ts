@@ -1,4 +1,4 @@
-import { Os, Overview, Process, Realtime } from '@/db/schemas/fusion.type'
+import { Os, Overview, Process, Realtime } from '@/types/fusion.type'
 
 export class FusionDto {
     overview?: Overview

@@ -10,10 +10,10 @@ import {
 import { Injectable, Logger } from '@nestjs/common'
 import { ClientService } from '@/client/client.service'
 import { CreateFusionDto } from '@/client/dto/create-fusion.dto'
-import { Server, Socket } from 'socket.io'
 import { inspect } from 'util'
 import { JwtUtilService } from '@/utils/jwt.util.service'
 import { EventsService } from '@/client/gateway/events.service'
+import { Server } from 'ws'
 
 @Injectable()
 @WebSocketGateway(9876, {
@@ -35,7 +35,7 @@ export class EventsGateway implements OnGatewayConnection {
         private readonly eventsService: EventsService
     ) {}
 
-    handleConnection(client: Socket, ...args: any[]) {
+    handleConnection(client: any, ...args: any[]) {
         // console.log(`handleConnection: ${inspect(client)}`)
         try {
             const token = JwtUtilService.extractBearerTokenFromRawHeaders(
@@ -58,7 +58,7 @@ export class EventsGateway implements OnGatewayConnection {
     @SubscribeMessage('report')
     findAll(
         @MessageBody() fusion: CreateFusionDto,
-        @ConnectedSocket() client: Socket
+        @ConnectedSocket() client: any
     ) {
         // this.clientService.addData(fusion)
         console.log(`report: ${inspect(fusion)}`)

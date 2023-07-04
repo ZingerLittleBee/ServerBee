@@ -16,6 +16,7 @@ import { CreateFusionDto } from '@/client/dto/create-fusion.dto'
 import { ClientDataGuard } from '@/client/guard/data.guard'
 import { ClientRegisterGuard } from '@/client/guard/register.guard'
 import { request } from 'express'
+import { CreateDeviceDto } from '@/client/device/dto/create-device.dto'
 
 @Controller('client')
 export class ClientController {
@@ -26,12 +27,14 @@ export class ClientController {
     @UseGuards(ClientRegisterGuard)
     @Post('register')
     async register(
-        @Body() createClientDto: CreateClientDto,
-        @Request() req: Request & { clientId?: string }
+        @Body() device: CreateDeviceDto,
+        @Request() req: Request & { clientId?: string; userId?: string }
     ): Promise<Result<{ token?: string }>> {
         try {
             const token = await this.clientService.registerClient({
-                ...createClientDto,
+                name: device?.name,
+                device,
+                userId: req.userId,
                 clientId: req.clientId
             })
             return ResultUtil.ok({

@@ -11,6 +11,9 @@ import { JwtUtilService } from '@/utils/jwt.util.service'
 import { CreateFusionDto } from '@/client/dto/create-fusion.dto'
 import { MongoService } from '@/db/mongo.service'
 import { RedisService } from '@/db/redis.service'
+import { Error } from 'mongoose'
+import { formatDataToString } from '@/utils/common.util'
+import { CreateDeviceDto } from '@/client/device/dto/create-device.dto'
 
 @Injectable()
 export class ClientService {
@@ -34,14 +37,27 @@ export class ClientService {
             this.logger.verbose(
                 `clientId: ${client.clientId} already registered before`
             )
-            await this.mergeClient(client)
-            clientId = client.clientId
+            try {
+                await this.mergeClient(client)
+                clientId = client.clientId
+            } catch (e) {
+                this.logger.error(`merge client error: ${e.message}`)
+                throw new Error('update client error')
+            }
         } else {
-            clientId = await this.create(client)
-            this.logger.verbose(`new client, id: ${clientId}, info: ${client}`)
+            try {
+                clientId = await this.create(client)
+                this.logger.verbose(
+                    `new client, id: ${clientId}, info: ${client}`
+                )
+            } catch (e) {
+                this.logger.error(`create client error: ${e.message}`)
+                throw new Error('create client error')
+            }
         }
         const token = await this.jwtService.signAsync({
-            clientId: clientId
+            clientId: clientId,
+            userId: client.userId
         })
         await this.redisService.setWithExpire(
             clientId,
@@ -66,7 +82,7 @@ export class ClientService {
         if (rawClient) {
             const newClient: UpdateClientDto = {
                 name: client.name ?? rawClient.name,
-                userId: client.userId ?? rawClient.user_id
+                userId: client.userId
             }
             if (client.device && rawClient.device) {
                 const { id, created_at, updated_at, client_id, ...other } =
@@ -98,7 +114,9 @@ export class ClientService {
                 },
                 device: {
                     update: {
-                        ...newClient.device
+                        ...newClient.device,
+                        memory: formatDataToString(newClient.device?.memory),
+                        swap: formatDataToString(newClient.device?.swap)
                     }
                 }
             }
@@ -128,8 +146,8 @@ export class ClientService {
                         brand: device.brand,
                         frequency: device.frequency,
                         vendor: device.vendor,
-                        memory: device.memory,
-                        swap: device.swap
+                        memory: formatDataToString(device.memory),
+                        swap: formatDataToString(device.swap)
                     }
                 }
             } as Prisma.ClientCreateInput

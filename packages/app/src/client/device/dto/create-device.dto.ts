@@ -1,4 +1,5 @@
 import { DiskDetail, NetworkInfo } from '@/types/device.type'
+import { FormatData } from '@/types/fusion.type'
 
 export class CreateDeviceDto {
     name: string
@@ -8,8 +9,8 @@ export class CreateDeviceDto {
     brand: string
     frequency: string
     vendor: string
-    memory: string
-    swap: string
+    memory: FormatData
+    swap: FormatData
     version: string
     disk: DiskDetail[]
     network: NetworkInfo[]

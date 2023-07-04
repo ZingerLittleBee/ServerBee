@@ -1,8 +1,8 @@
 import { CreateDeviceDto } from '@/client/device/dto/create-device.dto'
 
 export class CreateClientDto {
-    name: string
+    name?: string
     device: CreateDeviceDto
-    userId: string
+    userId?: string
     clientId?: string
 }

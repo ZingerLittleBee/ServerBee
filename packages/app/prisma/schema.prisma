@@ -4,7 +4,7 @@
 generator client {
     provider = "prisma-client-js"
     // https://github.com/prisma/prisma/issues/2584
-    output   = "../node_modules/.prisma/client"
+    // output   = "../node_modules/.prisma/client"
 }
 
 datasource db {
@@ -43,8 +43,8 @@ model Client {
     updated_at DateTime @updatedAt
     status     Status   @default(INACTIVE)
     device     Device?
-    user       User     @relation(fields: [user_id], references: [id])
-    user_id    Int
+    user       User?    @relation(fields: [user_id], references: [user_id])
+    user_id    String?  @unique
 }
 
 model Device {
@@ -59,8 +59,8 @@ model Device {
     swap       String?
     created_at DateTime @default(now())
     updated_at DateTime @updatedAt
-    client     Client   @relation(fields: [client_id], references: [id])
-    client_id  Int      @unique
+    client     Client   @relation(fields: [client_id], references: [client_id])
+    client_id  String   @unique
 }
 
 enum Role {

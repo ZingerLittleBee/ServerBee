@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose'
 import { HydratedDocument } from 'mongoose'
-import { Os, Overview, Process, Realtime } from '@/db/schemas/fusion.type'
+import { Os, Overview, Process, Realtime } from '@/types/fusion.type'
 
 export type FusionDocument = HydratedDocument<Fusion>
 

@@ -38,7 +38,7 @@ CREATE TABLE "Client" (
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
     "status" "Status" NOT NULL DEFAULT 'INACTIVE',
-    "user_id" INTEGER NOT NULL,
+    "user_id" TEXT,
 
     CONSTRAINT "Client_pkey" PRIMARY KEY ("id")
 );
@@ -56,7 +56,7 @@ CREATE TABLE "Device" (
     "swap" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-    "client_id" INTEGER NOT NULL,
+    "client_id" TEXT NOT NULL,
 
     CONSTRAINT "Device_pkey" PRIMARY KEY ("id")
 );
@@ -77,13 +77,16 @@ CREATE UNIQUE INDEX "Profile_user_id_key" ON "Profile"("user_id");
 CREATE UNIQUE INDEX "Client_client_id_key" ON "Client"("client_id");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Client_user_id_key" ON "Client"("user_id");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Device_client_id_key" ON "Device"("client_id");
 
 -- AddForeignKey
 ALTER TABLE "Profile" ADD CONSTRAINT "Profile_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "User"("user_id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Client" ADD CONSTRAINT "Client_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Client" ADD CONSTRAINT "Client_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "User"("user_id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Device" ADD CONSTRAINT "Device_client_id_fkey" FOREIGN KEY ("client_id") REFERENCES "Client"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Device" ADD CONSTRAINT "Device_client_id_fkey" FOREIGN KEY ("client_id") REFERENCES "Client"("client_id") ON DELETE RESTRICT ON UPDATE CASCADE;
