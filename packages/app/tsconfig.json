@@ -18,7 +18,24 @@
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@/*": ["src/*"],
+      "@app/server": [
+        "apps/server/src"
+      ],
+      "@app/server/*": [
+        "apps/server/src/*"
+      ],
+      "@app/client": [
+        "apps/client/src"
+      ],
+      "@app/client/*": [
+        "apps/client/src/*"
+      ],
+      "@app/shared": [
+        "libs/shared/src"
+      ],
+      "@app/shared/*": [
+        "libs/shared/src/*"
+      ]
     }
   }
 }
