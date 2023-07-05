@@ -31,12 +31,14 @@ export class ClientController {
         @Request() req: Request & { clientId?: string; userId?: string }
     ): Promise<Result<{ token?: string }>> {
         try {
-            const token = await this.clientService.registerClient({
-                name: device?.name,
-                device,
-                userId: req.userId,
-                clientId: req.clientId
-            })
+            const token = await this.clientService.registerClient(
+                new CreateClientDto({
+                    name: device?.name,
+                    device,
+                    userId: req.userId,
+                    clientId: req.clientId
+                })
+            )
             return ResultUtil.ok({
                 token
             })

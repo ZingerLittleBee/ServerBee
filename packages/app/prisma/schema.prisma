@@ -57,10 +57,37 @@ model Device {
     vendor     String?
     memory     String?
     swap       String?
+    version    String?
+    disk       Disk[]
+    network    Network[]
     created_at DateTime @default(now())
     updated_at DateTime @updatedAt
     client     Client   @relation(fields: [client_id], references: [client_id])
     client_id  String   @unique
+}
+
+model Disk {
+    id         Int      @id @default(autoincrement())
+    device     Device   @relation(fields: [device_id], references: [id])
+    device_id  Int   @unique
+    name       String?
+    type       String?
+    size       String?
+    used       String?
+    created_at DateTime @default(now())
+    updated_at DateTime @updatedAt
+}
+
+model Network {
+    id         Int      @id @default(autoincrement())
+    device     Device   @relation(fields: [device_id], references: [id])
+    device_id  Int   @unique
+    name       String?
+    mac        String?
+    rx         String?
+    tx         String?
+    created_at DateTime @default(now())
+    updated_at DateTime @updatedAt
 }
 
 enum Role {

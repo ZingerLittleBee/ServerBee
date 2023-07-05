@@ -5,4 +5,11 @@ export class CreateClientDto {
     device: CreateDeviceDto
     userId?: string
     clientId?: string
+
+    constructor(client: typeof CreateClientDto.prototype) {
+        this.name = client.name
+        this.device = new CreateDeviceDto(client.device)
+        this.userId = client.userId
+        this.clientId = client.clientId
+    }
 }
