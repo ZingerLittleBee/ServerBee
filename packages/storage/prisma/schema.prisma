@@ -1,0 +1,102 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+    provider = "prisma-client-js"
+    // https://github.com/prisma/prisma/issues/2584
+    // output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+model User {
+    id         Int      @id @default(autoincrement())
+    user_id    String   @unique @default(cuid())
+    created_at DateTime @default(now())
+    updated_at DateTime @updatedAt
+    email      String   @unique
+    username   String   @unique
+    password   String
+    profile    Profile?
+    role       Role     @default(USER)
+    clients    Client[]
+}
+
+model Profile {
+    id          Int      @id @default(autoincrement())
+    updated_at  DateTime @updatedAt
+    name        String
+    avatar      String?
+    description String?
+    user        User     @relation(fields: [user_id], references: [user_id])
+    user_id     String   @unique
+}
+
+model Client {
+    id         Int      @id @default(autoincrement())
+    client_id  String   @unique @default(cuid())
+    name       String
+    created_at DateTime @default(now())
+    updated_at DateTime @updatedAt
+    status     Status   @default(INACTIVE)
+    device     Device?
+    user       User?    @relation(fields: [user_id], references: [user_id])
+    user_id    String?  @unique
+}
+
+model Device {
+    id         Int       @id @default(autoincrement())
+    hostname   String?
+    kernel     String?
+    cpu_num    Int?
+    brand      String?
+    frequency  String?
+    vendor     String?
+    memory     String?
+    swap       String?
+    version    String?
+    disk       Disk[]
+    network    Network[]
+    created_at DateTime  @default(now())
+    updated_at DateTime  @updatedAt
+    client     Client    @relation(fields: [client_id], references: [client_id])
+    client_id  String    @unique
+}
+
+model Disk {
+    id         Int      @id @default(autoincrement())
+    device     Device   @relation(fields: [device_id], references: [id])
+    device_id  Int      @unique
+    name       String?
+    type       String?
+    size       String?
+    used       String?
+    created_at DateTime @default(now())
+    updated_at DateTime @updatedAt
+}
+
+model Network {
+    id         Int      @id @default(autoincrement())
+    device     Device   @relation(fields: [device_id], references: [id])
+    device_id  Int      @unique
+    name       String?
+    mac        String?
+    rx         String?
+    tx         String?
+    created_at DateTime @default(now())
+    updated_at DateTime @updatedAt
+}
+
+enum Role {
+    USER
+    ADMIN
+}
+
+enum Status {
+    ACTIVE
+    INACTIVE
+    DISABLED
+}

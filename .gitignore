@@ -45,3 +45,4 @@ lerna-debug.log*
 # APP Module
 packages/app/dist
 .env
+/packages/*/dist/
