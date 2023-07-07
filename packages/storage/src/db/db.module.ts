@@ -7,7 +7,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config'
 import { Fusion, FusionSchema } from '@/db/schemas/fusion.schema'
 import { RedisService } from '@/db/redis.service'
 import { MongoService } from '@/db/mongo.service'
-import { MongoController } from '@/db/mongo.controller'
 
 @Module({
     imports: [
@@ -27,7 +26,6 @@ import { MongoController } from '@/db/mongo.controller'
         }),
         MongooseModule.forFeature([{ name: Fusion.name, schema: FusionSchema }])
     ],
-    controllers: [MongoController],
     providers: [PrismaService, RedisService, MongoService],
     exports: [PrismaService, RedisService, MongoService]
 })

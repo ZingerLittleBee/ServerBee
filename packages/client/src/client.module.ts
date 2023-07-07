@@ -6,9 +6,22 @@ import { ClientController } from '@/client.controller'
 import { ClientService } from '@/client.service'
 import { EventsGateway } from '@/gateway/events.gateway'
 import { EventsService } from '@/gateway/events.service'
+import { ClientsModule, Transport } from '@nestjs/microservices'
 
 @Module({
-    imports: [SharedModule, JwtModule.register({})],
+    imports: [
+        ClientsModule.register([
+            {
+                name: 'STORAGE_SERVICE',
+                transport: Transport.NATS,
+                options: {
+                    servers: ['nats://localhost:4222']
+                }
+            }
+        ]),
+        SharedModule,
+        JwtModule.register({})
+    ],
     controllers: [ClientController],
     providers: [ClientService, EventsGateway, EventsService]
 })

@@ -8,8 +8,8 @@ export class RedisService {
 
     constructor(@InjectRedis() private readonly redis: Redis) {}
 
-    async setWithExpire(key: string, value: any, expire: number) {
-        return this.redis.set(key, value, 'EX', expire)
+    async setWithExpire(data: { key: string; value: any; expire: number }) {
+        return this.redis.set(data.key, data.value, 'EX', data.expire)
     }
 
     async equal(key: string, value: any) {

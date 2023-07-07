@@ -1,30 +1,25 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Inject, Injectable, Logger } from '@nestjs/common'
 import { CreateClientDto } from './dto/create-client.dto'
 import { Prisma } from '@prisma/client'
 import { JwtService } from '@nestjs/jwt'
 import { Error } from 'mongoose'
 import { inspect } from 'util'
-import {
-    JwtUtilService,
-    MongoService,
-    PrismaService,
-    RedisService
-} from '@server-octopus/shared'
+import { JwtUtilService } from '@server-octopus/shared'
 import { CreateClientEntity } from '@/entity/create-client.entity'
 import { UpdateClientEntity } from '@/entity/update-client.entity'
 import { StatusEnum } from '@/enums/status.enum'
 import { CreateFusionDto } from '@/dto/create-fusion.dto'
+import { ClientProxy } from '@nestjs/microservices'
+import { EventJwtCreated } from '@server-octopus/types'
 
 @Injectable()
 export class ClientService {
     private readonly logger = new Logger(ClientService.name)
 
     constructor(
-        private readonly prismaService: PrismaService,
         private readonly jwtService: JwtService,
         private readonly jwtUtilService: JwtUtilService,
-        private readonly mongoService: MongoService,
-        private readonly redisService: RedisService
+        @Inject('STORAGE_SERVICE') private client: ClientProxy
     ) {}
 
     async registerClient(client: CreateClientDto) {
@@ -64,11 +59,12 @@ export class ClientService {
             clientId: clientId,
             userId: client.userId
         })
-        await this.redisService.setWithExpire(
-            clientId,
-            token,
-            this.jwtUtilService.getClientAccessExpireTime()
-        )
+        const jwtCreated: EventJwtCreated = {
+            key: clientId,
+            value: token,
+            expire: this.jwtUtilService.getClientAccessExpireTime()
+        }
+        this.client.emit<unknown, EventJwtCreated>('jwt_created', jwtCreated)
         return token
     }
 

@@ -49,6 +49,7 @@ model Client {
 
 model Device {
     id         Int       @id @default(autoincrement())
+    name       String?
     hostname   String?
     kernel     String?
     cpu_num    Int?
@@ -72,8 +73,10 @@ model Disk {
     device_id  Int      @unique
     name       String?
     type       String?
-    size       String?
-    used       String?
+    total      String?
+    available  String?
+    file_system String?
+    removeable  Boolean?
     created_at DateTime @default(now())
     updated_at DateTime @updatedAt
 }

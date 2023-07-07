@@ -9,7 +9,7 @@ export type DiskDetail = {
     is_removable: boolean
 }
 
-export type DiskDetailEntity = Omit<
+export type DiskDetailDto = Omit<
     DiskDetail,
     'total_space' | 'available_space'
 > & {
@@ -25,7 +25,7 @@ export type NetworkInfo = {
     tx: FormatData
 }
 
-export type NetworkInfoEntity = Omit<NetworkInfo, 'rx' | 'tx'> & {
+export type NetworkInfoDto = Omit<NetworkInfo, 'rx' | 'tx'> & {
     rx: string
     tx: string
 }
