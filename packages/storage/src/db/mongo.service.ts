@@ -1,13 +1,16 @@
 import { Injectable } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model } from 'mongoose'
-import { Fusion } from '@/db/schemas/fusion.schema'
-import { FusionDto } from '@/db/dto/fusion.dto'
+import { FusionModel } from '@/db/schemas/fusion.schema'
+import { FusionDto } from '@server-octopus/types'
+
 @Injectable()
 export class MongoService {
-    constructor(@InjectModel(Fusion.name) private fusionModel: Model<Fusion>) {}
+    constructor(
+        @InjectModel(FusionModel.name) private fusionModel: Model<FusionModel>
+    ) {}
 
-    async createFusion(fusion: FusionDto) {
+    async addFusion(fusion: FusionDto) {
         const createdFusion = new this.fusionModel(fusion)
         return createdFusion.save()
     }

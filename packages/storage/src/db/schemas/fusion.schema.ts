@@ -1,13 +1,19 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose'
 import { HydratedDocument } from 'mongoose'
-import { Os, Overview, Process, Realtime } from '@server-octopus/types'
+import {
+    Os,
+    Overview,
+    Process,
+    Realtime,
+    SimpleProcess
+} from '@server-octopus/types'
 
-export type FusionDocument = HydratedDocument<Fusion>
+type FusionDocument = HydratedDocument<FusionModel>
 
 @Schema({
     timestamps: true
 })
-export class Fusion {
+class FusionModel {
     @Prop({ type: Object })
     overview: Overview
 
@@ -18,7 +24,10 @@ export class Fusion {
     realtime: Realtime
 
     @Prop({ type: [{ type: Object }] })
-    process: Process[]
+    simpleProcess: SimpleProcess[]
+
+    @Prop({ type: [{ type: Object }] })
+    fullProcess: Process[]
 
     @Prop({ type: String })
     clientId: string
@@ -27,4 +36,6 @@ export class Fusion {
     time: number
 }
 
-export const FusionSchema = SchemaFactory.createForClass(Fusion)
+const FusionSchema = SchemaFactory.createForClass(FusionModel)
+
+export { FusionSchema, FusionDocument, FusionModel }

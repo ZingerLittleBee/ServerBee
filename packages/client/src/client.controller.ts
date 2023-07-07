@@ -1,13 +1,10 @@
 import {
-    Controller,
-    Get,
-    Post,
     Body,
-    Param,
-    Delete,
-    UseGuards,
+    Controller,
     Logger,
-    Request
+    Post,
+    Request,
+    UseGuards
 } from '@nestjs/common'
 import { ClientService } from './client.service'
 import { CreateClientDto } from './dto/create-client.dto'
@@ -58,20 +55,5 @@ export class ClientController {
             this.logger.error(`add data: ${fusion}, error: ${e.message}`)
             return ResultUtil.error(e.message)
         }
-    }
-
-    @Get()
-    findAll() {
-        return this.clientService.findAll()
-    }
-
-    @Get(':id')
-    findOne(@Param('id') id: string) {
-        return this.clientService.findOne(+id)
-    }
-
-    @Delete(':id')
-    remove(@Param('id') id: string) {
-        return this.clientService.remove(+id)
     }
 }

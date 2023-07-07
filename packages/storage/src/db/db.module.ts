@@ -4,7 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose'
 
 import { RedisModule, RedisModuleOptions } from '@liaoliaots/nestjs-redis'
 import { ConfigModule, ConfigService } from '@nestjs/config'
-import { Fusion, FusionSchema } from '@/db/schemas/fusion.schema'
+import { FusionModel, FusionSchema } from '@/db/schemas/fusion.schema'
 import { RedisService } from '@/db/redis.service'
 import { MongoService } from '@/db/mongo.service'
 
@@ -24,7 +24,9 @@ import { MongoService } from '@/db/mongo.service'
                 } as RedisModuleOptions
             }
         }),
-        MongooseModule.forFeature([{ name: Fusion.name, schema: FusionSchema }])
+        MongooseModule.forFeature([
+            { name: FusionModel.name, schema: FusionSchema }
+        ])
     ],
     providers: [PrismaService, RedisService, MongoService],
     exports: [PrismaService, RedisService, MongoService]

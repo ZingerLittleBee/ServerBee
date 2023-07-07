@@ -6,6 +6,7 @@ import {
     DiskDetailDto,
     NetworkInfoDto
 } from '@server-octopus/types'
+import { StatusEnum } from '@server-octopus/shared/dist/enums/status.enum'
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit {
@@ -68,5 +69,98 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
             clientId,
             userId
         } as ClientDto
+    }
+
+    async upsertClient(client: ClientDto) {
+        const { client_id } = await this.client.upsert({
+            where: {
+                client_id: client.clientId
+            },
+            create: {
+                name: client.name,
+                status: StatusEnum.ACTIVE,
+                user_id: client.userId,
+                device: {
+                    create: {
+                        name: client.device.name,
+                        hostname: client.device.hostname,
+                        kernel: client.device.kernel,
+                        cpu_num: client.device.cpu_num,
+                        brand: client.device.brand,
+                        frequency: client.device.frequency,
+                        vendor: client.device.vendor,
+                        memory: client.device.memory,
+                        swap: client.device.swap,
+                        version: client.device.version,
+                        disk: {
+                            create: client.device.disk.map((disk) => ({
+                                type: disk.disk_type,
+                                name: disk.device_name,
+                                file_system: disk.file_system,
+                                total: disk.total_space,
+                                available: disk.available_space,
+                                removeable: disk.is_removable
+                            }))
+                        },
+                        network: {
+                            create: client.device.network.map((network) => ({
+                                name: network.name,
+                                mac: network.mac,
+                                rx: network.rx,
+                                tx: network.tx
+                            }))
+                        }
+                    }
+                }
+            },
+            update: {
+                name: client.name,
+                status: StatusEnum.ACTIVE,
+                user_id: client.userId,
+                device: {
+                    update: {
+                        name: client.device.name,
+                        hostname: client.device.hostname,
+                        kernel: client.device.kernel,
+                        cpu_num: client.device.cpu_num,
+                        brand: client.device.brand,
+                        frequency: client.device.frequency,
+                        vendor: client.device.vendor,
+                        memory: client.device.memory,
+                        swap: client.device.swap,
+                        version: client.device.version,
+                        disk: {
+                            updateMany: client.device.disk.map((disk) => ({
+                                where: {
+                                    client_id: client.clientId
+                                },
+                                data: {
+                                    type: disk.disk_type,
+                                    file_system: disk.file_system,
+                                    total: disk.total_space,
+                                    available: disk.available_space,
+                                    removeable: disk.is_removable
+                                }
+                            }))
+                        },
+                        network: {
+                            updateMany: client.device.network.map(
+                                (network) => ({
+                                    where: {
+                                        client_id: client.clientId
+                                    },
+                                    data: {
+                                        mac: network.mac,
+                                        rx: network.rx,
+                                        tx: network.tx
+                                    }
+                                })
+                            )
+                        }
+                    }
+                }
+            }
+        })
+        return client_id
     }
 }

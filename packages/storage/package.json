@@ -22,6 +22,7 @@
         "postinstall": "npx prisma generate"
     },
     "dependencies": {
+        "@server-octopus/shared": "workspace:*",
         "@liaoliaots/nestjs-redis": "^9.0.5",
         "@nestjs/common": "^10.0.0",
         "@nestjs/config": "^3.0.0",

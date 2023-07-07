@@ -1,4 +1,4 @@
-import {DiskDetail} from "./device.type";
+import { DiskDetail } from './device.type'
 
 export type FormatData = [string, string]
 
@@ -101,4 +101,15 @@ export type Process = {
     user?: string
     children?: string[]
     // group_id?: string;
+}
+
+export type SimpleProcess = Pick<Process, 'name' | 'pid' | 'cpu' | 'memory'>
+
+export type Fusion = {
+    overview?: Overview
+    os?: Os
+    realtime?: Realtime
+    process?: Process[]
+    full_process?: Process[]
+    time?: number
 }
