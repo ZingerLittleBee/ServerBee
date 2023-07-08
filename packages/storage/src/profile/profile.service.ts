@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
-import { PrismaService } from '../../dist/db/prisma.service'
 import { CreateProfile, ProfileVo } from '@server-octopus/types'
+import { PrismaService } from '@/db/prisma.service'
 
 @Injectable()
 export class ProfileService {

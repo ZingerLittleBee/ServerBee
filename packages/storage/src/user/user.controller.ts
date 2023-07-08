@@ -1,6 +1,11 @@
 import { Controller } from '@nestjs/common'
 import { UserService } from './user.service'
-import { kUserCreateEvent, kUserFind, ResultUtil } from '@server-octopus/shared'
+import {
+    kUserCreateEvent,
+    kUserFind,
+    kUserVerify,
+    ResultUtil
+} from '@server-octopus/shared'
 import {
     CreateUser,
     FindUserDto,

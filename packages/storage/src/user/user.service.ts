@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common'
-import { PrismaService } from '../../dist/db/prisma.service'
 import {
     AuthPayload,
     CreateUser,
@@ -8,6 +7,7 @@ import {
     VertifyUserDto
 } from '@server-octopus/types'
 import * as bcrypt from 'bcrypt'
+import { PrismaService } from '@/db/prisma.service'
 
 @Injectable()
 export class UserService {
