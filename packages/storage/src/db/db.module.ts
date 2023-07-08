@@ -7,6 +7,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config'
 import { FusionModel, FusionSchema } from '@/db/schemas/fusion.schema'
 import { RedisService } from '@/db/redis.service'
 import { MongoService } from '@/db/mongo.service'
+import { ErrorUtil } from '@/db/error.util'
 
 @Module({
     imports: [
@@ -28,7 +29,7 @@ import { MongoService } from '@/db/mongo.service'
             { name: FusionModel.name, schema: FusionSchema }
         ])
     ],
-    providers: [PrismaService, RedisService, MongoService],
-    exports: [PrismaService, RedisService, MongoService]
+    providers: [PrismaService, RedisService, MongoService, ErrorUtil],
+    exports: [PrismaService, RedisService, MongoService, ErrorUtil]
 })
 export class DbModule {}

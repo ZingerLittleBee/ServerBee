@@ -1,18 +1,13 @@
-import { Controller, Post, Body, Get } from '@nestjs/common'
+import { Body, Controller, Post } from '@nestjs/common'
 import { UserService } from 'src/user/user.service'
-import { CreateUserDto } from 'src/user/dto/create-user.dto'
+import { CreateUser } from '@server-octopus/types'
 
 @Controller('user')
 export class UserController {
     constructor(private readonly userService: UserService) {}
 
-    @Get('all')
-    async getAllUsers() {
-        return this.userService.getAllUsers()
-    }
-
     @Post()
-    async createUser(@Body() createUserDto: CreateUserDto) {
+    async createUser(@Body() createUserDto: CreateUser) {
         return this.userService.createUser(createUserDto)
     }
 }

@@ -1,4 +1,5 @@
 import { DiskDetailDto, NetworkInfoDto } from '../device.type'
+import { Os, Overview, Process, Realtime, SimpleProcess } from '../fusion.type'
 
 
 type ClientDto = {
@@ -23,7 +24,20 @@ type DeviceDto = {
     network: NetworkInfoDto[]
 }
 
+
+type FusionDto = {
+    overview?: Overview
+    os?: Os
+    realtime?: Realtime
+    simpleProcess?: SimpleProcess[]
+    fullProcess?: Process[]
+    clientId?: string
+    time?: number
+}
+
+
 export {
     ClientDto,
-    DeviceDto
+    DeviceDto,
+    FusionDto
 }

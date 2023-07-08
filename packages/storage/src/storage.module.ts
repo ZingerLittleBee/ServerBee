@@ -3,9 +3,19 @@ import { UtilModule } from '@/utils/util.module'
 import { DbModule } from '@/db/db.module'
 import { ConfigModule } from '@nestjs/config'
 import { StorageController } from '@/storage.controller'
+import { ProfileModule } from '@/profile/profile.module'
+import { UserModule } from './user/user.module'
+import { ClientModule } from './client/client.module';
 
 @Module({
-    controllers: [StorageController],
-    imports: [ConfigModule.forRoot(), DbModule, UtilModule]
+    imports: [
+        ConfigModule.forRoot(),
+        DbModule,
+        UtilModule,
+        ProfileModule,
+        UserModule,
+        ClientModule
+    ],
+    controllers: [StorageController]
 })
 export class StorageModule {}
