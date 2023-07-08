@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common'
 
 import { JwtModule } from '@nestjs/jwt'
-import { SharedModule } from '@server-octopus/shared'
+import { kStorageService, SharedModule } from '@server-octopus/shared'
 import { ClientController } from '@/client.controller'
 import { ClientService } from '@/client.service'
 import { EventsGateway } from '@/gateway/events.gateway'
@@ -12,7 +12,7 @@ import { ClientsModule, Transport } from '@nestjs/microservices'
     imports: [
         ClientsModule.register([
             {
-                name: 'STORAGE_SERVICE',
+                name: kStorageService,
                 transport: Transport.NATS,
                 options: {
                     servers: ['nats://localhost:4222']

@@ -10,12 +10,10 @@ import { ClientService } from './client.service'
 import { CreateClientDto } from './dto/create-client.dto'
 import { ClientRegisterGuard } from '@/guard/register.guard'
 import { CreateDeviceDto } from '@/device/dto/create-device.dto'
-import {
-    Result,
-    ResultUtil
-} from '@server-octopus/shared/dist/utils/result.util'
 import { CreateFusionDto } from '@/dto/create-fusion.dto'
 import { ClientDataGuard } from '@/guard/data.guard'
+import { Result } from '@server-octopus/types'
+import { ResultUtil } from '@server-octopus/shared'
 
 @Controller('client')
 export class ClientController {

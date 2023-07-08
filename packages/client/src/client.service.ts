@@ -8,6 +8,7 @@ import {
     kClientUpsertEvent,
     kFusionAddEvent,
     kJwtCreatedEvent,
+    kStorageService,
     Result
 } from '@server-octopus/shared'
 import { CreateFusionDto } from '@/dto/create-fusion.dto'
@@ -22,7 +23,7 @@ export class ClientService {
     constructor(
         private readonly jwtService: JwtService,
         private readonly jwtUtilService: JwtUtilService,
-        @Inject('STORAGE_SERVICE') private client: ClientProxy
+        @Inject(kStorageService) private client: ClientProxy
     ) {}
 
     async registerClient(client: CreateClientDto) {

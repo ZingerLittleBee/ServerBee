@@ -9,7 +9,8 @@ import { MongoService } from '@/db/mongo.service'
 import {
     kClientUpsertEvent,
     kFusionAddEvent,
-    kJwtCreatedEvent
+    kJwtCreatedEvent,
+    kRedisEqualEvent
 } from '@server-octopus/shared'
 
 @Controller()
@@ -34,6 +35,16 @@ export class StorageController {
     @EventPattern(kFusionAddEvent)
     async addFusion(fusion: FusionDto) {
         this.mongoService.addFusion(fusion)
+    }
+
+    @MessagePattern(kRedisEqualEvent)
+    async equal(data: { key: string; value: any }): Promise<Result<boolean>> {
+        try {
+            const res = await this.redisService.equal(data.key, data.value)
+            return ResultUtil.ok(res)
+        } catch (e) {
+            return ResultUtil.error(this.errorUtil.explain(e))
+        }
     }
 
     @MessagePattern(kClientUpsertEvent)

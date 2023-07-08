@@ -1,13 +1,21 @@
 import {
     CanActivate,
     ExecutionContext,
+    Inject,
     Injectable,
     Logger,
     UnauthorizedException
 } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import { Request } from 'express'
-import { JwtUtilService, RedisService } from '@server-octopus/shared'
+import {
+    JwtUtilService,
+    kRedisEqualEvent,
+    kStorageService
+} from '@server-octopus/shared'
+import { ClientProxy } from '@nestjs/microservices'
+import { firstValueFrom } from 'rxjs'
+import { RedisEqualResult } from '@server-octopus/types'
 
 @Injectable()
 export class ClientDataGuard implements CanActivate {
@@ -15,8 +23,8 @@ export class ClientDataGuard implements CanActivate {
 
     constructor(
         private jwtService: JwtService,
-        private redisService: RedisService,
-        private jwtUtilService: JwtUtilService
+        private jwtUtilService: JwtUtilService,
+        @Inject(kStorageService) private client: ClientProxy
     ) {}
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -52,13 +60,17 @@ export class ClientDataGuard implements CanActivate {
     }
 
     private async checkerInRedis(token: string, clientId: string) {
-        try {
-            await this.redisService.equal(clientId, token)
-        } catch (e) {
+        const { success, data, message } = await firstValueFrom(
+            this.client.send<RedisEqualResult>(kRedisEqualEvent, {
+                key: clientId,
+                value: token
+            })
+        )
+        if (!success || !data) {
             this.logger.error(
-                `token: ${token} check in redis failed: not found or not equal`
+                `token: ${token} check in redis failed error: ${message}`
             )
-            throw new UnauthorizedException(`token expired`)
+            throw new UnauthorizedException(message)
         }
     }
 

@@ -1,8 +1,4 @@
-export interface Result<T> {
-    success: boolean
-    message?: string
-    data?: T
-}
+import { Result } from '@server-octopus/types'
 
 export class ResultUtil<T> implements Result<T> {
     data: T

@@ -1,6 +1,4 @@
 import { DiskDetail, FormatData, NetworkInfo } from '@server-octopus/types'
-import { CreateDeviceEntity } from '@/device/entity/create-device.entity'
-import { formatDataToString } from '@server-octopus/shared'
 
 export class CreateDeviceDto {
     name: string
@@ -29,30 +27,5 @@ export class CreateDeviceDto {
         this.version = device.version
         this.disk = device.disk
         this.network = device.network
-    }
-
-    toDeviceEntity(): CreateDeviceEntity {
-        return {
-            name: this.name,
-            hostname: this.hostname,
-            kernel: this.kernel,
-            cpu_num: this.cpu_num,
-            brand: this.brand,
-            frequency: this.frequency,
-            vendor: this.vendor,
-            memory: formatDataToString(this.memory),
-            swap: formatDataToString(this.swap),
-            version: this.version,
-            disk: this.disk.map((item) => ({
-                ...item,
-                total_space: formatDataToString(item.total_space),
-                available_space: formatDataToString(item.available_space)
-            })),
-            network: this.network.map((item) => ({
-                ...item,
-                rx: formatDataToString(item.rx),
-                tx: formatDataToString(item.tx)
-            }))
-        }
     }
 }

@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "types": "dist/index.d.ts",
   "scripts": {
+    "dev": "tsup src/index.ts --dts-only --watch",
     "build": "tsup src/index.ts --dts-only --minify --clean"
   },
   "keywords": [],
