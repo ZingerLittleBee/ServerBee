@@ -21,4 +21,14 @@ export class RedisService {
             return false
         }
     }
+
+    async exists(key: string) {
+        try {
+            const res = await this.redis.exists(key)
+            return res === 1
+        } catch (e) {
+            this.logger.error(`get from redis error: ${e.message}`)
+            return false
+        }
+    }
 }

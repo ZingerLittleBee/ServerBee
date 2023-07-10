@@ -6,6 +6,7 @@ import { StorageController } from '@/storage.controller'
 import { ProfileModule } from '@/profile/profile.module'
 import { UserModule } from './user/user.module'
 import { ClientModule } from './client/client.module'
+import { AuthModule } from './auth/auth.module';
 import * as process from 'process'
 
 @Module({
@@ -18,7 +19,8 @@ import * as process from 'process'
         UtilModule,
         ProfileModule,
         UserModule,
-        ClientModule
+        ClientModule,
+        AuthModule
     ],
     controllers: [StorageController]
 })

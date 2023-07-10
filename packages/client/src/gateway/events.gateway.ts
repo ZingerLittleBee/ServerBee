@@ -13,7 +13,7 @@ import { Server } from 'ws'
 import { ClientService } from '@/client.service'
 import { EventsService } from '@/gateway/events.service'
 import { JwtUtilService } from '@server-octopus/shared'
-import { CreateFusionDto } from '@/dto/create-fusion.dto'
+import { Fusion } from '@server-octopus/types'
 
 @Injectable()
 @WebSocketGateway(9876, {
@@ -56,24 +56,12 @@ export class EventsGateway implements OnGatewayConnection {
     }
 
     @SubscribeMessage('report')
-    findAll(
-        @MessageBody() fusion: CreateFusionDto,
+    reportFromClient(
+        @MessageBody() fusion: Fusion,
         @ConnectedSocket() client: any
     ) {
         // this.clientService.addData(fusion)
         console.log(`report: ${inspect(fusion)}`)
         client.emit('report', 'ok')
-    }
-
-    @SubscribeMessage('identity')
-    async identity(@MessageBody() data: number): Promise<number> {
-        console.log(`id: ${data}`)
-        return data
-    }
-
-    @SubscribeMessage('test')
-    async test(@MessageBody() test: any) {
-        console.log(`test: ${inspect(test)}`)
-        return test
     }
 }

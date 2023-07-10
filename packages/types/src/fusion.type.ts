@@ -111,5 +111,6 @@ export type Fusion = {
     realtime?: Realtime
     process?: Process[]
     full_process?: Process[]
-    time?: number
 }
+
+

@@ -1,4 +1,4 @@
-import {FormatData} from "./fusion.type";
+import { FormatData } from './fusion.type'
 
 export type DiskDetail = {
     disk_type: string
@@ -28,4 +28,23 @@ export type NetworkInfo = {
 export type NetworkInfoDto = Omit<NetworkInfo, 'rx' | 'tx'> & {
     rx: string
     tx: string
+}
+
+type CreateDevice = {
+    name: string
+    hostname: string
+    kernel: string
+    cpu_num: number
+    brand: string
+    frequency: string
+    vendor: string
+    memory: FormatData
+    swap: FormatData
+    version: string
+    disk: DiskDetail[]
+    network: NetworkInfo[]
+}
+
+export {
+    CreateDevice
 }

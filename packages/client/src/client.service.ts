@@ -1,5 +1,4 @@
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { CreateClientDto } from './dto/create-client.dto'
 import { JwtService } from '@nestjs/jwt'
 import { Error } from 'mongoose'
 import { inspect } from 'util'
@@ -11,9 +10,8 @@ import {
     kStorageService,
     Result
 } from '@server-octopus/shared'
-import { CreateFusionDto } from '@/dto/create-fusion.dto'
 import { ClientProxy } from '@nestjs/microservices'
-import { EventJwtCreated } from '@server-octopus/types'
+import { CreateClient, EventJwtCreated, FusionDto } from '@server-octopus/types'
 import { firstValueFrom } from 'rxjs'
 
 @Injectable()
@@ -26,7 +24,7 @@ export class ClientService {
         @Inject(kStorageService) private client: ClientProxy
     ) {}
 
-    async registerClient(client: CreateClientDto) {
+    async registerClient(client: CreateClient) {
         const {
             success,
             message,
@@ -53,7 +51,9 @@ export class ClientService {
         return token
     }
 
-    async addData(fusion: CreateFusionDto) {
+    async checkToken(token: string) {}
+
+    async addData(fusion: FusionDto) {
         this.client.emit(kFusionAddEvent, fusion)
     }
 }

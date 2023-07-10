@@ -1,6 +1,6 @@
-import { Result } from "./result.type"
+import { Result } from './result.type'
 
-type VertifyUserDto = {
+type VerifyUserDto = {
     username?: string
     email?: string
     password: string
@@ -13,5 +13,5 @@ type AuthPayload = {
 type VertifyUserResult = Result<AuthPayload>
 
 
-export { AuthPayload, VertifyUserDto, VertifyUserResult }
+export { AuthPayload, VerifyUserDto, VertifyUserResult }
 
