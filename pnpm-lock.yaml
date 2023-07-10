@@ -13,6 +13,9 @@ importers:
       '@nestjs/common':
         specifier: ^10.0.0
         version: 10.0.2(reflect-metadata@0.1.13)(rxjs@7.8.1)
+      '@nestjs/config':
+        specifier: ^3.0.0
+        version: 3.0.0(@nestjs/common@10.0.2)(reflect-metadata@0.1.13)
       '@nestjs/core':
         specifier: ^10.0.0
         version: 10.0.2(@nestjs/common@10.0.2)(@nestjs/microservices@10.0.5)(@nestjs/platform-express@10.0.2)(reflect-metadata@0.1.13)(rxjs@7.8.1)
@@ -22,6 +25,9 @@ importers:
       '@nestjs/platform-express':
         specifier: ^10.0.0
         version: 10.0.2(@nestjs/common@10.0.2)(@nestjs/core@10.0.2)
+      '@server-octopus/shared':
+        specifier: workspace:*
+        version: link:../shared
       reflect-metadata:
         specifier: ^0.1.13
         version: 0.1.13
