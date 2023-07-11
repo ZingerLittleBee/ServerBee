@@ -1,29 +1,35 @@
-const kJwtCreatedEvent = 'jwt.created';
+const kJwtCreatedEvent = "jwt.created";
 
-const kFusionAddEvent = 'fusion.add';
+const kFusionAddEvent = "fusion.add";
 
-const kClientUpsertEvent = 'client.upsert';
+const kClientUpsertEvent = "client.upsert";
 
-const kRedisEqualEvent = 'redis.equal';
+const kRedisEqualEvent = "redis.equal";
 
-const kProfileGetByUserIdEvent = 'profile.getByUserId';
+const kRedisExistsEvent = "redis.exists";
 
-const kProfileCreateEvent = 'profile.create';
+const kProfileGetByUserIdEvent = "profile.getByUserId";
 
-const kUserCreateEvent = 'user.create';
+const kProfileCreateEvent = "profile.create";
 
-const kUserFind = 'user.find'
+const kUserCreateEvent = "user.create";
 
-const kUserVerify = 'user.verify'
+const kUserFind = "user.find";
+
+const kUserVerify = "user.verify";
+
+const kTokenVerify = "token.verify";
 
 export {
     kJwtCreatedEvent,
     kFusionAddEvent,
     kClientUpsertEvent,
     kRedisEqualEvent,
+    kRedisExistsEvent,
     kProfileGetByUserIdEvent,
     kProfileCreateEvent,
     kUserCreateEvent,
     kUserFind,
-    kUserVerify
-}
+    kUserVerify,
+    kTokenVerify,
+};

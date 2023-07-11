@@ -1,6 +1,7 @@
 import {
     Body,
     Controller,
+    Get,
     Logger,
     Post,
     Request,
@@ -10,6 +11,7 @@ import { ClientService } from './client.service'
 import { ClientRegisterGuard } from '@/guard/register.guard'
 import { CreateDevice, Result } from '@server-octopus/types'
 import { ResultUtil } from '@server-octopus/shared'
+import { VerifyTokenGuard } from '@/guard/verify.guard'
 
 @Controller('client')
 export class ClientController {
@@ -36,6 +38,12 @@ export class ClientController {
         } catch (e) {
             return ResultUtil.error(e.message)
         }
+    }
+
+    @UseGuards(VerifyTokenGuard)
+    @Get('verify')
+    async verifyToken() {
+        return ResultUtil.ok(true)
     }
 
     // @UseGuards(ClientDataGuard)

@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config'
 import { UserService } from 'src/user/user.service'
 import { kStorageService, kUserVerify } from '@server-octopus/shared'
 import { ClientProxy } from '@nestjs/microservices'
-import { VertifyUserDto, VertifyUserResult } from '@server-octopus/types'
+import { VerifyUserDto, VertifyUserResult } from '@server-octopus/types'
 import { firstValueFrom } from 'rxjs'
 import { inspect } from 'util'
 
@@ -30,7 +30,7 @@ export class AuthService {
             throw new UnauthorizedException()
         }
         const { success, message, data } = await firstValueFrom(
-            this.client.send<VertifyUserResult, VertifyUserDto>(kUserVerify, {
+            this.client.send<VertifyUserResult, VerifyUserDto>(kUserVerify, {
                 email,
                 username,
                 password: pass

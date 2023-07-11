@@ -8,6 +8,7 @@ import {
     kFusionAddEvent,
     kJwtCreatedEvent,
     kStorageService,
+    kTokenVerify,
     Result
 } from '@server-octopus/shared'
 import { ClientProxy } from '@nestjs/microservices'
@@ -51,7 +52,18 @@ export class ClientService {
         return token
     }
 
-    async checkToken(token: string) {}
+    async verifyToken(token: string) {
+        const { success, message, data } = await firstValueFrom(
+            this.client.send<Result<boolean>>(kTokenVerify, { token })
+        )
+        if (!success) {
+            this.logger.error(
+                `check token: ${token} error, message: ${message}`
+            )
+            return false
+        }
+        return data
+    }
 
     async addData(fusion: FusionDto) {
         this.client.emit(kFusionAddEvent, fusion)
