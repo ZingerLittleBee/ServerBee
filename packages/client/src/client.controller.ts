@@ -2,6 +2,7 @@ import {
     Body,
     Controller,
     Get,
+    HttpCode,
     Logger,
     Post,
     Request,
@@ -42,8 +43,9 @@ export class ClientController {
 
     @UseGuards(VerifyTokenGuard)
     @Get('verify')
+    @HttpCode(200)
     async verifyToken() {
-        return ResultUtil.ok(true)
+        return ResultUtil.ok()
     }
 
     // @UseGuards(ClientDataGuard)

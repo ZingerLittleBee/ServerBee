@@ -66,6 +66,7 @@ export class ClientService {
     async upsertClient(client: ClientDto) {
         const { client_id } = await this.prismaService.client.upsert({
             where: {
+                id: -1,
                 client_id: client.clientId
             },
             create: {

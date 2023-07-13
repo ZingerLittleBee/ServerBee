@@ -1,6 +1,6 @@
-import { DiskDetail } from './device.type'
+import { DiskDetail } from "./device.type";
 
-export type FormatData = [string, string]
+export type FormatData = [string, 'B' | 'KiB' | 'MiB' | 'GiB' | 'TiB' | 'PiB' | 'EiB' | '°C'];
 
 export type DiskIO = {
     read: FormatData

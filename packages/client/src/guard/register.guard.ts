@@ -24,12 +24,14 @@ export class ClientRegisterGuard implements CanActivate {
         try {
             const payload = await this.jwtService.verifyAsync<{
                 clientId: string
+                userId?: string
                 iat: number
                 exp: number
             }>(token, {
                 secret: this.jwtUtilService.getClientAccessSecret()
             })
             request['clientId'] = payload.clientId
+            request['userId'] = payload.userId
         } catch (e) {
             return true
         }

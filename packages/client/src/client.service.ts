@@ -14,6 +14,7 @@ import {
 import { ClientProxy } from '@nestjs/microservices'
 import { CreateClient, EventJwtCreated, FusionDto } from '@server-octopus/types'
 import { firstValueFrom } from 'rxjs'
+import { convertFormatDataToString } from '@/util'
 
 @Injectable()
 export class ClientService {
@@ -26,12 +27,13 @@ export class ClientService {
     ) {}
 
     async registerClient(client: CreateClient) {
+        const c = convertFormatDataToString(client)
         const {
             success,
             message,
             data: clientId
         } = await firstValueFrom(
-            this.client.send<Result<string>>(kClientUpsertEvent, client)
+            this.client.send<Result<string>>(kClientUpsertEvent, c)
         )
         if (!success) {
             this.logger.error(
