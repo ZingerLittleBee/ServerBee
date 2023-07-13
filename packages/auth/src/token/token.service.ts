@@ -1,23 +1,30 @@
-import { ConfigService } from '@nestjs/config'
 import {
+    Inject,
     Injectable,
-    NotFoundException,
+    Logger,
     UnauthorizedException
 } from '@nestjs/common'
-import {
-    kClientAccessExpireTime,
-    kClientAccessSecret,
-    kUserAccessSecret
-} from '@/token/token.const'
 import { JwtService } from '@nestjs/jwt'
+import { firstValueFrom } from 'rxjs'
+import { Result } from '@server-octopus/types'
+import { kRedisEqualEvent, kStorageService } from '@server-octopus/shared'
+import { ClientProxy } from '@nestjs/microservices'
+import { TokenUtilService } from '@/token/token.util.service'
+import { expireChecker } from '@/token/token.util'
+
+export enum SignType {
+    client,
+    user
+}
 
 @Injectable()
 export class TokenService {
-    private defaultClientAccessExpireTime = 3600 * 24 * 30
+    private readonly logger = new Logger(TokenService.name)
 
     constructor(
-        private readonly configService: ConfigService,
-        private readonly jwtService: JwtService
+        private readonly jwtService: JwtService,
+        private readonly tokenUtilService: TokenUtilService,
+        @Inject(kStorageService) private client: ClientProxy
     ) {}
 
     extractClientId(token: string) {
@@ -30,61 +37,35 @@ export class TokenService {
 
     checkExpireTime(token: string) {
         const payload = this.jwtService.verify(token)
-        TokenService.expireChecker(payload.exp)
+        expireChecker(payload.exp)
     }
 
-    getUserAccessSecret() {
-        const userAccessSecret = this.configService.get(kUserAccessSecret)
-        if (userAccessSecret) {
-            return userAccessSecret
-        } else {
-            throw new NotFoundException('user access secret Not Found')
-        }
-    }
-
-    getClientAccessSecret() {
-        const clientAccessSecret = this.configService.get(kClientAccessSecret)
-        if (clientAccessSecret) {
-            return clientAccessSecret
-        } else {
-            throw new NotFoundException('client access secret Not Found')
-        }
-    }
-
-    getClientAccessExpireTime() {
-        if (!this.configService.get(kClientAccessExpireTime)) {
-            return this.defaultClientAccessExpireTime
-        }
-        const expireTime = parseInt(
-            this.configService.get(kClientAccessExpireTime)!
+    async isTokenValid(token: string): Promise<boolean> {
+        this.checkExpireTime(token)
+        const { success, data, message } = await firstValueFrom(
+            this.client.send<Result<boolean>>(kRedisEqualEvent, {
+                key: this.extractClientId(token),
+                value: token
+            })
         )
-        return isNaN(expireTime)
-            ? this.defaultClientAccessExpireTime
-            : expireTime
-    }
-
-    /**
-     * @description check if the token is expired
-     * @param {string} exp
-     * @return {boolean} true if expired
-     */
-    static expireChecker(exp: number): void {
-        if (Date.now() >= exp * 1000) {
-            throw new UnauthorizedException(`token expired`)
+        if (!success || !data) {
+            this.logger.error(`invoke ${kRedisEqualEvent} error: ${message}`)
+            return false
         }
     }
 
-    static extractBearerTokenFromRawHeaders(rawHeaders: string[]): string {
-        const authorizationHeader = rawHeaders.find((header) =>
-            header.startsWith('Bearer')
-        )
-        if (!authorizationHeader) {
-            throw new UnauthorizedException('Authorization header not found')
+    async sign(payload: Record<string, any>, type: SignType) {
+        if (type === SignType.client) {
+            return this.jwtService.signAsync(payload, {
+                secret: this.tokenUtilService.getClientAccessSecret(),
+                expiresIn: this.tokenUtilService.getClientAccessExpireTime()
+            })
         }
-        const token = authorizationHeader.split(' ')[1]
-        if (!token) {
-            throw new UnauthorizedException('token not found')
+        if (type === SignType.user) {
+            return this.jwtService.signAsync(payload, {
+                secret: this.tokenUtilService.getUserAccessSecret(),
+                expiresIn: this.tokenUtilService.getUserAccessExpireTime()
+            })
         }
-        return token
     }
 }

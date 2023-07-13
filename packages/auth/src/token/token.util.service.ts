@@ -1,15 +1,16 @@
 import { ConfigService } from '@nestjs/config'
+import { Injectable, NotFoundException } from '@nestjs/common'
 import {
-    Injectable,
-    NotFoundException,
-    UnauthorizedException
-} from '@nestjs/common'
-import { kClientAccessExpireTime, kClientAccessSecret, kUserAccessSecret } from '@/utils/jwt.const'
-
+    kClientAccessExpireTime,
+    kClientAccessSecret,
+    kUserAccessExpireTime,
+    kUserAccessSecret
+} from '@/token/token.const'
 
 @Injectable()
-export class JwtUtilService {
+export class TokenUtilService {
     private defaultClientAccessExpireTime = 3600 * 24 * 30
+    private defaultUserAccessExpireTime = 3600 * 24 * 30
 
     constructor(private readonly configService: ConfigService) {}
 
@@ -20,6 +21,16 @@ export class JwtUtilService {
         } else {
             throw new NotFoundException('user access secret Not Found')
         }
+    }
+
+    getUserAccessExpireTime() {
+        if (!this.configService.get(kUserAccessExpireTime)) {
+            return this.defaultClientAccessExpireTime
+        }
+        const expireTime = parseInt(
+            this.configService.get(kUserAccessExpireTime)!
+        )
+        return isNaN(expireTime) ? this.defaultUserAccessExpireTime : expireTime
     }
 
     getClientAccessSecret() {
@@ -41,30 +52,5 @@ export class JwtUtilService {
         return isNaN(expireTime)
             ? this.defaultClientAccessExpireTime
             : expireTime
-    }
-
-    /**
-     * @description check if the token is expired
-     * @param {string} exp
-     * @return {boolean} true if expired
-     */
-    static expireChecker(exp: number): void {
-        if (Date.now() >= exp * 1000) {
-            throw new UnauthorizedException(`token expired`)
-        }
-    }
-
-    static extractBearerTokenFromRawHeaders(rawHeaders: string[]): string {
-        const authorizationHeader = rawHeaders.find((header) =>
-            header.startsWith('Bearer')
-        )
-        if (!authorizationHeader) {
-            throw new UnauthorizedException('Authorization header not found')
-        }
-        const token = authorizationHeader.split(' ')[1]
-        if (!token) {
-            throw new UnauthorizedException('token not found')
-        }
-        return token
     }
 }

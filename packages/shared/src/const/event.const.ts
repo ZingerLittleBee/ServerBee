@@ -20,6 +20,10 @@ const kUserVerify = "user.verify";
 
 const kTokenVerify = "token.verify";
 
+const kClientTokenSign = "client.token.sign"
+
+const kUserTokenSign = "user.token.sign"
+
 export {
     kJwtCreatedEvent,
     kFusionAddEvent,
@@ -32,4 +36,6 @@ export {
     kUserFind,
     kUserVerify,
     kTokenVerify,
+    kClientTokenSign,
+    kUserTokenSign
 };

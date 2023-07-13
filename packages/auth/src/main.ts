@@ -1,11 +1,11 @@
 import { NestFactory } from '@nestjs/core'
-import { AppModule } from './app.module'
+import { AuthModule } from './auth.module'
 import { MicroserviceOptions, Transport } from '@nestjs/microservices'
 import { ConfigService } from '@nestjs/config'
 import { kNatsServer } from '@server-octopus/shared'
 
 async function bootstrap() {
-    const app = await NestFactory.create(AppModule)
+    const app = await NestFactory.create(AuthModule)
     const configService = app.get(ConfigService)
     const servers = configService.get(kNatsServer)
 
