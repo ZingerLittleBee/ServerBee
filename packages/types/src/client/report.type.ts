@@ -1,4 +1,4 @@
-import { Fusion } from '../fusion.type'
+import { Fusion } from "../fusion.type";
 
 type Report = {
     token: string,
@@ -11,4 +11,4 @@ type ClientPayload = {
     userId?: string
 }
 
-export { Report }
+export { Report, ClientPayload }

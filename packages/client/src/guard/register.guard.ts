@@ -1,37 +1,36 @@
 import {
     CanActivate,
     ExecutionContext,
+    Inject,
     Injectable,
     Logger
 } from '@nestjs/common'
-import { JwtService } from '@nestjs/jwt'
 import { Request } from 'express'
-import { JwtUtilService } from '@server-octopus/shared'
+import { firstValueFrom } from 'rxjs'
+import { kAuthService, kTokenVerify } from '@server-octopus/shared'
+import { ClientProxy } from '@nestjs/microservices'
+import { ClientPayload, Result } from '@server-octopus/types'
 
 @Injectable()
 export class ClientRegisterGuard implements CanActivate {
     private logger = new Logger(ClientRegisterGuard.name)
 
-    constructor(
-        private jwtService: JwtService,
-        private jwtUtilService: JwtUtilService
-    ) {}
+    constructor(@Inject(kAuthService) private authClient: ClientProxy) {}
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const request = context.switchToHttp().getRequest()
         const token = this.extractTokenFromHeader(request)
         if (!token) return true
         try {
-            const payload = await this.jwtService.verifyAsync<{
-                clientId: string
-                userId?: string
-                iat: number
-                exp: number
-            }>(token, {
-                secret: this.jwtUtilService.getClientAccessSecret()
-            })
-            request['clientId'] = payload.clientId
-            request['userId'] = payload.userId
+            const { success, data } = await firstValueFrom(
+                this.authClient.send<Result<ClientPayload>>(kTokenVerify, {
+                    token
+                })
+            )
+            if (success && data) {
+                request['clientId'] = data.clientId
+                request['userId'] = data.userId
+            }
         } catch (e) {
             return true
         }

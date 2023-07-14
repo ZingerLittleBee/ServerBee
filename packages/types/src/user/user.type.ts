@@ -16,6 +16,10 @@ type FindUserDto = {
     userId?: string
 }
 
+type UserPayload = {
+    userId: string
+}
 
-export { CreateUser, FindUserDto, UserVo }
+
+export { CreateUser, FindUserDto, UserVo, UserPayload }
 

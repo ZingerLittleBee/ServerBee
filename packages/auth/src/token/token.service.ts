@@ -6,8 +6,17 @@ import {
 } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import { firstValueFrom } from 'rxjs'
-import { Result } from '@server-octopus/types'
-import { kRedisEqualEvent, kStorageService } from '@server-octopus/shared'
+import {
+    ClientPayload,
+    EventJwtCreated,
+    Result,
+    UserPayload
+} from '@server-octopus/types'
+import {
+    kJwtCreatedEvent,
+    kRedisEqualEvent,
+    kStorageService
+} from '@server-octopus/shared'
 import { ClientProxy } from '@nestjs/microservices'
 import { TokenUtilService } from '@/token/token.util.service'
 import { expireChecker } from '@/token/token.util'
@@ -54,18 +63,44 @@ export class TokenService {
         }
     }
 
-    async sign(payload: Record<string, any>, type: SignType) {
+    async sign(payload: ClientPayload | UserPayload, type: SignType) {
+        let token: string
         if (type === SignType.client) {
-            return this.jwtService.signAsync(payload, {
+            token = await this.jwtService.signAsync(payload, {
                 secret: this.tokenUtilService.getClientAccessSecret(),
                 expiresIn: this.tokenUtilService.getClientAccessExpireTime()
             })
         }
         if (type === SignType.user) {
-            return this.jwtService.signAsync(payload, {
+            token = await this.jwtService.signAsync(payload, {
                 secret: this.tokenUtilService.getUserAccessSecret(),
                 expiresIn: this.tokenUtilService.getUserAccessExpireTime()
             })
         }
+        if (token) {
+            const isClientPayload = 'clientId' in payload
+            const jwtCreated: EventJwtCreated = {
+                key: isClientPayload ? payload.clientId : payload.userId,
+                value: token,
+                expire: isClientPayload
+                    ? this.tokenUtilService.getClientAccessExpireTime()
+                    : this.tokenUtilService.getUserAccessExpireTime()
+            }
+            this.client.emit<unknown, EventJwtCreated>(
+                kJwtCreatedEvent,
+                jwtCreated
+            )
+        }
+    }
+
+    async verify(token: string) {
+        return this.jwtService.verifyAsync<{
+            clientId: string
+            userId?: string
+            iat: number
+            exp: number
+        }>(token, {
+            secret: this.tokenUtilService.getClientAccessSecret()
+        })
     }
 }

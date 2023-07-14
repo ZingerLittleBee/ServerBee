@@ -28,7 +28,7 @@ export class TokenUtilService {
             return this.defaultClientAccessExpireTime
         }
         const expireTime = parseInt(
-            this.configService.get(kUserAccessExpireTime)!
+            this.configService.get(kUserAccessExpireTime) ?? 'NaN'
         )
         return isNaN(expireTime) ? this.defaultUserAccessExpireTime : expireTime
     }
@@ -47,7 +47,7 @@ export class TokenUtilService {
             return this.defaultClientAccessExpireTime
         }
         const expireTime = parseInt(
-            this.configService.get(kClientAccessExpireTime)!
+            this.configService.get(kClientAccessExpireTime) ?? 'NaN'
         )
         return isNaN(expireTime)
             ? this.defaultClientAccessExpireTime

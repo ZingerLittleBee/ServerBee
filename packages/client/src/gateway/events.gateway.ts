@@ -12,7 +12,6 @@ import { inspect } from 'util'
 import { Server } from 'ws'
 import { ClientService } from '@/client.service'
 import { EventsService } from '@/gateway/events.service'
-import { JwtUtilService } from '@server-octopus/shared'
 import { Fusion } from '@server-octopus/types'
 
 @Injectable()
@@ -35,14 +34,16 @@ export class EventsGateway implements OnGatewayConnection {
         private readonly eventsService: EventsService
     ) {}
 
-    handleConnection(client: any, ...args: any[]) {
+    async handleConnection(client: any, ...args: any[]) {
         // console.log(`handleConnection: ${inspect(client)}`)
         try {
-            const token = JwtUtilService.extractBearerTokenFromRawHeaders(
+            const token = this.eventsService.extractBearerTokenFromRawHeaders(
                 args[0].rawHeaders
             )
             // parse token
-            const clientId = this.eventsService.extractClientIdFromToken(token)
+            const clientId = await this.eventsService.extractClientIdFromToken(
+                token
+            )
             this.logger.log(`client connected: ${clientId}`)
             this.clients.set(clientId, client)
         } catch (e) {

@@ -18,13 +18,13 @@ export class VerifyTokenGuard implements CanActivate {
         const request = context.switchToHttp().getRequest()
         const token = this.extractTokenFromHeader(request)
         if (!token) {
-            this.logger.warn('no token')
-            throw new UnauthorizedException('no token')
+            this.logger.warn('No token')
+            throw new UnauthorizedException('No token')
         }
-        const res = await this.clientService.verifyToken(token)
+        const res = await this.clientService.isTokenValid(token)
         if (!res) {
-            this.logger.warn('token verify failed')
-            throw new UnauthorizedException('token verify failed')
+            this.logger.warn(`Token: ${token} verify failed`)
+            throw new UnauthorizedException('Token verify failed')
         }
         return true
     }

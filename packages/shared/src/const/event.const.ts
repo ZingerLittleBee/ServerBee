@@ -1,28 +1,30 @@
-const kJwtCreatedEvent = "jwt.created";
+const kJwtCreatedEvent = 'jwt.created'
 
-const kFusionAddEvent = "fusion.add";
+const kFusionAddEvent = 'fusion.add'
 
-const kClientUpsertEvent = "client.upsert";
+const kClientUpsertEvent = 'client.upsert'
 
-const kRedisEqualEvent = "redis.equal";
+const kRedisEqualEvent = 'redis.equal'
 
-const kRedisExistsEvent = "redis.exists";
+const kRedisExistsEvent = 'redis.exists'
 
-const kProfileGetByUserIdEvent = "profile.getByUserId";
+const kProfileGetByUserIdEvent = 'profile.getByUserId'
 
-const kProfileCreateEvent = "profile.create";
+const kProfileCreateEvent = 'profile.create'
 
-const kUserCreateEvent = "user.create";
+const kUserCreateEvent = 'user.create'
 
-const kUserFind = "user.find";
+const kUserFind = 'user.find'
 
-const kUserVerify = "user.verify";
+const kUserVerify = 'user.verify'
 
-const kTokenVerify = "token.verify";
+const kTokenVerify = 'token.verify'
 
-const kClientTokenSign = "client.token.sign"
+const kTokenValid = 'token.valid'
 
-const kUserTokenSign = "user.token.sign"
+const kClientTokenSign = 'client.token.sign'
+
+const kUserTokenSign = 'user.token.sign'
 
 export {
     kJwtCreatedEvent,
@@ -36,6 +38,7 @@ export {
     kUserFind,
     kUserVerify,
     kTokenVerify,
+    kTokenValid,
     kClientTokenSign,
     kUserTokenSign
-};
+}

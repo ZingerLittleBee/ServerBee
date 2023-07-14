@@ -1,5 +1,4 @@
-const kStorageService = 'STORAGE_SERVICE';
+const kStorageService = 'STORAGE_SERVICE'
+const kAuthService = 'AUTH_SERVICE'
 
-export {
-    kStorageService
-}
+export { kStorageService, kAuthService }

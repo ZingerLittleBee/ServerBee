@@ -44,7 +44,7 @@ export class ClientController {
     @UseGuards(VerifyTokenGuard)
     @Get('verify')
     @HttpCode(200)
-    async verifyToken() {
+    async tokenValidCheck() {
         return ResultUtil.ok()
     }
 

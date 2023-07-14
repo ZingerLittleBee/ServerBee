@@ -1,4 +1,4 @@
-import { UnauthorizedException } from "@nestjs/common";
+import { UnauthorizedException } from '@nestjs/common'
 
 /**
  * @description check if the token is expired
@@ -11,18 +11,4 @@ function expireChecker(exp: number): void {
     }
 }
 
-function extractBearerTokenFromRawHeaders(rawHeaders: string[]): string {
-    const authorizationHeader = rawHeaders.find((header) =>
-        header.startsWith('Bearer')
-    )
-    if (!authorizationHeader) {
-        throw new UnauthorizedException('Authorization header not found')
-    }
-    const token = authorizationHeader.split(' ')[1]
-    if (!token) {
-        throw new UnauthorizedException('token not found')
-    }
-    return token
-}
-
-export { expireChecker, extractBearerTokenFromRawHeaders }
+export { expireChecker }

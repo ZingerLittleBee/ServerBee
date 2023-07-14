@@ -17,10 +17,6 @@
         "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
         "test:e2e": "jest --config ./apps/serveroctopus-app/test/jest-e2e.json"
     },
-    "dependencies": {
-        "@nestjs/common": "^10.0.2",
-        "@nestjs/config": "^3.0.0"
-    },
     "devDependencies": {
         "@server-octopus/types": "workspace:*",
         "@nestjs/cli": "^10.0.3",

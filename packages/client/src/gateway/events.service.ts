@@ -1,16 +1,36 @@
-import { Injectable } from '@nestjs/common'
-import { JwtService } from '@nestjs/jwt'
+import { Inject, Injectable, UnauthorizedException } from '@nestjs/common'
+import { ClientProxy } from '@nestjs/microservices'
+import { kAuthService, kTokenVerify } from '@server-octopus/shared'
+import { firstValueFrom } from 'rxjs'
+import { ClientPayload, Result } from '@server-octopus/types'
 
 @Injectable()
 export class EventsService {
-    constructor(private readonly jwtService: JwtService) {}
+    constructor(@Inject(kAuthService) private authService: ClientProxy) {}
 
-    extractClientIdFromToken(token: string) {
-        const payload = this.jwtService.verify<{
-            clientId: string
-            exp: number
-            iat: number
-        }>(token)
-        return payload.clientId
+    extractBearerTokenFromRawHeaders(rawHeaders: string[]): string {
+        const authorizationHeader = rawHeaders.find((header) =>
+            header.startsWith('Bearer')
+        )
+        if (!authorizationHeader) {
+            throw new UnauthorizedException('Authorization header not found')
+        }
+        const token = authorizationHeader.split(' ')[1]
+        if (!token) {
+            throw new UnauthorizedException('token not found')
+        }
+        return token
+    }
+
+    async extractClientIdFromToken(token: string) {
+        const { success, message, data } = await firstValueFrom(
+            this.authService.send<Result<ClientPayload>>(kTokenVerify, {
+                token
+            })
+        )
+        if (!success || !data.clientId) {
+            throw new UnauthorizedException(message)
+        }
+        return data.clientId
     }
 }
