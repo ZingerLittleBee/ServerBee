@@ -18,21 +18,19 @@ export class TokenController {
     async isTokenValid(data: { token: string }): Promise<Result<boolean>> {
         try {
             const res = await this.tokenService.isTokenValid(data.token)
-            if (res) {
-                return ResultUtil.ok(res)
-            }
+            return res ? ResultUtil.ok(res) : ResultUtil.error('Token Invalid')
         } catch (e) {
             return ResultUtil.error(e.message)
         }
-
-        return ResultUtil.error('token invalid')
     }
 
     @MessagePattern(kClientTokenSign)
     async signTokenForClient(payload: ClientPayload) {
         try {
             const token = await this.tokenService.sign(payload, SignType.client)
-            return ResultUtil.ok(token)
+            return token
+                ? ResultUtil.ok(token)
+                : ResultUtil.error('Client Sign Error')
         } catch (e) {
             return ResultUtil.error(e.message)
         }
@@ -42,7 +40,9 @@ export class TokenController {
     async signTokenForUser(payload: UserPayload) {
         try {
             const token = await this.tokenService.sign(payload, SignType.user)
-            return ResultUtil.ok(token)
+            return token
+                ? ResultUtil.ok(token)
+                : ResultUtil.error('User Sign Error')
         } catch (e) {
             return ResultUtil.error(e.message)
         }

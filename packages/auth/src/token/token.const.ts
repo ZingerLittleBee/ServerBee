@@ -6,4 +6,9 @@ const kClientAccessSecret = 'JWT_CLIENT_ACCESS_SECRET'
 
 const kClientAccessExpireTime = 'JWT_CLIENT_ACCESS_EXPIRATION_TIME'
 
-export { kUserAccessSecret, kClientAccessSecret, kClientAccessExpireTime, kUserAccessExpireTime }
+export {
+    kUserAccessSecret,
+    kClientAccessSecret,
+    kClientAccessExpireTime,
+    kUserAccessExpireTime
+}

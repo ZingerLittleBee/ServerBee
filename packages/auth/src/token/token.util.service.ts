@@ -38,7 +38,7 @@ export class TokenUtilService {
         if (clientAccessSecret) {
             return clientAccessSecret
         } else {
-            throw new NotFoundException('client access secret Not Found')
+            throw new NotFoundException('Client Access Secret Not Found')
         }
     }
 

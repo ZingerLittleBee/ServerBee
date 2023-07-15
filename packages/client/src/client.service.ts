@@ -52,7 +52,7 @@ export class ClientService {
             this.logger.error(
                 `Sign token: ${inspect(client)} error, message: ${signMsg}`
             )
-            throw new Error('Sign token error')
+            throw new Error('Sign Token Error')
         }
         return signData
     }

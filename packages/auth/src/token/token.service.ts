@@ -91,6 +91,7 @@ export class TokenService {
                 jwtCreated
             )
         }
+        return token
     }
 
     async verify(token: string) {

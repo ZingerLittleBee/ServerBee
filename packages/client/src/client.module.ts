@@ -17,36 +17,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config'
         ConfigModule.forRoot({
             isGlobal: true
         })
-        // ClientsModule.registerAsync([
-        //     {
-        //         provide: kAuthService,
-        //         imports: [ConfigModule],
-        //         inject: [ConfigService],
-        //         useFactory: (configService: ConfigService) => {
-        //             console.log(
-        //                 'configService.get(kNatsServer)',
-        //                 configService.get<string>('NATS_SERVER')
-        //             )
-        //             return ClientProxyFactory.create({
-        //                 transport: Transport.NATS,
-        //                 options: {
-        //                     servers: [configService.get<string>(kNatsServer)]
-        //                 }
-        //             })
-        //         }
-        //     }
-        //     // {
-        //     //     name: kStorageService,
-        //     //     imports: [ConfigModule],
-        //     //     inject: [ConfigService],
-        //     //     useFactory: (configService: ConfigService) => ({
-        //     //         transport: Transport.NATS,
-        //     //         options: {
-        //     //             servers: [configService.get<string>(kNatsServer)]
-        //     //         }
-        //     //     })
-        //     // }
-        // ])
     ],
     controllers: [ClientController],
     providers: [
@@ -56,30 +26,24 @@ import { ConfigModule, ConfigService } from '@nestjs/config'
         {
             provide: kAuthService,
             inject: [ConfigService],
-            useFactory: (configService: ConfigService) => {
-                console.log(
-                    'configService.get()',
-                    configService.get<string>('MONGO_URL')
-                )
-                return ClientProxyFactory.create({
+            useFactory: (configService: ConfigService) =>
+                ClientProxyFactory.create({
                     transport: Transport.NATS,
                     options: {
                         servers: [configService.get<string>(kNatsServer)]
                     }
                 })
-            }
         },
         {
             provide: kStorageService,
             inject: [ConfigService],
-            useFactory: (configService: ConfigService) => {
-                return ClientProxyFactory.create({
+            useFactory: (configService: ConfigService) =>
+                ClientProxyFactory.create({
                     transport: Transport.NATS,
                     options: {
                         servers: [configService.get<string>(kNatsServer)]
                     }
                 })
-            }
         }
     ]
 })
