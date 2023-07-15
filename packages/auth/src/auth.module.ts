@@ -14,12 +14,20 @@ import { kNatsServer, kStorageService } from '@server-octopus/shared'
                 {
                     name: kStorageService,
                     inject: [ConfigService],
-                    useFactory: (configService: ConfigService) => ({
-                        transport: Transport.NATS,
-                        options: {
-                            servers: [configService.get<string>(kNatsServer)]
+                    useFactory: (configService: ConfigService) => {
+                        console.log(
+                            'auth module',
+                            configService.get<string>(kNatsServer)
+                        )
+                        return {
+                            transport: Transport.NATS,
+                            options: {
+                                servers: [
+                                    configService.get<string>(kNatsServer)
+                                ]
+                            }
                         }
-                    })
+                    }
                 }
             ]
         })

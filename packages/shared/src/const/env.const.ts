@@ -3,4 +3,6 @@ const kNatsServer = 'NATS_SERVER'
 const kRedisHost = 'REDIS_HOST'
 const kRedisPort = 'REDIS_PORT'
 
-export { kNatsServer, kRedisHost, kRedisPort }
+const kMongoUrl = 'MONGO_URL'
+
+export { kNatsServer, kRedisHost, kRedisPort, kMongoUrl }

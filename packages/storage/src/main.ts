@@ -8,6 +8,7 @@ async function bootstrap() {
     const app = await NestFactory.create(StorageModule)
     const configService = app.get(ConfigService)
     const servers = configService.get(kNatsServer)
+    console.log('servers', servers)
 
     const microservice = app.connectMicroservice<MicroserviceOptions>({
         transport: Transport.NATS,

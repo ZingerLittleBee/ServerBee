@@ -6,18 +6,22 @@ import { StorageController } from '@/storage.controller'
 import { ProfileModule } from '@/profile/profile.module'
 import { UserModule } from './user/user.module'
 import { ClientModule } from './client/client.module'
-import * as process from 'process'
 import { MongooseModule } from '@nestjs/mongoose'
 import { RedisModule, RedisModuleOptions } from '@liaoliaots/nestjs-redis'
-import { kRedisHost, kRedisPort } from '@server-octopus/shared'
+import { kMongoUrl, kRedisHost, kRedisPort } from '@server-octopus/shared'
 
 @Module({
     imports: [
         ConfigModule.forRoot({
-            isGlobal: true,
-            envFilePath: `${process.cwd()}/.env`
+            isGlobal: true
         }),
-        MongooseModule.forRoot('mongodb://localhost:27017'),
+        MongooseModule.forRootAsync({
+            imports: [ConfigModule],
+            inject: [ConfigService],
+            useFactory: (config: ConfigService) => ({
+                uri: config.get<string>(kMongoUrl)
+            })
+        }),
         RedisModule.forRootAsync({
             imports: [ConfigModule],
             inject: [ConfigService],
