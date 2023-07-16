@@ -1,3 +1,5 @@
+import { Result } from '../result.type'
+
 type CreateUser = {
     username: string
     password: string
@@ -20,6 +22,18 @@ type UserPayload = {
     userId: string
 }
 
+type UserRefreshPayload = {
+    email?: string
+    username?: string
+    password: string
+}
 
-export { CreateUser, FindUserDto, UserVo, UserPayload }
+type UserTokenExpiration = {
+    accessExpiration: number
+    refreshExpiration: number
+}
+
+type UserTokenExpirationResult = Result<UserTokenExpiration>
+
+export { CreateUser, FindUserDto, UserVo, UserPayload, UserRefreshPayload, UserTokenExpirationResult, UserTokenExpiration }
 

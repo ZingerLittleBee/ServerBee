@@ -20,6 +20,8 @@ const kUserVerify = 'user.verify'
 
 const kTokenVerify = 'token.verify'
 
+const kUserTokenExpirationGet = 'user.token.expiration.get'
+
 const kTokenValid = 'token.valid'
 
 const kClientTokenSign = 'client.token.sign'
@@ -40,5 +42,6 @@ export {
     kTokenVerify,
     kTokenValid,
     kClientTokenSign,
-    kUserTokenSign
+    kUserTokenSign,
+    kUserTokenExpirationGet
 }

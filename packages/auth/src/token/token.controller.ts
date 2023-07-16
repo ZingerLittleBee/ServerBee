@@ -4,10 +4,16 @@ import {
     kClientTokenSign,
     kTokenValid,
     kTokenVerify,
+    kUserTokenExpirationGet,
     kUserTokenSign,
     ResultUtil
 } from '@server-octopus/shared'
-import { ClientPayload, Result, UserPayload } from '@server-octopus/types'
+import {
+    ClientPayload,
+    Result,
+    UserPayload,
+    UserTokenExpirationResult
+} from '@server-octopus/types'
 import { SignType, TokenService } from '@/token/token.service'
 
 @Controller()
@@ -52,6 +58,15 @@ export class TokenController {
     async verifyToken(data: { token: string }): Promise<Result<any>> {
         try {
             return ResultUtil.ok(await this.tokenService.verify(data.token))
+        } catch (e) {
+            return ResultUtil.error(e.message)
+        }
+    }
+
+    @MessagePattern(kUserTokenExpirationGet)
+    async getUserTokenExpiration(): Promise<UserTokenExpirationResult> {
+        try {
+            return ResultUtil.ok(this.tokenService.getUserExpiration())
         } catch (e) {
             return ResultUtil.error(e.message)
         }

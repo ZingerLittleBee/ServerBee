@@ -1,25 +1,20 @@
 import {
     Body,
     Controller,
-    Post,
     HttpCode,
     HttpStatus,
-    Logger,
+    Post,
     Res
 } from '@nestjs/common'
 import { AuthService } from './auth.service'
 import { hash } from 'bcrypt'
 import { Response } from 'express'
-import { ErrorService, Result, ResultUtil } from '@server-octopus/shared'
+import { Result, ResultUtil } from '@server-octopus/shared'
+import { kCookieAccessToken, kCookieRefreshToken } from './auth.const'
 
 @Controller('auth')
 export class AuthController {
-    private readonly logger = new Logger(AuthController.name)
-
-    constructor(
-        private authService: AuthService,
-        private readonly errorService: ErrorService
-    ) {}
+    constructor(private authService: AuthService) {}
 
     @HttpCode(HttpStatus.OK)
     @Post('register')
@@ -38,10 +33,7 @@ export class AuthController {
             )
             return ResultUtil.ok()
         } catch (e) {
-            return ResultUtil.error(
-                this.errorService.explain(e) ??
-                    'Register failed, please try again later'
-            )
+            return ResultUtil.error('Register failed, please try again later')
         }
     }
 
@@ -51,27 +43,25 @@ export class AuthController {
         @Body() signInDto: Record<string, any>,
         @Res({ passthrough: true }) res: Response
     ) {
-        console.log('login controller')
         try {
             const result = await this.authService.signIn(
                 signInDto.password,
                 signInDto.email,
                 signInDto.username
             )
-            res.cookie('access_token', result.access_token, {
+            const expiration = await this.authService.getTokenExpiration()
+            res.cookie(kCookieAccessToken, result.access_token, {
                 httpOnly: true,
                 sameSite: 'strict',
                 expires: new Date(
-                    new Date().getTime() +
-                        this.authService.getJwtAccessExpirationTime() * 1000
+                    new Date().getTime() + expiration.accessExpiration * 1000
                 )
             })
-            res.cookie('refresh_token', result.refresh_token, {
+            res.cookie(kCookieRefreshToken, result.refresh_token, {
                 httpOnly: true,
                 sameSite: 'strict',
                 expires: new Date(
-                    new Date().getTime() +
-                        this.authService.getJwtRefreshExpirationTime() * 1000
+                    new Date().getTime() + expiration.refreshExpiration * 1000
                 )
             })
             return res.status(200).json(ResultUtil.ok())

@@ -1,19 +1,19 @@
 import {
     CanActivate,
     ExecutionContext,
+    Inject,
     Injectable,
     UnauthorizedException
 } from '@nestjs/common'
-import { JwtService } from '@nestjs/jwt'
 import { Request } from 'express'
-import { JwtUtilService } from '@server-octopus/shared'
+import { ClientProxy } from '@nestjs/microservices'
+import { kAuthService, kTokenVerify } from '@server-octopus/shared'
+import { firstValueFrom } from 'rxjs'
+import { Result, UserPayload } from '@server-octopus/types'
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-    constructor(
-        private jwtService: JwtService,
-        private jwtUtilService: JwtUtilService
-    ) {}
+    constructor(@Inject(kAuthService) private authClient: ClientProxy) {}
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const request = context.switchToHttp().getRequest()
@@ -22,14 +22,13 @@ export class AuthGuard implements CanActivate {
             throw new UnauthorizedException()
         }
         try {
-            const payload = await this.jwtService.verifyAsync<{
-                userId: string
-                iat: number
-                exp: number
-            }>(token, {
-                secret: this.jwtUtilService.getUserAccessSecret()
-            })
-            request['userId'] = payload.userId
+            const { success, data, message } = await firstValueFrom(
+                this.authClient.send<Result<UserPayload>>(kTokenVerify, {
+                    token
+                })
+            )
+            if (!success || !data) throw new UnauthorizedException(message)
+            request['userId'] = data.userId
         } catch (e) {
             throw new UnauthorizedException(e.message)
         }

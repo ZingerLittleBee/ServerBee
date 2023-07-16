@@ -12,7 +12,7 @@ import {
     Result,
     UserVo,
     VerifyUserDto,
-    VertifyUserResult
+    VerifyUserResult
 } from '@server-octopus/types'
 import { MessagePattern } from '@nestjs/microservices'
 
@@ -39,7 +39,7 @@ export class UserController {
     }
 
     @MessagePattern(kUserVerify)
-    async verifyUser(data: VerifyUserDto): Promise<VertifyUserResult> {
+    async verifyUser(data: VerifyUserDto): Promise<VerifyUserResult> {
         try {
             return ResultUtil.ok(await this.userService.verifyUser(data))
         } catch (e) {

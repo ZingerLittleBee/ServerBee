@@ -1,14 +1,28 @@
 import { Module } from '@nestjs/common'
 import { AuthController } from './auth.controller'
 import { AuthService } from './auth.service'
-import { JwtModule } from '@nestjs/jwt'
 import { UserModule } from 'src/user/user.module'
-import { SharedModule } from '@server-octopus/shared'
+import { kAuthService, kNatsServer } from '@server-octopus/shared'
+import { ConfigService } from '@nestjs/config'
+import { ClientProxyFactory, Transport } from '@nestjs/microservices'
 
 @Module({
-    imports: [UserModule, JwtModule.register({}), SharedModule],
+    imports: [UserModule],
     controllers: [AuthController],
-    providers: [AuthService],
+    providers: [
+        AuthService,
+        {
+            provide: kAuthService,
+            inject: [ConfigService],
+            useFactory: (configService: ConfigService) =>
+                ClientProxyFactory.create({
+                    transport: Transport.NATS,
+                    options: {
+                        servers: [configService.get<string>(kNatsServer)]
+                    }
+                })
+        }
+    ],
     exports: [AuthService]
 })
 export class AuthModule {}

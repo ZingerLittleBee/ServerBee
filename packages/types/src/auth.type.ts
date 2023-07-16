@@ -10,8 +10,8 @@ type AuthPayload = {
     userId: string
 }
 
-type VertifyUserResult = Result<AuthPayload>
+type VerifyUserResult = Result<AuthPayload>
 
 
-export { AuthPayload, VerifyUserDto, VertifyUserResult }
+export { AuthPayload, VerifyUserDto, VerifyUserResult }
 

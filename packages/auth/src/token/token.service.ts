@@ -10,7 +10,8 @@ import {
     ClientPayload,
     EventJwtCreated,
     Result,
-    UserPayload
+    UserPayload,
+    UserTokenExpiration
 } from '@server-octopus/types'
 import {
     kJwtCreatedEvent,
@@ -68,13 +69,13 @@ export class TokenService {
         if (type === SignType.client) {
             token = await this.jwtService.signAsync(payload, {
                 secret: this.tokenUtilService.getClientAccessSecret(),
-                expiresIn: this.tokenUtilService.getClientAccessExpireTime()
+                expiresIn: this.tokenUtilService.getClientAccessExpiration()
             })
         }
         if (type === SignType.user) {
             token = await this.jwtService.signAsync(payload, {
                 secret: this.tokenUtilService.getUserAccessSecret(),
-                expiresIn: this.tokenUtilService.getUserAccessExpireTime()
+                expiresIn: this.tokenUtilService.getUserAccessExpiration()
             })
         }
         if (token) {
@@ -83,8 +84,8 @@ export class TokenService {
                 key: isClientPayload ? payload.clientId : payload.userId,
                 value: token,
                 expire: isClientPayload
-                    ? this.tokenUtilService.getClientAccessExpireTime()
-                    : this.tokenUtilService.getUserAccessExpireTime()
+                    ? this.tokenUtilService.getClientAccessExpiration()
+                    : this.tokenUtilService.getUserAccessExpiration()
             }
             this.client.emit<unknown, EventJwtCreated>(
                 kJwtCreatedEvent,
@@ -103,5 +104,12 @@ export class TokenService {
         }>(token, {
             secret: this.tokenUtilService.getClientAccessSecret()
         })
+    }
+
+    getUserExpiration(): UserTokenExpiration {
+        return {
+            accessExpiration: this.tokenUtilService.getUserAccessExpiration(),
+            refreshExpiration: this.tokenUtilService.getUserRefreshExpiration()
+        }
     }
 }

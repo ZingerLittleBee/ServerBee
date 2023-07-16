@@ -4,14 +4,27 @@ import {
     Logger,
     UnauthorizedException
 } from '@nestjs/common'
-import { JwtService } from '@nestjs/jwt'
 import { ConfigService } from '@nestjs/config'
 import { UserService } from 'src/user/user.service'
-import { kStorageService, kUserVerify } from '@server-octopus/shared'
+import {
+    kAuthService,
+    kUserTokenExpirationGet,
+    kUserTokenSign,
+    kUserVerify
+} from '@server-octopus/shared'
 import { ClientProxy } from '@nestjs/microservices'
-import { VerifyUserDto, VertifyUserResult } from '@server-octopus/types'
+import {
+    SignResult,
+    UserPayload,
+    UserRefreshPayload,
+    UserTokenExpiration,
+    UserTokenExpirationResult,
+    VerifyUserDto,
+    VerifyUserResult
+} from '@server-octopus/types'
 import { firstValueFrom } from 'rxjs'
 import { inspect } from 'util'
+import { defaultAccessExpiration, defaultRefreshExpiration } from './auth.const'
 
 @Injectable()
 export class AuthService {
@@ -19,9 +32,8 @@ export class AuthService {
 
     constructor(
         private usersService: UserService,
-        private jwtService: JwtService,
         private configService: ConfigService,
-        @Inject(kStorageService) private client: ClientProxy
+        @Inject(kAuthService) private authClient: ClientProxy
     ) {}
 
     async signIn(pass: string, email?: string, username?: string) {
@@ -30,7 +42,7 @@ export class AuthService {
             throw new UnauthorizedException()
         }
         const { success, message, data } = await firstValueFrom(
-            this.client.send<VertifyUserResult, VerifyUserDto>(kUserVerify, {
+            this.authClient.send<VerifyUserResult, VerifyUserDto>(kUserVerify, {
                 email,
                 username,
                 password: pass
@@ -45,9 +57,39 @@ export class AuthService {
                 data
             )}`
         )
+
+        const { success: accessSignSuccess, data: accessSignData } =
+            await firstValueFrom(
+                this.authClient.send<SignResult, UserPayload>(kUserTokenSign, {
+                    userId: data.userId
+                })
+            )
+
+        const { success: refreshSignSuccess, data: refreshSignData } =
+            await firstValueFrom(
+                this.authClient.send<SignResult, UserRefreshPayload>(
+                    kUserTokenSign,
+                    {
+                        email,
+                        username,
+                        password: pass
+                    }
+                )
+            )
+        if (
+            !accessSignSuccess ||
+            !refreshSignSuccess ||
+            !accessSignData ||
+            !refreshSignData
+        ) {
+            this.logger.error(
+                `Sign Error: ${accessSignData}, ${refreshSignData}`
+            )
+            throw new UnauthorizedException('Sign Error')
+        }
         return {
-            access_token: await this.jwtService.signAsync(data),
-            refresh_token: await this.jwtService.signAsync(data)
+            access_token: accessSignData,
+            refresh_token: refreshSignData
         }
     }
 
@@ -59,28 +101,20 @@ export class AuthService {
         })
     }
 
-    getSaltRounds() {
-        const saltRounds = this.configService.get('SALT_ROUNDS')
-        return saltRounds ? parseInt(saltRounds) : 10
-    }
-
-    /**
-     * unit seconds from .env
-     */
-    getJwtAccessExpirationTime() {
-        const jwtExpirationTime = this.configService.get('JWT_EXPIRATION_TIME')
-        return jwtExpirationTime ? parseInt(jwtExpirationTime) : 86400
-    }
-
-    /**
-     * unit seconds from .env
-     */
-    getJwtRefreshExpirationTime() {
-        const jwtRefreshExpirationTime = this.configService.get(
-            'JWT_REFRESH_EXPIRATION_TIME'
+    async getTokenExpiration(): Promise<UserTokenExpiration> {
+        const { success, data, message } = await firstValueFrom(
+            this.authClient.send<UserTokenExpirationResult>(
+                kUserTokenExpirationGet,
+                {}
+            )
         )
-        return jwtRefreshExpirationTime
-            ? parseInt(jwtRefreshExpirationTime)
-            : 86400 * 6
+        if (!success || !data) {
+            this.logger.error(`Get Token Expiration Error: ${message}`)
+            return {
+                accessExpiration: defaultAccessExpiration,
+                refreshExpiration: defaultRefreshExpiration
+            }
+        }
+        return data
     }
 }
