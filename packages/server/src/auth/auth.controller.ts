@@ -6,11 +6,11 @@ import {
     Post,
     Res
 } from '@nestjs/common'
-import { AuthService } from './auth.service'
-import { hash } from 'bcrypt'
-import { Response } from 'express'
 import { Result, ResultUtil } from '@server-octopus/shared'
+import { UserRegisterDto } from '@server-octopus/types'
+import { Response } from 'express'
 import { kCookieAccessToken, kCookieRefreshToken } from './auth.const'
+import { AuthService } from './auth.service'
 
 @Controller('auth')
 export class AuthController {
@@ -19,21 +19,13 @@ export class AuthController {
     @HttpCode(HttpStatus.OK)
     @Post('register')
     async register(
-        @Body() signInDto: Record<string, any>
+        @Body() registerDto: UserRegisterDto
     ): Promise<Result<{ token: string }>> {
         try {
-            const hashPass = await hash(
-                signInDto.password,
-                this.authService.getSaltRounds()
-            )
-            await this.authService.register(
-                hashPass,
-                signInDto.email,
-                signInDto.username
-            )
+            await this.authService.register(registerDto)
             return ResultUtil.ok()
         } catch (e) {
-            return ResultUtil.error('Register failed, please try again later')
+            return ResultUtil.error(`Register failed: ${e.message}`)
         }
     }
 

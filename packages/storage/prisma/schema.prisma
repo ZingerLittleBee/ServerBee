@@ -20,6 +20,7 @@ model User {
   email      String   @unique
   username   String   @unique
   password   String
+  salt       Int
   profile    Profile?
   role       Role     @default(USER)
   clients    Client[]

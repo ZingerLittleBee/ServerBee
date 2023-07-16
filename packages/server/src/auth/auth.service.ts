@@ -5,24 +5,27 @@ import {
     UnauthorizedException
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { UserService } from 'src/user/user.service'
+import { ClientProxy } from '@nestjs/microservices'
 import {
     kAuthService,
+    kUserRegister,
     kUserTokenExpirationGet,
     kUserTokenSign,
     kUserVerify
 } from '@server-octopus/shared'
-import { ClientProxy } from '@nestjs/microservices'
 import {
     SignResult,
     UserPayload,
     UserRefreshPayload,
+    UserRegisterDto,
+    UserRegisterResult,
     UserTokenExpiration,
     UserTokenExpirationResult,
     VerifyUserDto,
     VerifyUserResult
 } from '@server-octopus/types'
 import { firstValueFrom } from 'rxjs'
+import { UserService } from 'src/user/user.service'
 import { inspect } from 'util'
 import { defaultAccessExpiration, defaultRefreshExpiration } from './auth.const'
 
@@ -93,12 +96,16 @@ export class AuthService {
         }
     }
 
-    async register(pass: string, email: string, username: string) {
-        return this.usersService.createUser({
-            email,
-            password: pass,
-            username
-        })
+    async register(userDto: UserRegisterDto) {
+        const { success, data, message } = await firstValueFrom(
+            this.authClient.send<UserRegisterResult, UserRegisterDto>(
+                kUserRegister,
+                userDto
+            )
+        )
+        if (!success || !data) {
+            throw new Error(message)
+        }
     }
 
     async getTokenExpiration(): Promise<UserTokenExpiration> {

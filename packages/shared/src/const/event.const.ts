@@ -28,6 +28,8 @@ const kClientTokenSign = 'client.token.sign'
 
 const kUserTokenSign = 'user.token.sign'
 
+const kUserRegister = 'user.register'
+
 export {
     kJwtCreatedEvent,
     kFusionAddEvent,
@@ -43,5 +45,6 @@ export {
     kTokenValid,
     kClientTokenSign,
     kUserTokenSign,
-    kUserTokenExpirationGet
+    kUserTokenExpirationGet,
+    kUserRegister
 }
