@@ -1,19 +1,18 @@
 import {
     Body,
     Controller,
+    Get,
+    HttpCode,
     Logger,
     Post,
     Request,
     UseGuards
 } from '@nestjs/common'
 import { ClientService } from './client.service'
-import { CreateClientDto } from './dto/create-client.dto'
 import { ClientRegisterGuard } from '@/guard/register.guard'
-import { CreateDeviceDto } from '@/device/dto/create-device.dto'
-import { CreateFusionDto } from '@/dto/create-fusion.dto'
-import { ClientDataGuard } from '@/guard/data.guard'
-import { Result } from '@server-octopus/types'
+import { CreateDevice, Result } from '@server-octopus/types'
 import { ResultUtil } from '@server-octopus/shared'
+import { VerifyTokenGuard } from '@/guard/verify.guard'
 
 @Controller('client')
 export class ClientController {
@@ -24,18 +23,16 @@ export class ClientController {
     @UseGuards(ClientRegisterGuard)
     @Post('register')
     async register(
-        @Body() device: CreateDeviceDto,
+        @Body() device: CreateDevice,
         @Request() req: Request & { clientId?: string; userId?: string }
-    ): Promise<Result<{ token?: string }>> {
+    ): Promise<Result<{ token: string }>> {
         try {
-            const token = await this.clientService.registerClient(
-                new CreateClientDto({
-                    name: device?.name,
-                    device,
-                    userId: req.userId,
-                    clientId: req.clientId
-                })
-            )
+            const token = await this.clientService.registerClient({
+                name: device?.name,
+                device,
+                userId: req.userId,
+                clientId: req.clientId
+            })
             return ResultUtil.ok({
                 token
             })
@@ -44,14 +41,21 @@ export class ClientController {
         }
     }
 
-    @UseGuards(ClientDataGuard)
-    @Post('data')
-    async data(@Body() fusion: CreateFusionDto) {
-        try {
-            await this.clientService.addData(fusion)
-        } catch (e) {
-            this.logger.error(`add data: ${fusion}, error: ${e.message}`)
-            return ResultUtil.error(e.message)
-        }
+    @UseGuards(VerifyTokenGuard)
+    @Get('verify')
+    @HttpCode(200)
+    async tokenValidCheck() {
+        return ResultUtil.ok()
     }
+
+    // @UseGuards(ClientDataGuard)
+    // @Post('data')
+    // async data(@Body() fusion: Fusion) {
+    //     try {
+    //         await this.clientService.addData(fusion)
+    //     } catch (e) {
+    //         this.logger.error(`add data: ${fusion}, error: ${e.message}`)
+    //         return ResultUtil.error(e.message)
+    //     }
+    // }
 }

@@ -1,38 +1,36 @@
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { CreateClientDto } from './dto/create-client.dto'
-import { JwtService } from '@nestjs/jwt'
-import { Error } from 'mongoose'
 import { inspect } from 'util'
 import {
-    JwtUtilService,
+    kAuthService,
+    kClientTokenSign,
     kClientUpsertEvent,
     kFusionAddEvent,
-    kJwtCreatedEvent,
     kStorageService,
+    kTokenValid,
     Result
 } from '@server-octopus/shared'
-import { CreateFusionDto } from '@/dto/create-fusion.dto'
 import { ClientProxy } from '@nestjs/microservices'
-import { EventJwtCreated } from '@server-octopus/types'
+import { CreateClient, FusionDto } from '@server-octopus/types'
 import { firstValueFrom } from 'rxjs'
+import { convertFormatDataToString } from '@/util'
 
 @Injectable()
 export class ClientService {
     private readonly logger = new Logger(ClientService.name)
 
     constructor(
-        private readonly jwtService: JwtService,
-        private readonly jwtUtilService: JwtUtilService,
-        @Inject(kStorageService) private client: ClientProxy
+        @Inject(kAuthService) private authClient: ClientProxy,
+        @Inject(kStorageService) private storageClient: ClientProxy
     ) {}
 
-    async registerClient(client: CreateClientDto) {
+    async registerClient(client: CreateClient) {
+        const c = convertFormatDataToString(client)
         const {
             success,
             message,
             data: clientId
         } = await firstValueFrom(
-            this.client.send<Result<string>>(kClientUpsertEvent, client)
+            this.storageClient.send<Result<string>>(kClientUpsertEvent, c)
         )
         if (!success) {
             this.logger.error(
@@ -40,20 +38,37 @@ export class ClientService {
             )
             throw new Error(message)
         }
-        const token = await this.jwtService.signAsync({
-            clientId: clientId,
-            userId: client.userId
-        })
-        const jwtCreated: EventJwtCreated = {
-            key: clientId,
-            value: token,
-            expire: this.jwtUtilService.getClientAccessExpireTime()
+        const {
+            success: signSuccess,
+            message: signMsg,
+            data: signData
+        } = await firstValueFrom(
+            this.storageClient.send<Result<string>>(kClientTokenSign, {
+                clientId,
+                userId: client.userId
+            })
+        )
+        if (!signSuccess || !signData) {
+            this.logger.error(
+                `Sign token: ${inspect(client)} error, message: ${signMsg}`
+            )
+            throw new Error('Sign Token Error')
         }
-        this.client.emit<unknown, EventJwtCreated>(kJwtCreatedEvent, jwtCreated)
-        return token
+        return signData
     }
 
-    async addData(fusion: CreateFusionDto) {
-        this.client.emit(kFusionAddEvent, fusion)
+    async isTokenValid(token: string) {
+        const { success, message, data } = await firstValueFrom(
+            this.authClient.send<Result<boolean>>(kTokenValid, { token })
+        )
+        if (!success) {
+            this.logger.error(`token: ${token} invalid, message: ${message}`)
+            return false
+        }
+        return data
+    }
+
+    async addData(fusion: FusionDto) {
+        this.storageClient.emit(kFusionAddEvent, fusion)
     }
 }

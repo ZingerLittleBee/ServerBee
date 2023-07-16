@@ -1,6 +1,12 @@
-import { DiskDetailDto, NetworkInfoDto } from '../device.type'
+import { CreateDevice, DiskDetailDto, NetworkInfoDto } from '../device.type'
 import { Os, Overview, Process, Realtime, SimpleProcess } from '../fusion.type'
 
+type CreateClient = {
+    name?: string
+    device: CreateDevice
+    userId?: string
+    clientId?: string
+}
 
 type ClientDto = {
     name?: string
@@ -39,5 +45,6 @@ type FusionDto = {
 export {
     ClientDto,
     DeviceDto,
-    FusionDto
+    FusionDto,
+    CreateClient
 }

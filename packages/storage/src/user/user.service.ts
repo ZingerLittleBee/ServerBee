@@ -4,7 +4,7 @@ import {
     CreateUser,
     FindUserDto,
     UserVo,
-    VertifyUserDto
+    VerifyUserDto
 } from '@server-octopus/types'
 import * as bcrypt from 'bcrypt'
 import { PrismaService } from '@/db/prisma.service'
@@ -43,8 +43,8 @@ export class UserService {
         } as UserVo
     }
 
-    async verifyUser(data: VertifyUserDto): Promise<AuthPayload> {
-        const whereClause: Omit<VertifyUserDto, 'password'> = {}
+    async verifyUser(data: VerifyUserDto): Promise<AuthPayload> {
+        const whereClause: Omit<VerifyUserDto, 'password'> = {}
         if (data.email) whereClause.email = data.email
         if (data.username) whereClause.username = data.username
         const user = await this.prismaService.user.findUnique({
