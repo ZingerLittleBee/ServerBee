@@ -7,7 +7,7 @@ import { UnauthorizedException } from '@nestjs/common'
  */
 function expireChecker(exp: number): void {
     if (Date.now() >= exp * 1000) {
-        throw new UnauthorizedException(`token expired`)
+        throw new UnauthorizedException(`Token Expired`)
     }
 }
 

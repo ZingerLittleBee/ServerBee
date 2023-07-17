@@ -3,16 +3,19 @@ import {
     ExecutionContext,
     Inject,
     Injectable,
+    Logger,
     UnauthorizedException
 } from '@nestjs/common'
 import { Request } from 'express'
 import { ClientProxy } from '@nestjs/microservices'
-import { kAuthService, kTokenVerify } from '@server-octopus/shared'
+import { kAuthService, kUserTokenVerify } from '@server-octopus/shared'
 import { firstValueFrom } from 'rxjs'
-import { Result, UserPayload } from '@server-octopus/types'
+import { UserVerifyParam, UserVerifyResult } from '@server-octopus/types'
 
 @Injectable()
 export class AuthGuard implements CanActivate {
+    private logger = new Logger(AuthGuard.name)
+
     constructor(@Inject(kAuthService) private authClient: ClientProxy) {}
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -21,17 +24,19 @@ export class AuthGuard implements CanActivate {
         if (!token) {
             throw new UnauthorizedException()
         }
-        try {
-            const { success, data, message } = await firstValueFrom(
-                this.authClient.send<Result<UserPayload>>(kTokenVerify, {
+        const { success, data, message } = await firstValueFrom(
+            this.authClient.send<UserVerifyResult, UserVerifyParam>(
+                kUserTokenVerify,
+                {
                     token
-                })
+                }
             )
-            if (!success || !data) throw new UnauthorizedException(message)
-            request['userId'] = data.userId
-        } catch (e) {
-            throw new UnauthorizedException(e.message)
+        )
+        if (!success || !data) {
+            this.logger.error(`Invoke ${kUserTokenVerify} Error: ${message}`)
+            throw new UnauthorizedException()
         }
+        request['userId'] = data.userId
         return true
     }
 

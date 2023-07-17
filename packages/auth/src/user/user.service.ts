@@ -12,7 +12,7 @@ import { firstValueFrom } from 'rxjs'
 import * as bcrypt from 'bcrypt'
 import { TokenService } from '@/token/token.service'
 import { TokenUtilService } from '@/token/token.util.service'
-import { SignType } from '@/token/token.const'
+import { SignType, TokenType } from '@/token/token.const'
 
 @Injectable()
 export class UserService {
@@ -46,5 +46,12 @@ export class UserService {
 
     async sign(payload: UserPayload) {
         return this.tokenService.sign(payload, SignType.user)
+    }
+
+    async verify(token: string) {
+        return this.tokenService.verify<UserPayload>(
+            token,
+            TokenType.userAccess
+        )
     }
 }

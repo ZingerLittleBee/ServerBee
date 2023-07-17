@@ -28,6 +28,8 @@ const kClientTokenSign = 'client.token.sign'
 
 const kUserTokenSign = 'user.token.sign'
 
+const kUserTokenVerify = 'user.token.verify'
+
 const kUserRegister = 'user.register'
 
 export {
@@ -46,5 +48,6 @@ export {
     kClientTokenSign,
     kUserTokenSign,
     kUserTokenExpirationGet,
-    kUserRegister
+    kUserRegister,
+    kUserTokenVerify
 }

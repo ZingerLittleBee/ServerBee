@@ -4,13 +4,16 @@ import { MessagePattern } from '@nestjs/microservices'
 import {
     kUserRegister,
     kUserTokenSign,
+    kUserTokenVerify,
     ResultUtil
 } from '@server-octopus/shared'
 import {
     UserPayload,
     UserRegisterDto,
     UserRegisterResult,
-    UserTokenSignResult
+    UserTokenSignResult,
+    UserVerifyParam,
+    UserVerifyResult
 } from '@server-octopus/types'
 
 @Controller()
@@ -33,6 +36,18 @@ export class UserController {
             return token
                 ? ResultUtil.ok(token)
                 : ResultUtil.error('User Sign Error')
+        } catch (e) {
+            return ResultUtil.error(e.message)
+        }
+    }
+
+    @MessagePattern(kUserTokenVerify)
+    async verify({ token }: UserVerifyParam): Promise<UserVerifyResult> {
+        try {
+            const payload = await this.userService.verify(token)
+            return payload
+                ? ResultUtil.ok(payload)
+                : ResultUtil.error('User Token Verify Error')
         } catch (e) {
             return ResultUtil.error(e.message)
         }

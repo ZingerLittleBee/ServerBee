@@ -50,7 +50,15 @@ type UserLoginDto = {
     password: string
 }
 
+type UserVerifyResult = Result<UserPayload>
+
+type UserVerifyParam = {
+    token: string
+}
+
 export {
+    UserVerifyParam,
+    UserVerifyResult,
     UserLoginDto,
     UserToken, CreateUser, FindUserDto, UserPayload, UserRefreshPayload, UserRegisterDto, UserRegisterResult, UserTokenExpiration, UserTokenExpirationResult, UserVo, UserTokenSignResult }
 

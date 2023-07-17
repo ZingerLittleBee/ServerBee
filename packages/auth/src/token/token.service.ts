@@ -56,8 +56,22 @@ export class TokenService {
             })
         )
         if (!success || !data) {
-            this.logger.error(`invoke ${kRedisEqualEvent} error: ${message}`)
+            this.logger.error(`Invoke ${kRedisEqualEvent} Error: ${message}`)
             return false
+        }
+    }
+
+    async verify<T extends Record<string, any>>(
+        token: string,
+        tokenType: TokenType
+    ) {
+        try {
+            return this.jwtService.verify<T>(token, {
+                secret: this.getSecret(tokenType)
+            })
+        } catch (e) {
+            this.logger.error(`Verify Token Error: ${e.message}`)
+            throw new UnauthorizedException('invalid token')
         }
     }
 
@@ -91,17 +105,6 @@ export class TokenService {
             accessToken,
             refreshToken
         }
-    }
-
-    async verify(token: string) {
-        return this.jwtService.verifyAsync<{
-            clientId: string
-            userId?: string
-            iat: number
-            exp: number
-        }>(token, {
-            secret: this.tokenUtilService.getClientAccessSecret()
-        })
     }
 
     getUserExpiration(): UserTokenExpiration {
