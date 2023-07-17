@@ -6,8 +6,8 @@ import {
     Post,
     Res
 } from '@nestjs/common'
-import { Result, ResultUtil } from '@server-octopus/shared'
-import { UserRegisterDto } from '@server-octopus/types'
+import { ResultUtil } from '@server-octopus/shared'
+import { UserLoginDto, UserRegisterDto } from '@server-octopus/types'
 import { Response } from 'express'
 import { kCookieAccessToken, kCookieRefreshToken } from './auth.const'
 import { AuthService } from './auth.service'
@@ -18,9 +18,7 @@ export class AuthController {
 
     @HttpCode(HttpStatus.OK)
     @Post('register')
-    async register(
-        @Body() registerDto: UserRegisterDto
-    ): Promise<Result<{ token: string }>> {
+    async register(@Body() registerDto: UserRegisterDto) {
         try {
             await this.authService.register(registerDto)
             return ResultUtil.ok()
@@ -32,15 +30,11 @@ export class AuthController {
     @HttpCode(HttpStatus.OK)
     @Post('login')
     async signIn(
-        @Body() signInDto: Record<string, any>,
+        @Body() signInfoDto: UserLoginDto,
         @Res({ passthrough: true }) res: Response
     ) {
         try {
-            const result = await this.authService.signIn(
-                signInDto.password,
-                signInDto.email,
-                signInDto.username
-            )
+            const result = await this.authService.signIn(signInfoDto)
             const expiration = await this.authService.getTokenExpiration()
             res.cookie(kCookieAccessToken, result.access_token, {
                 httpOnly: true,

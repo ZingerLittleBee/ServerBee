@@ -4,7 +4,6 @@ import {
     Logger,
     UnauthorizedException
 } from '@nestjs/common'
-import { ConfigService } from '@nestjs/config'
 import { ClientProxy } from '@nestjs/microservices'
 import {
     kAuthService,
@@ -14,18 +13,17 @@ import {
     kUserVerify
 } from '@server-octopus/shared'
 import {
-    SignResult,
+    UserLoginDto,
     UserPayload,
-    UserRefreshPayload,
     UserRegisterDto,
     UserRegisterResult,
     UserTokenExpiration,
     UserTokenExpirationResult,
+    UserTokenSignResult,
     VerifyUserDto,
     VerifyUserResult
 } from '@server-octopus/types'
 import { firstValueFrom } from 'rxjs'
-import { UserService } from 'src/user/user.service'
 import { inspect } from 'util'
 import { defaultAccessExpiration, defaultRefreshExpiration } from './auth.const'
 
@@ -33,65 +31,48 @@ import { defaultAccessExpiration, defaultRefreshExpiration } from './auth.const'
 export class AuthService {
     private readonly logger = new Logger(AuthService.name)
 
-    constructor(
-        private usersService: UserService,
-        private configService: ConfigService,
-        @Inject(kAuthService) private authClient: ClientProxy
-    ) {}
+    constructor(@Inject(kAuthService) private authClient: ClientProxy) {}
 
-    async signIn(pass: string, email?: string, username?: string) {
-        if (!email && !username) {
+    async signIn(userInfo: UserLoginDto) {
+        if (!userInfo.email && !userInfo.username) {
             this.logger.error('email or username is required')
             throw new UnauthorizedException()
         }
         const { success, message, data } = await firstValueFrom(
-            this.authClient.send<VerifyUserResult, VerifyUserDto>(kUserVerify, {
-                email,
-                username,
-                password: pass
-            })
+            this.authClient.send<VerifyUserResult, VerifyUserDto>(
+                kUserVerify,
+                userInfo
+            )
         )
         if (!success || !data) {
             this.logger.error(`verify user error: ${message}`)
             throw new UnauthorizedException(`username or password is incorrect`)
         }
         this.logger.verbose(
-            `username: ${username}, email: ${email}, verified, payload: ${inspect(
-                data
-            )}`
+            `username: ${userInfo.username}, email: ${
+                userInfo.email
+            }, verified, payload: ${inspect(data)}`
         )
 
-        const { success: accessSignSuccess, data: accessSignData } =
-            await firstValueFrom(
-                this.authClient.send<SignResult, UserPayload>(kUserTokenSign, {
+        const {
+            success: signSuccess,
+            data: signData,
+            message: signMsg
+        } = await firstValueFrom(
+            this.authClient.send<UserTokenSignResult, UserPayload>(
+                kUserTokenSign,
+                {
                     userId: data.userId
-                })
+                }
             )
-
-        const { success: refreshSignSuccess, data: refreshSignData } =
-            await firstValueFrom(
-                this.authClient.send<SignResult, UserRefreshPayload>(
-                    kUserTokenSign,
-                    {
-                        email,
-                        username
-                    }
-                )
-            )
-        if (
-            !accessSignSuccess ||
-            !refreshSignSuccess ||
-            !accessSignData ||
-            !refreshSignData
-        ) {
-            this.logger.error(
-                `Sign Error: ${accessSignData}, ${refreshSignData}`
-            )
+        )
+        if (!signSuccess || !signData) {
+            this.logger.error(`Sign Error: ${signMsg}`)
             throw new UnauthorizedException('Sign Error')
         }
         return {
-            access_token: accessSignData,
-            refresh_token: refreshSignData
+            access_token: signData.accessToken,
+            refresh_token: signData.refreshToken
         }
     }
 

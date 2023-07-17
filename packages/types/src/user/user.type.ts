@@ -44,5 +44,13 @@ type UserTokenSignResult = Result<UserToken>
 
 type UserTokenExpirationResult = Result<UserTokenExpiration>
 
-export { UserToken, CreateUser, FindUserDto, UserPayload, UserRefreshPayload, UserRegisterDto, UserRegisterResult, UserTokenExpiration, UserTokenExpirationResult, UserVo, UserTokenSignResult }
+type UserLoginDto = {
+    username?: string
+    email?: string
+    password: string
+}
+
+export {
+    UserLoginDto,
+    UserToken, CreateUser, FindUserDto, UserPayload, UserRefreshPayload, UserRegisterDto, UserRegisterResult, UserTokenExpiration, UserTokenExpirationResult, UserVo, UserTokenSignResult }
 
