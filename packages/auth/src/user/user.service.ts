@@ -4,15 +4,23 @@ import { ClientProxy } from '@nestjs/microservices'
 import {
     CreateUser,
     Result,
+    UserPayload,
     UserRegisterDto,
     UserVo
 } from '@server-octopus/types'
 import { firstValueFrom } from 'rxjs'
 import * as bcrypt from 'bcrypt'
+import { TokenService } from '@/token/token.service'
+import { TokenUtilService } from '@/token/token.util.service'
+import { SignType } from '@/token/token.const'
 
 @Injectable()
 export class UserService {
-    constructor(@Inject(kStorageService) private client: ClientProxy) {}
+    constructor(
+        @Inject(kStorageService) private client: ClientProxy,
+        private tokenService: TokenService,
+        private tokenUtilService: TokenUtilService
+    ) {}
 
     async register(data: UserRegisterDto): Promise<UserVo> {
         // hash pass
@@ -34,5 +42,9 @@ export class UserService {
             throw new Error(message)
         }
         return user
+    }
+
+    async sign(payload: UserPayload) {
+        return this.tokenService.sign(payload, SignType.user)
     }
 }

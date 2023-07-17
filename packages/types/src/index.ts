@@ -7,4 +7,4 @@ export * from './fusion.type'
 export * from './profile/index'
 export * from './result.type'
 export * from './user/index'
-
+export * from './token/index'

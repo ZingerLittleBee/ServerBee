@@ -1,4 +1,5 @@
 import { Result } from '../result.type'
+import { TokenGroup } from '../token/token.type'
 
 type CreateUser = {
     username: string
@@ -30,7 +31,6 @@ type UserPayload = {
 type UserRefreshPayload = {
     email?: string
     username?: string
-    password: string
 }
 
 type UserTokenExpiration = {
@@ -38,7 +38,11 @@ type UserTokenExpiration = {
     refreshExpiration: number
 }
 
+type UserToken = TokenGroup
+
+type UserTokenSignResult = Result<UserToken>
+
 type UserTokenExpirationResult = Result<UserTokenExpiration>
 
-export { CreateUser, FindUserDto, UserPayload, UserRefreshPayload, UserRegisterDto, UserRegisterResult, UserTokenExpiration, UserTokenExpirationResult, UserVo }
+export { UserToken, CreateUser, FindUserDto, UserPayload, UserRefreshPayload, UserRegisterDto, UserRegisterResult, UserTokenExpiration, UserTokenExpirationResult, UserVo, UserTokenSignResult }
 

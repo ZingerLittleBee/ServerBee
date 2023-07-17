@@ -10,6 +10,7 @@ import {
     ClientPayload,
     EventJwtCreated,
     Result,
+    TokenGroup,
     UserPayload,
     UserTokenExpiration
 } from '@server-octopus/types'
@@ -21,11 +22,7 @@ import {
 import { ClientProxy } from '@nestjs/microservices'
 import { TokenUtilService } from '@/token/token.util.service'
 import { expireChecker } from '@/token/token.util'
-
-export enum SignType {
-    client,
-    user
-}
+import { SignType, TokenType } from '@/token/token.const'
 
 @Injectable()
 export class TokenService {
@@ -45,13 +42,13 @@ export class TokenService {
         return payload.clientId
     }
 
-    checkExpireTime(token: string) {
-        const payload = this.jwtService.verify(token)
+    checkExpireTime(token: string, secret: string) {
+        const payload = this.jwtService.verify(token, { secret })
         expireChecker(payload.exp)
     }
 
-    async isTokenValid(token: string): Promise<boolean> {
-        this.checkExpireTime(token)
+    async isTokenValid(token: string, tokenType: TokenType): Promise<boolean> {
+        this.checkExpireTime(token, this.getSecret(tokenType))
         const { success, data, message } = await firstValueFrom(
             this.client.send<Result<boolean>>(kRedisEqualEvent, {
                 key: this.extractClientId(token),
@@ -64,35 +61,36 @@ export class TokenService {
         }
     }
 
-    async sign(payload: ClientPayload | UserPayload, type: SignType) {
-        let token: string
-        if (type === SignType.client) {
-            token = await this.jwtService.signAsync(payload, {
-                secret: this.tokenUtilService.getClientAccessSecret(),
-                expiresIn: this.tokenUtilService.getClientAccessExpiration()
-            })
-        }
-        if (type === SignType.user) {
-            token = await this.jwtService.signAsync(payload, {
-                secret: this.tokenUtilService.getUserAccessSecret(),
-                expiresIn: this.tokenUtilService.getUserAccessExpiration()
-            })
-        }
-        if (token) {
+    async sign(
+        payload: ClientPayload | UserPayload,
+        type: SignType
+    ): Promise<TokenGroup> {
+        const { accessOptions, refreshOptions } = this.getOptions(type)
+        const accessToken = await this.jwtService.signAsync(
+            payload,
+            accessOptions
+        )
+        const refreshToken = await this.jwtService.signAsync(
+            payload,
+            refreshOptions
+        )
+        if (accessToken && refreshToken) {
             const isClientPayload = 'clientId' in payload
-            const jwtCreated: EventJwtCreated = {
+            this.client.emit<unknown, EventJwtCreated>(kJwtCreatedEvent, {
                 key: isClientPayload ? payload.clientId : payload.userId,
-                value: token,
-                expire: isClientPayload
-                    ? this.tokenUtilService.getClientAccessExpiration()
-                    : this.tokenUtilService.getUserAccessExpiration()
-            }
-            this.client.emit<unknown, EventJwtCreated>(
-                kJwtCreatedEvent,
-                jwtCreated
-            )
+                value: accessToken,
+                expire: accessOptions.expiresIn
+            })
+            this.client.emit<unknown, EventJwtCreated>(kJwtCreatedEvent, {
+                key: isClientPayload ? payload.clientId : payload.userId,
+                value: refreshToken,
+                expire: refreshOptions.expiresIn
+            })
         }
-        return token
+        return {
+            accessToken,
+            refreshToken
+        }
     }
 
     async verify(token: string) {
@@ -110,6 +108,57 @@ export class TokenService {
         return {
             accessExpiration: this.tokenUtilService.getUserAccessExpiration(),
             refreshExpiration: this.tokenUtilService.getUserRefreshExpiration()
+        }
+    }
+
+    getSecret(type: TokenType) {
+        try {
+            if (type === TokenType.clientAccess) {
+                return this.tokenUtilService.getClientAccessSecret()
+            }
+            if (type === TokenType.userAccess) {
+                return this.tokenUtilService.getUserAccessSecret()
+            }
+            if (type === TokenType.userRefresh) {
+                return this.tokenUtilService.getUserRefreshSecret()
+            }
+            if (type === TokenType.clientRefresh) {
+                return this.tokenUtilService.getClientRefreshSecret()
+            }
+        } catch (e) {
+            this.logger.error(`Get ${type} Secret Error: ${e.message}`)
+            throw new Error(`Invalid Token Type`)
+        }
+    }
+
+    getAccessSignOptions(type: SignType) {
+        return type === SignType.client
+            ? {
+                  secret: this.tokenUtilService.getClientAccessSecret(),
+                  expiresIn: this.tokenUtilService.getClientAccessExpiration()
+              }
+            : {
+                  secret: this.tokenUtilService.getUserAccessSecret(),
+                  expiresIn: this.tokenUtilService.getUserAccessExpiration()
+              }
+    }
+
+    getRefreshSignOptions(type: SignType) {
+        return type === SignType.client
+            ? {
+                  secret: this.tokenUtilService.getClientRefreshSecret(),
+                  expiresIn: this.tokenUtilService.getClientRefreshExpiration()
+              }
+            : {
+                  secret: this.tokenUtilService.getUserRefreshSecret(),
+                  expiresIn: this.tokenUtilService.getUserRefreshExpiration()
+              }
+    }
+
+    getOptions(type: SignType) {
+        return {
+            accessOptions: this.getAccessSignOptions(type),
+            refreshOptions: this.getRefreshSignOptions(type)
         }
     }
 }

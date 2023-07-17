@@ -3,6 +3,8 @@ import { Injectable, NotFoundException } from '@nestjs/common'
 import {
     kClientAccessExpiration,
     kClientAccessSecret,
+    kClientRefreshExpiration,
+    kClientRefreshSecret,
     kUserAccessExpiration,
     kUserAccessSecret,
     kUserRefreshExpiration,
@@ -12,69 +14,70 @@ import {
 @Injectable()
 export class TokenUtilService {
     private defaultClientAccessExpiration = 3600 * 24 * 30
+    private defaultClientRefreshExpiration = 3600 * 24 * 30 * 6
     private defaultUserAccessExpiration = 3600 * 24 * 30
     private defaultUserRefreshExpiration = 3600 * 24 * 30 * 6
 
     constructor(private readonly configService: ConfigService) {}
 
     getUserAccessSecret() {
-        const userAccessSecret = this.configService.get(kUserAccessSecret)
-        if (userAccessSecret) {
-            return userAccessSecret
-        } else {
-            throw new NotFoundException('User Access Secret Not Found')
-        }
+        return this.getSecret(kUserAccessSecret)
     }
 
     getUserRefreshSecret() {
-        const userRefreshSecret = this.configService.get(kUserRefreshSecret)
-        if (userRefreshSecret) {
-            return userRefreshSecret
-        } else {
-            throw new NotFoundException('User Refresh Secret Not Found')
-        }
+        return this.getSecret(kUserRefreshSecret)
     }
 
     getUserAccessExpiration() {
-        if (!this.configService.get(kUserAccessExpiration)) {
-            return this.defaultUserAccessExpiration
-        }
-        const expiration = parseInt(
-            this.configService.get(kUserAccessExpiration) ?? 'NaN'
+        return this.getExpiration(
+            kUserAccessExpiration,
+            this.defaultUserAccessExpiration
         )
-        return isNaN(expiration) ? this.defaultUserAccessExpiration : expiration
     }
 
     getUserRefreshExpiration() {
-        if (!this.configService.get(kUserRefreshExpiration)) {
-            return this.defaultUserRefreshExpiration
-        }
-        const expiration = parseInt(
-            this.configService.get(kUserRefreshExpiration) ?? 'NaN'
+        return this.getExpiration(
+            kUserRefreshExpiration,
+            this.defaultUserRefreshExpiration
         )
-        return isNaN(expiration)
-            ? this.defaultUserRefreshExpiration
-            : expiration
     }
 
     getClientAccessSecret() {
-        const clientAccessSecret = this.configService.get(kClientAccessSecret)
-        if (clientAccessSecret) {
-            return clientAccessSecret
-        } else {
-            throw new NotFoundException('Client Access Secret Not Found')
-        }
+        return this.getSecret(kClientAccessSecret)
+    }
+
+    getClientRefreshSecret() {
+        return this.getSecret(kClientRefreshSecret)
+    }
+
+    getClientRefreshExpiration() {
+        return this.getExpiration(
+            kClientRefreshExpiration,
+            this.defaultClientRefreshExpiration
+        )
     }
 
     getClientAccessExpiration() {
-        if (!this.configService.get(kClientAccessExpiration)) {
+        return this.getExpiration(
+            kClientAccessExpiration,
+            this.defaultClientAccessExpiration
+        )
+    }
+
+    getSecret(key: string): string {
+        const secret = this.configService.get(key)
+        if (secret) {
+            return secret
+        } else {
+            throw new NotFoundException(`${key} Not Found`)
+        }
+    }
+
+    getExpiration(key: string, defaultExpiration: number) {
+        if (!this.configService.get(key)) {
             return this.defaultClientAccessExpiration
         }
-        const expireTime = parseInt(
-            this.configService.get(kClientAccessExpiration) ?? 'NaN'
-        )
-        return isNaN(expireTime)
-            ? this.defaultClientAccessExpiration
-            : expireTime
+        const expiration = parseInt(this.configService.get(key) ?? 'NaN')
+        return isNaN(expiration) ? defaultExpiration : expiration
     }
 }

@@ -4,6 +4,8 @@ import { TokenModule } from '@/token/token.module'
 import { UserModule } from './user/user.module'
 import { ClientsModule, Transport } from '@nestjs/microservices'
 import { kNatsServer, kStorageService } from '@server-octopus/shared'
+import { JwtModule } from '@nestjs/jwt'
+import { ClientModule } from './client/client.module'
 
 @Module({
     imports: [
@@ -25,8 +27,12 @@ import { kNatsServer, kStorageService } from '@server-octopus/shared'
                 }
             ]
         }),
+        JwtModule.register({
+            global: true
+        }),
         TokenModule,
-        UserModule
+        UserModule,
+        ClientModule
     ]
 })
 export class AuthModule {}

@@ -74,8 +74,7 @@ export class AuthService {
                     kUserTokenSign,
                     {
                         email,
-                        username,
-                        password: pass
+                        username
                     }
                 )
             )

@@ -1,3 +1,15 @@
+enum SignType {
+    client,
+    user
+}
+
+enum TokenType {
+    userAccess,
+    userRefresh,
+    clientAccess,
+    clientRefresh
+}
+
 const kUserAccessSecret = 'JWT_USER_ACCESS_SECRET'
 
 const kUserAccessExpiration = 'JWT_USER_ACCESS_EXPIRATION'
@@ -10,10 +22,18 @@ const kClientAccessSecret = 'JWT_CLIENT_ACCESS_SECRET'
 
 const kClientAccessExpiration = 'JWT_CLIENT_ACCESS_EXPIRATION'
 
+const kClientRefreshSecret = 'JWT_CLIENT_REFRESH_SECRET'
+
+const kClientRefreshExpiration = 'JWT_CLIENT_REFRESH_EXPIRATION'
+
 export {
-    kUserAccessSecret,
+    SignType,
+    TokenType,
     kClientAccessSecret,
     kClientAccessExpiration,
+    kClientRefreshSecret,
+    kClientRefreshExpiration,
+    kUserAccessSecret,
     kUserAccessExpiration,
     kUserRefreshSecret,
     kUserRefreshExpiration

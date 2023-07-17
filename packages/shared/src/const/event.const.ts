@@ -18,7 +18,7 @@ const kUserFind = 'user.find'
 
 const kUserVerify = 'user.verify'
 
-const kTokenVerify = 'token.verify'
+const kClientTokenVerify = 'client.token.verify'
 
 const kUserTokenExpirationGet = 'user.token.expiration.get'
 
@@ -41,7 +41,7 @@ export {
     kUserCreateEvent,
     kUserFind,
     kUserVerify,
-    kTokenVerify,
+    kClientTokenVerify,
     kTokenValid,
     kClientTokenSign,
     kUserTokenSign,
