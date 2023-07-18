@@ -8,7 +8,7 @@ export class ClientService {
     constructor(private tokenService: TokenService) {}
 
     sign(payload: ClientPayload) {
-        return this.tokenService.sign(payload, SignType.client)
+        return this.tokenService.signGroup(payload, SignType.client)
     }
 
     verify(token: string) {

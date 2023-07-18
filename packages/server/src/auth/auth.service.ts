@@ -39,7 +39,7 @@ export class AuthService {
 
     async signIn(userInfo: UserLoginDto) {
         if (!userInfo.email && !userInfo.username) {
-            this.logger.error('email or username is required')
+            this.logger.error('Email or Username is required')
             throw new UnauthorizedException()
         }
         const { success, message, data } = await firstValueFrom(

@@ -3,8 +3,8 @@ import { ClientService } from './client.service'
 import { MessagePattern } from '@nestjs/microservices'
 import {
     kClientTokenSign,
+    kClientTokenValid,
     kClientTokenVerify,
-    kTokenValid,
     ResultUtil
 } from '@server-octopus/shared'
 import { ClientPayload, Result } from '@server-octopus/types'
@@ -34,7 +34,7 @@ export class ClientController {
         }
     }
 
-    @MessagePattern(kTokenValid)
+    @MessagePattern(kClientTokenValid)
     async isTokenValid(data: { token: string }): Promise<Result<boolean>> {
         try {
             const res = await this.clientService.isTokenValid(data.token)

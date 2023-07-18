@@ -22,7 +22,7 @@ const kClientTokenVerify = 'client.token.verify'
 
 const kUserTokenExpirationGet = 'user.token.expiration.get'
 
-const kTokenValid = 'token.valid'
+const kClientTokenValid = 'client.token.valid'
 
 const kClientTokenSign = 'client.token.sign'
 
@@ -34,6 +34,8 @@ const kUserRegister = 'user.register'
 
 const kUserTokenRefresh = 'user.token.refresh'
 
+const kUserTokenValid = 'user.token.valid'
+
 export {
     kClientTokenSign,
     kClientTokenVerify,
@@ -44,7 +46,7 @@ export {
     kProfileGetByUserIdEvent,
     kRedisEqualEvent,
     kRedisExistsEvent,
-    kTokenValid,
+    kClientTokenValid,
     kUserCreateEvent,
     kUserFind,
     kUserRegister,
@@ -52,5 +54,6 @@ export {
     kUserTokenRefresh,
     kUserTokenSign,
     kUserTokenVerify,
-    kUserVerify
+    kUserVerify,
+    kUserTokenValid
 }

@@ -3,10 +3,10 @@ import { inspect } from 'util'
 import {
     kAuthService,
     kClientTokenSign,
+    kClientTokenValid,
     kClientUpsertEvent,
     kFusionAddEvent,
     kStorageService,
-    kTokenValid,
     Result
 } from '@server-octopus/shared'
 import { ClientProxy } from '@nestjs/microservices'
@@ -59,7 +59,7 @@ export class ClientService {
 
     async isTokenValid(token: string) {
         const { success, message, data } = await firstValueFrom(
-            this.authClient.send<Result<boolean>>(kTokenValid, { token })
+            this.authClient.send<Result<boolean>>(kClientTokenValid, { token })
         )
         if (!success) {
             this.logger.error(`token: ${token} invalid, message: ${message}`)
