@@ -33,6 +33,7 @@ import { defaultAccessExpiration, defaultRefreshExpiration } from './auth.const'
 @Injectable()
 export class AuthService {
     private readonly logger = new Logger(AuthService.name)
+    private tokenExpiration: UserTokenExpiration
 
     constructor(@Inject(kAuthService) private authClient: ClientProxy) {}
 
@@ -92,6 +93,9 @@ export class AuthService {
     }
 
     async getTokenExpiration(): Promise<UserTokenExpiration> {
+        if (this.tokenExpiration) {
+            return this.tokenExpiration
+        }
         const { success, data, message } = await firstValueFrom(
             this.authClient.send<UserTokenExpirationResult>(
                 kUserTokenExpirationGet,
@@ -100,12 +104,14 @@ export class AuthService {
         )
         if (!success || !data) {
             this.logger.error(`Get Token Expiration Error: ${message}`)
-            return {
+            this.tokenExpiration = {
                 accessExpiration: defaultAccessExpiration,
                 refreshExpiration: defaultRefreshExpiration
             }
+        } else {
+            this.tokenExpiration = data
         }
-        return data
+        return this.tokenExpiration
     }
 
     async refreshToken(token: string) {
