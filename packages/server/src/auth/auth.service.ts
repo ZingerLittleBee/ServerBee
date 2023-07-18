@@ -9,6 +9,7 @@ import {
     kAuthService,
     kUserRegister,
     kUserTokenExpirationGet,
+    kUserTokenRefresh,
     kUserTokenSign,
     kUserVerify
 } from '@server-octopus/shared'
@@ -19,6 +20,8 @@ import {
     UserRegisterResult,
     UserTokenExpiration,
     UserTokenExpirationResult,
+    UserTokenRefreshParam,
+    UserTokenRefreshResult,
     UserTokenSignResult,
     VerifyUserDto,
     VerifyUserResult
@@ -105,5 +108,19 @@ export class AuthService {
         return data
     }
 
-    async refreshToken() {}
+    async refreshToken(token: string) {
+        const { success, data, message } = await firstValueFrom(
+            this.authClient.send<UserTokenRefreshResult, UserTokenRefreshParam>(
+                kUserTokenRefresh,
+                {
+                    refreshToken: token
+                }
+            )
+        )
+        if (!success || !data) {
+            this.logger.error(`Invoke ${kUserTokenRefresh} Error: ${message}`)
+            throw new Error('Refresh Token Error')
+        }
+        return data.accessToken
+    }
 }
