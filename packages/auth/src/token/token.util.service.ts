@@ -17,6 +17,7 @@ export class TokenUtilService {
     private defaultClientRefreshExpiration = 3600 * 24 * 30 * 6
     private defaultUserAccessExpiration = 3600 * 24 * 30
     private defaultUserRefreshExpiration = 3600 * 24 * 30 * 6
+    private defaultSaltRounds = '10'
 
     constructor(private readonly configService: ConfigService) {}
 
@@ -79,5 +80,11 @@ export class TokenUtilService {
         }
         const expiration = parseInt(this.configService.get(key) ?? 'NaN')
         return isNaN(expiration) ? defaultExpiration : expiration
+    }
+
+    getSaltRounds() {
+        return +(
+            this.configService.get('SALT_ROUNDS') ?? this.defaultSaltRounds
+        )
     }
 }

@@ -104,4 +104,6 @@ export class AuthService {
         }
         return data
     }
+
+    async refreshToken() {}
 }

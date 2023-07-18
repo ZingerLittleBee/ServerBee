@@ -8,22 +8,35 @@ import {
 } from '@server-octopus/types'
 import * as bcrypt from 'bcrypt'
 import { PrismaService } from '@/db/prisma.service'
+import { ErrorService } from '@/utils/error.util'
 
 @Injectable()
 export class UserService {
-    constructor(private readonly prismaService: PrismaService) {}
+    constructor(
+        private readonly prismaService: PrismaService,
+        private readonly errorService: ErrorService
+    ) {}
 
     async createUser(data: CreateUser) {
-        const user = await this.prismaService.user.create({
-            data: {
-                ...data
-            }
-        })
-        return {
-            userId: user.user_id,
-            username: user.username,
-            email: user.email
-        } as UserVo
+        try {
+            const user = await this.prismaService.user.create({
+                data: {
+                    ...data
+                }
+            })
+            return {
+                userId: user.user_id,
+                username: user.username,
+                email: user.email
+            } as UserVo
+        } catch (e) {
+            const { errorCode, message } = this.errorService.explain(e)
+            throw new Error(
+                errorCode === 'P2002'
+                    ? 'Email or Username already exists'
+                    : message
+            )
+        }
     }
 
     async findUser(data: FindUserDto) {

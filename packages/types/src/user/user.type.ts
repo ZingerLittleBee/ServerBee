@@ -2,13 +2,12 @@ import { Result } from '../result.type'
 import { TokenGroup } from '../token/token.type'
 
 type CreateUser = {
+    email: string
     username: string
     password: string
-    email: string
-    salt: number
 }
 
-type UserRegisterDto = Omit<CreateUser, 'salt'>
+type UserRegisterDto = CreateUser
 
 type UserVo = {
     userId: string
@@ -56,9 +55,11 @@ type UserVerifyParam = {
     token: string
 }
 
+type UserTokenRefreshParam = Omit<UserToken, 'accessToken'>
+type UserTokenRefreshResult = Result<Omit<UserToken, 'refreshToken'>>
+
 export {
-    UserVerifyParam,
-    UserVerifyResult,
-    UserLoginDto,
-    UserToken, CreateUser, FindUserDto, UserPayload, UserRefreshPayload, UserRegisterDto, UserRegisterResult, UserTokenExpiration, UserTokenExpirationResult, UserVo, UserTokenSignResult }
+    CreateUser, FindUserDto, UserLoginDto, UserPayload, UserRefreshPayload, UserRegisterDto, UserRegisterResult, UserToken, UserTokenExpiration, UserTokenExpirationResult, UserTokenRefreshParam, UserTokenRefreshResult, UserTokenSignResult, UserVerifyParam,
+    UserVerifyResult, UserVo
+}
 

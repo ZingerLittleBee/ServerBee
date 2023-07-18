@@ -18,10 +18,10 @@
         "test:e2e": "jest --config ./apps/serveroctopus-app/test/jest-e2e.json"
     },
     "devDependencies": {
-        "@server-octopus/types": "workspace:*",
         "@nestjs/cli": "^10.0.3",
         "@nestjs/schematics": "^10.0.1",
         "@nestjs/testing": "^10.0.2",
+        "@server-octopus/types": "workspace:*",
         "@types/jest": "28.1.4",
         "@types/node": "^16.0.0",
         "@types/supertest": "^2.0.11",

@@ -249,9 +249,6 @@ importers:
       '@server-octopus/storage':
         specifier: workspace:*
         version: link:../storage
-      bcrypt:
-        specifier: ^5.1.0
-        version: 5.1.0
       cookie-parser:
         specifier: ^1.4.6
         version: 1.4.6
@@ -292,9 +289,6 @@ importers:
       '@server-octopus/types':
         specifier: workspace:*
         version: link:../types
-      '@types/bcrypt':
-        specifier: ^5.0.0
-        version: 5.0.0
       '@types/cookie-parser':
         specifier: ^1.4.3
         version: 1.4.3
@@ -373,6 +367,9 @@ importers:
       '@server-octopus/types':
         specifier: workspace:*
         version: link:../types
+      '@types/express':
+        specifier: ^4.17.17
+        version: 4.17.17
       '@types/jest':
         specifier: 28.1.4
         version: 28.1.4

@@ -1,8 +1,8 @@
 import { Controller } from '@nestjs/common'
-import { UserService } from './user.service'
 import { MessagePattern } from '@nestjs/microservices'
 import {
     kUserRegister,
+    kUserTokenRefresh,
     kUserTokenSign,
     kUserTokenVerify,
     ResultUtil
@@ -11,10 +11,13 @@ import {
     UserPayload,
     UserRegisterDto,
     UserRegisterResult,
+    UserTokenRefreshParam,
+    UserTokenRefreshResult,
     UserTokenSignResult,
     UserVerifyParam,
     UserVerifyResult
 } from '@server-octopus/types'
+import { UserService } from './user.service'
 
 @Controller()
 export class UserController {
@@ -25,7 +28,7 @@ export class UserController {
         try {
             return ResultUtil.ok(await this.userService.register(data))
         } catch (e) {
-            return ResultUtil.error('Register Failed')
+            return ResultUtil.error(e.message)
         }
     }
 
@@ -48,6 +51,19 @@ export class UserController {
             return payload
                 ? ResultUtil.ok(payload)
                 : ResultUtil.error('User Token Verify Error')
+        } catch (e) {
+            return ResultUtil.error(e.message)
+        }
+    }
+
+    @MessagePattern(kUserTokenRefresh)
+    async refreshToken({
+        refreshToken
+    }: UserTokenRefreshParam): Promise<UserTokenRefreshResult> {
+        try {
+            return ResultUtil.ok(
+                await this.userService.refreshToken(refreshToken)
+            )
         } catch (e) {
             return ResultUtil.error(e.message)
         }

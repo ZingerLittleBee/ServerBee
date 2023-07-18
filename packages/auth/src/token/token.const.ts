@@ -26,6 +26,8 @@ const kClientRefreshSecret = 'JWT_CLIENT_REFRESH_SECRET'
 
 const kClientRefreshExpiration = 'JWT_CLIENT_REFRESH_EXPIRATION'
 
+const kSaltRounds = 'SALT_ROUNDS'
+
 export {
     SignType,
     TokenType,
@@ -36,5 +38,6 @@ export {
     kUserAccessSecret,
     kUserAccessExpiration,
     kUserRefreshSecret,
-    kUserRefreshExpiration
+    kUserRefreshExpiration,
+    kSaltRounds
 }

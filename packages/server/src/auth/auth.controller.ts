@@ -4,13 +4,16 @@ import {
     HttpCode,
     HttpStatus,
     Post,
-    Res
+    Request,
+    Res,
+    UseGuards
 } from '@nestjs/common'
 import { ResultUtil } from '@server-octopus/shared'
 import { UserLoginDto, UserRegisterDto } from '@server-octopus/types'
 import { Response } from 'express'
 import { kCookieAccessToken, kCookieRefreshToken } from './auth.const'
 import { AuthService } from './auth.service'
+import { RefreshGuard } from './guard/refresh.guard'
 
 @Controller('auth')
 export class AuthController {
@@ -23,7 +26,7 @@ export class AuthController {
             await this.authService.register(registerDto)
             return ResultUtil.ok()
         } catch (e) {
-            return ResultUtil.error(`Register failed: ${e.message}`)
+            return ResultUtil.error(`Register Failed: ${e.message}`)
         }
     }
 
@@ -51,6 +54,44 @@ export class AuthController {
                 )
             })
             return res.status(200).json(ResultUtil.ok())
+        } catch (e) {
+            return ResultUtil.error(e.message)
+        }
+    }
+
+    @UseGuards(RefreshGuard)
+    @HttpCode(HttpStatus.OK)
+    @Post('refresh')
+    async refresh(
+        @Request() req: Request & { access_token: string },
+        @Res({ passthrough: true }) res: Response
+    ) {
+        try {
+            if (req.access_token) {
+                const expiration = await this.authService.getTokenExpiration()
+                res.cookie(kCookieAccessToken, req.access_token, {
+                    httpOnly: true,
+                    sameSite: 'strict',
+                    expires: new Date(
+                        new Date().getTime() +
+                            expiration.accessExpiration * 1000
+                    )
+                })
+                return ResultUtil.ok()
+            }
+            return ResultUtil.error('Refresh Failed')
+        } catch (e) {
+            return ResultUtil.error(e.message)
+        }
+    }
+
+    @HttpCode(HttpStatus.OK)
+    @Post('logout')
+    async logout(@Res({ passthrough: true }) res: Response) {
+        try {
+            res.clearCookie(kCookieAccessToken)
+            res.clearCookie(kCookieRefreshToken)
+            return ResultUtil.ok()
         } catch (e) {
             return ResultUtil.error(e.message)
         }

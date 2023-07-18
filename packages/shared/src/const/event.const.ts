@@ -32,22 +32,25 @@ const kUserTokenVerify = 'user.token.verify'
 
 const kUserRegister = 'user.register'
 
+const kUserTokenRefresh = 'user.token.refresh'
+
 export {
-    kJwtCreatedEvent,
-    kFusionAddEvent,
+    kClientTokenSign,
+    kClientTokenVerify,
     kClientUpsertEvent,
+    kFusionAddEvent,
+    kJwtCreatedEvent,
+    kProfileCreateEvent,
+    kProfileGetByUserIdEvent,
     kRedisEqualEvent,
     kRedisExistsEvent,
-    kProfileGetByUserIdEvent,
-    kProfileCreateEvent,
+    kTokenValid,
     kUserCreateEvent,
     kUserFind,
-    kUserVerify,
-    kClientTokenVerify,
-    kTokenValid,
-    kClientTokenSign,
-    kUserTokenSign,
-    kUserTokenExpirationGet,
     kUserRegister,
-    kUserTokenVerify
+    kUserTokenExpirationGet,
+    kUserTokenRefresh,
+    kUserTokenSign,
+    kUserTokenVerify,
+    kUserVerify
 }

@@ -1,3 +1,6 @@
+import { SignType, TokenType } from '@/token/token.const'
+import { expireChecker } from '@/token/token.util'
+import { TokenUtilService } from '@/token/token.util.service'
 import {
     Inject,
     Injectable,
@@ -5,7 +8,12 @@ import {
     UnauthorizedException
 } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
-import { firstValueFrom } from 'rxjs'
+import { ClientProxy } from '@nestjs/microservices'
+import {
+    kJwtCreatedEvent,
+    kRedisEqualEvent,
+    kStorageService
+} from '@server-octopus/shared'
 import {
     ClientPayload,
     EventJwtCreated,
@@ -14,15 +22,7 @@ import {
     UserPayload,
     UserTokenExpiration
 } from '@server-octopus/types'
-import {
-    kJwtCreatedEvent,
-    kRedisEqualEvent,
-    kStorageService
-} from '@server-octopus/shared'
-import { ClientProxy } from '@nestjs/microservices'
-import { TokenUtilService } from '@/token/token.util.service'
-import { expireChecker } from '@/token/token.util'
-import { SignType, TokenType } from '@/token/token.const'
+import { firstValueFrom } from 'rxjs'
 
 @Injectable()
 export class TokenService {
@@ -76,31 +76,37 @@ export class TokenService {
     }
 
     async sign(
+        payload: Record<string, any>,
+        key: string,
+        options: {
+            secret: string
+            expiresIn: number
+        }
+    ) {
+        try {
+            const token = await this.jwtService.signAsync(payload, options)
+            if (token) {
+                this.client.emit<unknown, EventJwtCreated>(kJwtCreatedEvent, {
+                    key: key,
+                    value: token,
+                    expire: options.expiresIn
+                })
+            }
+            return token
+        } catch (e) {
+            this.logger.error(`Sign Token Error: ${e.message}`)
+            throw new Error(`Sign Token Error`)
+        }
+    }
+
+    async signGroup(
         payload: ClientPayload | UserPayload,
         type: SignType
     ): Promise<TokenGroup> {
+        const key = 'clientId' in payload ? payload.clientId : payload.userId
         const { accessOptions, refreshOptions } = this.getOptions(type)
-        const accessToken = await this.jwtService.signAsync(
-            payload,
-            accessOptions
-        )
-        const refreshToken = await this.jwtService.signAsync(
-            payload,
-            refreshOptions
-        )
-        if (accessToken && refreshToken) {
-            const isClientPayload = 'clientId' in payload
-            this.client.emit<unknown, EventJwtCreated>(kJwtCreatedEvent, {
-                key: isClientPayload ? payload.clientId : payload.userId,
-                value: accessToken,
-                expire: accessOptions.expiresIn
-            })
-            this.client.emit<unknown, EventJwtCreated>(kJwtCreatedEvent, {
-                key: isClientPayload ? payload.clientId : payload.userId,
-                value: refreshToken,
-                expire: refreshOptions.expiresIn
-            })
-        }
+        const accessToken = await this.sign(payload, key, accessOptions)
+        const refreshToken = await this.sign(payload, key, refreshOptions)
         return {
             accessToken,
             refreshToken

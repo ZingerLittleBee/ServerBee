@@ -1,6 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common'
-import { kStorageService, kUserCreateEvent } from '@server-octopus/shared'
+import { SignType, TokenType } from '@/token/token.const'
+import { TokenService } from '@/token/token.service'
+import { TokenUtilService } from '@/token/token.util.service'
+import { Inject, Injectable, Logger } from '@nestjs/common'
 import { ClientProxy } from '@nestjs/microservices'
+import { kStorageService, kUserCreateEvent } from '@server-octopus/shared'
 import {
     CreateUser,
     Result,
@@ -8,14 +11,13 @@ import {
     UserRegisterDto,
     UserVo
 } from '@server-octopus/types'
-import { firstValueFrom } from 'rxjs'
 import * as bcrypt from 'bcrypt'
-import { TokenService } from '@/token/token.service'
-import { TokenUtilService } from '@/token/token.util.service'
-import { SignType, TokenType } from '@/token/token.const'
+import { firstValueFrom } from 'rxjs'
 
 @Injectable()
 export class UserService {
+    private logger = new Logger(UserService.name)
+
     constructor(
         @Inject(kStorageService) private client: ClientProxy,
         private tokenService: TokenService,
@@ -24,8 +26,10 @@ export class UserService {
 
     async register(data: UserRegisterDto): Promise<UserVo> {
         // hash pass
-        const salt = parseInt(await bcrypt.genSalt())
-        const hashPass = await bcrypt.hash(data.password, salt)
+        const hashPass = await bcrypt.hash(
+            data.password,
+            this.tokenUtilService.getSaltRounds()
+        )
 
         const {
             success,
@@ -34,18 +38,18 @@ export class UserService {
         } = await firstValueFrom(
             this.client.send<Result<UserVo>, CreateUser>(kUserCreateEvent, {
                 ...data,
-                password: hashPass,
-                salt
+                password: hashPass
             })
         )
         if (!success || !user) {
+            this.logger.error(`Invalid ${kUserCreateEvent} Failed: ${message}`)
             throw new Error(message)
         }
         return user
     }
 
     async sign(payload: UserPayload) {
-        return this.tokenService.sign(payload, SignType.user)
+        return this.tokenService.signGroup(payload, SignType.user)
     }
 
     async verify(token: string) {
@@ -53,5 +57,11 @@ export class UserService {
             token,
             TokenType.userAccess
         )
+    }
+
+    async refreshToken(token: string): Promise<string> {
+        const payload = await this.verify(token)
+        const { accessOptions } = this.tokenService.getOptions(SignType.user)
+        return this.tokenService.sign(payload, payload.userId, accessOptions)
     }
 }
