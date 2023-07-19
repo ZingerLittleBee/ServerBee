@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { PrismaService } from '@/db/prisma.service'
-import { CreateUdDto } from '@server-octopus/types'
+import { CreateUdParam } from '@server-octopus/types'
 import { ErrorService } from '@/utils/error.util'
 
 @Injectable()
@@ -10,7 +10,7 @@ export class UdService {
         private readonly errorService: ErrorService
     ) {}
 
-    async createUd(data: CreateUdDto): Promise<string> {
+    async createUd(data: CreateUdParam): Promise<string> {
         try {
             const { ud_id: id } = await this.prismaService.ud.create({
                 data: {

@@ -1,8 +1,7 @@
 export enum DeviceType {
     UNKNOWN = 'UNKNOWN',
     DESKTOP = 'DESKTOP',
-    LAPTOP = 'LAPTOP',
-    WEB = 'WEB',
+    TABLET = 'TABLET',
     MOBILE = 'MOBILE',
-    SERVER = 'SERVER'
+    CLIENT = 'CLIENT'
 }

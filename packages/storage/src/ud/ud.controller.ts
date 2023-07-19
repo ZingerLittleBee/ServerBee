@@ -1,6 +1,6 @@
 import { Controller } from '@nestjs/common'
 import { UdService } from './ud.service'
-import { CreateUdDto, Result } from '@server-octopus/types'
+import { CreateUdParam } from '@server-octopus/types'
 import { MessagePattern } from '@nestjs/microservices'
 import { kUserDeviceCreate } from '@server-octopus/shared'
 import { ResultUtil } from '@/utils/result.util'
@@ -10,7 +10,7 @@ export class UdController {
     constructor(private readonly udService: UdService) {}
 
     @MessagePattern(kUserDeviceCreate)
-    async createUd(data: CreateUdDto): Promise<Result<string>> {
+    async createUd(data: CreateUdParam): Promise<CreateUdDtoResult> {
         return ResultUtil.ok(await this.udService.createUd(data))
     }
 }

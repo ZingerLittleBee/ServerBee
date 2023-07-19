@@ -34,10 +34,10 @@ model Ud {
   updated_at DateTime @updatedAt
   last_seen  DateTime @updatedAt
   name       String
+  os         String?
   app        String?
   ip         String?
   localtion  String?
-  version    String?
   type       Type     @default(UNKNOWN)
   status     Status   @default(ACTIVE)
   user       User     @relation(fields: [user_id], references: [user_id])
@@ -133,8 +133,7 @@ enum Status {
 enum Type {
   UNKNOWN
   DESKTOP
-  WEB
-  LAPTOP
+  TABLET
   MOBILE
-  SERVER
+  CLIENT
 }

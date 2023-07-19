@@ -1,22 +1,30 @@
+import { Result } from '../result.type'
+
 enum DeviceType {
     UNKNOWN = 'UNKNOWN',
     DESKTOP = 'DESKTOP',
-    LAPTOP = 'LAPTOP',
-    WEB = 'WEB',
+    TABLET = 'TABLET',
     MOBILE = 'MOBILE',
-    SERVER = 'SERVER'
+    CLIENT = 'CLIENT'
 }
 
-type CreateUdDto = {
+type CreateUdParam = {
     userId: string
-    name:string
+} & UserDevice
+
+type CreateUdResult = Result<string>
+
+type UserDevice = {
+    name: string
+    os?: string
     app?: string
     ip?: string
     location?: string
-    version?: string
     type?: DeviceType
 }
 
 export {
-    CreateUdDto
+    CreateUdParam,
+    UserDevice,
+    CreateUdResult
 }

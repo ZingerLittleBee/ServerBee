@@ -7,6 +7,8 @@ import {
 import { ClientProxy } from '@nestjs/microservices'
 import {
     kAuthService,
+    kStorageService,
+    kUserDeviceCreate,
     kUserRegister,
     kUserTokenExpirationGet,
     kUserTokenRefresh,
@@ -14,6 +16,9 @@ import {
     kUserVerify
 } from '@server-octopus/shared'
 import {
+    CreateUdParam,
+    CreateUdResult,
+    UserDevice,
     UserLoginDto,
     UserPayload,
     UserRegisterDto,
@@ -35,14 +40,18 @@ export class AuthService {
     private readonly logger = new Logger(AuthService.name)
     private tokenExpiration: UserTokenExpiration
 
-    constructor(@Inject(kAuthService) private authClient: ClientProxy) {}
+    constructor(
+        @Inject(kAuthService) private authClient: ClientProxy,
+        @Inject(kStorageService) private storageClient: ClientProxy
+    ) {}
 
-    async signIn(userInfo: UserLoginDto) {
+    async signIn(userInfo: UserLoginDto, userDevice: UserDevice) {
         if (!userInfo.email && !userInfo.username) {
             this.logger.error('Email or Username is required')
             throw new UnauthorizedException()
         }
-        const userId = this.verifyUser(userInfo)
+        const userId = await this.verifyUser(userInfo)
+        const clientId = await this.createUserDevice({ userId, ...userDevice })
 
         const {
             success: signSuccess,
@@ -52,7 +61,8 @@ export class AuthService {
             this.authClient.send<UserTokenSignResult, UserPayload>(
                 kUserTokenSign,
                 {
-                    userId
+                    userId,
+                    clientId
                 }
             )
         )
@@ -113,8 +123,10 @@ export class AuthService {
             this.logger.error(`Invoke ${kUserTokenRefresh} Error: ${message}`)
             throw new Error('Refresh Token Error')
         }
-        return data.accessToken
+        return data
     }
+
+    async registerUserDevice() {}
 
     async verifyUser(userInfo: UserLoginDto) {
         const { success, message, data } = await firstValueFrom(
@@ -136,4 +148,18 @@ export class AuthService {
     }
 
     async validToken(token: string) {}
+
+    async createUserDevice(ud: CreateUdParam) {
+        const { success, data, message } = await firstValueFrom(
+            this.storageClient.send<CreateUdResult, CreateUdParam>(
+                kUserDeviceCreate,
+                ud
+            )
+        )
+        if (!success || !data) {
+            this.logger.error(`Create User Device Error: ${message}`)
+            throw new Error('Create User Device Error')
+        }
+        return data
+    }
 }

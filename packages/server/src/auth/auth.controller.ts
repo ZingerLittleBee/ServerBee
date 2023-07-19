@@ -10,12 +10,17 @@ import {
     UseGuards
 } from '@nestjs/common'
 import { ResultUtil } from '@server-octopus/shared'
-import { UserLoginDto, UserRegisterDto } from '@server-octopus/types'
+import {
+    UserDevice,
+    UserLoginDto,
+    UserRegisterDto
+} from '@server-octopus/types'
 import { Response } from 'express'
 import { kCookieAccessToken, kCookieRefreshToken } from './auth.const'
 import { AuthService } from './auth.service'
 import { RefreshGuard } from './guard/refresh.guard'
 import { StatusGuard } from './guard/status.guard'
+import { UserDeviceGuard } from './guard/ud.guard'
 
 @Controller('auth')
 export class AuthController {
@@ -32,14 +37,16 @@ export class AuthController {
         }
     }
 
+    @UseGuards(UserDeviceGuard)
     @HttpCode(HttpStatus.OK)
     @Post('login')
     async signIn(
+        @Request() req: Request & { ud: UserDevice },
         @Body() signInfoDto: UserLoginDto,
         @Res({ passthrough: true }) res: Response
     ) {
         try {
-            const result = await this.authService.signIn(signInfoDto)
+            const result = await this.authService.signIn(signInfoDto, req.ud)
             const expiration = await this.authService.getTokenExpiration()
             res.cookie(kCookieAccessToken, result.access_token, {
                 httpOnly: true,
