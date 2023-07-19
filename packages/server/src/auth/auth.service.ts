@@ -23,7 +23,7 @@ import {
     UserTokenRefreshParam,
     UserTokenRefreshResult,
     UserTokenSignResult,
-    VerifyUserDto,
+    VerifyUserParam,
     VerifyUserResult
 } from '@server-octopus/types'
 import { firstValueFrom } from 'rxjs'
@@ -42,21 +42,7 @@ export class AuthService {
             this.logger.error('Email or Username is required')
             throw new UnauthorizedException()
         }
-        const { success, message, data } = await firstValueFrom(
-            this.authClient.send<VerifyUserResult, VerifyUserDto>(
-                kUserVerify,
-                userInfo
-            )
-        )
-        if (!success || !data) {
-            this.logger.error(`verify user error: ${message}`)
-            throw new UnauthorizedException(`username or password is incorrect`)
-        }
-        this.logger.verbose(
-            `username: ${userInfo.username}, email: ${
-                userInfo.email
-            }, verified, payload: ${inspect(data)}`
-        )
+        const userId = this.verifyUser(userInfo)
 
         const {
             success: signSuccess,
@@ -66,7 +52,7 @@ export class AuthService {
             this.authClient.send<UserTokenSignResult, UserPayload>(
                 kUserTokenSign,
                 {
-                    userId: data.userId
+                    userId
                 }
             )
         )
@@ -129,4 +115,25 @@ export class AuthService {
         }
         return data.accessToken
     }
+
+    async verifyUser(userInfo: UserLoginDto) {
+        const { success, message, data } = await firstValueFrom(
+            this.authClient.send<VerifyUserResult, VerifyUserParam>(
+                kUserVerify,
+                userInfo
+            )
+        )
+        if (!success || !data) {
+            this.logger.error(`verify user error: ${message}`)
+            throw new UnauthorizedException(`username or password is incorrect`)
+        }
+        this.logger.verbose(
+            `username: ${userInfo.username}, email: ${
+                userInfo.email
+            }, verified, payload: ${inspect(data)}`
+        )
+        return data.userId
+    }
+
+    async validToken(token: string) {}
 }

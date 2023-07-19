@@ -4,6 +4,7 @@ import {
     kUserRegister,
     kUserTokenRefresh,
     kUserTokenSign,
+    kUserTokenValid,
     kUserTokenVerify,
     ResultUtil
 } from '@server-octopus/shared'
@@ -14,6 +15,8 @@ import {
     UserTokenRefreshParam,
     UserTokenRefreshResult,
     UserTokenSignResult,
+    UserTokenValidParam,
+    UserTokenValidResult,
     UserVerifyParam,
     UserVerifyResult
 } from '@server-octopus/types'
@@ -67,5 +70,12 @@ export class UserController {
         } catch (e) {
             return ResultUtil.error(e.message)
         }
+    }
+
+    @MessagePattern(kUserTokenValid)
+    async validToken({
+        token
+    }: UserTokenValidParam): Promise<UserTokenValidResult> {
+        return this.userService.validToken(token)
     }
 }

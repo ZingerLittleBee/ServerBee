@@ -1,10 +1,9 @@
 import { Injectable } from '@nestjs/common'
 import {
-    AuthPayload,
     CreateUser,
     FindUserDto,
     UserVo,
-    VerifyUserDto
+    VerifyUserParam
 } from '@server-octopus/types'
 import * as bcrypt from 'bcrypt'
 import { PrismaService } from '@/db/prisma.service'
@@ -56,8 +55,8 @@ export class UserService {
         } as UserVo
     }
 
-    async verifyUser(data: VerifyUserDto): Promise<AuthPayload> {
-        const whereClause: Omit<VerifyUserDto, 'password'> = {}
+    async verifyUser(data: VerifyUserParam): Promise<string> {
+        const whereClause: Omit<VerifyUserParam, 'password'> = {}
         if (data.email) whereClause.email = data.email
         if (data.username) whereClause.username = data.username
         const user = await this.prismaService.user.findUnique({
@@ -68,9 +67,7 @@ export class UserService {
         if (!user) throw new Error('user not found')
         const isMatch = await this.comparePassword(data.password, user.password)
         if (!isMatch) throw new Error('password is incorrect')
-        return {
-            userId: user.user_id
-        }
+        return user.user_id
     }
 
     private async comparePassword(pass: string, hash: string) {

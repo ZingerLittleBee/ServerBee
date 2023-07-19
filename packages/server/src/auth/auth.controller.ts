@@ -1,6 +1,7 @@
 import {
     Body,
     Controller,
+    Get,
     HttpCode,
     HttpStatus,
     Post,
@@ -14,6 +15,7 @@ import { Response } from 'express'
 import { kCookieAccessToken, kCookieRefreshToken } from './auth.const'
 import { AuthService } from './auth.service'
 import { RefreshGuard } from './guard/refresh.guard'
+import { StatusGuard } from './guard/status.guard'
 
 @Controller('auth')
 export class AuthController {
@@ -95,5 +97,12 @@ export class AuthController {
         } catch (e) {
             return ResultUtil.error(e.message)
         }
+    }
+
+    @UseGuards(StatusGuard)
+    @HttpCode(HttpStatus.OK)
+    @Get('check')
+    async checkLoginStatus() {
+        return ResultUtil.ok()
     }
 }

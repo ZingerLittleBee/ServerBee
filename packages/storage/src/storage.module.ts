@@ -9,6 +9,8 @@ import { ClientModule } from './client/client.module'
 import { MongooseModule } from '@nestjs/mongoose'
 import { RedisModule, RedisModuleOptions } from '@liaoliaots/nestjs-redis'
 import { kMongoUrl, kRedisHost, kRedisPort } from '@server-octopus/shared'
+import { TokenModule } from './token/token.module';
+import { UdModule } from './ud/ud.module';
 
 @Module({
     imports: [
@@ -39,7 +41,9 @@ import { kMongoUrl, kRedisHost, kRedisPort } from '@server-octopus/shared'
         UtilModule,
         ProfileModule,
         UserModule,
-        ClientModule
+        ClientModule,
+        TokenModule,
+        UdModule
     ],
     controllers: [StorageController]
 })

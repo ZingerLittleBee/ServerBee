@@ -66,7 +66,7 @@ export class TokenService {
         tokenType: TokenType
     ) {
         try {
-            return this.jwtService.verify<T>(token, {
+            return this.jwtService.verifyAsync<T>(token, {
                 secret: this.getSecret(tokenType)
             })
         } catch (e) {
@@ -169,5 +169,9 @@ export class TokenService {
             accessOptions: this.getAccessSignOptions(type),
             refreshOptions: this.getRefreshSignOptions(type)
         }
+    }
+
+    async tokenValidInStorage(token: string) {
+        
     }
 }

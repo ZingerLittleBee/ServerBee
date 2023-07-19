@@ -64,4 +64,9 @@ export class UserService {
         const { accessOptions } = this.tokenService.getOptions(SignType.user)
         return this.tokenService.sign(payload, payload.userId, accessOptions)
     }
+
+    async validToken(token: string): Promise<boolean> {
+        await this.verify(token)
+        // TODO: check token in storage
+    }
 }

@@ -36,24 +36,30 @@ const kUserTokenRefresh = 'user.token.refresh'
 
 const kUserTokenValid = 'user.token.valid'
 
+const kCreateTokenGroup = 'create.token.group'
+
+const kUserDeviceCreate = 'user.device.create'
+
 export {
     kClientTokenSign,
+    kClientTokenValid,
     kClientTokenVerify,
     kClientUpsertEvent,
+    kCreateTokenGroup,
     kFusionAddEvent,
     kJwtCreatedEvent,
     kProfileCreateEvent,
     kProfileGetByUserIdEvent,
     kRedisEqualEvent,
     kRedisExistsEvent,
-    kClientTokenValid,
     kUserCreateEvent,
+    kUserDeviceCreate,
     kUserFind,
     kUserRegister,
     kUserTokenExpirationGet,
     kUserTokenRefresh,
     kUserTokenSign,
+    kUserTokenValid,
     kUserTokenVerify,
-    kUserVerify,
-    kUserTokenValid
+    kUserVerify
 }

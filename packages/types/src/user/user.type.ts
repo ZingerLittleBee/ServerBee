@@ -1,5 +1,5 @@
 import { Result } from '../result.type'
-import { TokenGroup } from '../token/token.type'
+import { TokenExpiration, TokenGroup, TokenPayload } from '../token/token.type'
 
 type CreateUser = {
     email: string
@@ -23,19 +23,14 @@ type FindUserDto = {
     userId?: string
 }
 
-type UserPayload = {
-    userId: string
-}
+type UserPayload = TokenPayload
 
 type UserRefreshPayload = {
     email?: string
     username?: string
 }
 
-type UserTokenExpiration = {
-    accessExpiration: number
-    refreshExpiration: number
-}
+type UserTokenExpiration = TokenExpiration
 
 type UserToken = TokenGroup
 
@@ -56,10 +51,20 @@ type UserVerifyParam = {
 }
 
 type UserTokenRefreshParam = Omit<UserToken, 'accessToken'>
-type UserTokenRefreshResult = Result<Omit<UserToken, 'refreshToken'>>
+type UserTokenRefreshResult = Result<string>
+
+type UserTokenValidParam = { token: string }
+type UserTokenValidResult = Result<boolean>
+
+type VerifyUserResult = Result<{ userId: string }>
+type VerifyUserParam = {
+    username?: string
+    email?: string
+    password: string
+}
 
 export {
-    CreateUser, FindUserDto, UserLoginDto, UserPayload, UserRefreshPayload, UserRegisterDto, UserRegisterResult, UserToken, UserTokenExpiration, UserTokenExpirationResult, UserTokenRefreshParam, UserTokenRefreshResult, UserTokenSignResult, UserVerifyParam,
-    UserVerifyResult, UserVo
+    CreateUser, FindUserDto, UserLoginDto, UserPayload, UserRefreshPayload, UserRegisterDto, UserRegisterResult, UserToken, UserTokenExpiration, UserTokenExpirationResult, UserTokenRefreshParam, UserTokenRefreshResult, UserTokenSignResult, UserTokenValidParam, UserTokenValidResult, UserVerifyParam,
+    UserVerifyResult, UserVo, VerifyUserParam, VerifyUserResult
 }
 
