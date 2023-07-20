@@ -62,7 +62,11 @@ export class UserService {
     async refreshToken(token: string): Promise<string> {
         const payload = await this.verify(token)
         const { accessOptions } = this.tokenService.getOptions(SignType.user)
-        return this.tokenService.sign(payload, payload.userId, accessOptions)
+        return this.tokenService.sign(
+            payload,
+            this.tokenService.getAccessKey(payload),
+            accessOptions
+        )
     }
 
     async validToken(token: string): Promise<boolean> {

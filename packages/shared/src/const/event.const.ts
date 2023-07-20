@@ -36,8 +36,6 @@ const kUserTokenRefresh = 'user.token.refresh'
 
 const kUserTokenValid = 'user.token.valid'
 
-const kCreateTokenGroup = 'create.token.group'
-
 const kUserDeviceCreate = 'user.device.create'
 
 export {
@@ -45,7 +43,6 @@ export {
     kClientTokenValid,
     kClientTokenVerify,
     kClientUpsertEvent,
-    kCreateTokenGroup,
     kFusionAddEvent,
     kJwtCreatedEvent,
     kProfileCreateEvent,

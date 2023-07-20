@@ -1,5 +1,6 @@
 import { CreateDevice, DiskDetailDto, NetworkInfoDto } from '../device.type'
 import { Os, Overview, Process, Realtime, SimpleProcess } from '../fusion.type'
+import { TokenPayload } from '../token/index'
 
 type CreateClient = {
     name?: string
@@ -41,10 +42,13 @@ type FusionDto = {
     time?: number
 }
 
+type ClientPayload = TokenPayload
+
 
 export {
     ClientDto,
     DeviceDto,
     FusionDto,
-    CreateClient
+    CreateClient,
+    ClientPayload
 }

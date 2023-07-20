@@ -18,13 +18,6 @@ type TokenInfoGroup = {
     refresh: TokenInfo
 }
 
-// create token to redis
-type CreateTokenGroup = {
-    userId: string
-    clientId: string
-    tokens: TokenInfoGroup
-}
-
 type TokenPayload = {
     userId: string
     clientId: string
@@ -32,7 +25,7 @@ type TokenPayload = {
 
 
 export {
-    CreateTokenGroup, TokenExpiration, TokenGroup, TokenInfo,
+    TokenExpiration, TokenGroup, TokenInfo,
     TokenInfoGroup, TokenPayload
 }
 

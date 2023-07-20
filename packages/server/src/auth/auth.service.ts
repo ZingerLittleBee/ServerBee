@@ -48,7 +48,7 @@ export class AuthService {
     async signIn(userInfo: UserLoginDto, userDevice: UserDevice) {
         if (!userInfo.email && !userInfo.username) {
             this.logger.error('Email or Username is required')
-            throw new UnauthorizedException()
+            throw new UnauthorizedException('Email or Username is required')
         }
         const userId = await this.verifyUser(userInfo)
         const clientId = await this.createUserDevice({ userId, ...userDevice })

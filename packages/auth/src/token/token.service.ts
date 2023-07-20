@@ -15,11 +15,10 @@ import {
     kStorageService
 } from '@server-octopus/shared'
 import {
-    ClientPayload,
     EventJwtCreated,
     Result,
     TokenGroup,
-    UserPayload,
+    TokenPayload,
     UserTokenExpiration
 } from '@server-octopus/types'
 import { firstValueFrom } from 'rxjs'
@@ -76,7 +75,7 @@ export class TokenService {
     }
 
     async sign(
-        payload: Record<string, any>,
+        payload: TokenPayload,
         key: string,
         options: {
             secret: string
@@ -100,13 +99,20 @@ export class TokenService {
     }
 
     async signGroup(
-        payload: ClientPayload | UserPayload,
+        payload: TokenPayload,
         type: SignType
     ): Promise<TokenGroup> {
-        const key = 'clientId' in payload ? payload.clientId : payload.userId
         const { accessOptions, refreshOptions } = this.getOptions(type)
-        const accessToken = await this.sign(payload, key, accessOptions)
-        const refreshToken = await this.sign(payload, key, refreshOptions)
+        const accessToken = await this.sign(
+            payload,
+            this.getAccessKey(payload),
+            accessOptions
+        )
+        const refreshToken = await this.sign(
+            payload,
+            this.getRefreshKey(payload),
+            refreshOptions
+        )
         return {
             accessToken,
             refreshToken
@@ -171,7 +177,13 @@ export class TokenService {
         }
     }
 
-    async tokenValidInStorage(token: string) {
-        
+    async tokenValidInStorage(token: string) {}
+
+    getAccessKey(payload: TokenPayload) {
+        return `${payload.userId}:${payload.clientId}:token:access`
+    }
+
+    getRefreshKey(payload: TokenPayload) {
+        return `${payload.userId}:${payload.clientId}:token:refresh`
     }
 }
