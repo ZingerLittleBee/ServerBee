@@ -54,7 +54,7 @@ type UserTokenRefreshParam = Omit<UserToken, 'accessToken'>
 type UserTokenRefreshResult = Result<string>
 
 type UserTokenValidParam = { token: string }
-type UserTokenValidResult = Result<boolean>
+type UserTokenValidResult = Result
 
 type VerifyUserResult = Result<{ userId: string }>
 type VerifyUserParam = {

@@ -5,7 +5,6 @@ import {
     UnauthorizedException
 } from '@nestjs/common'
 import { extractAccessTokenFromHeader } from '../auth.util'
-import { kAccessToken } from '../auth.const'
 import { AuthService } from '../auth.service'
 
 @Injectable()
@@ -14,15 +13,12 @@ export class StatusGuard implements CanActivate {
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const request = context.switchToHttp().getRequest()
-        const refreshToken = extractAccessTokenFromHeader(request)
-        if (!refreshToken) {
+        const accessToken = extractAccessTokenFromHeader(request)
+        if (!accessToken) {
             throw new UnauthorizedException('Access Token Not Found')
         }
         try {
-            request[kAccessToken] = await this.authService.refreshToken(
-                refreshToken
-            )
-            return true
+            return await this.authService.checkAccessToken(accessToken)
         } catch (e) {
             throw new UnauthorizedException(e.message)
         }

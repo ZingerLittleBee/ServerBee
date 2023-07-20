@@ -8,6 +8,7 @@ import { ClientProxy } from '@nestjs/microservices'
 import {
     kAuthService,
     kStorageService,
+    kUserAccessTokenValid,
     kUserDeviceCreate,
     kUserRegister,
     kUserTokenExpirationGet,
@@ -28,6 +29,8 @@ import {
     UserTokenRefreshParam,
     UserTokenRefreshResult,
     UserTokenSignResult,
+    UserTokenValidParam,
+    UserTokenValidResult,
     VerifyUserParam,
     VerifyUserResult
 } from '@server-octopus/types'
@@ -147,7 +150,15 @@ export class AuthService {
         return data.userId
     }
 
-    async validToken(token: string) {}
+    async checkAccessToken(token: string): Promise<boolean> {
+        const { success } = await firstValueFrom(
+            this.authClient.send<UserTokenValidResult, UserTokenValidParam>(
+                kUserAccessTokenValid,
+                { token }
+            )
+        )
+        return success
+    }
 
     async createUserDevice(ud: CreateUdParam) {
         const { success, data, message } = await firstValueFrom(

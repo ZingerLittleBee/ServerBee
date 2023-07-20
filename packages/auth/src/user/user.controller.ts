@@ -1,10 +1,11 @@
 import { Controller } from '@nestjs/common'
 import { MessagePattern } from '@nestjs/microservices'
 import {
+    kUserAccessTokenValid,
+    kUserRefreshTokenValid,
     kUserRegister,
     kUserTokenRefresh,
     kUserTokenSign,
-    kUserTokenValid,
     kUserTokenVerify,
     ResultUtil
 } from '@server-octopus/shared'
@@ -21,6 +22,7 @@ import {
     UserVerifyResult
 } from '@server-octopus/types'
 import { UserService } from './user.service'
+import { TokenType } from '@/token/token.const'
 
 @Controller()
 export class UserController {
@@ -72,10 +74,33 @@ export class UserController {
         }
     }
 
-    @MessagePattern(kUserTokenValid)
-    async validToken({
+    @MessagePattern(kUserAccessTokenValid)
+    async validAccessToken({
         token
     }: UserTokenValidParam): Promise<UserTokenValidResult> {
-        return this.userService.validToken(token)
+        try {
+            const res = await this.userService.validToken(
+                token,
+                TokenType.userAccess
+            )
+            return res ? ResultUtil.ok(res) : ResultUtil.error('Invalid Token')
+        } catch (e) {
+            return ResultUtil.error(e.message)
+        }
+    }
+
+    @MessagePattern(kUserRefreshTokenValid)
+    async validRefreshToken({
+        token
+    }: UserTokenValidParam): Promise<UserTokenValidResult> {
+        try {
+            const res = await this.userService.validToken(
+                token,
+                TokenType.userRefresh
+            )
+            return res ? ResultUtil.ok() : ResultUtil.error('Invalid Token')
+        } catch (e) {
+            return ResultUtil.error(e.message)
+        }
     }
 }

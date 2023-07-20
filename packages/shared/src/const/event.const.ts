@@ -34,7 +34,8 @@ const kUserRegister = 'user.register'
 
 const kUserTokenRefresh = 'user.token.refresh'
 
-const kUserTokenValid = 'user.token.valid'
+const kUserAccessTokenValid = 'user.access.token.valid'
+const kUserRefreshTokenValid = 'user.refresh.token.valid'
 
 const kUserDeviceCreate = 'user.device.create'
 
@@ -56,7 +57,8 @@ export {
     kUserTokenExpirationGet,
     kUserTokenRefresh,
     kUserTokenSign,
-    kUserTokenValid,
+    kUserAccessTokenValid,
+    kUserRefreshTokenValid,
     kUserTokenVerify,
     kUserVerify
 }

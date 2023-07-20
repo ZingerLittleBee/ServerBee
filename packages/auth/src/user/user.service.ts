@@ -69,8 +69,7 @@ export class UserService {
         )
     }
 
-    async validToken(token: string): Promise<boolean> {
-        await this.verify(token)
-        // TODO: check token in storage
+    async validToken(token: string, type: TokenType): Promise<boolean> {
+        return this.tokenService.isTokenValid(token, type)
     }
 }
