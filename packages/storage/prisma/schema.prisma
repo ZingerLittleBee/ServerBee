@@ -37,7 +37,7 @@ model Ud {
   os         String?
   app        String?
   ip         String?
-  localtion  String?
+  location   String?
   type       Type     @default(UNKNOWN)
   status     Status   @default(ACTIVE)
   user       User     @relation(fields: [user_id], references: [user_id])

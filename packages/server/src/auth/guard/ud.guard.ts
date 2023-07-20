@@ -4,11 +4,10 @@ import {
     Injectable,
     Logger
 } from '@nestjs/common'
-import DeviceDetector from 'node-device-detector'
-import DeviceHelper from 'node-device-detector/helper'
 import { lookup } from 'geoip-lite'
 import { DeviceType } from '@server-octopus/shared'
 import { UserDevice } from '@server-octopus/types'
+import { UAParser } from 'ua-parser-js'
 
 @Injectable()
 export class UserDeviceGuard implements CanActivate {
@@ -25,34 +24,38 @@ export class UserDeviceGuard implements CanActivate {
             location = `${geo.country} ${geo.region} ${geo.city}`
         }
 
-        const detector = new DeviceDetector({
-            clientIndexes: true,
-            deviceIndexes: true,
-            deviceAliasCode: false
-        })
         const ua: string = request.headers['user-agent']
         this.logger.verbose(`User-Agent: ${ua}`)
         const application = request.headers['application']
-        const result = detector.detect(ua)
-        let deviceType = DeviceType.UNKNOWN
+
+        const uaResult = new UAParser(ua).getResult()
+
+        let deviceType: DeviceType
         if (ua.toUpperCase().includes(DeviceType.CLIENT)) {
             deviceType = DeviceType.CLIENT
-        } else if (DeviceHelper.isMobile(result)) {
-            deviceType = DeviceType.MOBILE
-        } else if (DeviceHelper.isTablet(result)) {
-            deviceType = DeviceType.TABLET
-        } else if (DeviceHelper.isDesktop(result)) {
-            deviceType = DeviceType.DESKTOP
+        } else {
+            switch (uaResult.device.type) {
+                case 'wearable':
+                case 'mobile':
+                    deviceType = DeviceType.MOBILE
+                    break
+                case 'tablet':
+                    deviceType = DeviceType.TABLET
+                    break
+                case 'console':
+                case 'smarttv':
+                case 'embedded':
+                    deviceType = DeviceType.DESKTOP
+                    break
+                default:
+                    deviceType = DeviceType.UNKNOWN
+            }
         }
         request['ud'] = {
             location,
             ip,
-            name: result.client.version
-                ? `${result.client.name} ${result.client.version}`
-                : result.client.name,
-            os: result.os.version
-                ? `${result.os.name} ${result.os.version}`
-                : result.os.name,
+            name: `${uaResult.browser.name} ${uaResult.browser.version}`,
+            os: `${uaResult.os.name} ${uaResult.os.version}`,
             type: deviceType,
             app: application
         } as UserDevice

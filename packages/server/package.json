@@ -36,10 +36,10 @@
         "geoip-lite": "^1.4.7",
         "helmet": "^7.0.0",
         "nats": "^2.15.1",
-        "node-device-detector": "^2.0.15",
         "reflect-metadata": "^0.1.13",
         "rimraf": "^3.0.2",
         "rxjs": "^7.2.0",
+        "ua-parser-js": "^1.0.35",
         "ws": "^8.13.0"
     },
     "devDependencies": {
@@ -55,6 +55,7 @@
         "@types/jest": "28.1.4",
         "@types/node": "^16.0.0",
         "@types/supertest": "^2.0.11",
+        "@types/ua-parser-js": "^0.7.36",
         "@types/ws": "^8.5.5",
         "@typescript-eslint/eslint-plugin": "^5.0.0",
         "@typescript-eslint/parser": "^5.0.0",

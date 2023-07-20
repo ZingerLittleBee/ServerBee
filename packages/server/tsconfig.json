@@ -16,26 +16,6 @@
     "noImplicitAny": true,
     "strictBindCallApply": true,
     "forceConsistentCasingInFileNames": true,
-    "noFallthroughCasesInSwitch": true,
-    "paths": {
-      "@app/server": [
-        "apps/server/src"
-      ],
-      "@app/server/*": [
-        "apps/server/src/*"
-      ],
-      "@app/client": [
-        "apps/client/src"
-      ],
-      "@app/client/*": [
-        "apps/client/src/*"
-      ],
-      "@app/shared": [
-        "libs/shared/src"
-      ],
-      "@app/shared/*": [
-        "libs/shared/src/*"
-      ]
-    }
+    "noFallthroughCasesInSwitch": true
   }
 }

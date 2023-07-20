@@ -264,9 +264,6 @@ importers:
       nats:
         specifier: ^2.15.1
         version: 2.15.1
-      node-device-detector:
-        specifier: ^2.0.15
-        version: 2.0.15
       reflect-metadata:
         specifier: ^0.1.13
         version: 0.1.13
@@ -276,6 +273,9 @@ importers:
       rxjs:
         specifier: ^7.2.0
         version: 7.8.1
+      ua-parser-js:
+        specifier: ^1.0.35
+        version: 1.0.35
       ws:
         specifier: ^8.13.0
         version: 8.13.0
@@ -316,6 +316,9 @@ importers:
       '@types/supertest':
         specifier: ^2.0.11
         version: 2.0.12
+      '@types/ua-parser-js':
+        specifier: ^0.7.36
+        version: 0.7.36
       '@types/ws':
         specifier: ^8.5.5
         version: 8.5.5
@@ -4020,6 +4023,10 @@ packages:
       '@types/superagent': 4.1.18
     dev: true
 
+  /@types/ua-parser-js@0.7.36:
+    resolution: {integrity: sha512-N1rW+njavs70y2cApeIw1vLMYXRwfBy+7trgavGuuTfOd7j1Yh7QTRc/yqsPl6ncokt72ZXuxEU0PiCp9bSwNQ==}
+    dev: true
+
   /@types/unist@2.0.6:
     resolution: {integrity: sha512-PBjIUxZHOuj0R15/xuwJYjFi+KZdNFrehocChv4g5hu6aFroHue8m0lBP0POdK2nKzbw0cgV1mws8+V/JAcEkQ==}
     dev: false
@@ -4561,6 +4568,7 @@ packages:
 
   /argparse@2.0.1:
     resolution: {integrity: sha512-8+9WqebbFzpX9OR+Wa6O29asIogeRMzcGtAINdpMHHyAg10f05aSFVBbcEqGf/PXw1EjAZ+q2/bEBg3DvurK3Q==}
+    dev: true
 
   /aria-hidden@1.2.3:
     resolution: {integrity: sha512-xcLxITLe2HYa1cnYnwCjkOO1PqUHQpozB8x9AR0OgWN2woOBi5kSDVxKfd0b7sb1hw5qFeJhXm9H1nu3xSfLeQ==}
@@ -8048,6 +8056,7 @@ packages:
     hasBin: true
     dependencies:
       argparse: 2.0.1
+    dev: true
 
   /jsbn@1.1.0:
     resolution: {integrity: sha512-4bYVV3aAMtDTTu4+xsDYa6sy9GyJ69/amsu9sYF2zqjiEoZA5xJi3BrfX3uY+/IekIu7MwdObdbDWpoZdBv3/A==}
@@ -8647,13 +8656,6 @@ packages:
 
   /node-addon-api@5.1.0:
     resolution: {integrity: sha512-eh0GgfEkpnoWDq+VY8OyvYhFEzBk6jIYbRKdIlyTiAXIVJ8PyBaKb0rp7oDtoddbdoHWhq8wwr+XZ81F1rpNdA==}
-    dev: false
-
-  /node-device-detector@2.0.15:
-    resolution: {integrity: sha512-HDyr0eFqwlg49PhmkLfW57LrkwQESH92YtmKQXfnV2fmzy11X0p3bcVPXWh7z5ua68SHebt8raWrxtDohfkIQA==}
-    engines: {node: '>= 10.x', npm: '>= 6.x'}
-    dependencies:
-      js-yaml: 4.1.0
     dev: false
 
   /node-emoji@1.11.0:
@@ -10656,6 +10658,10 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
     dev: true
+
+  /ua-parser-js@1.0.35:
+    resolution: {integrity: sha512-fKnGuqmTBnIE+/KXSzCn4db8RTigUzw1AN0DmdU6hJovUTbYJKyqj+8Mt1c4VfRDnOVJnENmfYkIPZ946UrSAA==}
+    dev: false
 
   /uid@2.0.2:
     resolution: {integrity: sha512-u3xV3X7uzvi5b1MncmZo3i2Aw222Zk1keqLA1YkHldREkAhAqi65wuPfe7lHx8H/Wzy+8CE7S7uS3jekIM5s8g==}

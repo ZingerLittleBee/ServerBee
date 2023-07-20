@@ -47,6 +47,7 @@ export class AuthController {
     ) {
         try {
             const result = await this.authService.signIn(signInfoDto, req.ud)
+            // TODO: check expires
             const expiration = await this.authService.getTokenExpiration()
             res.cookie(kCookieAccessToken, result.access_token, {
                 httpOnly: true,

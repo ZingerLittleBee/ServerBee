@@ -11,10 +11,11 @@ export class UdService {
     ) {}
 
     async createUd(data: CreateUdParam): Promise<string> {
+        const { userId, ...rest } = data
         try {
             const { ud_id: id } = await this.prismaService.ud.create({
                 data: {
-                    ...data,
+                    ...rest,
                     user_id: data.userId
                 }
             })
