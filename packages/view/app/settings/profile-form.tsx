@@ -26,6 +26,8 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/react-hook-form/form"
+import { useProfile } from "@/app/hooks/useProfile";
+import { useEffect } from "react";
 
 const profileFormSchema = z.object({
   username: z
@@ -63,11 +65,17 @@ const defaultValues: Partial<ProfileFormValues> = {
 }
 
 export function ProfileForm() {
+    const { profile, isLoading } = useProfile()
+
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
-    defaultValues,
+    defaultValues: defaultValues,
     mode: "onChange",
   })
+
+    useEffect(() => {
+        form.setValue("username", profile?.user.username ?? '')
+    }, [form, profile?.user.username])
 
   const { fields, append } = useFieldArray({
     name: "urls",
@@ -95,7 +103,7 @@ export function ProfileForm() {
             <FormItem>
               <FormLabel>Username</FormLabel>
               <FormControl>
-                <Input placeholder="shadcn" {...field} />
+                <Input disabled={isLoading} {...field} />
               </FormControl>
               <FormDescription>
                 This is your public display name. It can be your real name or a
