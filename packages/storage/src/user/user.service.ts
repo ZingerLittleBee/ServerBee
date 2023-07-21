@@ -8,12 +8,14 @@ import {
 import * as bcrypt from 'bcrypt'
 import { PrismaService } from '@/db/prisma.service'
 import { ErrorService } from '@/utils/error.util'
+import { ProfileService } from '@/profile/profile.service'
 
 @Injectable()
 export class UserService {
     constructor(
         private readonly prismaService: PrismaService,
-        private readonly errorService: ErrorService
+        private readonly errorService: ErrorService,
+        private readonly profileService: ProfileService
     ) {}
 
     async createUser(data: CreateUser) {
@@ -22,6 +24,12 @@ export class UserService {
                 data: {
                     ...data
                 }
+            })
+            await this.profileService.createProfile({
+                userId: user.user_id,
+                name: user.username,
+                avatar: '',
+                description: ''
             })
             return {
                 userId: user.user_id,

@@ -52,16 +52,12 @@ export class AuthController {
             res.cookie(kCookieAccessToken, result.access_token, {
                 httpOnly: true,
                 sameSite: 'strict',
-                expires: new Date(
-                    new Date().getTime() + expiration.accessExpiration * 1000
-                )
+                maxAge: expiration.accessExpiration * 1000
             })
             res.cookie(kCookieRefreshToken, result.refresh_token, {
                 httpOnly: true,
                 sameSite: 'strict',
-                expires: new Date(
-                    new Date().getTime() + expiration.refreshExpiration * 1000
-                )
+                maxAge: expiration.refreshExpiration * 1000
             })
             return res.status(200).json(ResultUtil.ok())
         } catch (e) {

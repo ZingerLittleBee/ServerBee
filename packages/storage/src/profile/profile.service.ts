@@ -10,13 +10,21 @@ export class ProfileService {
         const val = await this.prismaService.profile.findUnique({
             where: {
                 user_id: userId
+            },
+            include: {
+                user: true
             }
         })
         return {
             name: val?.name,
             avatar: val?.avatar,
-            description: val?.description
-        }
+            description: val?.description,
+            user: {
+                userId: val?.user.user_id,
+                username: val?.user.username,
+                email: val?.user.email
+            }
+        } as ProfileVo
     }
 
     async createProfile(profile: CreateProfile) {
