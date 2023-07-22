@@ -39,6 +39,8 @@ const kUserRefreshTokenValid = 'user.refresh.token.valid'
 
 const kUserDeviceCreate = 'user.device.create'
 
+const kNotificationEmailSend = 'notification.email.send'
+
 export {
     kClientTokenSign,
     kClientTokenValid,
@@ -46,19 +48,20 @@ export {
     kClientUpsertEvent,
     kFusionAddEvent,
     kJwtCreatedEvent,
+    kNotificationEmailSend,
     kProfileCreateEvent,
     kProfileGetByUserIdEvent,
     kRedisEqualEvent,
     kRedisExistsEvent,
+    kUserAccessTokenValid,
     kUserCreateEvent,
     kUserDeviceCreate,
     kUserFind,
+    kUserRefreshTokenValid,
     kUserRegister,
     kUserTokenExpirationGet,
     kUserTokenRefresh,
     kUserTokenSign,
-    kUserAccessTokenValid,
-    kUserRefreshTokenValid,
     kUserTokenVerify,
     kUserVerify
 }
