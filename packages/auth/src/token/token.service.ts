@@ -33,8 +33,8 @@ export class TokenService {
         @Inject(kStorageService) private client: ClientProxy
     ) {}
 
-    extractClientId(token: string) {
-        const payload = this.jwtService.verify(token)
+    extractClientId(token: string, secret: string) {
+        const payload = this.jwtService.verify(token, { secret })
         if (!payload.clientId) {
             throw new UnauthorizedException('invalid token')
         }
@@ -46,11 +46,31 @@ export class TokenService {
         expireChecker(payload.exp)
     }
 
+    async getTokenPayload<T extends object = TokenPayload>(
+        token: string,
+        tokenType: TokenType
+    ) {
+        const secret = this.getSecret(tokenType)
+        return this.jwtService.verifyAsync<T>(token, { secret })
+    }
+
     async isTokenValid(token: string, tokenType: TokenType): Promise<boolean> {
         this.checkExpireTime(token, this.getSecret(tokenType))
+        const payload = await this.getTokenPayload(token, tokenType)
+        let key: string
+        switch (tokenType) {
+            case TokenType.clientAccess:
+            case TokenType.userAccess:
+                key = this.getAccessKey(payload)
+                break
+            case TokenType.clientRefresh:
+            case TokenType.userRefresh:
+                key = this.getRefreshKey(payload)
+                break
+        }
         const { success, data, message } = await firstValueFrom(
             this.client.send<Result<boolean>>(kRedisEqualEvent, {
-                key: this.extractClientId(token),
+                key,
                 value: token
             })
         )
@@ -58,6 +78,7 @@ export class TokenService {
             this.logger.error(`Invoke ${kRedisEqualEvent} Error: ${message}`)
             return false
         }
+        return true
     }
 
     async verify<T extends Record<string, any>>(

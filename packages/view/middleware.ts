@@ -1,15 +1,23 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server"
+
+import { isAuthenticated } from "@/lib/auth"
 
 
 
 
 
-// This function can be marked `async` if using `await` inside
-export function middleware(request: NextRequest) {
-  return NextResponse.redirect(new URL("/", request.url))
+export async function middleware(request: NextRequest) {
+  const cookie = request.cookies.toString()
+  const url = request.nextUrl.clone()
+
+  if (!cookie || !(await isAuthenticated(cookie))) {
+    url.pathname = "/login"
+    return NextResponse.rewrite(url)
+  }
+  return NextResponse.next()
 }
 
 // See "Matching Paths" below to learn more
 export const config = {
-    matcher: '/settings',
+  matcher: "/settings",
 }

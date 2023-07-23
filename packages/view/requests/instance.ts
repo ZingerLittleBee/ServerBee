@@ -1,6 +1,11 @@
-import axios from "axios";
-import {ResultUtil} from "@/utils/ResultUtil";
-import {toast} from "@/components/ui/use-toast";
+import { Result } from "@server-octopus/types"
+import axios from "axios"
+
+import { toast } from "@/components/ui/use-toast"
+
+
+
+
 
 const instance = axios.create({
   baseURL: 'http://localhost:3001',
@@ -12,7 +17,7 @@ const instance = axios.create({
 
 instance.interceptors.response.use(function (response) {
   if (response.data) {
-    const result = response.data as ResultUtil<any>
+    const result = response.data as Result
 
     if (!result.success) {
       toast(

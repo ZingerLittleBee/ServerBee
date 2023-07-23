@@ -1,3 +1,4 @@
+"use client"
 import React, { createContext, ReactNode, useContext, useReducer } from "react";
 import { UserAction, userReducer, UserState } from "@/store/user";
 
