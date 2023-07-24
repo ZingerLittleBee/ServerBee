@@ -39,23 +39,7 @@ interface SettingsLayoutProps {
 export default function SettingsLayout({ children }: SettingsLayoutProps) {
   return (
       <section className="container grid items-center gap-6 pb-8">
-          <div className="md:hidden">
-            <Image
-              src="/settings/forms-light.png"
-              width={1280}
-              height={791}
-              alt="Forms"
-              className="block dark:hidden"
-            />
-            <Image
-              src="/settings/forms-dark.png"
-              width={1280}
-              height={791}
-              alt="Forms"
-              className="hidden dark:block"
-            />
-          </div>
-          <div className="hidden space-y-6 py-5 pb-16 md:block">
+          <div className="space-y-6 py-5 pb-16">
             <div className="space-y-0.5">
               <h2 className="text-2xl font-bold tracking-tight">Settings</h2>
               <p className="text-muted-foreground">

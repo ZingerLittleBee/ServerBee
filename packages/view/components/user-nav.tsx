@@ -39,7 +39,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useProfile } from "@/app/hooks/useProfile"
 
-export function Account() {
+export function UserNav() {
   const router = useRouter()
   const { profile, isError } = useProfile()
 
@@ -53,7 +53,7 @@ export function Account() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Avatar className="cursor-pointer">
+        <Avatar className="h-9 w-9 cursor-pointer">
           <AvatarImage src={profile?.avatar} alt="account" />
           <AvatarFallback>{profile?.user.username[0]}</AvatarFallback>
         </Avatar>
