@@ -1,3 +1,12 @@
+import {
+  kClientRoute,
+  kConsoleRoute,
+  kDashboardRoute,
+  kLoginRoute,
+  kRegisterRoute,
+  kSettingsRoute,
+} from "@/lib/route"
+
 export type SiteConfig = typeof siteConfig
 
 export const siteConfig = {
@@ -5,27 +14,35 @@ export const siteConfig = {
   description:
     "Beautifully designed components built with Radix UI and Tailwind CSS.",
   mainNav: {
-    home: {
-      title: "Home",
-      href: "/",
+    // home: {
+    //   title: "Home",
+    //   href: "/",
+    // },
+    dashboard: {
+      title: "Dashboard",
+      href: kDashboardRoute,
+    },
+    client: {
+      title: "Client",
+      href: kClientRoute,
     },
     console: {
       title: "Console",
-      href: "/console",
+      href: kConsoleRoute,
     },
     login: {
       title: "Login",
-      href: "/login",
+      href: kLoginRoute,
       hide: true,
     },
     register: {
       title: "Register",
-      href: "/register",
+      href: kRegisterRoute,
       hide: true,
     },
     authentication: {
       title: "Settings",
-      href: "/settings",
+      href: kSettingsRoute,
     },
   },
   links: {

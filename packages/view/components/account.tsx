@@ -1,4 +1,7 @@
-'use client'
+"use client"
+
+import { useRouter } from "next/navigation"
+import { logout } from "@/requests/auth/auth"
 import {
   Cloud,
   CreditCard,
@@ -16,6 +19,7 @@ import {
   Users,
 } from "lucide-react"
 
+import { kLoginRoute, kSettingsProfile } from "@/lib/route";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   DropdownMenu,
@@ -31,9 +35,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { useRouter } from 'next/navigation'
-import { kSettingsProfile } from "@/lib/route";
-
+import { useProfile } from "@/app/hooks/useProfile";
 
 export type AccountProps = {
   avatarUrl?: string
@@ -42,17 +44,32 @@ export type AccountProps = {
 
 export function Account({ avatarUrl, singleChar }: AccountProps) {
   const router = useRouter()
+  const { profile } = useProfile()
+
+  const logoutHandler = async () => {
+    const res = await logout()
+    if (res) {
+      router.push(kLoginRoute)
+    }
+  }
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Avatar className="cursor-pointer">
-          <AvatarImage src={avatarUrl} alt="account" />
-          <AvatarFallback>{singleChar}</AvatarFallback>
+          <AvatarImage src={profile?.avatar} alt="account" />
+          <AvatarFallback>{profile?.user.username[0]}</AvatarFallback>
         </Avatar>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56">
-        <DropdownMenuLabel>My Account</DropdownMenuLabel>
+        <DropdownMenuLabel className="font-normal">
+          <div className="flex flex-col space-y-1">
+            <p className="text-sm font-medium leading-none">{profile?.user.username}</p>
+            <p className="text-xs leading-none text-muted-foreground">
+              {profile?.user.email}
+            </p>
+          </div>
+        </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuItem onClick={() => router.push(kSettingsProfile)}>
@@ -125,7 +142,7 @@ export function Account({ avatarUrl, singleChar }: AccountProps) {
           <span>API</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem>
+        <DropdownMenuItem onClick={logoutHandler}>
           <LogOut className="mr-2 h-4 w-4" />
           <span>Log out</span>
           <DropdownMenuShortcut>⇧⌘Q</DropdownMenuShortcut>

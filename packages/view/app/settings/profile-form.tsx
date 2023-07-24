@@ -69,7 +69,11 @@ export function ProfileForm() {
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
-    defaultValues: defaultValues,
+    defaultValues: {
+      ...defaultValues,
+      username: profile?.user.username ?? '',
+      email: profile?.user.email ?? '',
+    },
     mode: "onChange",
   })
 
