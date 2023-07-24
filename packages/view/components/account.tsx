@@ -8,6 +8,7 @@ import {
   Github,
   Keyboard,
   LifeBuoy,
+  LogIn,
   LogOut,
   Mail,
   MessageSquare,
@@ -19,8 +20,9 @@ import {
   Users,
 } from "lucide-react"
 
-import { kLoginRoute, kSettingsProfile } from "@/lib/route";
+import { kLoginRoute, kSettingsProfile } from "@/lib/route"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,16 +37,11 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { useProfile } from "@/app/hooks/useProfile";
+import { useProfile } from "@/app/hooks/useProfile"
 
-export type AccountProps = {
-  avatarUrl?: string
-  singleChar?: string
-}
-
-export function Account({ avatarUrl, singleChar }: AccountProps) {
+export function Account() {
   const router = useRouter()
-  const { profile } = useProfile()
+  const { profile, isError } = useProfile()
 
   const logoutHandler = async () => {
     const res = await logout()
@@ -62,14 +59,29 @@ export function Account({ avatarUrl, singleChar }: AccountProps) {
         </Avatar>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56">
-        <DropdownMenuLabel className="font-normal">
-          <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium leading-none">{profile?.user.username}</p>
-            <p className="text-xs leading-none text-muted-foreground">
-              {profile?.user.email}
-            </p>
-          </div>
-        </DropdownMenuLabel>
+        {isError ? (
+          <DropdownMenuItem className="focus:bg-transparent">
+            <Button
+              variant="secondary"
+              className="w-full"
+              onClick={() => router.push(kLoginRoute)}
+            >
+              <LogIn className="mr-2 h-4 w-4" /> Login
+            </Button>
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuLabel className="font-normal">
+            <div className="flex flex-col space-y-1">
+              <p className="text-sm font-medium leading-none">
+                {profile?.user.username}
+              </p>
+              <p className="text-xs leading-none text-muted-foreground">
+                {profile?.user.email}
+              </p>
+            </div>
+          </DropdownMenuLabel>
+        )}
+
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuItem onClick={() => router.push(kSettingsProfile)}>

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 
 import { isAuthenticated } from "@/lib/auth"
-import { kDashboardRoute, kLoginRoute, kSettingsRoute } from "@/lib/route"
+import { kDashboardRoute, kLoginRoute } from "@/lib/route"
 
 
 
@@ -13,12 +13,14 @@ export async function middleware(request: NextRequest) {
 
   const isAuth = await isAuthenticated(cookie)
 
-  if (request.nextUrl.pathname.startsWith(kLoginRoute) && isAuth) {
-    return NextResponse.redirect(new URL(kDashboardRoute, request.url))
+  if (request.nextUrl.pathname.startsWith(kLoginRoute)) {
+    return isAuth
+      ? NextResponse.redirect(new URL(kDashboardRoute, request.url))
+      : NextResponse.next()
   }
 
   if (!cookie || !isAuth) {
-    url.pathname = kSettingsRoute
+    url.pathname = kLoginRoute
     return NextResponse.rewrite(url)
   }
   return NextResponse.next()
