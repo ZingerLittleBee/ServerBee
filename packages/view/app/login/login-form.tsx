@@ -83,7 +83,8 @@ export function LoginForm({ className, ...props }: UserAuthFormProps) {
       router.push("/dashboard")
     } else {
       toast({
-        title: "Error",
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
         description: res?.message,
       })
     }

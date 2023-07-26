@@ -30,7 +30,7 @@ export type NetworkInfoDto = Omit<NetworkInfo, 'rx' | 'tx'> & {
     tx: string
 }
 
-type CreateDevice = {
+export type CreateDevice = {
     name: string
     hostname: string
     kernel: string
@@ -45,6 +45,21 @@ type CreateDevice = {
     network: NetworkInfo[]
 }
 
-export {
-    CreateDevice
+export type DeviceDto = {
+    name?: string
+    hostname?: string
+    kernel?: string
+    cpu_num?: number
+    brand?: string
+    frequency?: string
+    vendor?: string
+    memory?: string
+    swap?: string
+    version?: string
+    disk?: DiskDetailDto[]
+    network?: NetworkInfoDto[]
 }
+
+export type DeviceVo = DeviceDto
+
+export type CreateDeviceDto = DeviceDto

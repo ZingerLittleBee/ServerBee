@@ -1,13 +1,18 @@
+import { ErrorUtil } from '@/db/error.util'
+import { ResultUtil } from '@/utils/result.util'
 import { Controller } from '@nestjs/common'
-import { ClientService } from './client.service'
 import { EventPattern, MessagePattern } from '@nestjs/microservices'
 import {
-    kClientCreateEvent,
+    kClientCreateMsg,
     kClientDeviceUpdateEvent
 } from '@server-octopus/shared'
-import { CreateClientDto, UpdateDeviceDto } from '@server-octopus/types'
-import { ResultUtil } from '@/utils/result.util'
-import { ErrorUtil } from '@/db/error.util'
+import {
+    ClientStatus,
+    CreateClientDto,
+    CreateClientResult,
+    UpdateDeviceDto
+} from '@server-octopus/types'
+import { ClientService } from './client.service'
 
 @Controller()
 export class ClientController {
@@ -25,10 +30,17 @@ export class ClientController {
     //     }
     // }
 
-    @MessagePattern(kClientCreateEvent)
-    async createClient(client: CreateClientDto) {
+    @MessagePattern(kClientCreateMsg)
+    async createClient(client: CreateClientDto): Promise<CreateClientResult> {
         try {
-            return ResultUtil.ok(await this.clientService.createClient(client))
+            const { client_id, status, name, updated_at } =
+                await this.clientService.create(client)
+            return ResultUtil.ok({
+                clientId: client_id,
+                name: name,
+                status: status as ClientStatus,
+                lastCommunication: updated_at
+            })
         } catch (e) {
             return ResultUtil.error(this.errorUtil.explain(e))
         }

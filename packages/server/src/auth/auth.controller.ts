@@ -59,7 +59,7 @@ export class AuthController {
                 sameSite: 'strict',
                 maxAge: expiration.refreshExpiration * 1000
             })
-            return res.status(200).json(ResultUtil.ok())
+            return ResultUtil.ok()
         } catch (e) {
             return ResultUtil.error(e.message)
         }

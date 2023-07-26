@@ -10,7 +10,12 @@ import {
 } from '@nestjs/common'
 import { ClientService } from './client.service'
 import { ClientRegisterGuard } from '@/guard/register.guard'
-import { CreateClientDto, CreateDevice, Result } from '@server-octopus/types'
+import {
+    ClientVo,
+    CreateClientDto,
+    CreateDevice,
+    Result
+} from '@server-octopus/types'
 import { ResultUtil } from '@server-octopus/shared'
 import { VerifyTokenGuard } from '@/guard/verify.guard'
 import { convertFormatDataToString } from '@/util'
@@ -49,10 +54,9 @@ export class ClientController {
     }
 
     @Post()
-    async create(client: CreateClientDto) {
+    async create(@Body() client: CreateClientDto): Promise<Result<ClientVo>> {
         try {
-            await this.clientService.create(client)
-            return ResultUtil.ok()
+            return ResultUtil.ok(await this.clientService.create(client))
         } catch (e) {
             this.logger.error(`create client: ${client}, error: ${e.message}`)
             return ResultUtil.error(e.message)

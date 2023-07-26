@@ -12,5 +12,6 @@ export {
     loginUrl,
     registerUrl,
     logoutUrl,
-    profileUrl
+    profileUrl,
+    addClientUrl
 }

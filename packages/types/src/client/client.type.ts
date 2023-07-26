@@ -1,6 +1,24 @@
 import { Os, Overview, Process, Realtime, SimpleProcess } from "../fusion.type";
+import { Result } from "../result.type";
 import { TokenPayload } from "../token/index";
-import { DiskDetailDto, NetworkInfoDto } from "./device.type";
+import { DeviceDto, DeviceVo } from "./device.type";
+
+export enum ClientStatus {
+    ACTIVE = 'ACTIVE',
+    INACTIVE = 'INACTIVE',
+    DISABLED = 'DISABLED',
+    TO_BE_CONFIRMED = 'TO_BE_CONFIRMED'
+}
+
+export type CreateClientResult = Result<ClientVo>
+
+export type ClientVo = {
+    clientId: string
+    name: string
+    status: ClientStatus
+    lastCommunication: Date
+    device?: DeviceVo
+}
 
 type CreateClientDto = {
     name: string
@@ -11,24 +29,6 @@ type UpdateClientDto = {
     name?: string
     device?: DeviceDto
 }
-
-export type CreateDeviceDto = DeviceDto
-
-type DeviceDto = {
-    name?: string
-    hostname?: string
-    kernel?: string
-    cpu_num?: number
-    brand?: string
-    frequency?: string
-    vendor?: string
-    memory?: string
-    swap?: string
-    version?: string
-    disk?: DiskDetailDto[]
-    network?: NetworkInfoDto[]
-}
-
 
 type FusionDto = {
     overview?: Overview

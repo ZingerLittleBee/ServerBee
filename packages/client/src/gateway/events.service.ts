@@ -1,6 +1,6 @@
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common'
 import { ClientProxy } from '@nestjs/microservices'
-import { kAuthService, kTokenVerify } from '@server-octopus/shared'
+import { kAuthService, kClientTokenVerify } from '@server-octopus/shared'
 import { firstValueFrom } from 'rxjs'
 import { ClientPayload, Result } from '@server-octopus/types'
 
@@ -24,7 +24,7 @@ export class EventsService {
 
     async extractClientIdFromToken(token: string) {
         const { success, message, data } = await firstValueFrom(
-            this.authService.send<Result<ClientPayload>>(kTokenVerify, {
+            this.authService.send<Result<ClientPayload>>(kClientTokenVerify, {
                 token
             })
         )

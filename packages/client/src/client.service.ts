@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common'
 import { inspect } from 'util'
 import {
     kAuthService,
-    kClientCreateEvent,
+    kClientCreateMsg,
     kClientDeviceUpdateEvent,
     kClientTokenSign,
     kClientTokenValid,
@@ -13,6 +13,7 @@ import {
 import { ClientProxy } from '@nestjs/microservices'
 import {
     CreateClientDto,
+    CreateClientResult,
     FusionDto,
     RegisterClientDto,
     UpdateDeviceDto
@@ -83,8 +84,18 @@ export class ClientService {
     }
 
     async create(client: CreateClientDto) {
-        return firstValueFrom(
-            this.storageClient.emit(kClientCreateEvent, client)
+        const { success, message, data } = await firstValueFrom(
+            this.storageClient.send<CreateClientResult, CreateClientDto>(
+                kClientCreateMsg,
+                client
+            )
         )
+        if (!success) {
+            this.logger.error(
+                `create client: ${inspect(client)} error, message: ${message}`
+            )
+            throw new Error(message)
+        }
+        return data
     }
 }

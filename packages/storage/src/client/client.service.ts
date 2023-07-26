@@ -1,23 +1,23 @@
-import { Injectable } from '@nestjs/common'
 import { PrismaService } from '@/db/prisma.service'
+import { Injectable } from '@nestjs/common'
+import { StatusEnum } from '@server-octopus/shared'
 import {
     CreateClientDto,
     DiskDetailDto,
     NetworkInfoDto,
     UpdateDeviceDto
 } from '@server-octopus/types'
-import { StatusEnum } from '@server-octopus/shared'
 
 @Injectable()
 export class ClientService {
     constructor(private readonly prismaService: PrismaService) {}
 
-    async createClient(client: CreateClientDto) {
-        this.prismaService.client.create({
+    async create({ name, userId }: CreateClientDto) {
+        return this.prismaService.client.create({
             data: {
-                name: client.name,
+                name: name,
                 status: StatusEnum.TO_BE_CONFIRMED,
-                user_id: client.userId
+                user_id: userId
             }
         })
     }
