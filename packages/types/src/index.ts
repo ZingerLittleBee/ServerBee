@@ -1,5 +1,4 @@
 export * from './client/index'
-export * from './device.type'
 export * from './event.type'
 export * from './event/index'
 export * from './fusion.type'

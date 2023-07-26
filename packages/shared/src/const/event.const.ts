@@ -4,6 +4,8 @@ const kFusionAddEvent = 'fusion.add'
 
 const kClientUpsertEvent = 'client.upsert'
 
+const kClientCreateEvent = 'client.create'
+
 const kRedisEqualEvent = 'redis.equal'
 
 const kRedisExistsEvent = 'redis.exists'
@@ -41,7 +43,10 @@ const kUserDeviceCreate = 'user.device.create'
 
 const kNotificationEmailSend = 'notification.email.send'
 
+export const kClientDeviceUpdateEvent = 'client.device.update'
+
 export {
+    kClientCreateEvent,
     kClientTokenSign,
     kClientTokenValid,
     kClientTokenVerify,

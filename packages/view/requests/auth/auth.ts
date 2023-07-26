@@ -1,3 +1,4 @@
+import { loginUrl, logoutUrl, registerUrl } from "@/requests/endpoint"
 import instance from "@/requests/instance"
 import { Result } from "@server-octopus/types"
 
@@ -18,7 +19,7 @@ export const login = async (
     })
     return
   }
-  const { data } = await instance.post<Result>("/auth/login", {
+  const { data } = await instance.post<Result>(loginUrl, {
     email,
     username,
     password,
@@ -26,16 +27,20 @@ export const login = async (
   return data
 }
 
-export const register = async (email: string, username: string, password: string) => {
-  const { data } = await instance.post<Result>('/auth/register', {
+export const register = async (
+  email: string,
+  username: string,
+  password: string
+) => {
+  const { data } = await instance.post<Result>(registerUrl, {
     email,
     username,
-    password
+    password,
   })
   return data
 }
 
 export const logout = async () => {
-  const { data } = await instance.post<Result>('/auth/logout')
+  const { data } = await instance.post<Result>(logoutUrl)
   return data.success
 }

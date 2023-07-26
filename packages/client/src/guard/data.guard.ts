@@ -9,8 +9,8 @@ import {
 import { Request } from 'express'
 import {
     kAuthService,
-    kStorageService,
-    kTokenVerify
+    kClientTokenVerify,
+    kStorageService
 } from '@server-octopus/shared'
 import { ClientProxy } from '@nestjs/microservices'
 import { firstValueFrom } from 'rxjs'
@@ -34,7 +34,9 @@ export class ClientDataGuard implements CanActivate {
         }
         try {
             const { success, message, data } = await firstValueFrom(
-                this.client.send<Result<ClientPayload>>(kTokenVerify, { token })
+                this.client.send<Result<ClientPayload>>(kClientTokenVerify, {
+                    token
+                })
             )
             if (!success || !data.clientId) {
                 this.logger.error(

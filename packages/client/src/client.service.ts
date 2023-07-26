@@ -2,17 +2,22 @@ import { Inject, Injectable, Logger } from '@nestjs/common'
 import { inspect } from 'util'
 import {
     kAuthService,
+    kClientCreateEvent,
+    kClientDeviceUpdateEvent,
     kClientTokenSign,
     kClientTokenValid,
-    kClientUpsertEvent,
     kFusionAddEvent,
     kStorageService,
     Result
 } from '@server-octopus/shared'
 import { ClientProxy } from '@nestjs/microservices'
-import { CreateClient, FusionDto } from '@server-octopus/types'
+import {
+    CreateClientDto,
+    FusionDto,
+    RegisterClientDto,
+    UpdateDeviceDto
+} from '@server-octopus/types'
 import { firstValueFrom } from 'rxjs'
-import { convertFormatDataToString } from '@/util'
 
 @Injectable()
 export class ClientService {
@@ -23,18 +28,23 @@ export class ClientService {
         @Inject(kStorageService) private storageClient: ClientProxy
     ) {}
 
-    async registerClient(client: CreateClient) {
-        const c = convertFormatDataToString(client)
+    async registerClient(client: RegisterClientDto) {
         const {
             success,
             message,
             data: clientId
         } = await firstValueFrom(
-            this.storageClient.send<Result<string>>(kClientUpsertEvent, c)
+            this.storageClient.send<Result<string>, UpdateDeviceDto>(
+                kClientDeviceUpdateEvent,
+                {
+                    clientId: client.clientId,
+                    device: client.device
+                }
+            )
         )
         if (!success) {
             this.logger.error(
-                `upsert client: ${inspect(client)} error, message: ${message}`
+                `update device: ${inspect(client)} error, message: ${message}`
             )
             throw new Error(message)
         }
@@ -70,5 +80,11 @@ export class ClientService {
 
     async addData(fusion: FusionDto) {
         this.storageClient.emit(kFusionAddEvent, fusion)
+    }
+
+    async create(client: CreateClientDto) {
+        return firstValueFrom(
+            this.storageClient.emit(kClientCreateEvent, client)
+        )
     }
 }

@@ -8,7 +8,7 @@ import { toast } from "@/components/ui/use-toast"
 
 
 const instance = axios.create({
-  baseURL: 'http://localhost:3001',
+  baseURL: 'http://localhost:3000/api',
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json'

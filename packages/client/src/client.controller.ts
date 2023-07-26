@@ -10,9 +10,10 @@ import {
 } from '@nestjs/common'
 import { ClientService } from './client.service'
 import { ClientRegisterGuard } from '@/guard/register.guard'
-import { CreateDevice, Result } from '@server-octopus/types'
+import { CreateClientDto, CreateDevice, Result } from '@server-octopus/types'
 import { ResultUtil } from '@server-octopus/shared'
 import { VerifyTokenGuard } from '@/guard/verify.guard'
+import { convertFormatDataToString } from '@/util'
 
 @Controller('client')
 export class ClientController {
@@ -24,14 +25,13 @@ export class ClientController {
     @Post('register')
     async register(
         @Body() device: CreateDevice,
-        @Request() req: Request & { clientId?: string; userId?: string }
+        @Request() req: Request & { clientId: string; userId: string }
     ): Promise<Result<{ token: string }>> {
         try {
             const token = await this.clientService.registerClient({
-                name: device?.name,
-                device,
-                userId: req.userId,
-                clientId: req.clientId
+                ...convertFormatDataToString(device),
+                clientId: req.clientId,
+                userId: req.userId
             })
             return ResultUtil.ok({
                 token
@@ -46,6 +46,17 @@ export class ClientController {
     @HttpCode(200)
     async tokenValidCheck() {
         return ResultUtil.ok()
+    }
+
+    @Post()
+    async create(client: CreateClientDto) {
+        try {
+            await this.clientService.create(client)
+            return ResultUtil.ok()
+        } catch (e) {
+            this.logger.error(`create client: ${client}, error: ${e.message}`)
+            return ResultUtil.error(e.message)
+        }
     }
 
     // @UseGuards(ClientDataGuard)

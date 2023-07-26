@@ -2,14 +2,15 @@
 
 import { Cross2Icon } from "@radix-ui/react-icons"
 import { Table } from "@tanstack/react-table"
+import { PlusCircle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { DataTableViewOptions } from "./data-table-view-options"
 
 import { priorities, statuses } from "../data/data"
 import { DataTableFacetedFilter } from "./data-table-faceted-filter"
-import { PlusCircle } from "lucide-react";
+import { DataTableViewOptions } from "./data-table-view-options"
+import { AddClient } from "@/app/client/components/add-client";
 
 interface DataTableToolbarProps<TData> {
   table: Table<TData>
@@ -31,6 +32,7 @@ export function DataTableToolbar<TData>({
           }
           className="h-8 w-[150px] lg:w-[250px]"
         />
+        <DataTableViewOptions table={table} />
         {table.getColumn("status") && (
           <DataTableFacetedFilter
             column={table.getColumn("status")}
@@ -55,11 +57,8 @@ export function DataTableToolbar<TData>({
             <Cross2Icon className="ml-2 h-4 w-4" />
           </Button>
         )}
-          <DataTableViewOptions table={table} />
       </div>
-        <Button className="h-[32px]">
-            <PlusCircle className="mr-2 h-4 w-4" /> Add Client
-        </Button>
+        <AddClient />
     </div>
   )
 }

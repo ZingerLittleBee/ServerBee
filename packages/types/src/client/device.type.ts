@@ -1,4 +1,4 @@
-import { FormatData } from './fusion.type'
+import { FormatData } from '../fusion.type'
 
 export type DiskDetail = {
     disk_type: string
