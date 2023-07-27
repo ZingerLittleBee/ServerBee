@@ -2,12 +2,13 @@ import {
   ArrowDownIcon,
   ArrowRightIcon,
   ArrowUpIcon,
-  CheckCircledIcon,
-  CircleIcon,
-  CrossCircledIcon,
-  QuestionMarkCircledIcon,
-  StopwatchIcon,
 } from "@radix-ui/react-icons"
+import {
+  MonitorCheck,
+  MonitorDot,
+  MonitorPauseIcon,
+  MonitorXIcon
+} from "lucide-react";
 
 export const labels = [
   {
@@ -26,29 +27,24 @@ export const labels = [
 
 export const statuses = [
   {
-    value: "backlog",
-    label: "Backlog",
-    icon: QuestionMarkCircledIcon,
+    value: "ACTIVE",
+    label: "Active",
+    icon: MonitorCheck,
   },
   {
-    value: "todo",
-    label: "Todo",
-    icon: CircleIcon,
+    value: "INACTIVE",
+    label: "Inactive",
+    icon: MonitorDot,
   },
   {
-    value: "in progress",
-    label: "In Progress",
-    icon: StopwatchIcon,
+    value: "DISABLED",
+    label: "Disabled",
+    icon: MonitorXIcon,
   },
   {
-    value: "done",
-    label: "Done",
-    icon: CheckCircledIcon,
-  },
-  {
-    value: "canceled",
-    label: "Canceled",
-    icon: CrossCircledIcon,
+    value: "UNKNOWN",
+    label: "Unknown",
+    icon: MonitorPauseIcon,
   },
 ]
 

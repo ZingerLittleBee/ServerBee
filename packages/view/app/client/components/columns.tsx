@@ -1,9 +1,11 @@
 "use client"
 
+import { formatTime } from "@/utils/time"
 import { ColumnDef } from "@tanstack/react-table"
 
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
+import { SoTooltip } from "@/app/client/components/so-tooltip"
 
 import { labels, priorities, statuses } from "../data/data"
 import { Task } from "../data/schema"
@@ -35,9 +37,13 @@ export const columns: ColumnDef<Task>[] = [
   {
     accessorKey: "id",
     header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Task" />
+      <DataTableColumnHeader column={column} title="ID" />
     ),
-    cell: ({ row }) => <div className="w-[80px]">{row.getValue("id")}</div>,
+    cell: ({ row }) => (
+      <SoTooltip content={row.getValue("id")}>
+        <div className="max-w-[100px] truncate">{row.getValue("id")}</div>
+      </SoTooltip>
+    ),
     enableSorting: false,
     enableHiding: false,
   },
@@ -52,9 +58,11 @@ export const columns: ColumnDef<Task>[] = [
       return (
         <div className="flex space-x-2">
           {label && <Badge variant="outline">{label.label}</Badge>}
-          <span className="max-w-[500px] truncate font-medium">
-            {row.getValue("title")}
-          </span>
+          <SoTooltip content={row.getValue("title")}>
+            <span className="max-w-[500px] truncate font-medium">
+              {row.getValue("title")}
+            </span>
+          </SoTooltip>
         </div>
       )
     },
@@ -112,6 +120,19 @@ export const columns: ColumnDef<Task>[] = [
     filterFn: (row, id, value) => {
       return value.includes(row.getValue(id))
     },
+  },
+  {
+    accessorKey: "lct",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title="Last Communication" />
+    ),
+    cell: ({ row }) => {
+      return formatTime(row.getValue("lct"))
+    },
+    filterFn: (row, id, value) => {
+      return value.includes(row.getValue(id))
+    },
+    sortingFn: "datetime",
   },
   {
     id: "actions",

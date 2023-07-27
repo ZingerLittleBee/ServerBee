@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 
 import { columns } from "./components/columns"
 import { DataTable } from "./components/data-table"
-import { taskSchema } from "./data/schema"
+import { clientSchema } from "./data/schema"
 
 export const metadata: Metadata = {
   title: "Client",
@@ -23,7 +23,7 @@ async function getTasks() {
 
   const tasks = JSON.parse(data.toString())
 
-  return z.array(taskSchema).parse(tasks)
+  return z.array(clientSchema).parse(tasks)
 }
 
 export default async function TaskPage() {
