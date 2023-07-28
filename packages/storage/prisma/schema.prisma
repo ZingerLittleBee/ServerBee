@@ -2,139 +2,139 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-    provider = "prisma-client-js"
-    // https://github.com/prisma/prisma/issues/2584
-    // output   = "../node_modules/.prisma/client"
+  provider = "prisma-client-js"
+  // https://github.com/prisma/prisma/issues/2584
+  // output   = "../node_modules/.prisma/client"
 }
 
 datasource db {
-    provider = "postgresql"
-    url      = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
-    id         Int      @id @default(autoincrement())
-    user_id    String   @unique @default(cuid())
-    created_at DateTime @default(now())
-    updated_at DateTime @updatedAt
-    email      String   @unique
-    username   String   @unique
-    password   String
-    profile    Profile?
-    role       Role     @default(USER)
-    clients    Client[]
-    devices    Ud[]
+  id         Int      @id @default(autoincrement())
+  user_id    String   @unique @default(cuid())
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  email      String   @unique
+  username   String   @unique
+  password   String
+  profile    Profile?
+  role       Role     @default(USER)
+  clients    Client[]
+  devices    Ud[]
 }
 
 // User Device
 model Ud {
-    id         Int      @id @default(autoincrement())
-    ud_id      String   @unique @default(cuid())
-    created_at DateTime @default(now())
-    updated_at DateTime @updatedAt
-    last_seen  DateTime @updatedAt
-    name       String
-    os         String?
-    app        String?
-    ip         String?
-    location   String?
-    type       Type     @default(UNKNOWN)
-    status     Status   @default(ACTIVE)
-    user       User     @relation(fields: [user_id], references: [user_id])
-    user_id    String
+  id         Int      @id @default(autoincrement())
+  ud_id      String   @unique @default(cuid())
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  last_seen  DateTime @updatedAt
+  name       String
+  os         String?
+  app        String?
+  ip         String?
+  location   String?
+  type       Type     @default(UNKNOWN)
+  status     Status   @default(ACTIVE)
+  user       User     @relation(fields: [user_id], references: [user_id])
+  user_id    String
 }
 
 model Profile {
-    id          Int      @id @default(autoincrement())
-    updated_at  DateTime @updatedAt
-    name        String
-    avatar      String?
-    description String?
-    user        User     @relation(fields: [user_id], references: [user_id])
-    user_id     String   @unique
+  id          Int      @id @default(autoincrement())
+  updated_at  DateTime @updatedAt
+  name        String
+  avatar      String?
+  description String?
+  user        User     @relation(fields: [user_id], references: [user_id])
+  user_id     String   @unique
 }
 
 model Client {
-    id         Int       @id @default(autoincrement())
-    client_id  String    @unique @default(cuid())
-    name       String
-    created_at DateTime  @default(now())
-    updated_at DateTime  @updatedAt
-    status     Status    @default(INACTIVE)
-    device     Device?
-    user       User?     @relation(fields: [user_id], references: [user_id])
-    user_id    String?
-    disk       Disk[]
-    network    Network[]
+  id         Int       @id @default(autoincrement())
+  client_id  String    @unique @default(cuid())
+  name       String
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  status     Status    @default(INACTIVE)
+  device     Device?
+  user       User?     @relation(fields: [user_id], references: [user_id])
+  user_id    String?
+  disk       Disk[]
+  network    Network[]
 }
 
 // Client Device
 model Device {
-    id         Int       @id @default(autoincrement())
-    name       String?
-    hostname   String?
-    kernel     String?
-    cpu_num    Int?
-    brand      String?
-    frequency  String?
-    vendor     String?
-    memory     String?
-    swap       String?
-    version    String?
-    disk       Disk[]
-    network    Network[]
-    created_at DateTime  @default(now())
-    updated_at DateTime  @updatedAt
-    client     Client    @relation(fields: [client_id], references: [client_id])
-    client_id  String    @unique
+  id         Int       @id @default(autoincrement())
+  name       String?
+  hostname   String?
+  kernel     String?
+  cpu_num    Int?
+  brand      String?
+  frequency  String?
+  vendor     String?
+  memory     String?
+  swap       String?
+  version    String?
+  disk       Disk[]
+  network    Network[]
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  client     Client    @relation(fields: [client_id], references: [client_id])
+  client_id  String    @unique
 }
 
 model Disk {
-    id          Int      @id @default(autoincrement())
-    device      Device   @relation(fields: [device_id], references: [id])
-    device_id   Int
-    client      Client?  @relation(fields: [client_id], references: [client_id])
-    client_id   String?
-    name        String?
-    type        String?
-    total       String?
-    available   String?
-    file_system String?
-    removeable  Boolean?
-    created_at  DateTime @default(now())
-    updated_at  DateTime @updatedAt
+  id          Int      @id @default(autoincrement())
+  device      Device   @relation(fields: [device_id], references: [id])
+  device_id   Int
+  client      Client?  @relation(fields: [client_id], references: [client_id])
+  client_id   String?
+  name        String?
+  type        String?
+  total       String?
+  available   String?
+  file_system String?
+  removeable  Boolean?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
 }
 
 model Network {
-    id         Int      @id @default(autoincrement())
-    device     Device   @relation(fields: [device_id], references: [id])
-    device_id  Int
-    client     Client?  @relation(fields: [client_id], references: [client_id])
-    client_id  String?
-    name       String?
-    mac        String?
-    rx         String?
-    tx         String?
-    created_at DateTime @default(now())
-    updated_at DateTime @updatedAt
+  id         Int      @id @default(autoincrement())
+  device     Device   @relation(fields: [device_id], references: [id])
+  device_id  Int
+  client     Client?  @relation(fields: [client_id], references: [client_id])
+  client_id  String?
+  name       String?
+  mac        String?
+  rx         String?
+  tx         String?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 }
 
 enum Role {
-    USER
-    ADMIN
+  USER
+  ADMIN
 }
 
 enum Status {
-    ACTIVE
-    INACTIVE
-    DISABLED
-    TO_BE_CONFIRMED
+  ACTIVE
+  INACTIVE
+  DISABLED
+  UNKNOW
 }
 
 enum Type {
-    UNKNOWN
-    DESKTOP
-    TABLET
-    MOBILE
-    CLIENT
+  UNKNOWN
+  DESKTOP
+  TABLET
+  MOBILE
+  CLIENT
 }

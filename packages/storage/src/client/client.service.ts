@@ -16,7 +16,7 @@ export class ClientService {
         return this.prismaService.client.create({
             data: {
                 name: name,
-                status: StatusEnum.TO_BE_CONFIRMED,
+                status: StatusEnum.UNKNOW,
                 user_id: userId
             }
         })

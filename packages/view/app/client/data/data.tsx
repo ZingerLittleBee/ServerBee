@@ -30,21 +30,25 @@ export const statuses = [
     value: "ACTIVE",
     label: "Active",
     icon: MonitorCheck,
+    color: "text-blue-500 dark:text-blue-300",
   },
   {
     value: "INACTIVE",
     label: "Inactive",
     icon: MonitorDot,
+    color: "text-orange-400 dark:text-orange-200"
   },
   {
     value: "DISABLED",
     label: "Disabled",
     icon: MonitorXIcon,
+    color: "text-rose-400 dark:text-rose-300",
   },
   {
     value: "UNKNOWN",
     label: "Unknown",
     icon: MonitorPauseIcon,
+    color: "text-muted-foreground",
   },
 ]
 

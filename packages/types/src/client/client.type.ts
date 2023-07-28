@@ -7,7 +7,7 @@ export enum ClientStatus {
     ACTIVE = 'ACTIVE',
     INACTIVE = 'INACTIVE',
     DISABLED = 'DISABLED',
-    TO_BE_CONFIRMED = 'TO_BE_CONFIRMED'
+    UNKNOW = 'UNKNOW'
 }
 
 export type CreateClientResult = Result<ClientVo>
