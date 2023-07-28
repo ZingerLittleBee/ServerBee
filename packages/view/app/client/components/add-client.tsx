@@ -29,13 +29,18 @@ import {
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/components/ui/use-toast"
 import { Icons } from "@/components/icons"
-import { ClientDialog } from "@/app/client/components/client-dialog"
+import {
+  ClientDialog,
+  cctTemplate,
+} from "@/app/client/components/client-dialog"
+import { useClientStore } from "@/app/client/store"
+import { kOpenAlertDialog } from "@/app/client/store/dialog"
 
 export function AddClient() {
   const { toast } = useToast()
   const [isOpen, setIsOpen] = useState<boolean>(false)
   const [isLoading, setIsLoading] = useState<boolean>(false)
-  const [isClientDialogOpen, setIsClientDialogOpen] = useState<boolean>(false)
+  const { dialogDispatch } = useClientStore()
 
   const formSchema = z.object({
     name: z.string().nonempty({ message: "Not Empty" }).trim(),
@@ -71,7 +76,10 @@ export function AddClient() {
     console.log("clientVo", clientVo)
     setIsLoading(false)
     setIsOpen(false)
-    setIsClientDialogOpen(true)
+    dialogDispatch({
+      type: kOpenAlertDialog,
+      payload: cctTemplate(clientVo?.clientId ?? ""),
+    })
   }
 
   return (
@@ -128,10 +136,7 @@ export function AddClient() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <ClientDialog
-        isOpen={isClientDialogOpen}
-        setIsOpen={setIsClientDialogOpen}
-      />
+      <ClientDialog />
     </>
   )
 }

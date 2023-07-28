@@ -17,6 +17,9 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { cctTemplate } from "@/app/client/components/client-dialog"
+import { useClientStore } from "@/app/client/store"
+import { kOpenAlertDialog } from "@/app/client/store/dialog"
 
 import { labels } from "../data/data"
 import { clientSchema } from "../data/schema"
@@ -29,6 +32,7 @@ export function DataTableRowActions<TData>({
   row,
 }: DataTableRowActionsProps<TData>) {
   const client = clientSchema.parse(row.original)
+  const { dialogDispatch } = useClientStore()
 
   return (
     <DropdownMenu>
@@ -44,6 +48,16 @@ export function DataTableRowActions<TData>({
       <DropdownMenuContent align="end" className="w-[160px]">
         <DropdownMenuItem>Edit</DropdownMenuItem>
         <DropdownMenuItem>Make a copy</DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() =>
+            dialogDispatch({
+              type: kOpenAlertDialog,
+              payload: cctTemplate(row.getValue("id")),
+            })
+          }
+        >
+          Token
+        </DropdownMenuItem>
         <DropdownMenuItem>Favorite</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuSub>

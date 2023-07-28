@@ -1,6 +1,6 @@
 import { Metadata } from "next"
 
-import { Separator } from "@/components/ui/separator"
+import { ClientStateProvider } from "@/app/client/store"
 
 export const metadata: Metadata = {
   title: "Client",
@@ -14,7 +14,7 @@ interface ClientLayoutProps {
 export default function ClientLayout({ children }: ClientLayoutProps) {
   return (
     <section className="container grid items-center gap-6">
-      {children}
+      <ClientStateProvider>{children}</ClientStateProvider>
     </section>
   )
 }
