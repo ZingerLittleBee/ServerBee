@@ -4,8 +4,8 @@ import {
     Injectable,
     UnauthorizedException
 } from '@nestjs/common'
-import { extractAccessTokenFromHeader } from '../auth.util'
 import { AuthService } from '../auth.service'
+import { extractAccessTokenFromCookie } from '@server-octopus/shared'
 
 @Injectable()
 export class StatusGuard implements CanActivate {
@@ -13,7 +13,7 @@ export class StatusGuard implements CanActivate {
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const request = context.switchToHttp().getRequest()
-        const accessToken = extractAccessTokenFromHeader(request)
+        const accessToken = extractAccessTokenFromCookie(request)
         if (!accessToken) {
             throw new UnauthorizedException('Access Token Not Found')
         }

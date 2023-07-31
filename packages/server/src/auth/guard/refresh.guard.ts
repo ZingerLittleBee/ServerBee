@@ -4,9 +4,11 @@ import {
     Injectable,
     UnauthorizedException
 } from '@nestjs/common'
-import { extractRefreshTokenFromHeader } from '../auth.util'
-import { kAccessToken } from '../auth.const'
 import { AuthService } from '../auth.service'
+import {
+    extractRefreshTokenFromCookie,
+    kAccessToken
+} from '@server-octopus/shared'
 
 @Injectable()
 export class RefreshGuard implements CanActivate {
@@ -14,7 +16,7 @@ export class RefreshGuard implements CanActivate {
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const request = context.switchToHttp().getRequest()
-        const refreshToken = extractRefreshTokenFromHeader(request)
+        const refreshToken = extractRefreshTokenFromCookie(request)
         if (!refreshToken) {
             throw new UnauthorizedException('Refresh Token Not Found')
         }

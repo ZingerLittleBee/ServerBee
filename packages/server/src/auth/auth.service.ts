@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common'
 import { ClientProxy } from '@nestjs/microservices'
 import {
+    defaultAccessExpiration,
+    defaultRefreshExpiration,
     kAuthService,
     kStorageService,
     kUserAccessTokenValid,
@@ -36,7 +38,6 @@ import {
 } from '@server-octopus/types'
 import { firstValueFrom } from 'rxjs'
 import { inspect } from 'util'
-import { defaultAccessExpiration, defaultRefreshExpiration } from './auth.const'
 
 @Injectable()
 export class AuthService {

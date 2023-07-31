@@ -7,10 +7,13 @@ import {
     UnauthorizedException
 } from '@nestjs/common'
 import { ClientProxy } from '@nestjs/microservices'
-import { kAuthService, kUserTokenVerify } from '@server-octopus/shared'
+import {
+    extractAccessTokenFromCookie,
+    kAuthService,
+    kUserTokenVerify
+} from '@server-octopus/shared'
 import { firstValueFrom } from 'rxjs'
 import { UserVerifyParam, UserVerifyResult } from '@server-octopus/types'
-import { extractAccessTokenFromHeader } from '../auth.util'
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -20,7 +23,7 @@ export class AuthGuard implements CanActivate {
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const request = context.switchToHttp().getRequest()
-        const token = extractAccessTokenFromHeader(request)
+        const token = extractAccessTokenFromCookie(request)
         if (!token) {
             throw new UnauthorizedException()
         }

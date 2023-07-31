@@ -19,6 +19,7 @@ import {
 import { ResultUtil } from '@server-octopus/shared'
 import { VerifyTokenGuard } from '@/guard/verify.guard'
 import { convertFormatDataToString } from '@/util'
+import { ExtraGuard } from '@/guard/extra.guard'
 
 @Controller('client')
 export class ClientController {
@@ -53,9 +54,11 @@ export class ClientController {
         return ResultUtil.ok()
     }
 
+    @UseGuards(ExtraGuard)
     @Post()
     async create(@Body() client: CreateClientDto): Promise<Result<ClientVo>> {
         try {
+            // TODO sign token
             return ResultUtil.ok(await this.clientService.create(client))
         } catch (e) {
             this.logger.error(`create client: ${client}, error: ${e.message}`)

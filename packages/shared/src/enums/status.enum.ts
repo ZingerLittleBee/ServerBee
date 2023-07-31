@@ -2,5 +2,5 @@ export enum StatusEnum {
     ACTIVE = 'ACTIVE',
     INACTIVE = 'INACTIVE',
     DISABLED = 'DISABLED',
-    UNKNOW = 'UNKNOW'
+    UNKNOWN = 'UNKNOWN'
 }

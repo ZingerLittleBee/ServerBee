@@ -7,7 +7,7 @@ export enum ClientStatus {
     ACTIVE = 'ACTIVE',
     INACTIVE = 'INACTIVE',
     DISABLED = 'DISABLED',
-    UNKNOW = 'UNKNOW'
+    UNKNOWN = 'UNKNOWN'
 }
 
 export type CreateClientResult = Result<ClientVo>
@@ -19,6 +19,8 @@ export type ClientVo = {
     lastCommunication: Date
     device?: DeviceVo
 }
+
+export type CreateClientVo = ClientVo & { token: string }
 
 type CreateClientDto = {
     name: string

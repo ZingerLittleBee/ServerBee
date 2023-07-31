@@ -9,14 +9,17 @@ import {
     Res,
     UseGuards
 } from '@nestjs/common'
-import { ResultUtil } from '@server-octopus/shared'
+import {
+    kCookieAccessToken,
+    kCookieRefreshToken,
+    ResultUtil
+} from '@server-octopus/shared'
 import {
     UserDevice,
     UserLoginDto,
     UserRegisterDto
 } from '@server-octopus/types'
 import { Response } from 'express'
-import { kCookieAccessToken, kCookieRefreshToken } from './auth.const'
 import { AuthService } from './auth.service'
 import { RefreshGuard } from './guard/refresh.guard'
 import { StatusGuard } from './guard/status.guard'
