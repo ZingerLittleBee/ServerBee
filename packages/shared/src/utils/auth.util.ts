@@ -1,6 +1,8 @@
 import { Request } from 'express'
-import { kAccessToken, kRefreshToken } from '@/const/auth.const'
+import { kAccessToken, kRefreshToken } from '../const/auth.const'
 
+// cookie under cookie-parser
+// https://docs.nestjs.com/techniques/cookies#use-with-express-default
 const extractAccessTokenFromCookie = (request: Request): string | undefined => {
     return request.cookies[kAccessToken]
 }

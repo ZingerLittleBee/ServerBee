@@ -31,7 +31,6 @@
         "@nestjs/schedule": "^3.0.1",
         "@nestjs/swagger": "^7.1.2",
         "@nestjs/websockets": "^10.0.3",
-        "@server-octopus/storage": "workspace:*",
         "cookie-parser": "^1.4.6",
         "express": "^4.18.2",
         "geoip-lite": "^1.4.7",

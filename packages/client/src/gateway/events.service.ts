@@ -28,7 +28,7 @@ export class EventsService {
                 token
             })
         )
-        if (!success || !data.clientId) {
+        if (!success || !data?.clientId) {
             throw new UnauthorizedException(message)
         }
         return data.clientId

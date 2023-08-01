@@ -30,7 +30,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config'
                 ClientProxyFactory.create({
                     transport: Transport.NATS,
                     options: {
-                        servers: [configService.get<string>(kNatsServer)]
+                        servers: configService.get<string>(kNatsServer)
                     }
                 })
         },
@@ -41,7 +41,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config'
                 ClientProxyFactory.create({
                     transport: Transport.NATS,
                     options: {
-                        servers: [configService.get<string>(kNatsServer)]
+                        servers: configService.get<string>(kNatsServer)
                     }
                 })
         }

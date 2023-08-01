@@ -12,6 +12,7 @@ import {
 } from '@server-octopus/shared'
 import { ClientProxy } from '@nestjs/microservices'
 import {
+    ClientPayload,
     CreateClientDto,
     CreateClientResult,
     FusionDto,
@@ -93,6 +94,25 @@ export class ClientService {
         if (!success) {
             this.logger.error(
                 `create client: ${inspect(client)} error, message: ${message}`
+            )
+            throw new Error(message)
+        }
+        return data
+    }
+
+    async signToken(userId: string, clientId: string): Promise<string> {
+        const { success, message, data } = await firstValueFrom(
+            this.authClient.send<Result<string>, ClientPayload>(
+                kClientTokenSign,
+                { userId, clientId }
+            )
+        )
+        if (!success || !data) {
+            this.logger.error(
+                `sign token: ${inspect({
+                    userId,
+                    clientId
+                })} error, message: ${message}`
             )
             throw new Error(message)
         }

@@ -6,10 +6,13 @@ import {
     Logger
 } from '@nestjs/common'
 import { firstValueFrom } from 'rxjs'
-import { kAuthService, kClientTokenVerify } from '@server-octopus/shared'
+import {
+    extractAccessToken,
+    kAuthService,
+    kClientTokenVerify
+} from '@server-octopus/shared'
 import { ClientProxy } from '@nestjs/microservices'
 import { ClientPayload, Result } from '@server-octopus/types'
-import { extractAccessToken } from '../../../shared/src/utils/auth.util'
 
 @Injectable()
 export class ExtraGuard implements CanActivate {

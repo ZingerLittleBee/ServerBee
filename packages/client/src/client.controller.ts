@@ -11,10 +11,11 @@ import {
 import { ClientService } from './client.service'
 import { ClientRegisterGuard } from '@/guard/register.guard'
 import {
-    ClientVo,
     CreateClientDto,
+    CreateClientVo,
     CreateDevice,
-    Result
+    Result,
+    TokenPayload
 } from '@server-octopus/types'
 import { ResultUtil } from '@server-octopus/shared'
 import { VerifyTokenGuard } from '@/guard/verify.guard'
@@ -56,10 +57,22 @@ export class ClientController {
 
     @UseGuards(ExtraGuard)
     @Post()
-    async create(@Body() client: CreateClientDto): Promise<Result<ClientVo>> {
+    async create(
+        @Request() req: Request & TokenPayload,
+        @Body() client: CreateClientDto
+    ): Promise<Result<CreateClientVo>> {
         try {
-            // TODO sign token
-            return ResultUtil.ok(await this.clientService.create(client))
+            const clientVo = await this.clientService.create(client)
+            if (!clientVo?.clientId)
+                return ResultUtil.error('create client error')
+            const token = await this.clientService.signToken(
+                req.userId,
+                clientVo?.clientId
+            )
+            return ResultUtil.ok({
+                ...clientVo,
+                token
+            } as CreateClientVo)
         } catch (e) {
             this.logger.error(`create client: ${client}, error: ${e.message}`)
             return ResultUtil.error(e.message)

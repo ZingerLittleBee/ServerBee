@@ -7,6 +7,7 @@ import {
     UnauthorizedException
 } from '@nestjs/common'
 import {
+    extractAccessToken,
     kAuthService,
     kClientTokenVerify,
     kStorageService
@@ -14,7 +15,6 @@ import {
 import { ClientProxy } from '@nestjs/microservices'
 import { firstValueFrom } from 'rxjs'
 import { ClientPayload, Result } from '@server-octopus/types'
-import { extractAccessToken } from '../../../shared/src/utils/auth.util'
 
 @Injectable()
 export class ClientDataGuard implements CanActivate {
@@ -38,7 +38,7 @@ export class ClientDataGuard implements CanActivate {
                     token
                 })
             )
-            if (!success || !data.clientId) {
+            if (!success || !data?.clientId) {
                 this.logger.error(
                     `Token: ${token} verify failed error: ${message}`
                 )
