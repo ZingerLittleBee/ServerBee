@@ -2,8 +2,13 @@
   "name": "server-octopus",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "pnpm@8.6.11",
   "description": "",
   "keywords": [],
   "author": "",
-  "license": "AGPLv3"
+  "license": "AGPLv3",
+  "devDependencies": {
+    "nx": "16.6.0",
+    "nx-cloud": "latest"
+  }
 }
