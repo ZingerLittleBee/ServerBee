@@ -3,6 +3,7 @@
     "version": "1.0.0",
     "description": "",
     "author": "",
+    "bin": "dist/main.js",
     "private": true,
     "license": "AGPLv3",
     "scripts": {
@@ -18,7 +19,8 @@
         "test:watch": "jest --watch",
         "test:cov": "jest --coverage",
         "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-        "test:e2e": "jest --config ./apps/serveroctopus-app/test/jest-e2e.json"
+        "test:e2e": "jest --config ./apps/serveroctopus-app/test/jest-e2e.json",
+        "build:pkg": "pkg -t node16-linux-x64 -o ../../pkg/server-octopus ."
     },
     "dependencies": {
         "@nestjs/common": "^10.0.2",
@@ -63,6 +65,7 @@
         "eslint-config-prettier": "^8.3.0",
         "eslint-plugin-prettier": "^4.0.0",
         "jest": "28.1.2",
+        "pkg": "^5.8.1",
         "prettier": "^2.3.2",
         "source-map-support": "^0.5.20",
         "supertest": "^6.1.3",

@@ -2,11 +2,17 @@
   "name": "server-octopus",
   "version": "1.0.0",
   "private": true,
-  "packageManager": "pnpm@8.6.11",
   "description": "",
   "keywords": [],
   "author": "",
   "license": "AGPLv3",
+  "scripts": {
+    "preinstall": "npx only-allow pnpm",
+    "install:server": "pnpm install --ignore-scripts --frozen-lockfile --filter server",
+    "build:view": "nx build @server-octopus/view --prod",
+    "build:server": "nx build @server-octopus/server --prod && nx run @server-octopus/server:build:pkg",
+    "build:client": "nx build @server-octopus/client --prod && nx run @server-octopus/client:build:pkg"
+  },
   "devDependencies": {
     "nx": "16.6.0",
     "nx-cloud": "latest"

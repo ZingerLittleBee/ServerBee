@@ -1,0 +1,14 @@
+[phases.setup]
+nixPkgs = ['nodejs', 'pnpm-8_x', 'python311']
+aptPkgs = ['build-essential']
+
+[phases.install]
+cmds = ['pnpm install:server']
+
+[phases.build]
+cmds = ['pnpm build:server']
+
+[start]
+runImage  =  'debian:bullseye-slim'
+onlyIncludeFiles  =  [ './pkg/server-octopus' ]
+cmd = './server-octopus'
