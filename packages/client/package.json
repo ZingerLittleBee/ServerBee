@@ -32,7 +32,8 @@
         "@server-octopus/shared": "workspace:*",
         "cookie-parser": "^1.4.6",
         "reflect-metadata": "^0.1.13",
-        "rxjs": "^7.8.1"
+        "rxjs": "^7.8.1",
+        "ws": "^8.13.0"
     },
     "devDependencies": {
         "@nestjs/cli": "^10.0.0",
