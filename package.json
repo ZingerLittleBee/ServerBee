@@ -7,11 +7,14 @@
   "author": "",
   "license": "AGPLv3",
   "scripts": {
+    "clean": "node ./scripts/clean.js",
     "preinstall": "npx only-allow pnpm",
-    "install:server": "pnpm install --ignore-scripts --frozen-lockfile --filter server",
+    "install:infra": "pnpm install --ignore-scripts --frozen-lockfile --filter shared --filter types",
+    "install:server": "pnpm install:infra && pnpm install --ignore-scripts --frozen-lockfile --filter server",
+    "build:infra": "pnpm --filter shared --filter types build",
     "build:view": "nx build @server-octopus/view --prod",
-    "build:server": "nx build @server-octopus/server --prod && nx run @server-octopus/server:build:pkg",
-    "build:client": "nx build @server-octopus/client --prod && nx run @server-octopus/client:build:pkg"
+    "build:server": "pnpm build:infra && nx build @server-octopus/server --prod && nx run @server-octopus/server:build:pkg",
+    "build:client": "pnpm build:infra && nx build @server-octopus/client --prod && nx run @server-octopus/client:build:pkg"
   },
   "devDependencies": {
     "nx": "16.6.0",

@@ -49,3 +49,6 @@ packages/app/dist
 
 # NextJS
 .next
+
+# PKG
+pkg/**
