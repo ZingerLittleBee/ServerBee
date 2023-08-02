@@ -9,12 +9,12 @@
   "scripts": {
     "clean": "node ./scripts/clean.js",
     "preinstall": "npx only-allow pnpm",
-    "install:infra": "pnpm install --ignore-scripts --frozen-lockfile --filter shared --filter types",
-    "install:server": "pnpm install:infra && pnpm install --ignore-scripts --frozen-lockfile --filter server",
     "build:infra": "pnpm --filter shared --filter types build",
     "build:view": "nx build @server-octopus/view --prod",
     "build:server": "pnpm build:infra && nx build @server-octopus/server --prod && nx run @server-octopus/server:build:pkg",
-    "build:client": "pnpm build:infra && nx build @server-octopus/client --prod && nx run @server-octopus/client:build:pkg"
+    "build:client": "pnpm build:infra && nx build @server-octopus/client --prod && nx run @server-octopus/client:build:pkg",
+    "build:auth": "pnpm build:infra && nx build @server-octopus/auth --prod && nx run @server-octopus/auth:build:pkg",
+    "build:storage": "pnpm build:infra && nx build @server-octopus/storage --prod && nx run @server-octopus/storage:build:pkg"
   },
   "devDependencies": {
     "nx": "16.6.0",

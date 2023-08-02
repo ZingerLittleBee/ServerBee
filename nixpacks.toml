@@ -3,12 +3,12 @@ nixPkgs = ['nodejs', 'pnpm-8_x', 'python311']
 aptPkgs = ['build-essential']
 
 [phases.install]
-cmds = ['pnpm install:server']
+cmds = ['pnpm install --ignore-scripts --frozen-lockfile']
 
 [phases.build]
-cmds = ['pnpm build:server']
+cmds = ['pnpm build:auth']
 
 [start]
 runImage  =  'debian:bullseye-slim'
 onlyIncludeFiles  =  [ './pkg/server-octopus' ]
-cmd = './server-octopus'
+cmd = './pkg/server-octopus'
