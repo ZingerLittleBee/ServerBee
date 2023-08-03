@@ -6,7 +6,7 @@ aptPkgs = ['build-essential']
 cmds = ['pnpm install --ignore-scripts --frozen-lockfile']
 
 [phases.build]
-cmds = ['pnpm build:auth']
+cmds = ['pnpm build:storage']
 
 [start]
 runImage  =  'debian:bullseye-slim'
