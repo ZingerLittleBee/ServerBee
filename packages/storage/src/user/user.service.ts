@@ -51,9 +51,9 @@ export class UserService {
         if (data.userId) findUser.user_id = data.userId
         if (data.username) findUser.username = data.username
         if (data.email) findUser.email = data.email
-        const user = await this.prismaService.user.findUnique({
+        const user = await this.prismaService.user.findFirst({
             where: {
-                ...data
+                ...findUser
             }
         })
         return {
@@ -67,7 +67,7 @@ export class UserService {
         const whereClause: Omit<VerifyUserParam, 'password'> = {}
         if (data.email) whereClause.email = data.email
         if (data.username) whereClause.username = data.username
-        const user = await this.prismaService.user.findUnique({
+        const user = await this.prismaService.user.findFirst({
             where: {
                 ...whereClause
             }
