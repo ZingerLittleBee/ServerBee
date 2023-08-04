@@ -1,102 +1,102 @@
 {
-    "name": "@server-octopus/server",
-    "version": "1.0.0",
-    "description": "",
-    "author": "ZingerLittleBee",
-    "bin": "dist/main.js",
-    "private": true,
-    "license": "AGPLv3",
-    "scripts": {
-        "prebuild": "rimraf dist",
-        "build": "nest build",
-        "format": "prettier --write \"apps/**/*.ts\" \"libs/**/*.ts\"",
-        "start": "nest start",
-        "dev": "nest start --watch",
-        "start:debug": "nest start --debug --watch",
-        "start:prod": "node dist/apps/serveroctopus-app/main",
-        "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
-        "test": "jest",
-        "test:watch": "jest --watch",
-        "test:cov": "jest --coverage",
-        "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-        "test:e2e": "jest --config ./apps/serveroctopus-app/test/jest-e2e.json",
-        "build:pkg": "pkg -t node16-linux-x64 -o ../../pkg/server-octopus ."
+  "name": "@server-octopus/server",
+  "version": "1.0.0",
+  "description": "",
+  "author": "ZingerLittleBee",
+  "bin": "dist/main.js",
+  "private": true,
+  "license": "AGPLv3",
+  "scripts": {
+    "prebuild": "rimraf dist",
+    "build": "nest build",
+    "format": "prettier --write \"apps/**/*.ts\" \"libs/**/*.ts\"",
+    "start": "nest start",
+    "dev": "nest start --watch",
+    "start:debug": "nest start --debug --watch",
+    "start:prod": "node dist/apps/serveroctopus-app/main",
+    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage",
+    "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
+    "test:e2e": "jest --config ./apps/serveroctopus-app/test/jest-e2e.json",
+    "build:pkg": "pkg -t node16-linux-x64 -o ../../pkg/server-octopus ."
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.0.2",
+    "@nestjs/config": "^3.0.0",
+    "@nestjs/core": "^10.0.2",
+    "@nestjs/mapped-types": "^2.0.0",
+    "@nestjs/microservices": "^10.0.5",
+    "@nestjs/platform-express": "^10.0.2",
+    "@nestjs/platform-ws": "^10.0.4",
+    "@nestjs/schedule": "^3.0.1",
+    "@nestjs/swagger": "^7.1.2",
+    "@nestjs/websockets": "^10.0.3",
+    "cookie-parser": "^1.4.6",
+    "express": "^4.18.2",
+    "geoip-lite": "^1.4.7",
+    "helmet": "^7.0.0",
+    "nats": "^2.15.1",
+    "reflect-metadata": "^0.1.13",
+    "rimraf": "^3.0.2",
+    "rxjs": "^7.2.0",
+    "ua-parser-js": "^1.0.35",
+    "ws": "^8.13.0"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.0.3",
+    "@nestjs/schematics": "^10.0.1",
+    "@nestjs/testing": "^10.0.2",
+    "@server-octopus/shared": "workspace:*",
+    "@server-octopus/types": "workspace:*",
+    "@types/cookie-parser": "^1.4.3",
+    "@types/cron": "^2.0.1",
+    "@types/express": "^4.17.13",
+    "@types/geoip-lite": "^1.4.1",
+    "@types/jest": "28.1.4",
+    "@types/node": "^16.0.0",
+    "@types/supertest": "^2.0.11",
+    "@types/ua-parser-js": "^0.7.36",
+    "@typescript-eslint/eslint-plugin": "^5.0.0",
+    "@typescript-eslint/parser": "^5.0.0",
+    "eslint": "^8.0.1",
+    "eslint-config-prettier": "^8.3.0",
+    "eslint-plugin-prettier": "^4.0.0",
+    "jest": "28.1.2",
+    "pkg": "^5.8.1",
+    "prettier": "^2.3.2",
+    "source-map-support": "^0.5.20",
+    "supertest": "^6.1.3",
+    "ts-jest": "28.0.5",
+    "ts-loader": "^9.2.3",
+    "ts-node": "^10.0.0",
+    "tsconfig-paths": "4.0.0",
+    "typescript": "^4.3.5"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": ".",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
     },
-    "dependencies": {
-        "@nestjs/common": "^10.0.2",
-        "@nestjs/config": "^3.0.0",
-        "@nestjs/core": "^10.0.2",
-        "@nestjs/mapped-types": "^2.0.0",
-        "@nestjs/microservices": "^10.0.5",
-        "@nestjs/platform-express": "^10.0.2",
-        "@nestjs/platform-ws": "^10.0.4",
-        "@nestjs/schedule": "^3.0.1",
-        "@nestjs/swagger": "^7.1.2",
-        "@nestjs/websockets": "^10.0.3",
-        "cookie-parser": "^1.4.6",
-        "express": "^4.18.2",
-        "geoip-lite": "^1.4.7",
-        "helmet": "^7.0.0",
-        "nats": "^2.15.1",
-        "reflect-metadata": "^0.1.13",
-        "rimraf": "^3.0.2",
-        "rxjs": "^7.2.0",
-        "ua-parser-js": "^1.0.35",
-        "ws": "^8.13.0"
+    "collectCoverageFrom": [
+      "**/*.(t|j)s"
+    ],
+    "coverageDirectory": "./coverage",
+    "testEnvironment": "node",
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/../src/$1",
+      "^@app/shared(|/.*)$": "<rootDir>/libs/shared/src/$1"
     },
-    "devDependencies": {
-        "@nestjs/cli": "^10.0.3",
-        "@nestjs/schematics": "^10.0.1",
-        "@nestjs/testing": "^10.0.2",
-        "@server-octopus/shared": "workspace:*",
-        "@server-octopus/types": "workspace:*",
-        "@types/cookie-parser": "^1.4.3",
-        "@types/cron": "^2.0.1",
-        "@types/express": "^4.17.13",
-        "@types/geoip-lite": "^1.4.1",
-        "@types/jest": "28.1.4",
-        "@types/node": "^16.0.0",
-        "@types/supertest": "^2.0.11",
-        "@types/ua-parser-js": "^0.7.36",
-        "@typescript-eslint/eslint-plugin": "^5.0.0",
-        "@typescript-eslint/parser": "^5.0.0",
-        "eslint": "^8.0.1",
-        "eslint-config-prettier": "^8.3.0",
-        "eslint-plugin-prettier": "^4.0.0",
-        "jest": "28.1.2",
-        "pkg": "^5.8.1",
-        "prettier": "^2.3.2",
-        "source-map-support": "^0.5.20",
-        "supertest": "^6.1.3",
-        "ts-jest": "28.0.5",
-        "ts-loader": "^9.2.3",
-        "ts-node": "^10.0.0",
-        "tsconfig-paths": "4.0.0",
-        "typescript": "^4.3.5"
-    },
-    "jest": {
-        "moduleFileExtensions": [
-            "js",
-            "json",
-            "ts"
-        ],
-        "rootDir": ".",
-        "testRegex": ".*\\.spec\\.ts$",
-        "transform": {
-            "^.+\\.(t|j)s$": "ts-jest"
-        },
-        "collectCoverageFrom": [
-            "**/*.(t|j)s"
-        ],
-        "coverageDirectory": "./coverage",
-        "testEnvironment": "node",
-        "moduleNameMapper": {
-            "^@/(.*)$": "<rootDir>/../src/$1",
-            "^@app/shared(|/.*)$": "<rootDir>/libs/shared/src/$1"
-        },
-        "roots": [
-            "<rootDir>/apps/",
-            "<rootDir>/libs/"
-        ]
-    }
+    "roots": [
+      "<rootDir>/apps/",
+      "<rootDir>/libs/"
+    ]
+  }
 }
