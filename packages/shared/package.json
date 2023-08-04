@@ -1,9 +1,12 @@
 {
   "name": "@server-octopus/shared",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "ZingerLittleBee",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "prebuild": "rimraf dist",
     "build": "nest build",
@@ -19,7 +22,7 @@
     "@nestjs/cli": "^10.0.3",
     "@nestjs/schematics": "^10.0.1",
     "@nestjs/testing": "^10.0.2",
-    "@server-octopus/types": "workspace:*",
+    "@server-octopus/types": "1.0.1",
     "@types/express": "^4.17.17",
     "@types/jest": "28.1.4",
     "@types/node": "^16.0.0",

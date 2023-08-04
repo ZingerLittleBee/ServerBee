@@ -16,8 +16,8 @@
     "build:server": "pnpm build:infra && nx build @server-octopus/server --prod && nx run @server-octopus/server:build:pkg",
     "build:client": "pnpm build:infra && nx build @server-octopus/client --prod && nx run @server-octopus/client:build:pkg",
     "build:auth": "pnpm build:infra && nx build @server-octopus/auth --prod && nx run @server-octopus/auth:build:pkg",
-    "build:storage": "pnpm build:infra && nx build @server-octopus/storage --prod",
-    "prepublish": "pnpm version -C packages/types patch && pnpm version -C packages/shared patch",
+    "build:storage": "nx build @server-octopus/storage --prod",
+    "patch:infra": "pnpm version -C packages/types patch && pnpm version -C packages/shared patch",
     "prepack": "pnpm build:infra",
     "publish:infra": "pnpm --filter shared --filter types publish --access public"
   },

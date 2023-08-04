@@ -1,0 +1,30 @@
+FROM node:18-bullseye
+
+WORKDIR /app
+
+RUN apt-get update
+
+RUN apt-get install -y python3 python3-pip build-essential
+
+COPY . .
+
+RUN npm install -g pnpm
+
+RUN pnpm version:prod && pnpm install
+
+RUN pnpm build:infra && pnpm build:storage
+
+
+FROM node:18-bullseye-slim
+
+WORKDIR /app
+
+COPY --from=0 /app/packages/storage/package.json .
+
+COPY --from=0 /app/packages/storage/prisma ./prisma
+
+RUN npm install --omit=dev --legacy-peer-deps
+
+COPY --from=0 /app/packages/storage/dist .
+
+CMD ["node", "main.js"]

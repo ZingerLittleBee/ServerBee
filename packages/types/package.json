@@ -1,7 +1,10 @@
 {
   "name": "@server-octopus/types",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "dev": "tsup src/index.ts --dts-only --watch",
     "build": "tsup src/index.ts --dts-only --minify --clean"
