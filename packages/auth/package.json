@@ -76,5 +76,10 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
-  }
+  },
+    "pkg": {
+        "assets": [
+          "node_modules/bcrypt/lib"
+        ]
+    }
 }
