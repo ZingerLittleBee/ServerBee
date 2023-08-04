@@ -2,7 +2,7 @@
     "name": "@server-octopus/client",
     "version": "1.0.0",
     "description": "",
-    "author": "",
+    "author": "ZingerLittleBee",
     "bin": "./dist/main.js",
     "private": true,
     "license": "UNLICENSED",

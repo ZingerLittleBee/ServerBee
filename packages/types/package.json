@@ -7,7 +7,7 @@
     "build": "tsup src/index.ts --dts-only --minify --clean"
   },
   "keywords": [],
-  "author": "",
+  "author": "ZingerLittleBee",
   "devDependencies": {
     "tsup": "^7.1.0",
     "typescript": "^5.1.3"

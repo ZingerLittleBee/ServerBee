@@ -3,7 +3,7 @@ nixPkgs = ['nodejs', 'pnpm-8_x', 'python311']
 aptPkgs = ['build-essential']
 
 [phases.install]
-cmds = ['pnpm install --ignore-scripts --frozen-lockfile']
+cmds = ['pnpm install --frozen-lockfile']
 
 [phases.build]
 cmds = ['pnpm build:storage']

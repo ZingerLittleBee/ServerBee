@@ -3,7 +3,7 @@
     "version": "1.0.0",
     "description": "",
     "bin": "dist/main.js",
-    "author": "",
+    "author": "ZingerLittleBee",
     "private": true,
     "license": "UNLICENSED",
     "scripts": {

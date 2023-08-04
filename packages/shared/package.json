@@ -1,9 +1,7 @@
 {
     "name": "@server-octopus/shared",
     "version": "1.0.0",
-    "description": "",
-    "author": "",
-    "license": "AGPLv3",
+    "author": "ZingerLittleBee",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "scripts": {
