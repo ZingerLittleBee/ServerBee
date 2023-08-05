@@ -12,7 +12,7 @@ RUN npm install -g pnpm
 
 RUN pnpm version:prod && pnpm install
 
-RUN pnpm build:infra && pnpm build:auth
+RUN pnpm build:auth
 
 
 FROM node:18-bullseye-slim

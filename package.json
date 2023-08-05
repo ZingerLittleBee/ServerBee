@@ -19,7 +19,8 @@
     "build:storage": "nx build @server-octopus/storage --prod",
     "patch:infra": "pnpm version -C packages/types patch && pnpm version -C packages/shared patch",
     "prepack": "pnpm build:infra",
-    "publish:infra": "pnpm --filter shared --filter types publish --access public"
+    "publish:infra": "pnpm --filter shared --filter types publish --access public",
+    "postinstall": "pnpm build:infra"
   },
   "devDependencies": {
     "nx": "16.6.0",
