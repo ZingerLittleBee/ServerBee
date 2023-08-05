@@ -130,11 +130,9 @@ export class AuthService {
         return data
     }
 
-    async registerUserDevice() {}
-
     async verifyUser(userInfo: UserLoginDto) {
         const { success, message, data } = await firstValueFrom(
-            this.authClient.send<VerifyUserResult, VerifyUserParam>(
+            this.storageClient.send<VerifyUserResult, VerifyUserParam>(
                 kUserVerify,
                 userInfo
             )
