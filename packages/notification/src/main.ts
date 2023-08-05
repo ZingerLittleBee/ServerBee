@@ -2,9 +2,7 @@ import { NestFactory } from '@nestjs/core'
 import { ConfigService } from '@nestjs/config'
 import {
     defaultNotificationServicePort,
-    defaultNotificationServiceServerHost,
-    kNotificationServicePort,
-    kNotificationServiceServerHost
+    kNotificationServicePort
 } from '@server-octopus/shared'
 import { NotificationModule } from './notification.module'
 import { MicroserviceOptions, Transport } from '@nestjs/microservices'
@@ -12,9 +10,6 @@ import { MicroserviceOptions, Transport } from '@nestjs/microservices'
 async function bootstrap() {
     const app = await NestFactory.create(NotificationModule)
     const configService = app.get(ConfigService)
-    const host =
-        configService.get<string>(kNotificationServiceServerHost) ??
-        defaultNotificationServiceServerHost
     const port =
         configService.get<number>(kNotificationServicePort) ??
         defaultNotificationServicePort
@@ -22,7 +17,6 @@ async function bootstrap() {
     const microservice = app.connectMicroservice<MicroserviceOptions>({
         transport: Transport.TCP,
         options: {
-            host,
             port
         }
     })

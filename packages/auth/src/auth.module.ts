@@ -7,7 +7,8 @@ import {
     defaultStorageServiceHost,
     defaultStorageServicePort,
     kStorageService,
-    kStorageServiceHost
+    kStorageServiceHost,
+    kStorageServicePort
 } from '@server-octopus/shared'
 import { JwtModule } from '@nestjs/jwt'
 import { ClientModule } from './client/client.module'
@@ -32,7 +33,7 @@ import { ClientModule } from './client/client.module'
                                 ) ?? defaultStorageServiceHost,
                             port:
                                 configService.get<number>(
-                                    kStorageServiceHost
+                                    kStorageServicePort
                                 ) ?? defaultStorageServicePort
                         }
                     })
