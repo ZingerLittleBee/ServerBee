@@ -3,7 +3,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config'
 import { TokenModule } from '@/token/token.module'
 import { UserModule } from './user/user.module'
 import { ClientsModule, Transport } from '@nestjs/microservices'
-import { kNatsServer, kStorageService } from '@server-octopus/shared'
+import {
+    defaultStorageServiceHost,
+    defaultStorageServicePort,
+    kStorageService,
+    kStorageServiceHost
+} from '@server-octopus/shared'
 import { JwtModule } from '@nestjs/jwt'
 import { ClientModule } from './client/client.module'
 
@@ -19,9 +24,16 @@ import { ClientModule } from './client/client.module'
                     name: kStorageService,
                     inject: [ConfigService],
                     useFactory: (configService: ConfigService) => ({
-                        transport: Transport.NATS,
+                        transport: Transport.TCP,
                         options: {
-                            servers: [configService.get<string>(kNatsServer)]
+                            host:
+                                configService.get<string>(
+                                    kStorageServiceHost
+                                ) ?? defaultStorageServiceHost,
+                            port:
+                                configService.get<number>(
+                                    kStorageServiceHost
+                                ) ?? defaultStorageServicePort
                         }
                     })
                 }
