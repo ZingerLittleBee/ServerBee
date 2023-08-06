@@ -1,7 +1,11 @@
-import { cookies } from 'next/headers'
-import {NextResponse} from "next/server";
-import * as process from "process";
-import {ResultUtil} from "@/utils/ResultUtil";
+import * as process from "process"
+import { cookies } from "next/headers"
+import { NextResponse } from "next/server"
+import { Result } from "@server-octopus/types"
+
+
+
+
 
 export async function GET(request: Request) {
   const cookieStore = cookies()
@@ -22,12 +26,12 @@ export async function POST(req: Request) {
     body: JSON.stringify({ username, email, password }),
   })
 
-  const result= await res.json() as ResultUtil<{ token: string }>
+  const result= await res.json() as Result<{ token: string }>
 
   if (result.success) {
     return NextResponse.redirect('/dashboard', {
       headers: {
-        'Set-Cookie': `token=${result.data.token}; Path=/; HttpOnly`,
+        'Set-Cookie': `token=${result.data?.token}; Path=/; HttpOnly`,
       },
     })
   } else {

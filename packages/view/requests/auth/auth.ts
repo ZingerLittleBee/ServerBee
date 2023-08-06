@@ -8,11 +8,13 @@ import { toast } from "@/components/ui/use-toast"
 
 
 
-export const login = async (
-  password: string,
-  email?: string,
-  username?: string
-) => {
+export type LoginData = {
+    email?: string
+    username?: string
+    password: string
+}
+
+export const login = async ({ password, email, username }: LoginData) => {
   if (!email && !username) {
     toast({
       title: "Email or Username is required",

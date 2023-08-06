@@ -1,7 +1,10 @@
-import { cookies } from 'next/headers'
-import {NextResponse} from "next/server";
-import * as process from "process";
-import {ResultUtil} from "@/utils/ResultUtil";
+import * as process from 'process';
+import { NextResponse } from 'next/server';
+import { Result } from '@server-octopus/types';
+
+
+
+
 
 // register
 export async function POST(req: Request) {
@@ -15,7 +18,7 @@ export async function POST(req: Request) {
     body: JSON.stringify({ username, email, password }),
   })
 
-  const result= await res.json() as ResultUtil<any>
+  const result= await res.json() as Result
 
   // if (result.success) {
   //   console.log('req.url', req.url)

@@ -2,7 +2,7 @@ import Link from "next/link"
 
 import { LoginForm } from "@/app/login/login-form"
 
-export default () => {
+export default function LoginPage() {
   return (
     <>
       <div className="lg:p-8 lg:py-20">
@@ -12,7 +12,7 @@ export default () => {
               Sign in to your account
             </h1>
             <p className="text-sm text-muted-foreground">
-              Don't have an account?{" "}
+                {"Don't have an account? "}
               <Link
                 href="/register"
                 className="text-sm underline underline-offset-4 hover:text-primary"

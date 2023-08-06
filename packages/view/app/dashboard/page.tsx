@@ -2,7 +2,7 @@
 
 import {useProfile} from "@/app/hooks/useProfile";
 
-export default () => {
+export default function DashboardPage() {
   const { profile, isLoading, isError  } = useProfile()
 
   return (

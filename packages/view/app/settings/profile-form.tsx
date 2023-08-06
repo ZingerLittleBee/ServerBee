@@ -59,8 +59,8 @@ type ProfileFormValues = z.infer<typeof profileFormSchema>
 const defaultValues: Partial<ProfileFormValues> = {
   bio: "I own a computer.",
   urls: [
-    { value: "https://shadcn.com" },
-    { value: "http://twitter.com/shadcn" },
+    { value: "url0" },
+    { value: "url1" },
   ],
 }
 
@@ -80,7 +80,7 @@ export function ProfileForm() {
     useEffect(() => {
         form.setValue("username", profile?.user.username ?? '')
         form.setValue("email", profile?.user.email ?? '')
-    }, [form, profile?.user.username])
+    }, [form, profile?.user.email, profile?.user.username])
 
   const { fields, append } = useFieldArray({
     name: "urls",
