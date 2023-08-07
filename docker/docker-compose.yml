@@ -1,0 +1,69 @@
+version: '3'
+
+services:
+  reverse-proxy:
+    image: traefik:v2.10
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./traefik.yaml:/etc/traefik/traefik.yaml
+      - ./dynamic_conf.yaml:/etc/traefik/dynamic_conf.yaml
+      - ./acme.json:/acme.json
+  view:
+    build:
+      context: ..
+      dockerfile: Dockerfile.view
+    image: zingerbee/server-octopus-view
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.view.rule=Host(`serverhub.app`)
+      - traefik.http.routers.view.entrypoints=websecure
+      - traefik.http.routers.view.tls.certresolver=myresolver
+      - traefik.http.services.service-view.loadbalancer.server.port=3000
+  server:
+    build:
+      context: ..
+      dockerfile: Dockerfile.server
+    image: zingerbee/server-octopus-server
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.server.rule=Host(`server.serverhub.app`)
+      - traefik.http.routers.server.entrypoints=websecure
+      - traefik.http.routers.server.tls.certresolver=myresolver
+      - traefik.http.services.service-server.loadbalancer.server.port=3000
+  client:
+    build:
+      context: ..
+      dockerfile: Dockerfile.client
+    image: zingerbee/server-octopus-client
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.client.rule=Host(`client.serverhub.app`)
+      - traefik.http.routers.client.entrypoints=websecure
+      - traefik.http.routers.client.tls.certresolver=myresolver
+      - traefik.http.services.service-client.loadbalancer.server.port=3000
+  auth:
+    build:
+      context: ..
+      dockerfile: Dockerfile.auth
+    image: zingerbee/server-octopus-auth
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.auth.rule=Host(`auth.serverhub.app`)
+      - traefik.http.routers.auth.entrypoints=websecure
+      - traefik.http.routers.auth.tls.certresolver=myresolver
+      - traefik.http.services.service-auth.loadbalancer.server.port=3000
+  storage:
+    build:
+      context: ..
+      dockerfile: Dockerfile.storage
+    image: zingerbee/server-octopus-storage
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.storage.rule=Host(`storage.serverhub.app`)
+      - traefik.http.routers.storage.entrypoints=websecure
+      - traefik.http.routers.storage.tls.certresolver=myresolver
+      - traefik.http.services.service-storage.loadbalancer.server.port=3000
