@@ -22,11 +22,17 @@ jobs:
                   username: ${{ github.repository_owner }}
                   password: ${{ secrets.GITHUB_TOKEN }}
 
+            -   name: Set lower case owner name
+                run: |
+                    echo "OWNER_LC=${OWNER,,}" >>${GITHUB_ENV}
+                env:
+                    OWNER: ${{ github.repository_owner }}
+
             - name: Build and push Docker images
               run: |
                   for dockerfile in $(ls docker/Dockerfile.*); do
                     image_name=$(basename $dockerfile | cut -d '.' -f 2)
                     echo "Building Docker image for: $image_name"
-                    docker build -t ghcr.io/${{ github.repository_owner }}/serverhub-${image_name}:latest -f ${dockerfile} .
-                    docker push ghcr.io/${{ github.repository_owner }}/serverhub-${image_name}:latest
+                    docker build -t ghcr.io/${OWNER_LC}/serverhub-${image_name}:latest -f ${dockerfile} .
+                    docker push ghcr.io/${OWNER_LC}/serverhub-${image_name}:latest
                   done
