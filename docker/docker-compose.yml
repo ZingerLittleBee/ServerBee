@@ -9,13 +9,13 @@ services:
       - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./traefik.yaml:/etc/traefik/traefik.yaml
+      - ./traefik.yml:/etc/traefik/traefik.yml
       - ./dynamic_conf.yaml:/etc/traefik/dynamic_conf.yaml
-      - ./acme.json:/acme.json
+      - ./acme:/etc/traefik/acme
   view:
     build:
       context: ..
-      dockerfile: Dockerfile.view
+      dockerfile: docker/Dockerfile.view
     image: zingerbee/server-octopus-view
     labels:
       - traefik.enable=true
@@ -26,7 +26,7 @@ services:
   server:
     build:
       context: ..
-      dockerfile: Dockerfile.server
+      dockerfile: docker/Dockerfile.server
     image: zingerbee/server-octopus-server
     labels:
       - traefik.enable=true
@@ -37,7 +37,7 @@ services:
   client:
     build:
       context: ..
-      dockerfile: Dockerfile.client
+      dockerfile: docker/Dockerfile.client
     image: zingerbee/server-octopus-client
     labels:
       - traefik.enable=true
@@ -48,7 +48,7 @@ services:
   auth:
     build:
       context: ..
-      dockerfile: Dockerfile.auth
+      dockerfile: docker/Dockerfile.auth
     image: zingerbee/server-octopus-auth
     labels:
       - traefik.enable=true
@@ -59,7 +59,7 @@ services:
   storage:
     build:
       context: ..
-      dockerfile: Dockerfile.storage
+      dockerfile: docker/Dockerfile.storage
     image: zingerbee/server-octopus-storage
     labels:
       - traefik.enable=true

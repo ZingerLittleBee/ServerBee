@@ -1,11 +1,11 @@
 entryPoints:
   web:
     address: ":80"
-    http:
-      redirections:
-        entryPoint:
-          to: websecure
-          scheme: https
+#    http:
+#      redirections:
+#        entryPoint:
+#          to: websecure
+#          scheme: https
   websecure:
     address: ":443"
 
@@ -20,6 +20,5 @@ certificatesResolvers:
   myresolver:
     acme:
       email: "admin@serverhub.app"
-      storage: "/acme.json"
-      httpChallenge:
-        entryPoint: web
+      storage: "acme.json"
+      tlsChallenge: {}

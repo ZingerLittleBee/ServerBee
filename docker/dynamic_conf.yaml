@@ -8,13 +8,13 @@ http:
             tls:
                 certResolver: myresolver
 
-            api-c:
-                rule: "Host(`serverhub.app`) && PathPrefix(`/api/c/`)"
-                service: "service-client"
-                middlewares:
-                    - stripprefix-c
-                tls:
-                    certResolver: myresolver
+        api-c:
+            rule: "Host(`serverhub.app`) && PathPrefix(`/api/c/`)"
+            service: "service-client"
+            middlewares:
+                - stripprefix-c
+            tls:
+                certResolver: myresolver
 
         view:
             rule: "Host(`serverhub.app`)"
