@@ -21,56 +21,40 @@ http:
             service: "service-view"
             tls:
                 certResolver: myresolver
+            entryPoints:
+                - websecure
 
         client:
             rule: "Host(`client.serverhub.app`)"
             service: "service-client"
             tls:
                 certResolver: myresolver
+            entryPoints:
+                - websecure
 
         server:
             rule: "Host(`server.serverhub.app`)"
             service: "service-server"
             tls:
                 certResolver: myresolver
-
-        storage:
-            rule: "Host(`storage.serverhub.app`)"
-            service: "service-storage"
-            tls:
-                certResolver: myresolver
-
-        auth:
-            rule: "Host(`auth.serverhub.app`)"
-            service: "service-auth"
-            tls:
-                certResolver: myresolver
+            entryPoints:
+                - websecure
 
     services:
         service-view:
             loadBalancer:
                 servers:
-                    - url: "http://serverhub.app"
+                    - url: "http://view:3000"
+
+        service-server:
+          loadBalancer:
+              servers:
+                  -   url: "http://server:3001"
 
         service-client:
             loadBalancer:
                 servers:
-                    - url: "http://client.serverhub.app"
-
-        service-server:
-            loadBalancer:
-                servers:
-                    - url: "http://server.serverhub.app"
-
-        service-storage:
-            loadBalancer:
-                servers:
-                    - url: "http://storage.serverhub.app"
-
-        service-auth:
-            loadBalancer:
-                servers:
-                    - url: "http://auth.serverhub.app"
+                    - url: "http://client:3002"
 
     middlewares:
         stripprefix-s:

@@ -6,7 +6,6 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./traefik.yml:/etc/traefik/traefik.yml
@@ -38,17 +37,7 @@ services:
       - traefik.http.services.service-client.loadbalancer.server.port=3002
   auth:
     image: ghcr.io/zingerlittlebee/serverhub-auth:latest
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.auth.rule=Host(`auth.serverhub.app`)
-      - traefik.http.routers.auth.entrypoints=websecure
-      - traefik.http.routers.auth.tls.certresolver=myresolver
-      - traefik.http.services.service-auth.loadbalancer.server.port=3209
   storage:
     image: ghcr.io/zingerlittlebee/serverhub-storage:latest
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.storage.rule=Host(`storage.serverhub.app`)
-      - traefik.http.routers.storage.entrypoints=websecure
-      - traefik.http.routers.storage.tls.certresolver=myresolver
-      - traefik.http.services.service-storage.loadbalancer.server.port=3208
+  nats:
+    image: nats:latest
