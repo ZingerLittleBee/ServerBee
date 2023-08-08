@@ -60,7 +60,8 @@ export function RegisterForm({ className, ...props }: UserAuthFormProps) {
       })
     } else {
       toast({
-        title: "Error!",
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
         description: res.message,
       })
     }

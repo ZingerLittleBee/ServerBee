@@ -1,5 +1,5 @@
-export * from './utils/util'
+export * from './utils'
 
 export * from './enums/index.enum'
 
-export * from './const/index.const'
+export * from './const'

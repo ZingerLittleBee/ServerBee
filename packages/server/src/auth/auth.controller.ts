@@ -1,82 +1,115 @@
 import {
     Body,
     Controller,
-    Post,
+    Get,
     HttpCode,
     HttpStatus,
-    Logger,
-    Res
+    Post,
+    Request,
+    Res,
+    UseGuards
 } from '@nestjs/common'
-import { AuthService } from './auth.service'
-import { hash } from 'bcrypt'
+import {
+    kCookieAccessToken,
+    kCookieRefreshToken,
+    ResultUtil
+} from '@server-octopus/shared'
+import {
+    UserDevice,
+    UserLoginDto,
+    UserRegisterDto
+} from '@server-octopus/types'
 import { Response } from 'express'
-import { ErrorService, Result, ResultUtil } from '@server-octopus/shared'
+import { AuthService } from './auth.service'
+import { RefreshGuard } from './guard/refresh.guard'
+import { StatusGuard } from './guard/status.guard'
+import { UserDeviceGuard } from './guard/ud.guard'
 
 @Controller('auth')
 export class AuthController {
-    private readonly logger = new Logger(AuthController.name)
-
-    constructor(
-        private authService: AuthService,
-        private readonly errorService: ErrorService
-    ) {}
+    constructor(private authService: AuthService) {}
 
     @HttpCode(HttpStatus.OK)
     @Post('register')
-    async register(
-        @Body() signInDto: Record<string, any>
-    ): Promise<Result<{ token: string }>> {
+    async register(@Body() registerDto: UserRegisterDto) {
         try {
-            const hashPass = await hash(
-                signInDto.password,
-                this.authService.getSaltRounds()
-            )
-            await this.authService.register(
-                hashPass,
-                signInDto.email,
-                signInDto.username
-            )
+            await this.authService.register(registerDto)
             return ResultUtil.ok()
         } catch (e) {
-            return ResultUtil.error(
-                this.errorService.explain(e) ??
-                    'Register failed, please try again later'
-            )
+            return ResultUtil.error(`Register Failed: ${e.message}`)
+        }
+    }
+
+    @UseGuards(UserDeviceGuard)
+    @HttpCode(HttpStatus.OK)
+    @Post('login')
+    async signIn(
+        @Request() req: Request & { ud: UserDevice },
+        @Body() signInfoDto: UserLoginDto,
+        @Res({ passthrough: true }) res: Response
+    ) {
+        try {
+            const result = await this.authService.signIn(signInfoDto, req.ud)
+            // TODO: check expires
+            const expiration = await this.authService.getTokenExpiration()
+            res.cookie(kCookieAccessToken, result.access_token, {
+                httpOnly: true,
+                sameSite: 'strict',
+                maxAge: expiration.accessExpiration * 1000
+            })
+            res.cookie(kCookieRefreshToken, result.refresh_token, {
+                httpOnly: true,
+                sameSite: 'strict',
+                maxAge: expiration.refreshExpiration * 1000
+            })
+            return ResultUtil.ok()
+        } catch (e) {
+            return ResultUtil.error(e.message)
+        }
+    }
+
+    @UseGuards(RefreshGuard)
+    @HttpCode(HttpStatus.OK)
+    @Post('refresh')
+    async refresh(
+        @Request() req: Request & { access_token: string },
+        @Res({ passthrough: true }) res: Response
+    ) {
+        try {
+            if (req.access_token) {
+                const expiration = await this.authService.getTokenExpiration()
+                res.cookie(kCookieAccessToken, req.access_token, {
+                    httpOnly: true,
+                    sameSite: 'strict',
+                    expires: new Date(
+                        new Date().getTime() +
+                            expiration.accessExpiration * 1000
+                    )
+                })
+                return ResultUtil.ok()
+            }
+            return ResultUtil.error('Refresh Failed')
+        } catch (e) {
+            return ResultUtil.error(e.message)
         }
     }
 
     @HttpCode(HttpStatus.OK)
-    @Post('login')
-    async signIn(
-        @Body() signInDto: Record<string, any>,
-        @Res({ passthrough: true }) res: Response
-    ) {
-        console.log('login controller')
+    @Post('logout')
+    async logout(@Res({ passthrough: true }) res: Response) {
         try {
-            const result = await this.authService.signIn(
-                signInDto.password,
-                signInDto.email,
-                signInDto.username
-            )
-            res.cookie('access_token', result.access_token, {
-                httpOnly: true,
-                sameSite: 'strict',
-                expires: new Date(
-                    new Date().getTime() +
-                        this.authService.getJwtAccessExpirationTime() * 1000
-                )
-            })
-            res.cookie('refresh_token', result.refresh_token, {
-                httpOnly: true,
-                sameSite: 'strict',
-                expires: new Date(
-                    new Date().getTime() +
-                        this.authService.getJwtRefreshExpirationTime() * 1000
-                )
-            })
-            return res.status(200).json(ResultUtil.ok())
+            res.clearCookie(kCookieAccessToken)
+            res.clearCookie(kCookieRefreshToken)
+            return ResultUtil.ok()
         } catch (e) {
             return ResultUtil.error(e.message)
         }
+    }
+
+    @UseGuards(StatusGuard)
+    @HttpCode(HttpStatus.OK)
+    @Get('check')
+    async checkLoginStatus() {
+        return ResultUtil.ok()
     }
 }

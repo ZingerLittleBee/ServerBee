@@ -1,0 +1,27 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+RUN apk update
+RUN apk add --no-cache python3 py3-pip build-base
+
+COPY . .
+
+RUN npm install -g pnpm
+
+RUN pnpm version:prod && pnpm install
+
+RUN pnpm build:auth
+
+
+FROM node:18-alpine
+
+WORKDIR /app
+
+COPY --from=0 /app/packages/auth/package.json .
+
+RUN npm install --omit=dev --legacy-peer-deps
+
+COPY --from=0 /app/packages/auth/dist .
+
+CMD ["node", "main.js"]

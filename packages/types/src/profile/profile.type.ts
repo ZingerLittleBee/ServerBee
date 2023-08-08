@@ -13,6 +13,7 @@ type ProfileVo = {
     name?: string
     avatar?: string
     description?: string
+    user: UserVo
 }
 
-export { ProfileVo, CreateProfile, UpdateProfile }
+export { CreateProfile, ProfileVo, UpdateProfile }

@@ -2,17 +2,24 @@ import { Inject, Injectable, Logger } from '@nestjs/common'
 import { inspect } from 'util'
 import {
     kAuthService,
+    kClientCreateMsg,
+    kClientDeviceUpdateEvent,
     kClientTokenSign,
-    kClientUpsertEvent,
+    kClientTokenValid,
     kFusionAddEvent,
     kStorageService,
-    kTokenValid,
     Result
 } from '@server-octopus/shared'
 import { ClientProxy } from '@nestjs/microservices'
-import { CreateClient, FusionDto } from '@server-octopus/types'
+import {
+    ClientPayload,
+    CreateClientDto,
+    CreateClientResult,
+    FusionDto,
+    RegisterClientDto,
+    UpdateDeviceDto
+} from '@server-octopus/types'
 import { firstValueFrom } from 'rxjs'
-import { convertFormatDataToString } from '@/util'
 
 @Injectable()
 export class ClientService {
@@ -23,18 +30,23 @@ export class ClientService {
         @Inject(kStorageService) private storageClient: ClientProxy
     ) {}
 
-    async registerClient(client: CreateClient) {
-        const c = convertFormatDataToString(client)
+    async registerClient(client: RegisterClientDto) {
         const {
             success,
             message,
             data: clientId
         } = await firstValueFrom(
-            this.storageClient.send<Result<string>>(kClientUpsertEvent, c)
+            this.storageClient.send<Result<string>, UpdateDeviceDto>(
+                kClientDeviceUpdateEvent,
+                {
+                    clientId: client.clientId,
+                    device: client.device
+                }
+            )
         )
         if (!success) {
             this.logger.error(
-                `upsert client: ${inspect(client)} error, message: ${message}`
+                `update device: ${inspect(client)} error, message: ${message}`
             )
             throw new Error(message)
         }
@@ -59,7 +71,7 @@ export class ClientService {
 
     async isTokenValid(token: string) {
         const { success, message, data } = await firstValueFrom(
-            this.authClient.send<Result<boolean>>(kTokenValid, { token })
+            this.authClient.send<Result<boolean>>(kClientTokenValid, { token })
         )
         if (!success) {
             this.logger.error(`token: ${token} invalid, message: ${message}`)
@@ -70,5 +82,40 @@ export class ClientService {
 
     async addData(fusion: FusionDto) {
         this.storageClient.emit(kFusionAddEvent, fusion)
+    }
+
+    async create(client: CreateClientDto) {
+        const { success, message, data } = await firstValueFrom(
+            this.storageClient.send<CreateClientResult, CreateClientDto>(
+                kClientCreateMsg,
+                client
+            )
+        )
+        if (!success) {
+            this.logger.error(
+                `create client: ${inspect(client)} error, message: ${message}`
+            )
+            throw new Error(message)
+        }
+        return data
+    }
+
+    async signToken(userId: string, clientId: string): Promise<string> {
+        const { success, message, data } = await firstValueFrom(
+            this.authClient.send<Result<string>, ClientPayload>(
+                kClientTokenSign,
+                { userId, clientId }
+            )
+        )
+        if (!success || !data) {
+            this.logger.error(
+                `sign token: ${inspect({
+                    userId,
+                    clientId
+                })} error, message: ${message}`
+            )
+            throw new Error(message)
+        }
+        return data
     }
 }

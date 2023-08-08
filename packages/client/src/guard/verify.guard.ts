@@ -5,8 +5,8 @@ import {
     Logger,
     UnauthorizedException
 } from '@nestjs/common'
-import { Request } from 'express'
 import { ClientService } from '@/client.service'
+import { extractAccessToken } from '@server-octopus/shared'
 
 @Injectable()
 export class VerifyTokenGuard implements CanActivate {
@@ -16,7 +16,7 @@ export class VerifyTokenGuard implements CanActivate {
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const request = context.switchToHttp().getRequest()
-        const token = this.extractTokenFromHeader(request)
+        const token = extractAccessToken(request)
         if (!token) {
             this.logger.warn('No token')
             throw new UnauthorizedException('No token')
@@ -27,10 +27,5 @@ export class VerifyTokenGuard implements CanActivate {
             throw new UnauthorizedException('Token verify failed')
         }
         return true
-    }
-
-    private extractTokenFromHeader(request: Request): string | undefined {
-        const [type, token] = request.headers.authorization?.split(' ') ?? []
-        return type === 'Bearer' ? token : undefined
     }
 }

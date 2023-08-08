@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Request, UseGuards } from '@nestjs/common'
 import { ProfileService } from './profile.service'
-import { AuthGuard } from 'src/auth/auth.guard'
+import { AuthGuard } from '../auth/guard/auth.guard'
 import { ResultUtil } from '@server-octopus/shared'
 import { CreateProfile } from '@server-octopus/types'
 

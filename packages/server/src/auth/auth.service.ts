@@ -4,83 +4,172 @@ import {
     Logger,
     UnauthorizedException
 } from '@nestjs/common'
-import { JwtService } from '@nestjs/jwt'
-import { ConfigService } from '@nestjs/config'
-import { UserService } from 'src/user/user.service'
-import { kStorageService, kUserVerify } from '@server-octopus/shared'
 import { ClientProxy } from '@nestjs/microservices'
-import { VerifyUserDto, VertifyUserResult } from '@server-octopus/types'
+import {
+    defaultAccessExpiration,
+    defaultRefreshExpiration,
+    kAuthService,
+    kStorageService,
+    kUserAccessTokenValid,
+    kUserDeviceCreate,
+    kUserRegister,
+    kUserTokenExpirationGet,
+    kUserTokenRefresh,
+    kUserTokenSign,
+    kUserVerify
+} from '@server-octopus/shared'
+import {
+    CreateUdParam,
+    CreateUdResult,
+    UserDevice,
+    UserLoginDto,
+    UserPayload,
+    UserRegisterDto,
+    UserRegisterResult,
+    UserTokenExpiration,
+    UserTokenExpirationResult,
+    UserTokenRefreshParam,
+    UserTokenRefreshResult,
+    UserTokenSignResult,
+    UserTokenValidParam,
+    UserTokenValidResult,
+    VerifyUserParam,
+    VerifyUserResult
+} from '@server-octopus/types'
 import { firstValueFrom } from 'rxjs'
 import { inspect } from 'util'
 
 @Injectable()
 export class AuthService {
     private readonly logger = new Logger(AuthService.name)
+    private tokenExpiration: UserTokenExpiration
 
     constructor(
-        private usersService: UserService,
-        private jwtService: JwtService,
-        private configService: ConfigService,
-        @Inject(kStorageService) private client: ClientProxy
+        @Inject(kAuthService) private authClient: ClientProxy,
+        @Inject(kStorageService) private storageClient: ClientProxy
     ) {}
 
-    async signIn(pass: string, email?: string, username?: string) {
-        if (!email && !username) {
-            this.logger.error('email or username is required')
-            throw new UnauthorizedException()
+    async signIn(userInfo: UserLoginDto, userDevice: UserDevice) {
+        if (!userInfo.email && !userInfo.username) {
+            this.logger.error('Email or Username is required')
+            throw new UnauthorizedException('Email or Username is required')
         }
+        const userId = await this.verifyUser(userInfo)
+        const clientId = await this.createUserDevice({ userId, ...userDevice })
+
+        const {
+            success: signSuccess,
+            data: signData,
+            message: signMsg
+        } = await firstValueFrom(
+            this.authClient.send<UserTokenSignResult, UserPayload>(
+                kUserTokenSign,
+                {
+                    userId,
+                    clientId
+                }
+            )
+        )
+        if (!signSuccess || !signData) {
+            this.logger.error(`Sign Error: ${signMsg}`)
+            throw new UnauthorizedException('Sign Error')
+        }
+        return {
+            access_token: signData.accessToken,
+            refresh_token: signData.refreshToken
+        }
+    }
+
+    async register(userDto: UserRegisterDto) {
+        const { success, data, message } = await firstValueFrom(
+            this.authClient.send<UserRegisterResult, UserRegisterDto>(
+                kUserRegister,
+                userDto
+            )
+        )
+        if (!success || !data) {
+            throw new Error(message)
+        }
+    }
+
+    async getTokenExpiration(): Promise<UserTokenExpiration> {
+        if (this.tokenExpiration) {
+            return this.tokenExpiration
+        }
+        const { success, data, message } = await firstValueFrom(
+            this.authClient.send<UserTokenExpirationResult>(
+                kUserTokenExpirationGet,
+                {}
+            )
+        )
+        if (!success || !data) {
+            this.logger.error(`Get Token Expiration Error: ${message}`)
+            this.tokenExpiration = {
+                accessExpiration: defaultAccessExpiration,
+                refreshExpiration: defaultRefreshExpiration
+            }
+        } else {
+            this.tokenExpiration = data
+        }
+        return this.tokenExpiration
+    }
+
+    async refreshToken(token: string) {
+        const { success, data, message } = await firstValueFrom(
+            this.authClient.send<UserTokenRefreshResult, UserTokenRefreshParam>(
+                kUserTokenRefresh,
+                {
+                    refreshToken: token
+                }
+            )
+        )
+        if (!success || !data) {
+            this.logger.error(`Invoke ${kUserTokenRefresh} Error: ${message}`)
+            throw new Error('Refresh Token Error')
+        }
+        return data
+    }
+
+    async verifyUser(userInfo: UserLoginDto) {
         const { success, message, data } = await firstValueFrom(
-            this.client.send<VertifyUserResult, VerifyUserDto>(kUserVerify, {
-                email,
-                username,
-                password: pass
-            })
+            this.storageClient.send<VerifyUserResult, VerifyUserParam>(
+                kUserVerify,
+                userInfo
+            )
         )
         if (!success || !data) {
             this.logger.error(`verify user error: ${message}`)
             throw new UnauthorizedException(`username or password is incorrect`)
         }
         this.logger.verbose(
-            `username: ${username}, email: ${email}, verified, payload: ${inspect(
-                data
-            )}`
+            `username: ${userInfo.username}, email: ${
+                userInfo.email
+            }, verified, payload: ${inspect(data)}`
         )
-        return {
-            access_token: await this.jwtService.signAsync(data),
-            refresh_token: await this.jwtService.signAsync(data)
+        return data.userId
+    }
+
+    async checkAccessToken(token: string): Promise<boolean> {
+        const { success } = await firstValueFrom(
+            this.authClient.send<UserTokenValidResult, UserTokenValidParam>(
+                kUserAccessTokenValid,
+                { token }
+            )
+        )
+        return success
+    }
+
+    async createUserDevice(ud: CreateUdParam) {
+        const { success, data, message } = await firstValueFrom(
+            this.storageClient.send<CreateUdResult, CreateUdParam>(
+                kUserDeviceCreate,
+                ud
+            )
+        )
+        if (!success || !data) {
+            this.logger.error(`Create User Device Error: ${message}`)
+            throw new Error('Create User Device Error')
         }
-    }
-
-    async register(pass: string, email: string, username: string) {
-        return this.usersService.createUser({
-            email,
-            password: pass,
-            username
-        })
-    }
-
-    getSaltRounds() {
-        const saltRounds = this.configService.get('SALT_ROUNDS')
-        return saltRounds ? parseInt(saltRounds) : 10
-    }
-
-    /**
-     * unit seconds from .env
-     */
-    getJwtAccessExpirationTime() {
-        const jwtExpirationTime = this.configService.get('JWT_EXPIRATION_TIME')
-        return jwtExpirationTime ? parseInt(jwtExpirationTime) : 86400
-    }
-
-    /**
-     * unit seconds from .env
-     */
-    getJwtRefreshExpirationTime() {
-        const jwtRefreshExpirationTime = this.configService.get(
-            'JWT_REFRESH_EXPIRATION_TIME'
-        )
-        return jwtRefreshExpirationTime
-            ? parseInt(jwtRefreshExpirationTime)
-            : 86400 * 6
+        return data
     }
 }

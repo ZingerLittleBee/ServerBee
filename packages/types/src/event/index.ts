@@ -1,1 +1,1 @@
-export * from './redis.type'
+export * from './res.type'

@@ -1,33 +1,71 @@
 import { Module } from '@nestjs/common'
 import { UserModule } from './user/user.module'
 import { AuthModule } from './auth/auth.module'
-import { ConfigModule } from '@nestjs/config'
+import { ConfigModule, ConfigService } from '@nestjs/config'
 import { ProfileModule } from './profile/profile.module'
 import { TaskModule } from './task/task.module'
 import { ScheduleModule } from '@nestjs/schedule'
 import { ClientsModule, Transport } from '@nestjs/microservices'
-import { kStorageService } from '@server-octopus/shared'
+import {
+    defaultAuthServiceHost,
+    defaultAuthServicePort,
+    defaultStorageServiceHost,
+    defaultStorageServicePort,
+    kAuthService,
+    kAuthServiceHost,
+    kAuthServicePort,
+    kStorageService,
+    kStorageServiceHost,
+    kStorageServicePort
+} from '@server-octopus/shared'
 
 @Module({
     imports: [
-        ClientsModule.register({
+        ConfigModule.forRoot({
+            isGlobal: true
+        }),
+        ClientsModule.registerAsync({
+            isGlobal: true,
             clients: [
                 {
+                    name: kAuthService,
+                    imports: [ConfigModule],
+                    inject: [ConfigService],
+                    useFactory: (configService: ConfigService) => ({
+                        transport: Transport.TCP,
+                        options: {
+                            host:
+                                configService.get<string>(kAuthServiceHost) ??
+                                defaultAuthServiceHost,
+                            port:
+                                configService.get<number>(kAuthServicePort) ??
+                                defaultAuthServicePort
+                        }
+                    })
+                },
+                {
                     name: kStorageService,
-                    transport: Transport.NATS,
-                    options: {
-                        servers: ['nats://localhost:4222']
-                    }
+                    imports: [ConfigModule],
+                    inject: [ConfigService],
+                    useFactory: (configService: ConfigService) => ({
+                        transport: Transport.TCP,
+                        options: {
+                            host:
+                                configService.get<string>(
+                                    kStorageServiceHost
+                                ) ?? defaultStorageServiceHost,
+                            port:
+                                configService.get<number>(
+                                    kStorageServicePort
+                                ) ?? defaultStorageServicePort
+                        }
+                    })
                 }
-            ],
-            isGlobal: true
+            ]
         }),
         ScheduleModule.forRoot(),
         UserModule,
         AuthModule,
-        ConfigModule.forRoot({
-            isGlobal: true
-        }),
         ProfileModule,
         TaskModule
     ]

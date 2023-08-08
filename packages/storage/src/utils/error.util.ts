@@ -5,16 +5,22 @@ import { Prisma } from '@prisma/client'
 export class ErrorService {
     private readonly logger = new Logger()
 
-    explain(e: any): string | undefined {
+    explain(e: any): { errorCode?: string; message: string } {
         if (e instanceof Prisma.PrismaClientKnownRequestError) {
             this.logger.error(
                 `code: ${e.code}, name: ${e.name} ,message: ${
                     e.message
                 }, explanation: ${prismaErrorCodeExplain(e.code)})}`
             )
-            return e.code
+            return {
+                errorCode: e.code,
+                message: prismaErrorCodeExplain(e.code)
+            }
         } else {
             this.logger.error(e.message)
+            return {
+                message: e.message
+            }
         }
     }
 }

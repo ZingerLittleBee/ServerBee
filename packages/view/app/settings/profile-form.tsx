@@ -26,6 +26,8 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/react-hook-form/form"
+import { useProfile } from "@/app/hooks/useProfile";
+import { useEffect } from "react";
 
 const profileFormSchema = z.object({
   username: z
@@ -57,17 +59,28 @@ type ProfileFormValues = z.infer<typeof profileFormSchema>
 const defaultValues: Partial<ProfileFormValues> = {
   bio: "I own a computer.",
   urls: [
-    { value: "https://shadcn.com" },
-    { value: "http://twitter.com/shadcn" },
+    { value: "url0" },
+    { value: "url1" },
   ],
 }
 
 export function ProfileForm() {
+    const { profile, isLoading } = useProfile()
+
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
-    defaultValues,
+    defaultValues: {
+      ...defaultValues,
+      username: profile?.user.username ?? '',
+      email: profile?.user.email ?? '',
+    },
     mode: "onChange",
   })
+
+    useEffect(() => {
+        form.setValue("username", profile?.user.username ?? '')
+        form.setValue("email", profile?.user.email ?? '')
+    }, [form, profile?.user.email, profile?.user.username])
 
   const { fields, append } = useFieldArray({
     name: "urls",
@@ -95,7 +108,7 @@ export function ProfileForm() {
             <FormItem>
               <FormLabel>Username</FormLabel>
               <FormControl>
-                <Input placeholder="shadcn" {...field} />
+                <Input disabled={isLoading} {...field} />
               </FormControl>
               <FormDescription>
                 This is your public display name. It can be your real name or a
@@ -111,18 +124,9 @@ export function ProfileForm() {
           render={({ field }) => (
             <FormItem>
               <FormLabel>Email</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
                 <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a verified email to display" />
-                  </SelectTrigger>
+                    <Input disabled={isLoading} {...field} />
                 </FormControl>
-                <SelectContent>
-                  <SelectItem value="m@example.com">m@example.com</SelectItem>
-                  <SelectItem value="m@google.com">m@google.com</SelectItem>
-                  <SelectItem value="m@support.com">m@support.com</SelectItem>
-                </SelectContent>
-              </Select>
               <FormDescription>
                 You can manage verified email addresses in your{" "}
                 <Link href="/examples/forms">email settings</Link>.

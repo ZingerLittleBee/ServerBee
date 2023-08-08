@@ -18,27 +18,52 @@ const kUserFind = 'user.find'
 
 const kUserVerify = 'user.verify'
 
-const kTokenVerify = 'token.verify'
+const kClientTokenVerify = 'client.token.verify'
 
-const kTokenValid = 'token.valid'
+const kUserTokenExpirationGet = 'user.token.expiration.get'
+
+const kClientTokenValid = 'client.token.valid'
 
 const kClientTokenSign = 'client.token.sign'
 
 const kUserTokenSign = 'user.token.sign'
 
+const kUserTokenVerify = 'user.token.verify'
+
+const kUserRegister = 'user.register'
+
+const kUserTokenRefresh = 'user.token.refresh'
+
+const kUserAccessTokenValid = 'user.access.token.valid'
+const kUserRefreshTokenValid = 'user.refresh.token.valid'
+
+const kUserDeviceCreate = 'user.device.create'
+
+const kNotificationEmailSend = 'notification.email.send'
+
+export const kClientDeviceUpdateEvent = 'client.device.update'
+
 export {
-    kJwtCreatedEvent,
-    kFusionAddEvent,
+    kClientTokenSign,
+    kClientTokenValid,
+    kClientTokenVerify,
     kClientUpsertEvent,
+    kFusionAddEvent,
+    kJwtCreatedEvent,
+    kNotificationEmailSend,
+    kProfileCreateEvent,
+    kProfileGetByUserIdEvent,
     kRedisEqualEvent,
     kRedisExistsEvent,
-    kProfileGetByUserIdEvent,
-    kProfileCreateEvent,
+    kUserAccessTokenValid,
     kUserCreateEvent,
+    kUserDeviceCreate,
     kUserFind,
-    kUserVerify,
-    kTokenVerify,
-    kTokenValid,
-    kClientTokenSign,
-    kUserTokenSign
+    kUserRefreshTokenValid,
+    kUserRegister,
+    kUserTokenExpirationGet,
+    kUserTokenRefresh,
+    kUserTokenSign,
+    kUserTokenVerify,
+    kUserVerify
 }

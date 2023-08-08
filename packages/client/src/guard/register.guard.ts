@@ -5,9 +5,12 @@ import {
     Injectable,
     Logger
 } from '@nestjs/common'
-import { Request } from 'express'
 import { firstValueFrom } from 'rxjs'
-import { kAuthService, kTokenVerify } from '@server-octopus/shared'
+import {
+    extractAccessToken,
+    kAuthService,
+    kClientTokenVerify
+} from '@server-octopus/shared'
 import { ClientProxy } from '@nestjs/microservices'
 import { ClientPayload, Result } from '@server-octopus/types'
 
@@ -19,26 +22,25 @@ export class ClientRegisterGuard implements CanActivate {
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const request = context.switchToHttp().getRequest()
-        const token = this.extractTokenFromHeader(request)
+        const token = extractAccessToken(request)
         if (!token) return true
         try {
             const { success, data } = await firstValueFrom(
-                this.authClient.send<Result<ClientPayload>>(kTokenVerify, {
-                    token
-                })
+                this.authClient.send<Result<ClientPayload>>(
+                    kClientTokenVerify,
+                    {
+                        token
+                    }
+                )
             )
             if (success && data) {
                 request['clientId'] = data.clientId
                 request['userId'] = data.userId
             }
+            return success
         } catch (e) {
-            return true
+            this.logger.error(`verify token: ${token} error: ${e.message}`)
+            return false
         }
-        return true
-    }
-
-    private extractTokenFromHeader(request: Request): string | undefined {
-        const [type, token] = request.headers.authorization?.split(' ') ?? []
-        return type === 'Bearer' ? token : undefined
     }
 }

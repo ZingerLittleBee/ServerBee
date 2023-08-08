@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { login } from "@/requests/auth/auth"
+import { LoginData, login } from "@/requests/auth/auth"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import useSWR from "swr"
@@ -25,36 +25,24 @@ import { Icons } from "@/components/icons"
 
 interface UserAuthFormProps extends React.HTMLAttributes<HTMLDivElement> {}
 
-const formSchema = z
-  .object({
-    email: z.string().email().trim(),
-    username: z
-      .string()
-      .regex(/^[a-zA-Z_]+$/, { message: "Username must start with letter" })
-      .trim(),
-    password: z
-      .string()
-      .min(8, { message: "Password must be at least 8 characters" }),
-  })
-  .or(
-    z.object({
-      username: z
-        .string()
-        .regex(/^[a-zA-Z].*$/, { message: "Username must start with letter" })
-        .trim(),
-      password: z
-        .string()
-        .min(8, { message: "Password must be at least 8 characters" }),
-    })
-  )
-  .or(
-    z.object({
-      email: z.string().email().trim(),
-      password: z
-        .string()
-        .min(8, { message: "Password must be at least 8 characters" }),
-    })
-  )
+const usernameSchema = z.object({
+  username: z
+    .string()
+    .regex(/^[a-zA-Z].*$/, { message: "Username must start with letter" })
+    .trim(),
+  password: z
+    .string()
+    .min(8, { message: "Password must be at least 8 characters" }),
+})
+
+const emailSchema = z.object({
+  email: z.string().email().trim(),
+  password: z
+    .string()
+    .min(8, { message: "Password must be at least 8 characters" }),
+})
+
+const formSchema = usernameSchema.or(emailSchema)
 
 export function LoginForm({ className, ...props }: UserAuthFormProps) {
   const router = useRouter()
@@ -76,14 +64,20 @@ export function LoginForm({ className, ...props }: UserAuthFormProps) {
   })
 
   async function onSubmit(data: z.infer<typeof formSchema>) {
-    console.log("submit", data.email, data.username, data.password)
     setIsLoading(true)
-    const res = await login(data.password, data.email, data.username)
+    let userInfo: LoginData = { password: data.password }
+    if (usernameSchema.safeParse(data).success) {
+      userInfo.username = (data as z.infer<typeof usernameSchema>).username
+    } else {
+      userInfo.email = (data as z.infer<typeof emailSchema>).email
+    }
+    const res = await login({ ...userInfo })
     if (res?.success) {
       router.push("/dashboard")
     } else {
       toast({
-        title: "Error",
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
         description: res?.message,
       })
     }

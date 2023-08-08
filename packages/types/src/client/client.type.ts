@@ -1,35 +1,36 @@
-import { CreateDevice, DiskDetailDto, NetworkInfoDto } from '../device.type'
-import { Os, Overview, Process, Realtime, SimpleProcess } from '../fusion.type'
+import { Os, Overview, Process, Realtime, SimpleProcess } from "../fusion.type";
+import { Result } from "../result.type";
+import { TokenPayload } from "../token/index";
+import { DeviceDto, DeviceVo } from "./device.type";
 
-type CreateClient = {
-    name?: string
-    device: CreateDevice
-    userId?: string
-    clientId?: string
+export enum ClientStatus {
+    ACTIVE = 'ACTIVE',
+    INACTIVE = 'INACTIVE',
+    DISABLED = 'DISABLED',
+    UNKNOWN = 'UNKNOWN'
 }
 
-type ClientDto = {
-    name?: string
-    device: DeviceDto
-    userId?: string
-    clientId?: string
-}
+export type CreateClientResult = Result<ClientVo>
 
-type DeviceDto = {
+export type ClientVo = {
+    clientId: string
     name: string
-    hostname: string
-    kernel: string
-    cpu_num: number
-    brand: string
-    frequency: string
-    vendor: string
-    memory: string
-    swap: string
-    version: string
-    disk: DiskDetailDto[]
-    network: NetworkInfoDto[]
+    status: ClientStatus
+    lastCommunication: Date
+    device?: DeviceVo
 }
 
+export type CreateClientVo = ClientVo & { token: string }
+
+type CreateClientDto = {
+    name: string
+    userId?: string
+}
+
+type UpdateClientDto = {
+    name?: string
+    device?: DeviceDto
+}
 
 type FusionDto = {
     overview?: Overview
@@ -41,10 +42,23 @@ type FusionDto = {
     time?: number
 }
 
+type ClientPayload = TokenPayload
+
+type UpdateDeviceDto = {
+    clientId: string
+    device: DeviceDto
+}
+
+export type RegisterClientDto = {
+    clientId: string
+    userId: string
+    device: DeviceDto
+}
+
 
 export {
-    ClientDto,
-    DeviceDto,
+    ClientPayload, CreateClientDto, DeviceDto,
     FusionDto,
-    CreateClient
-}
+    UpdateDeviceDto
+};
+

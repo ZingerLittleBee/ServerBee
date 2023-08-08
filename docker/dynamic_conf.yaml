@@ -1,0 +1,84 @@
+http:
+    routers:
+        api-s:
+            rule: "Host(`serverhub.app`) && PathPrefix(`/api/s/`)"
+            service: "service-server"
+            middlewares:
+                - stripprefix-s
+            tls:
+                certResolver: myresolver
+
+        api-c:
+            rule: "Host(`serverhub.app`) && PathPrefix(`/api/c/`)"
+            service: "service-client"
+            middlewares:
+                - stripprefix-c
+            tls:
+                certResolver: myresolver
+
+        view:
+            rule: "Host(`serverhub.app`)"
+            service: "service-view"
+            tls:
+                certResolver: myresolver
+
+        client:
+            rule: "Host(`client.serverhub.app`)"
+            service: "service-client"
+            tls:
+                certResolver: myresolver
+
+        server:
+            rule: "Host(`server.serverhub.app`)"
+            service: "service-server"
+            tls:
+                certResolver: myresolver
+
+        storage:
+            rule: "Host(`storage.serverhub.app`)"
+            service: "service-storage"
+            tls:
+                certResolver: myresolver
+
+        auth:
+            rule: "Host(`auth.serverhub.app`)"
+            service: "service-auth"
+            tls:
+                certResolver: myresolver
+
+    services:
+        service-view:
+            loadBalancer:
+                servers:
+                    - url: "http://serverhub.app"
+
+        service-client:
+            loadBalancer:
+                servers:
+                    - url: "http://client.serverhub.app"
+
+        service-server:
+            loadBalancer:
+                servers:
+                    - url: "http://server.serverhub.app"
+
+        service-storage:
+            loadBalancer:
+                servers:
+                    - url: "http://storage.serverhub.app"
+
+        service-auth:
+            loadBalancer:
+                servers:
+                    - url: "http://auth.serverhub.app"
+
+    middlewares:
+        stripprefix-s:
+            stripPrefix:
+                prefixes:
+                    - "/api/s"
+
+        stripprefix-c:
+            stripPrefix:
+                prefixes:
+                    - "/api/c"

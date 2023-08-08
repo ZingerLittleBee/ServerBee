@@ -1,14 +1,18 @@
 {
   "name": "@server-octopus/types",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "dev": "tsup src/index.ts --dts-only --watch",
     "build": "tsup src/index.ts --dts-only --minify --clean"
   },
   "keywords": [],
-  "author": "",
+  "author": "ZingerLittleBee",
   "devDependencies": {
-    "tsup": "^7.1.0"
+    "tsup": "^7.1.0",
+    "typescript": "^5.1.3"
   }
 }

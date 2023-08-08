@@ -1,0 +1,40 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+ENV NEXT_TELEMETRY_DISABLED 1
+
+RUN apk update
+# Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine
+RUN apk add --no-cache python3 py3-pip build-base libc6-compat
+
+COPY . .
+
+RUN npm install -g pnpm
+
+RUN pnpm add sharp -w
+
+RUN pnpm install
+
+RUN pnpm build:view
+
+
+FROM node:18-alpine
+
+WORKDIR /app
+
+ENV NODE_ENV production
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+USER nextjs
+
+COPY --from=0 /app/packages/view/.next/standalone .
+COPY --from=0 /app/packages/view/.next/static ./packages/view/.next/static
+
+EXPOSE 3000
+
+ENV PORT 3000
+
+CMD ["node", "./packages/view/server.js"]

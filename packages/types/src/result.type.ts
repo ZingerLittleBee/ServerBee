@@ -1,4 +1,4 @@
-export interface Result<T> {
+export interface Result<T = any> {
     success: boolean
     message?: string
     data?: T

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import {RegisterForm} from "@/app/register/register-form";
 
-export default () => {
+export default function RegisterPage() {
   return (
     <>
         <div className="lg:p-8 lg:py-20">

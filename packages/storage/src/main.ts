@@ -2,17 +2,22 @@ import { NestFactory } from '@nestjs/core'
 import { StorageModule } from './storage.module'
 import { MicroserviceOptions, Transport } from '@nestjs/microservices'
 import { ConfigService } from '@nestjs/config'
-import { kNatsServer } from '@server-octopus/shared'
+import {
+    defaultStorageServicePort,
+    kStorageServicePort
+} from '@server-octopus/shared'
 
 async function bootstrap() {
     const app = await NestFactory.create(StorageModule)
     const configService = app.get(ConfigService)
-    const servers = configService.get(kNatsServer)
+    const port =
+        configService.get<number>(kStorageServicePort) ??
+        defaultStorageServicePort
 
     const microservice = app.connectMicroservice<MicroserviceOptions>({
-        transport: Transport.NATS,
+        transport: Transport.TCP,
         options: {
-            servers
+            port
         }
     })
     await microservice.listen()

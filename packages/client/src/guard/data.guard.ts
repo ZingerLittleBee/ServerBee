@@ -6,11 +6,11 @@ import {
     Logger,
     UnauthorizedException
 } from '@nestjs/common'
-import { Request } from 'express'
 import {
+    extractAccessToken,
     kAuthService,
-    kStorageService,
-    kTokenVerify
+    kClientTokenVerify,
+    kStorageService
 } from '@server-octopus/shared'
 import { ClientProxy } from '@nestjs/microservices'
 import { firstValueFrom } from 'rxjs'
@@ -27,16 +27,18 @@ export class ClientDataGuard implements CanActivate {
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const request = context.switchToHttp().getRequest()
-        const token = this.extractTokenFromHeader(request)
+        const token = extractAccessToken(request)
         if (!token) {
             this.logger.error(`token not found`)
             throw new UnauthorizedException(`token not found`)
         }
         try {
             const { success, message, data } = await firstValueFrom(
-                this.client.send<Result<ClientPayload>>(kTokenVerify, { token })
+                this.client.send<Result<ClientPayload>>(kClientTokenVerify, {
+                    token
+                })
             )
-            if (!success || !data.clientId) {
+            if (!success || !data?.clientId) {
                 this.logger.error(
                     `Token: ${token} verify failed error: ${message}`
                 )
@@ -51,10 +53,5 @@ export class ClientDataGuard implements CanActivate {
             throw new UnauthorizedException(e)
         }
         return true
-    }
-
-    private extractTokenFromHeader(request: Request): string | undefined {
-        const [type, token] = request.headers.authorization?.split(' ') ?? []
-        return type === 'Bearer' ? token : undefined
     }
 }

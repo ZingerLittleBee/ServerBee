@@ -46,3 +46,9 @@ lerna-debug.log*
 packages/app/dist
 .env
 /packages/*/dist/
+
+# NextJS
+.next
+
+# PKG
+pkg/**

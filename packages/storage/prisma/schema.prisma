@@ -8,8 +8,12 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // provider = "postgresql"
+  // url      = env("DATABASE_URL")
+
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -23,6 +27,25 @@ model User {
   profile    Profile?
   role       Role     @default(USER)
   clients    Client[]
+  devices    Ud[]
+}
+
+// User Device
+model Ud {
+  id         Int      @id @default(autoincrement())
+  ud_id      String   @unique @default(cuid())
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  last_seen  DateTime @updatedAt
+  name       String
+  os         String?
+  app        String?
+  ip         String?
+  location   String?
+  type       Type     @default(UNKNOWN)
+  status     Status   @default(ACTIVE)
+  user       User     @relation(fields: [user_id], references: [user_id])
+  user_id    String
 }
 
 model Profile {
@@ -49,6 +72,7 @@ model Client {
   network    Network[]
 }
 
+// Client Device
 model Device {
   id         Int       @id @default(autoincrement())
   name       String?
@@ -108,4 +132,13 @@ enum Status {
   ACTIVE
   INACTIVE
   DISABLED
+  UNKNOWN
+}
+
+enum Type {
+  UNKNOWN
+  DESKTOP
+  TABLET
+  MOBILE
+  CLIENT
 }

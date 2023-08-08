@@ -1,0 +1,23 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+RUN apk update
+RUN apk add --no-cache python3 py3-pip build-base
+
+COPY . .
+
+RUN npm install -g pnpm
+
+RUN pnpm install --frozen-lockfile
+
+RUN pnpm build:client
+
+
+FROM alpine
+
+WORKDIR /app
+
+COPY --from=0 /app/pkg/server-octopus .
+
+CMD ["./server-octopus"]

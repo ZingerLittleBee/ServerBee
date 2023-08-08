@@ -2,8 +2,11 @@ import { Module } from '@nestjs/common'
 
 import {
     kAuthService,
-    kNatsServer,
-    kStorageService
+    kAuthServiceHost,
+    kAuthServicePort,
+    kStorageService,
+    kStorageServiceHost,
+    kStorageServicePort
 } from '@server-octopus/shared'
 import { ClientController } from '@/client.controller'
 import { ClientService } from '@/client.service'
@@ -11,6 +14,12 @@ import { EventsGateway } from '@/gateway/events.gateway'
 import { EventsService } from '@/gateway/events.service'
 import { ClientProxyFactory, Transport } from '@nestjs/microservices'
 import { ConfigModule, ConfigService } from '@nestjs/config'
+import {
+    defaultAuthServiceHost,
+    defaultAuthServicePort,
+    defaultStorageServiceHost,
+    defaultStorageServicePort
+} from '@/const'
 
 @Module({
     imports: [
@@ -28,9 +37,14 @@ import { ConfigModule, ConfigService } from '@nestjs/config'
             inject: [ConfigService],
             useFactory: (configService: ConfigService) =>
                 ClientProxyFactory.create({
-                    transport: Transport.NATS,
+                    transport: Transport.TCP,
                     options: {
-                        servers: [configService.get<string>(kNatsServer)]
+                        host:
+                            configService.get<string>(kAuthServiceHost) ??
+                            defaultAuthServiceHost,
+                        port:
+                            configService.get<number>(kAuthServicePort) ??
+                            defaultAuthServicePort
                     }
                 })
         },
@@ -39,9 +53,14 @@ import { ConfigModule, ConfigService } from '@nestjs/config'
             inject: [ConfigService],
             useFactory: (configService: ConfigService) =>
                 ClientProxyFactory.create({
-                    transport: Transport.NATS,
+                    transport: Transport.TCP,
                     options: {
-                        servers: [configService.get<string>(kNatsServer)]
+                        host:
+                            configService.get<string>(kStorageServiceHost) ??
+                            defaultStorageServiceHost,
+                        port:
+                            configService.get<number>(kStorageServicePort) ??
+                            defaultStorageServicePort
                     }
                 })
         }
