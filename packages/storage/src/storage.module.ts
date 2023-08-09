@@ -24,18 +24,20 @@ import { UdModule } from './ud/ud.module'
                 uri: config.get<string>(kMongoUrl)
             })
         }),
-        RedisModule.forRootAsync({
-            imports: [ConfigModule],
-            inject: [ConfigService],
-            useFactory: (config: ConfigService) => {
-                return {
-                    readyLog: true,
-                    config: {
-                        url: config.get(kRedisUrl)
-                    }
-                } as RedisModuleOptions
-            }
-        }),
+        RedisModule.forRootAsync(
+            {
+                imports: [ConfigModule],
+                inject: [ConfigService],
+                useFactory: (config: ConfigService) =>
+                    ({
+                        readyLog: true,
+                        config: {
+                            url: config.get(kRedisUrl)
+                        }
+                    } as RedisModuleOptions)
+            },
+            true
+        ),
         DbModule,
         UtilModule,
         ProfileModule,

@@ -1,8 +1,11 @@
 name: Docker Build and Push
 
 on:
-    push:
-        branches: [ main ]
+    workflow_dispatch:
+    workflow_run:
+        workflows: [ "Publish to npm" ]
+        types:
+            - completed
 
 jobs:
     build-and-push:
