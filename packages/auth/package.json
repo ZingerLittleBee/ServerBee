@@ -28,7 +28,7 @@
         "@nestjs/mapped-types": "*",
         "@nestjs/microservices": "^10.0.5",
         "@nestjs/platform-express": "^10.0.0",
-        "@server-octopus/shared": "1.0.1",
+        "@server-octopus/shared": "1.0.2",
         "bcrypt": "^5.1.0",
         "nats": "^2.15.1",
         "reflect-metadata": "^0.1.13",

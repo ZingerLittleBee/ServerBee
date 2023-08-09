@@ -39,8 +39,8 @@ importers:
         specifier: ^10.0.0
         version: 10.0.2(@nestjs/common@10.0.2)(@nestjs/core@10.0.2)
       '@server-octopus/shared':
-        specifier: 1.0.1
-        version: 1.0.1
+        specifier: 1.0.2
+        version: link:../shared
       bcrypt:
         specifier: ^5.1.0
         version: 5.1.0
@@ -148,8 +148,8 @@ importers:
         specifier: ^10.0.3
         version: 10.0.3(@nestjs/common@10.0.2)(@nestjs/core@10.0.2)(reflect-metadata@0.1.13)(rxjs@7.8.1)
       '@server-octopus/shared':
-        specifier: 1.0.1
-        version: 1.0.1
+        specifier: 1.0.2
+        version: link:../shared
       cookie-parser:
         specifier: ^1.4.6
         version: 1.4.6
@@ -266,8 +266,8 @@ importers:
         specifier: 0.0.7
         version: 0.0.7(ts-node@10.9.1)
       '@server-octopus/shared':
-        specifier: 1.0.1
-        version: 1.0.1
+        specifier: 1.0.2
+        version: link:../shared
       '@webtre/nestjs-mailer-react-adapter':
         specifier: ^0.0.9
         version: 0.0.9(@nestjs-modules/mailer@1.9.1)
@@ -424,8 +424,8 @@ importers:
         specifier: ^10.0.2
         version: 10.0.2(@nestjs/common@10.0.2)(@nestjs/core@10.0.2)(@nestjs/microservices@10.0.5)(@nestjs/platform-express@10.0.2)
       '@server-octopus/shared':
-        specifier: 1.0.1
-        version: 1.0.1
+        specifier: 1.0.2
+        version: link:../shared
       '@server-octopus/types':
         specifier: 1.0.2
         version: link:../types
@@ -601,8 +601,8 @@ importers:
         specifier: ^5.1.1
         version: 5.1.1(prisma@5.1.1)
       '@server-octopus/shared':
-        specifier: 1.0.1
-        version: 1.0.1
+        specifier: 1.0.2
+        version: link:../shared
       bcrypt:
         specifier: ^5.1.0
         version: 5.1.0
@@ -5264,9 +5264,6 @@ packages:
       domhandler: 5.0.3
       selderee: 0.11.0
     dev: false
-
-  /@server-octopus/shared@1.0.1:
-    resolution: {integrity: sha512-K8FrgF6l8hmJFBS/HzqaDKNnZPmp3VFa/1044lodcrvD9EVu/GgcKEP+IMqyeaX7EA8NLqiPWA5Da2JIp5HX0A==}
 
   /@sinclair/typebox@0.24.51:
     resolution: {integrity: sha512-1P1OROm/rdubP5aFDSZQILU0vrLCJ4fvHt6EoqHEM+2D/G5MK3bIaymUKLit8Js9gbns5UyJnkP/TZROLw4tUA==}
