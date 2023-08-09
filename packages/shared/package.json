@@ -22,7 +22,7 @@
     "@nestjs/cli": "^10.0.3",
     "@nestjs/schematics": "^10.0.1",
     "@nestjs/testing": "^10.0.2",
-    "@server-octopus/types": "1.0.1",
+    "@server-octopus/types": "1.0.2",
     "@types/express": "^4.17.17",
     "@types/jest": "28.1.4",
     "@types/node": "^16.0.0",
