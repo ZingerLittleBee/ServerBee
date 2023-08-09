@@ -35,7 +35,7 @@
     "@server-octopus/shared": "1.0.1",
     "bcrypt": "^5.1.0",
     "ioredis": "^5.3.2",
-    "mongoose": "^7.3.1",
+    "mongoose": "^7.3.3",
     "nats": "^2.15.1",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1"
