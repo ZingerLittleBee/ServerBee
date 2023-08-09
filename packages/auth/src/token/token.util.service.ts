@@ -1,10 +1,16 @@
 import { ConfigService } from '@nestjs/config'
 import { Injectable, NotFoundException } from '@nestjs/common'
 import {
+    defaultClientAccessExpiration,
+    defaultClientRefreshExpiration,
+    defaultSaltRounds,
+    defaultUserAccessExpiration,
+    defaultUserRefreshExpiration,
     kClientAccessExpiration,
     kClientAccessSecret,
     kClientRefreshExpiration,
     kClientRefreshSecret,
+    kSaltRounds,
     kUserAccessExpiration,
     kUserAccessSecret,
     kUserRefreshExpiration,
@@ -13,12 +19,6 @@ import {
 
 @Injectable()
 export class TokenUtilService {
-    private defaultClientAccessExpiration = 3600 * 24 * 30
-    private defaultClientRefreshExpiration = 3600 * 24 * 30 * 6
-    private defaultUserAccessExpiration = 3600 * 24 * 30
-    private defaultUserRefreshExpiration = 3600 * 24 * 30 * 6
-    private defaultSaltRounds = '10'
-
     constructor(private readonly configService: ConfigService) {}
 
     getUserAccessSecret() {
@@ -32,14 +32,14 @@ export class TokenUtilService {
     getUserAccessExpiration() {
         return this.getExpiration(
             kUserAccessExpiration,
-            this.defaultUserAccessExpiration
+            defaultUserAccessExpiration
         )
     }
 
     getUserRefreshExpiration() {
         return this.getExpiration(
             kUserRefreshExpiration,
-            this.defaultUserRefreshExpiration
+            defaultUserRefreshExpiration
         )
     }
 
@@ -54,14 +54,14 @@ export class TokenUtilService {
     getClientRefreshExpiration() {
         return this.getExpiration(
             kClientRefreshExpiration,
-            this.defaultClientRefreshExpiration
+            defaultClientRefreshExpiration
         )
     }
 
     getClientAccessExpiration() {
         return this.getExpiration(
             kClientAccessExpiration,
-            this.defaultClientAccessExpiration
+            defaultClientAccessExpiration
         )
     }
 
@@ -76,7 +76,7 @@ export class TokenUtilService {
 
     getExpiration(key: string, defaultExpiration: number) {
         if (!this.configService.get(key)) {
-            return this.defaultClientAccessExpiration
+            return defaultClientAccessExpiration
         }
         const expiration = parseInt(this.configService.get(key) ?? 'NaN')
         return isNaN(expiration) ? defaultExpiration : expiration
@@ -84,7 +84,7 @@ export class TokenUtilService {
 
     getSaltRounds() {
         return +(
-            this.configService.get('SALT_ROUNDS') ?? this.defaultSaltRounds
+            this.configService.get<number>(kSaltRounds) ?? defaultSaltRounds
         )
     }
 }

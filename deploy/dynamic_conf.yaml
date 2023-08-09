@@ -1,0 +1,68 @@
+http:
+    routers:
+        api-s:
+            rule: "Host(`serverhub.app`) && PathPrefix(`/api/s/`)"
+            service: "service-server"
+            middlewares:
+                - stripprefix-s
+            tls:
+                certResolver: myresolver
+
+        api-c:
+            rule: "Host(`serverhub.app`) && PathPrefix(`/api/c/`)"
+            service: "service-client"
+            middlewares:
+                - stripprefix-c
+            tls:
+                certResolver: myresolver
+
+        view:
+            rule: "Host(`serverhub.app`)"
+            service: "service-view"
+            tls:
+                certResolver: myresolver
+            entryPoints:
+                - websecure
+
+        client:
+            rule: "Host(`client.serverhub.app`)"
+            service: "service-client"
+            tls:
+                certResolver: myresolver
+            entryPoints:
+                - websecure
+
+        server:
+            rule: "Host(`server.serverhub.app`)"
+            service: "service-server"
+            tls:
+                certResolver: myresolver
+            entryPoints:
+                - websecure
+
+    services:
+        service-view:
+            loadBalancer:
+                servers:
+                    - url: "http://view:3000"
+
+        service-server:
+          loadBalancer:
+              servers:
+                  -   url: "http://server:3001"
+
+        service-client:
+            loadBalancer:
+                servers:
+                    - url: "http://client:3002"
+
+    middlewares:
+        stripprefix-s:
+            stripPrefix:
+                prefixes:
+                    - "/api/s"
+
+        stripprefix-c:
+            stripPrefix:
+                prefixes:
+                    - "/api/c"

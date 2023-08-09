@@ -7,16 +7,9 @@ import { TaskModule } from './task/task.module'
 import { ScheduleModule } from '@nestjs/schedule'
 import { ClientsModule, Transport } from '@nestjs/microservices'
 import {
-    defaultAuthServiceHost,
-    defaultAuthServicePort,
-    defaultStorageServiceHost,
-    defaultStorageServicePort,
     kAuthService,
-    kAuthServiceHost,
-    kAuthServicePort,
-    kStorageService,
-    kStorageServiceHost,
-    kStorageServicePort
+    kNatsServerUrl,
+    kStorageService
 } from '@server-octopus/shared'
 
 @Module({
@@ -32,14 +25,11 @@ import {
                     imports: [ConfigModule],
                     inject: [ConfigService],
                     useFactory: (configService: ConfigService) => ({
-                        transport: Transport.TCP,
+                        transport: Transport.NATS,
                         options: {
-                            host:
-                                configService.get<string>(kAuthServiceHost) ??
-                                defaultAuthServiceHost,
-                            port:
-                                configService.get<number>(kAuthServicePort) ??
-                                defaultAuthServicePort
+                            servers:
+                                configService.get<string>(kNatsServerUrl) ??
+                                kNatsServerUrl
                         }
                     })
                 },
@@ -48,16 +38,11 @@ import {
                     imports: [ConfigModule],
                     inject: [ConfigService],
                     useFactory: (configService: ConfigService) => ({
-                        transport: Transport.TCP,
+                        transport: Transport.NATS,
                         options: {
-                            host:
-                                configService.get<string>(
-                                    kStorageServiceHost
-                                ) ?? defaultStorageServiceHost,
-                            port:
-                                configService.get<number>(
-                                    kStorageServicePort
-                                ) ?? defaultStorageServicePort
+                            servers:
+                                configService.get<string>(kNatsServerUrl) ??
+                                kNatsServerUrl
                         }
                     })
                 }

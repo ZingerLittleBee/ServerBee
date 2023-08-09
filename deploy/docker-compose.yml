@@ -1,0 +1,59 @@
+version: "3"
+
+services:
+    reverse-proxy:
+        image: traefik:v2.10
+        ports:
+            - "80:80"
+            - "443:443"
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock
+            - ./traefik.yml:/etc/traefik/traefik.yml
+            - ./dynamic_conf.yaml:/etc/traefik/dynamic_conf.yaml
+            - ./acme:/etc/traefik/acme
+    view:
+        image: ghcr.io/zingerlittlebee/serverhub-view:latest
+        labels:
+            - traefik.enable=true
+            - traefik.http.routers.view.rule=Host(`serverhub.app`)
+            - traefik.http.routers.view.entrypoints=websecure
+            - traefik.http.routers.view.tls.certresolver=myresolver
+            - traefik.http.services.service-view.loadbalancer.server.port=3000
+    server:
+        image: ghcr.io/zingerlittlebee/serverhub-server:latest
+        environment:
+            NATS_SERVER_URL: ${NATS_SERVER_URL}
+        labels:
+            - traefik.enable=true
+            - traefik.http.routers.server.rule=Host(`server.serverhub.app`)
+            - traefik.http.routers.server.entrypoints=websecure
+            - traefik.http.routers.server.tls.certresolver=myresolver
+            - traefik.http.services.service-server.loadbalancer.server.port=3001
+    client:
+        image: ghcr.io/zingerlittlebee/serverhub-client:latest
+        environment:
+            NATS_SERVER_URL: ${NATS_SERVER_URL}
+        labels:
+            - traefik.enable=true
+            - traefik.http.routers.client.rule=Host(`client.serverhub.app`)
+            - traefik.http.routers.client.entrypoints=websecure
+            - traefik.http.routers.client.tls.certresolver=myresolver
+            - traefik.http.services.service-client.loadbalancer.server.port=3002
+    auth:
+        image: ghcr.io/zingerlittlebee/serverhub-auth:latest
+        environment:
+            NATS_SERVER_URL: ${NATS_SERVER_URL}
+            JWT_USER_ACCESS_SECRET: ${JWT_USER_ACCESS_SECRET}
+            JWT_USER_REFRESH_SECRET: ${JWT_USER_REFRESH_SECRET}
+            JWT_CLIENT_ACCESS_SECRET: ${JWT_CLIENT_ACCESS_SECRET}
+            JWT_CLIENT_REFRESH_SECRET: ${JWT_CLIENT_REFRESH_SECRET}
+    storage:
+        image: ghcr.io/zingerlittlebee/serverhub-storage:latest
+        environment:
+            NATS_SERVER_URL: ${NATS_SERVER_URL}
+            DATABASE_URL: ${DATABASE_URL}
+            DIRECT_URL: ${DIRECT_URL}
+            REDIS_URL: ${REDIS_URL}
+            MONGO_URL: ${MONGO_URL}
+    nats:
+        image: nats:latest
