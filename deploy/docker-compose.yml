@@ -3,6 +3,7 @@ version: "3"
 services:
     reverse-proxy:
         image: traefik:v2.10
+        restart: on-failure
         ports:
             - "80:80"
             - "443:443"
@@ -13,6 +14,7 @@ services:
             - ./acme:/etc/traefik/acme
     view:
         image: ghcr.io/zingerlittlebee/serverhub-view:latest
+        restart: on-failure
         labels:
             - traefik.enable=true
             - traefik.http.routers.view.rule=Host(`serverhub.app`)
@@ -21,6 +23,7 @@ services:
             - traefik.http.services.service-view.loadbalancer.server.port=3000
     server:
         image: ghcr.io/zingerlittlebee/serverhub-server:latest
+        restart: on-failure
         environment:
             NATS_SERVER_URL: ${NATS_SERVER_URL}
         labels:
@@ -31,6 +34,7 @@ services:
             - traefik.http.services.service-server.loadbalancer.server.port=3001
     client:
         image: ghcr.io/zingerlittlebee/serverhub-client:latest
+        restart: on-failure
         environment:
             NATS_SERVER_URL: ${NATS_SERVER_URL}
         labels:
@@ -41,6 +45,7 @@ services:
             - traefik.http.services.service-client.loadbalancer.server.port=3002
     auth:
         image: ghcr.io/zingerlittlebee/serverhub-auth:latest
+        restart: on-failure
         environment:
             NATS_SERVER_URL: ${NATS_SERVER_URL}
             JWT_USER_ACCESS_SECRET: ${JWT_USER_ACCESS_SECRET}
@@ -49,6 +54,7 @@ services:
             JWT_CLIENT_REFRESH_SECRET: ${JWT_CLIENT_REFRESH_SECRET}
     storage:
         image: ghcr.io/zingerlittlebee/serverhub-storage:latest
+        restart: on-failure
         environment:
             NATS_SERVER_URL: ${NATS_SERVER_URL}
             DATABASE_URL: ${DATABASE_URL}
@@ -57,3 +63,4 @@ services:
             MONGO_URL: ${MONGO_URL}
     nats:
         image: nats:latest
+        restart: on-failure
