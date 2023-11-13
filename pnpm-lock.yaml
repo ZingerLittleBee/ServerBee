@@ -493,8 +493,8 @@ importers:
         specifier: ^10.0.0
         version: 10.9.1(@types/node@16.0.0)(typescript@4.9.5)
       tsconfig-paths:
-        specifier: 4.0.0
-        version: 4.0.0
+        specifier: 4.2.0
+        version: 4.2.0
       typescript:
         specifier: ^4.3.5
         version: 4.9.5
@@ -565,8 +565,8 @@ importers:
         specifier: ^10.0.0
         version: 10.9.1(@types/node@16.0.0)(typescript@4.9.5)
       tsconfig-paths:
-        specifier: 4.0.0
-        version: 4.0.0
+        specifier: 4.2.0
+        version: 4.2.0
       typescript:
         specifier: ^4.3.5
         version: 4.9.5
@@ -14894,14 +14894,6 @@ packages:
     dependencies:
       '@types/json5': 0.0.29
       json5: 1.0.2
-      minimist: 1.2.8
-      strip-bom: 3.0.0
-    dev: true
-
-  /tsconfig-paths@4.0.0:
-    resolution: {integrity: sha512-SLBg2GBKlR6bVtMgJJlud/o3waplKtL7skmLkExomIiaAtLGtVsoXIqP3SYdjbcH9lq/KVv7pMZeCBpLYOit6Q==}
-    dependencies:
-      json5: 2.2.3
       minimist: 1.2.8
       strip-bom: 3.0.0
     dev: true
