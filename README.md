@@ -1,4 +1,1 @@
-## init db
-```bash
-npx prisma migrate dev --name init
-```
+Move to https://github.com/ZingerLittleBee/server_bee-backend
