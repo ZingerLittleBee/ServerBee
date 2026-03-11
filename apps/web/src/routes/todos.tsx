@@ -1,59 +1,65 @@
-import { Button } from '@serverbee/ui/components/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@serverbee/ui/components/card'
-import { Checkbox } from '@serverbee/ui/components/checkbox'
-import { Input } from '@serverbee/ui/components/input'
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { createFileRoute } from '@tanstack/react-router'
-import { Loader2, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { Button } from "@serverbee/ui/components/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@serverbee/ui/components/card";
+import { Checkbox } from "@serverbee/ui/components/checkbox";
+import { Input } from "@serverbee/ui/components/input";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
+import { Loader2, Trash2 } from "lucide-react";
+import { useState } from "react";
 
-import { orpc } from '@/utils/orpc'
+import { orpc } from "@/utils/orpc";
 
-export const Route = createFileRoute('/todos')({
-  component: TodosRoute
-})
+export const Route = createFileRoute("/todos")({
+  component: TodosRoute,
+});
 
 function TodosRoute() {
-  const [newTodoText, setNewTodoText] = useState('')
+  const [newTodoText, setNewTodoText] = useState("");
 
-  const todos = useQuery(orpc.todo.getAll.queryOptions())
+  const todos = useQuery(orpc.todo.getAll.queryOptions());
   const createMutation = useMutation(
     orpc.todo.create.mutationOptions({
       onSuccess: () => {
-        todos.refetch()
-        setNewTodoText('')
-      }
-    })
-  )
+        todos.refetch();
+        setNewTodoText("");
+      },
+    }),
+  );
   const toggleMutation = useMutation(
     orpc.todo.toggle.mutationOptions({
       onSuccess: () => {
-        todos.refetch()
-      }
-    })
-  )
+        todos.refetch();
+      },
+    }),
+  );
   const deleteMutation = useMutation(
     orpc.todo.delete.mutationOptions({
       onSuccess: () => {
-        todos.refetch()
-      }
-    })
-  )
+        todos.refetch();
+      },
+    }),
+  );
 
   const handleAddTodo = (e) => {
-    e.preventDefault()
+    e.preventDefault();
     if (newTodoText.trim()) {
-      createMutation.mutate({ text: newTodoText })
+      createMutation.mutate({ text: newTodoText });
     }
-  }
+  };
 
   const handleToggleTodo = (id: number, completed: boolean) => {
-    toggleMutation.mutate({ id, completed: !completed })
-  }
+    toggleMutation.mutate({ id, completed: !completed });
+  };
 
   const handleDeleteTodo = (id: number) => {
-    deleteMutation.mutate({ id })
-  }
+    deleteMutation.mutate({ id });
+  };
 
   return (
     <div className="mx-auto w-full max-w-md py-10">
@@ -63,15 +69,15 @@ function TodosRoute() {
           <CardDescription>Manage your tasks efficiently</CardDescription>
         </CardHeader>
         <CardContent>
-          <form className="mb-6 flex items-center space-x-2" onSubmit={handleAddTodo}>
+          <form onSubmit={handleAddTodo} className="mb-6 flex items-center space-x-2">
             <Input
-              disabled={createMutation.isPending}
+              value={newTodoText}
               onChange={(e) => setNewTodoText(e.target.value)}
               placeholder="Add a new task..."
-              value={newTodoText}
+              disabled={createMutation.isPending}
             />
-            <Button disabled={createMutation.isPending || !newTodoText.trim()} type="submit">
-              {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add'}
+            <Button type="submit" disabled={createMutation.isPending || !newTodoText.trim()}>
+              {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add"}
             </Button>
           </form>
 
@@ -84,22 +90,28 @@ function TodosRoute() {
           ) : (
             <ul className="space-y-2">
               {todos.data?.map((todo) => (
-                <li className="flex items-center justify-between rounded-md border p-2" key={todo.id}>
+                <li
+                  key={todo.id}
+                  className="flex items-center justify-between rounded-md border p-2"
+                >
                   <div className="flex items-center space-x-2">
                     <Checkbox
                       checked={todo.completed}
-                      id={`todo-${todo.id}`}
                       onCheckedChange={() => handleToggleTodo(todo.id, todo.completed)}
+                      id={`todo-${todo.id}`}
                     />
-                    <label className={`${todo.completed ? 'line-through' : ''}`} htmlFor={`todo-${todo.id}`}>
+                    <label
+                      htmlFor={`todo-${todo.id}`}
+                      className={`${todo.completed ? "line-through" : ""}`}
+                    >
                       {todo.text}
                     </label>
                   </div>
                   <Button
-                    aria-label="Delete todo"
-                    onClick={() => handleDeleteTodo(todo.id)}
-                    size="icon"
                     variant="ghost"
+                    size="icon"
+                    onClick={() => handleDeleteTodo(todo.id)}
+                    aria-label="Delete todo"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -110,5 +122,5 @@ function TodosRoute() {
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

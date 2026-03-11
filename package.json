@@ -1,29 +1,59 @@
 {
-  "name": "server-octopus",
-  "version": "1.0.0",
+  "name": "serverbee",
   "private": true,
-  "description": "",
-  "keywords": [],
-  "author": "ZingerLittleBee",
-  "license": "AGPLv3",
+  "workspaces": {
+    "packages": [
+      "apps/*",
+      "packages/*"
+    ],
+    "catalog": {
+      "dotenv": "^17.2.2",
+      "zod": "^4.1.13",
+      "@types/node": "^22.13.14",
+      "lucide-react": "^0.546.0",
+      "next-themes": "^0.4.6",
+      "react": "^19.2.3",
+      "react-dom": "^19.2.3",
+      "sonner": "^2.0.5",
+      "tailwindcss": "^4.1.18",
+      "@libsql/client": "0.15.15",
+      "libsql": "0.5.22",
+      "@orpc/server": "^1.12.2",
+      "@orpc/client": "^1.12.2",
+      "@orpc/openapi": "^1.12.2",
+      "@orpc/zod": "^1.12.2",
+      "better-auth": "1.5.2",
+      "@types/react": "^19.2.10",
+      "@types/react-dom": "^19.2.3",
+      "drizzle-orm": "^0.45.1"
+    }
+  },
+  "type": "module",
   "scripts": {
-    "clean": "node ./scripts/clean.js",
-    "version:dev": "node ./scripts/versionToDev.js",
-    "version:prod": "node ./scripts/versionToProd.js",
-    "preinstall": "npx only-allow pnpm",
-    "build:infra": "nx build @server-octopus/types --prod && nx build @server-octopus/shared --prod",
-    "build:view": "nx build @server-octopus/view --prod",
-    "build:server": "pnpm build:infra && nx build @server-octopus/server --prod && nx run @server-octopus/server:build:pkg",
-    "build:client": "pnpm build:infra && nx build @server-octopus/client --prod && nx run @server-octopus/client:build:pkg",
-    "build:auth": "nx build @server-octopus/auth --prod",
-    "build:storage": "nx build @server-octopus/storage --prod",
-    "patch:infra": "pnpm version -C packages/types patch && pnpm version -C packages/shared patch",
-    "prepack": "pnpm build:infra",
-    "publish:infra": "pnpm --filter shared --filter types publish --access public",
-    "postinstall": "pnpm build:infra"
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "check-types": "turbo check-types",
+    "dev:web": "turbo -F web dev",
+    "db:push": "turbo -F @serverbee/db db:push",
+    "db:studio": "turbo -F @serverbee/db db:studio",
+    "db:generate": "turbo -F @serverbee/db db:generate",
+    "db:migrate": "turbo -F @serverbee/db db:migrate",
+    "db:local": "turbo -F @serverbee/db db:local",
+    "check": "ultracite check",
+    "fix": "ultracite fix"
+  },
+  "dependencies": {
+    "@serverbee/env": "workspace:*",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "nx": "16.6.0",
-    "nx-cloud": "latest"
-  }
+    "@biomejs/biome": "2.4.5",
+    "@serverbee/config": "workspace:*",
+    "@types/node": "catalog:",
+    "turbo": "^2.8.12",
+    "typescript": "^5",
+    "ultracite": "7.2.5"
+  },
+  "packageManager": "bun@1.3.4"
 }

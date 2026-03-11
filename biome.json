@@ -8,6 +8,7 @@
   "files": {
     "ignoreUnknown": false,
     "includes": [
+      "**",
       "!**/.next",
       "!**/dist",
       "!**/.turbo",
@@ -53,7 +54,11 @@
           "level": "warn",
           "fix": "safe",
           "options": {
-            "functions": ["clsx", "cva", "cn"]
+            "functions": [
+              "clsx",
+              "cva",
+              "cn"
+            ]
           }
         }
       },
@@ -84,5 +89,8 @@
       "tailwindDirectives": true
     }
   },
-  "extends": ["ultracite/biome/core", "ultracite/biome/react"]
+  "extends": [
+    "ultracite/biome/core",
+    "ultracite/biome/react"
+  ]
 }

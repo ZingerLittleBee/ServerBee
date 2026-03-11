@@ -1,9 +1,9 @@
-import { createServerFn } from '@tanstack/react-start'
+import { createServerFn } from "@tanstack/react-start";
 
-import { authMiddleware } from '@/middleware/auth'
+import { authMiddleware } from "@/middleware/auth";
 
-export const getUser = createServerFn({ method: 'GET' })
+export const getUser = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
-    return context.session
-  })
+    return context.session;
+  });

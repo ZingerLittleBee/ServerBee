@@ -17,8 +17,8 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
-    "@serverbee/env": "workspace:*",
     "@libsql/client": "catalog:",
+    "@serverbee/env": "workspace:*",
     "dotenv": "catalog:",
     "drizzle-orm": "catalog:",
     "libsql": "catalog:",

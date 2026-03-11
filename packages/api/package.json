@@ -11,13 +11,13 @@
   },
   "scripts": {},
   "dependencies": {
-    "@serverbee/auth": "workspace:*",
-    "@serverbee/db": "workspace:*",
-    "@serverbee/env": "workspace:*",
     "@orpc/client": "catalog:",
     "@orpc/openapi": "catalog:",
     "@orpc/server": "catalog:",
     "@orpc/zod": "catalog:",
+    "@serverbee/auth": "workspace:*",
+    "@serverbee/db": "workspace:*",
+    "@serverbee/env": "workspace:*",
     "dotenv": "catalog:",
     "drizzle-orm": "catalog:",
     "zod": "catalog:"
