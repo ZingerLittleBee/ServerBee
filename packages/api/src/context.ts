@@ -1,12 +1,12 @@
-import { auth } from "@serverbee/auth";
+import { auth } from '@serverbee/auth'
 
 export async function createContext({ req }: { req: Request }) {
   const session = await auth.api.getSession({
-    headers: req.headers,
-  });
+    headers: req.headers
+  })
   return {
-    session,
-  };
+    session
+  }
 }
 
-export type Context = Awaited<ReturnType<typeof createContext>>;
+export type Context = Awaited<ReturnType<typeof createContext>>
