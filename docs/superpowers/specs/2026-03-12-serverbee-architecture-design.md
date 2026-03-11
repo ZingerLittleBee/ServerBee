@@ -148,8 +148,6 @@ serverbee/
         ├── index.html
         ├── tsconfig.json
         ├── tsconfig.app.json
-        ├── eslint.config.js  # ESLint flat config
-        ├── .prettierrc       # Prettier + prettier-plugin-tailwindcss
         └── src/
             ├── main.tsx
             ├── App.tsx                   # 当前入口 (待替换为 router)
@@ -211,7 +209,7 @@ serverbee/
 - `lucide-react` — 图标
 - `tw-animate-css` — 动画
 - `@fontsource-variable/inter` — 字体
-- `eslint` 9 + `prettier` 3 + `prettier-plugin-tailwindcss` — 代码质量
+- 代码质量: 根目录 Biome (Ultracite) 统一管理，apps/web 不单独配置
 
 待安装:
 - `@tanstack/react-router` — 文件式路由
@@ -1444,8 +1442,6 @@ apps/web/
 ├── index.html                [已有]
 ├── tsconfig.json             [已有]
 ├── tsconfig.app.json         [已有] ES2022, react-jsx, 路径别名 @/*
-├── eslint.config.js          [已有] flat config
-├── .prettierrc               [已有] no-semi, double-quote, TW plugin
 ├── public/
 │   └── vite.svg              [已有]
 ├── src/
