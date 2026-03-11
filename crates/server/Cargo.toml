@@ -1,0 +1,30 @@
+[package]
+name = "serverbee-server"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serverbee-common.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+
+axum = { version = "0.8", features = ["ws", "macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
+sea-orm = { version = "1", features = ["sqlx-sqlite", "runtime-tokio-rustls", "macros"] }
+sea-orm-migration = { version = "1", features = ["sqlx-sqlite", "runtime-tokio-rustls"] }
+argon2 = "0.5"
+rand = "0.8"
+base64 = "0.22"
+dashmap = "6"
+figment = { version = "0.10", features = ["toml", "env"] }
+utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-swagger-ui = { version = "9", features = ["axum"] }
+tokio-cron-scheduler = "0.13"

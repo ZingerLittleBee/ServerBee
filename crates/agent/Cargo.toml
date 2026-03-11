@@ -1,0 +1,15 @@
+[package]
+name = "serverbee-agent"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serverbee-common.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+anyhow.workspace = true
