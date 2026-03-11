@@ -1,6 +1,9 @@
 mod config;
 mod entity;
+mod error;
+mod middleware;
 mod migration;
+mod service;
 mod state;
 
 use sea_orm::{ConnectOptions, ConnectionTrait, Database};
