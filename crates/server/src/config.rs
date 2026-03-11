@@ -1,0 +1,189 @@
+use figment::{
+    Figment,
+    providers::{Env, Format, Toml},
+};
+use serde::Deserialize;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AppConfig {
+    #[serde(default = "default_server")]
+    pub server: ServerConfig,
+    #[serde(default)]
+    pub database: DatabaseConfig,
+    #[serde(default)]
+    pub auth: AuthConfig,
+    #[serde(default)]
+    pub admin: AdminConfig,
+    #[serde(default)]
+    pub retention: RetentionConfig,
+    #[serde(default)]
+    pub rate_limit: RateLimitConfig,
+    #[serde(default)]
+    pub geoip: GeoIpConfig,
+    #[serde(default)]
+    pub log: LogConfig,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            server: default_server(),
+            database: DatabaseConfig::default(),
+            auth: AuthConfig::default(),
+            admin: AdminConfig::default(),
+            retention: RetentionConfig::default(),
+            rate_limit: RateLimitConfig::default(),
+            geoip: GeoIpConfig::default(),
+            log: LogConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ServerConfig {
+    #[serde(default = "default_listen")]
+    pub listen: String,
+    #[serde(default = "default_data_dir")]
+    pub data_dir: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct DatabaseConfig {
+    #[serde(default = "default_db_path")]
+    pub path: String,
+    #[serde(default = "default_max_connections")]
+    pub max_connections: u32,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct AuthConfig {
+    #[serde(default = "default_session_ttl")]
+    pub session_ttl: i64,
+    #[serde(default)]
+    pub auto_discovery_key: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct AdminConfig {
+    #[serde(default = "default_admin_username")]
+    pub username: String,
+    #[serde(default)]
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RetentionConfig {
+    #[serde(default = "default_7")]
+    pub records_days: u32,
+    #[serde(default = "default_90")]
+    pub records_hourly_days: u32,
+    #[serde(default = "default_7")]
+    pub gpu_records_days: u32,
+    #[serde(default = "default_7")]
+    pub ping_records_days: u32,
+    #[serde(default = "default_180")]
+    pub audit_logs_days: u32,
+}
+
+impl Default for RetentionConfig {
+    fn default() -> Self {
+        Self {
+            records_days: 7,
+            records_hourly_days: 90,
+            gpu_records_days: 7,
+            ping_records_days: 7,
+            audit_logs_days: 180,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct RateLimitConfig {
+    #[serde(default = "default_5")]
+    pub login_max: u32,
+    #[serde(default = "default_3")]
+    pub register_max: u32,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct GeoIpConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub mmdb_path: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct LogConfig {
+    #[serde(default = "default_log_level")]
+    pub level: String,
+    #[serde(default)]
+    pub file: String,
+}
+
+// Default functions
+fn default_server() -> ServerConfig {
+    ServerConfig {
+        listen: default_listen(),
+        data_dir: default_data_dir(),
+    }
+}
+
+fn default_listen() -> String {
+    "0.0.0.0:9527".to_string()
+}
+
+fn default_data_dir() -> String {
+    "./data".to_string()
+}
+
+fn default_db_path() -> String {
+    "serverbee.db".to_string()
+}
+
+fn default_max_connections() -> u32 {
+    10
+}
+
+fn default_session_ttl() -> i64 {
+    86400
+}
+
+fn default_admin_username() -> String {
+    "admin".to_string()
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
+}
+
+fn default_7() -> u32 {
+    7
+}
+
+fn default_90() -> u32 {
+    90
+}
+
+fn default_180() -> u32 {
+    180
+}
+
+fn default_5() -> u32 {
+    5
+}
+
+fn default_3() -> u32 {
+    3
+}
+
+impl AppConfig {
+    pub fn load() -> anyhow::Result<Self> {
+        let config: AppConfig = Figment::new()
+            .merge(Toml::file("/etc/serverbee/server.toml"))
+            .merge(Toml::file("server.toml"))
+            .merge(Env::prefixed("SB_").split("_"))
+            .extract()?;
+        Ok(config)
+    }
+}
