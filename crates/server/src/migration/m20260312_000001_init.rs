@@ -1,0 +1,1130 @@
+use sea_orm_migration::prelude::*;
+
+pub struct Migration;
+
+impl MigrationName for Migration {
+    fn name(&self) -> &str {
+        "m20260312_000001_init"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        // 1. users
+        manager
+            .create_table(
+                Table::create()
+                    .table(Users::Table)
+                    .if_not_exists()
+                    .col(ColumnDef::new(Users::Id).string().not_null().primary_key())
+                    .col(
+                        ColumnDef::new(Users::Username)
+                            .string()
+                            .not_null()
+                            .unique_key(),
+                    )
+                    .col(ColumnDef::new(Users::PasswordHash).string().not_null())
+                    .col(ColumnDef::new(Users::Role).string().not_null())
+                    .col(ColumnDef::new(Users::TotpSecret).string().null())
+                    .col(
+                        ColumnDef::new(Users::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Users::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // 2. sessions
+        manager
+            .create_table(
+                Table::create()
+                    .table(Sessions::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(Sessions::Id)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(Sessions::UserId).string().not_null())
+                    .col(
+                        ColumnDef::new(Sessions::Token)
+                            .string()
+                            .not_null()
+                            .unique_key(),
+                    )
+                    .col(ColumnDef::new(Sessions::Ip).string().not_null())
+                    .col(ColumnDef::new(Sessions::UserAgent).string().not_null())
+                    .col(
+                        ColumnDef::new(Sessions::ExpiresAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Sessions::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .from(Sessions::Table, Sessions::UserId)
+                            .to(Users::Table, Users::Id)
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_sessions_user_id")
+                    .table(Sessions::Table)
+                    .col(Sessions::UserId)
+                    .to_owned(),
+            )
+            .await?;
+
+        // 3. api_keys
+        manager
+            .create_table(
+                Table::create()
+                    .table(ApiKeys::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(ApiKeys::Id)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(ApiKeys::UserId).string().not_null())
+                    .col(ColumnDef::new(ApiKeys::Name).string().not_null())
+                    .col(ColumnDef::new(ApiKeys::KeyHash).string().not_null())
+                    .col(ColumnDef::new(ApiKeys::KeyPrefix).string().not_null())
+                    .col(
+                        ColumnDef::new(ApiKeys::LastUsedAt)
+                            .timestamp_with_time_zone()
+                            .null(),
+                    )
+                    .col(
+                        ColumnDef::new(ApiKeys::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .from(ApiKeys::Table, ApiKeys::UserId)
+                            .to(Users::Table, Users::Id)
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_api_keys_user_id")
+                    .table(ApiKeys::Table)
+                    .col(ApiKeys::UserId)
+                    .to_owned(),
+            )
+            .await?;
+
+        // 4. server_groups
+        manager
+            .create_table(
+                Table::create()
+                    .table(ServerGroups::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(ServerGroups::Id)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(ServerGroups::Name)
+                            .string()
+                            .not_null()
+                            .unique_key(),
+                    )
+                    .col(
+                        ColumnDef::new(ServerGroups::Weight)
+                            .integer()
+                            .not_null()
+                            .default(0),
+                    )
+                    .col(
+                        ColumnDef::new(ServerGroups::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // 5. servers
+        manager
+            .create_table(
+                Table::create()
+                    .table(Servers::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(Servers::Id)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(Servers::TokenHash).string().not_null())
+                    .col(ColumnDef::new(Servers::TokenPrefix).string().not_null())
+                    .col(ColumnDef::new(Servers::Name).string().not_null())
+                    .col(ColumnDef::new(Servers::CpuName).string().null())
+                    .col(ColumnDef::new(Servers::CpuCores).integer().null())
+                    .col(ColumnDef::new(Servers::CpuArch).string().null())
+                    .col(ColumnDef::new(Servers::Os).string().null())
+                    .col(ColumnDef::new(Servers::KernelVersion).string().null())
+                    .col(ColumnDef::new(Servers::MemTotal).big_integer().null())
+                    .col(ColumnDef::new(Servers::SwapTotal).big_integer().null())
+                    .col(ColumnDef::new(Servers::DiskTotal).big_integer().null())
+                    .col(ColumnDef::new(Servers::Ipv4).string().null())
+                    .col(ColumnDef::new(Servers::Ipv6).string().null())
+                    .col(ColumnDef::new(Servers::Region).string().null())
+                    .col(ColumnDef::new(Servers::CountryCode).string().null())
+                    .col(ColumnDef::new(Servers::Virtualization).string().null())
+                    .col(ColumnDef::new(Servers::AgentVersion).string().null())
+                    .col(ColumnDef::new(Servers::GroupId).string().null())
+                    .col(
+                        ColumnDef::new(Servers::Weight)
+                            .integer()
+                            .not_null()
+                            .default(0),
+                    )
+                    .col(
+                        ColumnDef::new(Servers::Hidden)
+                            .boolean()
+                            .not_null()
+                            .default(false),
+                    )
+                    .col(ColumnDef::new(Servers::Remark).string().null())
+                    .col(ColumnDef::new(Servers::PublicRemark).string().null())
+                    .col(ColumnDef::new(Servers::Price).double().null())
+                    .col(ColumnDef::new(Servers::BillingCycle).string().null())
+                    .col(ColumnDef::new(Servers::Currency).string().null())
+                    .col(
+                        ColumnDef::new(Servers::ExpiredAt)
+                            .timestamp_with_time_zone()
+                            .null(),
+                    )
+                    .col(ColumnDef::new(Servers::TrafficLimit).big_integer().null())
+                    .col(ColumnDef::new(Servers::TrafficLimitType).string().null())
+                    .col(
+                        ColumnDef::new(Servers::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Servers::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .from(Servers::Table, Servers::GroupId)
+                            .to(ServerGroups::Table, ServerGroups::Id)
+                            .on_delete(ForeignKeyAction::SetNull),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_servers_group_id")
+                    .table(Servers::Table)
+                    .col(Servers::GroupId)
+                    .to_owned(),
+            )
+            .await?;
+
+        // 6. server_tags
+        manager
+            .create_table(
+                Table::create()
+                    .table(ServerTags::Table)
+                    .if_not_exists()
+                    .col(ColumnDef::new(ServerTags::ServerId).string().not_null())
+                    .col(ColumnDef::new(ServerTags::Tag).string().not_null())
+                    .primary_key(
+                        Index::create()
+                            .col(ServerTags::ServerId)
+                            .col(ServerTags::Tag),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .from(ServerTags::Table, ServerTags::ServerId)
+                            .to(Servers::Table, Servers::Id)
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // 7. records
+        manager
+            .create_table(
+                Table::create()
+                    .table(Records::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(Records::Id)
+                            .big_integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(Records::ServerId).string().not_null())
+                    .col(
+                        ColumnDef::new(Records::Time)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(Records::Cpu).double().not_null())
+                    .col(ColumnDef::new(Records::MemUsed).big_integer().not_null())
+                    .col(ColumnDef::new(Records::SwapUsed).big_integer().not_null())
+                    .col(ColumnDef::new(Records::DiskUsed).big_integer().not_null())
+                    .col(
+                        ColumnDef::new(Records::NetInSpeed)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Records::NetOutSpeed)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Records::NetInTransfer)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Records::NetOutTransfer)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(Records::Load1).double().not_null())
+                    .col(ColumnDef::new(Records::Load5).double().not_null())
+                    .col(ColumnDef::new(Records::Load15).double().not_null())
+                    .col(ColumnDef::new(Records::TcpConn).integer().not_null())
+                    .col(ColumnDef::new(Records::UdpConn).integer().not_null())
+                    .col(ColumnDef::new(Records::ProcessCount).integer().not_null())
+                    .col(ColumnDef::new(Records::Temperature).double().null())
+                    .col(ColumnDef::new(Records::GpuUsage).double().null())
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_records_server_id_time")
+                    .table(Records::Table)
+                    .col(Records::ServerId)
+                    .col(Records::Time)
+                    .to_owned(),
+            )
+            .await?;
+
+        // 8. records_hourly
+        manager
+            .create_table(
+                Table::create()
+                    .table(RecordsHourly::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(RecordsHourly::Id)
+                            .big_integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(RecordsHourly::ServerId)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(RecordsHourly::Time)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(RecordsHourly::Cpu).double().not_null())
+                    .col(
+                        ColumnDef::new(RecordsHourly::MemUsed)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(RecordsHourly::SwapUsed)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(RecordsHourly::DiskUsed)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(RecordsHourly::NetInSpeed)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(RecordsHourly::NetOutSpeed)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(RecordsHourly::NetInTransfer)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(RecordsHourly::NetOutTransfer)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(RecordsHourly::Load1).double().not_null())
+                    .col(ColumnDef::new(RecordsHourly::Load5).double().not_null())
+                    .col(ColumnDef::new(RecordsHourly::Load15).double().not_null())
+                    .col(
+                        ColumnDef::new(RecordsHourly::TcpConn)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(RecordsHourly::UdpConn)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(RecordsHourly::ProcessCount)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(RecordsHourly::Temperature).double().null())
+                    .col(ColumnDef::new(RecordsHourly::GpuUsage).double().null())
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_records_hourly_server_id_time")
+                    .table(RecordsHourly::Table)
+                    .col(RecordsHourly::ServerId)
+                    .col(RecordsHourly::Time)
+                    .to_owned(),
+            )
+            .await?;
+
+        // 9. gpu_records
+        manager
+            .create_table(
+                Table::create()
+                    .table(GpuRecords::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(GpuRecords::Id)
+                            .big_integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(GpuRecords::ServerId).string().not_null())
+                    .col(
+                        ColumnDef::new(GpuRecords::Time)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(GpuRecords::DeviceIndex)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(GpuRecords::DeviceName).string().not_null())
+                    .col(
+                        ColumnDef::new(GpuRecords::MemTotal)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(GpuRecords::MemUsed)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(GpuRecords::Utilization).double().not_null())
+                    .col(ColumnDef::new(GpuRecords::Temperature).double().not_null())
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_gpu_records_server_id_time")
+                    .table(GpuRecords::Table)
+                    .col(GpuRecords::ServerId)
+                    .col(GpuRecords::Time)
+                    .to_owned(),
+            )
+            .await?;
+
+        // 10. configs
+        manager
+            .create_table(
+                Table::create()
+                    .table(Configs::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(Configs::Key)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(Configs::Value).string().not_null())
+                    .to_owned(),
+            )
+            .await?;
+
+        // 11. alert_rules
+        manager
+            .create_table(
+                Table::create()
+                    .table(AlertRules::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(AlertRules::Id)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(AlertRules::Name).string().not_null())
+                    .col(
+                        ColumnDef::new(AlertRules::Enabled)
+                            .boolean()
+                            .not_null()
+                            .default(true),
+                    )
+                    .col(ColumnDef::new(AlertRules::RulesJson).string().not_null())
+                    .col(ColumnDef::new(AlertRules::TriggerMode).string().not_null())
+                    .col(
+                        ColumnDef::new(AlertRules::NotificationGroupId)
+                            .string()
+                            .null(),
+                    )
+                    .col(ColumnDef::new(AlertRules::FailTriggerTasks).string().null())
+                    .col(
+                        ColumnDef::new(AlertRules::RecoverTriggerTasks)
+                            .string()
+                            .null(),
+                    )
+                    .col(ColumnDef::new(AlertRules::CoverType).string().not_null())
+                    .col(ColumnDef::new(AlertRules::ServerIdsJson).string().null())
+                    .col(
+                        ColumnDef::new(AlertRules::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(AlertRules::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // 12. alert_states
+        manager
+            .create_table(
+                Table::create()
+                    .table(AlertStates::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(AlertStates::Id)
+                            .big_integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(AlertStates::RuleId).string().not_null())
+                    .col(ColumnDef::new(AlertStates::ServerId).string().not_null())
+                    .col(
+                        ColumnDef::new(AlertStates::FirstTriggeredAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(AlertStates::LastNotifiedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(AlertStates::Count).integer().not_null())
+                    .col(
+                        ColumnDef::new(AlertStates::Resolved)
+                            .boolean()
+                            .not_null()
+                            .default(false),
+                    )
+                    .col(
+                        ColumnDef::new(AlertStates::ResolvedAt)
+                            .timestamp_with_time_zone()
+                            .null(),
+                    )
+                    .col(
+                        ColumnDef::new(AlertStates::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_alert_states_rule_id_server_id")
+                    .table(AlertStates::Table)
+                    .col(AlertStates::RuleId)
+                    .col(AlertStates::ServerId)
+                    .unique()
+                    .to_owned(),
+            )
+            .await?;
+
+        // 13. notifications
+        manager
+            .create_table(
+                Table::create()
+                    .table(Notifications::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(Notifications::Id)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(Notifications::Name).string().not_null())
+                    .col(
+                        ColumnDef::new(Notifications::NotifyType)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Notifications::ConfigJson)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Notifications::Enabled)
+                            .boolean()
+                            .not_null()
+                            .default(true),
+                    )
+                    .col(
+                        ColumnDef::new(Notifications::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // 14. notification_groups
+        manager
+            .create_table(
+                Table::create()
+                    .table(NotificationGroups::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(NotificationGroups::Id)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(NotificationGroups::Name)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(NotificationGroups::NotificationIdsJson)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(NotificationGroups::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // 15. ping_tasks
+        manager
+            .create_table(
+                Table::create()
+                    .table(PingTasks::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(PingTasks::Id)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(PingTasks::Name).string().not_null())
+                    .col(ColumnDef::new(PingTasks::ProbeType).string().not_null())
+                    .col(ColumnDef::new(PingTasks::Target).string().not_null())
+                    .col(ColumnDef::new(PingTasks::Interval).integer().not_null())
+                    .col(
+                        ColumnDef::new(PingTasks::ServerIdsJson)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(PingTasks::Enabled)
+                            .boolean()
+                            .not_null()
+                            .default(true),
+                    )
+                    .col(
+                        ColumnDef::new(PingTasks::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // 16. ping_records
+        manager
+            .create_table(
+                Table::create()
+                    .table(PingRecords::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(PingRecords::Id)
+                            .big_integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(PingRecords::TaskId).string().not_null())
+                    .col(ColumnDef::new(PingRecords::ServerId).string().not_null())
+                    .col(ColumnDef::new(PingRecords::Latency).double().not_null())
+                    .col(ColumnDef::new(PingRecords::Success).boolean().not_null())
+                    .col(ColumnDef::new(PingRecords::Error).string().null())
+                    .col(
+                        ColumnDef::new(PingRecords::Time)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_ping_records_task_id_server_id_time")
+                    .table(PingRecords::Table)
+                    .col(PingRecords::TaskId)
+                    .col(PingRecords::ServerId)
+                    .col(PingRecords::Time)
+                    .to_owned(),
+            )
+            .await?;
+
+        // 17. tasks
+        manager
+            .create_table(
+                Table::create()
+                    .table(Tasks::Table)
+                    .if_not_exists()
+                    .col(ColumnDef::new(Tasks::Id).string().not_null().primary_key())
+                    .col(ColumnDef::new(Tasks::Command).string().not_null())
+                    .col(ColumnDef::new(Tasks::ServerIdsJson).string().not_null())
+                    .col(ColumnDef::new(Tasks::CreatedBy).string().not_null())
+                    .col(
+                        ColumnDef::new(Tasks::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // 18. task_results
+        manager
+            .create_table(
+                Table::create()
+                    .table(TaskResults::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(TaskResults::Id)
+                            .big_integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(TaskResults::TaskId).string().not_null())
+                    .col(ColumnDef::new(TaskResults::ServerId).string().not_null())
+                    .col(ColumnDef::new(TaskResults::Output).string().not_null())
+                    .col(ColumnDef::new(TaskResults::ExitCode).integer().not_null())
+                    .col(
+                        ColumnDef::new(TaskResults::FinishedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // 19. audit_logs
+        manager
+            .create_table(
+                Table::create()
+                    .table(AuditLogs::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(AuditLogs::Id)
+                            .big_integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(AuditLogs::UserId).string().not_null())
+                    .col(ColumnDef::new(AuditLogs::Action).string().not_null())
+                    .col(ColumnDef::new(AuditLogs::Detail).string().null())
+                    .col(ColumnDef::new(AuditLogs::Ip).string().not_null())
+                    .col(
+                        ColumnDef::new(AuditLogs::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        let tables = vec![
+            AuditLogs::Table.into_table_ref(),
+            TaskResults::Table.into_table_ref(),
+            Tasks::Table.into_table_ref(),
+            PingRecords::Table.into_table_ref(),
+            PingTasks::Table.into_table_ref(),
+            NotificationGroups::Table.into_table_ref(),
+            Notifications::Table.into_table_ref(),
+            AlertStates::Table.into_table_ref(),
+            AlertRules::Table.into_table_ref(),
+            Configs::Table.into_table_ref(),
+            GpuRecords::Table.into_table_ref(),
+            RecordsHourly::Table.into_table_ref(),
+            Records::Table.into_table_ref(),
+            ServerTags::Table.into_table_ref(),
+            Servers::Table.into_table_ref(),
+            ServerGroups::Table.into_table_ref(),
+            ApiKeys::Table.into_table_ref(),
+            Sessions::Table.into_table_ref(),
+            Users::Table.into_table_ref(),
+        ];
+
+        for table in tables {
+            manager
+                .drop_table(Table::drop().table(table).to_owned())
+                .await?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(DeriveIden)]
+enum Users {
+    Table,
+    Id,
+    Username,
+    PasswordHash,
+    Role,
+    TotpSecret,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum Sessions {
+    Table,
+    Id,
+    UserId,
+    Token,
+    Ip,
+    UserAgent,
+    ExpiresAt,
+    CreatedAt,
+}
+
+#[derive(DeriveIden)]
+enum ApiKeys {
+    Table,
+    Id,
+    UserId,
+    Name,
+    KeyHash,
+    KeyPrefix,
+    LastUsedAt,
+    CreatedAt,
+}
+
+#[derive(DeriveIden)]
+enum ServerGroups {
+    Table,
+    Id,
+    Name,
+    Weight,
+    CreatedAt,
+}
+
+#[derive(DeriveIden)]
+enum Servers {
+    Table,
+    Id,
+    TokenHash,
+    TokenPrefix,
+    Name,
+    CpuName,
+    CpuCores,
+    CpuArch,
+    Os,
+    KernelVersion,
+    MemTotal,
+    SwapTotal,
+    DiskTotal,
+    Ipv4,
+    Ipv6,
+    Region,
+    CountryCode,
+    Virtualization,
+    AgentVersion,
+    GroupId,
+    Weight,
+    Hidden,
+    Remark,
+    PublicRemark,
+    Price,
+    BillingCycle,
+    Currency,
+    ExpiredAt,
+    TrafficLimit,
+    TrafficLimitType,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum ServerTags {
+    Table,
+    ServerId,
+    Tag,
+}
+
+#[derive(DeriveIden)]
+enum Records {
+    Table,
+    Id,
+    ServerId,
+    Time,
+    Cpu,
+    MemUsed,
+    SwapUsed,
+    DiskUsed,
+    NetInSpeed,
+    NetOutSpeed,
+    NetInTransfer,
+    NetOutTransfer,
+    Load1,
+    Load5,
+    Load15,
+    TcpConn,
+    UdpConn,
+    ProcessCount,
+    Temperature,
+    GpuUsage,
+}
+
+#[derive(DeriveIden)]
+enum RecordsHourly {
+    Table,
+    Id,
+    ServerId,
+    Time,
+    Cpu,
+    MemUsed,
+    SwapUsed,
+    DiskUsed,
+    NetInSpeed,
+    NetOutSpeed,
+    NetInTransfer,
+    NetOutTransfer,
+    Load1,
+    Load5,
+    Load15,
+    TcpConn,
+    UdpConn,
+    ProcessCount,
+    Temperature,
+    GpuUsage,
+}
+
+#[derive(DeriveIden)]
+enum GpuRecords {
+    Table,
+    Id,
+    ServerId,
+    Time,
+    DeviceIndex,
+    DeviceName,
+    MemTotal,
+    MemUsed,
+    Utilization,
+    Temperature,
+}
+
+#[derive(DeriveIden)]
+enum Configs {
+    Table,
+    Key,
+    Value,
+}
+
+#[derive(DeriveIden)]
+enum AlertRules {
+    Table,
+    Id,
+    Name,
+    Enabled,
+    RulesJson,
+    TriggerMode,
+    NotificationGroupId,
+    FailTriggerTasks,
+    RecoverTriggerTasks,
+    CoverType,
+    ServerIdsJson,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum AlertStates {
+    Table,
+    Id,
+    RuleId,
+    ServerId,
+    FirstTriggeredAt,
+    LastNotifiedAt,
+    Count,
+    Resolved,
+    ResolvedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum Notifications {
+    Table,
+    Id,
+    Name,
+    NotifyType,
+    ConfigJson,
+    Enabled,
+    CreatedAt,
+}
+
+#[derive(DeriveIden)]
+enum NotificationGroups {
+    Table,
+    Id,
+    Name,
+    NotificationIdsJson,
+    CreatedAt,
+}
+
+#[derive(DeriveIden)]
+enum PingTasks {
+    Table,
+    Id,
+    Name,
+    ProbeType,
+    Target,
+    Interval,
+    ServerIdsJson,
+    Enabled,
+    CreatedAt,
+}
+
+#[derive(DeriveIden)]
+enum PingRecords {
+    Table,
+    Id,
+    TaskId,
+    ServerId,
+    Latency,
+    Success,
+    Error,
+    Time,
+}
+
+#[derive(DeriveIden)]
+enum Tasks {
+    Table,
+    Id,
+    Command,
+    ServerIdsJson,
+    CreatedBy,
+    CreatedAt,
+}
+
+#[derive(DeriveIden)]
+enum TaskResults {
+    Table,
+    Id,
+    TaskId,
+    ServerId,
+    Output,
+    ExitCode,
+    FinishedAt,
+}
+
+#[derive(DeriveIden)]
+enum AuditLogs {
+    Table,
+    Id,
+    UserId,
+    Action,
+    Detail,
+    Ip,
+    CreatedAt,
+}

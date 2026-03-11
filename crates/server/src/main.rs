@@ -1,3 +1,6 @@
+mod entity;
+mod migration;
+
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
