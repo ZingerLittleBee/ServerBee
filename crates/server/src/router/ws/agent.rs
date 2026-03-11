@@ -1,0 +1,267 @@
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
+
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::{ConnectInfo, Query, State};
+use axum::response::Response;
+use axum::routing::get;
+use axum::Router;
+use futures_util::{SinkExt, StreamExt};
+use serde::Deserialize;
+use tokio::sync::mpsc;
+
+use crate::service::auth::AuthService;
+use crate::service::record::RecordService;
+use crate::service::server::ServerService;
+use crate::state::AppState;
+use serverbee_common::protocol::{AgentMessage, ServerMessage};
+
+#[derive(Debug, Deserialize)]
+pub struct WsQuery {
+    token: String,
+}
+
+pub fn router() -> Router<Arc<AppState>> {
+    Router::new().route("/agent/ws", get(agent_ws_handler))
+}
+
+async fn agent_ws_handler(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<WsQuery>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    ws: WebSocketUpgrade,
+) -> Response {
+    // Validate agent token
+    let server = match AuthService::validate_agent_token(&state.db, &query.token).await {
+        Ok(Some(server)) => server,
+        Ok(None) => {
+            return Response::builder()
+                .status(401)
+                .body("Unauthorized".into())
+                .unwrap();
+        }
+        Err(e) => {
+            tracing::error!("Failed to validate agent token: {e}");
+            return Response::builder()
+                .status(500)
+                .body("Internal server error".into())
+                .unwrap();
+        }
+    };
+
+    let server_id = server.id.clone();
+    let server_name = server.name.clone();
+    tracing::info!("Agent WS upgrading for server {server_id} ({server_name}) from {addr}");
+
+    ws.on_upgrade(move |socket| handle_agent_ws(socket, state, server_id, server_name, addr))
+}
+
+async fn handle_agent_ws(
+    socket: WebSocket,
+    state: Arc<AppState>,
+    server_id: String,
+    server_name: String,
+    remote_addr: SocketAddr,
+) {
+    let (mut ws_sink, mut ws_stream) = socket.split();
+
+    // Create mpsc channel for outgoing messages to this agent (buffer 64)
+    let (tx, mut rx) = mpsc::channel::<ServerMessage>(64);
+
+    // Send Welcome message
+    let welcome = ServerMessage::Welcome {
+        server_id: server_id.clone(),
+        protocol_version: 1,
+        report_interval: 3,
+    };
+    if let Err(e) = send_server_message(&mut ws_sink, &welcome).await {
+        tracing::error!("Failed to send Welcome to {server_id}: {e}");
+        return;
+    }
+
+    // Register in AgentManager
+    state
+        .agent_manager
+        .add_connection(server_id.clone(), server_name, tx, remote_addr);
+
+    tracing::info!("Agent {server_id} connected from {remote_addr}");
+
+    // Spawn a task to forward mpsc messages to WebSocket + send periodic Pings
+    let sid_write = server_id.clone();
+    let write_task = tokio::spawn(async move {
+        let mut ping_interval = tokio::time::interval(Duration::from_secs(30));
+        // Skip the first immediate tick
+        ping_interval.tick().await;
+
+        loop {
+            tokio::select! {
+                msg = rx.recv() => {
+                    match msg {
+                        Some(server_msg) => {
+                            if let Err(e) = send_server_message(&mut ws_sink, &server_msg).await {
+                                tracing::warn!("Failed to send message to agent {sid_write}: {e}");
+                                break;
+                            }
+                        }
+                        None => {
+                            // Channel closed, agent removed
+                            break;
+                        }
+                    }
+                }
+                _ = ping_interval.tick() => {
+                    if let Err(e) = ws_sink.send(Message::Ping(vec![].into())).await {
+                        tracing::warn!("Failed to send ping to agent {sid_write}: {e}");
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Try to close the WebSocket gracefully
+        let _ = ws_sink.close().await;
+    });
+
+    // Read loop
+    let sid_read = server_id.clone();
+    let state_read = state.clone();
+    while let Some(result) = ws_stream.next().await {
+        match result {
+            Ok(Message::Text(text)) => {
+                match serde_json::from_str::<AgentMessage>(&text) {
+                    Ok(agent_msg) => {
+                        handle_agent_message(&state_read, &sid_read, agent_msg).await;
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Invalid message from agent {sid_read}: {e}, text: {text}"
+                        );
+                    }
+                }
+            }
+            Ok(Message::Binary(data)) => {
+                match serde_json::from_slice::<AgentMessage>(&data) {
+                    Ok(agent_msg) => {
+                        handle_agent_message(&state_read, &sid_read, agent_msg).await;
+                    }
+                    Err(e) => {
+                        tracing::warn!("Invalid binary message from agent {sid_read}: {e}");
+                    }
+                }
+            }
+            Ok(Message::Pong(_)) => {
+                // Agent responded to our Ping, update heartbeat timestamp
+                state_read.agent_manager.touch_connection(&sid_read);
+            }
+            Ok(Message::Close(_)) => {
+                tracing::info!("Agent {sid_read} sent close frame");
+                break;
+            }
+            Ok(Message::Ping(_)) => {
+                // axum auto-responds with Pong
+            }
+            Err(e) => {
+                tracing::warn!("WebSocket error for agent {sid_read}: {e}");
+                break;
+            }
+        }
+    }
+
+    // Cleanup: remove from AgentManager and abort write task
+    state.agent_manager.remove_connection(&server_id);
+    write_task.abort();
+    tracing::info!("Agent {server_id} disconnected");
+}
+
+async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: AgentMessage) {
+    match msg {
+        AgentMessage::SystemInfo { msg_id, info } => {
+            if let Err(e) = ServerService::update_system_info(&state.db, server_id, &info).await {
+                tracing::error!("Failed to update system info for {server_id}: {e}");
+            }
+            // Send Ack
+            if let Some(tx) = state.agent_manager.get_sender(server_id) {
+                let _ = tx.send(ServerMessage::Ack { msg_id }).await;
+            }
+        }
+        AgentMessage::Report(report) => {
+            // Save GPU records if present
+            if let Some(ref gpu) = report.gpu {
+                if let Err(e) = RecordService::save_gpu_records(&state.db, server_id, gpu).await {
+                    tracing::error!("Failed to save GPU records for {server_id}: {e}");
+                }
+            }
+            state.agent_manager.update_report(server_id, report);
+        }
+        AgentMessage::TaskResult { msg_id, result } => {
+            // Store task result in DB
+            if let Err(e) = save_task_result(&state.db, server_id, &result).await {
+                tracing::error!("Failed to save task result for {server_id}: {e}");
+            }
+            // Send Ack
+            if let Some(tx) = state.agent_manager.get_sender(server_id) {
+                let _ = tx.send(ServerMessage::Ack { msg_id }).await;
+            }
+        }
+        AgentMessage::PingResult(result) => {
+            if let Err(e) = save_ping_result(&state.db, server_id, &result).await {
+                tracing::error!("Failed to save ping result for {server_id}: {e}");
+            }
+        }
+        AgentMessage::Pong => {
+            // Agent responded to our protocol-level Ping; already handled by WS Pong frames
+        }
+    }
+}
+
+async fn send_server_message(
+    sink: &mut futures_util::stream::SplitSink<WebSocket, Message>,
+    msg: &ServerMessage,
+) -> Result<(), axum::Error> {
+    let text = serde_json::to_string(msg).map_err(|e| axum::Error::new(e))?;
+    sink.send(Message::Text(text.into())).await
+}
+
+/// Save a task result to the database.
+async fn save_task_result(
+    db: &sea_orm::DatabaseConnection,
+    server_id: &str,
+    result: &serverbee_common::types::TaskResult,
+) -> Result<(), crate::error::AppError> {
+    use crate::entity::task_result;
+    use sea_orm::{ActiveModelTrait, NotSet, Set};
+
+    let new_result = task_result::ActiveModel {
+        id: NotSet,
+        task_id: Set(result.task_id.clone()),
+        server_id: Set(server_id.to_string()),
+        output: Set(result.output.clone()),
+        exit_code: Set(result.exit_code),
+        finished_at: Set(chrono::Utc::now()),
+    };
+    new_result.insert(db).await?;
+    Ok(())
+}
+
+/// Save a ping result to the database.
+async fn save_ping_result(
+    db: &sea_orm::DatabaseConnection,
+    server_id: &str,
+    result: &serverbee_common::types::PingResult,
+) -> Result<(), crate::error::AppError> {
+    use crate::entity::ping_record;
+    use sea_orm::{ActiveModelTrait, NotSet, Set};
+
+    let new_record = ping_record::ActiveModel {
+        id: NotSet,
+        task_id: Set(result.task_id.clone()),
+        server_id: Set(server_id.to_string()),
+        latency: Set(result.latency),
+        success: Set(result.success),
+        error: Set(result.error.clone()),
+        time: Set(result.time),
+    };
+    new_record.insert(db).await?;
+    Ok(())
+}
