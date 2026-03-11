@@ -29,3 +29,4 @@ utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 tokio-cron-scheduler = "0.13"
 async-trait = "0.1"
+futures-util = "0.3"

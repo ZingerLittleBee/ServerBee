@@ -6,6 +6,7 @@ mod migration;
 mod router;
 mod service;
 mod state;
+mod task;
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -68,6 +69,18 @@ async fn main() -> anyhow::Result<()> {
     // Build AppState
     let state = AppState::new(db, config.clone());
 
+    // Spawn background tasks
+    let s = state.clone();
+    tokio::spawn(async move { task::record_writer::run(s).await });
+    let s = state.clone();
+    tokio::spawn(async move { task::offline_checker::run(s).await });
+    let s = state.clone();
+    tokio::spawn(async move { task::aggregator::run(s).await });
+    let s = state.clone();
+    tokio::spawn(async move { task::cleanup::run(s).await });
+    let s = state.clone();
+    tokio::spawn(async move { task::session_cleaner::run(s).await });
+
     // Build router
     let app = router::create_router(state);
 
@@ -84,9 +97,12 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Auto-discovery key: {}", auto_discovery_key);
     tracing::info!("========================================");
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
 
     tracing::info!("Server stopped");
     Ok(())

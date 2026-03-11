@@ -2783,6 +2783,7 @@ dependencies = [
  "chrono",
  "dashmap",
  "figment",
+ "futures-util",
  "rand 0.8.5",
  "sea-orm",
  "sea-orm-migration",
