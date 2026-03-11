@@ -3,6 +3,7 @@ mod entity;
 mod error;
 mod middleware;
 mod migration;
+mod router;
 mod service;
 mod state;
 
@@ -57,9 +58,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState::new(db, config.clone());
 
     // Build router
-    let app = axum::Router::new()
-        .route("/healthz", axum::routing::get(|| async { "ok" }))
-        .with_state(state);
+    let app = router::create_router(state);
 
     // Start server
     let listener = tokio::net::TcpListener::bind(&config.server.listen).await?;
