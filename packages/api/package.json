@@ -1,0 +1,29 @@
+{
+  "name": "@serverbee/api",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {},
+  "dependencies": {
+    "@serverbee/auth": "workspace:*",
+    "@serverbee/db": "workspace:*",
+    "@serverbee/env": "workspace:*",
+    "@orpc/client": "catalog:",
+    "@orpc/openapi": "catalog:",
+    "@orpc/server": "catalog:",
+    "@orpc/zod": "catalog:",
+    "dotenv": "catalog:",
+    "drizzle-orm": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@serverbee/config": "workspace:*",
+    "typescript": "^5"
+  }
+}
