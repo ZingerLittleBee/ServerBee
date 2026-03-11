@@ -1,3 +1,0 @@
-GET localhost:3000/client/verify
-Content-Type: application/json
-Authorization: Bearer token-test

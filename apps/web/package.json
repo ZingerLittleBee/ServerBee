@@ -1,5 +1,5 @@
 {
-  "name": "@serverbee/web",
+  "name": "web",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,16 +8,16 @@
     "dev": "vite dev"
   },
   "dependencies": {
-    "@serverbee/api": "workspace:*",
-    "@serverbee/auth": "workspace:*",
-    "@serverbee/env": "workspace:*",
-    "@serverbee/ui": "workspace:*",
     "@libsql/client": "catalog:",
     "@orpc/client": "catalog:",
     "@orpc/openapi": "catalog:",
     "@orpc/server": "catalog:",
     "@orpc/tanstack-query": "^1.12.2",
     "@orpc/zod": "catalog:",
+    "@serverbee/api": "workspace:*",
+    "@serverbee/auth": "workspace:*",
+    "@serverbee/env": "workspace:*",
+    "@serverbee/ui": "workspace:*",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-form": "^1.28.0",
     "@tanstack/react-query": "^5.80.6",
