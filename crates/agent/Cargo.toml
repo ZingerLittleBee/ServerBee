@@ -13,3 +13,11 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
 anyhow.workspace = true
+
+sysinfo = "0.33"
+tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
+figment = { version = "0.10", features = ["toml", "env"] }
+reqwest = { version = "0.12", features = ["json"] }
+futures-util = "0.3"
+url = "2"
+rand = "0.8"
