@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "setup": "ln -sf AGENTS.md CLAUDE.md && bun i",
+    "run": ""
+  }
+}
