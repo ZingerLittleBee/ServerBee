@@ -140,18 +140,28 @@ serverbee/
 │           │   └── http.rs
 │           ├── executor.rs
 │           └── terminal.rs
-└── web/                      # React SPA
-    ├── package.json
-    ├── vite.config.ts
-    ├── index.html
-    └── src/
-        ├── main.tsx
-        ├── router.tsx
-        ├── routes/
-        ├── components/
-        ├── hooks/
-        ├── lib/
-        └── types/
+└── apps/
+    └── web/                  # React SPA (已初始化)
+        ├── package.json
+        ├── vite.config.ts    # Vite 7 + @vitejs/plugin-react + @tailwindcss/vite
+        ├── components.json   # shadcn/ui 配置 (base-nova 风格)
+        ├── index.html
+        ├── tsconfig.json
+        ├── tsconfig.app.json
+        ├── eslint.config.js  # ESLint flat config
+        ├── .prettierrc       # Prettier + prettier-plugin-tailwindcss
+        └── src/
+            ├── main.tsx
+            ├── App.tsx                   # 当前入口 (待替换为 router)
+            ├── index.css                 # TW v4 + shadcn/tailwind.css + Inter 字体
+            ├── components/
+            │   ├── theme-provider.tsx    # 已实现: light/dark/system 主题切换
+            │   └── ui/
+            │       └── button.tsx        # 已实现: shadcn Button (base-nova)
+            ├── lib/
+            │   └── utils.ts             # cn() 工具函数
+            ├── hooks/                   # 待实现
+            └── types/                   # 待实现 (openapi-typescript 生成)
 ```
 
 ### 核心依赖
@@ -190,13 +200,25 @@ serverbee/
 - `figment` — 配置
 - `tracing` — 日志
 
-**前端:**
+**前端 (apps/web/):**
 
-- React 19+ / Vite / Tailwind CSS v4 / shadcn/ui
-- TanStack Router / TanStack Query
+已安装:
+- `react` 19.2 / `react-dom` 19.2 — UI 框架
+- `vite` 7.2 + `@vitejs/plugin-react` — 构建工具 (SWC 转译)
+- `tailwindcss` 4.1 + `@tailwindcss/vite` — 样式
+- `shadcn` 4.0 + `@base-ui/react` — 组件库 (base-nova 风格)
+- `class-variance-authority` / `clsx` / `tailwind-merge` — 样式工具
+- `lucide-react` — 图标
+- `tw-animate-css` — 动画
+- `@fontsource-variable/inter` — 字体
+- `eslint` 9 + `prettier` 3 + `prettier-plugin-tailwindcss` — 代码质量
+
+待安装:
+- `@tanstack/react-router` — 文件式路由
+- `@tanstack/react-query` — 服务器状态管理
 - `openapi-typescript` — 从 OpenAPI spec 生成 TS 类型
 - `recharts` — 图表
-- `xterm.js` — Web 终端
+- `@xterm/xterm` — Web 终端
 
 ---
 
@@ -1412,66 +1434,76 @@ Server 下发 ServerMessage::Upgrade { version, download_url }
 
 ### 9.1 目录结构
 
+已实现的文件标注 `[已有]`，待实现的标注 `[待建]`。
+
 ```
-web/
-├── package.json
-├── vite.config.ts
-├── app.css                   # TW v4 CSS-first 配置
-├── index.html
+apps/web/
+├── package.json              [已有]
+├── vite.config.ts            [已有] Vite 7 + React plugin + TW plugin
+├── components.json           [已有] shadcn base-nova 风格
+├── index.html                [已有]
+├── tsconfig.json             [已有]
+├── tsconfig.app.json         [已有] ES2022, react-jsx, 路径别名 @/*
+├── eslint.config.js          [已有] flat config
+├── .prettierrc               [已有] no-semi, double-quote, TW plugin
+├── public/
+│   └── vite.svg              [已有]
 ├── src/
-│   ├── main.tsx
-│   ├── router.tsx
-│   ├── routes/
-│   │   ├── __root.tsx            # Root layout (侧边栏 + 顶栏)
-│   │   ├── login.tsx             # 登录页 (公开)
-│   │   ├── _authed.tsx           # 认证 layout guard
+│   ├── main.tsx              [已有] StrictMode + ThemeProvider 挂载
+│   ├── App.tsx               [已有] 欢迎页 (待替换为 RouterProvider)
+│   ├── index.css             [已有] TW v4 + shadcn + Inter + OKLch 色彩
+│   ├── router.tsx            [待建] TanStack Router 配置
+│   ├── routes/               [待建]
+│   │   ├── __root.tsx             # Root layout (侧边栏 + 顶栏)
+│   │   ├── login.tsx              # 登录页 (公开)
+│   │   ├── _authed.tsx            # 认证 layout guard
 │   │   ├── _authed/
-│   │   │   ├── index.tsx              # 仪表盘总览
+│   │   │   ├── index.tsx               # 仪表盘总览
 │   │   │   ├── servers/
-│   │   │   │   ├── index.tsx          # 服务器列表
-│   │   │   │   └── $id.tsx            # 服务器详情 + 图表
-│   │   │   ├── alerts.tsx             # 告警规则管理
-│   │   │   ├── notifications.tsx      # 通知渠道管理
-│   │   │   ├── ping-tasks.tsx         # 探测任务管理
+│   │   │   │   ├── index.tsx           # 服务器列表
+│   │   │   │   └── $id.tsx             # 服务器详情 + 图表
+│   │   │   ├── alerts.tsx              # 告警规则管理
+│   │   │   ├── notifications.tsx       # 通知渠道管理
+│   │   │   ├── ping-tasks.tsx          # 探测任务管理
 │   │   │   ├── terminal/
-│   │   │   │   └── $serverId.tsx      # Web 终端
+│   │   │   │   └── $serverId.tsx       # Web 终端
 │   │   │   └── settings/
-│   │   │       ├── index.tsx          # 常规设置
-│   │   │       ├── api-keys.tsx       # API Key 管理
-│   │   │       └── users.tsx          # 用户管理 (P2)
+│   │   │       ├── index.tsx           # 常规设置
+│   │   │       ├── api-keys.tsx        # API Key 管理
+│   │   │       └── users.tsx           # 用户管理 (P2)
 │   ├── components/
-│   │   ├── ui/                   # shadcn/ui
-│   │   ├── layout/
+│   │   ├── theme-provider.tsx [已有] light/dark/system, 按 d 切换, 跨 tab 同步
+│   │   ├── ui/
+│   │   │   └── button.tsx     [已有] CVA 变体 (6 variant + 8 size)
+│   │   ├── layout/           [待建]
 │   │   │   ├── sidebar.tsx
 │   │   │   ├── header.tsx
 │   │   │   └── theme-toggle.tsx
-│   │   ├── server/
+│   │   ├── server/           [待建]
 │   │   │   ├── server-card.tsx
 │   │   │   ├── server-table.tsx
 │   │   │   ├── server-detail.tsx
 │   │   │   ├── metrics-chart.tsx
 │   │   │   └── status-badge.tsx
-│   │   ├── alert/
+│   │   ├── alert/            [待建]
 │   │   │   ├── alert-rule-form.tsx
 │   │   │   └── alert-rule-list.tsx
-│   │   ├── notification/
+│   │   ├── notification/     [待建]
 │   │   │   ├── notification-form.tsx
 │   │   │   └── notification-list.tsx
-│   │   └── terminal/
+│   │   └── terminal/         [待建]
 │   │       └── terminal-view.tsx
-│   ├── hooks/
+│   ├── hooks/                [待建]
 │   │   ├── use-auth.ts
 │   │   ├── use-servers-ws.ts
 │   │   ├── use-api.ts
 │   │   └── use-terminal-ws.ts
 │   ├── lib/
-│   │   ├── api-client.ts
-│   │   ├── ws-client.ts
-│   │   └── utils.ts
+│   │   ├── utils.ts           [已有] cn() = twMerge(clsx(...))
+│   │   ├── api-client.ts      [待建]
+│   │   └── ws-client.ts       [待建]
 │   └── types/
-│       └── api.ts                # openapi-typescript 生成
-└── public/
-    └── favicon.svg
+│       └── api.ts             [待建] openapi-typescript 生成
 ```
 
 ### 9.2 认证守卫
@@ -1568,12 +1600,12 @@ class WebSocketClient {
 
 ```
 开发模式:
-  web/ 下 `bun run dev` -> Vite dev server (HMR)
-  Server 端反代 /api -> Rust 后端
+  apps/web/ 下 `bun run dev` -> Vite dev server (HMR)
+  Vite proxy 转发 /api -> Rust 后端 (vite.config.ts server.proxy)
 
 生产构建:
-  1. `cd web && bun run build` -> web/dist/
-  2. Rust 编译时 rust-embed 嵌入 web/dist/
+  1. `cd apps/web && bun run build` -> apps/web/dist/
+  2. Rust 编译时 rust-embed 嵌入 apps/web/dist/
   3. Axum static_files handler 提供静态资源
   4. 非 /api 路径 fallback 到 index.html (SPA 路由)
 ```
@@ -1672,13 +1704,13 @@ ServerBee 本身不处理 TLS，生产环境建议使用反向代理:
 ```dockerfile
 FROM oven/bun:latest AS web-builder
 WORKDIR /app/web
-COPY web/ .
+COPY apps/web/ .
 RUN bun install && bun run build
 
 FROM rust:1.85-alpine AS rust-builder
 WORKDIR /app
 COPY . .
-COPY --from=web-builder /app/web/dist web/dist
+COPY --from=web-builder /app/web/dist apps/web/dist
 RUN cargo build --release -p serverbee-server
 
 FROM alpine:3.21
