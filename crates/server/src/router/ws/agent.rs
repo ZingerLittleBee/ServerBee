@@ -177,7 +177,18 @@ async fn handle_agent_ws(
 async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: AgentMessage) {
     match msg {
         AgentMessage::SystemInfo { msg_id, info } => {
-            if let Err(e) = ServerService::update_system_info(&state.db, server_id, &info).await {
+            // Resolve GeoIP from agent's remote address
+            let geo = state.geoip.as_ref().and_then(|g| {
+                let conn = state.agent_manager.get_remote_addr(server_id);
+                conn.map(|addr| g.lookup(addr.ip()))
+            });
+
+            let (region, country_code) = match geo {
+                Some(ref g) => (g.region.clone(), g.country_code.clone()),
+                None => (None, None),
+            };
+
+            if let Err(e) = ServerService::update_system_info(&state.db, server_id, &info, region, country_code).await {
                 tracing::error!("Failed to update system info for {server_id}: {e}");
             }
             // Send Ack
@@ -187,10 +198,10 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         }
         AgentMessage::Report(report) => {
             // Save GPU records if present
-            if let Some(ref gpu) = report.gpu {
-                if let Err(e) = RecordService::save_gpu_records(&state.db, server_id, gpu).await {
-                    tracing::error!("Failed to save GPU records for {server_id}: {e}");
-                }
+            if let Some(ref gpu) = report.gpu
+                && let Err(e) = RecordService::save_gpu_records(&state.db, server_id, gpu).await
+            {
+                tracing::error!("Failed to save GPU records for {server_id}: {e}");
             }
             state.agent_manager.update_report(server_id, report);
         }
@@ -209,6 +220,21 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 tracing::error!("Failed to save ping result for {server_id}: {e}");
             }
         }
+        AgentMessage::TerminalOutput { session_id, data } => {
+            if let Some(tx) = state.agent_manager.get_terminal_session(&session_id) {
+                let _ = tx.send(crate::service::agent_manager::TerminalSessionEvent::Output(data)).await;
+            }
+        }
+        AgentMessage::TerminalStarted { session_id } => {
+            if let Some(tx) = state.agent_manager.get_terminal_session(&session_id) {
+                let _ = tx.send(crate::service::agent_manager::TerminalSessionEvent::Started).await;
+            }
+        }
+        AgentMessage::TerminalError { session_id, error } => {
+            if let Some(tx) = state.agent_manager.get_terminal_session(&session_id) {
+                let _ = tx.send(crate::service::agent_manager::TerminalSessionEvent::Error(error)).await;
+            }
+        }
         AgentMessage::Pong => {
             // Agent responded to our protocol-level Ping; already handled by WS Pong frames
         }
@@ -219,7 +245,7 @@ async fn send_server_message(
     sink: &mut futures_util::stream::SplitSink<WebSocket, Message>,
     msg: &ServerMessage,
 ) -> Result<(), axum::Error> {
-    let text = serde_json::to_string(msg).map_err(|e| axum::Error::new(e))?;
+    let text = serde_json::to_string(msg).map_err(axum::Error::new)?;
     sink.send(Message::Text(text.into())).await
 }
 

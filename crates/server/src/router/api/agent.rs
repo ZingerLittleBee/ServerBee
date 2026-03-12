@@ -16,8 +16,8 @@ use crate::state::AppState;
 
 const CONFIG_KEY_AUTO_DISCOVERY: &str = "auto_discovery_key";
 
-#[derive(Debug, Serialize)]
-struct RegisterResponse {
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct RegisterResponse {
     server_id: String,
     token: String,
 }
@@ -27,6 +27,17 @@ pub fn public_router() -> Router<Arc<AppState>> {
     Router::new().route("/agent/register", post(register))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/agent/register",
+    tag = "agent",
+    responses(
+        (status = 200, description = "Agent registered", body = RegisterResponse),
+        (status = 400, description = "Auto-discovery key not configured"),
+        (status = 401, description = "Invalid auto-discovery key"),
+    ),
+    security(("bearer_token" = []))
+)]
 async fn register(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,

@@ -1,5 +1,6 @@
 mod cpu;
 mod disk;
+mod gpu;
 mod load;
 mod memory;
 mod network;
@@ -18,10 +19,11 @@ pub struct Collector {
     prev_net_out: u64,
     prev_time: Instant,
     enable_temperature: bool,
+    enable_gpu: bool,
 }
 
 impl Collector {
-    pub fn new(enable_temperature: bool) -> Self {
+    pub fn new(enable_temperature: bool, enable_gpu: bool) -> Self {
         let mut sys = System::new_all();
         sys.refresh_all();
         let networks = Networks::new_with_refreshed_list();
@@ -33,6 +35,7 @@ impl Collector {
             prev_net_out: net_out,
             prev_time: Instant::now(),
             enable_temperature,
+            enable_gpu,
         }
     }
 
@@ -72,7 +75,11 @@ impl Collector {
             process_count: process::count(&self.sys),
             uptime: System::uptime(),
             temperature,
-            gpu: None,
+            gpu: if self.enable_gpu {
+                gpu::get_gpu_report()
+            } else {
+                None
+            },
         }
     }
 

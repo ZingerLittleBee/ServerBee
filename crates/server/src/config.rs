@@ -20,6 +20,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub rate_limit: RateLimitConfig,
     #[serde(default)]
+    pub oauth: OAuthConfig,
+    #[serde(default)]
     pub geoip: GeoIpConfig,
     #[serde(default)]
     pub log: LogConfig,
@@ -34,6 +36,7 @@ impl Default for AppConfig {
             admin: AdminConfig::default(),
             retention: RetentionConfig::default(),
             rate_limit: RateLimitConfig::default(),
+            oauth: OAuthConfig::default(),
             geoip: GeoIpConfig::default(),
             log: LogConfig::default(),
         }
@@ -71,6 +74,10 @@ pub struct AuthConfig {
     pub session_ttl: i64,
     #[serde(default)]
     pub auto_discovery_key: String,
+    /// Whether to set the Secure flag on session cookies.
+    /// Defaults to true. Set to false only for development without HTTPS.
+    #[serde(default = "default_true")]
+    pub secure_cookie: bool,
 }
 
 impl Default for AuthConfig {
@@ -78,6 +85,7 @@ impl Default for AuthConfig {
         Self {
             session_ttl: default_session_ttl(),
             auto_discovery_key: String::new(),
+            secure_cookie: true,
         }
     }
 }
@@ -141,6 +149,43 @@ impl Default for RateLimitConfig {
             register_max: default_3(),
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct OAuthConfig {
+    #[serde(default)]
+    pub github: Option<OAuthProviderConfig>,
+    #[serde(default)]
+    pub google: Option<OAuthProviderConfig>,
+    #[serde(default)]
+    pub oidc: Option<OIDCProviderConfig>,
+    /// Base URL of the ServerBee server (e.g. "https://serverbee.example.com").
+    /// Used to construct OAuth callback URLs.
+    #[serde(default)]
+    pub base_url: String,
+    /// Whether to allow automatic user creation on first OAuth login.
+    /// Defaults to false. When false, OAuth login only works for existing linked accounts.
+    #[serde(default)]
+    pub allow_registration: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OAuthProviderConfig {
+    pub client_id: String,
+    pub client_secret: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OIDCProviderConfig {
+    pub issuer_url: String,
+    pub client_id: String,
+    pub client_secret: String,
+    #[serde(default = "default_oidc_scopes")]
+    pub scopes: Vec<String>,
+}
+
+fn default_oidc_scopes() -> Vec<String> {
+    vec!["openid".to_string(), "email".to_string(), "profile".to_string()]
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -216,6 +261,10 @@ fn default_90() -> u32 {
 
 fn default_180() -> u32 {
     180
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_5() -> u32 {

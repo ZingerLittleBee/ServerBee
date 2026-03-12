@@ -12,13 +12,13 @@ use crate::entity::server_group;
 use crate::error::{ok, ApiResponse, AppError};
 use crate::state::AppState;
 
-#[derive(Debug, Deserialize)]
-struct CreateGroupRequest {
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct CreateGroupRequest {
     name: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct UpdateGroupRequest {
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct UpdateGroupRequest {
     name: Option<String>,
     weight: Option<i32>,
 }
@@ -31,6 +31,15 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/server-groups/{id}", delete(delete_group))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/server-groups",
+    tag = "server-groups",
+    responses(
+        (status = 200, description = "List all server groups", body = Vec<server_group::Model>),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
 async fn list_groups(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<Vec<server_group::Model>>>, AppError> {
@@ -42,6 +51,18 @@ async fn list_groups(
     ok(groups)
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/server-groups",
+    tag = "server-groups",
+    request_body = CreateGroupRequest,
+    responses(
+        (status = 200, description = "Group created", body = server_group::Model),
+        (status = 409, description = "Group name already exists"),
+        (status = 422, description = "Validation error"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
 async fn create_group(
     State(state): State<Arc<AppState>>,
     Json(body): Json<CreateGroupRequest>,
@@ -74,6 +95,19 @@ async fn create_group(
     ok(result)
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/server-groups/{id}",
+    tag = "server-groups",
+    params(("id" = String, Path, description = "Server group ID")),
+    request_body = UpdateGroupRequest,
+    responses(
+        (status = 200, description = "Group updated", body = server_group::Model),
+        (status = 404, description = "Group not found"),
+        (status = 422, description = "Validation error"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
 async fn update_group(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -100,6 +134,17 @@ async fn update_group(
     ok(updated)
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/server-groups/{id}",
+    tag = "server-groups",
+    params(("id" = String, Path, description = "Server group ID")),
+    responses(
+        (status = 200, description = "Group deleted"),
+        (status = 404, description = "Group not found"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
 async fn delete_group(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
