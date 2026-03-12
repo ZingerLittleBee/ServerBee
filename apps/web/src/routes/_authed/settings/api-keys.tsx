@@ -12,14 +12,8 @@ export const Route = createFileRoute('/_authed/settings/api-keys')({
 interface ApiKey {
   created_at: string
   id: string
-  last_used: string | null
-  name: string
-  prefix: string
-}
-
-interface CreateApiKeyResponse {
-  id: string
-  key: string
+  key: string | null
+  key_prefix: string
   name: string
 }
 
@@ -30,11 +24,11 @@ function ApiKeysPage() {
 
   const { data: keys, isLoading } = useQuery<ApiKey[]>({
     queryKey: ['settings', 'api-keys'],
-    queryFn: () => api.get<ApiKey[]>('/api/settings/api-keys')
+    queryFn: () => api.get<ApiKey[]>('/api/auth/api-keys')
   })
 
   const createMutation = useMutation({
-    mutationFn: (name: string) => api.post<CreateApiKeyResponse>('/api/settings/api-keys', { name }),
+    mutationFn: (name: string) => api.post<ApiKey>('/api/auth/api-keys', { name }),
     onSuccess: (data) => {
       setCreatedKey(data.key)
       setNewKeyName('')
@@ -49,7 +43,7 @@ function ApiKeysPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.delete(`/api/settings/api-keys/${id}`),
+    mutationFn: (id: string) => api.delete(`/api/auth/api-keys/${id}`),
     onSuccess: () => {
       queryClient
         .invalidateQueries({
@@ -126,17 +120,15 @@ function ApiKeysPage() {
                   <div>
                     <p className="font-medium text-sm">{apiKey.name}</p>
                     <div className="flex gap-3 text-muted-foreground text-xs">
-                      <span className="font-mono">{apiKey.prefix}...</span>
-                      <span>
-                        Last used: {apiKey.last_used ? new Date(apiKey.last_used).toLocaleDateString() : 'Never'}
-                      </span>
+                      <span className="font-mono">sb_{apiKey.key_prefix}...</span>
+                      <span>Created: {new Date(apiKey.created_at).toLocaleDateString()}</span>
                     </div>
                   </div>
                   <Button
                     aria-label={`Delete key ${apiKey.name}`}
                     disabled={deleteMutation.isPending}
                     onClick={() => handleDelete(apiKey.id)}
-                    size="icon-sm"
+                    size="sm"
                     variant="destructive"
                   >
                     <Trash2 className="size-3.5" />

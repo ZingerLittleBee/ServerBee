@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -5,6 +6,7 @@ import { MetricsChart } from '@/components/server/metrics-chart'
 import { StatusBadge } from '@/components/server/status-badge'
 import { Button } from '@/components/ui/button'
 import { useServer, useServerRecords } from '@/hooks/use-api'
+import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/servers/$id')({
@@ -18,11 +20,11 @@ interface TimeRange {
 }
 
 const TIME_RANGES: TimeRange[] = [
-  { label: '1h', hours: 1, interval: '1m' },
-  { label: '6h', hours: 6, interval: '5m' },
-  { label: '24h', hours: 24, interval: '15m' },
-  { label: '7d', hours: 168, interval: '1h' },
-  { label: '30d', hours: 720, interval: '6h' }
+  { label: '1h', hours: 1, interval: 'raw' },
+  { label: '6h', hours: 6, interval: 'raw' },
+  { label: '24h', hours: 24, interval: 'raw' },
+  { label: '7d', hours: 168, interval: 'hourly' },
+  { label: '30d', hours: 720, interval: 'hourly' }
 ]
 
 function formatBytes(bytes: number): string {
@@ -47,22 +49,26 @@ function ServerDetailPage() {
   const { data: server, isLoading: serverLoading } = useServer(id)
   const { data: records } = useServerRecords(id, from, to, range.interval)
 
+  const queryClient = useQueryClient()
+  const liveServers = queryClient.getQueryData<ServerMetrics[]>(['servers'])
+  const liveData = liveServers?.find((s) => s.id === id)
+
   const chartData = useMemo(() => {
     if (!records) {
       return []
     }
     return records.map((r) => ({
-      timestamp: r.timestamp,
-      cpu_usage: r.cpu_usage,
-      memory_pct: r.memory_total > 0 ? (r.memory_used / r.memory_total) * 100 : 0,
-      disk_pct: r.disk_total > 0 ? (r.disk_used / r.disk_total) * 100 : 0,
-      network_in: r.network_in,
-      network_out: r.network_out,
-      load_1: r.load_avg[0],
-      load_5: r.load_avg[1],
-      load_15: r.load_avg[2]
+      timestamp: r.time,
+      cpu: r.cpu,
+      memory_pct: server?.mem_total ? (r.mem_used / server.mem_total) * 100 : 0,
+      disk_pct: server?.disk_total ? (r.disk_used / server.disk_total) * 100 : 0,
+      net_in_speed: r.net_in_speed,
+      net_out_speed: r.net_out_speed,
+      load1: r.load1,
+      load5: r.load5,
+      load15: r.load15
     }))
-  }, [records])
+  }, [records, server])
 
   if (serverLoading) {
     return (
@@ -80,6 +86,8 @@ function ServerDetailPage() {
     )
   }
 
+  const isOnline = liveData?.online ?? false
+
   return (
     <div>
       <div className="mb-6">
@@ -95,13 +103,17 @@ function ServerDetailPage() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="font-bold text-2xl">{server.name}</h1>
-              <StatusBadge online={server.online} />
+              <StatusBadge online={isOnline} />
             </div>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground text-sm">
-              <span>OS: {server.os}</span>
-              <span>CPU: {server.cpu_name}</span>
-              <span>RAM: {formatBytes(server.memory_total)}</span>
-              <span>IP: {server.ip}</span>
+              {server.os && <span>OS: {server.os}</span>}
+              {server.cpu_name && (
+                <span>
+                  CPU: {server.cpu_name} ({server.cpu_cores} cores)
+                </span>
+              )}
+              {server.mem_total != null && <span>RAM: {formatBytes(server.mem_total)}</span>}
+              {server.ipv4 && <span>IP: {server.ipv4}</span>}
             </div>
           </div>
         </div>
@@ -122,7 +134,7 @@ function ServerDetailPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <MetricsChart color="var(--color-chart-1)" data={chartData} dataKey="cpu_usage" title="CPU Usage" unit="%" />
+        <MetricsChart color="var(--color-chart-1)" data={chartData} dataKey="cpu" title="CPU Usage" unit="%" />
         <MetricsChart
           color="var(--color-chart-2)"
           data={chartData}
@@ -134,18 +146,18 @@ function ServerDetailPage() {
         <MetricsChart
           color="var(--color-chart-4)"
           data={chartData}
-          dataKey="network_in"
+          dataKey="net_in_speed"
           formatValue={(v) => formatBytes(v)}
           title="Network In"
         />
         <MetricsChart
           color="var(--color-chart-5)"
           data={chartData}
-          dataKey="network_out"
+          dataKey="net_out_speed"
           formatValue={(v) => formatBytes(v)}
           title="Network Out"
         />
-        <MetricsChart color="var(--color-chart-1)" data={chartData} dataKey="load_1" title="Load Average (1m)" />
+        <MetricsChart color="var(--color-chart-1)" data={chartData} dataKey="load1" title="Load Average (1m)" />
       </div>
     </div>
   )

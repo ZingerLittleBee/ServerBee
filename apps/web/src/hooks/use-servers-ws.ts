@@ -3,28 +3,39 @@ import { useEffect, useRef } from 'react'
 import { WsClient } from '@/lib/ws-client'
 
 interface ServerMetrics {
-  cpu_name: string
-  cpu_usage: number
+  country_code: string | null
+  cpu: number
+  cpu_name: string | null
   disk_total: number
   disk_used: number
   id: string
-  ip: string
-  load_avg: [number, number, number]
-  memory_total: number
-  memory_used: number
+  last_active: number
+  load1: number
+  load5: number
+  load15: number
+  mem_total: number
+  mem_used: number
   name: string
-  network_in_speed: number
-  network_out_speed: number
+  net_in_speed: number
+  net_in_transfer: number
+  net_out_speed: number
+  net_out_transfer: number
   online: boolean
-  os: string
+  os: string | null
+  process_count: number
+  region: string | null
+  swap_total: number
+  swap_used: number
+  tcp_conn: number
+  udp_conn: number
   uptime: number
 }
 
 type WsMessage =
   | { type: 'full_sync'; servers: ServerMetrics[] }
-  | { type: 'update'; server: ServerMetrics }
-  | { type: 'server_online'; server: ServerMetrics }
-  | { type: 'server_offline'; id: string }
+  | { type: 'update'; servers: ServerMetrics[] }
+  | { type: 'server_online'; server_id: string }
+  | { type: 'server_offline'; server_id: string }
 
 export type { ServerMetrics }
 
@@ -47,22 +58,25 @@ export function useServersWs(): void {
         case 'update': {
           queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) => {
             if (!prev) {
-              return [msg.server]
+              return msg.servers
             }
-            return prev.map((s) => (s.id === msg.server.id ? msg.server : s))
+            const updated = [...prev]
+            for (const incoming of msg.servers) {
+              const idx = updated.findIndex((s) => s.id === incoming.id)
+              if (idx >= 0) {
+                updated[idx] = { ...updated[idx], ...incoming }
+              }
+            }
+            return updated
           })
           break
         }
         case 'server_online': {
           queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) => {
             if (!prev) {
-              return [msg.server]
+              return prev
             }
-            const exists = prev.some((s) => s.id === msg.server.id)
-            if (exists) {
-              return prev.map((s) => (s.id === msg.server.id ? msg.server : s))
-            }
-            return [...prev, msg.server]
+            return prev.map((s) => (s.id === msg.server_id ? { ...s, online: true } : s))
           })
           break
         }
@@ -71,7 +85,7 @@ export function useServersWs(): void {
             if (!prev) {
               return prev
             }
-            return prev.map((s) => (s.id === msg.id ? { ...s, online: false } : s))
+            return prev.map((s) => (s.id === msg.server_id ? { ...s, online: false } : s))
           })
           break
         }

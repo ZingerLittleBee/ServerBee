@@ -33,6 +33,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
 
   const json = await response.json()
+  if (json && typeof json === 'object' && 'data' in json) {
+    return json.data as T
+  }
   return json as T
 }
 

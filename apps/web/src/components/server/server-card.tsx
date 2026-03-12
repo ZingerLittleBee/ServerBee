@@ -50,7 +50,7 @@ function ProgressBar({ value, label, color }: { value: number; label: string; co
 }
 
 export function ServerCard({ server }: ServerCardProps) {
-  const memoryPct = server.memory_total > 0 ? (server.memory_used / server.memory_total) * 100 : 0
+  const memoryPct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
   const diskPct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
 
   return (
@@ -65,15 +65,15 @@ export function ServerCard({ server }: ServerCardProps) {
       </div>
 
       <div className="space-y-2.5">
-        <ProgressBar color="bg-chart-1" label="CPU" value={server.cpu_usage} />
+        <ProgressBar color="bg-chart-1" label="CPU" value={server.cpu} />
         <ProgressBar color="bg-chart-2" label="Memory" value={memoryPct} />
         <ProgressBar color="bg-chart-3" label="Disk" value={diskPct} />
       </div>
 
       <div className="mt-3 flex items-center justify-between text-muted-foreground text-xs">
         <div className="flex gap-3">
-          <span title="Network In">{formatSpeed(server.network_in_speed)}</span>
-          <span title="Network Out">{formatSpeed(server.network_out_speed)}</span>
+          <span title="Network In">{formatSpeed(server.net_in_speed)}</span>
+          <span title="Network Out">{formatSpeed(server.net_out_speed)}</span>
         </div>
         <span title="Uptime">{formatUptime(server.uptime)}</span>
       </div>

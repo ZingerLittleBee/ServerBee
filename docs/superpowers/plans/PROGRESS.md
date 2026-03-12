@@ -11,7 +11,7 @@
 | Plan 3 | Real-time (WS + 后台任务) | **已完成** | 1 |
 | Plan 4 | Frontend (路由 + 仪表盘 + 详情) | **已完成** | 2 |
 
-**P0 MVP 代码已全部完成, `cargo build` 和 `bun run build` 均通过。**
+**P0 MVP 代码已全部完成并通过端到端验证。** Server + Agent + Frontend 完整数据流已跑通：注册→WS连接→实时上报→API查询→浏览器WS推送。
 
 ---
 
@@ -129,9 +129,20 @@
 ## 未完成的工作
 
 ### 待验证 (高优先级)
-- [ ] 端到端集成测试: 启动 server + agent, 验证注册→连接→上报→仪表盘展示完整流程
-- [ ] 修复集成中发现的 bug
+- [x] 端到端集成测试: 启动 server + agent, 验证注册→连接→上报→仪表盘展示完整流程 ✅
+- [x] 修复集成中发现的 bug ✅ (见下方 bug 修复清单)
 - [ ] 清理编译警告 (当前 24 个 dead_code warnings)
+
+#### 已修复的集成 Bug
+1. **Server Config `Default` 导致 panic**: `DatabaseConfig::default()` 的 `max_connections=0` 导致 SQLx pool panic。修复：所有 config struct 手动实现 `Default` 使用正确的默认值。
+2. **API 泄露 token_hash**: `/api/servers` 返回了 `token_hash` 和 `token_prefix`。修复：新增 `ServerResponse` DTO 过滤敏感字段。
+3. **前端 API 客户端未解包 `{ data: T }`**: `api-client.ts` 返回了整个 `ApiResponse` 而非内部 `data`。修复：自动提取 `.data`。
+4. **前端 Auth 字段名错误**: User 接口用 `id` 而服务端返回 `user_id`，缺少 `role`。修复。
+5. **WebSocket 消息格式不匹配**: `update` 用 singular `server`（应为 `servers` 数组），`server_online/offline` 期望完整对象（实际只有 `server_id`）。修复。
+6. **ServerMetrics 字段名全错**: `cpu_usage→cpu`, `memory_total→mem_total`, `network_in_speed→net_in_speed`, `load_avg→load1/5/15` 等。修复。
+7. **API 路径错误**: Settings 页面用 `/api/settings/discovery`（应为 `/api/settings/auto-discovery-key`），API Keys 用 `/api/settings/api-keys`（应为 `/api/auth/api-keys`）。修复。
+8. **ServerRecord 字段名错误**: `cpu_usage→cpu`, `timestamp→time`, `memory_used→mem_used` 等。修复。
+9. **Server Detail 页面时间范围**: interval 参数 `1m/5m/15m/1h/6h` 改为 `raw/hourly` 匹配服务端。
 
 ### 待实现: P1 功能
 - [ ] 告警规则引擎 (资源阈值 + 流量周期 + 离线检测)
@@ -168,7 +179,7 @@
 ### 代码质量
 - [ ] 单元测试
 - [ ] 代码审查 (spec compliance + quality)
-- [ ] `bun x ultracite fix` 格式化前端代码
+- [x] `bun x ultracite fix` 格式化前端代码 ✅
 
 ---
 
