@@ -16,6 +16,21 @@ use crate::state::AppState;
 
 const CONFIG_KEY_AUTO_DISCOVERY: &str = "auto_discovery_key";
 
+fn extract_client_ip(headers: &HeaderMap) -> String {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .map(|s| s.trim().to_string())
+        .or_else(|| {
+            headers
+                .get("x-real-ip")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct RegisterResponse {
     server_id: String,
@@ -42,6 +57,14 @@ async fn register(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<RegisterResponse>>, AppError> {
+    // Rate limiting
+    let ip = extract_client_ip(&headers);
+    if !state.check_register_rate(&ip) {
+        return Err(AppError::TooManyRequests(
+            "Too many registration attempts, please try later".to_string(),
+        ));
+    }
+
     // Extract Bearer token from Authorization header
     let auth_header = headers
         .get("authorization")

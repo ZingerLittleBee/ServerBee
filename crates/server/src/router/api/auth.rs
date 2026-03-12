@@ -128,7 +128,7 @@ pub async fn login(
 
     // Rate limiting
     if !state.check_login_rate(&ip) {
-        return Err(AppError::BadRequest(
+        return Err(AppError::TooManyRequests(
             "Too many login attempts. Please try again later.".to_string(),
         ));
     }
