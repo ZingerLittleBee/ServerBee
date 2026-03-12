@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Activity, Globe, Server } from 'lucide-react'
 import { StatusBadge } from '@/components/server/status-badge'
 import { api } from '@/lib/api-client'
-import { cn } from '@/lib/utils'
+import { cn, countryCodeToFlag, formatSpeed, formatUptime } from '@/lib/utils'
 
 export const Route = createFileRoute('/status')({
   component: StatusPage
@@ -47,32 +47,6 @@ interface StatusPageResponse {
   total_count: number
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) {
-    return '0 B'
-  }
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
-  return `${(bytes / 1024 ** i).toFixed(1)} ${units[i]}`
-}
-
-function formatSpeed(bytesPerSec: number): string {
-  return `${formatBytes(bytesPerSec)}/s`
-}
-
-function formatUptime(seconds: number): string {
-  const days = Math.floor(seconds / 86_400)
-  const hours = Math.floor((seconds % 86_400) / 3600)
-  if (days > 0) {
-    return `${days}d ${hours}h`
-  }
-  const minutes = Math.floor((seconds % 3600) / 60)
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`
-  }
-  return `${minutes}m`
-}
-
 function ProgressBar({ value, label, color }: { color: string; label: string; value: number }) {
   const pct = Math.min(100, Math.max(0, value))
   return (
@@ -92,18 +66,15 @@ function ServerStatusCard({ server }: { server: StatusServer }) {
   const m = server.metrics
   const memPct = m && m.mem_total > 0 ? (m.mem_used / m.mem_total) * 100 : 0
   const diskPct = m && m.disk_total > 0 ? (m.disk_used / m.disk_total) * 100 : 0
+  const flag = countryCodeToFlag(server.country_code)
 
   return (
     <div className="rounded-lg border bg-card p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-2 truncate">
+        <div className="flex items-center gap-1.5 truncate">
+          {flag && <span className="shrink-0 text-sm">{flag}</span>}
           <h3 className="truncate font-semibold text-sm">{server.name}</h3>
-          {server.region && (
-            <span className="shrink-0 text-muted-foreground text-xs">
-              {server.country_code && `${server.country_code} · `}
-              {server.region}
-            </span>
-          )}
+          {server.region && <span className="shrink-0 text-muted-foreground text-xs">{server.region}</span>}
         </div>
         <StatusBadge className="shrink-0" online={server.online} />
       </div>
@@ -201,7 +172,6 @@ function StatusContent({ data }: { data: StatusPageResponse }) {
     }
   }
 
-  // Sort: named groups first (by group name), ungrouped last
   const sortedKeys = [...grouped.keys()].sort((a, b) => {
     if (a === '__ungrouped__') {
       return 1
@@ -222,7 +192,6 @@ function StatusContent({ data }: { data: StatusPageResponse }) {
     )
   }
 
-  // If there's only one group (or only ungrouped), skip the group heading
   const showGroupHeaders = sortedKeys.length > 1 || !sortedKeys.includes('__ungrouped__')
 
   return (

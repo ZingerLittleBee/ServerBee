@@ -30,7 +30,8 @@ function AuditLogsPage() {
 
   const { data, isLoading } = useQuery<AuditListResponse>({
     queryKey: ['audit-logs', page],
-    queryFn: () => api.get<AuditListResponse>(`/api/audit-logs?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`)
+    queryFn: () => api.get<AuditListResponse>(`/api/audit-logs?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`),
+    placeholderData: (prev) => prev
   })
 
   const total = data?.total ?? 0
