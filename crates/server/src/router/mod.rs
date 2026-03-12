@@ -1,7 +1,6 @@
 pub mod api;
+mod static_files;
 pub mod ws;
-
-// TODO: Add utoipa OpenAPI documentation (P1)
 
 use std::sync::Arc;
 
@@ -24,6 +23,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .nest("/api", ws::agent::router())
         // Browser WS: /api/ws/servers (auth checked inside handler)
         .nest("/api", ws::browser::router())
+        // Embedded frontend: serve static files, SPA fallback to index.html
+        .fallback(static_files::static_handler)
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(state)

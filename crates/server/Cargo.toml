@@ -30,3 +30,5 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 tokio-cron-scheduler = "0.13"
 async-trait = "0.1"
 futures-util = "0.3"
+rust-embed = { version = "8", features = ["mime-guess"] }
+mime_guess = "2"

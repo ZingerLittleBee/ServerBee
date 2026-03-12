@@ -47,3 +47,10 @@ coverage
 .cache
 tmp
 temp
+
+# Runtime data
+data/
+agent.toml
+*.db
+*.db-wal
+*.db-shm
