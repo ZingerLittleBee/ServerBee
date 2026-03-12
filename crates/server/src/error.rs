@@ -11,6 +11,7 @@ pub struct ApiResponse<T: Serialize> {
 }
 
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 pub struct PaginatedResponse<T: Serialize> {
     pub data: Vec<T>,
     pub total: u64,
@@ -36,6 +37,7 @@ pub enum AppError {
     #[error("Unauthorized")]
     Unauthorized,
     #[error("Forbidden")]
+    #[allow(dead_code)]
     Forbidden,
     #[error("Not found: {0}")]
     NotFound(String),
@@ -84,6 +86,7 @@ impl From<anyhow::Error> for AppError {
     }
 }
 
+#[allow(dead_code)]
 pub type ApiResult<T> = Result<Json<ApiResponse<T>>, AppError>;
 
 pub fn ok<T: Serialize>(data: T) -> Result<Json<ApiResponse<T>>, AppError> {

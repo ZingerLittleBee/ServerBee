@@ -5,6 +5,7 @@ use figment::{
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct AppConfig {
     #[serde(default = "default_server")]
     pub server: ServerConfig,
@@ -125,6 +126,7 @@ impl Default for RetentionConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct RateLimitConfig {
     #[serde(default = "default_5")]
     pub login_max: u32,
@@ -142,6 +144,7 @@ impl Default for RateLimitConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[allow(dead_code)]
 pub struct GeoIpConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -150,6 +153,7 @@ pub struct GeoIpConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct LogConfig {
     #[serde(default = "default_log_level")]
     pub level: String,
