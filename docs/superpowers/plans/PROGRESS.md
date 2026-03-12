@@ -10,16 +10,12 @@
 | Plan 2 | Agent (采集 + 上报 + 注册) | **已完成** | 1 |
 | Plan 3 | Real-time (WS + 后台任务) | **已完成** | 1 |
 | Plan 4 | Frontend (路由 + 仪表盘 + 详情) | **已完成** | 2 |
-| P1-a | 告警 + 通知 + 远程命令 | **已完成** | 待提交 |
-| P1-b | Ping 探测 + Web 终端 | **已完成** | 待提交 |
-| P1-c | GeoIP + GPU + OpenAPI | **已完成** | 待提交 |
-| P1-d | OAuth + 2FA | **已完成** | 待提交 |
-| P2-a | 多用户权限 + 审计日志 | **已完成** | 待提交 |
-| P2-b | 公开状态页 | **已完成** | 待提交 |
-| P2-c | 计费信息管理 | **已完成** | 待提交 |
-| P2-d | Agent 自动更新 | **已完成** | 待提交 |
-| P2-e | 备份恢复 | **已完成** | 待提交 |
-| P2-review | 代码审查修复 | **已完成** | 待提交 |
+| P1-a | 告警 + 通知 + 远程命令 | **已完成** | 1 (`01cb970`) |
+| P1-b | Ping 探测 + Web 终端 | **已完成** | 1 (`dd1dca5`) |
+| P1-c | GeoIP + GPU + OpenAPI | **已完成** | 1 (`e334e74`) |
+| P1-d | OAuth + 2FA | **已完成** | 1 (`00f5704`) |
+| P2-a+review | 权限 + 审计 + 安全加固 | **已完成** | 1 (`020190b`) |
+| P2-b/c/d/e | 状态页 + 计费 + 升级 + 备份 | **已完成** | 1 (`6cb0f6a`) |
 | P3-a | 用户管理 + 缺失 API | **待开始** | — |
 | P3-b | 前端 UI 完善 | **待开始** | — |
 | P3-c | 测试 | **待开始** | — |
@@ -27,7 +23,7 @@
 | P3-e | 性能优化 | **待开始** | — |
 | P3-f | CI/CD + 部署文档 | **待开始** | — |
 
-**P0 MVP + P1 + P2 全部完成。P3 已规划，共 6 个子阶段 31 个任务。**
+**P0 MVP + P1 + P2 全部完成并已提交 (共 18 个 commits)。P3 已规划，共 6 个子阶段 31 个任务。**
 
 ---
 
@@ -380,7 +376,13 @@
 ## Git Commits
 
 ```
-(待提交) feat: add notification, alert, and remote command systems with frontend pages
+cbb7cdc docs: update implementation progress for P1 and P2 milestones
+6cb0f6a feat: add public status page, billing management, and backup/restore (P2-b/c/d/e)
+020190b feat: add role-based access control, audit logging, and security hardening (P2-a + P2-review)
+00f5704 feat: add OAuth login and two-factor authentication (P1-d)
+e334e74 feat: add GeoIP, GPU collection, and OpenAPI documentation (P1-c)
+dd1dca5 feat: add ping monitoring and web terminal (P1-b)
+01cb970 feat: add notification, alert, and remote command systems (P1-a)
 cd89953 ci: add GitHub Actions CI and release workflows
 038da71 feat: add deployment infrastructure with rust-embed, Docker, and systemd
 39f7097 chore: suppress 24 dead_code warnings for P1 feature scaffolding
