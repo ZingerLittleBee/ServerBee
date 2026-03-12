@@ -1,7 +1,9 @@
 mod collector;
 mod config;
+mod pinger;
 mod register;
 mod reporter;
+mod terminal;
 
 use tracing_subscriber::EnvFilter;
 

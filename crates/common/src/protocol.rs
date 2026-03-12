@@ -18,6 +18,17 @@ pub enum AgentMessage {
         #[serde(flatten)]
         result: TaskResult,
     },
+    TerminalOutput {
+        session_id: String,
+        data: String, // base64 encoded
+    },
+    TerminalStarted {
+        session_id: String,
+    },
+    TerminalError {
+        session_id: String,
+        error: String,
+    },
     Pong,
 }
 
@@ -40,6 +51,20 @@ pub enum ServerMessage {
         task_id: String,
         command: String,
         timeout: Option<u32>,
+    },
+    TerminalOpen {
+        session_id: String,
+        rows: u16,
+        cols: u16,
+    },
+    TerminalInput {
+        session_id: String,
+        data: String, // base64 encoded
+    },
+    TerminalResize {
+        session_id: String,
+        rows: u16,
+        cols: u16,
     },
     TerminalClose {
         session_id: String,
