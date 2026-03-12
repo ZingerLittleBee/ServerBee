@@ -6,6 +6,7 @@ mod memory;
 mod network;
 mod process;
 mod temperature;
+pub mod virtualization;
 
 use std::time::Instant;
 
@@ -95,7 +96,7 @@ impl Collector {
             disk_total: disk::total(),
             ipv4: None,
             ipv6: None,
-            virtualization: None,
+            virtualization: virtualization::detect(),
             agent_version: serverbee_common::constants::VERSION.to_string(),
         }
     }
