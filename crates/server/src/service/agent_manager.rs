@@ -129,6 +129,7 @@ impl AgentManager {
             os: None,
             region: None,
             country_code: None,
+            group_id: None,
         };
 
         let _ = self.browser_tx.send(BrowserMessage::Update {
