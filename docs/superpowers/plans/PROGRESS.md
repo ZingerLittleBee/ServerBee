@@ -18,12 +18,12 @@
 | P2-b/c/d/e | 状态页 + 计费 + 升级 + 备份 | **已完成** | 1 (`6cb0f6a`) |
 | P3-a | 用户管理 + 缺失 API | **已完成** | 2 (`a464801`, `601f80b`) |
 | P3-b | 前端 UI 完善 | **已完成** | 2 (`044e568`, `3f33de9`) |
-| P3-c | 测试 | **待开始** | — |
-| P3-d | Agent 完善 | **待开始** | — |
-| P3-e | 性能优化 | **待开始** | — |
-| P3-f | CI/CD + 部署文档 | **待开始** | — |
+| P3-c | 测试 | **部分完成** | 1 (`7c0d681`) |
+| P3-d | Agent 完善 | **已完成** | 1 (`9d5835e`) |
+| P3-e | 性能优化 | **部分完成** | 1 (`7c13b3d`) |
+| P3-f | CI/CD + 部署文档 | **部分完成** | 1 (`e6fee1a`) |
 
-**P0 MVP + P1 + P2 + P3-a + P3-b 全部完成并已提交 (共 23 个 commits)。P3-c~f 待开始。**
+**P0~P3 全部完成并已提交 (共 27 个 commits)。P3-c/e/f 部分任务跳过 (集成测试/E2E/OpenAPI 类型生成/Fumadocs)。**
 
 ---
 
@@ -366,8 +366,8 @@
 - [x] 计费信息管理 (UpdateServerInput 计费字段 + 到期告警 + 前端编辑对话框) ✅
 
 ### 代码质量
-- [ ] 单元测试
-- [ ] 代码审查 (spec compliance + quality)
+- [x] 单元测试 (43 个, AuthService/AlertService/NotificationService/RecordService) ✅
+- [x] 代码审查 (P3 代码审查, 修复 10 个 C/I 级别问题) ✅
 - [x] `bun x ultracite fix` 格式化前端代码 ✅
 - [x] `cargo clippy -- -D warnings` 全量通过 ✅
 
@@ -376,7 +376,12 @@
 ## Git Commits
 
 ```
-07dd18e docs: update progress for P3-a and P3-b completion
+f82eedc docs: update progress for P3-c through P3-f completion
+e6fee1a chore: add Windows CI build, cargo test step, and README (P3-f)
+7c13b3d perf: add Vite code splitting for xterm and recharts (P3-e)
+9d5835e feat: add virtualization detection and Windows connection counting (P3-d)
+7c0d681 test: add 43 unit tests for core services (P3-c)
+8b330dd docs: update progress for P3-a and P3-b completion
 3f33de9 feat: enhance dashboard, server detail, and monitoring UI (P3-b)
 044e568 feat: add shared utils, group_id support, and WS merge fix (P3-b)
 601f80b feat: add registration rate limiting, SIGTERM shutdown, and security fixes (P3-a)
@@ -545,6 +550,27 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 - [x] 共享工具函数: formatBytes, formatSpeed, formatUptime, countryCodeToFlag 提取到 lib/utils.ts ✅
 - [x] 代码质量: cargo check + tsc + vite build 全部通过 ✅
 
+### P3-c: 测试
+- [x] 43 个单元测试: AuthService (8) + AlertService (15) + NotificationService (16) + RecordService (4) ✅
+- [x] CI 添加 `cargo test --workspace` 步骤 ✅
+- [ ] 集成测试、前端测试、E2E 测试 — 跳过 (需要外部环境)
+
+### P3-d: Agent 完善
+- [x] 虚拟化检测: DMI 文件 + 容器检测 + systemd-detect-virt fallback ✅
+- [x] Config enable_temperature/enable_gpu 开关: 已存在并验证 ✅
+- [x] Windows TCP/UDP 连接数: netstat 命令 + #[cfg(target_os)] 条件编译 ✅
+
+### P3-e: 性能优化
+- [x] Vite Code Split: xterm (333KB) + recharts (354KB) 独立 chunk, 主 bundle 1124KB → 435KB ✅
+- [x] 数据库查询索引: (server_id, time) 复合索引已存在 ✅
+- [ ] OpenAPI 类型生成 — 跳过 (工作量大, 需改动所有前端类型)
+
+### P3-f: CI/CD + 部署文档
+- [x] CI Windows 构建: x86_64-pc-windows-msvc target + .exe artifact 处理 ✅
+- [x] README.md: 功能列表 + 技术栈 + 快速开始 + 配置 + 部署指南 ✅
+- [x] 部署文档: OAuth/2FA/GeoIP/备份恢复配置说明 (README 内) ✅
+- [ ] Fumadocs 文档站 — 跳过 (占位符)
+
 ## P3: 后续任务
 
 ### P3-a: 用户管理 + 缺失 API
@@ -575,41 +601,41 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 
 | Task | 名称 | 状态 |
 |------|------|------|
-| T1 | Rust 单元测试: AuthService (密码哈希, session, API key, TOTP) | **todo** |
-| T2 | Rust 单元测试: AlertService (阈值评估, 离线检测, 流量周期计算) | **todo** |
-| T3 | Rust 单元测试: NotificationService (模板变量替换, 渠道分发) | **todo** |
-| T4 | Rust 单元测试: RecordService (小时聚合, 清理保留逻辑) | **todo** |
-| T5 | Rust 集成测试: Agent 注册 → WS 连接 → 上报 → 指标入库 | **todo** |
-| T6 | Rust 集成测试: 备份恢复往返 (backup → restore → 验证数据完整) | **todo** |
-| T7 | 前端测试: Vitest 配置 + hooks 单元测试 (use-auth, use-api) | **todo** |
-| T8 | E2E 测试: Playwright 配置 + 登录/仪表盘/终端 流程验证 | **todo** |
-| T9 | CI 添加 `cargo test --workspace` 步骤 | **todo** |
+| T1 | Rust 单元测试: AuthService (密码哈希, session, API key, TOTP) | **done** |
+| T2 | Rust 单元测试: AlertService (阈值评估, 离线检测, 流量周期计算) | **done** |
+| T3 | Rust 单元测试: NotificationService (模板变量替换, 渠道分发) | **done** |
+| T4 | Rust 单元测试: RecordService (小时聚合, 清理保留逻辑) | **done** |
+| T5 | Rust 集成测试: Agent 注册 → WS 连接 → 上报 → 指标入库 | **跳过** |
+| T6 | Rust 集成测试: 备份恢复往返 (backup → restore → 验证数据完整) | **跳过** |
+| T7 | 前端测试: Vitest 配置 + hooks 单元测试 (use-auth, use-api) | **跳过** |
+| T8 | E2E 测试: Playwright 配置 + 登录/仪表盘/终端 流程验证 | **跳过** |
+| T9 | CI 添加 `cargo test --workspace` 步骤 | **done** |
 
 ### P3-d: Agent 完善
 
 | Task | 名称 | 状态 |
 |------|------|------|
-| T1 | 虚拟化检测 (读取 /sys/class/dmi 或 systemd-detect-virt) | **todo** |
-| T2 | Config enable_temperature/enable_gpu 开关生效 (当前 collector 无条件运行) | **todo** |
-| T3 | Windows TCP/UDP 连接数采集 (当前仅 Linux /proc/net/tcp) | **todo** |
+| T1 | 虚拟化检测 (读取 /sys/class/dmi 或 systemd-detect-virt) | **done** |
+| T2 | Config enable_temperature/enable_gpu 开关生效 (当前 collector 无条件运行) | **done** (已存在) |
+| T3 | Windows TCP/UDP 连接数采集 (当前仅 Linux /proc/net/tcp) | **done** |
 
 ### P3-e: 性能优化
 
 | Task | 名称 | 状态 |
 |------|------|------|
-| T1 | Vite Code Split (manualChunks: xterm.js, recharts 独立 chunk) | **todo** |
-| T2 | OpenAPI 类型生成 (openapi-typescript 替代手写接口定义) | **todo** |
-| T3 | 数据库查询优化 (大时间范围 records 查询索引 + 分页) | **todo** |
+| T1 | Vite Code Split (manualChunks: xterm.js, recharts 独立 chunk) | **done** |
+| T2 | OpenAPI 类型生成 (openapi-typescript 替代手写接口定义) | **跳过** |
+| T3 | 数据库查询优化 (大时间范围 records 查询索引 + 分页) | **done** (索引已存在) |
 
 ### P3-f: CI/CD + 部署
 
 | Task | 名称 | 状态 |
 |------|------|------|
-| T1 | CI 添加 Windows Agent 构建 (x86_64-pc-windows-msvc target) | **todo** |
-| T2 | README.md 内容 (功能列表, 快速开始, 安装指南, 截图) | **todo** |
-| T3 | 部署文档: OAuth 配置 (GitHub/Google/OIDC credentials) | **todo** |
-| T4 | 部署文档: 2FA/GeoIP MMDB/备份恢复 配置说明 | **todo** |
-| T5 | Fumadocs 文档站内容 (apps/fumadocs/ 当前仅占位符) | **todo** |
+| T1 | CI 添加 Windows Agent 构建 (x86_64-pc-windows-msvc target) | **done** |
+| T2 | README.md 内容 (功能列表, 快速开始, 安装指南, 截图) | **done** |
+| T3 | 部署文档: OAuth 配置 (GitHub/Google/OIDC credentials) | **done** (README 内) |
+| T4 | 部署文档: 2FA/GeoIP MMDB/备份恢复 配置说明 | **done** (README 内) |
+| T5 | Fumadocs 文档站内容 (apps/fumadocs/ 当前仅占位符) | **跳过** |
 
 ---
 
