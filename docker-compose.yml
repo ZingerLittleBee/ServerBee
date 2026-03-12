@@ -1,0 +1,15 @@
+services:
+  serverbee:
+    build: .
+    image: ghcr.io/zingerbee/serverbee:latest
+    ports:
+      - "9527:9527"
+    volumes:
+      - serverbee-data:/data
+    environment:
+      - SB_ADMIN_USERNAME=admin
+      - SB_ADMIN_PASSWORD=changeme
+    restart: unless-stopped
+
+volumes:
+  serverbee-data:

@@ -1,0 +1,10 @@
+target/
+data/
+.git/
+.idea/
+.vscode/
+docs/
+apps/web/node_modules/
+apps/web/dist/
+*.md
+agent.toml

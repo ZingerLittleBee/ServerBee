@@ -131,7 +131,7 @@
 ### 待验证 (高优先级)
 - [x] 端到端集成测试: 启动 server + agent, 验证注册→连接→上报→仪表盘展示完整流程 ✅
 - [x] 修复集成中发现的 bug ✅ (见下方 bug 修复清单)
-- [ ] 清理编译警告 (当前 24 个 dead_code warnings)
+- [x] 清理编译警告 (24 个 dead_code warnings → 0) ✅
 
 #### 已修复的集成 Bug
 1. **Server Config `Default` 导致 panic**: `DatabaseConfig::default()` 的 `max_connections=0` 导致 SQLx pool panic。修复：所有 config struct 手动实现 `Default` 使用正确的默认值。
@@ -169,12 +169,12 @@
 - [ ] 计费信息管理
 
 ### 待实现: 部署
-- [ ] Dockerfile (多阶段构建: bun build → cargo build → alpine)
-- [ ] docker-compose.yml
-- [ ] install.sh (安装脚本)
-- [ ] systemd service units
+- [x] Dockerfile (多阶段构建: bun build → cargo build → alpine) ✅
+- [x] docker-compose.yml ✅
+- [x] install.sh (安装脚本) ✅
+- [x] systemd service units ✅
 - [ ] GitHub Actions CI/CD
-- [ ] rust-embed 嵌入前端到 server 二进制
+- [x] rust-embed 嵌入前端到 server 二进制 ✅
 
 ### 代码质量
 - [ ] 单元测试

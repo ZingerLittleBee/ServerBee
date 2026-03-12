@@ -1,0 +1,15 @@
+[Unit]
+Description=ServerBee Dashboard
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/serverbee-server
+WorkingDirectory=/var/lib/serverbee
+Environment=SB_SERVER_DATA_DIR=/var/lib/serverbee
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

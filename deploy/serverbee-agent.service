@@ -1,0 +1,14 @@
+[Unit]
+Description=ServerBee Agent
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/serverbee-agent
+WorkingDirectory=/etc/serverbee
+Restart=always
+RestartSec=5
+AmbientCapabilities=CAP_NET_RAW
+
+[Install]
+WantedBy=multi-user.target
