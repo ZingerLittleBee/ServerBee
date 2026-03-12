@@ -10,6 +10,7 @@ pub mod server_group;
 pub mod setting;
 pub mod status;
 pub mod task;
+pub mod user;
 
 use std::sync::Arc;
 
@@ -38,6 +39,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                         .merge(alert::router())
                         .merge(task::router())
                         .merge(audit::router())
+                        .merge(user::router())
                         .layer(middleware::from_fn(require_admin)),
                 )
                 .layer(middleware::from_fn_with_state(

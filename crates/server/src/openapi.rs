@@ -77,6 +77,12 @@ use utoipa::OpenApi;
         crate::router::api::task::get_task_results,
         // audit
         crate::router::api::audit::list_audit_logs,
+        // users
+        crate::router::api::user::list_users,
+        crate::router::api::user::get_user,
+        crate::router::api::user::create_user,
+        crate::router::api::user::update_user,
+        crate::router::api::user::delete_user,
         // ping-tasks
         crate::router::api::ping::list_tasks,
         crate::router::api::ping::get_task,
@@ -142,6 +148,10 @@ use utoipa::OpenApi;
             // audit
             crate::router::api::audit::AuditLogEntry,
             crate::router::api::audit::AuditListResponse,
+            // users
+            crate::service::user::UserResponse,
+            crate::service::user::CreateUserInput,
+            crate::service::user::UpdateUserInput,
             // entity models used as responses
             crate::entity::server_group::Model,
             crate::entity::notification::Model,
@@ -166,6 +176,7 @@ use utoipa::OpenApi;
         (name = "alert-rules", description = "Alert rules"),
         (name = "status", description = "Public server status page"),
         (name = "audit", description = "Audit logs (admin only)"),
+        (name = "users", description = "User management (admin only)"),
         (name = "tasks", description = "Remote command execution"),
         (name = "ping-tasks", description = "Ping probe tasks"),
     ),

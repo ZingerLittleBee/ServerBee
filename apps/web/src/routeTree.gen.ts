@@ -15,6 +15,7 @@ import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
 import { Route as AuthedTerminalServerIdRouteImport } from './routes/_authed/terminal.$serverId'
+import { Route as AuthedSettingsUsersRouteImport } from './routes/_authed/settings/users'
 import { Route as AuthedSettingsTasksRouteImport } from './routes/_authed/settings/tasks'
 import { Route as AuthedSettingsSecurityRouteImport } from './routes/_authed/settings/security'
 import { Route as AuthedSettingsPingTasksRouteImport } from './routes/_authed/settings/ping-tasks'
@@ -51,6 +52,11 @@ const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
 const AuthedTerminalServerIdRoute = AuthedTerminalServerIdRouteImport.update({
   id: '/terminal/$serverId',
   path: '/terminal/$serverId',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedSettingsUsersRoute = AuthedSettingsUsersRouteImport.update({
+  id: '/settings/users',
+  path: '/settings/users',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedSettingsTasksRoute = AuthedSettingsTasksRouteImport.update({
@@ -107,6 +113,7 @@ export interface FileRoutesByFullPath {
   '/settings/ping-tasks': typeof AuthedSettingsPingTasksRoute
   '/settings/security': typeof AuthedSettingsSecurityRoute
   '/settings/tasks': typeof AuthedSettingsTasksRoute
+  '/settings/users': typeof AuthedSettingsUsersRoute
   '/terminal/$serverId': typeof AuthedTerminalServerIdRoute
   '/settings/': typeof AuthedSettingsIndexRoute
 }
@@ -122,6 +129,7 @@ export interface FileRoutesByTo {
   '/settings/ping-tasks': typeof AuthedSettingsPingTasksRoute
   '/settings/security': typeof AuthedSettingsSecurityRoute
   '/settings/tasks': typeof AuthedSettingsTasksRoute
+  '/settings/users': typeof AuthedSettingsUsersRoute
   '/terminal/$serverId': typeof AuthedTerminalServerIdRoute
   '/settings': typeof AuthedSettingsIndexRoute
 }
@@ -139,6 +147,7 @@ export interface FileRoutesById {
   '/_authed/settings/ping-tasks': typeof AuthedSettingsPingTasksRoute
   '/_authed/settings/security': typeof AuthedSettingsSecurityRoute
   '/_authed/settings/tasks': typeof AuthedSettingsTasksRoute
+  '/_authed/settings/users': typeof AuthedSettingsUsersRoute
   '/_authed/terminal/$serverId': typeof AuthedTerminalServerIdRoute
   '/_authed/settings/': typeof AuthedSettingsIndexRoute
 }
@@ -156,6 +165,7 @@ export interface FileRouteTypes {
     | '/settings/ping-tasks'
     | '/settings/security'
     | '/settings/tasks'
+    | '/settings/users'
     | '/terminal/$serverId'
     | '/settings/'
   fileRoutesByTo: FileRoutesByTo
@@ -171,6 +181,7 @@ export interface FileRouteTypes {
     | '/settings/ping-tasks'
     | '/settings/security'
     | '/settings/tasks'
+    | '/settings/users'
     | '/terminal/$serverId'
     | '/settings'
   id:
@@ -187,6 +198,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/ping-tasks'
     | '/_authed/settings/security'
     | '/_authed/settings/tasks'
+    | '/_authed/settings/users'
     | '/_authed/terminal/$serverId'
     | '/_authed/settings/'
   fileRoutesById: FileRoutesById
@@ -239,6 +251,13 @@ declare module '@tanstack/react-router' {
       path: '/terminal/$serverId'
       fullPath: '/terminal/$serverId'
       preLoaderRoute: typeof AuthedTerminalServerIdRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/users': {
+      id: '/_authed/settings/users'
+      path: '/settings/users'
+      fullPath: '/settings/users'
+      preLoaderRoute: typeof AuthedSettingsUsersRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/settings/tasks': {
@@ -310,6 +329,7 @@ interface AuthedRouteChildren {
   AuthedSettingsPingTasksRoute: typeof AuthedSettingsPingTasksRoute
   AuthedSettingsSecurityRoute: typeof AuthedSettingsSecurityRoute
   AuthedSettingsTasksRoute: typeof AuthedSettingsTasksRoute
+  AuthedSettingsUsersRoute: typeof AuthedSettingsUsersRoute
   AuthedTerminalServerIdRoute: typeof AuthedTerminalServerIdRoute
   AuthedSettingsIndexRoute: typeof AuthedSettingsIndexRoute
 }
@@ -324,6 +344,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedSettingsPingTasksRoute: AuthedSettingsPingTasksRoute,
   AuthedSettingsSecurityRoute: AuthedSettingsSecurityRoute,
   AuthedSettingsTasksRoute: AuthedSettingsTasksRoute,
+  AuthedSettingsUsersRoute: AuthedSettingsUsersRoute,
   AuthedTerminalServerIdRoute: AuthedTerminalServerIdRoute,
   AuthedSettingsIndexRoute: AuthedSettingsIndexRoute,
 }
