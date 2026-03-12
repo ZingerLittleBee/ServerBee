@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, CreditCard, Pencil, Terminal as TerminalIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -8,7 +8,8 @@ import { StatusBadge } from '@/components/server/status-badge'
 import { Button } from '@/components/ui/button'
 import { useServer, useServerRecords } from '@/hooks/use-api'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { cn } from '@/lib/utils'
+import { api } from '@/lib/api-client'
+import { cn, countryCodeToFlag, formatBytes } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/servers/$id')({
   component: ServerDetailPage
@@ -28,14 +29,15 @@ const TIME_RANGES: TimeRange[] = [
   { label: '30d', hours: 720, interval: 'hourly' }
 ]
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) {
-    return '0 B'
-  }
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
-  const value = bytes / 1024 ** i
-  return `${value.toFixed(1)} ${units[i]}`
+interface GpuRecord {
+  gpu_count: number
+  gpu_usage_avg: number
+  id: number
+  mem_total_avg: number
+  mem_used_avg: number
+  server_id: string
+  temperature_avg: number
+  time: string
 }
 
 function formatCurrency(price: number, currency: string): string {
@@ -52,12 +54,21 @@ function ServerDetailPage() {
   const [editOpen, setEditOpen] = useState(false)
 
   const range = TIME_RANGES[selectedRange]
-  const now = useMemo(() => new Date(), [])
+  const now = useMemo(() => new Date(), [selectedRange])
   const from = new Date(now.getTime() - range.hours * 3600 * 1000).toISOString()
   const to = now.toISOString()
 
   const { data: server, isLoading: serverLoading } = useServer(id)
   const { data: records } = useServerRecords(id, from, to, range.interval)
+
+  const { data: gpuRecords } = useQuery<GpuRecord[]>({
+    queryKey: ['servers', id, 'gpu-records', from, to],
+    queryFn: () =>
+      api.get<GpuRecord[]>(
+        `/api/servers/${id}/gpu-records?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+      ),
+    enabled: id.length > 0
+  })
 
   const queryClient = useQueryClient()
   const liveServers = queryClient.getQueryData<ServerMetrics[]>(['servers'])
@@ -74,11 +85,29 @@ function ServerDetailPage() {
       disk_pct: server?.disk_total ? (r.disk_used / server.disk_total) * 100 : 0,
       net_in_speed: r.net_in_speed,
       net_out_speed: r.net_out_speed,
+      net_in_transfer: r.net_in_transfer,
+      net_out_transfer: r.net_out_transfer,
       load1: r.load1,
       load5: r.load5,
-      load15: r.load15
+      load15: r.load15,
+      temperature: r.temperature
     }))
   }, [records, server])
+
+  const gpuChartData = useMemo(() => {
+    if (!gpuRecords || gpuRecords.length === 0) {
+      return []
+    }
+    return gpuRecords.map((r) => ({
+      timestamp: r.time,
+      gpu_usage: r.gpu_usage_avg,
+      gpu_temp: r.temperature_avg,
+      gpu_mem_pct: r.mem_total_avg > 0 ? (r.mem_used_avg / r.mem_total_avg) * 100 : 0
+    }))
+  }, [gpuRecords])
+
+  const hasTemperature = chartData.some((d) => d.temperature != null && d.temperature > 0)
+  const hasGpu = gpuChartData.length > 0
 
   if (serverLoading) {
     return (
@@ -98,6 +127,11 @@ function ServerDetailPage() {
 
   const isOnline = liveData?.online ?? false
   const hasBilling = server.price != null || server.expired_at != null || server.traffic_limit != null
+  const flag = countryCodeToFlag(server.country_code)
+
+  // Network cumulative traffic from live data
+  const liveNetIn = liveData?.net_in_transfer ?? 0
+  const liveNetOut = liveData?.net_out_transfer ?? 0
 
   return (
     <div>
@@ -113,6 +147,7 @@ function ServerDetailPage() {
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-3">
+              {flag && <span className="text-xl">{flag}</span>}
               <h1 className="font-bold text-2xl">{server.name}</h1>
               <StatusBadge online={isOnline} />
             </div>
@@ -120,11 +155,17 @@ function ServerDetailPage() {
               {server.os && <span>OS: {server.os}</span>}
               {server.cpu_name && (
                 <span>
-                  CPU: {server.cpu_name} ({server.cpu_cores} cores)
+                  CPU: {server.cpu_name}
+                  {server.cpu_cores && ` (${server.cpu_cores} cores)`}
+                  {server.cpu_arch && ` ${server.cpu_arch}`}
                 </span>
               )}
               {server.mem_total != null && <span>RAM: {formatBytes(server.mem_total)}</span>}
-              {server.ipv4 && <span>IP: {server.ipv4}</span>}
+              {server.ipv4 && <span>IPv4: {server.ipv4}</span>}
+              {server.ipv6 && <span>IPv6: {server.ipv6}</span>}
+              {server.kernel_version && <span>Kernel: {server.kernel_version}</span>}
+              {server.region && <span>Region: {server.region}</span>}
+              {server.agent_version && <span>Agent: v{server.agent_version}</span>}
             </div>
           </div>
           <div className="flex gap-2">
@@ -145,6 +186,20 @@ function ServerDetailPage() {
       </div>
 
       {hasBilling && <BillingInfoBar server={server} />}
+
+      {isOnline && (liveNetIn > 0 || liveNetOut > 0) && (
+        <div className="mb-6 flex flex-wrap gap-6 rounded-lg border bg-card p-3 text-sm">
+          <span className="text-muted-foreground">
+            Network In: <span className="font-medium text-foreground">{formatBytes(liveNetIn)}</span>
+          </span>
+          <span className="text-muted-foreground">
+            Network Out: <span className="font-medium text-foreground">{formatBytes(liveNetOut)}</span>
+          </span>
+          <span className="text-muted-foreground">
+            Total: <span className="font-medium text-foreground">{formatBytes(liveNetIn + liveNetOut)}</span>
+          </span>
+        </div>
+      )}
 
       <div className="mb-4 flex gap-1">
         {TIME_RANGES.map((tr, i) => (
@@ -185,6 +240,35 @@ function ServerDetailPage() {
           title="Network Out"
         />
         <MetricsChart color="var(--color-chart-1)" data={chartData} dataKey="load1" title="Load Average (1m)" />
+
+        {hasTemperature && (
+          <MetricsChart
+            color="var(--color-chart-4)"
+            data={chartData}
+            dataKey="temperature"
+            title="Temperature"
+            unit="°C"
+          />
+        )}
+
+        {hasGpu && (
+          <>
+            <MetricsChart
+              color="var(--color-chart-5)"
+              data={gpuChartData}
+              dataKey="gpu_usage"
+              title="GPU Usage"
+              unit="%"
+            />
+            <MetricsChart
+              color="var(--color-chart-2)"
+              data={gpuChartData}
+              dataKey="gpu_temp"
+              title="GPU Temperature"
+              unit="°C"
+            />
+          </>
+        )}
       </div>
 
       <ServerEditDialog onClose={() => setEditOpen(false)} open={editOpen} server={server} />

@@ -1,40 +1,13 @@
 import { Link } from '@tanstack/react-router'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { cn } from '@/lib/utils'
+import { cn, countryCodeToFlag, formatSpeed, formatUptime } from '@/lib/utils'
 import { StatusBadge } from './status-badge'
 
 interface ServerCardProps {
   server: ServerMetrics
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) {
-    return '0 B'
-  }
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
-  const value = bytes / 1024 ** i
-  return `${value.toFixed(1)} ${units[i]}`
-}
-
-function formatSpeed(bytesPerSec: number): string {
-  return `${formatBytes(bytesPerSec)}/s`
-}
-
-function formatUptime(seconds: number): string {
-  const days = Math.floor(seconds / 86_400)
-  const hours = Math.floor((seconds % 86_400) / 3600)
-  if (days > 0) {
-    return `${days}d ${hours}h`
-  }
-  const minutes = Math.floor((seconds % 3600) / 60)
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`
-  }
-  return `${minutes}m`
-}
-
-function ProgressBar({ value, label, color }: { value: number; label: string; color: string }) {
+function ProgressBar({ value, label, color }: { color: string; label: string; value: number }) {
   const pct = Math.min(100, Math.max(0, value))
   return (
     <div className="space-y-1">
@@ -49,9 +22,31 @@ function ProgressBar({ value, label, color }: { value: number; label: string; co
   )
 }
 
+function osIcon(os: string | null): string {
+  if (!os) {
+    return ''
+  }
+  const lower = os.toLowerCase()
+  if (lower.includes('ubuntu') || lower.includes('debian') || lower.includes('linux')) {
+    return '🐧'
+  }
+  if (lower.includes('windows')) {
+    return '🪟'
+  }
+  if (lower.includes('macos') || lower.includes('darwin')) {
+    return '🍎'
+  }
+  if (lower.includes('freebsd') || lower.includes('openbsd')) {
+    return '😈'
+  }
+  return ''
+}
+
 export function ServerCard({ server }: ServerCardProps) {
   const memoryPct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
   const diskPct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
+  const flag = countryCodeToFlag(server.country_code)
+  const osEmoji = osIcon(server.os)
 
   return (
     <Link
@@ -60,7 +55,19 @@ export function ServerCard({ server }: ServerCardProps) {
       to="/servers/$id"
     >
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="truncate font-semibold text-sm">{server.name}</h3>
+        <div className="flex items-center gap-1.5 truncate">
+          {flag && (
+            <span className="shrink-0 text-sm" title={server.country_code ?? ''}>
+              {flag}
+            </span>
+          )}
+          {osEmoji && (
+            <span className="shrink-0 text-sm" title={server.os ?? ''}>
+              {osEmoji}
+            </span>
+          )}
+          <h3 className="truncate font-semibold text-sm">{server.name}</h3>
+        </div>
         <StatusBadge online={server.online} />
       </div>
 
