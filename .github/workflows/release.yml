@@ -30,6 +30,9 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest
             suffix: darwin-arm64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            suffix: windows-amd64
     steps:
       - uses: actions/checkout@v4
 
@@ -58,19 +61,27 @@ jobs:
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
 
-      - name: Package binaries
+      - name: Package binaries (Unix)
+        if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
           cp serverbee-server serverbee-server-${{ matrix.suffix }}
           cp serverbee-agent serverbee-agent-${{ matrix.suffix }}
+
+      - name: Package binaries (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          cp serverbee-server.exe serverbee-server-${{ matrix.suffix }}.exe
+          cp serverbee-agent.exe serverbee-agent-${{ matrix.suffix }}.exe
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.suffix }}
           path: |
-            target/${{ matrix.target }}/release/serverbee-server-${{ matrix.suffix }}
-            target/${{ matrix.target }}/release/serverbee-agent-${{ matrix.suffix }}
+            target/${{ matrix.target }}/release/serverbee-server-${{ matrix.suffix }}*
+            target/${{ matrix.target }}/release/serverbee-agent-${{ matrix.suffix }}*
 
   docker:
     name: Docker Image
