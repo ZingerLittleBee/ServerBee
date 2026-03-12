@@ -1,8 +1,8 @@
 use sea_orm::entity::prelude::*;
+use serde::Serialize;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, utoipa::ToSchema)]
 #[sea_orm(table_name = "ping_tasks")]
-#[allow(dead_code)]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
@@ -12,6 +12,7 @@ pub struct Model {
     pub interval: i32,
     pub server_ids_json: String,
     pub enabled: bool,
+    #[schema(value_type = String, format = DateTime)]
     pub created_at: DateTimeUtc,
 }
 

@@ -7,10 +7,22 @@ use tokio::sync::{broadcast, mpsc};
 use serverbee_common::protocol::{BrowserMessage, ServerMessage};
 use serverbee_common::types::{ServerStatus, SystemReport};
 
+/// Sender for forwarding terminal output from agent to browser WS.
+pub type TerminalOutputTx = mpsc::Sender<TerminalSessionEvent>;
+
+/// Events sent from agent handler to browser terminal WS.
+pub enum TerminalSessionEvent {
+    Output(String),  // base64 encoded data
+    Started,
+    Error(String),
+}
+
 pub struct AgentManager {
     connections: DashMap<String, AgentConnection>,
     latest_reports: DashMap<String, CachedReport>,
     browser_tx: broadcast::Sender<BrowserMessage>,
+    /// Maps session_id -> terminal output channel (for routing agent output to browser WS)
+    terminal_sessions: DashMap<String, TerminalOutputTx>,
 }
 
 #[allow(dead_code)]
@@ -35,6 +47,7 @@ impl AgentManager {
             connections: DashMap::new(),
             latest_reports: DashMap::new(),
             browser_tx,
+            terminal_sessions: DashMap::new(),
         }
     }
 
@@ -161,11 +174,31 @@ impl AgentManager {
         self.connections.get(server_id).map(|c| c.tx.clone())
     }
 
+    /// Get the remote address of a connected agent.
+    pub fn get_remote_addr(&self, server_id: &str) -> Option<SocketAddr> {
+        self.connections.get(server_id).map(|c| c.remote_addr)
+    }
+
     /// Update the last_report_at timestamp for a connection (e.g., on Pong).
     pub fn touch_connection(&self, server_id: &str) {
         if let Some(mut conn) = self.connections.get_mut(server_id) {
             conn.last_report_at = Instant::now();
         }
+    }
+
+    /// Register a terminal session for routing output from agent to browser.
+    pub fn register_terminal_session(&self, session_id: String, tx: TerminalOutputTx) {
+        self.terminal_sessions.insert(session_id, tx);
+    }
+
+    /// Unregister a terminal session.
+    pub fn unregister_terminal_session(&self, session_id: &str) {
+        self.terminal_sessions.remove(session_id);
+    }
+
+    /// Get the terminal output sender for a session.
+    pub fn get_terminal_session(&self, session_id: &str) -> Option<TerminalOutputTx> {
+        self.terminal_sessions.get(session_id).map(|v| v.clone())
     }
 
     /// Find agents that have not reported for `threshold_secs` seconds,

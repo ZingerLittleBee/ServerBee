@@ -4,12 +4,15 @@ use futures_util::{SinkExt, StreamExt};
 use rand::Rng;
 use serverbee_common::constants::{DEFAULT_COMMAND_TIMEOUT_SECS, DEFAULT_REPORT_INTERVAL, MAX_TASK_OUTPUT_SIZE};
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
+use tokio::sync::mpsc;
 use tokio::time::interval;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::collector::Collector;
 use crate::config::AgentConfig;
+use crate::pinger::PingManager;
+use crate::terminal::{TerminalEvent, TerminalManager};
 
 const MAX_BACKOFF_SECS: u64 = 30;
 const JITTER_FACTOR: f64 = 0.2;
@@ -82,7 +85,10 @@ impl Reporter {
         };
 
         // Send SystemInfo
-        let mut collector = Collector::new(self.config.collector.enable_temperature);
+        let mut collector = Collector::new(
+            self.config.collector.enable_temperature,
+            self.config.collector.enable_gpu,
+        );
         let info = collector.system_info();
         let info_msg = AgentMessage::SystemInfo {
             msg_id: uuid::Uuid::new_v4().to_string(),
@@ -91,6 +97,14 @@ impl Reporter {
         let json = serde_json::to_string(&info_msg)?;
         write.send(Message::Text(json.into())).await?;
         tracing::info!("Sent SystemInfo");
+
+        // Ping probe manager
+        let (ping_tx, mut ping_rx) = mpsc::channel(256);
+        let mut ping_manager = PingManager::new(ping_tx);
+
+        // Terminal session manager
+        let (term_tx, mut term_rx) = mpsc::channel(256);
+        let mut terminal_manager = TerminalManager::new(term_tx);
 
         // Main loop: send reports and handle server messages
         let mut report_interval = interval(Duration::from_secs(report_interval as u64));
@@ -105,13 +119,43 @@ impl Reporter {
                     write.send(Message::Text(json.into())).await?;
                     tracing::debug!("Sent report");
                 }
+                Some(ping_result) = ping_rx.recv() => {
+                    let msg = AgentMessage::PingResult(ping_result);
+                    let json = serde_json::to_string(&msg)?;
+                    write.send(Message::Text(json.into())).await?;
+                    tracing::debug!("Sent PingResult");
+                }
+                Some(term_event) = term_rx.recv() => {
+                    let msg = match term_event {
+                        TerminalEvent::Output { session_id, data } => {
+                            AgentMessage::TerminalOutput { session_id, data }
+                        }
+                        TerminalEvent::Started { session_id } => {
+                            AgentMessage::TerminalStarted { session_id }
+                        }
+                        TerminalEvent::Error { session_id, error } => {
+                            AgentMessage::TerminalError { session_id, error }
+                        }
+                        TerminalEvent::Exited { session_id } => {
+                            terminal_manager.close(&session_id);
+                            AgentMessage::TerminalError {
+                                session_id,
+                                error: "Session exited".to_string(),
+                            }
+                        }
+                    };
+                    let json = serde_json::to_string(&msg)?;
+                    write.send(Message::Text(json.into())).await?;
+                }
                 server_msg = read.next() => {
                     match server_msg {
                         Some(Ok(Message::Text(text))) => {
-                            self.handle_server_message(&text, &mut write).await?;
+                            self.handle_server_message(&text, &mut write, &mut ping_manager, &mut terminal_manager).await?;
                         }
                         Some(Ok(Message::Close(_))) => {
                             tracing::info!("Server closed connection");
+                            ping_manager.stop_all();
+                            terminal_manager.close_all();
                             return Ok(());
                         }
                         Some(Ok(Message::Ping(data))) => {
@@ -120,10 +164,14 @@ impl Reporter {
                         Some(Ok(_)) => {}
                         Some(Err(e)) => {
                             tracing::error!("WebSocket error: {e}");
+                            ping_manager.stop_all();
+                            terminal_manager.close_all();
                             return Err(e.into());
                         }
                         None => {
                             tracing::info!("WebSocket stream ended");
+                            ping_manager.stop_all();
+                            terminal_manager.close_all();
                             return Ok(());
                         }
                     }
@@ -132,7 +180,13 @@ impl Reporter {
         }
     }
 
-    async fn handle_server_message<S>(&self, text: &str, write: &mut S) -> anyhow::Result<()>
+    async fn handle_server_message<S>(
+        &self,
+        text: &str,
+        write: &mut S,
+        ping_manager: &mut PingManager,
+        terminal_manager: &mut TerminalManager,
+    ) -> anyhow::Result<()>
     where
         S: SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
     {
@@ -171,17 +225,43 @@ impl Reporter {
             ServerMessage::Welcome { .. } => {
                 tracing::warn!("Unexpected second Welcome message");
             }
-            ServerMessage::PingTasksSync { .. } => {
-                tracing::debug!("Received PingTasksSync (not yet implemented)");
+            ServerMessage::PingTasksSync { tasks } => {
+                tracing::info!("Received PingTasksSync with {} tasks", tasks.len());
+                ping_manager.sync(tasks);
+            }
+            ServerMessage::TerminalOpen {
+                session_id,
+                rows,
+                cols,
+            } => {
+                tracing::info!("Opening terminal session {session_id} ({cols}x{rows})");
+                terminal_manager.open(session_id, rows, cols);
+            }
+            ServerMessage::TerminalInput { session_id, data } => {
+                terminal_manager.write_input(&session_id, &data);
+            }
+            ServerMessage::TerminalResize {
+                session_id,
+                rows,
+                cols,
+            } => {
+                tracing::debug!("Resizing terminal {session_id} to {cols}x{rows}");
+                terminal_manager.resize(&session_id, rows, cols);
             }
             ServerMessage::TerminalClose { session_id } => {
-                tracing::debug!("Received TerminalClose for session_id={session_id} (not yet implemented)");
+                tracing::debug!("Closing terminal session {session_id}");
+                terminal_manager.close(&session_id);
             }
             ServerMessage::Upgrade {
                 version,
                 download_url,
             } => {
-                tracing::info!("Upgrade available: v{version} at {download_url} (not yet implemented)");
+                tracing::info!("Upgrade requested: v{version} from {download_url}");
+                tokio::spawn(async move {
+                    if let Err(e) = perform_upgrade(&version, &download_url).await {
+                        tracing::error!("Upgrade to v{version} failed: {e}");
+                    }
+                });
             }
         }
 
@@ -254,4 +334,86 @@ fn apply_jitter(base_secs: u64) -> f64 {
     let mut rng = rand::thread_rng();
     let jitter: f64 = rng.gen_range(-jitter_range..=jitter_range);
     (base + jitter).max(0.5)
+}
+
+/// Download a new agent binary, verify checksum, replace current binary, and restart.
+async fn perform_upgrade(version: &str, download_url: &str) -> anyhow::Result<()> {
+    use std::io::Write;
+    use sha2::{Digest, Sha256};
+
+    let current_exe = std::env::current_exe()?;
+    let tmp_path = current_exe.with_extension("new");
+    let backup_path = current_exe.with_extension("bak");
+
+    tracing::info!("Downloading agent v{version}...");
+    let client = reqwest::Client::new();
+    let response = client
+        .get(download_url)
+        .header("User-Agent", "ServerBee-Agent")
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        anyhow::bail!(
+            "Download failed with status {}",
+            response.status()
+        );
+    }
+
+    // Extract expected checksum from header if present
+    let expected_checksum = response
+        .headers()
+        .get("x-checksum-sha256")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let bytes = response.bytes().await?;
+    tracing::info!("Downloaded {} bytes", bytes.len());
+
+    // Verify checksum if provided
+    if let Some(expected) = &expected_checksum {
+        let mut hasher = Sha256::new();
+        hasher.update(&bytes);
+        let actual = format!("{:x}", hasher.finalize());
+        if actual != *expected {
+            anyhow::bail!(
+                "Checksum mismatch: expected {expected}, got {actual}"
+            );
+        }
+        tracing::info!("Checksum verified");
+    }
+
+    // Write to temporary file
+    {
+        let mut file = std::fs::File::create(&tmp_path)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+    }
+
+    // Set executable permission on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755))?;
+    }
+
+    // Backup current binary and replace
+    if backup_path.exists() {
+        std::fs::remove_file(&backup_path)?;
+    }
+    std::fs::rename(&current_exe, &backup_path)?;
+    std::fs::rename(&tmp_path, &current_exe)?;
+
+    tracing::info!("Agent binary replaced. Restarting...");
+
+    // Restart: exec the new binary with the same args
+    let args: Vec<String> = std::env::args().collect();
+    let mut cmd = std::process::Command::new(&current_exe);
+    if args.len() > 1 {
+        cmd.args(&args[1..]);
+    }
+    cmd.spawn()?;
+
+    // Exit current process
+    std::process::exit(0);
 }
