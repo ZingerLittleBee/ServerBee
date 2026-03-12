@@ -9,13 +9,15 @@ import {
   Server,
   Settings,
   Shield,
-  Terminal
+  Terminal,
+  Users
 } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/settings/users', label: 'Users', icon: Users, adminOnly: true },
   { to: '/settings/notifications', label: 'Notifications', icon: Bell, adminOnly: true },
   { to: '/settings/alerts', label: 'Alerts', icon: AlertTriangle, adminOnly: true },
   { to: '/settings/ping-tasks', label: 'Ping Tasks', icon: Activity },
