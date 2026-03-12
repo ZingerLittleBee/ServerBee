@@ -56,6 +56,7 @@ async fn main() -> anyhow::Result<()> {
     db.execute_unprepared("PRAGMA journal_mode=WAL").await?;
     db.execute_unprepared("PRAGMA synchronous=NORMAL").await?;
     db.execute_unprepared("PRAGMA busy_timeout=5000").await?;
+    db.execute_unprepared("PRAGMA foreign_keys=ON").await?;
 
     // Run migrations
     Migrator::up(&db, None).await?;
@@ -150,8 +151,27 @@ async fn init_auto_discovery_key(
 }
 
 async fn shutdown_signal() {
-    tokio::signal::ctrl_c()
-        .await
-        .expect("Failed to install CTRL+C signal handler");
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to install CTRL+C signal handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("Failed to install SIGTERM signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
     tracing::info!("Shutdown signal received");
 }

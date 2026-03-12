@@ -41,6 +41,8 @@ pub enum AppError {
     Forbidden,
     #[error("Not found: {0}")]
     NotFound(String),
+    #[error("Too many requests: {0}")]
+    TooManyRequests(String),
     #[error("Conflict: {0}")]
     Conflict(String),
     #[error("Validation error: {0}")]
@@ -55,6 +57,7 @@ impl IntoResponse for AppError {
             AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, "BAD_REQUEST"),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED"),
             AppError::Forbidden => (StatusCode::FORBIDDEN, "FORBIDDEN"),
+            AppError::TooManyRequests(_) => (StatusCode::TOO_MANY_REQUESTS, "TOO_MANY_REQUESTS"),
             AppError::NotFound(_) => (StatusCode::NOT_FOUND, "NOT_FOUND"),
             AppError::Conflict(_) => (StatusCode::CONFLICT, "CONFLICT"),
             AppError::Validation(_) => (StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR"),

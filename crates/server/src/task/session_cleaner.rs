@@ -43,5 +43,10 @@ pub async fn run(state: Arc<AppState>) {
         state
             .login_rate_limit
             .retain(|_, v| v.window_start > rate_cutoff);
+
+        // Clean expired registration rate limit entries (older than 15 minutes)
+        state
+            .register_rate_limit
+            .retain(|_, v| v.window_start > rate_cutoff);
     }
 }

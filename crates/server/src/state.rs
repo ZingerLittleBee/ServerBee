@@ -33,23 +33,20 @@ pub struct AppState {
     pub pending_totp: DashMap<String, PendingTotp>,
     /// Rate limiter for login attempts, keyed by IP.
     pub login_rate_limit: DashMap<String, RateLimitEntry>,
+    /// Rate limiter for agent registration attempts, keyed by IP.
+    pub register_rate_limit: DashMap<String, RateLimitEntry>,
 }
 
 impl AppState {
-    /// Check if an IP has exceeded the login rate limit.
-    /// Returns true if allowed, false if rate-limited.
-    pub fn check_login_rate(&self, ip: &str) -> bool {
+    /// Check rate limit against a given DashMap. Returns true if allowed.
+    fn check_rate(map: &DashMap<String, RateLimitEntry>, ip: &str, max: u32) -> bool {
         let now = chrono::Utc::now();
         let window = chrono::Duration::minutes(15);
-        let max = self.config.rate_limit.login_max;
 
-        let mut entry = self
-            .login_rate_limit
-            .entry(ip.to_string())
-            .or_insert_with(|| RateLimitEntry {
-                count: 0,
-                window_start: now,
-            });
+        let mut entry = map.entry(ip.to_string()).or_insert_with(|| RateLimitEntry {
+            count: 0,
+            window_start: now,
+        });
 
         // Reset window if expired
         if now - entry.window_start > window {
@@ -58,8 +55,33 @@ impl AppState {
             return true;
         }
 
+        // Check before incrementing so denied requests don't grow the counter
+        if entry.count >= max {
+            return false;
+        }
+
         entry.count += 1;
-        entry.count <= max
+        true
+    }
+
+    /// Check if an IP has exceeded the login rate limit.
+    /// Returns true if allowed, false if rate-limited.
+    pub fn check_login_rate(&self, ip: &str) -> bool {
+        Self::check_rate(
+            &self.login_rate_limit,
+            ip,
+            self.config.rate_limit.login_max,
+        )
+    }
+
+    /// Check if an IP has exceeded the registration rate limit.
+    /// Returns true if allowed, false if rate-limited.
+    pub fn check_register_rate(&self, ip: &str) -> bool {
+        Self::check_rate(
+            &self.register_rate_limit,
+            ip,
+            self.config.rate_limit.register_max,
+        )
     }
 
     pub fn new(db: DatabaseConnection, config: AppConfig) -> Arc<Self> {
@@ -79,6 +101,7 @@ impl AppState {
             oauth_states: DashMap::new(),
             pending_totp: DashMap::new(),
             login_rate_limit: DashMap::new(),
+            register_rate_limit: DashMap::new(),
         })
     }
 }
