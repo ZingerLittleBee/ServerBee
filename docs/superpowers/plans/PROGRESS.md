@@ -1,6 +1,6 @@
 # ServerBee 实现进度
 
-> 最后更新: 2026-03-12
+> 最后更新: 2026-03-13
 
 ## 总览
 
@@ -10,8 +10,24 @@
 | Plan 2 | Agent (采集 + 上报 + 注册) | **已完成** | 1 |
 | Plan 3 | Real-time (WS + 后台任务) | **已完成** | 1 |
 | Plan 4 | Frontend (路由 + 仪表盘 + 详情) | **已完成** | 2 |
+| P1-a | 告警 + 通知 + 远程命令 | **已完成** | 待提交 |
+| P1-b | Ping 探测 + Web 终端 | **已完成** | 待提交 |
+| P1-c | GeoIP + GPU + OpenAPI | **已完成** | 待提交 |
+| P1-d | OAuth + 2FA | **已完成** | 待提交 |
+| P2-a | 多用户权限 + 审计日志 | **已完成** | 待提交 |
+| P2-b | 公开状态页 | **已完成** | 待提交 |
+| P2-c | 计费信息管理 | **已完成** | 待提交 |
+| P2-d | Agent 自动更新 | **已完成** | 待提交 |
+| P2-e | 备份恢复 | **已完成** | 待提交 |
+| P2-review | 代码审查修复 | **已完成** | 待提交 |
+| P3-a | 用户管理 + 缺失 API | **待开始** | — |
+| P3-b | 前端 UI 完善 | **待开始** | — |
+| P3-c | 测试 | **待开始** | — |
+| P3-d | Agent 完善 | **待开始** | — |
+| P3-e | 性能优化 | **待开始** | — |
+| P3-f | CI/CD + 部署文档 | **待开始** | — |
 
-**P0 MVP 代码已全部完成并通过端到端验证。** Server + Agent + Frontend 完整数据流已跑通：注册→WS连接→实时上报→API查询→浏览器WS推送。
+**P0 MVP + P1 + P2 全部完成。P3 已规划，共 6 个子阶段 31 个任务。**
 
 ---
 
@@ -86,54 +102,237 @@
 | T11 | Settings + API Key Management | **done** |
 | T12 | Build Verification | **done** |
 
+## P1-a: 告警 + 通知 + 远程命令
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | NotificationService (Webhook/Telegram/Bark 渠道) | **done** |
+| T2 | Notification CRUD API (10 个端点) | **done** |
+| T3 | Notification Group CRUD API | **done** |
+| T4 | AlertService (规则评估 + 状态管理) | **done** |
+| T5 | Alert Rule CRUD API (5 个端点) | **done** |
+| T6 | Alert Evaluator 后台任务 (每 60s) | **done** |
+| T7 | Task (远程命令) API (3 个端点) | **done** |
+| T8 | 通知管理前端页面 | **done** |
+| T9 | 告警管理前端页面 | **done** |
+| T10 | 侧边栏导航更新 | **done** |
+| T11 | Clippy 全量修复 (7 个 collapsible_if) | **done** |
+| T12 | Entity Serialize derive (4 个实体) | **done** |
+
+## P1-b: Ping 探测 + Web 终端
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | PingService CRUD + agent 同步 | **done** |
+| T2 | Ping API Router (6 个端点) | **done** |
+| T3 | Agent PingManager (ICMP/TCP/HTTP 三种探针) | **done** |
+| T4 | Ping 任务前端页面 + 侧边栏导航 | **done** |
+| T5 | Protocol 扩展 (TerminalOpen/Input/Resize/Output/Started/Error) | **done** |
+| T6 | Agent TerminalManager (portable-pty PTY 会话管理) | **done** |
+| T7 | Server Terminal WS 代理 (/api/ws/terminal/:server_id) | **done** |
+| T8 | AgentManager 终端 session 路由表 | **done** |
+| T9 | 前端 xterm.js 终端组件 + WS Hook | **done** |
+| T10 | 终端路由页面 + Server Detail Terminal 按钮 | **done** |
+| T11 | ping_record Entity Serialize derive | **done** |
+
+## P1-c: GeoIP + GPU + OpenAPI
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | GeoIpService (maxminddb MMDB 加载 + IP 查询) | **done** |
+| T2 | GeoIP 集成: Agent SystemInfo → region/country_code 写入 server | **done** |
+| T3 | GPU 采集: nvml-wrapper feature-gated, GpuReport 上报 | **done** |
+| T4 | GPU Record 持久化 + API (GET /servers/:id/gpu-records) | **done** |
+| T5 | OpenAPI: 全部 44 个 API 端点 utoipa::path 注解 | **done** |
+| T6 | OpenAPI: Entity/DTO ToSchema 注解 (20+ 类型) | **done** |
+| T7 | OpenAPI: ApiDoc + Swagger UI 挂载 (/swagger-ui) | **done** |
+| T8 | Clippy 0 warnings 验证 | **done** |
+
+## P1-d: OAuth + 2FA
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | oauth_account Entity + Migration (含 FK + CASCADE) | **done** |
+| T2 | OAuth Config (GitHub/Google/OIDC) | **done** |
+| T3 | OAuthService (build_client, fetch_user_info, find_or_create_user) | **done** |
+| T4 | AuthService 2FA 方法 (generate_totp_secret, verify_totp, enable/disable/has_2fa) | **done** |
+| T5 | Login 修改支持 totp_code + 2fa_required 错误 | **done** |
+| T6 | 2FA API 端点 (setup/enable/disable/status, secret 服务端暂存) | **done** |
+| T7 | OAuth Account API 端点 (list/unlink) | **done** |
+| T8 | OAuth Flow 端点 (authorize + callback, CSRF state 验证) | **done** |
+| T9 | OAuth providers 端点 (GET /api/auth/oauth/providers) | **done** |
+| T10 | OpenAPI 更新 | **done** |
+| T11 | 前端 Security 页面 (2FA + 修改密码 + OAuth 账号) | **done** |
+| T12 | 前端 Login 页面 (2FA 输入 + 动态 OAuth 按钮) | **done** |
+| T13 | 侧边栏导航更新 | **done** |
+| T14 | 代码审查修复 (CSRF、角色、cookie、TOTP 暂存等 10 项) | **done** |
+
+## P2-a: 多用户权限 + 审计日志
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | require_admin 中间件 (role == "admin" 校验) | **done** |
+| T2 | Admin-only 路由保护 (settings/notification/alert/task/audit) | **done** |
+| T3 | AuditService (log + list) | **done** |
+| T4 | 审计日志 API (GET /api/audit-logs, admin only) | **done** |
+| T5 | 关键操作审计记录 (login/password/2fa) | **done** |
+| T6 | audit_log entity ToSchema + OpenAPI | **done** |
+| T7 | 前端审计日志页面 (分页表格) | **done** |
+| T8 | 侧边栏导航更新 (Audit Logs) | **done** |
+| T9 | OAuth 新用户角色 member (非 admin) | **done** |
+| T10 | User entity 添加 OauthAccounts 关系 | **done** |
+| T11 | 编译验证 | **done** |
+
+## P2-b: 公开状态页
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | StatusPageResponse + StatusServer + StatusMetrics + StatusGroup 类型定义 | **done** |
+| T2 | GET /api/status 公开端点 (无需认证, 返回非隐藏服务器 + 在线指标) | **done** |
+| T3 | OpenAPI 更新 (status tag + 4 个 schema) | **done** |
+| T4 | 前端 /status 页面 (分组展示 + 进度条 + 自动刷新 10s) | **done** |
+| T5 | 编译验证 (tsc + vite build) | **done** |
+
+## P2-c: 计费信息管理
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | UpdateServerInput 添加计费字段 (price/billing_cycle/currency/expired_at/traffic_limit) | **done** |
+| T2 | ServerService::update_server 处理计费字段更新 | **done** |
+| T3 | 到期告警规则类型 (expiration) + check_expiration 评估器 | **done** |
+| T4 | 前端 BillingInfoBar 组件 (价格/到期/流量展示) | **done** |
+| T5 | 前端 ServerEditDialog 编辑对话框 (基础信息 + 计费信息) | **done** |
+| T6 | 编译验证 (cargo + tsc + vite) | **done** |
+
+## P2-d: Agent 自动更新
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | Protocol Upgrade 消息 (已存在于 protocol.rs) | **done** |
+| T2 | Agent perform_upgrade: 下载 → sha256 校验 → 替换二进制 → 重启 | **done** |
+| T3 | Server API: POST /api/servers/:id/upgrade (发送 Upgrade 命令到 Agent) | **done** |
+| T4 | OpenAPI 更新 (UpgradeRequest schema) | **done** |
+| T5 | Agent 添加 sha2 依赖 | **done** |
+| T6 | 编译验证 | **done** |
+
+## P2-e: 备份恢复
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | POST /api/settings/backup — VACUUM INTO 生成一致性备份并下载 | **done** |
+| T2 | POST /api/settings/restore — 上传 SQLite 文件, 校验文件头, 替换数据库 | **done** |
+| T3 | OpenAPI 更新 | **done** |
+| T4 | 编译验证 | **done** |
+
+## P2-review: 代码审查修复
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | [C1] Session cookie 添加 Secure 标志 (可配置 secure_cookie) | **done** |
+| T2 | [C2] Login 端点限流 (DashMap IP 计数, 15min 窗口) | **done** |
+| T3 | [C3] Login 提取真实 IP/User-Agent (x-forwarded-for/x-real-ip) | **done** |
+| T4 | [I1] pending_totp 过期清理 (session_cleaner 任务) | **done** |
+| T5 | [I4] change_password/totp_enable/totp_disable 审计日志提取真实 IP | **done** |
+| T6 | [I5] 非管理员用户隐藏 admin-only 侧边栏链接 | **done** |
+| T7 | [I6] OAuth 自动注册配置开关 (allow_registration, 默认 false) | **done** |
+| T8 | login_rate_limit 过期清理 (session_cleaner 任务) | **done** |
+| T9 | 编译验证 | **done** |
+
 ---
 
 ## 已实现的文件清单
 
-### Rust (66 files)
+### Rust (83 files)
 
 **crates/common/src/** (4 files)
 - `lib.rs`, `types.rs`, `constants.rs`, `protocol.rs`
 
-**crates/server/src/** (50 files)
-- `main.rs`, `config.rs`, `state.rs`, `error.rs`
-- `entity/` (20 files): user, session, api_key, server, server_group, server_tag, record, record_hourly, gpu_record, config, alert_rule, alert_state, notification, notification_group, ping_task, ping_record, task, task_result, audit_log
-- `migration/` (2 files): mod.rs, m20260312_000001_init.rs
+**crates/server/src/** (66 files)
+- `main.rs`, `config.rs`, `state.rs`, `error.rs`, **`openapi.rs`**
+- `entity/` (21 files): user, session, api_key, server, server_group, server_tag, record, record_hourly, gpu_record, config, alert_rule, alert_state, notification, notification_group, ping_task, ping_record, task, task_result, audit_log, **oauth_account**
+- `migration/` (3 files): mod.rs, m20260312_000001_init.rs, **m20260312_000002_oauth.rs**
 - `middleware/` (2 files): mod.rs, auth.rs
-- `service/` (6 files): mod.rs, auth.rs, server.rs, config.rs, record.rs, agent_manager.rs
-- `router/api/` (6 files): mod.rs, auth.rs, server.rs, server_group.rs, setting.rs, agent.rs
-- `router/ws/` (3 files): mod.rs, agent.rs, browser.rs
-- `router/` (1 file): mod.rs
-- `task/` (6 files): mod.rs, record_writer.rs, aggregator.rs, cleanup.rs, offline_checker.rs, session_cleaner.rs
+- `service/` (12 files): mod.rs, auth.rs, server.rs, config.rs, record.rs, agent_manager.rs, **notification.rs**, **alert.rs**, **ping.rs**, **geoip.rs**, **oauth.rs**, **audit.rs**
+- `router/api/` (12 files): mod.rs, auth.rs, server.rs, server_group.rs, setting.rs, agent.rs, **notification.rs**, **alert.rs**, **task.rs**, **ping.rs**, **oauth.rs**, **audit.rs**
+- `router/ws/` (4 files): mod.rs, agent.rs, browser.rs, **terminal.rs**
+- `router/` (2 files): mod.rs, static_files.rs
+- `task/` (7 files): mod.rs, record_writer.rs, aggregator.rs, cleanup.rs, offline_checker.rs, session_cleaner.rs, **alert_evaluator.rs**
 
-**crates/agent/src/** (12 files)
-- `main.rs`, `config.rs`, `register.rs`, `reporter.rs`
-- `collector/` (8 files): mod.rs, cpu.rs, memory.rs, disk.rs, network.rs, load.rs, process.rs, temperature.rs
+**crates/agent/src/** (15 files)
+- `main.rs`, `config.rs`, `register.rs`, `reporter.rs`, **`pinger.rs`**, **`terminal.rs`**
+- `collector/` (9 files): mod.rs, cpu.rs, memory.rs, disk.rs, network.rs, load.rs, process.rs, temperature.rs, **gpu.rs**
 
-### Frontend (24 files)
+### Frontend (33 files)
 
 **apps/web/src/**
 - `main.tsx`, `router.tsx`, `routeTree.gen.ts`
 - `lib/`: api-client.ts, ws-client.ts, utils.ts
-- `hooks/`: use-auth.ts, use-servers-ws.ts, use-api.ts
+- `hooks/`: use-auth.ts, use-servers-ws.ts, use-api.ts, **use-terminal-ws.ts**
 - `components/ui/`: button.tsx
 - `components/layout/`: sidebar.tsx, header.tsx, theme-toggle.tsx
-- `components/server/`: server-card.tsx, status-badge.tsx, metrics-chart.tsx
+- `components/server/`: server-card.tsx, status-badge.tsx, metrics-chart.tsx, **server-edit-dialog.tsx**
+- `components/terminal/`: **terminal-view.tsx**
 - `components/`: theme-provider.tsx
-- `routes/`: __root.tsx, login.tsx, _authed.tsx, index.tsx (redirect)
-- `routes/_authed/`: index.tsx (dashboard), servers/$id.tsx (detail)
-- `routes/_authed/settings/`: index.tsx, api-keys.tsx
+- `routes/`: __root.tsx, login.tsx, **status.tsx**, _authed.tsx, index.tsx (redirect)
+- `routes/_authed/`: index.tsx (dashboard), servers/$id.tsx (detail), **terminal.$serverId.tsx**
+- `routes/_authed/settings/`: index.tsx, api-keys.tsx, **notifications.tsx**, **alerts.tsx**, **tasks.tsx**, **ping-tasks.tsx**, **security.tsx**, **audit-logs.tsx**
+
+### 部署 (7 files)
+
+- `Dockerfile`, `docker-compose.yml`
+- `deploy/`: install.sh, serverbee-server.service, serverbee-agent.service
+- `.github/workflows/`: ci.yml, release.yml
 
 ---
 
-## 未完成的工作
+## 已完成的工作
 
-### 待验证 (高优先级)
+### P0: 端到端验证 + Bug 修复
 - [x] 端到端集成测试: 启动 server + agent, 验证注册→连接→上报→仪表盘展示完整流程 ✅
-- [x] 修复集成中发现的 bug ✅ (见下方 bug 修复清单)
+- [x] 修复集成中发现的 9 个 bug ✅
 - [x] 清理编译警告 (24 个 dead_code warnings → 0) ✅
+- [x] 部署基础设施 (Docker + systemd + install.sh + CI/CD) ✅
+- [x] rust-embed 嵌入前端到 server 二进制 ✅
 
-#### 已修复的集成 Bug
+### P1-a: 告警 + 通知 + 远程命令
+- [x] 通知系统: Webhook / Telegram / Bark / **Email (SMTP)** 四种渠道 + 通知组 + 模板变量 ✅
+- [x] 告警引擎: 14 种指标阈值 + 离线检测 + **流量周期告警** + AND 逻辑 + 70% 采样判定 ✅
+- [x] 告警状态: DashMap 热缓存 + SQLite 持久化, always/once 两种触发模式 ✅
+- [x] 后台评估任务: 每 60 秒评估全部 enabled 规则 ✅
+- [x] 远程命令执行: POST /api/tasks → 通过 WS 下发到 Agent → 结果回写 DB ✅
+- [x] 前端: 通知管理页 + 告警管理页 + **远程命令页** + 侧边栏导航 ✅
+- [x] 代码质量: Clippy 全量 0 warnings, Ultracite lint 通过 ✅
+
+### P1-b: Ping 探测 + Web 终端
+- [x] Ping 探测: ICMP (系统 ping 命令) / TCP (TcpStream) / HTTP (reqwest) 三种探针 ✅
+- [x] Ping 任务管理: CRUD API (6 端点) + Agent 同步 (PingTasksSync) + 前端管理页 ✅
+- [x] Agent PingManager: 并行任务调度, 按 interval 定时探测, 结果通过 WS 上报 ✅
+- [x] Web 终端协议: 新增 TerminalOpen/Input/Resize (Server→Agent) + TerminalOutput/Started/Error (Agent→Server) ✅
+- [x] Agent PTY: portable-pty 管理 PTY 会话, base64 编码, 阻塞 reader 线程 + mpsc 转发 ✅
+- [x] Server 终端代理: WS 端点 `/api/ws/terminal/:server_id`, session 路由, 空闲超时 10min ✅
+- [x] 前端终端: xterm.js (Tokyo Night 主题) + FitAddon + WebLinksAddon + 终端路由页 ✅
+- [x] Server Detail 页面: 在线服务器显示 Terminal 按钮 ✅
+- [x] 代码质量: Clippy 0 warnings, TypeScript + Vite build 通过 ✅
+
+### P1-c: GeoIP + GPU + OpenAPI
+- [x] GeoIP: maxminddb MMDB 加载, Agent SystemInfo 时解析 remote_addr → region/country_code ✅
+- [x] GPU 采集: nvml-wrapper 0.10, feature-gated `#[cfg(feature = "gpu")]`, GpuReport 上报 ✅
+- [x] GPU 数据: gpu_record 实体 + RecordService 持久化 + API 端点 ✅
+- [x] OpenAPI: utoipa v5 + utoipa-swagger-ui v9, 全部 44 个 API 端点注解 ✅
+- [x] OpenAPI: 20+ 类型 ToSchema/IntoParams 注解, Swagger UI 挂载 /swagger-ui ✅
+- [x] 代码质量: Clippy 0 warnings ✅
+
+### P1-d: OAuth + 2FA
+- [x] OAuth: GitHub/Google/OIDC 三种 Provider, oauth2 v4 授权码流 ✅
+- [x] OAuth: 自动创建用户 (首次 OAuth 登录) + 账号关联/解关联 ✅
+- [x] 2FA: TOTP (totp-rs v5), QR 码生成, 启用/禁用/状态查询 ✅
+- [x] Login: 支持 totp_code 可选字段, 2FA 启用时返回 2fa_required 错误 ✅
+- [x] OpenAPI: 更新 ApiDoc, 新增 2FA/OAuth 路径和模式 (共 51 个端点) ✅
+- [x] 前端: Security 页面 (2FA 设置 + 修改密码 + OAuth 账号管理) ✅
+- [x] 前端: Login 页面 2FA 输入 + OAuth 按钮 (GitHub/Google) ✅
+- [x] 代码质量: Rust + TypeScript + Vite build 全部通过 ✅
+
+#### 已修复的集成 Bug (P0 阶段)
 1. **Server Config `Default` 导致 panic**: `DatabaseConfig::default()` 的 `max_connections=0` 导致 SQLx pool panic。修复：所有 config struct 手动实现 `Default` 使用正确的默认值。
 2. **API 泄露 token_hash**: `/api/servers` 返回了 `token_hash` 和 `token_prefix`。修复：新增 `ServerResponse` DTO 过滤敏感字段。
 3. **前端 API 客户端未解包 `{ data: T }`**: `api-client.ts` 返回了整个 `ApiResponse` 而非内部 `data`。修复：自动提取 `.data`。
@@ -144,48 +343,49 @@
 8. **ServerRecord 字段名错误**: `cpu_usage→cpu`, `timestamp→time`, `memory_used→mem_used` 等。修复。
 9. **Server Detail 页面时间范围**: interval 参数 `1m/5m/15m/1h/6h` 改为 `raw/hourly` 匹配服务端。
 
-### 待实现: P1 功能
-- [ ] 告警规则引擎 (资源阈值 + 流量周期 + 离线检测)
-- [ ] 通知系统 (Webhook, Telegram, Email, Bark)
-- [ ] Ping 探测任务 (ICMP/TCP/HTTP)
-- [ ] 远程命令执行 (下发 + 结果)
-- [ ] Web 终端 (PTY 代理)
-- [ ] 温度/GPU 采集 (Agent 端)
-- [ ] GeoIP 查询
-- [ ] OAuth (GitHub, Google, OIDC)
-- [ ] 2FA (TOTP)
-- [ ] OpenAPI 文档 (utoipa + Swagger UI)
-- [ ] 告警管理前端页面
-- [ ] 通知配置前端页面
-- [ ] Ping 任务前端页面
-- [ ] Web 终端前端页面
+---
+
+## 未完成的工作
+
+### 待实现: P1 剩余功能
+- [x] Email 通知渠道 (lettre SMTP) ✅
+- [x] 流量周期告警 (transfer_in/out/all_cycle) ✅
+- [x] 远程命令前端页面 ✅
+- [x] Ping 探测任务 (ICMP/TCP/HTTP) ✅
+- [x] Ping 任务前端页面 ✅
+- [x] Web 终端 (PTY 代理) ✅
+- [x] Web 终端前端页面 ✅
+- [x] 温度/GPU 采集 (Agent 端, nvml-wrapper feature-gated) ✅
+- [x] GeoIP 查询 (maxminddb, agent SystemInfo 时解析) ✅
+- [x] OpenAPI 文档 (utoipa v5 + Swagger UI, 44 个端点全覆盖) ✅
+- [x] OAuth (GitHub, Google, OIDC) ✅
+- [x] 2FA (TOTP) ✅
 
 ### 待实现: P2 功能
-- [ ] 多用户 (Admin/Member 角色)
-- [ ] 审计日志
-- [ ] 备份恢复
-- [ ] Agent 自动更新
-- [ ] 公开状态页
-- [ ] 计费信息管理
-
-### 待实现: 部署
-- [x] Dockerfile (多阶段构建: bun build → cargo build → alpine) ✅
-- [x] docker-compose.yml ✅
-- [x] install.sh (安装脚本) ✅
-- [x] systemd service units ✅
-- [x] GitHub Actions CI/CD (CI + Release workflows) ✅
-- [x] rust-embed 嵌入前端到 server 二进制 ✅
+- [x] 多用户 (Admin/Member 角色 + require_admin 中间件) ✅
+- [x] 审计日志 (AuditService + API + 前端页面) ✅
+- [x] 备份恢复 (VACUUM INTO 备份 + 文件上传恢复 + SQLite 头校验) ✅
+- [x] Agent 自动更新 (Server Upgrade 命令 + Agent 下载/校验/替换/重启) ✅
+- [x] 公开状态页 (后端 API + 前端页面, 分组展示, 10s 自动刷新) ✅
+- [x] 计费信息管理 (UpdateServerInput 计费字段 + 到期告警 + 前端编辑对话框) ✅
 
 ### 代码质量
 - [ ] 单元测试
 - [ ] 代码审查 (spec compliance + quality)
 - [x] `bun x ultracite fix` 格式化前端代码 ✅
+- [x] `cargo clippy -- -D warnings` 全量通过 ✅
 
 ---
 
-## Git Commits (实现部分)
+## Git Commits
 
 ```
+(待提交) feat: add notification, alert, and remote command systems with frontend pages
+cd89953 ci: add GitHub Actions CI and release workflows
+038da71 feat: add deployment infrastructure with rust-embed, Docker, and systemd
+39f7097 chore: suppress 24 dead_code warnings for P1 feature scaffolding
+ae9af0c fix: resolve 9 integration bugs found during end-to-end testing
+c2e93be docs: add implementation progress tracking document
 a5406ac chore(web): add TanStack Router, Query, and Recharts dependencies
 da1488b feat(web): add full SPA with routing, auth, dashboard, and server detail pages
 9c9d965 feat: add real-time infrastructure with WebSocket handlers and background tasks
@@ -199,9 +399,189 @@ c0dc189 feat: initialize Cargo workspace with common types and protocol messages
 68cf945 docs: add 4 implementation plans for ServerBee
 ```
 
-## 下次继续的建议
+## 新增 API 端点汇总
 
-1. **先跑通**: `cargo run -p serverbee-server` 启动服务端，创建 `agent.toml`，`cargo run -p serverbee-agent` 启动 Agent，验证完整数据流
-2. **修 bug**: 端到端测试中必然会发现一些集成问题，逐个修复
-3. **P1 功能**: 按优先级推进告警/通知/终端等
-4. **部署**: 写 Dockerfile + install.sh，让项目可以实际部署
+### 通知 (Session 认证)
+```
+GET    /api/notifications                 列出所有通知渠道
+POST   /api/notifications                 创建通知渠道
+GET    /api/notifications/:id             获取通知渠道详情
+PUT    /api/notifications/:id             更新通知渠道
+DELETE /api/notifications/:id             删除通知渠道
+POST   /api/notifications/:id/test        测试发送通知
+GET    /api/notification-groups           列出所有通知组
+POST   /api/notification-groups           创建通知组
+PUT    /api/notification-groups/:id       更新通知组
+DELETE /api/notification-groups/:id       删除通知组
+```
+
+### 告警规则 (Session|API Key 认证)
+```
+GET    /api/alert-rules                   列出所有告警规则
+POST   /api/alert-rules                   创建告警规则
+GET    /api/alert-rules/:id              获取告警规则详情
+PUT    /api/alert-rules/:id              更新告警规则
+DELETE /api/alert-rules/:id              删除告警规则
+```
+
+### 远程命令 (Session|API Key 认证)
+```
+POST   /api/tasks                         创建并下发命令
+GET    /api/tasks/:id                     获取任务详情
+GET    /api/tasks/:id/results             获取任务执行结果
+```
+
+### Ping 探测 (Session|API Key 认证)
+```
+GET    /api/ping-tasks                    列出所有 Ping 任务
+POST   /api/ping-tasks                    创建 Ping 任务
+GET    /api/ping-tasks/:id               获取 Ping 任务详情
+PUT    /api/ping-tasks/:id               更新 Ping 任务
+DELETE /api/ping-tasks/:id               删除 Ping 任务
+GET    /api/ping-tasks/:id/records       获取探测记录 (?from=&to=&server_id=)
+```
+
+### Web 终端 (Session|API Key 认证)
+```
+WS     /api/ws/terminal/:server_id       终端 WebSocket (代理 Browser↔Agent PTY)
+```
+
+### OAuth + 2FA (Session|OAuth 认证)
+```
+POST   /api/auth/2fa/setup               生成 TOTP secret + QR 码
+POST   /api/auth/2fa/enable              验证并启用 2FA
+POST   /api/auth/2fa/disable             验证密码并禁用 2FA
+GET    /api/auth/2fa/status              查询 2FA 状态
+GET    /api/auth/oauth/accounts          列出已关联 OAuth 账号
+DELETE /api/auth/oauth/accounts/:id      解关联 OAuth 账号
+GET    /api/auth/oauth/:provider         OAuth 授权重定向
+GET    /api/auth/oauth/:provider/callback OAuth 回调
+```
+
+### 服务器管理扩展 (Session|API Key 认证)
+```
+POST   /api/servers/:id/upgrade           触发 Agent 远程升级
+```
+
+### 设置扩展 (Admin, Session|API Key 认证)
+```
+POST   /api/settings/backup               下载 SQLite 数据库备份
+POST   /api/settings/restore              上传并恢复 SQLite 数据库
+```
+
+### 公开状态页 (无需认证)
+```
+GET    /api/status                        公开服务器状态页数据 (非隐藏服务器 + 在线指标)
+```
+
+### 审计日志 (Admin, Session|API Key 认证)
+```
+GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
+```
+
+### P2-b: 公开状态页
+- [x] 后端: `GET /api/status` 公开端点, 返回非隐藏服务器 + 在线状态 + 实时指标 ✅
+- [x] 前端: `/status` 页面, 分组展示服务器, 进度条 (CPU/内存/磁盘), 10s 自动刷新 ✅
+- [x] 代码质量: TypeScript + Vite build 通过 ✅
+
+### P2-c: 计费信息管理
+- [x] `UpdateServerInput` 新增 price/billing_cycle/currency/expired_at/traffic_limit/traffic_limit_type 字段 ✅
+- [x] `ServerService::update_server` 处理计费字段更新 ✅
+- [x] 到期告警: `expiration` 规则类型, 检测 expired_at 是否在 N 天内 ✅
+- [x] 前端: `BillingInfoBar` 组件, 展示价格/到期时间/流量限额 ✅
+- [x] 前端: `ServerEditDialog` 编辑对话框, 支持基础信息 + 计费信息编辑 ✅
+- [x] 代码质量: cargo + tsc + vite 全部通过 ✅
+
+### P2-d: Agent 自动更新
+- [x] Agent: `perform_upgrade` — 下载新二进制, sha256 校验, 替换当前文件, 重启进程 ✅
+- [x] Server: `POST /api/servers/:id/upgrade` — 通过 WS 发送 Upgrade 命令到在线 Agent ✅
+- [x] OpenAPI: UpgradeRequest schema ✅
+
+### P2-e: 备份恢复
+- [x] `POST /api/settings/backup` — SQLite VACUUM INTO 生成一致性备份, 下载为 .db 文件 ✅
+- [x] `POST /api/settings/restore` — 上传 SQLite 文件, 校验文件头 (magic bytes), 备份当前 DB, 替换 ✅
+
+### P2-review: 代码审查修复
+- [x] Session cookie 添加 `Secure` 标志 (可配置 `secure_cookie`) ✅
+- [x] Login 端点限流 (DashMap IP 计数, 15 分钟窗口, login_max=5) ✅
+- [x] Login/change_password/2fa 端点提取真实 IP/User-Agent ✅
+- [x] `pending_totp` + `login_rate_limit` 过期清理 (session_cleaner 任务) ✅
+- [x] 非管理员用户隐藏 admin-only 侧边栏链接 ✅
+- [x] OAuth 自动注册配置开关 (`allow_registration`, 默认 false) ✅
+
+## P3: 后续任务
+
+### P3-a: 用户管理 + 缺失 API
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | User CRUD API (GET/POST/PUT/DELETE /api/users, admin only) | **todo** |
+| T2 | 前端用户管理页面 (settings/users.tsx, 列表/创建/编辑角色/删除) | **todo** |
+| T3 | Agent 注册端点限流 (复用 DashMap 限流, register_max 配置) | **todo** |
+| T4 | SIGTERM 优雅关闭 (server 当前仅处理 SIGINT, systemd 发 SIGTERM) | **todo** |
+
+### P3-b: 前端 UI 完善
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | Dashboard 统计卡片 (在线/离线/总数、CPU 平均、内存平均、总带宽) | **todo** |
+| T2 | Dashboard 按分组展示服务器卡片 (group headers + 分组折叠) | **todo** |
+| T3 | Server Card 添加国旗 emoji + OS 图标 (基于 country_code/os 字段) | **todo** |
+| T4 | Server Detail GPU 面板 (调用 GET /api/servers/:id/gpu-records + 图表) | **todo** |
+| T5 | Server Detail 温度图表 (records 中 temperature 字段) | **todo** |
+| T6 | Server Detail 网络累计流量统计 (net_in_transfer/net_out_transfer) | **todo** |
+| T7 | Server Detail 补充信息 (region, agent_version, ipv6, kernel_version, cpu_arch) | **todo** |
+| T8 | Ping 任务结果图表 (调用 GET /api/ping-tasks/:id/records + 延迟图表) | **todo** |
+| T9 | 审计日志分页 placeholderData (TanStack Query keepPreviousData 防闪烁) | **todo** |
+| T10 | 服务器列表/管理页面 (servers/index.tsx, 表格视图 + 批量操作) | **todo** |
+
+### P3-c: 测试
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | Rust 单元测试: AuthService (密码哈希, session, API key, TOTP) | **todo** |
+| T2 | Rust 单元测试: AlertService (阈值评估, 离线检测, 流量周期计算) | **todo** |
+| T3 | Rust 单元测试: NotificationService (模板变量替换, 渠道分发) | **todo** |
+| T4 | Rust 单元测试: RecordService (小时聚合, 清理保留逻辑) | **todo** |
+| T5 | Rust 集成测试: Agent 注册 → WS 连接 → 上报 → 指标入库 | **todo** |
+| T6 | Rust 集成测试: 备份恢复往返 (backup → restore → 验证数据完整) | **todo** |
+| T7 | 前端测试: Vitest 配置 + hooks 单元测试 (use-auth, use-api) | **todo** |
+| T8 | E2E 测试: Playwright 配置 + 登录/仪表盘/终端 流程验证 | **todo** |
+| T9 | CI 添加 `cargo test --workspace` 步骤 | **todo** |
+
+### P3-d: Agent 完善
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | 虚拟化检测 (读取 /sys/class/dmi 或 systemd-detect-virt) | **todo** |
+| T2 | Config enable_temperature/enable_gpu 开关生效 (当前 collector 无条件运行) | **todo** |
+| T3 | Windows TCP/UDP 连接数采集 (当前仅 Linux /proc/net/tcp) | **todo** |
+
+### P3-e: 性能优化
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | Vite Code Split (manualChunks: xterm.js, recharts 独立 chunk) | **todo** |
+| T2 | OpenAPI 类型生成 (openapi-typescript 替代手写接口定义) | **todo** |
+| T3 | 数据库查询优化 (大时间范围 records 查询索引 + 分页) | **todo** |
+
+### P3-f: CI/CD + 部署
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | CI 添加 Windows Agent 构建 (x86_64-pc-windows-msvc target) | **todo** |
+| T2 | README.md 内容 (功能列表, 快速开始, 安装指南, 截图) | **todo** |
+| T3 | 部署文档: OAuth 配置 (GitHub/Google/OIDC credentials) | **todo** |
+| T4 | 部署文档: 2FA/GeoIP MMDB/备份恢复 配置说明 | **todo** |
+| T5 | Fumadocs 文档站内容 (apps/fumadocs/ 当前仅占位符) | **todo** |
+
+---
+
+## 推荐执行顺序
+
+1. **P3-a** (用户管理) — 多用户功能的关键缺失部分, 当前 admin 无法管理其他用户
+2. **P3-b** (前端 UI) — 用户体验直接影响, 可并行执行
+3. **P3-c** (测试) — 代码质量保障, 建议与功能开发交替进行
+4. **P3-d** (Agent 完善) — 功能完整性
+5. **P3-e** (性能) — 当用户量增长时再优先处理
+6. **P3-f** (CI/CD + 文档) — 开源/发布前必须完成
