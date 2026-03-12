@@ -1,44 +1,47 @@
 use std::sync::Arc;
 
-use axum::extract::{Extension, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::header::SET_COOKIE;
 use axum::http::HeaderMap;
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
+use sea_orm::EntityTrait;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{ok, ApiResponse, AppError};
 use crate::middleware::auth::CurrentUser;
+use crate::service::audit::AuditService;
 use crate::service::auth::AuthService;
 use crate::state::AppState;
 
-#[derive(Debug, Deserialize)]
-struct LoginRequest {
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct LoginRequest {
     username: String,
     password: String,
+    totp_code: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
-struct LoginResponse {
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct LoginResponse {
     user_id: String,
     username: String,
     role: String,
 }
 
-#[derive(Debug, Serialize)]
-struct MeResponse {
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct MeResponse {
     user_id: String,
     username: String,
     role: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct CreateApiKeyRequest {
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct CreateApiKeyRequest {
     name: String,
 }
 
-#[derive(Debug, Serialize)]
-struct ApiKeyResponse {
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct ApiKeyResponse {
     id: String,
     name: String,
     key_prefix: String,
@@ -46,10 +49,32 @@ struct ApiKeyResponse {
     key: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct ChangePasswordRequest {
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct ChangePasswordRequest {
     old_password: String,
     new_password: String,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct TotpSetupResponse {
+    secret: String,
+    otpauth_url: String,
+    qr_code_base64: String,
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct TotpVerifyRequest {
+    code: String,
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct TotpDisableRequest {
+    password: String,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct TotpStatusResponse {
+    enabled: bool,
 }
 
 /// Public routes (no auth required).
@@ -66,10 +91,30 @@ pub fn protected_router() -> Router<Arc<AppState>> {
         .route("/auth/api-keys", get(list_api_keys))
         .route("/auth/api-keys/{id}", delete(delete_api_key))
         .route("/auth/password", put(change_password))
+        // 2FA
+        .route("/auth/2fa/setup", post(totp_setup))
+        .route("/auth/2fa/enable", post(totp_enable))
+        .route("/auth/2fa/disable", post(totp_disable))
+        .route("/auth/2fa/status", get(totp_status))
+        // OAuth accounts management
+        .route("/auth/oauth/accounts", get(list_oauth_accounts))
+        .route("/auth/oauth/accounts/{id}", delete(unlink_oauth_account))
 }
 
-async fn login(
+#[utoipa::path(
+    post,
+    path = "/api/auth/login",
+    tag = "auth",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Login successful", body = LoginResponse),
+        (status = 401, description = "Invalid credentials"),
+        (status = 422, description = "2FA code required (code: 2fa_required)"),
+    )
+)]
+pub async fn login(
     State(state): State<Arc<AppState>>,
+    req_headers: HeaderMap,
     Json(body): Json<LoginRequest>,
 ) -> Result<(HeaderMap, Json<ApiResponse<LoginResponse>>), AppError> {
     if body.username.is_empty() || body.password.is_empty() {
@@ -78,19 +123,35 @@ async fn login(
         ));
     }
 
-    let (session, user) = AuthService::login(
+    let ip = extract_client_ip(&req_headers);
+    let user_agent = extract_user_agent(&req_headers);
+
+    // Rate limiting
+    if !state.check_login_rate(&ip) {
+        return Err(AppError::BadRequest(
+            "Too many login attempts. Please try again later.".to_string(),
+        ));
+    }
+
+    let (session, user) = AuthService::login_with_totp(
         &state.db,
         &body.username,
         &body.password,
-        "unknown",
-        "unknown",
+        body.totp_code.as_deref(),
+        &ip,
+        &user_agent,
         state.config.auth.session_ttl,
     )
     .await?;
 
+    let secure_flag = if state.config.auth.secure_cookie {
+        "; Secure"
+    } else {
+        ""
+    };
     let cookie = format!(
-        "session_token={}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400",
-        session.token
+        "session_token={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}{}",
+        session.token, state.config.auth.session_ttl, secure_flag
     );
 
     let mut headers = HeaderMap::new();
@@ -100,6 +161,16 @@ async fn login(
             .parse()
             .map_err(|_| AppError::Internal("Failed to set cookie".to_string()))?,
     );
+
+    // Audit log (best-effort, don't fail login on audit error)
+    let _ = AuditService::log(
+        &state.db,
+        &user.id,
+        "login",
+        None,
+        &ip,
+    )
+    .await;
 
     let response = ApiResponse {
         data: LoginResponse {
@@ -112,23 +183,30 @@ async fn login(
     Ok((headers, Json(response)))
 }
 
-async fn logout(
+#[utoipa::path(
+    post,
+    path = "/api/auth/logout",
+    tag = "auth",
+    responses(
+        (status = 200, description = "Logout successful"),
+    ),
+    security(("session_cookie" = []))
+)]
+pub async fn logout(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<(HeaderMap, Json<ApiResponse<&'static str>>), AppError> {
-    // Extract session token from cookie
-    if let Some(cookie_header) = headers.get("cookie") {
-        if let Ok(cookies) = cookie_header.to_str() {
-            for cookie in cookies.split(';') {
-                let cookie = cookie.trim();
-                if let Some(token) = cookie.strip_prefix("session_token=") {
-                    AuthService::logout(&state.db, token).await?;
-                }
+    if let Some(cookie_header) = headers.get("cookie")
+        && let Ok(cookies) = cookie_header.to_str()
+    {
+        for cookie in cookies.split(';') {
+            let cookie = cookie.trim();
+            if let Some(token) = cookie.strip_prefix("session_token=") {
+                AuthService::logout(&state.db, token).await?;
             }
         }
     }
 
-    // Clear the cookie
     let clear_cookie = "session_token=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0";
     let mut response_headers = HeaderMap::new();
     response_headers.insert(
@@ -141,7 +219,17 @@ async fn logout(
     Ok((response_headers, Json(ApiResponse { data: "ok" })))
 }
 
-async fn me(
+#[utoipa::path(
+    get,
+    path = "/api/auth/me",
+    tag = "auth",
+    responses(
+        (status = 200, description = "Current user info", body = MeResponse),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+pub async fn me(
     Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<ApiResponse<MeResponse>>, AppError> {
     ok(MeResponse {
@@ -151,7 +239,18 @@ async fn me(
     })
 }
 
-async fn create_api_key(
+#[utoipa::path(
+    post,
+    path = "/api/auth/api-keys",
+    tag = "auth",
+    request_body = CreateApiKeyRequest,
+    responses(
+        (status = 200, description = "API key created", body = ApiKeyResponse),
+        (status = 422, description = "Validation error"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+pub async fn create_api_key(
     State(state): State<Arc<AppState>>,
     Extension(current_user): Extension<CurrentUser>,
     Json(body): Json<CreateApiKeyRequest>,
@@ -172,7 +271,16 @@ async fn create_api_key(
     })
 }
 
-async fn list_api_keys(
+#[utoipa::path(
+    get,
+    path = "/api/auth/api-keys",
+    tag = "auth",
+    responses(
+        (status = 200, description = "List of API keys", body = Vec<ApiKeyResponse>),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+pub async fn list_api_keys(
     State(state): State<Arc<AppState>>,
     Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<ApiResponse<Vec<ApiKeyResponse>>>, AppError> {
@@ -192,7 +300,18 @@ async fn list_api_keys(
     ok(response)
 }
 
-async fn delete_api_key(
+#[utoipa::path(
+    delete,
+    path = "/api/auth/api-keys/{id}",
+    tag = "auth",
+    params(("id" = String, Path, description = "API key ID")),
+    responses(
+        (status = 200, description = "API key deleted"),
+        (status = 404, description = "API key not found"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+pub async fn delete_api_key(
     State(state): State<Arc<AppState>>,
     Extension(current_user): Extension<CurrentUser>,
     axum::extract::Path(id): axum::extract::Path<String>,
@@ -201,9 +320,21 @@ async fn delete_api_key(
     ok("ok")
 }
 
-async fn change_password(
+#[utoipa::path(
+    put,
+    path = "/api/auth/password",
+    tag = "auth",
+    request_body = ChangePasswordRequest,
+    responses(
+        (status = 200, description = "Password changed"),
+        (status = 422, description = "Validation error"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+pub async fn change_password(
     State(state): State<Arc<AppState>>,
     Extension(current_user): Extension<CurrentUser>,
+    req_headers: HeaderMap,
     Json(body): Json<ChangePasswordRequest>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     if body.new_password.is_empty() {
@@ -220,5 +351,243 @@ async fn change_password(
     )
     .await?;
 
+    let ip = extract_client_ip(&req_headers);
+    let _ = AuditService::log(
+        &state.db,
+        &current_user.user_id,
+        "change_password",
+        None,
+        &ip,
+    )
+    .await;
+
     ok("ok")
+}
+
+// ── 2FA (TOTP) Endpoints ──
+
+#[utoipa::path(
+    post,
+    path = "/api/auth/2fa/setup",
+    tag = "2fa",
+    responses(
+        (status = 200, description = "TOTP setup data", body = TotpSetupResponse),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+pub async fn totp_setup(
+    State(state): State<Arc<AppState>>,
+    Extension(current_user): Extension<CurrentUser>,
+) -> Result<Json<ApiResponse<TotpSetupResponse>>, AppError> {
+    let (secret, url, qr) = AuthService::generate_totp_secret(&current_user.username)?;
+
+    // Store the secret server-side, keyed by user_id (10 min TTL enforced on read)
+    state.pending_totp.insert(
+        current_user.user_id.clone(),
+        crate::state::PendingTotp {
+            secret: secret.clone(),
+            created_at: chrono::Utc::now(),
+        },
+    );
+
+    ok(TotpSetupResponse {
+        secret,
+        otpauth_url: url,
+        qr_code_base64: qr,
+    })
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/auth/2fa/enable",
+    tag = "2fa",
+    request_body = TotpVerifyRequest,
+    responses(
+        (status = 200, description = "2FA enabled"),
+        (status = 401, description = "Invalid TOTP code"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+pub async fn totp_enable(
+    State(state): State<Arc<AppState>>,
+    Extension(current_user): Extension<CurrentUser>,
+    req_headers: HeaderMap,
+    Json(body): Json<TotpVerifyRequest>,
+) -> Result<Json<ApiResponse<&'static str>>, AppError> {
+    // Retrieve the server-stored secret for this user
+    let pending = state
+        .pending_totp
+        .remove(&current_user.user_id)
+        .ok_or_else(|| {
+            AppError::BadRequest("No pending 2FA setup. Call /api/auth/2fa/setup first.".to_string())
+        })?;
+
+    let (_, pending_totp) = pending;
+
+    // Check TTL (10 minutes)
+    if chrono::Utc::now() - pending_totp.created_at > chrono::Duration::minutes(10) {
+        return Err(AppError::BadRequest(
+            "2FA setup expired. Please start again.".to_string(),
+        ));
+    }
+
+    // Verify the code against the server-stored secret
+    if !AuthService::verify_totp(&pending_totp.secret, &body.code)? {
+        // Re-insert so user can retry
+        state.pending_totp.insert(
+            current_user.user_id.clone(),
+            crate::state::PendingTotp {
+                secret: pending_totp.secret,
+                created_at: pending_totp.created_at,
+            },
+        );
+        return Err(AppError::Unauthorized);
+    }
+
+    AuthService::enable_2fa(&state.db, &current_user.user_id, &pending_totp.secret).await?;
+
+    let ip = extract_client_ip(&req_headers);
+    let _ = AuditService::log(
+        &state.db,
+        &current_user.user_id,
+        "2fa_enable",
+        None,
+        &ip,
+    )
+    .await;
+
+    ok("ok")
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/auth/2fa/disable",
+    tag = "2fa",
+    request_body = TotpDisableRequest,
+    responses(
+        (status = 200, description = "2FA disabled"),
+        (status = 400, description = "Invalid password"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+pub async fn totp_disable(
+    State(state): State<Arc<AppState>>,
+    Extension(current_user): Extension<CurrentUser>,
+    req_headers: HeaderMap,
+    Json(body): Json<TotpDisableRequest>,
+) -> Result<Json<ApiResponse<&'static str>>, AppError> {
+    // Verify password before disabling
+    let user = crate::entity::user::Entity::find_by_id(&current_user.user_id)
+        .one(&state.db)
+        .await?
+        .ok_or(AppError::NotFound("User not found".to_string()))?;
+
+    if !AuthService::verify_password(&body.password, &user.password_hash)? {
+        return Err(AppError::BadRequest(
+            "Password is incorrect".to_string(),
+        ));
+    }
+
+    AuthService::disable_2fa(&state.db, &current_user.user_id).await?;
+
+    let ip = extract_client_ip(&req_headers);
+    let _ = AuditService::log(
+        &state.db,
+        &current_user.user_id,
+        "2fa_disable",
+        None,
+        &ip,
+    )
+    .await;
+
+    ok("ok")
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/auth/2fa/status",
+    tag = "2fa",
+    responses(
+        (status = 200, description = "2FA status", body = TotpStatusResponse),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+pub async fn totp_status(
+    State(state): State<Arc<AppState>>,
+    Extension(current_user): Extension<CurrentUser>,
+) -> Result<Json<ApiResponse<TotpStatusResponse>>, AppError> {
+    let enabled = AuthService::has_2fa(&state.db, &current_user.user_id).await?;
+    ok(TotpStatusResponse { enabled })
+}
+
+// ── OAuth Account Management ──
+
+#[utoipa::path(
+    get,
+    path = "/api/auth/oauth/accounts",
+    tag = "oauth",
+    responses(
+        (status = 200, description = "List linked OAuth accounts", body = Vec<crate::entity::oauth_account::Model>),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+pub async fn list_oauth_accounts(
+    State(state): State<Arc<AppState>>,
+    Extension(current_user): Extension<CurrentUser>,
+) -> Result<Json<ApiResponse<Vec<crate::entity::oauth_account::Model>>>, AppError> {
+    let accounts =
+        crate::service::oauth::OAuthService::list_accounts(&state.db, &current_user.user_id)
+            .await?;
+    ok(accounts)
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/auth/oauth/accounts/{id}",
+    tag = "oauth",
+    params(("id" = String, Path, description = "OAuth account ID")),
+    responses(
+        (status = 200, description = "OAuth account unlinked"),
+        (status = 404, description = "Not found"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+pub async fn unlink_oauth_account(
+    State(state): State<Arc<AppState>>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<&'static str>>, AppError> {
+    crate::service::oauth::OAuthService::unlink_account(
+        &state.db,
+        &id,
+        &current_user.user_id,
+    )
+    .await?;
+    ok("ok")
+}
+
+// ── Helpers ──
+
+/// Extract the client IP from request headers (X-Forwarded-For, X-Real-IP, or fallback).
+fn extract_client_ip(headers: &HeaderMap) -> String {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').next().unwrap_or("unknown").trim().to_string())
+        .or_else(|| {
+            headers
+                .get("x-real-ip")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// Extract the User-Agent from request headers.
+fn extract_user_agent(headers: &HeaderMap) -> String {
+    headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string()
 }
