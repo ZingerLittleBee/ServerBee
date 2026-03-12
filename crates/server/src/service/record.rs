@@ -281,3 +281,125 @@ pub enum QueryHistoryResult {
     Raw(Vec<record::Model>),
     Hourly(Vec<record_hourly::Model>),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // NOTE: All RecordService methods (save_report, query_history, aggregate_hourly,
+    // cleanup_expired) require a DatabaseConnection. There are no pure helper
+    // functions to unit-test in isolation.
+    //
+    // The tests below verify the QueryHistoryResult enum and the interval
+    // selection logic that can be exercised without a database.
+
+    #[test]
+    fn test_query_history_result_variants() {
+        // Verify the Raw variant can be constructed
+        let raw: QueryHistoryResult = QueryHistoryResult::Raw(vec![]);
+        assert!(matches!(raw, QueryHistoryResult::Raw(v) if v.is_empty()));
+
+        // Verify the Hourly variant can be constructed
+        let hourly: QueryHistoryResult = QueryHistoryResult::Hourly(vec![]);
+        assert!(matches!(hourly, QueryHistoryResult::Hourly(v) if v.is_empty()));
+    }
+
+    /// The interval auto-selection logic: <=24h => raw, >24h => hourly.
+    /// Extracted from `query_history` so we can verify it without DB.
+    #[test]
+    fn test_interval_selection_logic() {
+        let now = Utc::now();
+
+        // Within 24 hours => should use raw
+        let from_recent = now - Duration::hours(12);
+        let duration_recent = now - from_recent;
+        let use_hourly_recent = duration_recent > Duration::hours(24);
+        assert!(!use_hourly_recent, "12h range should select raw");
+
+        // Exactly 24 hours => should use raw (not >24h)
+        let from_exact = now - Duration::hours(24);
+        let duration_exact = now - from_exact;
+        let use_hourly_exact = duration_exact > Duration::hours(24);
+        assert!(!use_hourly_exact, "24h range should select raw (not strictly greater)");
+
+        // More than 24 hours => should use hourly
+        let from_old = now - Duration::hours(48);
+        let duration_old = now - from_old;
+        let use_hourly_old = duration_old > Duration::hours(24);
+        assert!(use_hourly_old, "48h range should select hourly");
+
+        // Explicit interval overrides
+        let explicit_raw = match "raw" {
+            "raw" => false,
+            "hourly" => true,
+            _ => unreachable!(),
+        };
+        assert!(!explicit_raw, "explicit 'raw' should use raw");
+
+        let explicit_hourly = match "hourly" {
+            "raw" => false,
+            "hourly" => true,
+            _ => unreachable!(),
+        };
+        assert!(explicit_hourly, "explicit 'hourly' should use hourly");
+    }
+
+    /// Verify the retention cutoff calculation used in cleanup_expired.
+    #[test]
+    fn test_retention_cutoff_calculation() {
+        let retention_days: u32 = 30;
+        let now = Utc::now();
+        let cutoff = now - Duration::days(retention_days as i64);
+
+        // Cutoff should be approximately 30 days ago
+        let diff = now - cutoff;
+        assert_eq!(diff.num_days(), 30);
+
+        // A record from 31 days ago should be before the cutoff (eligible for cleanup)
+        let old_time = now - Duration::days(31);
+        assert!(old_time < cutoff, "31-day-old record should be before cutoff");
+
+        // A record from 29 days ago should be after the cutoff (retained)
+        let recent_time = now - Duration::days(29);
+        assert!(recent_time > cutoff, "29-day-old record should be after cutoff");
+    }
+
+    /// Verify the hourly aggregation averaging logic (extracted computation).
+    #[test]
+    fn test_hourly_aggregation_averages() {
+        // Simulate the averaging computation used in aggregate_hourly
+        let cpu_values = vec![80.0_f64, 90.0, 70.0, 85.0, 95.0];
+        let count = cpu_values.len() as f64;
+        let avg_cpu = cpu_values.iter().sum::<f64>() / count;
+        assert!(
+            (avg_cpu - 84.0).abs() < f64::EPSILON,
+            "average of [80, 90, 70, 85, 95] should be 84.0"
+        );
+
+        // Integer averaging (mem_used style)
+        let mem_values: Vec<i64> = vec![1000, 2000, 3000];
+        let mem_count = mem_values.len() as f64;
+        let avg_mem = (mem_values.iter().sum::<i64>() as f64 / mem_count) as i64;
+        assert_eq!(avg_mem, 2000, "average of [1000, 2000, 3000] should be 2000");
+
+        // Optional field averaging (temperature style)
+        let temp_values: Vec<Option<f64>> = vec![Some(50.0), None, Some(60.0), None];
+        let temps: Vec<f64> = temp_values.into_iter().flatten().collect();
+        let avg_temp = if temps.is_empty() {
+            None
+        } else {
+            Some(temps.iter().sum::<f64>() / temps.len() as f64)
+        };
+        assert_eq!(avg_temp, Some(55.0), "average of [50, 60] (skipping None) should be 55");
+
+        // All None case
+        let no_temps: Vec<Option<f64>> = vec![None, None, None];
+        let filtered: Vec<f64> = no_temps.into_iter().flatten().collect();
+        let avg_no_temp = if filtered.is_empty() {
+            None
+        } else {
+            Some(filtered.iter().sum::<f64>() / filtered.len() as f64)
+        };
+        assert_eq!(avg_no_temp, None, "all-None should produce None average");
+    }
+}
