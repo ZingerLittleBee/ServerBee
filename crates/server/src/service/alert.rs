@@ -1,0 +1,619 @@
+use chrono::{Duration, Utc};
+use dashmap::DashMap;
+use sea_orm::prelude::Expr;
+use sea_orm::*;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::entity::{alert_rule, alert_state, record, server};
+use crate::error::AppError;
+use crate::service::agent_manager::AgentManager;
+use crate::service::notification::{NotificationService, NotifyContext};
+
+// ── Alert Rule Types ──
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct AlertRuleItem {
+    pub rule_type: String,
+    #[serde(default)]
+    pub min: Option<f64>,
+    #[serde(default)]
+    pub max: Option<f64>,
+    #[serde(default)]
+    pub duration: Option<u32>,
+    #[serde(default)]
+    pub cycle_interval: Option<String>,
+    #[serde(default)]
+    pub cycle_limit: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct CreateAlertRule {
+    pub name: String,
+    pub rules: Vec<AlertRuleItem>,
+    #[serde(default = "default_trigger_mode")]
+    pub trigger_mode: String,
+    pub notification_group_id: Option<String>,
+    #[serde(default = "default_cover_type")]
+    pub cover_type: String,
+    pub server_ids: Option<Vec<String>>,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+fn default_trigger_mode() -> String {
+    "always".to_string()
+}
+
+fn default_cover_type() -> String {
+    "all".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct UpdateAlertRule {
+    pub name: Option<String>,
+    pub rules: Option<Vec<AlertRuleItem>>,
+    pub trigger_mode: Option<String>,
+    pub notification_group_id: Option<Option<String>>,
+    pub cover_type: Option<String>,
+    pub server_ids: Option<Option<Vec<String>>>,
+    pub enabled: Option<bool>,
+}
+
+// ── Alert State (hot cache + DB persistence) ──
+
+#[derive(Debug, Clone)]
+pub struct TriggeredInfo {
+    #[allow(dead_code)]
+    pub first_triggered_at: chrono::DateTime<Utc>,
+    pub last_notified_at: chrono::DateTime<Utc>,
+    pub count: u32,
+}
+
+pub struct AlertStateManager {
+    triggered: DashMap<(String, String), TriggeredInfo>,
+}
+
+impl AlertStateManager {
+    pub async fn load_from_db(db: &DatabaseConnection) -> Result<Self, AppError> {
+        let states = alert_state::Entity::find()
+            .filter(alert_state::Column::Resolved.eq(false))
+            .all(db)
+            .await?;
+
+        let triggered = DashMap::new();
+        for s in states {
+            triggered.insert(
+                (s.rule_id, s.server_id),
+                TriggeredInfo {
+                    first_triggered_at: s.first_triggered_at,
+                    last_notified_at: s.last_notified_at,
+                    count: s.count as u32,
+                },
+            );
+        }
+
+        Ok(Self { triggered })
+    }
+
+    pub fn is_triggered(&self, rule_id: &str, server_id: &str) -> bool {
+        self.triggered
+            .contains_key(&(rule_id.to_string(), server_id.to_string()))
+    }
+
+    pub fn get_info(&self, rule_id: &str, server_id: &str) -> Option<TriggeredInfo> {
+        self.triggered
+            .get(&(rule_id.to_string(), server_id.to_string()))
+            .map(|r| r.clone())
+    }
+
+    pub async fn mark_triggered(
+        &self,
+        db: &DatabaseConnection,
+        rule_id: &str,
+        server_id: &str,
+    ) -> Result<(), AppError> {
+        let now = Utc::now();
+        let key = (rule_id.to_string(), server_id.to_string());
+
+        if let Some(mut info) = self.triggered.get_mut(&key) {
+            info.count += 1;
+            info.last_notified_at = now;
+
+            // Update DB
+            alert_state::Entity::update_many()
+                .col_expr(alert_state::Column::Count, Expr::col(alert_state::Column::Count).add(1))
+                .col_expr(alert_state::Column::LastNotifiedAt, Expr::value(now))
+                .col_expr(alert_state::Column::UpdatedAt, Expr::value(now))
+                .filter(alert_state::Column::RuleId.eq(rule_id))
+                .filter(alert_state::Column::ServerId.eq(server_id))
+                .filter(alert_state::Column::Resolved.eq(false))
+                .exec(db)
+                .await?;
+        } else {
+            self.triggered.insert(
+                key,
+                TriggeredInfo {
+                    first_triggered_at: now,
+                    last_notified_at: now,
+                    count: 1,
+                },
+            );
+
+            // Insert to DB
+            let model = alert_state::ActiveModel {
+                id: NotSet,
+                rule_id: Set(rule_id.to_string()),
+                server_id: Set(server_id.to_string()),
+                first_triggered_at: Set(now),
+                last_notified_at: Set(now),
+                count: Set(1),
+                resolved: Set(false),
+                resolved_at: Set(None),
+                updated_at: Set(now),
+            };
+            model.insert(db).await?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn mark_resolved(
+        &self,
+        db: &DatabaseConnection,
+        rule_id: &str,
+        server_id: &str,
+    ) -> Result<(), AppError> {
+        let now = Utc::now();
+        let key = (rule_id.to_string(), server_id.to_string());
+
+        self.triggered.remove(&key);
+
+        alert_state::Entity::update_many()
+            .col_expr(alert_state::Column::Resolved, Expr::value(true))
+            .col_expr(alert_state::Column::ResolvedAt, Expr::value(Some(now)))
+            .col_expr(alert_state::Column::UpdatedAt, Expr::value(now))
+            .filter(alert_state::Column::RuleId.eq(rule_id))
+            .filter(alert_state::Column::ServerId.eq(server_id))
+            .filter(alert_state::Column::Resolved.eq(false))
+            .exec(db)
+            .await?;
+
+        Ok(())
+    }
+}
+
+// ── Alert Rule CRUD ──
+
+pub struct AlertService;
+
+impl AlertService {
+    pub async fn list(db: &DatabaseConnection) -> Result<Vec<alert_rule::Model>, AppError> {
+        Ok(alert_rule::Entity::find().all(db).await?)
+    }
+
+    pub async fn get(
+        db: &DatabaseConnection,
+        id: &str,
+    ) -> Result<alert_rule::Model, AppError> {
+        alert_rule::Entity::find_by_id(id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Alert rule {id} not found")))
+    }
+
+    pub async fn create(
+        db: &DatabaseConnection,
+        input: CreateAlertRule,
+    ) -> Result<alert_rule::Model, AppError> {
+        let rules_json = serde_json::to_string(&input.rules)
+            .map_err(|e| AppError::Validation(format!("Invalid rules: {e}")))?;
+        let server_ids_json = input.server_ids.map(|ids| {
+            serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string())
+        });
+        let now = Utc::now();
+
+        let model = alert_rule::ActiveModel {
+            id: Set(Uuid::new_v4().to_string()),
+            name: Set(input.name),
+            enabled: Set(input.enabled),
+            rules_json: Set(rules_json),
+            trigger_mode: Set(input.trigger_mode),
+            notification_group_id: Set(input.notification_group_id),
+            fail_trigger_tasks: Set(None),
+            recover_trigger_tasks: Set(None),
+            cover_type: Set(input.cover_type),
+            server_ids_json: Set(server_ids_json),
+            created_at: Set(now),
+            updated_at: Set(now),
+        };
+        Ok(model.insert(db).await?)
+    }
+
+    pub async fn update(
+        db: &DatabaseConnection,
+        id: &str,
+        input: UpdateAlertRule,
+    ) -> Result<alert_rule::Model, AppError> {
+        let existing = Self::get(db, id).await?;
+        let mut model: alert_rule::ActiveModel = existing.into();
+
+        if let Some(name) = input.name {
+            model.name = Set(name);
+        }
+        if let Some(rules) = input.rules {
+            let rules_json = serde_json::to_string(&rules)
+                .map_err(|e| AppError::Validation(format!("Invalid rules: {e}")))?;
+            model.rules_json = Set(rules_json);
+        }
+        if let Some(trigger_mode) = input.trigger_mode {
+            model.trigger_mode = Set(trigger_mode);
+        }
+        if let Some(notification_group_id) = input.notification_group_id {
+            model.notification_group_id = Set(notification_group_id);
+        }
+        if let Some(cover_type) = input.cover_type {
+            model.cover_type = Set(cover_type);
+        }
+        if let Some(server_ids) = input.server_ids {
+            let json = server_ids.map(|ids| {
+                serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string())
+            });
+            model.server_ids_json = Set(json);
+        }
+        if let Some(enabled) = input.enabled {
+            model.enabled = Set(enabled);
+        }
+        model.updated_at = Set(Utc::now());
+
+        Ok(model.update(db).await?)
+    }
+
+    pub async fn delete(db: &DatabaseConnection, id: &str) -> Result<(), AppError> {
+        let result = alert_rule::Entity::delete_by_id(id).exec(db).await?;
+        if result.rows_affected == 0 {
+            return Err(AppError::NotFound(format!("Alert rule {id} not found")));
+        }
+        // Clean up alert states for this rule
+        alert_state::Entity::delete_many()
+            .filter(alert_state::Column::RuleId.eq(id))
+            .exec(db)
+            .await?;
+        Ok(())
+    }
+
+    // ── Evaluation ──
+
+    /// Evaluate all enabled alert rules against current data.
+    pub async fn evaluate_all(
+        db: &DatabaseConnection,
+        agent_manager: &AgentManager,
+        state_manager: &AlertStateManager,
+    ) -> Result<(), AppError> {
+        let rules = alert_rule::Entity::find()
+            .filter(alert_rule::Column::Enabled.eq(true))
+            .all(db)
+            .await?;
+
+        for rule in rules {
+            if let Err(e) = Self::evaluate_rule(db, agent_manager, state_manager, &rule).await {
+                tracing::error!("Error evaluating alert rule '{}': {e}", rule.name);
+            }
+        }
+        Ok(())
+    }
+
+    async fn evaluate_rule(
+        db: &DatabaseConnection,
+        agent_manager: &AgentManager,
+        state_manager: &AlertStateManager,
+        rule: &alert_rule::Model,
+    ) -> Result<(), AppError> {
+        let items: Vec<AlertRuleItem> = serde_json::from_str(&rule.rules_json)
+            .unwrap_or_default();
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        let servers = resolve_servers(db, &rule.cover_type, &rule.server_ids_json).await?;
+
+        for srv in &servers {
+            let triggered = Self::check_server(db, agent_manager, &items, &srv.id).await;
+
+            if triggered {
+                Self::handle_triggered(db, state_manager, rule, &srv.id, &srv.name).await?;
+            } else if state_manager.is_triggered(&rule.id, &srv.id) {
+                // Recovered
+                state_manager.mark_resolved(db, &rule.id, &srv.id).await?;
+                tracing::info!(
+                    "Alert '{}' resolved for server '{}'",
+                    rule.name,
+                    srv.name
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn check_server(
+        db: &DatabaseConnection,
+        agent_manager: &AgentManager,
+        items: &[AlertRuleItem],
+        server_id: &str,
+    ) -> bool {
+        for item in items {
+            let matched = match item.rule_type.as_str() {
+                "offline" => {
+                    let duration = item.duration.unwrap_or(60) as u64;
+                    !agent_manager.is_online(server_id) && {
+                        // Check how long the server has been offline by looking at last record
+                        match get_last_record_time(db, server_id).await {
+                            Some(last) => {
+                                let elapsed =
+                                    (Utc::now() - last).num_seconds().max(0) as u64;
+                                elapsed >= duration
+                            }
+                            None => true,
+                        }
+                    }
+                }
+                "transfer_in_cycle" | "transfer_out_cycle" | "transfer_all_cycle" => {
+                    check_transfer_cycle(db, server_id, item).await
+                }
+                "expiration" => {
+                    // Check if server's expired_at is within N days (default 7)
+                    check_expiration(db, server_id, item).await
+                }
+                _ => {
+                    // Resource threshold type: check recent records
+                    check_threshold(db, server_id, item).await
+                }
+            };
+
+            if !matched {
+                return false; // AND logic: all items must match
+            }
+        }
+        true
+    }
+
+    async fn handle_triggered(
+        db: &DatabaseConnection,
+        state_manager: &AlertStateManager,
+        rule: &alert_rule::Model,
+        server_id: &str,
+        server_name: &str,
+    ) -> Result<(), AppError> {
+        let should_notify = match rule.trigger_mode.as_str() {
+            "once" => !state_manager.is_triggered(&rule.id, server_id),
+            _ => {
+                // "always" — but debounce 5 minutes
+                match state_manager.get_info(&rule.id, server_id) {
+                    Some(info) => {
+                        let elapsed = Utc::now() - info.last_notified_at;
+                        elapsed >= Duration::minutes(5)
+                    }
+                    None => true,
+                }
+            }
+        };
+
+        state_manager.mark_triggered(db, &rule.id, server_id).await?;
+
+        if should_notify
+            && let Some(ref group_id) = rule.notification_group_id
+        {
+            let ctx = NotifyContext {
+                server_name: server_name.to_string(),
+                server_id: server_id.to_string(),
+                rule_name: rule.name.clone(),
+                event: "triggered".to_string(),
+                message: format!("Alert rule '{}' triggered", rule.name),
+                time: Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+                ..Default::default()
+            };
+            if let Err(e) = NotificationService::send_group(db, group_id, &ctx).await {
+                tracing::error!("Failed to send alert notification: {e}");
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ── Helpers ──
+
+async fn resolve_servers(
+    db: &DatabaseConnection,
+    cover_type: &str,
+    server_ids_json: &Option<String>,
+) -> Result<Vec<server::Model>, AppError> {
+    match cover_type {
+        "specific" => {
+            let ids: Vec<String> = server_ids_json
+                .as_deref()
+                .and_then(|s| serde_json::from_str(s).ok())
+                .unwrap_or_default();
+            if ids.is_empty() {
+                return Ok(vec![]);
+            }
+            Ok(server::Entity::find()
+                .filter(server::Column::Id.is_in(ids))
+                .all(db)
+                .await?)
+        }
+        _ => {
+            // "all"
+            Ok(server::Entity::find().all(db).await?)
+        }
+    }
+}
+
+async fn get_last_record_time(
+    db: &DatabaseConnection,
+    server_id: &str,
+) -> Option<chrono::DateTime<Utc>> {
+    record::Entity::find()
+        .filter(record::Column::ServerId.eq(server_id))
+        .order_by_desc(record::Column::Time)
+        .one(db)
+        .await
+        .ok()
+        .flatten()
+        .map(|r| r.time)
+}
+
+async fn check_threshold(
+    db: &DatabaseConnection,
+    server_id: &str,
+    item: &AlertRuleItem,
+) -> bool {
+    let ten_min_ago = Utc::now() - Duration::minutes(10);
+
+    let records = match record::Entity::find()
+        .filter(record::Column::ServerId.eq(server_id))
+        .filter(record::Column::Time.gte(ten_min_ago))
+        .order_by_desc(record::Column::Time)
+        .all(db)
+        .await
+    {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+
+    if records.is_empty() {
+        return false;
+    }
+
+    let mut exceeded_count = 0;
+    let total = records.len();
+
+    for rec in &records {
+        let value = extract_metric(rec, &item.rule_type);
+        let exceeds = match (item.min, item.max) {
+            (Some(min), Some(max)) => value >= min && value <= max,
+            (Some(min), None) => value >= min,
+            (None, Some(max)) => value >= max,
+            (None, None) => false,
+        };
+        if exceeds {
+            exceeded_count += 1;
+        }
+    }
+
+    // 70%+ samples exceeded threshold
+    exceeded_count as f64 / total as f64 >= 0.7
+}
+
+/// Check transfer cycle alert: compare cumulative traffic within a time cycle against a limit.
+async fn check_transfer_cycle(
+    db: &DatabaseConnection,
+    server_id: &str,
+    item: &AlertRuleItem,
+) -> bool {
+    let cycle_limit = match item.cycle_limit {
+        Some(limit) => limit,
+        None => return false,
+    };
+
+    let cycle_interval = item.cycle_interval.as_deref().unwrap_or("month");
+    let now = Utc::now();
+
+    // Calculate the start of the current cycle
+    let cycle_start = match cycle_interval {
+        "hour" => now - Duration::hours(1),
+        "day" => now - Duration::days(1),
+        "week" => now - Duration::weeks(1),
+        "month" => now - Duration::days(30),
+        "year" => now - Duration::days(365),
+        _ => now - Duration::days(30),
+    };
+
+    // Get the earliest record in this cycle and the latest
+    let earliest = record::Entity::find()
+        .filter(record::Column::ServerId.eq(server_id))
+        .filter(record::Column::Time.gte(cycle_start))
+        .order_by_asc(record::Column::Time)
+        .one(db)
+        .await
+        .ok()
+        .flatten();
+
+    let latest = record::Entity::find()
+        .filter(record::Column::ServerId.eq(server_id))
+        .filter(record::Column::Time.gte(cycle_start))
+        .order_by_desc(record::Column::Time)
+        .one(db)
+        .await
+        .ok()
+        .flatten();
+
+    let (Some(first), Some(last)) = (earliest, latest) else {
+        return false;
+    };
+
+    let transfer = match item.rule_type.as_str() {
+        "transfer_in_cycle" => last.net_in_transfer - first.net_in_transfer,
+        "transfer_out_cycle" => last.net_out_transfer - first.net_out_transfer,
+        "transfer_all_cycle" => {
+            (last.net_in_transfer - first.net_in_transfer)
+                + (last.net_out_transfer - first.net_out_transfer)
+        }
+        _ => 0,
+    };
+
+    transfer >= cycle_limit
+}
+
+/// Check if a server's `expired_at` is within N days of now (or already expired).
+/// `item.duration` = days threshold (default 7). Triggers if expired_at is set and
+/// expires within that many days.
+async fn check_expiration(
+    db: &DatabaseConnection,
+    server_id: &str,
+    item: &AlertRuleItem,
+) -> bool {
+    let srv = server::Entity::find_by_id(server_id)
+        .one(db)
+        .await
+        .ok()
+        .flatten();
+    let Some(srv) = srv else {
+        return false;
+    };
+    let Some(expired_at) = srv.expired_at else {
+        return false;
+    };
+    let days_threshold = item.duration.unwrap_or(7) as i64;
+    let deadline = Utc::now() + Duration::days(days_threshold);
+    expired_at <= deadline
+}
+
+fn extract_metric(rec: &record::Model, rule_type: &str) -> f64 {
+    match rule_type {
+        "cpu" => rec.cpu,
+        "memory" => {
+            // We need mem_total for percentage but we don't have it in the record.
+            // Return raw mem_used as bytes. The threshold should be set accordingly.
+            rec.mem_used as f64
+        }
+        "swap" => rec.swap_used as f64,
+        "disk" => rec.disk_used as f64,
+        "load1" => rec.load1,
+        "load5" => rec.load5,
+        "load15" => rec.load15,
+        "tcp_conn" => rec.tcp_conn as f64,
+        "udp_conn" => rec.udp_conn as f64,
+        "process" => rec.process_count as f64,
+        "net_in_speed" => rec.net_in_speed as f64,
+        "net_out_speed" => rec.net_out_speed as f64,
+        "temperature" => rec.temperature.unwrap_or(0.0),
+        "gpu" => rec.gpu_usage.unwrap_or(0.0),
+        _ => 0.0,
+    }
+}

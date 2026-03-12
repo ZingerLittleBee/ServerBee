@@ -1,6 +1,7 @@
 use sea_orm::entity::prelude::*;
+use serde::Serialize;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, utoipa::ToSchema)]
 #[sea_orm(table_name = "task_results")]
 pub struct Model {
     #[sea_orm(primary_key)]
@@ -9,6 +10,7 @@ pub struct Model {
     pub server_id: String,
     pub output: String,
     pub exit_code: i32,
+    #[schema(value_type = String, format = DateTime)]
     pub finished_at: DateTimeUtc,
 }
 

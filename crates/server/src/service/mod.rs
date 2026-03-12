@@ -1,5 +1,11 @@
 pub mod agent_manager;
+pub mod alert;
+pub mod audit;
 pub mod auth;
 pub mod config;
+pub mod geoip;
+pub mod notification;
+pub mod oauth;
+pub mod ping;
 pub mod record;
 pub mod server;

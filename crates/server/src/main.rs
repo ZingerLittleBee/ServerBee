@@ -3,6 +3,7 @@ mod entity;
 mod error;
 mod middleware;
 mod migration;
+mod openapi;
 mod router;
 mod service;
 mod state;
@@ -80,6 +81,8 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move { task::cleanup::run(s).await });
     let s = state.clone();
     tokio::spawn(async move { task::session_cleaner::run(s).await });
+    let s = state.clone();
+    tokio::spawn(async move { task::alert_evaluator::run(s).await });
 
     // Build router
     let app = router::create_router(state);
@@ -129,10 +132,10 @@ async fn init_auto_discovery_key(
     }
 
     // Check if a key already exists in the database
-    if let Some(existing) = ConfigService::get(db, CONFIG_KEY).await? {
-        if !existing.is_empty() {
-            return Ok(existing);
-        }
+    if let Some(existing) = ConfigService::get(db, CONFIG_KEY).await?
+        && !existing.is_empty()
+    {
+        return Ok(existing);
     }
 
     // Generate a new random key
