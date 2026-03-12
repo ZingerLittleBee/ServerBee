@@ -2,6 +2,7 @@ use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "server_tags")]
+#[allow(dead_code)]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub server_id: String,
@@ -10,6 +11,7 @@ pub struct Model {
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+#[allow(dead_code)]
 pub enum Relation {
     #[sea_orm(
         belongs_to = "super::server::Entity",

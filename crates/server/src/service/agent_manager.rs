@@ -13,6 +13,7 @@ pub struct AgentManager {
     browser_tx: broadcast::Sender<BrowserMessage>,
 }
 
+#[allow(dead_code)]
 pub struct AgentConnection {
     pub server_id: String,
     pub server_name: String,
@@ -22,6 +23,7 @@ pub struct AgentConnection {
     pub remote_addr: SocketAddr,
 }
 
+#[allow(dead_code)]
 pub struct CachedReport {
     pub report: SystemReport,
     pub received_at: Instant,
@@ -136,6 +138,7 @@ impl AgentManager {
     }
 
     /// Return the number of currently connected agents.
+    #[allow(dead_code)]
     pub fn online_count(&self) -> usize {
         self.connections.len()
     }
