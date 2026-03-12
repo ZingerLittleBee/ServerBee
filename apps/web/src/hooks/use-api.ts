@@ -1,22 +1,58 @@
 import { useQuery } from '@tanstack/react-query'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 
-type ServerDetail = ServerMetrics & {
-  cpu_cores: number
-  total_memory_gb: number
+interface ServerDetail {
+  agent_version: string | null
+  billing_cycle: string | null
+  country_code: string | null
+  cpu_arch: string | null
+  cpu_cores: number | null
+  cpu_name: string | null
+  created_at: string
+  currency: string | null
+  disk_total: number | null
+  expired_at: string | null
+  group_id: string | null
+  hidden: boolean
+  id: string
+  ipv4: string | null
+  ipv6: string | null
+  kernel_version: string | null
+  mem_total: number | null
+  name: string
+  os: string | null
+  price: number | null
+  public_remark: string | null
+  region: string | null
+  remark: string | null
+  swap_total: number | null
+  traffic_limit: number | null
+  traffic_limit_type: string | null
+  updated_at: string
+  virtualization: string | null
+  weight: number
 }
 
 interface ServerRecord {
-  cpu_usage: number
-  disk_total: number
+  cpu: number
   disk_used: number
-  load_avg: [number, number, number]
-  memory_total: number
-  memory_used: number
-  network_in: number
-  network_out: number
-  timestamp: string
+  gpu_usage: number | null
+  id: number
+  load1: number
+  load5: number
+  load15: number
+  mem_used: number
+  net_in_speed: number
+  net_in_transfer: number
+  net_out_speed: number
+  net_out_transfer: number
+  process_count: number
+  server_id: string
+  swap_used: number
+  tcp_conn: number
+  temperature: number | null
+  time: string
+  udp_conn: number
 }
 
 export function useServer(id: string) {

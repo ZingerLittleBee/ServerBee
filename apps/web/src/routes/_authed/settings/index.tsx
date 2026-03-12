@@ -19,7 +19,7 @@ function SettingsPage() {
 
   const { data: config } = useQuery<DiscoveryConfig>({
     queryKey: ['settings', 'discovery'],
-    queryFn: () => api.get<DiscoveryConfig>('/api/settings/discovery')
+    queryFn: () => api.get<DiscoveryConfig>('/api/settings/auto-discovery-key')
   })
 
   const handleCopy = async () => {

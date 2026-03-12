@@ -47,7 +47,7 @@ pub struct ServerConfig {
     pub data_dir: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct DatabaseConfig {
     #[serde(default = "default_db_path")]
     pub path: String,
@@ -55,7 +55,16 @@ pub struct DatabaseConfig {
     pub max_connections: u32,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        Self {
+            path: default_db_path(),
+            max_connections: default_max_connections(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct AuthConfig {
     #[serde(default = "default_session_ttl")]
     pub session_ttl: i64,
@@ -63,12 +72,30 @@ pub struct AuthConfig {
     pub auto_discovery_key: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self {
+            session_ttl: default_session_ttl(),
+            auto_discovery_key: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct AdminConfig {
     #[serde(default = "default_admin_username")]
     pub username: String,
     #[serde(default)]
     pub password: String,
+}
+
+impl Default for AdminConfig {
+    fn default() -> Self {
+        Self {
+            username: default_admin_username(),
+            password: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -97,12 +124,21 @@ impl Default for RetentionConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct RateLimitConfig {
     #[serde(default = "default_5")]
     pub login_max: u32,
     #[serde(default = "default_3")]
     pub register_max: u32,
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            login_max: default_5(),
+            register_max: default_3(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -113,12 +149,21 @@ pub struct GeoIpConfig {
     pub mmdb_path: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct LogConfig {
     #[serde(default = "default_log_level")]
     pub level: String,
     #[serde(default)]
     pub file: String,
+}
+
+impl Default for LogConfig {
+    fn default() -> Self {
+        Self {
+            level: default_log_level(),
+            file: String::new(),
+        }
+    }
 }
 
 // Default functions
