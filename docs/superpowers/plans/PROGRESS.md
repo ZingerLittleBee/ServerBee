@@ -173,7 +173,7 @@
 - [x] docker-compose.yml ✅
 - [x] install.sh (安装脚本) ✅
 - [x] systemd service units ✅
-- [ ] GitHub Actions CI/CD
+- [x] GitHub Actions CI/CD (CI + Release workflows) ✅
 - [x] rust-embed 嵌入前端到 server 二进制 ✅
 
 ### 代码质量
