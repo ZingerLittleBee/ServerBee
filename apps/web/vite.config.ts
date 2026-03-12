@@ -11,6 +11,16 @@ export default defineConfig({
       '@': path.resolve(import.meta.dirname, './src')
     }
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          xterm: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links'],
+          recharts: ['recharts']
+        }
+      }
+    }
+  },
   server: {
     proxy: {
       '/api': {
