@@ -33,19 +33,18 @@ async fn browser_ws_handler(
 
 async fn validate_browser_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Option<String> {
     // Try session cookie
-    if let Some(token) = extract_session_cookie(headers) {
-        if let Ok(Some(user)) =
+    if let Some(token) = extract_session_cookie(headers)
+        && let Ok(Some(user)) =
             AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
-        {
-            return Some(user.id);
-        }
+    {
+        return Some(user.id);
     }
 
     // Try API key header
-    if let Some(key) = extract_api_key(headers) {
-        if let Ok(Some(user)) = AuthService::validate_api_key(&state.db, &key).await {
-            return Some(user.id);
-        }
+    if let Some(key) = extract_api_key(headers)
+        && let Ok(Some(user)) = AuthService::validate_api_key(&state.db, &key).await
+    {
+        return Some(user.id);
     }
 
     None

@@ -66,6 +66,22 @@ pub async fn auth_middleware(
     }
 }
 
+/// Middleware that requires the authenticated user to have the "admin" role.
+/// Must be applied AFTER `auth_middleware`.
+pub async fn require_admin(req: Request, next: Next) -> Response {
+    let is_admin = req
+        .extensions()
+        .get::<CurrentUser>()
+        .map(|u| u.role == "admin")
+        .unwrap_or(false);
+
+    if !is_admin {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    next.run(req).await
+}
+
 fn extract_session_cookie(req: &Request) -> Option<String> {
     req.headers()
         .get("cookie")?
