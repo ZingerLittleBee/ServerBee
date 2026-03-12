@@ -16,14 +16,14 @@
 | P1-d | OAuth + 2FA | **已完成** | 1 (`00f5704`) |
 | P2-a+review | 权限 + 审计 + 安全加固 | **已完成** | 1 (`020190b`) |
 | P2-b/c/d/e | 状态页 + 计费 + 升级 + 备份 | **已完成** | 1 (`6cb0f6a`) |
-| P3-a | 用户管理 + 缺失 API | **待开始** | — |
-| P3-b | 前端 UI 完善 | **待开始** | — |
+| P3-a | 用户管理 + 缺失 API | **已完成** | 2 (`a464801`, `601f80b`) |
+| P3-b | 前端 UI 完善 | **已完成** | 2 (`044e568`, `3f33de9`) |
 | P3-c | 测试 | **待开始** | — |
 | P3-d | Agent 完善 | **待开始** | — |
 | P3-e | 性能优化 | **待开始** | — |
 | P3-f | CI/CD + 部署文档 | **待开始** | — |
 
-**P0 MVP + P1 + P2 全部完成并已提交 (共 18 个 commits)。P3 已规划，共 6 个子阶段 31 个任务。**
+**P0 MVP + P1 + P2 + P3-a + P3-b 全部完成并已提交 (共 23 个 commits)。P3-c~f 待开始。**
 
 ---
 
@@ -238,7 +238,7 @@
 
 ## 已实现的文件清单
 
-### Rust (83 files)
+### Rust (85 files)
 
 **crates/common/src/** (4 files)
 - `lib.rs`, `types.rs`, `constants.rs`, `protocol.rs`
@@ -248,8 +248,8 @@
 - `entity/` (21 files): user, session, api_key, server, server_group, server_tag, record, record_hourly, gpu_record, config, alert_rule, alert_state, notification, notification_group, ping_task, ping_record, task, task_result, audit_log, **oauth_account**
 - `migration/` (3 files): mod.rs, m20260312_000001_init.rs, **m20260312_000002_oauth.rs**
 - `middleware/` (2 files): mod.rs, auth.rs
-- `service/` (12 files): mod.rs, auth.rs, server.rs, config.rs, record.rs, agent_manager.rs, **notification.rs**, **alert.rs**, **ping.rs**, **geoip.rs**, **oauth.rs**, **audit.rs**
-- `router/api/` (12 files): mod.rs, auth.rs, server.rs, server_group.rs, setting.rs, agent.rs, **notification.rs**, **alert.rs**, **task.rs**, **ping.rs**, **oauth.rs**, **audit.rs**
+- `service/` (13 files): mod.rs, auth.rs, server.rs, config.rs, record.rs, agent_manager.rs, **notification.rs**, **alert.rs**, **ping.rs**, **geoip.rs**, **oauth.rs**, **audit.rs**, **user.rs**
+- `router/api/` (13 files): mod.rs, auth.rs, server.rs, server_group.rs, setting.rs, agent.rs, **notification.rs**, **alert.rs**, **task.rs**, **ping.rs**, **oauth.rs**, **audit.rs**, **user.rs**
 - `router/ws/` (4 files): mod.rs, agent.rs, browser.rs, **terminal.rs**
 - `router/` (2 files): mod.rs, static_files.rs
 - `task/` (7 files): mod.rs, record_writer.rs, aggregator.rs, cleanup.rs, offline_checker.rs, session_cleaner.rs, **alert_evaluator.rs**
@@ -258,7 +258,7 @@
 - `main.rs`, `config.rs`, `register.rs`, `reporter.rs`, **`pinger.rs`**, **`terminal.rs`**
 - `collector/` (9 files): mod.rs, cpu.rs, memory.rs, disk.rs, network.rs, load.rs, process.rs, temperature.rs, **gpu.rs**
 
-### Frontend (33 files)
+### Frontend (34 files)
 
 **apps/web/src/**
 - `main.tsx`, `router.tsx`, `routeTree.gen.ts`
@@ -271,7 +271,7 @@
 - `components/`: theme-provider.tsx
 - `routes/`: __root.tsx, login.tsx, **status.tsx**, _authed.tsx, index.tsx (redirect)
 - `routes/_authed/`: index.tsx (dashboard), servers/$id.tsx (detail), **terminal.$serverId.tsx**
-- `routes/_authed/settings/`: index.tsx, api-keys.tsx, **notifications.tsx**, **alerts.tsx**, **tasks.tsx**, **ping-tasks.tsx**, **security.tsx**, **audit-logs.tsx**
+- `routes/_authed/settings/`: index.tsx, api-keys.tsx, **notifications.tsx**, **alerts.tsx**, **tasks.tsx**, **ping-tasks.tsx**, **security.tsx**, **audit-logs.tsx**, **users.tsx**
 
 ### 部署 (7 files)
 
@@ -376,6 +376,12 @@
 ## Git Commits
 
 ```
+07dd18e docs: update progress for P3-a and P3-b completion
+3f33de9 feat: enhance dashboard, server detail, and monitoring UI (P3-b)
+044e568 feat: add shared utils, group_id support, and WS merge fix (P3-b)
+601f80b feat: add registration rate limiting, SIGTERM shutdown, and security fixes (P3-a)
+a464801 feat: add user management CRUD API and frontend page (P3-a)
+d8c8e9f docs: update PROGRESS.md with actual commit hashes for P1/P2 milestones
 cbb7cdc docs: update implementation progress for P1 and P2 milestones
 6cb0f6a feat: add public status page, billing management, and backup/restore (P2-b/c/d/e)
 020190b feat: add role-based access control, audit logging, and security hardening (P2-a + P2-review)
@@ -476,6 +482,15 @@ POST   /api/settings/restore              上传并恢复 SQLite 数据库
 GET    /api/status                        公开服务器状态页数据 (非隐藏服务器 + 在线指标)
 ```
 
+### 用户管理 (Admin, Session|API Key 认证)
+```
+GET    /api/users                         列出所有用户
+POST   /api/users                         创建用户
+GET    /api/users/:id                     获取用户详情
+PUT    /api/users/:id                     更新用户 (角色等)
+DELETE /api/users/:id                     删除用户 (禁止删除最后 admin)
+```
+
 ### 审计日志 (Admin, Session|API Key 认证)
 ```
 GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
@@ -511,31 +526,50 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 - [x] 非管理员用户隐藏 admin-only 侧边栏链接 ✅
 - [x] OAuth 自动注册配置开关 (`allow_registration`, 默认 false) ✅
 
+### P3-a: 用户管理 + 缺失 API
+- [x] User CRUD API: UserService + 5 个 admin-only 端点 (GET/POST /users, GET/PUT/DELETE /users/:id) ✅
+- [x] 前端用户管理页面: 列表/创建/编辑角色/删除, 侧边栏导航 ✅
+- [x] Agent 注册端点限流: DashMap 限流, register_max 配置, session_cleaner 清理 ✅
+- [x] SIGTERM 优雅关闭: tokio::select! SIGINT+SIGTERM, #[cfg(unix)] 条件编译 ✅
+
+### P3-b: 前端 UI 完善
+- [x] Dashboard 统计卡片: 5 个 StatCard (Servers/CPU/Memory/Bandwidth/Health) ✅
+- [x] Dashboard 分组展示: 按 group_id 分组 + group headers ✅
+- [x] Server Card 国旗 + OS 图标: countryCodeToFlag + osIcon helper ✅
+- [x] Server Detail GPU 面板: gpu-records API + GPU Usage/Temperature 图表 ✅
+- [x] Server Detail 温度图表: 条件渲染 (temperature > 0) ✅
+- [x] Server Detail 网络累计流量: net_in_transfer/net_out_transfer stats bar ✅
+- [x] Server Detail 补充信息: ipv6, kernel_version, cpu_arch, region, agent_version ✅
+- [x] Ping 结果图表: PingResultsChart 组件 + 24h 延迟面积图 + 成功率/平均延迟 ✅
+- [x] 审计日志分页防闪烁: placeholderData: (prev) => prev ✅
+- [x] 共享工具函数: formatBytes, formatSpeed, formatUptime, countryCodeToFlag 提取到 lib/utils.ts ✅
+- [x] 代码质量: cargo check + tsc + vite build 全部通过 ✅
+
 ## P3: 后续任务
 
 ### P3-a: 用户管理 + 缺失 API
 
 | Task | 名称 | 状态 |
 |------|------|------|
-| T1 | User CRUD API (GET/POST/PUT/DELETE /api/users, admin only) | **todo** |
-| T2 | 前端用户管理页面 (settings/users.tsx, 列表/创建/编辑角色/删除) | **todo** |
-| T3 | Agent 注册端点限流 (复用 DashMap 限流, register_max 配置) | **todo** |
-| T4 | SIGTERM 优雅关闭 (server 当前仅处理 SIGINT, systemd 发 SIGTERM) | **todo** |
+| T1 | User CRUD API (GET/POST/PUT/DELETE /api/users, admin only) | **done** |
+| T2 | 前端用户管理页面 (settings/users.tsx, 列表/创建/编辑角色/删除) | **done** |
+| T3 | Agent 注册端点限流 (复用 DashMap 限流, register_max 配置) | **done** |
+| T4 | SIGTERM 优雅关闭 (server 当前仅处理 SIGINT, systemd 发 SIGTERM) | **done** |
 
 ### P3-b: 前端 UI 完善
 
 | Task | 名称 | 状态 |
 |------|------|------|
-| T1 | Dashboard 统计卡片 (在线/离线/总数、CPU 平均、内存平均、总带宽) | **todo** |
-| T2 | Dashboard 按分组展示服务器卡片 (group headers + 分组折叠) | **todo** |
-| T3 | Server Card 添加国旗 emoji + OS 图标 (基于 country_code/os 字段) | **todo** |
-| T4 | Server Detail GPU 面板 (调用 GET /api/servers/:id/gpu-records + 图表) | **todo** |
-| T5 | Server Detail 温度图表 (records 中 temperature 字段) | **todo** |
-| T6 | Server Detail 网络累计流量统计 (net_in_transfer/net_out_transfer) | **todo** |
-| T7 | Server Detail 补充信息 (region, agent_version, ipv6, kernel_version, cpu_arch) | **todo** |
-| T8 | Ping 任务结果图表 (调用 GET /api/ping-tasks/:id/records + 延迟图表) | **todo** |
-| T9 | 审计日志分页 placeholderData (TanStack Query keepPreviousData 防闪烁) | **todo** |
-| T10 | 服务器列表/管理页面 (servers/index.tsx, 表格视图 + 批量操作) | **todo** |
+| T1 | Dashboard 统计卡片 (在线/离线/总数、CPU 平均、内存平均、总带宽) | **done** |
+| T2 | Dashboard 按分组展示服务器卡片 (group headers + 分组折叠) | **done** |
+| T3 | Server Card 添加国旗 emoji + OS 图标 (基于 country_code/os 字段) | **done** |
+| T4 | Server Detail GPU 面板 (调用 GET /api/servers/:id/gpu-records + 图表) | **done** |
+| T5 | Server Detail 温度图表 (records 中 temperature 字段) | **done** |
+| T6 | Server Detail 网络累计流量统计 (net_in_transfer/net_out_transfer) | **done** |
+| T7 | Server Detail 补充信息 (region, agent_version, ipv6, kernel_version, cpu_arch) | **done** |
+| T8 | Ping 任务结果图表 (调用 GET /api/ping-tasks/:id/records + 延迟图表) | **done** |
+| T9 | 审计日志分页 placeholderData (TanStack Query keepPreviousData 防闪烁) | **done** |
+| T10 | 服务器列表/管理页面 (servers/index.tsx, 表格视图 + 批量操作) | **跳过** |
 
 ### P3-c: 测试
 
