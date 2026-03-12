@@ -9,13 +9,26 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as StatusRouteImport } from './routes/status'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
+import { Route as AuthedTerminalServerIdRouteImport } from './routes/_authed/terminal.$serverId'
+import { Route as AuthedSettingsTasksRouteImport } from './routes/_authed/settings/tasks'
+import { Route as AuthedSettingsSecurityRouteImport } from './routes/_authed/settings/security'
+import { Route as AuthedSettingsPingTasksRouteImport } from './routes/_authed/settings/ping-tasks'
+import { Route as AuthedSettingsNotificationsRouteImport } from './routes/_authed/settings/notifications'
+import { Route as AuthedSettingsAuditLogsRouteImport } from './routes/_authed/settings/audit-logs'
 import { Route as AuthedSettingsApiKeysRouteImport } from './routes/_authed/settings/api-keys'
+import { Route as AuthedSettingsAlertsRouteImport } from './routes/_authed/settings/alerts'
 import { Route as AuthedServersIdRouteImport } from './routes/_authed/servers/$id'
 
+const StatusRoute = StatusRouteImport.update({
+  id: '/status',
+  path: '/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -35,9 +48,45 @@ const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
   path: '/settings/',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedTerminalServerIdRoute = AuthedTerminalServerIdRouteImport.update({
+  id: '/terminal/$serverId',
+  path: '/terminal/$serverId',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedSettingsTasksRoute = AuthedSettingsTasksRouteImport.update({
+  id: '/settings/tasks',
+  path: '/settings/tasks',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedSettingsSecurityRoute = AuthedSettingsSecurityRouteImport.update({
+  id: '/settings/security',
+  path: '/settings/security',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedSettingsPingTasksRoute = AuthedSettingsPingTasksRouteImport.update({
+  id: '/settings/ping-tasks',
+  path: '/settings/ping-tasks',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedSettingsNotificationsRoute =
+  AuthedSettingsNotificationsRouteImport.update({
+    id: '/settings/notifications',
+    path: '/settings/notifications',
+    getParentRoute: () => AuthedRoute,
+  } as any)
+const AuthedSettingsAuditLogsRoute = AuthedSettingsAuditLogsRouteImport.update({
+  id: '/settings/audit-logs',
+  path: '/settings/audit-logs',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedSettingsApiKeysRoute = AuthedSettingsApiKeysRouteImport.update({
   id: '/settings/api-keys',
   path: '/settings/api-keys',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedSettingsAlertsRoute = AuthedSettingsAlertsRouteImport.update({
+  id: '/settings/alerts',
+  path: '/settings/alerts',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedServersIdRoute = AuthedServersIdRouteImport.update({
@@ -49,24 +98,48 @@ const AuthedServersIdRoute = AuthedServersIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
   '/login': typeof LoginRoute
+  '/status': typeof StatusRoute
   '/servers/$id': typeof AuthedServersIdRoute
+  '/settings/alerts': typeof AuthedSettingsAlertsRoute
   '/settings/api-keys': typeof AuthedSettingsApiKeysRoute
+  '/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
+  '/settings/notifications': typeof AuthedSettingsNotificationsRoute
+  '/settings/ping-tasks': typeof AuthedSettingsPingTasksRoute
+  '/settings/security': typeof AuthedSettingsSecurityRoute
+  '/settings/tasks': typeof AuthedSettingsTasksRoute
+  '/terminal/$serverId': typeof AuthedTerminalServerIdRoute
   '/settings/': typeof AuthedSettingsIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
+  '/status': typeof StatusRoute
   '/': typeof AuthedIndexRoute
   '/servers/$id': typeof AuthedServersIdRoute
+  '/settings/alerts': typeof AuthedSettingsAlertsRoute
   '/settings/api-keys': typeof AuthedSettingsApiKeysRoute
+  '/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
+  '/settings/notifications': typeof AuthedSettingsNotificationsRoute
+  '/settings/ping-tasks': typeof AuthedSettingsPingTasksRoute
+  '/settings/security': typeof AuthedSettingsSecurityRoute
+  '/settings/tasks': typeof AuthedSettingsTasksRoute
+  '/terminal/$serverId': typeof AuthedTerminalServerIdRoute
   '/settings': typeof AuthedSettingsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authed': typeof AuthedRouteWithChildren
   '/login': typeof LoginRoute
+  '/status': typeof StatusRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/servers/$id': typeof AuthedServersIdRoute
+  '/_authed/settings/alerts': typeof AuthedSettingsAlertsRoute
   '/_authed/settings/api-keys': typeof AuthedSettingsApiKeysRoute
+  '/_authed/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
+  '/_authed/settings/notifications': typeof AuthedSettingsNotificationsRoute
+  '/_authed/settings/ping-tasks': typeof AuthedSettingsPingTasksRoute
+  '/_authed/settings/security': typeof AuthedSettingsSecurityRoute
+  '/_authed/settings/tasks': typeof AuthedSettingsTasksRoute
+  '/_authed/terminal/$serverId': typeof AuthedTerminalServerIdRoute
   '/_authed/settings/': typeof AuthedSettingsIndexRoute
 }
 export interface FileRouteTypes {
@@ -74,28 +147,65 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/status'
     | '/servers/$id'
+    | '/settings/alerts'
     | '/settings/api-keys'
+    | '/settings/audit-logs'
+    | '/settings/notifications'
+    | '/settings/ping-tasks'
+    | '/settings/security'
+    | '/settings/tasks'
+    | '/terminal/$serverId'
     | '/settings/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/login' | '/' | '/servers/$id' | '/settings/api-keys' | '/settings'
+  to:
+    | '/login'
+    | '/status'
+    | '/'
+    | '/servers/$id'
+    | '/settings/alerts'
+    | '/settings/api-keys'
+    | '/settings/audit-logs'
+    | '/settings/notifications'
+    | '/settings/ping-tasks'
+    | '/settings/security'
+    | '/settings/tasks'
+    | '/terminal/$serverId'
+    | '/settings'
   id:
     | '__root__'
     | '/_authed'
     | '/login'
+    | '/status'
     | '/_authed/'
     | '/_authed/servers/$id'
+    | '/_authed/settings/alerts'
     | '/_authed/settings/api-keys'
+    | '/_authed/settings/audit-logs'
+    | '/_authed/settings/notifications'
+    | '/_authed/settings/ping-tasks'
+    | '/_authed/settings/security'
+    | '/_authed/settings/tasks'
+    | '/_authed/terminal/$serverId'
     | '/_authed/settings/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
   LoginRoute: typeof LoginRoute
+  StatusRoute: typeof StatusRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/status': {
+      id: '/status'
+      path: '/status'
+      fullPath: '/status'
+      preLoaderRoute: typeof StatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -124,11 +234,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/terminal/$serverId': {
+      id: '/_authed/terminal/$serverId'
+      path: '/terminal/$serverId'
+      fullPath: '/terminal/$serverId'
+      preLoaderRoute: typeof AuthedTerminalServerIdRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/tasks': {
+      id: '/_authed/settings/tasks'
+      path: '/settings/tasks'
+      fullPath: '/settings/tasks'
+      preLoaderRoute: typeof AuthedSettingsTasksRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/security': {
+      id: '/_authed/settings/security'
+      path: '/settings/security'
+      fullPath: '/settings/security'
+      preLoaderRoute: typeof AuthedSettingsSecurityRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/ping-tasks': {
+      id: '/_authed/settings/ping-tasks'
+      path: '/settings/ping-tasks'
+      fullPath: '/settings/ping-tasks'
+      preLoaderRoute: typeof AuthedSettingsPingTasksRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/notifications': {
+      id: '/_authed/settings/notifications'
+      path: '/settings/notifications'
+      fullPath: '/settings/notifications'
+      preLoaderRoute: typeof AuthedSettingsNotificationsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/audit-logs': {
+      id: '/_authed/settings/audit-logs'
+      path: '/settings/audit-logs'
+      fullPath: '/settings/audit-logs'
+      preLoaderRoute: typeof AuthedSettingsAuditLogsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/settings/api-keys': {
       id: '/_authed/settings/api-keys'
       path: '/settings/api-keys'
       fullPath: '/settings/api-keys'
       preLoaderRoute: typeof AuthedSettingsApiKeysRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/alerts': {
+      id: '/_authed/settings/alerts'
+      path: '/settings/alerts'
+      fullPath: '/settings/alerts'
+      preLoaderRoute: typeof AuthedSettingsAlertsRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/servers/$id': {
@@ -144,14 +303,28 @@ declare module '@tanstack/react-router' {
 interface AuthedRouteChildren {
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedServersIdRoute: typeof AuthedServersIdRoute
+  AuthedSettingsAlertsRoute: typeof AuthedSettingsAlertsRoute
   AuthedSettingsApiKeysRoute: typeof AuthedSettingsApiKeysRoute
+  AuthedSettingsAuditLogsRoute: typeof AuthedSettingsAuditLogsRoute
+  AuthedSettingsNotificationsRoute: typeof AuthedSettingsNotificationsRoute
+  AuthedSettingsPingTasksRoute: typeof AuthedSettingsPingTasksRoute
+  AuthedSettingsSecurityRoute: typeof AuthedSettingsSecurityRoute
+  AuthedSettingsTasksRoute: typeof AuthedSettingsTasksRoute
+  AuthedTerminalServerIdRoute: typeof AuthedTerminalServerIdRoute
   AuthedSettingsIndexRoute: typeof AuthedSettingsIndexRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedServersIdRoute: AuthedServersIdRoute,
+  AuthedSettingsAlertsRoute: AuthedSettingsAlertsRoute,
   AuthedSettingsApiKeysRoute: AuthedSettingsApiKeysRoute,
+  AuthedSettingsAuditLogsRoute: AuthedSettingsAuditLogsRoute,
+  AuthedSettingsNotificationsRoute: AuthedSettingsNotificationsRoute,
+  AuthedSettingsPingTasksRoute: AuthedSettingsPingTasksRoute,
+  AuthedSettingsSecurityRoute: AuthedSettingsSecurityRoute,
+  AuthedSettingsTasksRoute: AuthedSettingsTasksRoute,
+  AuthedTerminalServerIdRoute: AuthedTerminalServerIdRoute,
   AuthedSettingsIndexRoute: AuthedSettingsIndexRoute,
 }
 
@@ -161,6 +334,7 @@ const AuthedRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
   LoginRoute: LoginRoute,
+  StatusRoute: StatusRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

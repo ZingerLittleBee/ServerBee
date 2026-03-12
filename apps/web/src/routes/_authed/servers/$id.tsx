@@ -1,8 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, CreditCard, Pencil, Terminal as TerminalIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { MetricsChart } from '@/components/server/metrics-chart'
+import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
 import { Button } from '@/components/ui/button'
 import { useServer, useServerRecords } from '@/hooks/use-api'
@@ -37,9 +38,18 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(1)} ${units[i]}`
 }
 
+function formatCurrency(price: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(price)
+  } catch {
+    return `${currency} ${price.toFixed(2)}`
+  }
+}
+
 function ServerDetailPage() {
   const { id } = Route.useParams()
   const [selectedRange, setSelectedRange] = useState(1)
+  const [editOpen, setEditOpen] = useState(false)
 
   const range = TIME_RANGES[selectedRange]
   const now = useMemo(() => new Date(), [])
@@ -87,6 +97,7 @@ function ServerDetailPage() {
   }
 
   const isOnline = liveData?.online ?? false
+  const hasBilling = server.price != null || server.expired_at != null || server.traffic_limit != null
 
   return (
     <div>
@@ -116,8 +127,24 @@ function ServerDetailPage() {
               {server.ipv4 && <span>IP: {server.ipv4}</span>}
             </div>
           </div>
+          <div className="flex gap-2">
+            <Button onClick={() => setEditOpen(true)} size="sm" variant="outline">
+              <Pencil className="mr-1 size-4" />
+              Edit
+            </Button>
+            {isOnline && (
+              <Link params={{ serverId: id }} to="/terminal/$serverId">
+                <Button size="sm" variant="outline">
+                  <TerminalIcon className="mr-1 size-4" />
+                  Terminal
+                </Button>
+              </Link>
+            )}
+          </div>
         </div>
       </div>
+
+      {hasBilling && <BillingInfoBar server={server} />}
 
       <div className="mb-4 flex gap-1">
         {TIME_RANGES.map((tr, i) => (
@@ -159,6 +186,60 @@ function ServerDetailPage() {
         />
         <MetricsChart color="var(--color-chart-1)" data={chartData} dataKey="load1" title="Load Average (1m)" />
       </div>
+
+      <ServerEditDialog onClose={() => setEditOpen(false)} open={editOpen} server={server} />
+    </div>
+  )
+}
+
+function BillingInfoBar({
+  server
+}: {
+  server: {
+    billing_cycle: string | null
+    currency: string | null
+    expired_at: string | null
+    price: number | null
+    traffic_limit: number | null
+    traffic_limit_type: string | null
+  }
+}) {
+  const isExpired = server.expired_at ? new Date(server.expired_at) < new Date() : false
+  const daysUntilExpiry = server.expired_at
+    ? Math.ceil((new Date(server.expired_at).getTime() - Date.now()) / 86_400_000)
+    : null
+
+  return (
+    <div className="mb-6 flex flex-wrap items-center gap-4 rounded-lg border bg-card p-3 text-sm">
+      <CreditCard className="size-4 text-muted-foreground" />
+      {server.price != null && (
+        <span>
+          {formatCurrency(server.price, server.currency ?? 'USD')}
+          {server.billing_cycle && <span className="text-muted-foreground"> / {server.billing_cycle}</span>}
+        </span>
+      )}
+      {server.expired_at && (
+        <span
+          className={cn(
+            isExpired
+              ? 'text-destructive'
+              : daysUntilExpiry != null && daysUntilExpiry <= 7
+                ? 'text-yellow-600 dark:text-yellow-400'
+                : 'text-muted-foreground'
+          )}
+        >
+          {isExpired
+            ? `Expired ${new Date(server.expired_at).toLocaleDateString()}`
+            : `Expires ${new Date(server.expired_at).toLocaleDateString()}`}
+          {daysUntilExpiry != null && !isExpired && ` (${daysUntilExpiry}d)`}
+        </span>
+      )}
+      {server.traffic_limit != null && (
+        <span className="text-muted-foreground">
+          Traffic: {formatBytes(server.traffic_limit)}
+          {server.traffic_limit_type && server.traffic_limit_type !== 'sum' && ` (${server.traffic_limit_type})`}
+        </span>
+      )}
     </div>
   )
 }
