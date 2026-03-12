@@ -476,3 +476,121 @@ impl AuthService {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hash_and_verify_password() {
+        let password = "my_secret_p@ssw0rd!";
+        let hash = AuthService::hash_password(password).expect("hashing should succeed");
+
+        // Correct password should verify successfully
+        let valid = AuthService::verify_password(password, &hash).expect("verify should succeed");
+        assert!(valid, "correct password must verify as true");
+
+        // Wrong password should fail verification
+        let invalid =
+            AuthService::verify_password("wrong_password", &hash).expect("verify should succeed");
+        assert!(!invalid, "wrong password must verify as false");
+    }
+
+    #[test]
+    fn test_hash_password_not_empty() {
+        let hash = AuthService::hash_password("test123").expect("hashing should succeed");
+        assert!(!hash.is_empty(), "hash output must not be empty");
+        // Argon2 hashes start with "$argon2"
+        assert!(
+            hash.starts_with("$argon2"),
+            "hash should be in argon2 PHC format, got: {hash}"
+        );
+    }
+
+    #[test]
+    fn test_hash_password_unique_salts() {
+        let password = "same_password";
+        let hash1 = AuthService::hash_password(password).expect("hash 1");
+        let hash2 = AuthService::hash_password(password).expect("hash 2");
+
+        // Two hashes of the same password should differ (random salt)
+        assert_ne!(
+            hash1, hash2,
+            "hashing the same password twice must produce different hashes"
+        );
+    }
+
+    #[test]
+    fn test_generate_session_token() {
+        let token = AuthService::generate_session_token();
+
+        assert!(!token.is_empty(), "session token must not be empty");
+
+        // 32 bytes base64url-encoded (no padding) => 43 characters
+        assert_eq!(
+            token.len(),
+            43,
+            "32-byte base64url-no-pad token should be 43 chars, got {}",
+            token.len()
+        );
+
+        // Must be valid base64url characters (A-Z, a-z, 0-9, -, _)
+        assert!(
+            token
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
+            "token must only contain base64url characters"
+        );
+    }
+
+    #[test]
+    fn test_generate_session_token_uniqueness() {
+        let t1 = AuthService::generate_session_token();
+        let t2 = AuthService::generate_session_token();
+
+        assert_ne!(t1, t2, "two generated tokens must be different");
+    }
+
+    #[test]
+    fn test_generate_api_key_raw() {
+        let key = AuthService::generate_api_key_raw();
+
+        assert!(
+            key.starts_with("sb_"),
+            "API key must start with 'sb_' prefix"
+        );
+        // "sb_" + 43 chars of base64url = 46 total
+        assert_eq!(
+            key.len(),
+            46,
+            "API key should be 46 chars (sb_ + 43), got {}",
+            key.len()
+        );
+    }
+
+    #[test]
+    fn test_verify_password_invalid_hash_format() {
+        let result = AuthService::verify_password("password", "not_a_valid_hash");
+        assert!(
+            result.is_err(),
+            "verifying against an invalid hash format should return an error"
+        );
+    }
+
+    #[test]
+    fn test_generate_totp_secret() {
+        let (secret, url, qr) =
+            AuthService::generate_totp_secret("testuser").expect("TOTP generation should succeed");
+
+        assert!(!secret.is_empty(), "TOTP secret must not be empty");
+        assert!(
+            url.starts_with("otpauth://totp/"),
+            "TOTP URL should start with otpauth://totp/, got: {url}"
+        );
+        assert!(
+            url.contains("ServerBee"),
+            "TOTP URL should contain issuer 'ServerBee'"
+        );
+        assert!(!qr.is_empty(), "QR code base64 must not be empty");
+    }
+}

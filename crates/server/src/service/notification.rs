@@ -462,3 +462,261 @@ fn urlencoding(s: &str) -> String {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── T3-1: Template substitution ──
+
+    #[test]
+    fn test_template_substitution_all_variables() {
+        let ctx = NotifyContext {
+            server_name: "web-01".to_string(),
+            server_id: "srv-abc-123".to_string(),
+            rule_name: "High CPU".to_string(),
+            event: "triggered".to_string(),
+            message: "CPU exceeded 90%".to_string(),
+            time: "2026-03-13 12:00:00 UTC".to_string(),
+            cpu: "92.5%".to_string(),
+            memory: "78.3%".to_string(),
+        };
+
+        let template = "Server: {{server_name}} ({{server_id}}), Rule: {{rule_name}}, Event: {{event}}, Msg: {{message}}, Time: {{time}}, CPU: {{cpu}}, Mem: {{memory}}";
+        let rendered = ctx.render(template);
+
+        assert_eq!(
+            rendered,
+            "Server: web-01 (srv-abc-123), Rule: High CPU, Event: triggered, Msg: CPU exceeded 90%, Time: 2026-03-13 12:00:00 UTC, CPU: 92.5%, Mem: 78.3%"
+        );
+    }
+
+    #[test]
+    fn test_template_substitution_default_template() {
+        let ctx = NotifyContext {
+            server_name: "db-server".to_string(),
+            server_id: "id-1".to_string(),
+            rule_name: "Disk Full".to_string(),
+            event: "triggered".to_string(),
+            message: "Disk usage above 95%".to_string(),
+            time: "2026-03-13 08:30:00 UTC".to_string(),
+            ..Default::default()
+        };
+
+        let rendered = ctx.render(DEFAULT_TEMPLATE);
+
+        assert!(
+            rendered.contains("db-server"),
+            "rendered template should contain server name"
+        );
+        assert!(
+            rendered.contains("triggered"),
+            "rendered template should contain event"
+        );
+        assert!(
+            rendered.contains("Disk usage above 95%"),
+            "rendered template should contain message"
+        );
+        assert!(
+            rendered.contains("2026-03-13 08:30:00 UTC"),
+            "rendered template should contain time"
+        );
+    }
+
+    #[test]
+    fn test_template_substitution_no_placeholders() {
+        let ctx = NotifyContext::default();
+        let template = "Static text with no variables.";
+        let rendered = ctx.render(template);
+        assert_eq!(rendered, "Static text with no variables.");
+    }
+
+    #[test]
+    fn test_template_substitution_empty_context() {
+        let ctx = NotifyContext::default();
+        let rendered = ctx.render("Name: {{server_name}}, ID: {{server_id}}");
+        assert_eq!(rendered, "Name: , ID: ");
+    }
+
+    // ── T3-2: Webhook payload format (parse_config) ──
+
+    #[test]
+    fn test_parse_config_webhook() {
+        let config_json = r#"{"url": "https://example.com/hook", "method": "POST"}"#;
+        let config =
+            NotificationService::parse_config("webhook", config_json).expect("should parse");
+
+        match config {
+            ChannelConfig::Webhook { url, method, .. } => {
+                assert_eq!(url, "https://example.com/hook");
+                assert_eq!(method, "POST");
+            }
+            _ => panic!("expected Webhook variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_config_webhook_with_body_template() {
+        let config_json = r#"{
+            "url": "https://hooks.slack.com/services/xxx",
+            "body_template": "{\"text\": \"{{server_name}} {{event}}\"}"
+        }"#;
+        let config =
+            NotificationService::parse_config("webhook", config_json).expect("should parse");
+
+        match config {
+            ChannelConfig::Webhook {
+                body_template, url, ..
+            } => {
+                assert_eq!(url, "https://hooks.slack.com/services/xxx");
+                assert!(body_template.is_some());
+                assert!(body_template.unwrap().contains("{{server_name}}"));
+            }
+            _ => panic!("expected Webhook variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_config_telegram() {
+        let config_json = r#"{"bot_token": "123:ABC", "chat_id": "-1001234"}"#;
+        let config =
+            NotificationService::parse_config("telegram", config_json).expect("should parse");
+
+        match config {
+            ChannelConfig::Telegram { bot_token, chat_id } => {
+                assert_eq!(bot_token, "123:ABC");
+                assert_eq!(chat_id, "-1001234");
+            }
+            _ => panic!("expected Telegram variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_config_bark() {
+        let config_json = r#"{"server_url": "https://bark.example.com", "device_key": "mykey"}"#;
+        let config =
+            NotificationService::parse_config("bark", config_json).expect("should parse");
+
+        match config {
+            ChannelConfig::Bark {
+                server_url,
+                device_key,
+            } => {
+                assert_eq!(server_url, "https://bark.example.com");
+                assert_eq!(device_key, "mykey");
+            }
+            _ => panic!("expected Bark variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_config_email() {
+        let config_json = r#"{
+            "smtp_host": "smtp.gmail.com",
+            "smtp_port": 587,
+            "username": "user@gmail.com",
+            "password": "secret",
+            "from": "user@gmail.com",
+            "to": "admin@example.com"
+        }"#;
+        let config =
+            NotificationService::parse_config("email", config_json).expect("should parse");
+
+        match config {
+            ChannelConfig::Email {
+                smtp_host,
+                smtp_port,
+                from,
+                to,
+                ..
+            } => {
+                assert_eq!(smtp_host, "smtp.gmail.com");
+                assert_eq!(smtp_port, 587);
+                assert_eq!(from, "user@gmail.com");
+                assert_eq!(to, "admin@example.com");
+            }
+            _ => panic!("expected Email variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_config_email_default_port() {
+        let config_json = r#"{
+            "smtp_host": "smtp.example.com",
+            "username": "u",
+            "password": "p",
+            "from": "a@b.com",
+            "to": "c@d.com"
+        }"#;
+        let config =
+            NotificationService::parse_config("email", config_json).expect("should parse");
+
+        match config {
+            ChannelConfig::Email { smtp_port, .. } => {
+                assert_eq!(smtp_port, 587, "default SMTP port should be 587");
+            }
+            _ => panic!("expected Email variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_config_invalid_json() {
+        let result = NotificationService::parse_config("webhook", "not json");
+        assert!(result.is_err(), "invalid JSON should return error");
+    }
+
+    #[test]
+    fn test_parse_config_missing_required_fields() {
+        // Webhook requires `url`
+        let result = NotificationService::parse_config("webhook", r#"{"method": "GET"}"#);
+        assert!(
+            result.is_err(),
+            "missing required field should return error"
+        );
+    }
+
+    // ── T3-3: URL encoding ──
+
+    #[test]
+    fn test_urlencoding_plain_ascii() {
+        assert_eq!(urlencoding("hello"), "hello");
+        assert_eq!(urlencoding("test-value_1.0~ok"), "test-value_1.0~ok");
+    }
+
+    #[test]
+    fn test_urlencoding_special_characters() {
+        assert_eq!(urlencoding("hello world"), "hello%20world");
+        assert_eq!(urlencoding("a+b=c"), "a%2Bb%3Dc");
+        assert_eq!(urlencoding("100%"), "100%25");
+    }
+
+    #[test]
+    fn test_urlencoding_empty_string() {
+        assert_eq!(urlencoding(""), "");
+    }
+
+    // ── T3-4: ChannelConfig serialization round-trip ──
+
+    #[test]
+    fn test_channel_config_webhook_roundtrip() {
+        let config = ChannelConfig::Webhook {
+            url: "https://example.com".to_string(),
+            method: "POST".to_string(),
+            headers: HashMap::from([("Authorization".to_string(), "Bearer token".to_string())]),
+            body_template: Some("{{message}}".to_string()),
+        };
+
+        let json = serde_json::to_string(&config).expect("serialize");
+        let parsed: ChannelConfig = serde_json::from_str(&json).expect("deserialize");
+
+        match parsed {
+            ChannelConfig::Webhook { url, method, headers, body_template } => {
+                assert_eq!(url, "https://example.com");
+                assert_eq!(method, "POST");
+                assert_eq!(headers.get("Authorization").unwrap(), "Bearer token");
+                assert_eq!(body_template.as_deref(), Some("{{message}}"));
+            }
+            _ => panic!("expected Webhook"),
+        }
+    }
+}

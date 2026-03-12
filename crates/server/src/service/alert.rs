@@ -617,3 +617,241 @@ fn extract_metric(rec: &record::Model, rule_type: &str) -> f64 {
         _ => 0.0,
     }
 }
+
+#[cfg(test)]
+/// Pure helper: evaluate whether a single metric value exceeds the threshold
+/// defined by `min` and `max` bounds, using the same logic as `check_threshold`.
+/// Returns `true` when the value falls within the alerting range.
+fn evaluate_threshold(value: f64, min: Option<f64>, max: Option<f64>) -> bool {
+    match (min, max) {
+        (Some(min), Some(max)) => value >= min && value <= max,
+        (Some(min), None) => value >= min,
+        (None, Some(max)) => value >= max,
+        (None, None) => false,
+    }
+}
+
+#[cfg(test)]
+/// Pure helper: given `exceeded_count` out of `total` samples, return whether
+/// the 70 % majority threshold is met (same rule used in `check_threshold`).
+fn majority_exceeded(exceeded_count: usize, total: usize) -> bool {
+    if total == 0 {
+        return false;
+    }
+    exceeded_count as f64 / total as f64 >= 0.7
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    /// Build a minimal `record::Model` with the given field values.
+    fn make_record(cpu: f64, mem_used: i64, load1: f64) -> record::Model {
+        record::Model {
+            id: 1,
+            server_id: "srv-1".to_string(),
+            time: Utc::now(),
+            cpu,
+            mem_used,
+            swap_used: 0,
+            disk_used: 0,
+            net_in_speed: 0,
+            net_out_speed: 0,
+            net_in_transfer: 0,
+            net_out_transfer: 0,
+            load1,
+            load5: 0.0,
+            load15: 0.0,
+            tcp_conn: 100,
+            udp_conn: 50,
+            process_count: 200,
+            temperature: Some(55.0),
+            gpu_usage: Some(40.0),
+        }
+    }
+
+    // ── T2-1: threshold above ──
+
+    #[test]
+    fn test_threshold_above() {
+        // min = Some(80.0), max = None  =>  triggers when value >= 80
+        assert!(
+            evaluate_threshold(90.0, Some(80.0), None),
+            "90 >= 80 should trigger"
+        );
+        assert!(
+            evaluate_threshold(80.0, Some(80.0), None),
+            "80 >= 80 should trigger (boundary)"
+        );
+        assert!(
+            !evaluate_threshold(79.9, Some(80.0), None),
+            "79.9 < 80 should NOT trigger"
+        );
+    }
+
+    // ── T2-2: threshold below ──
+
+    #[test]
+    fn test_threshold_below() {
+        // min = None, max = Some(20.0)  =>  triggers when value >= 20
+        // NOTE: in the codebase, (None, Some(max)) means value >= max,
+        // which is "above max". This test verifies that exact semantic.
+        assert!(
+            evaluate_threshold(25.0, None, Some(20.0)),
+            "25 >= 20 should trigger"
+        );
+        assert!(
+            evaluate_threshold(20.0, None, Some(20.0)),
+            "20 >= 20 should trigger (boundary)"
+        );
+        assert!(
+            !evaluate_threshold(19.0, None, Some(20.0)),
+            "19 < 20 should NOT trigger"
+        );
+    }
+
+    #[test]
+    fn test_threshold_range() {
+        // Both min and max set  =>  triggers when min <= value <= max
+        assert!(
+            evaluate_threshold(50.0, Some(40.0), Some(60.0)),
+            "50 in [40, 60] should trigger"
+        );
+        assert!(
+            evaluate_threshold(40.0, Some(40.0), Some(60.0)),
+            "40 at lower boundary should trigger"
+        );
+        assert!(
+            evaluate_threshold(60.0, Some(40.0), Some(60.0)),
+            "60 at upper boundary should trigger"
+        );
+        assert!(
+            !evaluate_threshold(39.0, Some(40.0), Some(60.0)),
+            "39 below range should NOT trigger"
+        );
+        assert!(
+            !evaluate_threshold(61.0, Some(40.0), Some(60.0)),
+            "61 above range should NOT trigger"
+        );
+    }
+
+    #[test]
+    fn test_threshold_no_bounds() {
+        // Neither min nor max  =>  never triggers
+        assert!(
+            !evaluate_threshold(50.0, None, None),
+            "no bounds should never trigger"
+        );
+    }
+
+    // ── T2-3: majority calculation ──
+
+    #[test]
+    fn test_majority_exceeded() {
+        assert!(
+            majority_exceeded(7, 10),
+            "7/10 = 70% should meet threshold"
+        );
+        assert!(
+            majority_exceeded(8, 10),
+            "8/10 = 80% should meet threshold"
+        );
+        assert!(
+            !majority_exceeded(6, 10),
+            "6/10 = 60% should NOT meet threshold"
+        );
+        assert!(
+            !majority_exceeded(0, 10),
+            "0/10 should NOT meet threshold"
+        );
+        assert!(
+            !majority_exceeded(0, 0),
+            "0/0 (no samples) should NOT meet threshold"
+        );
+        assert!(majority_exceeded(1, 1), "1/1 = 100% should meet threshold");
+    }
+
+    // ── T2-4: extract_metric ──
+
+    #[test]
+    fn test_extract_metric_cpu() {
+        let rec = make_record(85.5, 4_000_000, 1.2);
+        assert!((extract_metric(&rec, "cpu") - 85.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_extract_metric_memory() {
+        let rec = make_record(50.0, 8_000_000, 0.0);
+        assert!((extract_metric(&rec, "memory") - 8_000_000.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_extract_metric_load() {
+        let rec = make_record(0.0, 0, 3.14);
+        assert!((extract_metric(&rec, "load1") - 3.14).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_extract_metric_temperature() {
+        let rec = make_record(0.0, 0, 0.0);
+        assert!((extract_metric(&rec, "temperature") - 55.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_extract_metric_gpu() {
+        let rec = make_record(0.0, 0, 0.0);
+        assert!((extract_metric(&rec, "gpu") - 40.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_extract_metric_connections() {
+        let rec = make_record(0.0, 0, 0.0);
+        assert!((extract_metric(&rec, "tcp_conn") - 100.0).abs() < f64::EPSILON);
+        assert!((extract_metric(&rec, "udp_conn") - 50.0).abs() < f64::EPSILON);
+        assert!((extract_metric(&rec, "process") - 200.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_extract_metric_unknown_type() {
+        let rec = make_record(99.0, 0, 0.0);
+        assert!(
+            (extract_metric(&rec, "nonexistent") - 0.0).abs() < f64::EPSILON,
+            "unknown metric type should return 0.0"
+        );
+    }
+
+    // ── T2-5: AlertRuleItem serialization round-trip ──
+
+    #[test]
+    fn test_alert_rule_item_serialization() {
+        let item = AlertRuleItem {
+            rule_type: "cpu".to_string(),
+            min: Some(80.0),
+            max: None,
+            duration: Some(300),
+            cycle_interval: None,
+            cycle_limit: None,
+        };
+
+        let json = serde_json::to_string(&item).expect("serialize");
+        let parsed: AlertRuleItem = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(parsed.rule_type, "cpu");
+        assert_eq!(parsed.min, Some(80.0));
+        assert_eq!(parsed.max, None);
+        assert_eq!(parsed.duration, Some(300));
+    }
+
+    // ── T2-6: default helper functions ──
+
+    #[test]
+    fn test_default_trigger_mode() {
+        assert_eq!(default_trigger_mode(), "always");
+    }
+
+    #[test]
+    fn test_default_cover_type() {
+        assert_eq!(default_cover_type(), "all");
+    }
+}
