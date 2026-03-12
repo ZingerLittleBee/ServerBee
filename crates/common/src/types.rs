@@ -106,4 +106,5 @@ pub struct ServerStatus {
     pub os: Option<String>,
     pub region: Option<String>,
     pub country_code: Option<String>,
+    pub group_id: Option<String>,
 }

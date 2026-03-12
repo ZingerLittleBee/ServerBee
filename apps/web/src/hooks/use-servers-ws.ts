@@ -8,6 +8,7 @@ interface ServerMetrics {
   cpu_name: string | null
   disk_total: number
   disk_used: number
+  group_id: string | null
   id: string
   last_active: number
   load1: number
@@ -56,6 +57,18 @@ export function useServersWs(): void {
           break
         }
         case 'update': {
+          // Static fields set to defaults (0 or null) in Update broadcasts
+          // should not overwrite values from FullSync.
+          const staticFields = new Set([
+            'mem_total',
+            'swap_total',
+            'disk_total',
+            'cpu_name',
+            'os',
+            'region',
+            'country_code',
+            'group_id'
+          ])
           queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) => {
             if (!prev) {
               return msg.servers
@@ -64,7 +77,14 @@ export function useServersWs(): void {
             for (const incoming of msg.servers) {
               const idx = updated.findIndex((s) => s.id === incoming.id)
               if (idx >= 0) {
-                updated[idx] = { ...updated[idx], ...incoming }
+                const merged = { ...updated[idx] }
+                for (const [key, value] of Object.entries(incoming)) {
+                  const isStaticDefault = staticFields.has(key) && (value === null || value === 0)
+                  if (!isStaticDefault) {
+                    ;(merged as Record<string, unknown>)[key] = value
+                  }
+                }
+                updated[idx] = merged as ServerMetrics
               }
             }
             return updated

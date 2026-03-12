@@ -226,6 +226,7 @@ async fn build_full_sync(state: &Arc<AppState>) -> BrowserMessage {
                 os: server.os,
                 region: server.region,
                 country_code: server.country_code,
+                group_id: server.group_id,
             }
         })
         .collect();
