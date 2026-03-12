@@ -6,7 +6,7 @@ use crate::entity::server;
 use crate::error::AppError;
 use serverbee_common::types::SystemInfo;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateServerInput {
     pub name: Option<String>,
     pub group_id: Option<Option<String>>,
@@ -14,6 +14,13 @@ pub struct UpdateServerInput {
     pub hidden: Option<bool>,
     pub remark: Option<String>,
     pub public_remark: Option<String>,
+    // Billing fields
+    pub price: Option<Option<f64>>,
+    pub billing_cycle: Option<Option<String>>,
+    pub currency: Option<Option<String>>,
+    pub expired_at: Option<Option<chrono::DateTime<chrono::Utc>>>,
+    pub traffic_limit: Option<Option<i64>>,
+    pub traffic_limit_type: Option<Option<String>>,
 }
 
 pub struct ServerService;
@@ -69,6 +76,24 @@ impl ServerService {
         if let Some(public_remark) = input.public_remark {
             active.public_remark = Set(Some(public_remark));
         }
+        if let Some(price) = input.price {
+            active.price = Set(price);
+        }
+        if let Some(billing_cycle) = input.billing_cycle {
+            active.billing_cycle = Set(billing_cycle);
+        }
+        if let Some(currency) = input.currency {
+            active.currency = Set(currency);
+        }
+        if let Some(expired_at) = input.expired_at {
+            active.expired_at = Set(expired_at);
+        }
+        if let Some(traffic_limit) = input.traffic_limit {
+            active.traffic_limit = Set(traffic_limit);
+        }
+        if let Some(traffic_limit_type) = input.traffic_limit_type {
+            active.traffic_limit_type = Set(traffic_limit_type);
+        }
 
         active.updated_at = Set(Utc::now());
         let updated = active.update(db).await?;
@@ -107,6 +132,8 @@ impl ServerService {
         db: &DatabaseConnection,
         server_id: &str,
         info: &SystemInfo,
+        region: Option<String>,
+        country_code: Option<String>,
     ) -> Result<(), AppError> {
         let model = Self::get_server(db, server_id).await?;
         let mut active: server::ActiveModel = model.into();
@@ -123,6 +150,12 @@ impl ServerService {
         active.ipv6 = Set(info.ipv6.clone());
         active.virtualization = Set(info.virtualization.clone());
         active.agent_version = Set(Some(info.agent_version.clone()));
+        if region.is_some() {
+            active.region = Set(region);
+        }
+        if country_code.is_some() {
+            active.country_code = Set(country_code);
+        }
         active.updated_at = Set(Utc::now());
 
         active.update(db).await?;

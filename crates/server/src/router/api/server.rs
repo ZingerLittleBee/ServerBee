@@ -12,13 +12,13 @@ use crate::service::record::{QueryHistoryResult, RecordService};
 use crate::service::server::{ServerService, UpdateServerInput};
 use crate::state::AppState;
 
-#[derive(Debug, Deserialize)]
-struct BatchDeleteRequest {
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct BatchDeleteRequest {
     ids: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct RecordQueryParams {
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct RecordQueryParams {
     from: DateTime<Utc>,
     to: DateTime<Utc>,
     #[serde(default = "default_interval")]
@@ -29,20 +29,20 @@ fn default_interval() -> String {
     "auto".to_string()
 }
 
-#[derive(Debug, Deserialize)]
-struct GpuRecordQueryParams {
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct GpuRecordQueryParams {
     from: DateTime<Utc>,
     to: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize)]
-struct BatchDeleteResponse {
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct BatchDeleteResponse {
     deleted: u64,
 }
 
 /// Server response DTO — excludes sensitive fields (token_hash, token_prefix).
-#[derive(Debug, Serialize)]
-struct ServerResponse {
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct ServerResponse {
     id: String,
     name: String,
     cpu_name: Option<String>,
@@ -119,8 +119,18 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/servers/batch-delete", post(batch_delete))
         .route("/servers/{id}/records", get(get_records))
         .route("/servers/{id}/gpu-records", get(get_gpu_records))
+        .route("/servers/{id}/upgrade", post(trigger_upgrade))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/servers",
+    tag = "servers",
+    responses(
+        (status = 200, description = "List all servers", body = Vec<ServerResponse>),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
 async fn list_servers(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<Vec<ServerResponse>>>, AppError> {
@@ -128,6 +138,17 @@ async fn list_servers(
     ok(servers.into_iter().map(ServerResponse::from).collect())
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/servers/{id}",
+    tag = "servers",
+    params(("id" = String, Path, description = "Server ID")),
+    responses(
+        (status = 200, description = "Server details", body = ServerResponse),
+        (status = 404, description = "Server not found"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
 async fn get_server(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -136,6 +157,18 @@ async fn get_server(
     ok(ServerResponse::from(server))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/servers/{id}",
+    tag = "servers",
+    params(("id" = String, Path, description = "Server ID")),
+    request_body = UpdateServerInput,
+    responses(
+        (status = 200, description = "Server updated", body = ServerResponse),
+        (status = 404, description = "Server not found"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
 async fn update_server(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -145,6 +178,17 @@ async fn update_server(
     ok(ServerResponse::from(server))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/servers/{id}",
+    tag = "servers",
+    params(("id" = String, Path, description = "Server ID")),
+    responses(
+        (status = 200, description = "Server deleted"),
+        (status = 404, description = "Server not found"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
 async fn delete_server(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -153,6 +197,16 @@ async fn delete_server(
     ok("ok")
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/servers/batch-delete",
+    tag = "servers",
+    request_body = BatchDeleteRequest,
+    responses(
+        (status = 200, description = "Batch delete result", body = BatchDeleteResponse),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
 async fn batch_delete(
     State(state): State<Arc<AppState>>,
     Json(body): Json<BatchDeleteRequest>,
@@ -161,6 +215,19 @@ async fn batch_delete(
     ok(BatchDeleteResponse { deleted })
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/servers/{id}/records",
+    tag = "servers",
+    params(
+        ("id" = String, Path, description = "Server ID"),
+        RecordQueryParams,
+    ),
+    responses(
+        (status = 200, description = "Server metric records"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
 async fn get_records(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -180,6 +247,19 @@ async fn get_records(
     ok(data)
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/servers/{id}/gpu-records",
+    tag = "servers",
+    params(
+        ("id" = String, Path, description = "Server ID"),
+        GpuRecordQueryParams,
+    ),
+    responses(
+        (status = 200, description = "GPU metric records", body = Vec<crate::entity::gpu_record::Model>),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
 async fn get_gpu_records(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -188,4 +268,46 @@ async fn get_gpu_records(
     let records =
         RecordService::query_gpu_history(&state.db, &id, params.from, params.to).await?;
     ok(records)
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct UpgradeRequest {
+    /// Target version string (e.g. "0.2.0")
+    version: String,
+    /// URL to download the new agent binary from
+    download_url: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/servers/{id}/upgrade",
+    tag = "servers",
+    params(("id" = String, Path, description = "Server ID")),
+    request_body = UpgradeRequest,
+    responses(
+        (status = 200, description = "Upgrade command sent to agent"),
+        (status = 404, description = "Server not found or not online"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+async fn trigger_upgrade(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(body): Json<UpgradeRequest>,
+) -> Result<Json<ApiResponse<&'static str>>, AppError> {
+    let sender = state
+        .agent_manager
+        .get_sender(&id)
+        .ok_or_else(|| AppError::NotFound("Server not online".to_string()))?;
+
+    let msg = serverbee_common::protocol::ServerMessage::Upgrade {
+        version: body.version,
+        download_url: body.download_url,
+    };
+    sender
+        .send(msg)
+        .await
+        .map_err(|_| AppError::Internal("Failed to send upgrade command".to_string()))?;
+
+    ok("ok")
 }

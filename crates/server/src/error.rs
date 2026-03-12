@@ -5,7 +5,7 @@ use axum::{
 };
 use serde::Serialize;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ApiResponse<T: Serialize> {
     pub data: T,
 }
@@ -19,15 +19,15 @@ pub struct PaginatedResponse<T: Serialize> {
     pub page_size: u64,
 }
 
-#[derive(Debug, Serialize)]
-struct ErrorBody {
-    error: ErrorDetail,
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct ErrorBody {
+    pub error: ErrorDetail,
 }
 
-#[derive(Debug, Serialize)]
-struct ErrorDetail {
-    code: String,
-    message: String,
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct ErrorDetail {
+    pub code: String,
+    pub message: String,
 }
 
 #[derive(Debug, thiserror::Error)]
