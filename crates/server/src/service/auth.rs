@@ -71,11 +71,25 @@ impl AuthService {
     }
 
     /// Authenticate a user by username and password, creating a new session.
+    /// If the user has 2FA enabled, `totp_code` must be provided.
     /// Returns the session and user models on success.
     pub async fn login(
         db: &DatabaseConnection,
         username: &str,
         password: &str,
+        ip: &str,
+        user_agent: &str,
+        session_ttl: i64,
+    ) -> Result<(session::Model, user::Model), AppError> {
+        Self::login_with_totp(db, username, password, None, ip, user_agent, session_ttl).await
+    }
+
+    /// Login with optional TOTP code.
+    pub async fn login_with_totp(
+        db: &DatabaseConnection,
+        username: &str,
+        password: &str,
+        totp_code: Option<&str>,
         ip: &str,
         user_agent: &str,
         session_ttl: i64,
@@ -89,6 +103,21 @@ impl AuthService {
         let valid = Self::verify_password(password, &user.password_hash)?;
         if !valid {
             return Err(AppError::Unauthorized);
+        }
+
+        // Check 2FA
+        if let Some(ref secret) = user.totp_secret {
+            match totp_code {
+                Some(code) => {
+                    if !Self::verify_totp(secret, code)? {
+                        return Err(AppError::Unauthorized);
+                    }
+                }
+                None => {
+                    // 2FA enabled but no code provided — signal requires_2fa
+                    return Err(AppError::Validation("2fa_required".to_string()));
+                }
+            }
         }
 
         let token = Self::generate_session_token();
@@ -320,6 +349,103 @@ impl AuthService {
         let mut bytes = [0u8; 32];
         OsRng.fill_bytes(&mut bytes);
         format!("sb_{}", URL_SAFE_NO_PAD.encode(bytes))
+    }
+
+    /// Check if the given TOTP code is valid for the user's secret.
+    pub fn verify_totp(secret: &str, code: &str) -> Result<bool, AppError> {
+        use totp_rs::{Algorithm, Secret, TOTP};
+
+        let secret_bytes = Secret::Encoded(secret.to_string())
+            .to_bytes()
+            .map_err(|e| AppError::Internal(format!("Invalid TOTP secret: {e}")))?;
+
+        let totp = TOTP::new(
+            Algorithm::SHA1,
+            6,
+            1,
+            30,
+            secret_bytes,
+            Some("ServerBee".to_string()),
+            String::new(),
+        )
+        .map_err(|e| AppError::Internal(format!("TOTP error: {e}")))?;
+
+        Ok(totp.check_current(code).unwrap_or(false))
+    }
+
+    /// Generate a new TOTP secret and return (secret_base32, otpauth_url, qr_code_base64).
+    pub fn generate_totp_secret(
+        username: &str,
+    ) -> Result<(String, String, String), AppError> {
+        use totp_rs::{Algorithm, Secret, TOTP};
+
+        let secret = Secret::generate_secret();
+        let secret_base32 = secret.to_encoded().to_string();
+        let secret_bytes = secret
+            .to_bytes()
+            .map_err(|e| AppError::Internal(format!("Secret error: {e}")))?;
+
+        let totp = TOTP::new(
+            Algorithm::SHA1,
+            6,
+            1,
+            30,
+            secret_bytes,
+            Some("ServerBee".to_string()),
+            username.to_string(),
+        )
+        .map_err(|e| AppError::Internal(format!("TOTP error: {e}")))?;
+
+        let url = totp.get_url();
+        let qr_base64 = totp
+            .get_qr_base64()
+            .map_err(|e| AppError::Internal(format!("QR error: {e}")))?;
+
+        Ok((secret_base32, url, qr_base64))
+    }
+
+    /// Enable 2FA for a user by saving the TOTP secret.
+    pub async fn enable_2fa(
+        db: &DatabaseConnection,
+        user_id: &str,
+        secret: &str,
+    ) -> Result<(), AppError> {
+        let user = user::Entity::find_by_id(user_id)
+            .one(db)
+            .await?
+            .ok_or(AppError::NotFound("User not found".to_string()))?;
+
+        let mut active: user::ActiveModel = user.into();
+        active.totp_secret = Set(Some(secret.to_string()));
+        active.updated_at = Set(Utc::now());
+        active.update(db).await?;
+        Ok(())
+    }
+
+    /// Disable 2FA for a user.
+    pub async fn disable_2fa(
+        db: &DatabaseConnection,
+        user_id: &str,
+    ) -> Result<(), AppError> {
+        let user = user::Entity::find_by_id(user_id)
+            .one(db)
+            .await?
+            .ok_or(AppError::NotFound("User not found".to_string()))?;
+
+        let mut active: user::ActiveModel = user.into();
+        active.totp_secret = Set(None);
+        active.updated_at = Set(Utc::now());
+        active.update(db).await?;
+        Ok(())
+    }
+
+    /// Check if a user has 2FA enabled.
+    pub async fn has_2fa(db: &DatabaseConnection, user_id: &str) -> Result<bool, AppError> {
+        let user = user::Entity::find_by_id(user_id)
+            .one(db)
+            .await?
+            .ok_or(AppError::NotFound("User not found".to_string()))?;
+        Ok(user.totp_secret.is_some())
     }
 
     /// Change a user's password after verifying the old password.

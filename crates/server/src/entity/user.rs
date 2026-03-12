@@ -20,6 +20,8 @@ pub enum Relation {
     Sessions,
     #[sea_orm(has_many = "super::api_key::Entity")]
     ApiKeys,
+    #[sea_orm(has_many = "super::oauth_account::Entity")]
+    OauthAccounts,
 }
 
 impl Related<super::session::Entity> for Entity {
@@ -31,6 +33,12 @@ impl Related<super::session::Entity> for Entity {
 impl Related<super::api_key::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::ApiKeys.def()
+    }
+}
+
+impl Related<super::oauth_account::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::OauthAccounts.def()
     }
 }
 

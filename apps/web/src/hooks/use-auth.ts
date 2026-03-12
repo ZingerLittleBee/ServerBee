@@ -9,6 +9,7 @@ interface User {
 
 interface LoginPayload {
   password: string
+  totp_code?: string
   username: string
 }
 
