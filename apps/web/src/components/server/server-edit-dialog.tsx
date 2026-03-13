@@ -1,9 +1,14 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import type { ServerDetail } from '@/hooks/use-api'
 import { api } from '@/lib/api-client'
+
+interface ServerGroup {
+  id: string
+  name: string
+}
 
 interface ServerEditDialogProps {
   onClose: () => void
@@ -15,6 +20,7 @@ interface UpdatePayload {
   billing_cycle?: string | null
   currency?: string | null
   expired_at?: string | null
+  group_id?: string | null
   hidden?: boolean
   name?: string
   price?: number | null
@@ -30,6 +36,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
   const [name, setName] = useState(server.name)
   const [weight, setWeight] = useState(server.weight)
   const [hidden, setHidden] = useState(server.hidden)
+  const [groupId, setGroupId] = useState(server.group_id ?? '')
   const [remark, setRemark] = useState(server.remark ?? '')
   const [publicRemark, setPublicRemark] = useState(server.public_remark ?? '')
   const [price, setPrice] = useState(server.price?.toString() ?? '')
@@ -41,11 +48,19 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
   )
   const [trafficLimitType, setTrafficLimitType] = useState(server.traffic_limit_type ?? 'sum')
 
+  const { data: groups } = useQuery<ServerGroup[]>({
+    queryKey: ['server-groups'],
+    queryFn: () => api.get<ServerGroup[]>('/api/server-groups'),
+    staleTime: 60_000,
+    enabled: open
+  })
+
   useEffect(() => {
     if (open) {
       setName(server.name)
       setWeight(server.weight)
       setHidden(server.hidden)
+      setGroupId(server.group_id ?? '')
       setRemark(server.remark ?? '')
       setPublicRemark(server.public_remark ?? '')
       setPrice(server.price?.toString() ?? '')
@@ -72,6 +87,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
       name,
       weight,
       hidden,
+      group_id: groupId || null,
       remark: remark || null,
       public_remark: publicRemark || null,
       price: price ? Number.parseFloat(price) : null,
@@ -138,6 +154,16 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                 </label>
               </Field>
             </div>
+            <Field label="Group">
+              <select className="input-field" onChange={(e) => setGroupId(e.target.value)} value={groupId}>
+                <option value="">No Group</option>
+                {groups?.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <Field label="Remark (private)">
               <input
                 className="input-field"

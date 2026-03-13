@@ -62,7 +62,7 @@ impl AgentConfig {
         let config: Self = Figment::new()
             .merge(Toml::file("/etc/serverbee/agent.toml"))
             .merge(Toml::file("agent.toml"))
-            .merge(Env::prefixed("SB_").split("_"))
+            .merge(Env::prefixed("SB_").split("__"))
             .extract()?;
         Ok(config)
     }

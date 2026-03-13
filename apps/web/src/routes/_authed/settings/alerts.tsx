@@ -27,6 +27,11 @@ interface NotificationGroup {
   name: string
 }
 
+interface Server {
+  id: string
+  name: string
+}
+
 interface AlertRuleItem {
   max?: number
   min?: number
@@ -55,6 +60,8 @@ function AlertsPage() {
   const [triggerMode, setTriggerMode] = useState('always')
   const [groupId, setGroupId] = useState('')
   const [ruleItems, setRuleItems] = useState<AlertRuleItem[]>([{ rule_type: 'cpu', max: 90 }])
+  const [coverType, setCoverType] = useState<'all' | 'specific'>('all')
+  const [serverIds, setServerIds] = useState<string[]>([])
 
   const { data: rules, isLoading } = useQuery<AlertRule[]>({
     queryKey: ['alert-rules'],
@@ -66,11 +73,19 @@ function AlertsPage() {
     queryFn: () => api.get<NotificationGroup[]>('/api/notification-groups')
   })
 
+  const { data: servers } = useQuery<Server[]>({
+    queryKey: ['servers'],
+    queryFn: () => api.get<Server[]>('/api/servers'),
+    enabled: showForm
+  })
+
   const createMutation = useMutation({
     mutationFn: (input: {
+      cover_type: string
       name: string
       notification_group_id: string | null
       rules: AlertRuleItem[]
+      server_ids: string[]
       trigger_mode: string
     }) => api.post<AlertRule>('/api/alert-rules', input),
     onSuccess: () => {
@@ -99,6 +114,8 @@ function AlertsPage() {
     setTriggerMode('always')
     setGroupId('')
     setRuleItems([{ rule_type: 'cpu', max: 90 }])
+    setCoverType('all')
+    setServerIds([])
     setShowForm(false)
   }
 
@@ -111,7 +128,9 @@ function AlertsPage() {
       name: name.trim(),
       trigger_mode: triggerMode,
       notification_group_id: groupId || null,
-      rules: ruleItems
+      rules: ruleItems,
+      cover_type: coverType,
+      server_ids: coverType === 'specific' ? serverIds : []
     })
   }
 
@@ -174,6 +193,48 @@ function AlertsPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="space-y-2">
+                <span className="font-medium text-sm">Coverage</span>
+                <div className="flex gap-3">
+                  <select
+                    className="flex h-9 flex-1 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                    onChange={(e) => {
+                      const val = e.target.value as 'all' | 'specific'
+                      setCoverType(val)
+                      if (val === 'all') {
+                        setServerIds([])
+                      }
+                    }}
+                    value={coverType}
+                  >
+                    <option value="all">All servers</option>
+                    <option value="specific">Specific servers</option>
+                  </select>
+                </div>
+                {coverType === 'specific' && (
+                  <div className="flex flex-wrap gap-2 rounded-md border p-2">
+                    {servers && servers.length > 0 ? (
+                      servers.map((s) => (
+                        <label className="flex items-center gap-1.5 text-sm" key={s.id}>
+                          <input
+                            checked={serverIds.includes(s.id)}
+                            onChange={(e) => {
+                              setServerIds((prev) =>
+                                e.target.checked ? [...prev, s.id] : prev.filter((id) => id !== s.id)
+                              )
+                            }}
+                            type="checkbox"
+                          />
+                          {s.name}
+                        </label>
+                      ))
+                    ) : (
+                      <span className="text-muted-foreground text-xs">No servers found</span>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
