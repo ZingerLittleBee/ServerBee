@@ -1,14 +1,3 @@
-mod config;
-mod entity;
-mod error;
-mod middleware;
-mod migration;
-mod openapi;
-mod router;
-mod service;
-mod state;
-mod task;
-
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use rand::RngCore;
@@ -16,11 +5,13 @@ use sea_orm::{ConnectOptions, ConnectionTrait, Database};
 use sea_orm_migration::MigratorTrait;
 use tracing_subscriber::EnvFilter;
 
-use crate::config::AppConfig;
-use crate::migration::Migrator;
-use crate::service::auth::AuthService;
-use crate::service::config::ConfigService;
-use crate::state::AppState;
+use serverbee_server::config::AppConfig;
+use serverbee_server::migration::Migrator;
+use serverbee_server::router::create_router;
+use serverbee_server::service::auth::AuthService;
+use serverbee_server::service::config::ConfigService;
+use serverbee_server::state::AppState;
+use serverbee_server::task;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -86,7 +77,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move { task::alert_evaluator::run(s).await });
 
     // Build router
-    let app = router::create_router(state);
+    let app = create_router(state);
 
     // Start server
     let listener = tokio::net::TcpListener::bind(&config.server.listen).await?;
