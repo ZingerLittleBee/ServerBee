@@ -23,9 +23,15 @@ pub struct UpdateGroupRequest {
     weight: Option<i32>,
 }
 
-pub fn router() -> Router<Arc<AppState>> {
+/// GET endpoints accessible to all authenticated users (admin + member).
+pub fn read_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/server-groups", get(list_groups))
+}
+
+/// Write endpoints (POST/PUT/DELETE) restricted to admin users only.
+pub fn write_router() -> Router<Arc<AppState>> {
+    Router::new()
         .route("/server-groups", post(create_group))
         .route("/server-groups/{id}", put(update_group))
         .route("/server-groups/{id}", delete(delete_group))

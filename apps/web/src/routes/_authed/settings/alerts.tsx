@@ -37,7 +37,7 @@ function AlertsPage() {
   const [triggerMode, setTriggerMode] = useState('always')
   const [groupId, setGroupId] = useState('')
   const [ruleItems, setRuleItems] = useState<AlertRuleItem[]>([{ rule_type: 'cpu', max: 90 }])
-  const [coverType, setCoverType] = useState<'all' | 'specific'>('all')
+  const [coverType, setCoverType] = useState<'all' | 'exclude' | 'include'>('all')
   const [serverIds, setServerIds] = useState<string[]>([])
 
   const { data: rules, isLoading } = useQuery<AlertRule[]>({
@@ -107,7 +107,7 @@ function AlertsPage() {
       notification_group_id: groupId || null,
       rules: ruleItems,
       cover_type: coverType,
-      server_ids: coverType === 'specific' ? serverIds : []
+      server_ids: coverType === 'include' || coverType === 'exclude' ? serverIds : []
     })
   }
 
@@ -178,7 +178,7 @@ function AlertsPage() {
                   <select
                     className="flex h-9 flex-1 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                     onChange={(e) => {
-                      const val = e.target.value as 'all' | 'specific'
+                      const val = e.target.value as 'all' | 'exclude' | 'include'
                       setCoverType(val)
                       if (val === 'all') {
                         setServerIds([])
@@ -187,10 +187,11 @@ function AlertsPage() {
                     value={coverType}
                   >
                     <option value="all">All servers</option>
-                    <option value="specific">Specific servers</option>
+                    <option value="include">Include servers</option>
+                    <option value="exclude">Exclude servers</option>
                   </select>
                 </div>
-                {coverType === 'specific' && (
+                {(coverType === 'include' || coverType === 'exclude') && (
                   <div className="flex flex-wrap gap-2 rounded-md border p-2">
                     {servers && servers.length > 0 ? (
                       servers.map((s) => (

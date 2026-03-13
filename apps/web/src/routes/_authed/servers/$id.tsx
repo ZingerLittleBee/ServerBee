@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, CreditCard, Pencil, Terminal as TerminalIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -8,6 +8,7 @@ import { StatusBadge } from '@/components/server/status-badge'
 import { Button } from '@/components/ui/button'
 import { useServer, useServerRecords } from '@/hooks/use-api'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import { useServersWs } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import { cn, countryCodeToFlag, formatBytes } from '@/lib/utils'
 
@@ -89,8 +90,15 @@ function ServerDetailPage() {
     enabled: id.length > 0
   })
 
-  const queryClient = useQueryClient()
-  const liveServers = queryClient.getQueryData<ServerMetrics[]>(['servers'])
+  useServersWs()
+
+  const { data: liveServers } = useQuery<ServerMetrics[]>({
+    queryKey: ['servers'],
+    queryFn: () => [],
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false
+  })
   const liveData = liveServers?.find((s) => s.id === id)
 
   const chartData = useMemo(() => {

@@ -54,7 +54,13 @@ function ServersListPage() {
   useServersWs()
 
   const queryClient = useQueryClient()
-  const servers = queryClient.getQueryData<ServerMetrics[]>(['servers']) ?? []
+  const { data: servers = [] } = useQuery<ServerMetrics[]>({
+    queryKey: ['servers'],
+    queryFn: () => [],
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false
+  })
 
   const { data: groups } = useQuery<ServerGroup[]>({
     queryKey: ['server-groups'],

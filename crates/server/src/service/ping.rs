@@ -170,6 +170,41 @@ impl PingService {
             .await?)
     }
 
+    /// Send current ping tasks to a specific agent (e.g., on new connection).
+    pub async fn sync_tasks_to_agent(db: &DatabaseConnection, agent_manager: &AgentManager, server_id: &str) {
+        let tasks = match ping_task::Entity::find()
+            .filter(ping_task::Column::Enabled.eq(true))
+            .all(db)
+            .await
+        {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::error!("Failed to load ping tasks for agent sync: {e}");
+                return;
+            }
+        };
+
+        let mut task_configs: Vec<PingTaskConfig> = Vec::new();
+        for task in &tasks {
+            let server_ids: Vec<String> =
+                serde_json::from_str(&task.server_ids_json).unwrap_or_default();
+            // Include task if server_ids is empty (all agents) or contains this server
+            if server_ids.is_empty() || server_ids.contains(&server_id.to_string()) {
+                task_configs.push(PingTaskConfig {
+                    task_id: task.id.clone(),
+                    probe_type: task.probe_type.clone(),
+                    target: task.target.clone(),
+                    interval: task.interval as u32,
+                });
+            }
+        }
+
+        if let Some(tx) = agent_manager.get_sender(server_id) {
+            let msg = ServerMessage::PingTasksSync { tasks: task_configs };
+            let _ = tx.send(msg).await;
+        }
+    }
+
     /// Sync all enabled ping tasks to all connected agents.
     async fn sync_tasks_to_agents(db: &DatabaseConnection, agent_manager: &AgentManager) {
         let tasks = match ping_task::Entity::find()
@@ -199,13 +234,14 @@ impl PingService {
             };
 
             if server_ids.is_empty() {
-                // No specific servers = all agents
-                // We don't enumerate all connected agents here; just skip for now
-                continue;
-            }
-
-            for sid in server_ids {
-                agent_tasks.entry(sid).or_default().push(config.clone());
+                // No specific servers = broadcast to all connected agents
+                for sid in agent_manager.connected_server_ids() {
+                    agent_tasks.entry(sid).or_default().push(config.clone());
+                }
+            } else {
+                for sid in server_ids {
+                    agent_tasks.entry(sid).or_default().push(config.clone());
+                }
             }
         }
 

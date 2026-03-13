@@ -25,10 +25,14 @@ async fn terminal_ws_handler(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Response {
-    // Auth: session cookie only
+    // Auth: session cookie or API key
     let user = validate_auth(&state, &headers).await;
     match user {
-        Some(_) => {
+        Some((_, role)) => {
+            // Terminal access is admin-only
+            if role != "admin" {
+                return axum::http::StatusCode::FORBIDDEN.into_response();
+            }
             // Check agent is online
             if !state.agent_manager.is_online(&server_id) {
                 return (
@@ -43,7 +47,7 @@ async fn terminal_ws_handler(
     }
 }
 
-async fn validate_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Option<String> {
+async fn validate_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Option<(String, String)> {
     use crate::service::auth::AuthService;
 
     // Try session cookie
@@ -51,14 +55,14 @@ async fn validate_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Option<Str
         && let Ok(Some(user)) =
             AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
     {
-        return Some(user.id);
+        return Some((user.id, user.role));
     }
 
     // Try API key header
     if let Some(key) = extract_api_key(headers)
         && let Ok(Some(user)) = AuthService::validate_api_key(&state.db, &key).await
     {
-        return Some(user.id);
+        return Some((user.id, user.role));
     }
 
     None

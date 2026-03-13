@@ -210,6 +210,7 @@ impl AlertService {
         db: &DatabaseConnection,
         input: CreateAlertRule,
     ) -> Result<alert_rule::Model, AppError> {
+        validate_cover_type(&input.cover_type)?;
         let rules_json = serde_json::to_string(&input.rules)
             .map_err(|e| AppError::Validation(format!("Invalid rules: {e}")))?;
         let server_ids_json = input.server_ids.map(|ids| {
@@ -257,6 +258,7 @@ impl AlertService {
             model.notification_group_id = Set(notification_group_id);
         }
         if let Some(cover_type) = input.cover_type {
+            validate_cover_type(&cover_type)?;
             model.cover_type = Set(cover_type);
         }
         if let Some(server_ids) = input.server_ids {
@@ -428,13 +430,25 @@ impl AlertService {
 
 // ── Helpers ──
 
+const VALID_COVER_TYPES: &[&str] = &["all", "include", "exclude"];
+
+fn validate_cover_type(cover_type: &str) -> Result<(), AppError> {
+    if VALID_COVER_TYPES.contains(&cover_type) {
+        Ok(())
+    } else {
+        Err(AppError::Validation(format!(
+            "Invalid cover_type '{cover_type}': must be one of 'all', 'include', 'exclude'"
+        )))
+    }
+}
+
 async fn resolve_servers(
     db: &DatabaseConnection,
     cover_type: &str,
     server_ids_json: &Option<String>,
 ) -> Result<Vec<server::Model>, AppError> {
     match cover_type {
-        "specific" => {
+        "include" => {
             let ids: Vec<String> = server_ids_json
                 .as_deref()
                 .and_then(|s| serde_json::from_str(s).ok())
@@ -447,8 +461,21 @@ async fn resolve_servers(
                 .all(db)
                 .await?)
         }
+        "exclude" => {
+            let ids: Vec<String> = server_ids_json
+                .as_deref()
+                .and_then(|s| serde_json::from_str(s).ok())
+                .unwrap_or_default();
+            if ids.is_empty() {
+                return Ok(server::Entity::find().all(db).await?);
+            }
+            Ok(server::Entity::find()
+                .filter(server::Column::Id.is_not_in(ids))
+                .all(db)
+                .await?)
+        }
         _ => {
-            // "all"
+            // "all" (default)
             Ok(server::Entity::find().all(db).await?)
         }
     }

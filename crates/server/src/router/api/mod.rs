@@ -28,12 +28,16 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(
             Router::new()
                 .merge(auth::protected_router())
-                .merge(server::router())
-                .merge(server_group::router())
-                .merge(ping::router())
-                // Admin-only routes
+                // Read-only routes accessible to all authenticated users
+                .merge(server::read_router())
+                .merge(server_group::read_router())
+                .merge(ping::read_router())
+                // Admin-only routes (write operations + management)
                 .merge(
                     Router::new()
+                        .merge(server::write_router())
+                        .merge(server_group::write_router())
+                        .merge(ping::write_router())
                         .merge(setting::router())
                         .merge(notification::router())
                         .merge(alert::router())
