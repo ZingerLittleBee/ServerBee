@@ -299,7 +299,7 @@ WebSocket 路径（`/api/ws/` 和 `/api/agent/ws`）必须正确配置 `Upgrade`
 
 Caddy 会自动处理 HTTPS 证书和 WebSocket 代理，配置更加简洁：
 
-```caddyfile title="Caddyfile"
+```txt title="Caddyfile"
 monitor.example.com {
     reverse_proxy 127.0.0.1:9527
 }
