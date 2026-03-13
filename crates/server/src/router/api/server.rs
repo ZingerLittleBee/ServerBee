@@ -218,6 +218,7 @@ async fn batch_delete(
 #[utoipa::path(
     get,
     path = "/api/servers/{id}/records",
+    operation_id = "get_server_records",
     tag = "servers",
     params(
         ("id" = String, Path, description = "Server ID"),

@@ -4,29 +4,11 @@ import { Check, Link2Off, Loader2, Shield, ShieldOff, Smartphone } from 'lucide-
 import { type FormEvent, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
+import type { OAuthAccount, TotpSetupResponse, TotpStatusResponse } from '@/lib/api-schema'
 
 export const Route = createFileRoute('/_authed/settings/security')({
   component: SecurityPage
 })
-
-interface TotpStatus {
-  enabled: boolean
-}
-
-interface TotpSetup {
-  otpauth_url: string
-  qr_code_base64: string
-  secret: string
-}
-
-interface OAuthAccount {
-  created_at: string
-  display_name: string | null
-  email: string | null
-  id: string
-  provider: string
-  provider_user_id: string
-}
 
 function SecurityPage() {
   return (
@@ -43,16 +25,16 @@ function SecurityPage() {
 
 function TwoFactorSection() {
   const queryClient = useQueryClient()
-  const [setupData, setSetupData] = useState<TotpSetup | null>(null)
+  const [setupData, setSetupData] = useState<TotpSetupResponse | null>(null)
   const [verifyCode, setVerifyCode] = useState('')
 
-  const { data: status, isLoading } = useQuery<TotpStatus>({
+  const { data: status, isLoading } = useQuery<TotpStatusResponse>({
     queryKey: ['auth', '2fa', 'status'],
-    queryFn: () => api.get<TotpStatus>('/api/auth/2fa/status')
+    queryFn: () => api.get<TotpStatusResponse>('/api/auth/2fa/status')
   })
 
   const setupMutation = useMutation({
-    mutationFn: () => api.post<TotpSetup>('/api/auth/2fa/setup'),
+    mutationFn: () => api.post<TotpSetupResponse>('/api/auth/2fa/setup'),
     onSuccess: (data) => setSetupData(data)
   })
 

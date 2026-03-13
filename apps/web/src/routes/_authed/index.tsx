@@ -6,16 +6,12 @@ import { ServerCard } from '@/components/server/server-card'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { useServersWs } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
+import type { ServerGroup } from '@/lib/api-schema'
 import { formatBytes } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/')({
   component: DashboardPage
 })
-
-interface ServerGroup {
-  id: string
-  name: string
-}
 
 function StatCard({
   icon: Icon,

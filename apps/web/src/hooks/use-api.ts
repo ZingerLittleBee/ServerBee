@@ -1,37 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
-
-interface ServerDetail {
-  agent_version: string | null
-  billing_cycle: string | null
-  country_code: string | null
-  cpu_arch: string | null
-  cpu_cores: number | null
-  cpu_name: string | null
-  created_at: string
-  currency: string | null
-  disk_total: number | null
-  expired_at: string | null
-  group_id: string | null
-  hidden: boolean
-  id: string
-  ipv4: string | null
-  ipv6: string | null
-  kernel_version: string | null
-  mem_total: number | null
-  name: string
-  os: string | null
-  price: number | null
-  public_remark: string | null
-  region: string | null
-  remark: string | null
-  swap_total: number | null
-  traffic_limit: number | null
-  traffic_limit_type: string | null
-  updated_at: string
-  virtualization: string | null
-  weight: number
-}
+import type { ServerResponse } from '@/lib/api-schema'
 
 interface ServerRecord {
   cpu: number
@@ -56,9 +25,9 @@ interface ServerRecord {
 }
 
 export function useServer(id: string) {
-  return useQuery<ServerDetail>({
+  return useQuery<ServerResponse>({
     queryKey: ['servers', id],
-    queryFn: () => api.get<ServerDetail>(`/api/servers/${id}`),
+    queryFn: () => api.get<ServerResponse>(`/api/servers/${id}`),
     enabled: id.length > 0
   })
 }
@@ -74,4 +43,4 @@ export function useServerRecords(id: string, from: string, to: string, interval:
   })
 }
 
-export type { ServerDetail, ServerRecord }
+export type { ServerRecord }

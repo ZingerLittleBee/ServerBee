@@ -4,38 +4,15 @@ import { AlertTriangle, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
+import type { AlertRule, AlertRuleItem, NotificationGroup } from '@/lib/api-schema'
 
 export const Route = createFileRoute('/_authed/settings/alerts')({
   component: AlertsPage
 })
 
-interface AlertRule {
-  cover_type: string
-  created_at: string
-  enabled: boolean
-  id: string
-  name: string
-  notification_group_id: string | null
-  rules_json: string
-  server_ids_json: string | null
-  trigger_mode: string
-  updated_at: string
-}
-
-interface NotificationGroup {
-  id: string
-  name: string
-}
-
 interface Server {
   id: string
   name: string
-}
-
-interface AlertRuleItem {
-  max?: number
-  min?: number
-  rule_type: string
 }
 
 const ruleTypes = [

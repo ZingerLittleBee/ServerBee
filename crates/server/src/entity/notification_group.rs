@@ -2,6 +2,7 @@ use sea_orm::entity::prelude::*;
 use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, utoipa::ToSchema)]
+#[schema(as = NotificationGroup)]
 #[sea_orm(table_name = "notification_groups")]
 #[allow(dead_code)]
 pub struct Model {

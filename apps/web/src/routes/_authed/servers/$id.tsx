@@ -21,6 +21,14 @@ interface TimeRange {
   label: string
 }
 
+interface GpuRecordAggregated {
+  gpu_usage_avg: number
+  mem_total_avg: number
+  mem_used_avg: number
+  temperature_avg: number
+  time: string
+}
+
 const TIME_RANGES: TimeRange[] = [
   { label: '1h', hours: 1, interval: 'raw' },
   { label: '6h', hours: 6, interval: 'raw' },
@@ -28,17 +36,6 @@ const TIME_RANGES: TimeRange[] = [
   { label: '7d', hours: 168, interval: 'hourly' },
   { label: '30d', hours: 720, interval: 'hourly' }
 ]
-
-interface GpuRecord {
-  gpu_count: number
-  gpu_usage_avg: number
-  id: number
-  mem_total_avg: number
-  mem_used_avg: number
-  server_id: string
-  temperature_avg: number
-  time: string
-}
 
 function formatCurrency(price: number, currency: string): string {
   try {
@@ -61,10 +58,10 @@ function ServerDetailPage() {
   const { data: server, isLoading: serverLoading } = useServer(id)
   const { data: records } = useServerRecords(id, from, to, range.interval)
 
-  const { data: gpuRecords } = useQuery<GpuRecord[]>({
+  const { data: gpuRecords } = useQuery<GpuRecordAggregated[]>({
     queryKey: ['servers', id, 'gpu-records', from, to],
     queryFn: () =>
-      api.get<GpuRecord[]>(
+      api.get<GpuRecordAggregated[]>(
         `/api/servers/${id}/gpu-records?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
       ),
     enabled: id.length > 0
@@ -279,14 +276,10 @@ function ServerDetailPage() {
 function BillingInfoBar({
   server
 }: {
-  server: {
-    billing_cycle: string | null
-    currency: string | null
-    expired_at: string | null
-    price: number | null
-    traffic_limit: number | null
-    traffic_limit_type: string | null
-  }
+  server: Pick<
+    import('@/lib/api-schema').ServerResponse,
+    'billing_cycle' | 'currency' | 'expired_at' | 'price' | 'traffic_limit' | 'traffic_limit_type'
+  >
 }) {
   const isExpired = server.expired_at ? new Date(server.expired_at) < new Date() : false
   const daysUntilExpiry = server.expired_at

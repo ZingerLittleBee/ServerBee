@@ -2,6 +2,7 @@ use sea_orm::entity::prelude::*;
 use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, utoipa::ToSchema)]
+#[schema(as = AlertRule)]
 #[sea_orm(table_name = "alert_rules")]
 #[allow(dead_code)]
 pub struct Model {

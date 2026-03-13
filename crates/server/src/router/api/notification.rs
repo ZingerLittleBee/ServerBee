@@ -142,6 +142,7 @@ async fn test_notification(
 #[utoipa::path(
     get,
     path = "/api/notification-groups",
+    operation_id = "list_notification_groups",
     tag = "notification-groups",
     responses(
         (status = 200, description = "List all notification groups", body = Vec<crate::entity::notification_group::Model>),
@@ -177,6 +178,7 @@ async fn get_group(
 #[utoipa::path(
     post,
     path = "/api/notification-groups",
+    operation_id = "create_notification_group",
     tag = "notification-groups",
     request_body = CreateNotificationGroup,
     responses(
@@ -195,6 +197,7 @@ async fn create_group(
 #[utoipa::path(
     put,
     path = "/api/notification-groups/{id}",
+    operation_id = "update_notification_group",
     tag = "notification-groups",
     params(("id" = String, Path, description = "Notification group ID")),
     request_body = UpdateNotificationGroup,
@@ -216,6 +219,7 @@ async fn update_group(
 #[utoipa::path(
     delete,
     path = "/api/notification-groups/{id}",
+    operation_id = "delete_notification_group",
     tag = "notification-groups",
     params(("id" = String, Path, description = "Notification group ID")),
     responses(

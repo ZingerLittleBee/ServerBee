@@ -8,16 +8,12 @@ import { useServer } from '@/hooks/use-api'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { useServersWs } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
+import type { ServerGroup } from '@/lib/api-schema'
 import { cn, countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/servers/')({
   component: ServersListPage
 })
-
-interface ServerGroup {
-  id: string
-  name: string
-}
 
 type SortKey = 'name' | 'status' | 'cpu' | 'memory' | 'disk' | 'uptime' | 'group'
 type SortDir = 'asc' | 'desc'

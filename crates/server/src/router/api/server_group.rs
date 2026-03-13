@@ -34,6 +34,7 @@ pub fn router() -> Router<Arc<AppState>> {
 #[utoipa::path(
     get,
     path = "/api/server-groups",
+    operation_id = "list_server_groups",
     tag = "server-groups",
     responses(
         (status = 200, description = "List all server groups", body = Vec<server_group::Model>),
@@ -54,6 +55,7 @@ async fn list_groups(
 #[utoipa::path(
     post,
     path = "/api/server-groups",
+    operation_id = "create_server_group",
     tag = "server-groups",
     request_body = CreateGroupRequest,
     responses(
@@ -98,6 +100,7 @@ async fn create_group(
 #[utoipa::path(
     put,
     path = "/api/server-groups/{id}",
+    operation_id = "update_server_group",
     tag = "server-groups",
     params(("id" = String, Path, description = "Server group ID")),
     request_body = UpdateGroupRequest,
@@ -137,6 +140,7 @@ async fn update_group(
 #[utoipa::path(
     delete,
     path = "/api/server-groups/{id}",
+    operation_id = "delete_server_group",
     tag = "server-groups",
     params(("id" = String, Path, description = "Server group ID")),
     responses(

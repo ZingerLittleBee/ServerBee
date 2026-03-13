@@ -40,6 +40,7 @@ async fn list_tasks(
 #[utoipa::path(
     get,
     path = "/api/ping-tasks/{id}",
+    operation_id = "get_ping_task",
     tag = "ping-tasks",
     params(("id" = String, Path, description = "Ping task ID")),
     responses(
@@ -59,6 +60,7 @@ async fn get_task(
 #[utoipa::path(
     post,
     path = "/api/ping-tasks",
+    operation_id = "create_ping_task",
     tag = "ping-tasks",
     request_body = CreatePingTask,
     responses(
@@ -125,6 +127,7 @@ pub struct RecordsQuery {
 #[utoipa::path(
     get,
     path = "/api/ping-tasks/{id}/records",
+    operation_id = "get_ping_records",
     tag = "ping-tasks",
     params(
         ("id" = String, Path, description = "Ping task ID"),
