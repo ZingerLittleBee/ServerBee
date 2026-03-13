@@ -24,6 +24,7 @@ const navItems = [
   { to: '/settings/alerts', label: 'Alerts', icon: AlertTriangle, adminOnly: true },
   { to: '/settings/ping-tasks', label: 'Ping Tasks', icon: Activity },
   { to: '/settings/tasks', label: 'Commands', icon: Terminal, adminOnly: true },
+  { to: '/settings/capabilities', label: 'Capabilities', icon: Shield, adminOnly: true },
   { to: '/settings/api-keys', label: 'API Keys', icon: Key },
   { to: '/settings/security', label: 'Security', icon: Shield },
   { to: '/settings/audit-logs', label: 'Audit Logs', icon: ClipboardList, adminOnly: true },
