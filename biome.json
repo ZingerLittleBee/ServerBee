@@ -88,7 +88,8 @@
   "overrides": [
     {
       "includes": [
-        "apps/fumadocs/src/routes/docs/$.tsx",
+        "apps/fumadocs/src/routes/$lang.tsx",
+        "apps/fumadocs/src/routes/$lang/docs/$.tsx",
         "apps/fumadocs/src/routes/llms*",
         "apps/web/src/routes/_authed/terminal.$serverId.tsx"
       ],
