@@ -29,6 +29,11 @@ pub enum AgentMessage {
         session_id: String,
         error: String,
     },
+    CapabilityDenied {
+        msg_id: Option<String>,
+        session_id: Option<String>,
+        capability: String,
+    },
     Pong,
 }
 
@@ -40,6 +45,8 @@ pub enum ServerMessage {
         server_id: String,
         protocol_version: u32,
         report_interval: u32,
+        #[serde(default)]
+        capabilities: Option<u32>,
     },
     Ack {
         msg_id: String,
@@ -74,6 +81,9 @@ pub enum ServerMessage {
         version: String,
         download_url: String,
     },
+    CapabilitiesSync {
+        capabilities: u32,
+    },
 }
 
 /// Server -> Browser messages
@@ -91,5 +101,13 @@ pub enum BrowserMessage {
     },
     ServerOffline {
         server_id: String,
+    },
+    CapabilitiesChanged {
+        server_id: String,
+        capabilities: u32,
+    },
+    AgentInfoUpdated {
+        server_id: String,
+        protocol_version: u32,
     },
 }
