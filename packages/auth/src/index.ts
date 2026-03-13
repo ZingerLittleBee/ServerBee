@@ -1,5 +1,13 @@
 import { db } from '@serverbee/db'
-import * as schema from '@serverbee/db/schema/auth'
+import {
+  account,
+  accountRelations,
+  session,
+  sessionRelations,
+  user,
+  userRelations,
+  verification
+} from '@serverbee/db/schema/auth'
 import { env } from '@serverbee/env/server'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
@@ -9,7 +17,7 @@ export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: 'sqlite',
 
-    schema
+    schema: { account, accountRelations, session, sessionRelations, user, userRelations, verification }
   }),
   trustedOrigins: [env.CORS_ORIGIN],
   emailAndPassword: {

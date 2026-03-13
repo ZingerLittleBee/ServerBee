@@ -124,7 +124,7 @@ function DashboardPage() {
         </div>
       )}
 
-      {servers.length === 0 ? (
+      {servers.length === 0 && (
         <div className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed">
           <div className="text-center">
             <p className="text-muted-foreground text-sm">No servers connected yet</p>
@@ -133,7 +133,8 @@ function DashboardPage() {
             </p>
           </div>
         </div>
-      ) : hasGroups ? (
+      )}
+      {servers.length > 0 && hasGroups && (
         <div className="space-y-8">
           {sortedKeys.map((key) => {
             const groupServers = grouped.get(key) ?? []
@@ -150,7 +151,8 @@ function DashboardPage() {
             )
           })}
         </div>
-      ) : (
+      )}
+      {servers.length > 0 && !hasGroups && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {servers.map((server) => (
             <ServerCard key={server.id} server={server} />

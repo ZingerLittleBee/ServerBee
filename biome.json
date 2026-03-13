@@ -84,5 +84,34 @@
       "tailwindDirectives": true
     }
   },
+  "overrides": [
+    {
+      "includes": [
+        "apps/fumadocs/src/routes/docs/$.tsx",
+        "apps/fumadocs/src/routes/llms*",
+        "apps/web/src/routes/_authed/terminal.$serverId.tsx"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "useFilenamingConvention": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "apps/fumadocs/src/lib/cn.ts",
+        "packages/db/src/schema/index.ts"
+      ],
+      "linter": {
+        "rules": {
+          "performance": {
+            "noBarrelFile": "off"
+          }
+        }
+      }
+    }
+  ],
   "extends": ["ultracite/biome/core", "ultracite/biome/react"]
 }

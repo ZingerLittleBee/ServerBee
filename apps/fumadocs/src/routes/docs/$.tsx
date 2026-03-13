@@ -56,6 +56,8 @@ const clientLoader = browserCollections.docs.createClientLoader({
       path: string
     }
   ) {
+    // biome-ignore lint/correctness/useHookAtTopLevel: this method is a component function used by createClientLoader
+    const components = useMDXComponents()
     return (
       <DocsPage toc={toc}>
         <DocsTitle>{frontmatter.title}</DocsTitle>
@@ -68,7 +70,7 @@ const clientLoader = browserCollections.docs.createClientLoader({
           />
         </div>
         <DocsBody>
-          <MDX components={useMDXComponents()} />
+          <MDX components={components} />
         </DocsBody>
       </DocsPage>
     )

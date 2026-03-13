@@ -18,6 +18,38 @@ export const Route = createFileRoute('/_authed/servers/')({
 type SortKey = 'name' | 'status' | 'cpu' | 'memory' | 'disk' | 'uptime' | 'group'
 type SortDir = 'asc' | 'desc'
 
+function memPctOf(s: ServerMetrics): number {
+  return s.mem_total > 0 ? s.mem_used / s.mem_total : 0
+}
+
+function diskPctOf(s: ServerMetrics): number {
+  return s.disk_total > 0 ? s.disk_used / s.disk_total : 0
+}
+
+function compareServers(a: ServerMetrics, b: ServerMetrics, sortKey: SortKey, groupMap: Map<string, string>): number {
+  switch (sortKey) {
+    case 'name':
+      return a.name.localeCompare(b.name)
+    case 'status':
+      return Number(b.online) - Number(a.online)
+    case 'cpu':
+      return a.cpu - b.cpu
+    case 'memory':
+      return memPctOf(a) - memPctOf(b)
+    case 'disk':
+      return diskPctOf(a) - diskPctOf(b)
+    case 'uptime':
+      return a.uptime - b.uptime
+    case 'group': {
+      const aG = (a.group_id && groupMap.get(a.group_id)) || ''
+      const bG = (b.group_id && groupMap.get(b.group_id)) || ''
+      return aG.localeCompare(bG)
+    }
+    default:
+      return 0
+  }
+}
+
 function ServersListPage() {
   useServersWs()
 
@@ -46,9 +78,9 @@ function ServersListPage() {
     return servers.filter(
       (s) =>
         s.name.toLowerCase().includes(q) ||
-        (s.os && s.os.toLowerCase().includes(q)) ||
-        (s.country_code && s.country_code.toLowerCase().includes(q)) ||
-        (s.region && s.region.toLowerCase().includes(q)) ||
+        s.os?.toLowerCase().includes(q) ||
+        s.country_code?.toLowerCase().includes(q) ||
+        s.region?.toLowerCase().includes(q) ||
         (s.group_id && groupMap.get(s.group_id)?.toLowerCase().includes(q))
     )
   }, [servers, search, groupMap])
@@ -56,35 +88,7 @@ function ServersListPage() {
   const sorted = useMemo(() => {
     const list = [...filtered]
     const dir = sortDir === 'asc' ? 1 : -1
-    list.sort((a, b) => {
-      switch (sortKey) {
-        case 'name':
-          return a.name.localeCompare(b.name) * dir
-        case 'status':
-          return (Number(b.online) - Number(a.online)) * dir
-        case 'cpu':
-          return (a.cpu - b.cpu) * dir
-        case 'memory': {
-          const aP = a.mem_total > 0 ? a.mem_used / a.mem_total : 0
-          const bP = b.mem_total > 0 ? b.mem_used / b.mem_total : 0
-          return (aP - bP) * dir
-        }
-        case 'disk': {
-          const aD = a.disk_total > 0 ? a.disk_used / a.disk_total : 0
-          const bD = b.disk_total > 0 ? b.disk_used / b.disk_total : 0
-          return (aD - bD) * dir
-        }
-        case 'uptime':
-          return (a.uptime - b.uptime) * dir
-        case 'group': {
-          const aG = (a.group_id && groupMap.get(a.group_id)) || ''
-          const bG = (b.group_id && groupMap.get(b.group_id)) || ''
-          return aG.localeCompare(bG) * dir
-        }
-        default:
-          return 0
-      }
-    })
+    list.sort((a, b) => compareServers(a, b, sortKey, groupMap) * dir)
     return list
   }, [filtered, sortKey, sortDir, groupMap])
 
@@ -136,8 +140,6 @@ function ServersListPage() {
     }
     return sortDir === 'asc' ? ' ↑' : ' ↓'
   }
-
-  const editingOpen = editingId !== null
 
   return (
     <div>
@@ -310,7 +312,7 @@ function ServersListPage() {
         </p>
       )}
 
-      {editingOpen && <EditWrapper onClose={() => setEditingId(null)} serverId={editingId!} />}
+      {editingId !== null && <EditWrapper onClose={() => setEditingId(null)} serverId={editingId} />}
     </div>
   )
 }
@@ -345,9 +347,19 @@ function Th({
   )
 }
 
+function getBarColor(p: number): string {
+  if (p > 90) {
+    return 'bg-red-500'
+  }
+  if (p > 70) {
+    return 'bg-amber-500'
+  }
+  return 'bg-emerald-500'
+}
+
 function MiniBar({ pct, sub }: { pct: number; sub?: string }) {
   const p = Math.min(100, Math.max(0, pct))
-  const color = p > 90 ? 'bg-red-500' : p > 70 ? 'bg-amber-500' : 'bg-emerald-500'
+  const color = getBarColor(p)
   return (
     <div className="min-w-[80px]">
       <div className="flex items-center gap-2">
