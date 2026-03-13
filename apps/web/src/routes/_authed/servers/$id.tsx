@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, CreditCard, Pencil, Terminal as TerminalIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -7,8 +7,11 @@ import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
 import { Button } from '@/components/ui/button'
 import { useServer, useServerRecords } from '@/hooks/use-api'
+import { useAuth } from '@/hooks/use-auth'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
+import type { ServerResponse } from '@/lib/api-schema'
+import { CAPABILITIES } from '@/lib/capabilities'
 import { cn, countryCodeToFlag, formatBytes } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/servers/$id')({
@@ -29,6 +32,12 @@ interface GpuRecordAggregated {
   time: string
 }
 
+interface ServerWithCaps {
+  capabilities?: number | null
+  id: string
+  protocol_version?: number | null
+}
+
 const TIME_RANGES: TimeRange[] = [
   { label: '1h', hours: 1, interval: 'raw' },
   { label: '6h', hours: 6, interval: 'raw' },
@@ -45,7 +54,7 @@ function formatCurrency(price: number, currency: string): string {
   }
 }
 
-function ServerInfoMeta({ server }: { server: import('@/lib/api-schema').ServerResponse }) {
+function ServerInfoMeta({ server }: { server: ServerResponse }) {
   return (
     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground text-sm">
       {server.os && <span>OS: {server.os}</span>}
@@ -62,6 +71,82 @@ function ServerInfoMeta({ server }: { server: import('@/lib/api-schema').ServerR
       {server.kernel_version && <span>Kernel: {server.kernel_version}</span>}
       {server.region && <span>Region: {server.region}</span>}
       {server.agent_version && <span>Agent: v{server.agent_version}</span>}
+    </div>
+  )
+}
+
+function CapabilitiesSection({ server }: { server: ServerWithCaps }) {
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+
+  const mutation = useMutation({
+    mutationFn: (newCaps: number) => api.put(`/api/servers/${server.id}`, { capabilities: newCaps }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['servers', server.id] })
+    }
+  })
+
+  if (user?.role !== 'admin') {
+    return null
+  }
+
+  const caps = server.capabilities ?? 56
+
+  const toggle = (bit: number) => {
+    // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask toggle
+    const newCaps = caps & bit ? caps & ~bit : caps | bit
+    mutation.mutate(newCaps)
+  }
+
+  return (
+    <div className="mt-6 rounded-lg border bg-card p-6">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="font-semibold">Capability Toggles</h3>
+        {server.protocol_version != null && server.protocol_version < 2 && (
+          <span className="rounded bg-amber-100 px-2 py-1 text-amber-600 text-xs dark:bg-amber-900/30 dark:text-amber-400">
+            Agent does not support capability enforcement — upgrade recommended
+          </span>
+        )}
+      </div>
+      <div className="space-y-3">
+        {CAPABILITIES.map(({ bit, label, risk }) => (
+          <div className="flex items-center justify-between" key={bit}>
+            <div className="flex items-center gap-2">
+              <span>{label}</span>
+              <span
+                className={`rounded px-1.5 py-0.5 text-xs ${
+                  risk === 'high'
+                    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                    : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                }`}
+              >
+                {risk === 'high' ? 'High Risk' : 'Low Risk'}
+              </span>
+            </div>
+            <button
+              aria-checked={
+                // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
+                !!(caps & bit)
+              }
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
+                caps & bit ? 'bg-primary' : 'bg-muted'
+              }`}
+              disabled={mutation.isPending}
+              onClick={() => toggle(bit)}
+              role="switch"
+              type="button"
+            >
+              <span
+                className={`inline-block size-4 rounded-full bg-white transition-transform ${
+                  // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
+                  caps & bit ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -149,9 +234,12 @@ function ServerDetailPage() {
     )
   }
 
+  const serverWithCaps = server as ServerResponse & ServerWithCaps
   const isOnline = liveData?.online ?? false
   const hasBilling = server.price != null || server.expired_at != null || server.traffic_limit != null
   const flag = countryCodeToFlag(server.country_code)
+  // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
+  const terminalEnabled = serverWithCaps.capabilities == null || (serverWithCaps.capabilities & 1) !== 0
 
   // Network cumulative traffic from live data
   const liveNetIn = liveData?.net_in_transfer ?? 0
@@ -182,7 +270,7 @@ function ServerDetailPage() {
               <Pencil className="mr-1 size-4" />
               Edit
             </Button>
-            {isOnline && (
+            {isOnline && terminalEnabled && (
               <Link params={{ serverId: id }} to="/terminal/$serverId">
                 <Button size="sm" variant="outline">
                   <TerminalIcon className="mr-1 size-4" />
@@ -280,6 +368,8 @@ function ServerDetailPage() {
         )}
       </div>
 
+      <CapabilitiesSection server={serverWithCaps} />
+
       <ServerEditDialog onClose={() => setEditOpen(false)} open={editOpen} server={server} />
     </div>
   )
@@ -289,7 +379,7 @@ function BillingInfoBar({
   server
 }: {
   server: Pick<
-    import('@/lib/api-schema').ServerResponse,
+    ServerResponse,
     'billing_cycle' | 'currency' | 'expired_at' | 'price' | 'traffic_limit' | 'traffic_limit_type'
   >
 }) {
