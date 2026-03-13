@@ -73,3 +73,58 @@ pub fn probe_type_to_cap(probe_type: &str) -> Option<u32> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_has_capability_single_bit() {
+        assert!(has_capability(CAP_TERMINAL, CAP_TERMINAL));
+        assert!(!has_capability(0, CAP_TERMINAL));
+        assert!(!has_capability(CAP_EXEC, CAP_TERMINAL));
+    }
+
+    #[test]
+    fn test_has_capability_combined() {
+        let caps = CAP_TERMINAL | CAP_EXEC;
+        assert!(has_capability(caps, CAP_TERMINAL));
+        assert!(has_capability(caps, CAP_EXEC));
+        assert!(!has_capability(caps, CAP_UPGRADE));
+    }
+
+    #[test]
+    fn test_default_capabilities() {
+        assert!(!has_capability(CAP_DEFAULT, CAP_TERMINAL));
+        assert!(!has_capability(CAP_DEFAULT, CAP_EXEC));
+        assert!(!has_capability(CAP_DEFAULT, CAP_UPGRADE));
+        assert!(has_capability(CAP_DEFAULT, CAP_PING_ICMP));
+        assert!(has_capability(CAP_DEFAULT, CAP_PING_TCP));
+        assert!(has_capability(CAP_DEFAULT, CAP_PING_HTTP));
+    }
+
+    #[test]
+    fn test_valid_mask() {
+        assert_eq!(CAP_VALID_MASK, 63);
+        for meta in ALL_CAPABILITIES {
+            assert!(meta.bit & CAP_VALID_MASK == meta.bit);
+        }
+        assert!(64 & !CAP_VALID_MASK != 0);
+    }
+
+    #[test]
+    fn test_probe_type_to_cap() {
+        assert_eq!(probe_type_to_cap("icmp"), Some(CAP_PING_ICMP));
+        assert_eq!(probe_type_to_cap("tcp"), Some(CAP_PING_TCP));
+        assert_eq!(probe_type_to_cap("http"), Some(CAP_PING_HTTP));
+        assert_eq!(probe_type_to_cap("unknown"), None);
+    }
+
+    #[test]
+    fn test_u32_max_allows_everything() {
+        assert!(has_capability(u32::MAX, CAP_TERMINAL));
+        assert!(has_capability(u32::MAX, CAP_EXEC));
+        assert!(has_capability(u32::MAX, CAP_UPGRADE));
+        assert!(has_capability(u32::MAX, CAP_PING_ICMP));
+    }
+}

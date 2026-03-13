@@ -111,3 +111,80 @@ pub enum BrowserMessage {
         protocol_version: u32,
     },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_welcome_without_capabilities_deserializes() {
+        let json = r#"{"type":"welcome","server_id":"s1","protocol_version":1,"report_interval":3}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::Welcome { capabilities, .. } => {
+                assert_eq!(capabilities, None);
+            }
+            _ => panic!("Expected Welcome"),
+        }
+    }
+
+    #[test]
+    fn test_welcome_with_capabilities_deserializes() {
+        let json = r#"{"type":"welcome","server_id":"s1","protocol_version":2,"report_interval":3,"capabilities":56}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::Welcome { capabilities, .. } => {
+                assert_eq!(capabilities, Some(56));
+            }
+            _ => panic!("Expected Welcome"),
+        }
+    }
+
+    #[test]
+    fn test_capabilities_sync_round_trip() {
+        let msg = ServerMessage::CapabilitiesSync { capabilities: 7 };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ServerMessage::CapabilitiesSync { capabilities } => {
+                assert_eq!(capabilities, 7);
+            }
+            _ => panic!("Expected CapabilitiesSync"),
+        }
+    }
+
+    #[test]
+    fn test_capability_denied_round_trip() {
+        let msg = AgentMessage::CapabilityDenied {
+            msg_id: Some("task-1".to_string()),
+            session_id: None,
+            capability: "exec".to_string(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::CapabilityDenied {
+                msg_id,
+                session_id,
+                capability,
+            } => {
+                assert_eq!(msg_id, Some("task-1".to_string()));
+                assert_eq!(session_id, None);
+                assert_eq!(capability, "exec");
+            }
+            _ => panic!("Expected CapabilityDenied"),
+        }
+    }
+
+    #[test]
+    fn test_system_info_without_protocol_version() {
+        let json = r#"{"type":"system_info","msg_id":"m1","cpu_name":"Intel","cpu_cores":4,"cpu_arch":"x86_64","os":"Linux","kernel_version":"5.4","mem_total":8000000000,"swap_total":0,"disk_total":100000000000,"agent_version":"0.1.0"}"#;
+        let msg: AgentMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            AgentMessage::SystemInfo { info, .. } => {
+                assert_eq!(info.protocol_version, 1);
+            }
+            _ => panic!("Expected SystemInfo"),
+        }
+    }
+}
