@@ -4,19 +4,11 @@ import { Plus, Trash2, UserCog } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
+import type { UserResponse } from '@/lib/api-schema'
 
 export const Route = createFileRoute('/_authed/settings/users')({
   component: UsersPage
 })
-
-interface UserItem {
-  created_at: string
-  has_2fa: boolean
-  id: string
-  role: string
-  updated_at: string
-  username: string
-}
 
 function UsersPage() {
   const queryClient = useQueryClient()
@@ -27,9 +19,9 @@ function UsersPage() {
   const [newPassword, setNewPassword] = useState('')
   const [newRole, setNewRole] = useState('member')
 
-  const { data: users, isLoading } = useQuery<UserItem[]>({
+  const { data: users, isLoading } = useQuery<UserResponse[]>({
     queryKey: ['users'],
-    queryFn: () => api.get<UserItem[]>('/api/users')
+    queryFn: () => api.get<UserResponse[]>('/api/users')
   })
 
   const invalidate = () => {
@@ -38,7 +30,7 @@ function UsersPage() {
 
   const createMutation = useMutation({
     mutationFn: (input: { password: string; role: string; username: string }) =>
-      api.post<UserItem>('/api/users', input),
+      api.post<UserResponse>('/api/users', input),
     onSuccess: () => {
       invalidate()
       resetForm()
@@ -46,7 +38,7 @@ function UsersPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, role }: { id: string; role: string }) => api.put<UserItem>(`/api/users/${id}`, { role }),
+    mutationFn: ({ id, role }: { id: string; role: string }) => api.put<UserResponse>(`/api/users/${id}`, { role }),
     onSuccess: () => {
       invalidate()
       setEditingId(null)

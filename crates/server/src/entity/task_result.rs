@@ -2,6 +2,7 @@ use sea_orm::entity::prelude::*;
 use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, utoipa::ToSchema)]
+#[schema(as = TaskResult)]
 #[sea_orm(table_name = "task_results")]
 pub struct Model {
     #[sea_orm(primary_key)]

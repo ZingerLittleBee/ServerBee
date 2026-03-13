@@ -4,24 +4,11 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
+import type { AuditListResponse } from '@/lib/api-schema'
 
 export const Route = createFileRoute('/_authed/settings/audit-logs')({
   component: AuditLogsPage
 })
-
-interface AuditLogEntry {
-  action: string
-  created_at: string
-  detail: string | null
-  id: number
-  ip: string
-  user_id: string
-}
-
-interface AuditListResponse {
-  entries: AuditLogEntry[]
-  total: number
-}
 
 const PAGE_SIZE = 25
 

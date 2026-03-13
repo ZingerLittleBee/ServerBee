@@ -4,33 +4,26 @@ import { Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
+import type { ApiKeyResponse } from '@/lib/api-schema'
 
 export const Route = createFileRoute('/_authed/settings/api-keys')({
   component: ApiKeysPage
 })
-
-interface ApiKey {
-  created_at: string
-  id: string
-  key: string | null
-  key_prefix: string
-  name: string
-}
 
 function ApiKeysPage() {
   const queryClient = useQueryClient()
   const [newKeyName, setNewKeyName] = useState('')
   const [createdKey, setCreatedKey] = useState<string | null>(null)
 
-  const { data: keys, isLoading } = useQuery<ApiKey[]>({
+  const { data: keys, isLoading } = useQuery<ApiKeyResponse[]>({
     queryKey: ['settings', 'api-keys'],
-    queryFn: () => api.get<ApiKey[]>('/api/auth/api-keys')
+    queryFn: () => api.get<ApiKeyResponse[]>('/api/auth/api-keys')
   })
 
   const createMutation = useMutation({
-    mutationFn: (name: string) => api.post<ApiKey>('/api/auth/api-keys', { name }),
+    mutationFn: (name: string) => api.post<ApiKeyResponse>('/api/auth/api-keys', { name }),
     onSuccess: (data) => {
-      setCreatedKey(data.key)
+      setCreatedKey(data.key ?? null)
       setNewKeyName('')
       queryClient
         .invalidateQueries({

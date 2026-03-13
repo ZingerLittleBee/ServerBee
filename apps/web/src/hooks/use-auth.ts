@@ -1,18 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
-
-interface User {
-  must_change_password: boolean
-  role: string
-  user_id: string
-  username: string
-}
-
-interface LoginPayload {
-  password: string
-  totp_code?: string
-  username: string
-}
+import type { LoginRequest, MeResponse } from '@/lib/api-schema'
 
 export function useAuth() {
   const queryClient = useQueryClient()
@@ -21,11 +9,11 @@ export function useAuth() {
     data: user,
     isLoading,
     isError
-  } = useQuery<User | null>({
+  } = useQuery<MeResponse | null>({
     queryKey: ['auth', 'me'],
     queryFn: async () => {
       try {
-        return await api.get<User>('/api/auth/me')
+        return await api.get<MeResponse>('/api/auth/me')
       } catch {
         return null
       }
@@ -35,7 +23,7 @@ export function useAuth() {
   })
 
   const loginMutation = useMutation({
-    mutationFn: (payload: LoginPayload) => api.post<User>('/api/auth/login', payload),
+    mutationFn: (payload: LoginRequest) => api.post<MeResponse>('/api/auth/login', payload),
     onSuccess: (data) => {
       queryClient.setQueryData(['auth', 'me'], data)
     }

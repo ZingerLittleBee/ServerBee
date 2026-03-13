@@ -5,6 +5,7 @@ import { type FormEvent, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/use-auth'
 import { ApiError, api } from '@/lib/api-client'
+import type { OAuthProvidersResponse } from '@/lib/api-schema'
 
 export const Route = createFileRoute('/login')({
   component: LoginPage
@@ -122,19 +123,15 @@ function LoginPage() {
   )
 }
 
-interface OAuthProviders {
-  providers: string[]
-}
-
 const providerConfig: Record<string, { label: string; icon: () => React.JSX.Element }> = {
   github: { label: 'GitHub', icon: GitHubIcon },
   google: { label: 'Google', icon: GoogleIcon }
 }
 
 function OAuthButtons() {
-  const { data } = useQuery<OAuthProviders>({
+  const { data } = useQuery<OAuthProvidersResponse>({
     queryKey: ['auth', 'oauth', 'providers'],
-    queryFn: () => api.get<OAuthProviders>('/api/auth/oauth/providers'),
+    queryFn: () => api.get<OAuthProvidersResponse>('/api/auth/oauth/providers'),
     retry: false,
     staleTime: 300_000
   })

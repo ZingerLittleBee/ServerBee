@@ -5,30 +5,11 @@ import { type FormEvent, useMemo, useState } from 'react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
+import type { PingRecord, PingTask } from '@/lib/api-schema'
 
 export const Route = createFileRoute('/_authed/settings/ping-tasks')({
   component: PingTasksPage
 })
-
-interface PingTask {
-  created_at: string
-  enabled: boolean
-  id: string
-  interval: number
-  name: string
-  probe_type: string
-  server_ids_json: string
-  target: string
-}
-
-interface PingRecord {
-  id: number
-  latency: number
-  server_id: string
-  success: boolean
-  task_id: string
-  time: string
-}
 
 interface Server {
   id: string

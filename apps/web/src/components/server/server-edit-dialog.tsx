@@ -2,33 +2,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import type { ServerDetail } from '@/hooks/use-api'
 import { api } from '@/lib/api-client'
-
-interface ServerGroup {
-  id: string
-  name: string
-}
+import type { ServerGroup, ServerResponse, UpdateServerInput } from '@/lib/api-schema'
 
 interface ServerEditDialogProps {
   onClose: () => void
   open: boolean
-  server: ServerDetail
-}
-
-interface UpdatePayload {
-  billing_cycle?: string | null
-  currency?: string | null
-  expired_at?: string | null
-  group_id?: string | null
-  hidden?: boolean
-  name?: string
-  price?: number | null
-  public_remark?: string | null
-  remark?: string | null
-  traffic_limit?: number | null
-  traffic_limit_type?: string | null
-  weight?: number
+  server: ServerResponse
 }
 
 export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProps) {
@@ -73,7 +53,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
   }, [open, server])
 
   const mutation = useMutation({
-    mutationFn: (payload: UpdatePayload) => api.put<ServerDetail>(`/api/servers/${server.id}`, payload),
+    mutationFn: (payload: UpdateServerInput) => api.put<ServerResponse>(`/api/servers/${server.id}`, payload),
     onSuccess: (data) => {
       queryClient.setQueryData(['servers', server.id], data)
       queryClient.invalidateQueries({ queryKey: ['servers'] })
@@ -83,7 +63,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-    const payload: UpdatePayload = {
+    const payload: UpdateServerInput = {
       name,
       weight,
       hidden,

@@ -2,6 +2,7 @@ use sea_orm::entity::prelude::*;
 use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, utoipa::ToSchema)]
+#[schema(as = PingRecord)]
 #[sea_orm(table_name = "ping_records")]
 pub struct Model {
     #[sea_orm(primary_key)]

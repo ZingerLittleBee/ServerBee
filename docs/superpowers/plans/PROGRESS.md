@@ -20,11 +20,11 @@
 | P3-b | 前端 UI 完善 | **已完成** | 3 (`044e568`, `3f33de9`, `1bea44d`) |
 | P3-c | 测试 | **已完成** | 2 (`7c0d681`, `3244eac`) |
 | P3-d | Agent 完善 | **已完成** | 1 (`9d5835e`) |
-| P3-e | 性能优化 | **部分完成** | 1 (`7c13b3d`) |
+| P3-e | 性能优化 | **已完成** | 2 (`7c13b3d`) |
 | P3-f | CI/CD + 部署文档 | **部分完成** | 1 (`e6fee1a`) |
 | P4 | 端到端验证 + 上线前加固 | **已完成** | 1 (`51e8b40`) |
 
-**P0~P4 全部完成并已提交 (共 31 个 commits)。测试: 43 单元 + 2 集成 + 8 前端 = 53 个测试。仅 P3-c T8 (E2E) / P3-e T2 (OpenAPI 类型生成) / P3-f T5 (Fumadocs) 跳过。**
+**P0~P4 全部完成并已提交 (共 32 个 commits)。测试: 43 单元 + 2 集成 + 8 前端 = 53 个测试。仅 P3-c T8 (E2E) / P3-f T5 (Fumadocs) 跳过。**
 
 ---
 
@@ -573,7 +573,7 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 ### P3-e: 性能优化
 - [x] Vite Code Split: xterm (333KB) + recharts (354KB) 独立 chunk, 主 bundle 1124KB → 435KB ✅
 - [x] 数据库查询索引: (server_id, time) 复合索引已存在 ✅
-- [ ] OpenAPI 类型生成 — 跳过 (工作量大, 需改动所有前端类型)
+- [x] OpenAPI 类型生成: utoipa 导出 → openapi-typescript 生成 → 替换 14 个文件的手写接口 ✅
 
 ### P3-f: CI/CD + 部署文档
 - [x] CI Windows 构建: x86_64-pc-windows-msvc target + .exe artifact 处理 ✅
@@ -634,7 +634,7 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 | Task | 名称 | 状态 |
 |------|------|------|
 | T1 | Vite Code Split (manualChunks: xterm.js, recharts 独立 chunk) | **done** |
-| T2 | OpenAPI 类型生成 (openapi-typescript 替代手写接口定义) | **跳过** |
+| T2 | OpenAPI 类型生成 (openapi-typescript 替代手写接口定义) | **done** |
 | T3 | 数据库查询优化 (大时间范围 records 查询索引 + 分页) | **done** (索引已存在) |
 
 ### P3-f: CI/CD + 部署
@@ -687,6 +687,6 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 ### 可以不做
 
 - ~~P3-b T10 服务器列表页~~ — **已完成** (`1bea44d`)
-- P3-e T2 OpenAPI 类型生成 — 手写类型可用，只是维护成本高
+- ~~P3-e T2 OpenAPI 类型生成~~ — **已完成**
 - P3-c T8 Playwright E2E — 有单元测试和手动验证足够
 - P3-f T5 Fumadocs — 有 README 和 Swagger UI 足够

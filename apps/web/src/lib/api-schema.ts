@@ -1,0 +1,95 @@
+/**
+ * Convenience re-exports from the auto-generated OpenAPI types.
+ * Import from here instead of defining hand-written interfaces.
+ *
+ * Regenerate: pnpm run generate:api-types
+ */
+import type { components } from './api-types'
+
+type S = components['schemas']
+
+// Auth
+export type LoginRequest = S['LoginRequest']
+export type LoginResponse = S['LoginResponse']
+export type MeResponse = S['MeResponse']
+
+// Users
+export type UserResponse = S['UserResponse']
+export type CreateUserInput = S['CreateUserInput']
+export type UpdateUserInput = S['UpdateUserInput']
+export type ChangePasswordRequest = S['ChangePasswordRequest']
+
+// Servers
+export type ServerResponse = S['ServerResponse']
+export type UpdateServerInput = S['UpdateServerInput']
+export type BatchDeleteRequest = S['BatchDeleteRequest']
+export type BatchDeleteResponse = S['BatchDeleteResponse']
+
+// Server groups
+export type ServerGroup = S['ServerGroup']
+export type CreateGroupRequest = S['CreateGroupRequest']
+export type UpdateGroupRequest = S['UpdateGroupRequest']
+
+// Alert rules
+export type AlertRule = S['AlertRule']
+export type AlertRuleItem = S['AlertRuleItem']
+export type CreateAlertRule = S['CreateAlertRule']
+export type UpdateAlertRule = S['UpdateAlertRule']
+
+// Notifications
+export type Notification = S['Notification']
+export type NotificationGroup = S['NotificationGroup']
+export type CreateNotification = S['CreateNotification']
+export type UpdateNotification = S['UpdateNotification']
+export type CreateNotificationGroup = S['CreateNotificationGroup']
+export type UpdateNotificationGroup = S['UpdateNotificationGroup']
+
+// Ping
+export type PingTask = S['PingTask']
+export type PingRecord = S['PingRecord']
+export type CreatePingTask = S['CreatePingTask']
+export type UpdatePingTask = S['UpdatePingTask']
+
+// Tasks
+export type TaskResponse = S['TaskResponse']
+export type TaskResult = S['TaskResult']
+export type CreateTaskRequest = S['CreateTaskRequest']
+
+// GPU
+export type GpuRecord = S['GpuRecord']
+
+// Audit
+export type AuditLogEntry = S['AuditLogEntry']
+export type AuditListResponse = S['AuditListResponse']
+
+// API keys
+export type ApiKeyResponse = S['ApiKeyResponse']
+export type CreateApiKeyRequest = S['CreateApiKeyRequest']
+
+// OAuth
+export type OAuthAccount = S['OAuthAccount']
+export type OAuthProvidersResponse = S['OAuthProvidersResponse']
+
+// 2FA / TOTP
+export type TotpStatusResponse = S['TotpStatusResponse']
+export type TotpSetupResponse = S['TotpSetupResponse']
+export type TotpVerifyRequest = S['TotpVerifyRequest']
+export type TotpDisableRequest = S['TotpDisableRequest']
+
+// System settings
+export type SystemSettings = S['SystemSettings']
+
+// Status page (public)
+export type StatusPageResponse = S['StatusPageResponse']
+export type StatusServer = S['StatusServer']
+export type StatusMetrics = S['StatusMetrics']
+export type StatusGroup = S['StatusGroup']
+
+// Agent
+export type RegisterResponse = S['RegisterResponse']
+export type UpgradeRequest = S['UpgradeRequest']
+export type AutoDiscoveryKeyResponse = S['AutoDiscoveryKeyResponse']
+
+// Errors
+export type ErrorBody = S['ErrorBody']
+export type ErrorDetail = S['ErrorDetail']

@@ -2,6 +2,7 @@ use sea_orm::entity::prelude::*;
 use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, utoipa::ToSchema)]
+#[schema(as = ServerGroup)]
 #[sea_orm(table_name = "server_groups")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]

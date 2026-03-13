@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, Play, Terminal } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
+import type { TaskResponse, TaskResult } from '@/lib/api-schema'
 
 export const Route = createFileRoute('/_authed/settings/tasks')({
   component: TasksPage
@@ -12,22 +13,6 @@ export const Route = createFileRoute('/_authed/settings/tasks')({
 interface ServerInfo {
   id: string
   name: string
-}
-
-interface TaskResponse {
-  command: string
-  created_at: string
-  id: string
-  server_ids: string[]
-}
-
-interface TaskResultItem {
-  exit_code: number
-  finished_at: string
-  id: number
-  output: string
-  server_id: string
-  task_id: string
 }
 
 function TasksPage() {
@@ -49,9 +34,9 @@ function TasksPage() {
     }
   })
 
-  const { data: taskResults, refetch: refetchResults } = useQuery<TaskResultItem[]>({
+  const { data: taskResults, refetch: refetchResults } = useQuery<TaskResult[]>({
     queryKey: ['task-results', expandedTask],
-    queryFn: () => api.get<TaskResultItem[]>(`/api/tasks/${expandedTask}/results`),
+    queryFn: () => api.get<TaskResult[]>(`/api/tasks/${expandedTask}/results`),
     enabled: expandedTask !== null,
     refetchInterval: expandedTask ? 2000 : false
   })

@@ -3,49 +3,12 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Activity, Globe, Server } from 'lucide-react'
 import { StatusBadge } from '@/components/server/status-badge'
 import { api } from '@/lib/api-client'
+import type { StatusPageResponse, StatusServer } from '@/lib/api-schema'
 import { cn, countryCodeToFlag, formatSpeed, formatUptime } from '@/lib/utils'
 
 export const Route = createFileRoute('/status')({
   component: StatusPage
 })
-
-interface StatusMetrics {
-  cpu: number
-  disk_total: number
-  disk_used: number
-  load1: number
-  mem_total: number
-  mem_used: number
-  net_in_speed: number
-  net_in_transfer: number
-  net_out_speed: number
-  net_out_transfer: number
-  uptime: number
-}
-
-interface StatusServer {
-  country_code: string | null
-  group_id: string | null
-  id: string
-  metrics: StatusMetrics | null
-  name: string
-  online: boolean
-  os: string | null
-  public_remark: string | null
-  region: string | null
-}
-
-interface StatusGroup {
-  id: string
-  name: string
-}
-
-interface StatusPageResponse {
-  groups: StatusGroup[]
-  online_count: number
-  servers: StatusServer[]
-  total_count: number
-}
 
 function ProgressBar({ value, label, color }: { color: string; label: string; value: number }) {
   const pct = Math.min(100, Math.max(0, value))

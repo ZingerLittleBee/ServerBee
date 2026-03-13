@@ -4,26 +4,11 @@ import { Bell, Plus, Send, Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
+import type { Notification, NotificationGroup } from '@/lib/api-schema'
 
 export const Route = createFileRoute('/_authed/settings/notifications')({
   component: NotificationsPage
 })
-
-interface Notification {
-  config_json: string
-  created_at: string
-  enabled: boolean
-  id: string
-  name: string
-  notify_type: string
-}
-
-interface NotificationGroup {
-  created_at: string
-  id: string
-  name: string
-  notification_ids_json: string
-}
 
 type NotifyType = 'bark' | 'email' | 'telegram' | 'webhook'
 

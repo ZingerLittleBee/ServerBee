@@ -4,22 +4,19 @@ import { Copy, Eye, EyeOff } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
+import type { AutoDiscoveryKeyResponse } from '@/lib/api-schema'
 
 export const Route = createFileRoute('/_authed/settings/')({
   component: SettingsPage
 })
 
-interface DiscoveryConfig {
-  key: string
-}
-
 function SettingsPage() {
   const [showKey, setShowKey] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  const { data: config } = useQuery<DiscoveryConfig>({
+  const { data: config } = useQuery<AutoDiscoveryKeyResponse>({
     queryKey: ['settings', 'discovery'],
-    queryFn: () => api.get<DiscoveryConfig>('/api/settings/auto-discovery-key')
+    queryFn: () => api.get<AutoDiscoveryKeyResponse>('/api/settings/auto-discovery-key')
   })
 
   const handleCopy = async () => {
