@@ -8,6 +8,7 @@ import {
   FEATURED_COMMAND_KEYS,
   getCommandByKey,
   getMenuColumnWidths,
+  getSelectedCommandFromFzfResult,
   orderCommandsForMenu,
   readRecentCommands,
   recordRecentCommand
@@ -74,5 +75,16 @@ describe('menu display formatting', () => {
 
     expect(dockerLabel.indexOf(dockerLogs.name)).toBe(dbLabel.indexOf(dbMigrate.name))
     expect(dockerLabel.indexOf(dockerLogs.description)).toBe(dbLabel.indexOf(dbMigrate.description))
+  })
+})
+
+describe('menu selection result handling', () => {
+  it('treats a zero status from spawnSync as a successful selection', () => {
+    const command = getSelectedCommandFromFzfResult({
+      status: 0,
+      stdout: '  Workspace  test  Run the root web test suite\tbun run test\ttest'
+    })
+
+    expect(command?.key).toBe('test')
   })
 })

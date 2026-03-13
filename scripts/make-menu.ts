@@ -402,6 +402,11 @@ export interface MenuColumnWidths {
   nameWidth: number
 }
 
+interface FzfSelectionResult {
+  status: number | null
+  stdout: string
+}
+
 export const getCommandByKey = (key: string): CommandDefinition | undefined => COMMANDS_BY_KEY.get(key)
 
 const getFeaturedCommands = (): CommandDefinition[] => COMMANDS.filter((command) => command.featured)
@@ -500,6 +505,22 @@ const ensureFzfIsInstalled = (): void => {
   }
 }
 
+export const getSelectedCommandFromFzfResult = (result: FzfSelectionResult): CommandDefinition | undefined => {
+  if (result.status !== 0) {
+    return undefined
+  }
+
+  const selectedLine = result.stdout.trim()
+
+  if (!selectedLine) {
+    return undefined
+  }
+
+  const selectedKey = selectedLine.split('\t').at(-1)
+
+  return selectedKey ? getCommandByKey(selectedKey) : undefined
+}
+
 const openMenu = async (): Promise<CommandDefinition | undefined> => {
   ensureFzfIsInstalled()
 
@@ -534,19 +555,10 @@ const openMenu = async (): Promise<CommandDefinition | undefined> => {
     }
   )
 
-  if (result.exitCode !== 0) {
-    return undefined
-  }
-
-  const selectedLine = result.stdout.trim()
-
-  if (!selectedLine) {
-    return undefined
-  }
-
-  const selectedKey = selectedLine.split('\t').at(-1)
-
-  return selectedKey ? getCommandByKey(selectedKey) : undefined
+  return getSelectedCommandFromFzfResult({
+    status: result.status,
+    stdout: result.stdout
+  })
 }
 
 const runShellCommand = async (command: CommandDefinition): Promise<number> => {
