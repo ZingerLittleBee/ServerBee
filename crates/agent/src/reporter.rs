@@ -115,11 +115,11 @@ impl Reporter {
 
         // Ping probe manager
         let (ping_tx, mut ping_rx) = mpsc::channel(256);
-        let mut ping_manager = PingManager::new(ping_tx);
+        let mut ping_manager = PingManager::new(ping_tx, Arc::clone(&capabilities));
 
         // Terminal session manager
         let (term_tx, mut term_rx) = mpsc::channel(256);
-        let mut terminal_manager = TerminalManager::new(term_tx);
+        let mut terminal_manager = TerminalManager::new(term_tx, Arc::clone(&capabilities));
 
         // Channel for background command execution results
         let (cmd_result_tx, mut cmd_result_rx) = mpsc::channel::<AgentMessage>(32);
