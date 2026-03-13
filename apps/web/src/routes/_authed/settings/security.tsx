@@ -43,14 +43,14 @@ function TwoFactorSection() {
     onSuccess: () => {
       setSetupData(null)
       setVerifyCode('')
-      queryClient.invalidateQueries({ queryKey: ['auth', '2fa', 'status'] }).catch(() => {})
+      queryClient.invalidateQueries({ queryKey: ['auth', '2fa', 'status'] }).catch(() => undefined)
     }
   })
 
   const disableMutation = useMutation({
     mutationFn: (password: string) => api.post('/api/auth/2fa/disable', { password }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['auth', '2fa', 'status'] }).catch(() => {})
+      queryClient.invalidateQueries({ queryKey: ['auth', '2fa', 'status'] }).catch(() => undefined)
     }
   })
 
@@ -90,7 +90,7 @@ function TwoFactorSection() {
         <h2 className="font-semibold text-lg">Two-Factor Authentication</h2>
       </div>
 
-      {status?.enabled ? (
+      {status?.enabled && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
             <Shield className="size-4" />
@@ -135,14 +135,20 @@ function TwoFactorSection() {
             </Button>
           )}
         </div>
-      ) : setupData ? (
+      )}
+      {!status?.enabled && setupData && (
         <div className="space-y-4">
           <p className="text-muted-foreground text-sm">
             Scan the QR code with your authenticator app (Google Authenticator, Authy, etc.)
           </p>
 
           <div className="flex justify-center rounded-md border bg-white p-4">
-            <img alt="TOTP QR Code" className="size-48" src={`data:image/png;base64,${setupData.qr_code_base64}`} />
+            <img
+              alt="TOTP QR Code"
+              height={192}
+              src={`data:image/png;base64,${setupData.qr_code_base64}`}
+              width={192}
+            />
           </div>
 
           <details className="text-sm">
@@ -187,7 +193,8 @@ function TwoFactorSection() {
             {enableMutation.error && <p className="text-destructive text-sm">Invalid code. Please try again.</p>}
           </form>
         </div>
-      ) : (
+      )}
+      {!(status?.enabled || setupData) && (
         <div className="space-y-3">
           <p className="text-muted-foreground text-sm">
             Add an extra layer of security to your account using a time-based one-time password (TOTP).
@@ -281,7 +288,7 @@ function OAuthAccountsSection() {
   const unlinkMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/api/auth/oauth/accounts/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['auth', 'oauth', 'accounts'] }).catch(() => {})
+      queryClient.invalidateQueries({ queryKey: ['auth', 'oauth', 'accounts'] }).catch(() => undefined)
     }
   })
 
@@ -289,32 +296,34 @@ function OAuthAccountsSection() {
     <div className="rounded-lg border bg-card p-6">
       <h2 className="mb-4 font-semibold text-lg">Linked Accounts</h2>
 
-      {isLoading ? (
+      {isLoading && (
         <div className="space-y-2">
           <div className="h-12 animate-pulse rounded bg-muted" />
           <div className="h-12 animate-pulse rounded bg-muted" />
         </div>
-      ) : !accounts || accounts.length === 0 ? (
+      )}
+      {!isLoading && (!accounts || accounts.length === 0) && (
         <p className="text-muted-foreground text-sm">No linked OAuth accounts</p>
-      ) : (
+      )}
+      {!isLoading && accounts && accounts.length > 0 && (
         <div className="space-y-2">
-          {accounts.map((account) => (
-            <div className="flex items-center justify-between rounded-md border px-4 py-3" key={account.id}>
+          {accounts.map((acct) => (
+            <div className="flex items-center justify-between rounded-md border px-4 py-3" key={acct.id}>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs uppercase">{account.provider}</span>
+                  <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs uppercase">{acct.provider}</span>
                   <span className="font-medium text-sm">
-                    {account.display_name || account.email || account.provider_user_id}
+                    {acct.display_name || acct.email || acct.provider_user_id}
                   </span>
                 </div>
-                {account.email && account.display_name && (
-                  <p className="mt-0.5 text-muted-foreground text-xs">{account.email}</p>
+                {acct.email && acct.display_name && (
+                  <p className="mt-0.5 text-muted-foreground text-xs">{acct.email}</p>
                 )}
               </div>
               <Button
-                aria-label={`Unlink ${account.provider} account`}
+                aria-label={`Unlink ${acct.provider} account`}
                 disabled={unlinkMutation.isPending}
-                onClick={() => unlinkMutation.mutate(account.id)}
+                onClick={() => unlinkMutation.mutate(acct.id)}
                 size="sm"
                 variant="outline"
               >

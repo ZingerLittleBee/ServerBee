@@ -40,6 +40,39 @@ type WsMessage =
 
 export type { ServerMetrics }
 
+const STATIC_FIELDS = new Set([
+  'mem_total',
+  'swap_total',
+  'disk_total',
+  'cpu_name',
+  'os',
+  'region',
+  'country_code',
+  'group_id'
+])
+
+function mergeServerUpdate(prev: ServerMetrics[], incoming: ServerMetrics[]): ServerMetrics[] {
+  const updated = [...prev]
+  for (const server of incoming) {
+    const idx = updated.findIndex((s) => s.id === server.id)
+    if (idx >= 0) {
+      const merged = { ...updated[idx] }
+      for (const [key, value] of Object.entries(server)) {
+        const isStaticDefault = STATIC_FIELDS.has(key) && (value === null || value === 0)
+        if (!isStaticDefault) {
+          ;(merged as Record<string, unknown>)[key] = value
+        }
+      }
+      updated[idx] = merged as ServerMetrics
+    }
+  }
+  return updated
+}
+
+function setServerOnlineStatus(prev: ServerMetrics[], serverId: string, online: boolean): ServerMetrics[] {
+  return prev.map((s) => (s.id === serverId ? { ...s, online } : s))
+}
+
 export function useServersWs(): void {
   const queryClient = useQueryClient()
   const wsRef = useRef<WsClient | null>(null)
@@ -57,37 +90,11 @@ export function useServersWs(): void {
           break
         }
         case 'update': {
-          // Static fields set to defaults (0 or null) in Update broadcasts
-          // should not overwrite values from FullSync.
-          const staticFields = new Set([
-            'mem_total',
-            'swap_total',
-            'disk_total',
-            'cpu_name',
-            'os',
-            'region',
-            'country_code',
-            'group_id'
-          ])
           queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) => {
             if (!prev) {
               return msg.servers
             }
-            const updated = [...prev]
-            for (const incoming of msg.servers) {
-              const idx = updated.findIndex((s) => s.id === incoming.id)
-              if (idx >= 0) {
-                const merged = { ...updated[idx] }
-                for (const [key, value] of Object.entries(incoming)) {
-                  const isStaticDefault = staticFields.has(key) && (value === null || value === 0)
-                  if (!isStaticDefault) {
-                    ;(merged as Record<string, unknown>)[key] = value
-                  }
-                }
-                updated[idx] = merged as ServerMetrics
-              }
-            }
-            return updated
+            return mergeServerUpdate(prev, msg.servers)
           })
           break
         }
@@ -96,7 +103,7 @@ export function useServersWs(): void {
             if (!prev) {
               return prev
             }
-            return prev.map((s) => (s.id === msg.server_id ? { ...s, online: true } : s))
+            return setServerOnlineStatus(prev, msg.server_id, true)
           })
           break
         }
@@ -105,7 +112,7 @@ export function useServersWs(): void {
             if (!prev) {
               return prev
             }
-            return prev.map((s) => (s.id === msg.server_id ? { ...s, online: false } : s))
+            return setServerOnlineStatus(prev, msg.server_id, false)
           })
           break
         }

@@ -45,12 +45,34 @@ function formatCurrency(price: number, currency: string): string {
   }
 }
 
+function ServerInfoMeta({ server }: { server: import('@/lib/api-schema').ServerResponse }) {
+  return (
+    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground text-sm">
+      {server.os && <span>OS: {server.os}</span>}
+      {server.cpu_name && (
+        <span>
+          CPU: {server.cpu_name}
+          {server.cpu_cores && ` (${server.cpu_cores} cores)`}
+          {server.cpu_arch && ` ${server.cpu_arch}`}
+        </span>
+      )}
+      {server.mem_total != null && <span>RAM: {formatBytes(server.mem_total)}</span>}
+      {server.ipv4 && <span>IPv4: {server.ipv4}</span>}
+      {server.ipv6 && <span>IPv6: {server.ipv6}</span>}
+      {server.kernel_version && <span>Kernel: {server.kernel_version}</span>}
+      {server.region && <span>Region: {server.region}</span>}
+      {server.agent_version && <span>Agent: v{server.agent_version}</span>}
+    </div>
+  )
+}
+
 function ServerDetailPage() {
   const { id } = Route.useParams()
   const [selectedRange, setSelectedRange] = useState(1)
   const [editOpen, setEditOpen] = useState(false)
 
   const range = TIME_RANGES[selectedRange]
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally re-compute when selectedRange changes
   const now = useMemo(() => new Date(), [selectedRange])
   const from = new Date(now.getTime() - range.hours * 3600 * 1000).toISOString()
   const to = now.toISOString()
@@ -148,22 +170,7 @@ function ServerDetailPage() {
               <h1 className="font-bold text-2xl">{server.name}</h1>
               <StatusBadge online={isOnline} />
             </div>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground text-sm">
-              {server.os && <span>OS: {server.os}</span>}
-              {server.cpu_name && (
-                <span>
-                  CPU: {server.cpu_name}
-                  {server.cpu_cores && ` (${server.cpu_cores} cores)`}
-                  {server.cpu_arch && ` ${server.cpu_arch}`}
-                </span>
-              )}
-              {server.mem_total != null && <span>RAM: {formatBytes(server.mem_total)}</span>}
-              {server.ipv4 && <span>IPv4: {server.ipv4}</span>}
-              {server.ipv6 && <span>IPv6: {server.ipv6}</span>}
-              {server.kernel_version && <span>Kernel: {server.kernel_version}</span>}
-              {server.region && <span>Region: {server.region}</span>}
-              {server.agent_version && <span>Agent: v{server.agent_version}</span>}
-            </div>
+            <ServerInfoMeta server={server} />
           </div>
           <div className="flex gap-2">
             <Button onClick={() => setEditOpen(true)} size="sm" variant="outline">
@@ -286,6 +293,16 @@ function BillingInfoBar({
     ? Math.ceil((new Date(server.expired_at).getTime() - Date.now()) / 86_400_000)
     : null
 
+  const expiryColor = (() => {
+    if (isExpired) {
+      return 'text-destructive'
+    }
+    if (daysUntilExpiry != null && daysUntilExpiry <= 7) {
+      return 'text-yellow-600 dark:text-yellow-400'
+    }
+    return 'text-muted-foreground'
+  })()
+
   return (
     <div className="mb-6 flex flex-wrap items-center gap-4 rounded-lg border bg-card p-3 text-sm">
       <CreditCard className="size-4 text-muted-foreground" />
@@ -296,15 +313,7 @@ function BillingInfoBar({
         </span>
       )}
       {server.expired_at && (
-        <span
-          className={cn(
-            isExpired
-              ? 'text-destructive'
-              : daysUntilExpiry != null && daysUntilExpiry <= 7
-                ? 'text-yellow-600 dark:text-yellow-400'
-                : 'text-muted-foreground'
-          )}
-        >
+        <span className={cn(expiryColor)}>
           {isExpired
             ? `Expired ${new Date(server.expired_at).toLocaleDateString()}`
             : `Expires ${new Date(server.expired_at).toLocaleDateString()}`}

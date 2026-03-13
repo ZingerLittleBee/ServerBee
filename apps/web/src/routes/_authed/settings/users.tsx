@@ -197,6 +197,7 @@ function UsersPage() {
                     aria-label={`Delete user ${user.username}`}
                     disabled={deleteMutation.isPending}
                     onClick={() => {
+                      // biome-ignore lint/suspicious/noAlert: temporary UX, will replace with dialog
                       if (window.confirm(`Delete user "${user.username}"? This cannot be undone.`)) {
                         deleteMutation.mutate(user.id)
                       }

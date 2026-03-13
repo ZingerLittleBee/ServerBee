@@ -25,6 +25,7 @@ const probeTypeLabels: Record<ProbeType, string> = {
 }
 
 function PingResultsChart({ taskId }: { taskId: string }) {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally re-compute when taskId changes
   const now = useMemo(() => new Date(), [taskId])
   const from = new Date(now.getTime() - 24 * 3600 * 1000).toISOString()
   const to = now.toISOString()
