@@ -21,6 +21,7 @@ pub struct UpdateServerInput {
     pub expired_at: Option<Option<chrono::DateTime<chrono::Utc>>>,
     pub traffic_limit: Option<Option<i64>>,
     pub traffic_limit_type: Option<Option<String>>,
+    pub capabilities: Option<i32>,
 }
 
 pub struct ServerService;
@@ -93,6 +94,13 @@ impl ServerService {
         }
         if let Some(traffic_limit_type) = input.traffic_limit_type {
             active.traffic_limit_type = Set(traffic_limit_type);
+        }
+        if let Some(caps) = input.capabilities {
+            let caps_u32 = caps as u32;
+            if caps_u32 & !serverbee_common::constants::CAP_VALID_MASK != 0 {
+                return Err(AppError::Validation("Invalid capability bits".into()));
+            }
+            active.capabilities = Set(caps);
         }
 
         active.updated_at = Set(Utc::now());
