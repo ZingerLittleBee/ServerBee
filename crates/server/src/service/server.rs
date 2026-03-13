@@ -164,6 +164,7 @@ impl ServerService {
         if country_code.is_some() {
             active.country_code = Set(country_code);
         }
+        active.protocol_version = Set(info.protocol_version as i32);
         active.updated_at = Set(Utc::now());
 
         active.update(db).await?;
