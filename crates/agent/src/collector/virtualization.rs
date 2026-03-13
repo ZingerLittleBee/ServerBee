@@ -39,12 +39,12 @@ fn detect_linux() -> Option<String> {
     }
 
     // Fallback: try systemd-detect-virt
-    if let Ok(output) = std::process::Command::new("systemd-detect-virt").output() {
-        if output.status.success() {
-            let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !result.is_empty() && result != "none" {
-                return Some(result);
-            }
+    if let Ok(output) = std::process::Command::new("systemd-detect-virt").output()
+        && output.status.success()
+    {
+        let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !result.is_empty() && result != "none" {
+            return Some(result);
         }
     }
 

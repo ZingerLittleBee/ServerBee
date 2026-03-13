@@ -150,14 +150,14 @@ pub async fn create_backup(
     let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
     let filename = format!("serverbee_backup_{timestamp}.db");
 
-    Ok(axum::response::Response::builder()
+    axum::response::Response::builder()
         .header(header::CONTENT_TYPE, "application/octet-stream")
         .header(
             header::CONTENT_DISPOSITION,
             format!("attachment; filename=\"{filename}\""),
         )
         .body(Body::from(bytes))
-        .map_err(|e| AppError::Internal(format!("Response build error: {e}")))?)
+        .map_err(|e| AppError::Internal(format!("Response build error: {e}")))
 }
 
 /// Restore the database from an uploaded backup file.
