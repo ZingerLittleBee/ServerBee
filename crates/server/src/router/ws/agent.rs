@@ -257,6 +257,22 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             tracing::warn!(
                 "Agent {server_id} denied capability '{capability}' (msg_id={msg_id:?}, session_id={session_id:?})"
             );
+            // For exec: write synthetic task_result so frontend polling resolves
+            if let Some(task_id) = &msg_id {
+                use crate::entity::task_result;
+                use sea_orm::{ActiveModelTrait, NotSet, Set};
+                let result = task_result::ActiveModel {
+                    id: NotSet,
+                    task_id: Set(task_id.clone()),
+                    server_id: Set(server_id.to_string()),
+                    output: Set("Capability denied by agent".to_string()),
+                    exit_code: Set(-1),
+                    finished_at: Set(chrono::Utc::now()),
+                };
+                if let Err(e) = result.insert(&state.db).await {
+                    tracing::error!("Failed to write CapabilityDenied task result: {e}");
+                }
+            }
             // For terminal: unregister session so browser gets notified
             if let Some(sid) = &session_id {
                 state.agent_manager.unregister_terminal_session(sid);

@@ -186,14 +186,27 @@ async fn get_server(
 )]
 async fn update_server(
     State(state): State<Arc<AppState>>,
+    Extension((user_id, _role, ip)): Extension<(String, String, String)>,
     Path(id): Path<String>,
     Json(input): Json<UpdateServerInput>,
 ) -> Result<Json<ApiResponse<ServerResponse>>, AppError> {
-    let caps_changed = input.capabilities.is_some();
+    use serverbee_common::constants::{CAP_PING_HTTP, CAP_PING_ICMP, CAP_PING_TCP};
+
+    // Capture old caps before update for diffing
+    let old_caps = if input.capabilities.is_some() {
+        Some(
+            ServerService::get_server(&state.db, &id)
+                .await?
+                .capabilities as u32,
+        )
+    } else {
+        None
+    };
+
     let server = ServerService::update_server(&state.db, &id, input).await?;
 
     // If capabilities changed, broadcast + re-sync
-    if caps_changed {
+    if let Some(old) = old_caps {
         let new_caps = server.capabilities as u32;
 
         // Send CapabilitiesSync to Agent (if online and protocol_version >= 2)
@@ -216,8 +229,22 @@ async fn update_server(
                 capabilities: new_caps,
             });
 
-        // Re-sync ping tasks
-        PingService::sync_tasks_to_agent(&state.db, &state.agent_manager, &id).await;
+        // Re-sync ping tasks only if ping bits changed
+        let ping_mask = CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP;
+        if old & ping_mask != new_caps & ping_mask {
+            PingService::sync_tasks_to_agent(&state.db, &state.agent_manager, &id).await;
+        }
+
+        // Audit log
+        let detail = serde_json::json!({
+            "server_id": id,
+            "old": old,
+            "new": new_caps,
+        })
+        .to_string();
+        let _ =
+            AuditService::log(&state.db, &user_id, "capabilities_changed", Some(&detail), &ip)
+                .await;
     }
 
     ok(ServerResponse::from(server))
