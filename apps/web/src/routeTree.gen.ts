@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
+import { Route as AuthedServersIndexRouteImport } from './routes/_authed/servers/index'
 import { Route as AuthedTerminalServerIdRouteImport } from './routes/_authed/terminal.$serverId'
 import { Route as AuthedSettingsUsersRouteImport } from './routes/_authed/settings/users'
 import { Route as AuthedSettingsTasksRouteImport } from './routes/_authed/settings/tasks'
@@ -47,6 +48,11 @@ const AuthedIndexRoute = AuthedIndexRouteImport.update({
 const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
   id: '/settings/',
   path: '/settings/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedServersIndexRoute = AuthedServersIndexRouteImport.update({
+  id: '/servers/',
+  path: '/servers/',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedTerminalServerIdRoute = AuthedTerminalServerIdRouteImport.update({
@@ -115,6 +121,7 @@ export interface FileRoutesByFullPath {
   '/settings/tasks': typeof AuthedSettingsTasksRoute
   '/settings/users': typeof AuthedSettingsUsersRoute
   '/terminal/$serverId': typeof AuthedTerminalServerIdRoute
+  '/servers/': typeof AuthedServersIndexRoute
   '/settings/': typeof AuthedSettingsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -131,6 +138,7 @@ export interface FileRoutesByTo {
   '/settings/tasks': typeof AuthedSettingsTasksRoute
   '/settings/users': typeof AuthedSettingsUsersRoute
   '/terminal/$serverId': typeof AuthedTerminalServerIdRoute
+  '/servers': typeof AuthedServersIndexRoute
   '/settings': typeof AuthedSettingsIndexRoute
 }
 export interface FileRoutesById {
@@ -149,6 +157,7 @@ export interface FileRoutesById {
   '/_authed/settings/tasks': typeof AuthedSettingsTasksRoute
   '/_authed/settings/users': typeof AuthedSettingsUsersRoute
   '/_authed/terminal/$serverId': typeof AuthedTerminalServerIdRoute
+  '/_authed/servers/': typeof AuthedServersIndexRoute
   '/_authed/settings/': typeof AuthedSettingsIndexRoute
 }
 export interface FileRouteTypes {
@@ -167,6 +176,7 @@ export interface FileRouteTypes {
     | '/settings/tasks'
     | '/settings/users'
     | '/terminal/$serverId'
+    | '/servers/'
     | '/settings/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -183,6 +193,7 @@ export interface FileRouteTypes {
     | '/settings/tasks'
     | '/settings/users'
     | '/terminal/$serverId'
+    | '/servers'
     | '/settings'
   id:
     | '__root__'
@@ -200,6 +211,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/tasks'
     | '/_authed/settings/users'
     | '/_authed/terminal/$serverId'
+    | '/_authed/servers/'
     | '/_authed/settings/'
   fileRoutesById: FileRoutesById
 }
@@ -244,6 +256,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings/'
       preLoaderRoute: typeof AuthedSettingsIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/servers/': {
+      id: '/_authed/servers/'
+      path: '/servers'
+      fullPath: '/servers/'
+      preLoaderRoute: typeof AuthedServersIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/terminal/$serverId': {
@@ -331,6 +350,7 @@ interface AuthedRouteChildren {
   AuthedSettingsTasksRoute: typeof AuthedSettingsTasksRoute
   AuthedSettingsUsersRoute: typeof AuthedSettingsUsersRoute
   AuthedTerminalServerIdRoute: typeof AuthedTerminalServerIdRoute
+  AuthedServersIndexRoute: typeof AuthedServersIndexRoute
   AuthedSettingsIndexRoute: typeof AuthedSettingsIndexRoute
 }
 
@@ -346,6 +366,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedSettingsTasksRoute: AuthedSettingsTasksRoute,
   AuthedSettingsUsersRoute: AuthedSettingsUsersRoute,
   AuthedTerminalServerIdRoute: AuthedTerminalServerIdRoute,
+  AuthedServersIndexRoute: AuthedServersIndexRoute,
   AuthedSettingsIndexRoute: AuthedSettingsIndexRoute,
 }
 
