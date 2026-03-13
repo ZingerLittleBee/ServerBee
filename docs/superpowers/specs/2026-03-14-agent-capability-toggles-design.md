@@ -270,7 +270,8 @@ Server 收到 `CapabilityDenied` 后：
 {
   "id": "xxx",
   "name": "prod-web-01",
-  "capabilities": 56
+  "capabilities": 56,
+  "protocol_version": 2
 }
 ```
 
@@ -298,7 +299,7 @@ BrowserMessage::CapabilitiesChanged {
 
 - 当前 `useServersWs()` 在 `DashboardPage`、`ServersListPage` 和 `servers/$id.tsx` 详情页中各自挂载
 - 用户停留在 `/settings/tasks`、`/settings/capabilities` 等页面时不会建立 Browser WS 连接
-- `CapabilitiesChanged` 和 `ServerOnline`（含 protocol_version）等消息无法被接收
+- `CapabilitiesChanged` 和 `AgentInfoUpdated` 等消息无法被接收
 - 导致 Toggle 状态、终端按钮禁用、exec 灰显等实时反馈失效
 
 变更：在 `_authed.tsx` 的 layout 组件中调用 `useServersWs()`，所有认证页面共享同一个 WS 连接。Dashboard（`_authed/index.tsx`）、ServersListPage（`servers/index.tsx`）和详情页（`servers/$id.tsx`）中各自的 `useServersWs()` 调用必须全部移除，避免重复连接。
@@ -419,7 +420,7 @@ capabilities 变更记入 `audit_log` 表：
 4. **审计日志**：所有 capabilities 变更记入 audit_log，含旧值/新值/变更位
 5. **即时生效**：开关变更通过 WS 推送立即同步到 Agent
 6. **输入校验**：拒绝 `CAP_VALID_MASK` 范围外的 bit 位，防止未定义位被设置
-7. **版本感知**：Server 区分新旧 Agent，Dashboard 提示管理员升级旧版 Agent 以获得完整保护
+7. **版本感知**：Server 区分新旧 Agent，详情页和 capabilities 设置页提示管理员升级旧版 Agent 以获得完整保护
 8. **capabilities 可见性**：所有认证用户可读取 capabilities 状态（不构成安全风险），仅 admin 可修改
 
 ## 测试策略
