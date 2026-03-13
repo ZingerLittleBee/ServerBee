@@ -41,6 +41,7 @@ use utoipa::OpenApi;
         crate::router::api::server::get_records,
         crate::router::api::server::get_gpu_records,
         crate::router::api::server::trigger_upgrade,
+        crate::router::api::server::batch_update_capabilities,
         // server-groups
         crate::router::api::server_group::list_groups,
         crate::router::api::server_group::create_group,
@@ -118,6 +119,8 @@ use utoipa::OpenApi;
             crate::router::api::server::BatchDeleteRequest,
             crate::router::api::server::BatchDeleteResponse,
             crate::router::api::server::UpgradeRequest,
+            crate::router::api::server::BatchCapabilitiesRequest,
+            crate::router::api::server::BatchCapabilitiesResponse,
             crate::service::server::UpdateServerInput,
             // server-groups
             crate::router::api::server_group::CreateGroupRequest,

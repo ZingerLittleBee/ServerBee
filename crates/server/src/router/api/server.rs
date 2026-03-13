@@ -197,16 +197,15 @@ async fn update_server(
         let new_caps = server.capabilities as u32;
 
         // Send CapabilitiesSync to Agent (if online and protocol_version >= 2)
-        if let Some(pv) = state.agent_manager.get_protocol_version(&id) {
-            if pv >= 2 {
-                if let Some(tx) = state.agent_manager.get_sender(&id) {
-                    let _ = tx
-                        .send(ServerMessage::CapabilitiesSync {
-                            capabilities: new_caps,
-                        })
-                        .await;
-                }
-            }
+        if let Some(pv) = state.agent_manager.get_protocol_version(&id)
+            && pv >= 2
+            && let Some(tx) = state.agent_manager.get_sender(&id)
+        {
+            let _ = tx
+                .send(ServerMessage::CapabilitiesSync {
+                    capabilities: new_caps,
+                })
+                .await;
         }
 
         // Broadcast to browsers
@@ -368,7 +367,7 @@ async fn trigger_upgrade(
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
-struct BatchCapabilitiesRequest {
+pub struct BatchCapabilitiesRequest {
     server_ids: Vec<String>,
     #[serde(default)]
     set: u32,
@@ -377,10 +376,21 @@ struct BatchCapabilitiesRequest {
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
-struct BatchCapabilitiesResponse {
+pub struct BatchCapabilitiesResponse {
     updated: u64,
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/servers/batch-capabilities",
+    tag = "servers",
+    request_body = BatchCapabilitiesRequest,
+    responses(
+        (status = 200, description = "Batch capabilities update result", body = BatchCapabilitiesResponse),
+        (status = 422, description = "Validation error"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
 async fn batch_update_capabilities(
     State(state): State<Arc<AppState>>,
     Extension((user_id, _role, ip)): Extension<(String, String, String)>,
@@ -420,12 +430,11 @@ async fn batch_update_capabilities(
         count += 1;
 
         // Sync to agent if online and protocol v2+
-        if let Some(pv) = state.agent_manager.get_protocol_version(&s.id) {
-            if pv >= 2 {
-                if let Some(tx) = state.agent_manager.get_sender(&s.id) {
-                    let _ = tx.send(ServerMessage::CapabilitiesSync { capabilities: new_caps }).await;
-                }
-            }
+        if let Some(pv) = state.agent_manager.get_protocol_version(&s.id)
+            && pv >= 2
+            && let Some(tx) = state.agent_manager.get_sender(&s.id)
+        {
+            let _ = tx.send(ServerMessage::CapabilitiesSync { capabilities: new_caps }).await;
         }
 
         // Broadcast to browsers
