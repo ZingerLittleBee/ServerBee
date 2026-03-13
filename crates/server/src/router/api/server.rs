@@ -189,7 +189,38 @@ async fn update_server(
     Path(id): Path<String>,
     Json(input): Json<UpdateServerInput>,
 ) -> Result<Json<ApiResponse<ServerResponse>>, AppError> {
+    let caps_changed = input.capabilities.is_some();
     let server = ServerService::update_server(&state.db, &id, input).await?;
+
+    // If capabilities changed, broadcast + re-sync
+    if caps_changed {
+        let new_caps = server.capabilities as u32;
+
+        // Send CapabilitiesSync to Agent (if online and protocol_version >= 2)
+        if let Some(pv) = state.agent_manager.get_protocol_version(&id) {
+            if pv >= 2 {
+                if let Some(tx) = state.agent_manager.get_sender(&id) {
+                    let _ = tx
+                        .send(ServerMessage::CapabilitiesSync {
+                            capabilities: new_caps,
+                        })
+                        .await;
+                }
+            }
+        }
+
+        // Broadcast to browsers
+        state
+            .agent_manager
+            .broadcast_browser(BrowserMessage::CapabilitiesChanged {
+                server_id: id.clone(),
+                capabilities: new_caps,
+            });
+
+        // Re-sync ping tasks
+        PingService::sync_tasks_to_agent(&state.db, &state.agent_manager, &id).await;
+    }
+
     ok(ServerResponse::from(server))
 }
 
