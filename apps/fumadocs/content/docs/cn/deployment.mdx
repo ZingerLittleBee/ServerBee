@@ -218,7 +218,7 @@ WebSocket 路径必须正确配置 `Upgrade` 和 `Connection` 头部。`proxy_re
 
 Caddy 会自动申请和续期 HTTPS 证书，配置最为简洁。
 
-```caddyfile title="/etc/caddy/Caddyfile"
+```txt title="/etc/caddy/Caddyfile"
 monitor.example.com {
     reverse_proxy 127.0.0.1:9527
 }
@@ -228,7 +228,7 @@ Caddy 天然支持 WebSocket 代理，无需额外配置。
 
 如果需要更精细的控制：
 
-```caddyfile title="/etc/caddy/Caddyfile"
+```txt title="/etc/caddy/Caddyfile"
 monitor.example.com {
     # API 和 WebSocket
     handle /api/* {
