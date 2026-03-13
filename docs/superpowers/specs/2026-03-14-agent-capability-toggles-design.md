@@ -112,11 +112,21 @@ AgentMessage::CapabilityDenied {
 
 3. **Server 端感知 Agent 版本**: Server 从 Agent 的 SystemInfo 中读取 `protocol_version`：
    - `protocol_version >= 2`: Agent 支持 capability enforcement，双重校验生效
-   - `protocol_version == 1`（或缺失）: 旧 Agent，**仅 Server 端拦截生效**，Server 在 Dashboard UI 上标注该 Agent 为「旧版本，仅服务端防护」
+   - `protocol_version == 1`（或缺失）: 旧 Agent，**仅 Server 端拦截生效**
 
 4. **Server 端行为差异**: 对旧 Agent，Server 不发送 `CapabilitiesSync`（避免解析错误日志）；所有 capability 检查仍在 Server 端执行。
 
-**安全声明修正**: 双重校验仅在 Agent 版本 >= 2 时完整生效。旧版 Agent 仅有 Server 端单层防护。建议在 Dashboard 中提示管理员升级旧 Agent。
+5. **持久化 Agent 协议版本**: Server 收到 SystemInfo 后，除了更新内存中 `AgentConnection.protocol_version`，还需将 `protocol_version` 持久化到 `servers` 表（新增 `protocol_version INTEGER` 列，默认 1）。这样：
+   - REST API `ServerResponse` 可以返回 `protocol_version` 字段
+   - 离线 Agent 也能在 Dashboard 上标注版本信息
+   - Browser WS 的 `FullSync`/`ServerOnline` 可以携带该信息
+
+6. **前端数据模型**:
+   - `ServerResponse`（REST）增加 `protocol_version: number` 字段
+   - `ServerStatus`（Browser WS FullSync）增加 `protocol_version: Option<i32>`（FullSync 时从 DB 填充，Update 时为 None 不覆盖）
+   - 前端根据 `protocol_version < 2` 显示旧版 Agent 警告
+
+**安全声明修正**: 双重校验仅在 Agent 版本 >= 2 时完整生效。旧版 Agent 仅有 Server 端单层防护。Dashboard 根据持久化的 `protocol_version` 提示管理员升级旧 Agent。
 
 ## 数据流
 
@@ -250,18 +260,40 @@ BrowserMessage::CapabilitiesChanged {
 }
 ```
 
-capabilities 变更通过独立的 `CapabilitiesChanged` 消息推送，**不加入 `ServerStatus` 结构体**。理由：
+**运行时 capabilities 变更**通过独立的 `CapabilitiesChanged` 消息推送。
 
-- `ServerStatus` 被 `FullSync` 和 `Update` 共用。`update_report` 构建 `Update` 时没有 DB 访问，无法获取 capabilities 值
-- 如果将 capabilities 设为 `ServerStatus` 的必填字段，每次 metric update 都需要填充它；如果填 0 或旧值，前端 merge 逻辑会将正确值覆盖
-- capabilities 变更频率极低（管理员偶尔操作），不应混入每 3 秒的高频 metric update
+**`ServerStatus` 不新增 capabilities 字段**。理由：
+- `ServerStatus` 被 `FullSync` 和 `Update` 共用。`update_report` 构建 `Update` 时没有 DB 访问，无法获取 capabilities
+- 如果加为必填字段，每 3 秒的 metric update 都需填充，填 0 或旧值会导致前端 merge 覆盖正确值
+- capabilities 变更频率极低（管理员偶尔操作），不应混入高频 metric update
 
-具体实现：
-- `FullSync`: 构建 `ServerStatus` 时从 DB 查询 capabilities，作为 `ServerStatus` 的 `Option<u32>` 字段（`#[serde(skip_serializing_if = "Option::is_none")]`），仅在 FullSync 时填充
-- `Update`: `ServerStatus.capabilities` 为 `None`，前端 merge 时跳过 None 字段（不覆盖）
-- `CapabilitiesChanged`: 独立消息，仅在管理员修改时发送
+**前端 capabilities 数据来源**（三条独立路径，无矛盾）：
+1. **REST API**: `GET /api/servers` 和 `GET /api/servers/:id` 响应包含 `capabilities` 字段 → 填充 query cache `['servers-list']` 和 `['servers', id]`
+2. **Browser WS FullSync**: 浏览器连接时不依赖 WS 获取 capabilities，由 REST query 提供初始值
+3. **Browser WS CapabilitiesChanged**: 管理员修改后推送 → 前端 handler 需要同时 invalidate 或直接更新所有相关 query key：
+   - `['servers']`（Dashboard WS 缓存）
+   - `['servers', serverId]`（详情页）
+   - `['servers-list']`（任务页等列表页）
 
-前端 `use-servers-ws.ts` 的 `mergeServerUpdate` 需要调整：对 `Option` 字段（如 `capabilities`），值为 `null`/`undefined` 时不覆盖已有值。
+前端 `use-servers-ws.ts` 新增 `capabilities_changed` 消息处理：
+
+```typescript
+// use-servers-ws.ts 新增 handler
+case 'capabilities_changed': {
+  const { server_id, capabilities } = msg
+  // 更新 Dashboard WS 缓存
+  queryClient.setQueryData(['servers'], (prev) =>
+    prev?.map(s => s.id === server_id ? { ...s, capabilities } : s)
+  )
+  // 更新详情页缓存
+  queryClient.setQueryData(['servers', server_id], (prev) =>
+    prev ? { ...prev, capabilities } : prev
+  )
+  // 失效列表页缓存（触发 refetch）
+  queryClient.invalidateQueries({ queryKey: ['servers-list'] })
+  break
+}
+```
 
 ### 新增 API
 
