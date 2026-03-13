@@ -187,10 +187,9 @@ function CapabilitiesPage() {
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{server.name}</span>
                         {hasOldAgent && (
-                          <ShieldAlert
-                            className="size-3.5 text-amber-500"
-                            title="Agent does not support capability enforcement — upgrade recommended"
-                          />
+                          <span title="Agent does not support capability enforcement — upgrade recommended">
+                            <ShieldAlert className="size-3.5 text-amber-500" />
+                          </span>
                         )}
                       </div>
                     </td>
