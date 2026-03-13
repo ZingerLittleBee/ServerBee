@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
-use serverbee_common::constants::MAX_TERMINAL_SESSIONS;
+use serverbee_common::constants::{has_capability, CAP_TERMINAL, MAX_TERMINAL_SESSIONS};
 use tokio::sync::mpsc;
 
 /// Message sent from terminal sessions back to the reporter.
@@ -26,18 +28,36 @@ struct PtySession {
 pub struct TerminalManager {
     sessions: HashMap<String, PtySession>,
     event_tx: mpsc::Sender<TerminalEvent>,
+    capabilities: Arc<AtomicU32>,
 }
 
 impl TerminalManager {
-    pub fn new(event_tx: mpsc::Sender<TerminalEvent>) -> Self {
+    pub fn new(event_tx: mpsc::Sender<TerminalEvent>, capabilities: Arc<AtomicU32>) -> Self {
         Self {
             sessions: HashMap::new(),
             event_tx,
+            capabilities,
         }
     }
 
     /// Open a new terminal session with the given dimensions.
     pub fn open(&mut self, session_id: String, rows: u16, cols: u16) {
+        let caps = self.capabilities.load(Ordering::SeqCst);
+        if !has_capability(caps, CAP_TERMINAL) {
+            tracing::warn!("Terminal denied: capability disabled (session={session_id})");
+            let tx = self.event_tx.clone();
+            let sid = session_id;
+            tokio::spawn(async move {
+                let _ = tx
+                    .send(TerminalEvent::Error {
+                        session_id: sid,
+                        error: "Terminal capability is disabled".to_string(),
+                    })
+                    .await;
+            });
+            return;
+        }
+
         if self.sessions.len() >= MAX_TERMINAL_SESSIONS {
             let tx = self.event_tx.clone();
             let sid = session_id.clone();
