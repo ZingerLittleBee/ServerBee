@@ -1,27 +1,9 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { HomeLayout } from 'fumadocs-ui/layouts/home'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-import { baseOptions } from '@/lib/layout.shared'
+import { i18n } from '@/lib/i18n'
 
 export const Route = createFileRoute('/')({
-  component: Home
+  beforeLoad: () => {
+    throw redirect({ to: '/$lang', params: { lang: i18n.defaultLanguage }, replace: true })
+  }
 })
-
-function Home() {
-  return (
-    <HomeLayout {...baseOptions()}>
-      <div className="flex flex-1 flex-col justify-center px-4 py-8 text-center">
-        <h1 className="mb-4 font-medium text-xl">Fumadocs on Tanstack Start.</h1>
-        <Link
-          className="mx-auto rounded-lg bg-fd-primary px-3 py-2 font-medium text-fd-primary-foreground text-sm"
-          params={{
-            _splat: ''
-          }}
-          to="/docs/$"
-        >
-          Open Docs
-        </Link>
-      </div>
-    </HomeLayout>
-  )
-}

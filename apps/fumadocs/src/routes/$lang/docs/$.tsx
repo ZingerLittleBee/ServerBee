@@ -1,4 +1,4 @@
-import { createFileRoute, notFound } from '@tanstack/react-router'
+import { createFileRoute, notFound, useParams } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import browserCollections from 'collections/browser'
 import { useFumadocsLoader } from 'fumadocs-core/source/client'
@@ -15,13 +15,13 @@ import { Suspense } from 'react'
 
 import { useMDXComponents } from '@/components/mdx'
 import { baseOptions, gitConfig } from '@/lib/layout.shared'
-import { source } from '@/lib/source'
+import { localizePageTree, source } from '@/lib/source'
 
-export const Route = createFileRoute('/docs/$')({
+export const Route = createFileRoute('/$lang/docs/$')({
   component: Page,
   loader: async ({ params }) => {
     const slugs = params._splat?.split('/') ?? []
-    const data = await serverLoader({ data: slugs })
+    const data = await serverLoader({ data: { slugs, lang: params.lang } })
     await clientLoader.preload(data.path)
     return data
   }
@@ -30,24 +30,27 @@ export const Route = createFileRoute('/docs/$')({
 const serverLoader = createServerFn({
   method: 'GET'
 })
-  .inputValidator((slugs: string[]) => slugs)
-  .handler(async ({ data: slugs }) => {
-    const page = source.getPage(slugs)
+  .inputValidator((data: { slugs: string[]; lang: string }) => data)
+  .handler(async ({ data: { slugs, lang } }) => {
+    const page = source.getPage(slugs, lang)
     if (!page) {
       throw notFound()
     }
 
+    const pageTree = source.getPageTree(lang)
+    const localizedTree = localizePageTree(pageTree, lang)
+
     return {
       slugs: page.slugs,
       path: page.path,
-      pageTree: await source.serializePageTree(source.getPageTree())
+      lang,
+      pageTree: await source.serializePageTree(localizedTree)
     }
   })
 
 const clientLoader = browserCollections.docs.createClientLoader({
   component(
     { toc, frontmatter, default: MDX },
-    // you can define props for the component
     {
       markdownUrl,
       path
@@ -65,7 +68,7 @@ const clientLoader = browserCollections.docs.createClientLoader({
         <div className="-mt-4 flex flex-row items-center gap-2 border-b pb-6">
           <MarkdownCopyButton markdownUrl={markdownUrl} />
           <ViewOptionsPopover
-            githubUrl={`https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/content/docs/${path}`}
+            githubUrl={`https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/apps/fumadocs/content/docs/${path}`}
             markdownUrl={markdownUrl}
           />
         </div>
@@ -78,11 +81,13 @@ const clientLoader = browserCollections.docs.createClientLoader({
 })
 
 function Page() {
-  const { path, pageTree, slugs } = useFumadocsLoader(Route.useLoaderData())
+  const { path, pageTree, slugs, lang } = useFumadocsLoader(Route.useLoaderData())
+  const { lang: routeLang } = useParams({ from: '/$lang/docs/$' })
+  const currentLang = lang ?? routeLang
   const markdownUrl = `/llms.mdx/docs/${slugs.join('/')}`
 
   return (
-    <DocsLayout {...baseOptions()} tree={pageTree}>
+    <DocsLayout {...baseOptions(currentLang)} tree={pageTree}>
       <Suspense>{clientLoader.useContent(path, { markdownUrl, path })}</Suspense>
     </DocsLayout>
   )
