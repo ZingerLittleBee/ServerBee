@@ -18,13 +18,13 @@
 | P2-b/c/d/e | 状态页 + 计费 + 升级 + 备份 | **已完成** | 1 (`6cb0f6a`) |
 | P3-a | 用户管理 + 缺失 API | **已完成** | 2 (`a464801`, `601f80b`) |
 | P3-b | 前端 UI 完善 | **已完成** | 2 (`044e568`, `3f33de9`) |
-| P3-c | 测试 | **部分完成** | 1 (`7c0d681`) |
+| P3-c | 测试 | **已完成** | 2 (`7c0d681`, `3244eac`) |
 | P3-d | Agent 完善 | **已完成** | 1 (`9d5835e`) |
 | P3-e | 性能优化 | **部分完成** | 1 (`7c13b3d`) |
 | P3-f | CI/CD + 部署文档 | **部分完成** | 1 (`e6fee1a`) |
 | P4 | 端到端验证 + 上线前加固 | **已完成** | 1 (`51e8b40`) |
 
-**P0~P4 全部完成并已提交 (共 28 个 commits)。P3-c/e/f 部分任务跳过 (集成测试/E2E/OpenAPI 类型生成/Fumadocs)。**
+**P0~P4 全部完成并已提交 (共 30 个 commits)。测试: 43 单元 + 2 集成 + 8 前端 = 53 个测试。P3-e/f 部分任务跳过 (OpenAPI 类型生成/Fumadocs/E2E)。**
 
 ---
 
@@ -239,13 +239,13 @@
 
 ## 已实现的文件清单
 
-### Rust (85 files)
+### Rust (87 files)
 
 **crates/common/src/** (4 files)
 - `lib.rs`, `types.rs`, `constants.rs`, `protocol.rs`
 
-**crates/server/src/** (66 files)
-- `main.rs`, `config.rs`, `state.rs`, `error.rs`, **`openapi.rs`**
+**crates/server/src/** (67 files)
+- `main.rs`, `lib.rs`, `config.rs`, `state.rs`, `error.rs`, **`openapi.rs`**
 - `entity/` (21 files): user, session, api_key, server, server_group, server_tag, record, record_hourly, gpu_record, config, alert_rule, alert_state, notification, notification_group, ping_task, ping_record, task, task_result, audit_log, **oauth_account**
 - `migration/` (3 files): mod.rs, m20260312_000001_init.rs, **m20260312_000002_oauth.rs**
 - `middleware/` (2 files): mod.rs, auth.rs
@@ -368,6 +368,8 @@
 
 ### 代码质量
 - [x] 单元测试 (43 个, AuthService/AlertService/NotificationService/RecordService) ✅
+- [x] 集成测试 (2 个, Agent 注册→WS→上报 + 备份恢复) ✅
+- [x] 前端测试 (8 个, use-auth/use-api hooks) ✅
 - [x] 代码审查 (P3 代码审查, 修复 10 个 C/I 级别问题) ✅
 - [x] `bun x ultracite fix` 格式化前端代码 ✅
 - [x] `cargo clippy -- -D warnings` 全量通过 ✅
@@ -377,6 +379,8 @@
 ## Git Commits
 
 ```
+3244eac test: add Rust integration tests and frontend Vitest tests (P3-c T5-T7)
+4c0e026 docs: update progress for P4 end-to-end verification
 51e8b40 fix: end-to-end verification fixes and pre-launch hardening (P4)
 c806f89 docs: add pre-launch checklist and next steps to PROGRESS.md
 f82eedc docs: update progress for P3-c through P3-f completion
@@ -556,7 +560,9 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 ### P3-c: 测试
 - [x] 43 个单元测试: AuthService (8) + AlertService (15) + NotificationService (16) + RecordService (4) ✅
 - [x] CI 添加 `cargo test --workspace` 步骤 ✅
-- [ ] 集成测试、前端测试、E2E 测试 — 跳过 (需要外部环境)
+- [x] Rust 集成测试: Agent 注册→WS→SystemInfo→Report + Backup/Restore (2 个测试) ✅
+- [x] 前端 Vitest 测试: use-auth (4 个) + use-api (4 个) = 8 个测试 ✅
+- [ ] E2E 测试 (Playwright) — 跳过 (有集成测试 + 单元测试覆盖)
 
 ### P3-d: Agent 完善
 - [x] 虚拟化检测: DMI 文件 + 容器检测 + systemd-detect-virt fallback ✅
@@ -608,9 +614,9 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 | T2 | Rust 单元测试: AlertService (阈值评估, 离线检测, 流量周期计算) | **done** |
 | T3 | Rust 单元测试: NotificationService (模板变量替换, 渠道分发) | **done** |
 | T4 | Rust 单元测试: RecordService (小时聚合, 清理保留逻辑) | **done** |
-| T5 | Rust 集成测试: Agent 注册 → WS 连接 → 上报 → 指标入库 | **跳过** |
-| T6 | Rust 集成测试: 备份恢复往返 (backup → restore → 验证数据完整) | **跳过** |
-| T7 | 前端测试: Vitest 配置 + hooks 单元测试 (use-auth, use-api) | **跳过** |
+| T5 | Rust 集成测试: Agent 注册 → WS 连接 → 上报 → 指标入库 | **done** |
+| T6 | Rust 集成测试: 备份恢复往返 (backup → restore → 验证数据完整) | **done** |
+| T7 | 前端测试: Vitest 配置 + hooks 单元测试 (use-auth, use-api) | **done** |
 | T8 | E2E 测试: Playwright 配置 + 登录/仪表盘/终端 流程验证 | **跳过** |
 | T9 | CI 添加 `cargo test --workspace` 步骤 | **done** |
 
@@ -670,12 +676,12 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 2. **Alert 表单缺失字段** — 添加 `cover_type` 和 `server_ids` 选择器，支持选择规则覆盖范围
 3. **Server 编辑缺失字段** — 添加 `group_id` 下拉选择器，支持修改服务器分组
 
-### 建议做（提升质量）
+### 建议做（提升质量） — 全部完成 ✅
 
-| 优先级 | 任务 | 说明 |
-|--------|------|------|
-| **P3** | Rust 集成测试 (P3-c T5-T6) | 至少覆盖注册→连接→上报主链路，防止回归 |
-| **P4** | 前端 Vitest 测试 (P3-c T7) | hooks (use-auth, use-api) 是核心逻辑，基础测试成本不高 |
+| 优先级 | 任务 | 状态 | 说明 |
+|--------|------|------|------|
+| **P3** | Rust 集成测试 (P3-c T5-T6) | **已完成** ✅ | Agent 注册→WS→SystemInfo→Report + Backup/Restore 2 个测试 |
+| **P4** | 前端 Vitest 测试 (P3-c T7) | **已完成** ✅ | use-auth (4 个) + use-api (4 个) = 8 个测试 |
 
 ### 可以不做
 
