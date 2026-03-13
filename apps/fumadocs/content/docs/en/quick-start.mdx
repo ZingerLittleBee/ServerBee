@@ -1,0 +1,142 @@
+---
+title: Quick Start
+description: Get ServerBee up and running in under 5 minutes.
+icon: Zap
+---
+
+This guide walks you through the fastest path to a working ServerBee installation. Pick whichever method suits your environment.
+
+## Prerequisites
+
+You need one of the following on your server machine:
+
+- **Docker and Docker Compose** (recommended for quick setup)
+- **Rust toolchain** (1.75+) and **Bun** (for building from source)
+- A pre-built binary from the [releases page](https://github.com/ZingerBee/ServerBee/releases)
+
+## Option 1: Docker Compose (Recommended)
+
+This is the fastest way to get started. Create a `docker-compose.yml` file:
+
+```yaml
+version: "3.8"
+
+services:
+  serverbee:
+    image: ghcr.io/zingerbee/serverbee:latest
+    container_name: serverbee
+    restart: unless-stopped
+    ports:
+      - "9527:9527"
+    volumes:
+      - serverbee-data:/app/data
+    environment:
+      - SB_ADMIN__USERNAME=admin
+      - SB_ADMIN__PASSWORD=changeme
+
+volumes:
+  serverbee-data:
+```
+
+Then start the server:
+
+```bash
+docker compose up -d
+```
+
+The dashboard is now available at `http://your-server-ip:9527`.
+
+## Option 2: Install Script
+
+Download and run the install script for a quick binary installation:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ZingerBee/ServerBee/main/install.sh | bash
+```
+
+This will download the appropriate binary for your platform, create a systemd service, and start ServerBee automatically.
+
+## Option 3: Build from Source
+
+Clone the repository and build both the server and frontend:
+
+```bash
+# Clone the repo
+git clone https://github.com/ZingerBee/ServerBee.git
+cd ServerBee
+
+# Build the frontend
+cd apps/web
+bun install
+bun run build
+cd ../..
+
+# Build the server (embeds the frontend via rust-embed)
+cargo build --release -p serverbee-server
+
+# Build the agent
+cargo build --release -p serverbee-agent
+```
+
+The binaries will be located at:
+- `target/release/serverbee-server`
+- `target/release/serverbee-agent`
+
+Start the server:
+
+```bash
+./target/release/serverbee-server
+```
+
+## First Login
+
+1. Open your browser and navigate to `http://your-server-ip:9527`
+2. Log in with the default credentials:
+   - **Username:** `admin`
+   - **Password:** `admin` (or the password you configured)
+3. **Change the default password immediately** via Settings > Security
+
+<Callout type="warn">
+If you are using the default password, the server will display a prominent warning in the logs at startup. Always change the default password before exposing the server to the internet.
+</Callout>
+
+## Adding Your First Agent
+
+When the server starts, it generates an **auto-discovery key** and prints it to the logs:
+
+```
+INFO  ServerBee v0.1.0 is ready
+INFO  Listening on 0.0.0.0:9527
+INFO  Auto-discovery key: aB3dEfGh...
+```
+
+On the VPS you want to monitor, create an agent configuration file at `/etc/serverbee/agent.toml` (or `agent.toml` in the working directory):
+
+```toml
+server_url = "http://your-server-ip:9527"
+auto_discovery_key = "your-auto-discovery-key-here"
+```
+
+Then start the agent:
+
+```bash
+./serverbee-agent
+```
+
+The agent will:
+
+1. Contact the server using the auto-discovery key
+2. Register itself and receive an authentication token
+3. Save the token to the config file for future connections
+4. Begin reporting system metrics immediately
+
+You should see the new server appear in your dashboard within a few seconds.
+
+## What Next?
+
+<Cards>
+  <Card title="Server Configuration" href="/docs/en/server" />
+  <Card title="Agent Configuration" href="/docs/en/agent" />
+  <Card title="Set Up Alerts" href="/docs/en/alerts" />
+  <Card title="Web Terminal" href="/docs/en/terminal" />
+</Cards>

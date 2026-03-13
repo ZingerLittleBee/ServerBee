@@ -1,0 +1,20 @@
+{
+  "title": "文档",
+  "pages": [
+    "index",
+    "---快速开始---",
+    "quick-start",
+    "---指南---",
+    "server",
+    "agent",
+    "configuration",
+    "---功能---",
+    "monitoring",
+    "alerts",
+    "terminal",
+    "ping",
+    "---参考---",
+    "architecture",
+    "deployment"
+  ]
+}

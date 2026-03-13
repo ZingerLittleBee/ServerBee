@@ -1,0 +1,20 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "index",
+    "---Quick Start---",
+    "quick-start",
+    "---Guides---",
+    "server",
+    "agent",
+    "configuration",
+    "---Features---",
+    "monitoring",
+    "alerts",
+    "terminal",
+    "ping",
+    "---Reference---",
+    "architecture",
+    "deployment"
+  ]
+}

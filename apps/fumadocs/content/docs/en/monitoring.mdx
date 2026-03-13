@@ -1,0 +1,169 @@
+---
+title: Monitoring
+description: Real-time system monitoring, dashboards, and historical data.
+icon: Activity
+---
+
+ServerBee provides real-time monitoring of all your connected servers through a unified web dashboard. Metrics are streamed over WebSocket for instant updates without polling.
+
+## Dashboard Overview
+
+The main dashboard shows all registered servers with their current status at a glance:
+
+- **Online/Offline status** with color indicators
+- **CPU usage** percentage with visual bar
+- **Memory usage** (used / total) with percentage
+- **Disk usage** (used / total) with percentage
+- **Network throughput** (upload/download speed)
+- **Load average** (1/5/15 minute)
+- **Uptime** duration
+- **Region and country** flags (when GeoIP is enabled)
+
+Servers are organized by groups and sorted by weight. You can filter, search, and batch-operate on servers from this view.
+
+## Real-Time Updates
+
+The browser connects to the server via WebSocket at `/ws/browser`. The communication flow works as follows:
+
+1. On initial connection, the server sends a `FullSync` message containing the current state of all servers
+2. As agents report new metrics, the server broadcasts `Update` messages to all connected browsers
+3. When an agent connects or disconnects, `ServerOnline` / `ServerOffline` events are sent
+
+This means the dashboard updates in real time -- there is no need to refresh the page or wait for polling intervals.
+
+## Metric Types
+
+The agent collects the following metrics at a configurable interval (default: every 3 seconds):
+
+### System Resources
+
+| Metric | Unit | Description |
+|--------|------|-------------|
+| CPU Usage | % | Overall CPU utilization (0-100) |
+| Memory Used | bytes | Current RAM usage |
+| Swap Used | bytes | Current swap space usage |
+| Disk Used | bytes | Total disk space consumption |
+
+### Network
+
+| Metric | Unit | Description |
+|--------|------|-------------|
+| Network In Speed | bytes/sec | Current download speed |
+| Network Out Speed | bytes/sec | Current upload speed |
+| Network In Transfer | bytes | Cumulative total download since agent start |
+| Network Out Transfer | bytes | Cumulative total upload since agent start |
+
+### System Load
+
+| Metric | Description |
+|--------|-------------|
+| Load Average 1m | System load over the last 1 minute |
+| Load Average 5m | System load over the last 5 minutes |
+| Load Average 15m | System load over the last 15 minutes |
+
+### Connections and Processes
+
+| Metric | Description |
+|--------|-------------|
+| TCP Connections | Number of active TCP connections |
+| UDP Connections | Number of active UDP connections |
+| Process Count | Total number of running processes |
+
+### Environment
+
+| Metric | Description |
+|--------|-------------|
+| Temperature | CPU temperature in degrees Celsius (optional) |
+| Uptime | System uptime in seconds |
+
+### GPU (Optional)
+
+When GPU monitoring is enabled (`enable_gpu = true`), per-device metrics are collected:
+
+| Metric | Description |
+|--------|-------------|
+| GPU Name | Device model name |
+| GPU Utilization | GPU core utilization percentage |
+| GPU Memory Used | VRAM usage in bytes |
+| GPU Memory Total | Total VRAM in bytes |
+| GPU Temperature | Device temperature in degrees Celsius |
+
+## Server Information
+
+In addition to periodic metrics, each agent reports static system information when it first connects:
+
+- CPU name, core count, and architecture
+- Operating system and kernel version
+- Total memory, swap, and disk capacity
+- IPv4 and IPv6 addresses
+- Virtualization type (KVM, Xen, Docker, etc.)
+- Agent version
+
+This information is displayed on the server detail page and stored in the database.
+
+## Historical Data and Charts
+
+ServerBee stores metric records at two levels of granularity:
+
+### Raw Records
+
+- Written every 60 seconds by the RecordWriter background task
+- Retained for **7 days** by default (configurable via `retention.records_days`)
+- Each record captures all metric values at a single point in time
+
+### Hourly Aggregated Records
+
+- Computed by the Aggregator background task
+- Averages of all raw records within each hour
+- Retained for **90 days** by default (configurable via `retention.records_hourly_days`)
+- Used for long-term trend visualization
+
+The dashboard charts automatically switch between raw and hourly data depending on the selected time range.
+
+### GPU Records
+
+GPU metrics are stored separately in a dedicated table with per-device granularity. Each record includes the device index, name, memory, utilization, and temperature. These are retained for **7 days** by default.
+
+## Server Groups
+
+Organize your servers into logical groups for easier management:
+
+- Create groups with custom names and sort weights
+- Assign servers to groups
+- Groups appear as sections in the dashboard
+- Sort weight controls the display order (lower weight = higher position)
+
+Groups can represent environments (production, staging), regions (US-East, EU-West), providers (AWS, Hetzner), or any other organizational structure that makes sense for your setup.
+
+## Server Details
+
+Each server has a detail page showing:
+
+- Real-time metric gauges and charts
+- System information (hardware, OS, network)
+- Historical trend charts with time range selection
+- Server metadata (group, tags, remarks, pricing)
+- Actions (terminal access, edit, delete)
+
+## Data Flow
+
+```
+Agent                  Server                    Browser
+  |                      |                         |
+  |-- Report (3s) ------>|                         |
+  |                      |-- cache in AgentManager |
+  |                      |                         |
+  |                      |-- RecordWriter (60s) -->|
+  |                      |   writes to SQLite      |
+  |                      |                         |
+  |                      |-- Update (broadcast) -->|
+  |                      |                     real-time UI
+  |                      |                         |
+  |                      |-- Aggregator (hourly) ->|
+  |                      |   hourly averages       |
+  |                      |                         |
+  |                      |-- Cleanup (hourly) ---->|
+  |                      |   delete old records    |
+```
+
+The agent reports every 3 seconds. The server caches the latest report in memory and immediately broadcasts it to connected browsers. Every 60 seconds, all cached reports are batch-written to SQLite. Every hour, raw records are aggregated into hourly summaries, and expired data is cleaned up based on retention settings.

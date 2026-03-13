@@ -1,0 +1,112 @@
+---
+title: Web 终端
+description: 通过浏览器直接访问服务器的 Shell 终端。
+icon: TerminalSquare
+---
+
+ServerBee 提供基于 Web 的远程终端功能，允许管理员通过浏览器直接访问被监控服务器的 Shell，无需额外的 SSH 客户端。
+
+## 工作原理
+
+Web 终端采用三段式架构，Server 作为中间代理转发终端数据：
+
+```
+浏览器 (xterm.js) <--WebSocket--> Server (代理转发) <--WebSocket--> Agent (PTY)
+```
+
+详细流程：
+
+1. 管理员在浏览器中打开终端页面
+2. 浏览器通过 WebSocket 连接到 Server：`ws://<server>/api/ws/terminal/<server_id>`
+3. Server 通过已建立的 Agent WebSocket 连接，指令 Agent 创建 PTY 会话
+4. Agent 使用 `portable-pty` 库创建伪终端（PTY），启动 Shell 进程
+5. 浏览器输入的字符经 Server 转发到 Agent 的 PTY
+6. Agent PTY 的输出经 Server 转发回浏览器显示
+
+终端数据使用 WebSocket Binary 帧直接转发，不经过 JSON 封装。Binary 帧格式：
+
+```
+[1 byte session_id 长度][session_id bytes][payload bytes]
+```
+
+## 使用方法
+
+1. 登录 ServerBee 管理面板
+2. 进入服务器列表，点击目标服务器
+3. 在服务器详情页面，点击「终端」按钮
+4. 等待连接建立，即可在浏览器中使用完整的 Shell
+
+<Callout type="warn">
+Web 终端功能仅对管理员 (Admin) 角色可用。普通成员 (Member) 无法访问终端。
+</Callout>
+
+## 功能特性
+
+### 完整 Shell 体验
+
+- 支持标准的 Shell 操作（bash、zsh 等，取决于 Agent 所在系统的默认 Shell）
+- 支持 Tab 补全、历史命令、快捷键
+- 支持运行交互式程序（如 vim、top、htop 等）
+- 支持彩色输出和 ANSI 转义序列
+
+### 自动调整大小
+
+终端窗口大小会自动适配浏览器窗口。当你调整浏览器窗口大小时，终端的行数和列数会自动同步到远端 PTY，确保显示效果始终正确。
+
+### Tokyo Night 主题
+
+Web 终端使用 Tokyo Night 配色方案，提供舒适的视觉体验，与 ServerBee 的暗色主题风格一致。
+
+### 多会话支持
+
+同一台服务器支持同时打开多个终端会话，方便在不同窗口执行不同任务。
+
+## 限制
+
+| 限制项 | 值 | 说明 |
+|--------|-----|------|
+| 最大并发会话 | 3 | 每台服务器最多 3 个同时活跃的终端会话 |
+| 空闲超时 | 10 分钟 | 无任何输入超过 10 分钟后自动断开 |
+| 单帧数据上限 | 64 KB | 单条 WebSocket Binary 帧最大体积 |
+| 访问权限 | 仅管理员 | Member 角色无法使用终端功能 |
+
+## 安全说明
+
+### PTY 运行用户
+
+Agent 创建的 PTY 进程以 Agent 运行时的系统用户身份执行。安装脚本默认将 Agent 配置为以 root 身份运行的 systemd 服务，因此终端也将以 root 权限运行。
+
+如果你有安全方面的顾虑，可以：
+
+- 创建专用的系统用户运行 Agent，限制其权限
+- 使用 systemd 的 `User=` 指令指定运行用户
+
+```ini title="serverbee-agent.service"
+[Service]
+User=serverbee
+Group=serverbee
+ExecStart=/usr/local/bin/serverbee-agent
+```
+
+<Callout type="warn">
+使用非 root 用户运行 Agent 时，部分系统指标的采集可能受限（如 TCP/UDP 连接数），且终端操作也会受到对应用户权限的约束。同时 ICMP Ping 探测需要 `CAP_NET_RAW` 权限。
+</Callout>
+
+### 审计日志
+
+终端连接和断开事件会记录到审计日志中（P2 阶段），包括：
+
+- 操作者用户名
+- 目标服务器
+- 连接时间和断开时间
+- 来源 IP 地址
+
+### 连接加密
+
+在生产环境中，务必通过 HTTPS 反向代理来保护终端数据的传输安全。未加密的 WebSocket 连接可能导致终端输入输出被窃听。
+
+<Cards>
+  <Card title="Server 配置" href="/docs/cn/server" />
+  <Card title="架构设计" href="/docs/cn/architecture" />
+  <Card title="部署指南" href="/docs/cn/deployment" />
+</Cards>

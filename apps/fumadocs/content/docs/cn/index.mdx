@@ -1,31 +1,69 @@
 ---
-title: 你好世界
-description: 你最喜欢的文档框架。
+title: 介绍
+description: ServerBee 是一个轻量级、高性能的 VPS 监控探针系统，使用现代 Rust 技术栈构建。
 icon: Rocket
 ---
 
-你好！Fumadocs 也可以在 Tanstack Start 上运行！
+ServerBee 是一个轻量级的 VPS 监控探针系统，类似 Nezha 和 Komari，专为个人和小型团队的服务器监控需求而设计。它使用 Rust 全栈构建，兼具高性能和极低的资源占用。
 
-## 标题
+## ServerBee 是什么
 
-你好世界！
+ServerBee 由两个核心组件构成：
+
+- **Server**：部署在管理服务器上的控制中心，提供 Web 管理面板、数据存储、告警评估和 API 接口
+- **Agent**：部署在每台被监控服务器上的轻量级采集程序，负责采集系统指标并实时上报
+
+Agent 通过 WebSocket 与 Server 保持长连接，实现毫秒级的实时数据推送。所有数据存储在 SQLite 数据库中，无需安装任何外部数据库服务。
+
+## 核心功能
+
+### 实时监控
+
+通过 WebSocket 驱动的实时仪表盘，一目了然地查看所有服务器的运行状态。支持 CPU、内存、磁盘、网络、负载、温度等多维度指标，以及历史趋势图表。
+
+### 告警通知
+
+灵活的告警规则引擎，支持 14 种以上指标类型的阈值监控。采用采样窗口和触发比例机制降低误报。支持 Webhook、Telegram、Bark、Email 等多种通知渠道。
+
+### Web 终端
+
+通过浏览器直接访问服务器的 Shell 终端，无需额外的 SSH 客户端。基于 PTY 实现完整的终端体验，支持交互式程序和彩色输出。
+
+### Ping 探测
+
+支持 ICMP、TCP、HTTP 三种探测协议。可以从多个 Agent 节点同时探测同一目标，对比不同地区的网络质量。
+
+### GPU 监控
+
+支持 NVIDIA GPU 指标采集，包括利用率、显存使用量、温度等。每块 GPU 独立记录，适合监控 GPU 服务器。
+
+## 技术栈
+
+| 组件 | 技术选型 |
+|------|----------|
+| Server | Rust (Axum 0.8 + sea-orm + SQLite + tokio) |
+| Agent | Rust (sysinfo + tokio-tungstenite) |
+| Frontend | React 19 + Vite + TanStack Router + TanStack Query + Recharts + shadcn/ui |
+| 通信 | WebSocket (JSON + Binary) |
+| 数据库 | SQLite (WAL 模式) |
+| 部署 | 单二进制 / Docker / 安装脚本 |
+
+### 为什么选择 Rust
+
+- **高性能**：Agent 内存占用仅 5-15 MB，Server 在管理 1000 台节点时内存占用约 50-100 MB
+- **安全可靠**：Rust 的内存安全保证消除了大量常见的运行时错误
+- **单二进制部署**：Server 将前端静态资源通过 `rust-embed` 嵌入二进制文件，部署时只需一个可执行文件
+- **零依赖**：无需安装 MySQL、Redis 等外部服务，SQLite 内嵌于程序中
+
+## 快速链接
 
 <Cards>
-  <Card title="了解更多 Tanstack Start" href="https://tanstack.com/start" />
-  <Card title="了解更多 Fumadocs" href="https://fumadocs.dev" />
+  <Card title="快速开始" href="/docs/cn/quick-start" />
+  <Card title="Server 安装配置" href="/docs/cn/server" />
+  <Card title="Agent 安装配置" href="/docs/cn/agent" />
+  <Card title="监控功能" href="/docs/cn/monitoring" />
+  <Card title="告警与通知" href="/docs/cn/alerts" />
+  <Card title="架构设计" href="/docs/cn/architecture" />
+  <Card title="部署指南" href="/docs/cn/deployment" />
+  <Card title="配置参考" href="/docs/cn/configuration" />
 </Cards>
-
-### 代码块
-
-```ts
-console.log("Hello World");
-```
-
-#### 表格
-
-| 表头                            | 描述                                |
-| ------------------------------- | ----------------------------------- |
-| `hello`                         | 你好世界                            |
-| 非常 **重要**                   | 嘿                                  |
-| _出乎意料_                      | Fumadocs                            |
-| 很长的文本看起来有些奇怪        | 你好世界 你好世界 你好世界           |

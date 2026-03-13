@@ -1,0 +1,439 @@
+---
+title: 部署指南
+description: 生产环境下 ServerBee 的部署、反向代理、TLS 配置和运维管理。
+icon: Cloud
+---
+
+本文介绍在生产环境中部署 ServerBee 的最佳实践，包括 Docker Compose、systemd 服务、反向代理和运维管理。
+
+## Docker Compose（推荐）
+
+Docker Compose 是推荐的生产部署方式，简单且易于维护。
+
+### 基础部署
+
+```yaml title="docker-compose.yml"
+services:
+  serverbee:
+    image: ghcr.io/zingerbee/serverbee:latest
+    ports:
+      - "9527:9527"
+    volumes:
+      - serverbee-data:/data
+    environment:
+      - SB_ADMIN_USERNAME=admin
+      - SB_ADMIN_PASSWORD=your_secure_password
+    restart: unless-stopped
+
+volumes:
+  serverbee-data:
+```
+
+```bash
+# 启动
+docker compose up -d
+
+# 查看日志
+docker compose logs -f serverbee
+
+# 停止
+docker compose down
+
+# 更新到最新版本
+docker compose pull && docker compose up -d
+```
+
+### 带完整配置的部署
+
+```yaml title="docker-compose.yml"
+services:
+  serverbee:
+    image: ghcr.io/zingerbee/serverbee:latest
+    ports:
+      - "127.0.0.1:9527:9527"   # 仅监听本地，通过反向代理访问
+    volumes:
+      - serverbee-data:/data
+      - ./GeoLite2-City.mmdb:/data/GeoLite2-City.mmdb:ro
+    environment:
+      - SB_ADMIN_USERNAME=admin
+      - SB_ADMIN_PASSWORD=your_secure_password
+      - SB_SERVER_DATA_DIR=/data
+      - SB_GEOIP_ENABLED=true
+      - SB_GEOIP_MMDB_PATH=/data/GeoLite2-City.mmdb
+      - SB_RETENTION_RECORDS_DAYS=14
+      - SB_RETENTION_RECORDS_HOURLY_DAYS=365
+      - SB_LOG_LEVEL=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9527/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  serverbee-data:
+```
+
+<Callout type="info">
+当使用反向代理时，建议将端口绑定到 `127.0.0.1:9527` 而非 `0.0.0.0:9527`，防止绕过反向代理直接访问。
+</Callout>
+
+## systemd 服务（生产 Linux 环境）
+
+适用于不使用 Docker 的 Linux 服务器。
+
+### Server 服务
+
+```ini title="/etc/systemd/system/serverbee-server.service"
+[Unit]
+Description=ServerBee Dashboard
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/serverbee-server
+WorkingDirectory=/var/lib/serverbee
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+# 安全加固（可选）
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/serverbee /etc/serverbee
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### Agent 服务
+
+```ini title="/etc/systemd/system/serverbee-agent.service"
+[Unit]
+Description=ServerBee Agent
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/serverbee-agent
+Restart=always
+RestartSec=5
+AmbientCapabilities=CAP_NET_RAW
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 常用操作
+
+```bash
+# 启用开机自启
+sudo systemctl daemon-reload
+sudo systemctl enable serverbee-server
+sudo systemctl enable serverbee-agent
+
+# 启动/停止/重启
+sudo systemctl start serverbee-server
+sudo systemctl stop serverbee-server
+sudo systemctl restart serverbee-server
+
+# 查看状态和日志
+sudo systemctl status serverbee-server
+sudo journalctl -u serverbee-server -f
+sudo journalctl -u serverbee-server --since "1 hour ago"
+```
+
+## Nginx 反向代理
+
+### 基础配置
+
+```nginx title="/etc/nginx/sites-available/serverbee"
+server {
+    listen 443 ssl http2;
+    server_name monitor.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/monitor.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/monitor.example.com/privkey.pem;
+
+    # 推荐的 SSL 配置
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # 普通 HTTP 请求
+    location / {
+        proxy_pass http://127.0.0.1:9527;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 浏览器 WebSocket（实时数据推送）
+    location /api/ws/ {
+        proxy_pass http://127.0.0.1:9527;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+
+    # Agent WebSocket
+    location /api/agent/ws {
+        proxy_pass http://127.0.0.1:9527;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+}
+
+# HTTP 重定向到 HTTPS
+server {
+    listen 80;
+    server_name monitor.example.com;
+    return 301 https://$host$request_uri;
+}
+```
+
+```bash
+# 启用站点
+sudo ln -s /etc/nginx/sites-available/serverbee /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+<Callout type="warn">
+WebSocket 路径必须正确配置 `Upgrade` 和 `Connection` 头部。`proxy_read_timeout` 建议设置为较大值（如 86400s），防止 Nginx 主动断开 Agent 的长连接。
+</Callout>
+
+## Caddy 反向代理
+
+Caddy 会自动申请和续期 HTTPS 证书，配置最为简洁。
+
+```caddyfile title="/etc/caddy/Caddyfile"
+monitor.example.com {
+    reverse_proxy 127.0.0.1:9527
+}
+```
+
+Caddy 天然支持 WebSocket 代理，无需额外配置。
+
+如果需要更精细的控制：
+
+```caddyfile title="/etc/caddy/Caddyfile"
+monitor.example.com {
+    # API 和 WebSocket
+    handle /api/* {
+        reverse_proxy 127.0.0.1:9527
+    }
+
+    # 静态文件和 SPA
+    handle {
+        reverse_proxy 127.0.0.1:9527
+    }
+
+    # 访问日志
+    log {
+        output file /var/log/caddy/serverbee.log
+    }
+}
+```
+
+## TLS/HTTPS 配置
+
+### 使用 Let's Encrypt（推荐）
+
+**Caddy**（自动）：
+
+Caddy 默认自动申请和续期 Let's Encrypt 证书，无需手动配置。
+
+**Nginx + Certbot**：
+
+```bash
+# 安装 Certbot
+sudo apt install certbot python3-certbot-nginx
+
+# 申请证书
+sudo certbot --nginx -d monitor.example.com
+
+# 自动续期（Certbot 默认已设置 systemd timer）
+sudo certbot renew --dry-run
+```
+
+### Agent 连接配置
+
+配置 HTTPS 后，Agent 需要使用 `wss://` 协议连接：
+
+```toml title="agent.toml"
+server_url = "wss://monitor.example.com"
+```
+
+<Callout type="info">
+ServerBee 自身不处理 TLS 终止。所有 HTTPS/WSS 加密由前置的反向代理（Nginx/Caddy）处理。这种架构简化了 Server 的实现，同时也便于统一管理证书。
+</Callout>
+
+## 备份与恢复
+
+### 备份
+
+ServerBee 的所有数据都存储在 SQLite 数据库文件中，备份只需要复制数据目录。
+
+**Docker 环境：**
+
+```bash
+# 方式一：直接复制 volume 数据
+docker compose stop
+docker cp serverbee:/data /path/to/backup/serverbee-data-$(date +%Y%m%d)
+docker compose start
+
+# 方式二：使用 SQLite 在线备份（无需停机）
+docker compose exec serverbee sqlite3 /data/serverbee.db ".backup '/data/backup.db'"
+docker cp serverbee:/data/backup.db /path/to/backup/
+```
+
+**systemd 环境：**
+
+```bash
+# 方式一：停机备份
+sudo systemctl stop serverbee-server
+cp -r /var/lib/serverbee /path/to/backup/serverbee-data-$(date +%Y%m%d)
+sudo systemctl start serverbee-server
+
+# 方式二：SQLite 在线备份（推荐，无需停机）
+sqlite3 /var/lib/serverbee/serverbee.db ".backup '/path/to/backup/serverbee-$(date +%Y%m%d).db'"
+```
+
+**定时备份脚本示例：**
+
+```bash title="/usr/local/bin/backup-serverbee.sh"
+#!/bin/bash
+BACKUP_DIR="/path/to/backups"
+DB_PATH="/var/lib/serverbee/serverbee.db"
+DATE=$(date +%Y%m%d_%H%M%S)
+
+# 创建备份
+sqlite3 "$DB_PATH" ".backup '${BACKUP_DIR}/serverbee-${DATE}.db'"
+
+# 保留最近 7 天的备份
+find "$BACKUP_DIR" -name "serverbee-*.db" -mtime +7 -delete
+
+echo "Backup completed: serverbee-${DATE}.db"
+```
+
+```bash
+# 添加 crontab，每天凌晨 3 点备份
+echo "0 3 * * * /usr/local/bin/backup-serverbee.sh" | sudo tee -a /var/spool/cron/crontabs/root
+```
+
+### 恢复
+
+```bash
+# 停止服务
+sudo systemctl stop serverbee-server
+
+# 恢复数据库
+cp /path/to/backup/serverbee-20260314.db /var/lib/serverbee/serverbee.db
+
+# 启动服务
+sudo systemctl start serverbee-server
+```
+
+<Callout type="warn">
+恢复备份会覆盖备份时间点之后的所有数据变更。建议在恢复前先备份当前数据库。
+</Callout>
+
+## 健康检查
+
+### HTTP 健康检查端点
+
+ServerBee 提供健康检查接口：
+
+```bash
+curl -s http://localhost:9527/api/health
+```
+
+### Docker 健康检查
+
+在 `docker-compose.yml` 中配置：
+
+```yaml
+healthcheck:
+  test: ["CMD", "wget", "--spider", "-q", "http://localhost:9527/api/health"]
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_period: 10s
+```
+
+### 外部监控
+
+建议使用外部监控工具（如 Uptime Kuma）监控 ServerBee 自身的可用性：
+
+- 监控 HTTP 端口 `9527` 的可达性
+- 监控 `/api/health` 端点的响应
+- 监控 WebSocket 连接的可用性
+
+## 性能预估
+
+以 1000 台 Agent 为例的资源消耗预估：
+
+| 资源 | 预估值 |
+|------|--------|
+| Server 内存 | 50-100 MB |
+| Agent 内存 | 5-15 MB（每台） |
+| SQLite 写入 | 约 1000 行/分钟 |
+| WebSocket 带宽 | 约 160 KB/s |
+| 磁盘占用（30 天） | 约 8 GB |
+
+SQLite 的 WAL 模式可以轻松承载这个级别的写入量。对于绝大多数 VPS 监控场景，单实例 ServerBee 即可满足需求。
+
+## 升级指南
+
+### Docker 升级
+
+```bash
+# 拉取最新镜像
+docker compose pull
+
+# 重启服务（自动运行数据库迁移）
+docker compose up -d
+
+# 确认运行状态
+docker compose ps
+docker compose logs --tail 50 serverbee
+```
+
+### 二进制升级
+
+```bash
+# 下载新版本
+wget https://github.com/zingerbee/ServerBee/releases/latest/download/serverbee-server-linux-amd64
+
+# 停止服务
+sudo systemctl stop serverbee-server
+
+# 替换二进制
+sudo mv serverbee-server-linux-amd64 /usr/local/bin/serverbee-server
+sudo chmod +x /usr/local/bin/serverbee-server
+
+# 启动服务（自动运行数据库迁移）
+sudo systemctl start serverbee-server
+```
+
+<Callout type="info">
+ServerBee 在启动时会自动运行数据库迁移，升级后无需手动执行任何迁移操作。建议在升级前进行数据库备份。
+</Callout>
+
+<Cards>
+  <Card title="Server 配置" href="/docs/cn/server" />
+  <Card title="Agent 配置" href="/docs/cn/agent" />
+  <Card title="架构设计" href="/docs/cn/architecture" />
+</Cards>

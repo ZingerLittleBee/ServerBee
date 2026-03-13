@@ -1,31 +1,47 @@
 ---
-title: Hello World
-description: Your favourite docs framework.
+title: Introduction
+description: ServerBee is a lightweight, modern VPS monitoring system built with Rust and React.
 icon: Rocket
 ---
 
-Hey there! Fumadocs is the docs framework that also works on Tanstack Start!
+ServerBee is a lightweight VPS monitoring probe system -- similar in concept to [Nezha](https://github.com/nezhahq/nezha) or [Komari](https://github.com/komari-monitor/komari), but built from the ground up with a modern Rust backend and React frontend. It is designed to be fast, resource-efficient, and easy to deploy on small VPS instances.
 
-## Heading
+## Key Features
 
-Hello World!
+- **Real-time monitoring** -- CPU, memory, disk, network, load average, temperature, and GPU metrics streamed over WebSocket
+- **Alert rules** -- Flexible threshold-based alerts with support for 14+ metric types, debounce logic, and multiple notification channels
+- **Web terminal** -- Secure browser-based shell access to your servers through a full PTY session
+- **Ping monitoring** -- ICMP, TCP, and HTTP probes to track endpoint availability and latency
+- **GPU support** -- Optional NVIDIA GPU monitoring (utilization, memory, temperature per device)
+- **Lightweight footprint** -- Single binary server and agent, SQLite database, no external dependencies required
+- **OAuth login** -- GitHub, Google, and generic OIDC provider support
+- **GeoIP detection** -- Automatic server region identification via MaxMind MMDB
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|-----------|
+| Server | Rust (Axum 0.8, sea-orm, tokio, SQLite) |
+| Agent | Rust (sysinfo, tokio-tungstenite) |
+| Frontend | React 19, Vite 7, TanStack Router, TanStack Query, Recharts, shadcn/ui, Tailwind CSS v4 |
+| Protocol | WebSocket (JSON frames, binary for terminal data) |
+| Database | SQLite with WAL mode |
+
+## How It Works
+
+ServerBee follows a hub-and-spoke architecture:
+
+1. The **Server** is the central dashboard that runs the web UI, REST API, and manages all WebSocket connections
+2. **Agents** are installed on each VPS you want to monitor -- they collect system metrics and report back to the server every few seconds
+3. The **Frontend** is a React SPA embedded into the server binary, so there is nothing extra to deploy
+
+All communication between agents and the server happens over WebSocket with JSON-encoded messages. Terminal sessions use the same WebSocket connection with base64-encoded PTY data.
+
+## Next Steps
 
 <Cards>
-  <Card title="Learn more about Tanstack Start" href="https://tanstack.com/start" />
-  <Card title="Learn more about Fumadocs" href="https://fumadocs.dev" />
+  <Card title="Quick Start" href="/docs/en/quick-start" />
+  <Card title="Server Setup" href="/docs/en/server" />
+  <Card title="Agent Setup" href="/docs/en/agent" />
+  <Card title="Architecture" href="/docs/en/architecture" />
 </Cards>
-
-### CodeBlock
-
-```ts
-console.log("Hello World");
-```
-
-#### Table
-
-| Head                            | Description                         |
-| ------------------------------- | ----------------------------------- |
-| `hello`                         | Hello World                         |
-| very **important**              | Hey                                 |
-| _Surprisingly_                  | Fumadocs                            |
-| very long text that looks weird | hello world hello world hello world |

@@ -1,0 +1,166 @@
+---
+title: 快速开始
+description: 在几分钟内完成 ServerBee 的安装和首次配置。
+icon: Zap
+---
+
+ServerBee 提供多种安装方式，你可以根据自身环境和需求选择最合适的方案。
+
+## 前置条件
+
+根据安装方式的不同，你需要准备以下环境之一：
+
+- **Docker Compose**（推荐）：Docker 20.10+ 和 Docker Compose V2
+- **安装脚本**：Linux (amd64/arm64) 系统，支持 systemd
+- **源码编译**：Rust 1.85+、Bun 1.x（或 Node.js 22+）
+
+## 方式一：Docker Compose（推荐）
+
+这是最快的安装方式，适合大多数用户。
+
+创建 `docker-compose.yml` 文件：
+
+```yaml title="docker-compose.yml"
+services:
+  serverbee:
+    image: ghcr.io/zingerbee/serverbee:latest
+    ports:
+      - "9527:9527"
+    volumes:
+      - serverbee-data:/data
+    environment:
+      - SB_ADMIN_USERNAME=admin
+      - SB_ADMIN_PASSWORD=your_secure_password
+    restart: unless-stopped
+
+volumes:
+  serverbee-data:
+```
+
+启动服务：
+
+```bash
+docker compose up -d
+```
+
+<Callout type="warn">
+务必将 `SB_ADMIN_PASSWORD` 修改为你自己的强密码。如果不设置密码，系统会自动生成随机密码并打印到日志中。
+</Callout>
+
+启动完成后，打开浏览器访问 `http://your-server-ip:9527` 即可进入管理面板。
+
+## 方式二：安装脚本
+
+适用于 Linux 服务器，一键完成安装、配置和 systemd 服务注册。
+
+**安装 Server：**
+
+```bash
+curl -fsSL https://get.serverbee.io | bash
+```
+
+安装脚本会自动完成以下操作：
+
+1. 检测系统架构（amd64/arm64）
+2. 从 GitHub Releases 下载对应的二进制文件
+3. 安装到 `/usr/local/bin/`
+4. 创建 `/etc/serverbee/` 配置目录并生成默认配置
+5. 创建 systemd service unit
+6. 启动服务并设置开机自启
+
+**安装 Agent：**
+
+在需要监控的每台服务器上执行：
+
+```bash
+curl -fsSL https://get.serverbee.io/agent | bash -s -- \
+  --server-url ws://your-server-ip:9527 \
+  --discovery-key YOUR_DISCOVERY_KEY
+```
+
+## 方式三：源码编译
+
+适合开发者或有定制需求的用户。
+
+```bash
+# 克隆仓库
+git clone https://github.com/zingerbee/ServerBee.git
+cd ServerBee
+
+# 构建前端
+cd apps/web
+bun install
+bun run build
+cd ../..
+
+# 构建 Server
+cargo build --release -p serverbee-server
+
+# 构建 Agent
+cargo build --release -p serverbee-agent
+```
+
+编译产物位于 `target/release/` 目录下：
+
+- `serverbee-server` — 服务端，内嵌前端静态资源
+- `serverbee-agent` — Agent 采集端
+
+启动 Server：
+
+```bash
+./target/release/serverbee-server
+```
+
+## 首次登录
+
+1. 打开浏览器访问 `http://your-server-ip:9527`
+2. 使用默认账户 `admin` 和你设置的密码登录
+3. 如果未设置密码，查看 Server 启动日志获取自动生成的密码
+
+<Callout type="warn">
+首次登录后请立即修改默认密码。进入「设置」页面即可修改。
+</Callout>
+
+## 添加第一台 Agent
+
+完成 Server 安装后，按以下步骤添加监控节点：
+
+### 第一步：获取 Discovery Key
+
+登录管理面板，进入「设置」页面，找到「Auto Discovery Key」，复制该密钥。
+
+Server 首次启动时会自动生成此密钥并打印到日志中，你也可以在日志中找到它。
+
+### 第二步：配置并启动 Agent
+
+在被监控的服务器上创建配置文件：
+
+```toml title="/etc/serverbee/agent.toml"
+server_url = "ws://your-server-ip:9527"
+
+[collector]
+interval = 3
+enable_gpu = false
+enable_temperature = true
+
+[log]
+level = "info"
+```
+
+首次启动 Agent 时，使用 Discovery Key 进行自动注册：
+
+```bash
+SB_TOKEN="" SB_AUTO_DISCOVERY_KEY=YOUR_KEY serverbee-agent
+```
+
+Agent 会自动向 Server 注册，获取 Token 并写回配置文件。后续启动无需再提供 Discovery Key。
+
+### 第三步：验证连接
+
+回到管理面板的仪表盘页面，你应该能看到新添加的服务器已上线，实时指标开始更新。
+
+<Cards>
+  <Card title="Server 详细配置" href="/docs/cn/server" />
+  <Card title="Agent 详细配置" href="/docs/cn/agent" />
+  <Card title="完整配置参考" href="/docs/cn/configuration" />
+</Cards>

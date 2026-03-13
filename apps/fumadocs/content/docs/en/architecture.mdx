@@ -1,0 +1,237 @@
+---
+title: Architecture
+description: Technical overview of ServerBee's system design, components, and protocols.
+icon: Boxes
+---
+
+This page describes the internal architecture of ServerBee for developers and operators who want to understand how the system works under the hood.
+
+## System Overview
+
+```
++--------------------------------------------------+
+|              ServerBee Dashboard                  |
+|                                                   |
+|  +---------------------------------------------+ |
+|  | Frontend (React SPA, embedded via rust-embed)| |
+|  | React 19, TanStack Router/Query             | |
+|  | shadcn/ui, Tailwind CSS v4, Recharts        | |
+|  +---------------------------------------------+ |
+|  +---------------------------------------------+ |
+|  | Server (Rust)                                | |
+|  | Axum Router                                  | |
+|  |  +-- REST API handlers                      | |
+|  |  +-- WebSocket: Agent + Browser + Terminal   | |
+|  |  +-- Static files (rust-embed)              | |
+|  | Service Layer                                | |
+|  |  +-- AgentManager (connections/state)        | |
+|  |  +-- AlertService (rule evaluation)          | |
+|  |  +-- RecordService (metrics/aggregation)     | |
+|  |  +-- NotificationService (dispatch)          | |
+|  | Entity Layer (sea-orm)                       | |
+|  |  +-- SQLite                                  | |
+|  +---------------------------------------------+ |
++--------------------------+-----------------------+
+                           | WebSocket (JSON + Binary)
++--------------------------v-----------------------+
+|              ServerBee Agent (Rust)               |
+|  common crate (shared types/protocol)             |
+|  +-- Collector (system metrics)                   |
+|  +-- Reporter (WebSocket + reconnect)             |
+|  +-- Pinger (ICMP/TCP/HTTP probes)                |
+|  +-- TerminalManager (PTY sessions)               |
++---------------------------------------------------+
+```
+
+## Component Roles
+
+### Server (`crates/server`)
+
+The central hub that:
+
+- Serves the web dashboard (React SPA embedded via `rust-embed`)
+- Exposes REST API endpoints for CRUD operations
+- Manages WebSocket connections from agents and browsers
+- Stores all data in SQLite
+- Runs background tasks (record writing, aggregation, cleanup, alerting, offline detection)
+- Dispatches notifications
+
+### Agent (`crates/agent`)
+
+A lightweight daemon that:
+
+- Collects system metrics using the `sysinfo` crate
+- Reports metrics to the server over WebSocket every N seconds
+- Runs ping probes as instructed by the server
+- Provides PTY terminal sessions for remote shell access
+- Executes remote commands dispatched by the server
+- Supports self-upgrade when instructed
+
+### Common (`crates/common`)
+
+A shared library crate containing:
+
+- **Protocol definitions** -- `AgentMessage`, `ServerMessage`, `BrowserMessage` enums
+- **Data types** -- `SystemInfo`, `SystemReport`, `GpuReport`, `PingResult`, `ServerStatus`, etc.
+- **Constants** -- Default ports, timeouts, retention periods, alert parameters
+
+### Frontend (`apps/web`)
+
+A React 19 single-page application:
+
+- **Routing** -- TanStack Router (file-based)
+- **Data fetching** -- TanStack Query for REST, native WebSocket for real-time updates
+- **UI components** -- shadcn/ui with the base-nova theme
+- **Styling** -- Tailwind CSS v4
+- **Charts** -- Recharts
+- **Build** -- Vite 7
+
+The built frontend is embedded into the server binary at compile time, so there is nothing to deploy separately.
+
+## Communication Protocol
+
+All communication uses WebSocket with JSON-encoded messages. Terminal data uses base64 encoding within the JSON frames.
+
+### Agent to Server (`AgentMessage`)
+
+| Message Type | Purpose |
+|-------------|---------|
+| `SystemInfo` | Static system information, sent once on connect |
+| `Report` | Periodic metric report (every N seconds) |
+| `PingResult` | Result of a ping probe |
+| `TaskResult` | Output from a remote command execution |
+| `TerminalOutput` | PTY output data (base64-encoded) |
+| `TerminalStarted` | Confirmation that a PTY session was created |
+| `TerminalError` | Error from a terminal session |
+| `Pong` | Protocol-level heartbeat response |
+
+### Server to Agent (`ServerMessage`)
+
+| Message Type | Purpose |
+|-------------|---------|
+| `Welcome` | Sent on connect with server_id, protocol_version, report_interval |
+| `Ack` | Acknowledges a received message (by msg_id) |
+| `PingTasksSync` | Sync all assigned ping tasks to the agent |
+| `Exec` | Execute a shell command on the agent |
+| `TerminalOpen` | Request to open a new PTY session |
+| `TerminalInput` | Forward keyboard input to a PTY session |
+| `TerminalResize` | Resize a PTY session |
+| `TerminalClose` | Close a PTY session |
+| `Ping` | Protocol-level heartbeat |
+| `Upgrade` | Instruct the agent to self-upgrade |
+
+### Server to Browser (`BrowserMessage`)
+
+| Message Type | Purpose |
+|-------------|---------|
+| `FullSync` | Complete state of all servers (sent on browser connect) |
+| `Update` | Incremental update with latest metrics for changed servers |
+| `ServerOnline` | Notification that a server came online |
+| `ServerOffline` | Notification that a server went offline |
+
+## Database Design
+
+ServerBee uses SQLite with 19 tables across 4 categories:
+
+### Authentication (4 tables)
+
+| Table | Purpose |
+|-------|---------|
+| `users` | User accounts (id, username, password_hash, role, TOTP secret) |
+| `sessions` | Active login sessions (token, IP, user agent, expiry) |
+| `api_keys` | API key credentials (hashed key, prefix, last used) |
+| `oauth_accounts` | Linked OAuth provider accounts |
+
+### Server Management (4 tables)
+
+| Table | Purpose |
+|-------|---------|
+| `servers` | Registered servers (system info, metadata, pricing, group assignment) |
+| `server_groups` | Logical groups for organizing servers |
+| `server_tags` | Tag labels attached to servers |
+| `configs` | Key-value configuration store (auto-discovery key, etc.) |
+
+### Monitoring Data (5 tables)
+
+| Table | Purpose |
+|-------|---------|
+| `records` | Raw metric records (one row per server per minute) |
+| `records_hourly` | Hourly aggregated metric averages |
+| `gpu_records` | Per-GPU device metrics (device index, name, memory, utilization, temp) |
+| `ping_records` | Ping probe results (latency, success, error) |
+| `ping_tasks` | Ping task definitions (probe type, target, interval, assigned servers) |
+
+### Alerting & Operations (6 tables)
+
+| Table | Purpose |
+|-------|---------|
+| `alert_rules` | Alert rule definitions (conditions, cover type, trigger mode) |
+| `alert_states` | Current alert state per rule/server pair (triggered, resolved) |
+| `notifications` | Notification channel configs (webhook, telegram, bark, email) |
+| `notification_groups` | Groups of notification channels |
+| `tasks` | Remote command tasks (command, target servers, created by) |
+| `task_results` | Command execution results (output, exit code) |
+| `audit_logs` | User action audit trail (action, detail, IP) |
+
+All tables use UTC timestamps. IDs are UUIDs (string type) for most entities, and auto-incrementing integers for high-volume records.
+
+## Background Tasks
+
+The server spawns six long-running background tasks:
+
+| Task | Interval | Description |
+|------|----------|-------------|
+| **RecordWriter** | 60s | Flushes all cached agent reports from memory to the database |
+| **OfflineChecker** | 10s | Scans for agents that have not sent a heartbeat in 30 seconds and marks them offline |
+| **Aggregator** | 1 hour | Computes hourly averages from raw records for long-term storage |
+| **Cleanup** | 1 hour | Deletes records, GPU data, ping records, and audit logs older than their retention periods |
+| **SessionCleaner** | Periodic | Removes expired user login sessions |
+| **AlertEvaluator** | 60s | Evaluates all enabled alert rules against current data and dispatches notifications |
+
+## Security Model
+
+### Authentication Layers
+
+ServerBee supports three authentication mechanisms:
+
+1. **Session-based** (browser) -- User logs in with username/password, receives a session cookie. Sessions have a configurable TTL (default 24 hours).
+2. **API Key** (automation) -- Users can create named API keys for programmatic access. Keys are hashed with SHA-256 and stored with an 8-character prefix for identification.
+3. **Agent Token** (agents) -- Each registered server has a unique token hashed with argon2. Agents authenticate by providing the raw token as a query parameter on the WebSocket connection.
+
+### Role-Based Access
+
+Two roles exist:
+
+| Role | Capabilities |
+|------|-------------|
+| `admin` | Full access: manage users, servers, alerts, notifications, terminal, settings |
+| `user` | Read-only dashboard access (no terminal, no administrative actions) |
+
+### OAuth
+
+OAuth login is supported for GitHub, Google, and generic OIDC providers. The `allow_registration` flag controls whether new users are automatically created on first OAuth login.
+
+### Rate Limiting
+
+Login and agent registration endpoints are rate-limited to prevent brute-force attacks (default: 5 login attempts, 3 registration attempts per window).
+
+### TOTP
+
+Users can enable TOTP-based two-factor authentication for additional security.
+
+## Workspace Structure
+
+```
+ServerBee/
+  crates/
+    common/          # Shared types, protocol, constants
+    server/          # Server binary (Axum, sea-orm, background tasks)
+    agent/           # Agent binary (collector, reporter, terminal)
+  apps/
+    web/             # React frontend (Vite, TanStack, shadcn/ui)
+    fumadocs/        # Documentation site
+  docs/              # Design documents and plans
+  Cargo.toml         # Workspace root
+```
+
+The project uses a Cargo workspace for the Rust crates. The frontend is a separate Bun/Node project under `apps/web/`.

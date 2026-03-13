@@ -1,0 +1,230 @@
+---
+title: Agent Setup
+description: Install and configure the ServerBee agent on your monitored servers.
+icon: Cpu
+---
+
+The ServerBee agent is a lightweight Rust binary that runs on each server you want to monitor. It collects system metrics (CPU, memory, disk, network, load, temperature, GPU) and reports them to the central ServerBee server over a persistent WebSocket connection.
+
+## What the Agent Does
+
+- Collects system metrics every 3 seconds (configurable)
+- Reports metrics to the server over WebSocket
+- Executes ping probes (ICMP, TCP, HTTP) assigned by the server
+- Provides a PTY shell for web terminal access
+- Runs remote commands dispatched from the server
+- Supports automatic self-upgrade when the server pushes new versions
+- Reconnects automatically with exponential backoff if the connection drops
+
+## Installation
+
+### Pre-built Binary
+
+Download the agent binary for your platform from the [releases page](https://github.com/ZingerBee/ServerBee/releases):
+
+```bash
+chmod +x serverbee-agent
+```
+
+### Install Script
+
+Use the install script to download the binary and configure a systemd service automatically:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ZingerBee/ServerBee/main/install-agent.sh | bash
+```
+
+### Build from Source
+
+```bash
+cargo build --release -p serverbee-agent
+```
+
+The binary is located at `target/release/serverbee-agent`.
+
+## Registration Flow
+
+Agents authenticate with the server using a **token**. There are two ways to obtain a token:
+
+### Automatic Registration (Recommended)
+
+1. Get the **auto-discovery key** from the server startup logs
+2. Configure the agent with the key:
+
+```toml
+server_url = "http://your-server-ip:9527"
+auto_discovery_key = "your-auto-discovery-key"
+```
+
+3. Start the agent. It will:
+   - Send a registration request to `POST /api/agent/register` using the key as a Bearer token
+   - Receive a `server_id` and `token` from the server
+   - Save the token to the config file automatically
+   - Connect via WebSocket using the token for all future sessions
+
+### Manual Token
+
+If you prefer not to use auto-discovery, you can manually create a server entry in the dashboard and provide the token directly:
+
+```toml
+server_url = "http://your-server-ip:9527"
+token = "the-agent-token-from-dashboard"
+```
+
+## Configuration
+
+The agent reads configuration from TOML files in the following order:
+
+1. `/etc/serverbee/agent.toml` (system-wide, preferred)
+2. `agent.toml` (working directory)
+3. Environment variables with `SB_` prefix
+
+Here is a complete `agent.toml` with all available options:
+
+```toml
+# Required: URL of your ServerBee server
+server_url = "http://your-server-ip:9527"
+
+# Authentication token (auto-populated after registration)
+token = ""
+
+# Auto-discovery key for automatic registration (used only if token is empty)
+auto_discovery_key = ""
+
+[collector]
+interval = 3                   # Metric collection interval in seconds
+enable_gpu = false             # Enable NVIDIA GPU monitoring (requires nvidia-smi)
+enable_temperature = true      # Enable temperature sensor monitoring
+
+[log]
+level = "info"                 # Log level: trace, debug, info, warn, error
+file = ""                      # Log file path (empty = stdout only)
+```
+
+### Environment Variables
+
+Like the server, all options support `SB_` prefixed environment variables:
+
+```bash
+export SB_SERVER_URL="http://your-server-ip:9527"
+export SB_TOKEN="your-agent-token"
+export SB_COLLECTOR__INTERVAL=5
+export SB_COLLECTOR__ENABLE_GPU=true
+```
+
+## GPU Monitoring
+
+GPU monitoring is disabled by default because it requires `nvidia-smi` to be available on the system. To enable it:
+
+1. Ensure NVIDIA drivers and `nvidia-smi` are installed
+2. Set `enable_gpu = true` in the agent config
+
+```toml
+[collector]
+enable_gpu = true
+```
+
+When enabled, the agent collects per-GPU metrics:
+- Device name
+- Memory total and used
+- GPU utilization percentage
+- GPU temperature
+
+These metrics appear in the server dashboard and can be used in alert rules.
+
+## Running as a Systemd Service
+
+For production deployments, run the agent as a systemd service so it starts automatically on boot.
+
+Create `/etc/systemd/system/serverbee-agent.service`:
+
+```ini
+[Unit]
+Description=ServerBee Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/serverbee-agent
+Restart=always
+RestartSec=5
+User=root
+WorkingDirectory=/etc/serverbee
+
+# Optional: limit resource usage
+MemoryMax=128M
+CPUQuota=10%
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then enable and start the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable serverbee-agent
+sudo systemctl start serverbee-agent
+```
+
+Check the status:
+
+```bash
+sudo systemctl status serverbee-agent
+journalctl -u serverbee-agent -f
+```
+
+<Callout type="info">
+The agent needs to run as root to access all system metrics (temperature sensors, process lists, etc.) and to open PTY sessions for the web terminal. If you do not need terminal access, you can run it as a non-root user, though some metrics may be unavailable.
+</Callout>
+
+## Auto-Update
+
+The server can push upgrade commands to connected agents. When an upgrade is triggered:
+
+1. The server sends an `Upgrade` message with a download URL and version
+2. The agent downloads the new binary
+3. Verifies the SHA-256 checksum (if provided via `x-checksum-sha256` header)
+4. Backs up the current binary (`.bak` extension)
+5. Replaces itself with the new binary
+6. Restarts automatically
+
+This process is transparent and requires no manual intervention on the agent side.
+
+## Connection Behavior
+
+The agent maintains a persistent WebSocket connection to the server. If the connection drops:
+
+- It reconnects using **exponential backoff** starting at 1 second
+- The maximum backoff interval is 30 seconds
+- A random jitter of +/-20% is applied to avoid thundering herd reconnections
+- Upon successful reconnection, the backoff resets to 1 second
+
+During the initial connection:
+
+1. The server sends a `Welcome` message with the assigned `server_id` and `report_interval`
+2. The agent sends its `SystemInfo` (CPU name, cores, arch, OS, kernel, memory, disk, IP addresses, virtualization type, agent version)
+3. The server acknowledges with an `Ack`
+4. The server syncs any assigned ping tasks
+5. The agent begins its periodic metric reporting loop
+
+## Collected Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `cpu` | float | CPU usage percentage (0-100) |
+| `mem_used` | int | Used memory in bytes |
+| `swap_used` | int | Used swap in bytes |
+| `disk_used` | int | Used disk space in bytes |
+| `net_in_speed` | int | Network inbound speed (bytes/sec) |
+| `net_out_speed` | int | Network outbound speed (bytes/sec) |
+| `net_in_transfer` | int | Cumulative inbound transfer (bytes) |
+| `net_out_transfer` | int | Cumulative outbound transfer (bytes) |
+| `load1` / `load5` / `load15` | float | System load averages |
+| `tcp_conn` | int | Active TCP connections |
+| `udp_conn` | int | Active UDP connections |
+| `process_count` | int | Running process count |
+| `uptime` | int | System uptime in seconds |
+| `temperature` | float | CPU temperature (optional) |
+| `gpu` | object | GPU metrics per device (optional) |
