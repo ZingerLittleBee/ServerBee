@@ -1,0 +1,362 @@
+---
+title: Deployment Guide
+description: Production deployment strategies for the ServerBee server and agents.
+icon: Cloud
+---
+
+This guide covers production deployment best practices for ServerBee, including Docker, systemd, reverse proxy configuration, TLS, and backup strategies.
+
+## Docker Compose (Recommended)
+
+Docker Compose is the simplest way to deploy ServerBee in production. Create a `docker-compose.yml`:
+
+```yaml
+version: "3.8"
+
+services:
+  serverbee:
+    image: ghcr.io/zingerbee/serverbee:latest
+    container_name: serverbee
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9527:9527"
+    volumes:
+      - serverbee-data:/app/data
+      - ./server.toml:/app/server.toml:ro
+    environment:
+      - SB_ADMIN__PASSWORD=change-this-password
+      - SB_AUTH__SECURE_COOKIE=true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9527/api/status/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  serverbee-data:
+```
+
+<Callout type="info">
+Binding to `127.0.0.1:9527` instead of `0.0.0.0:9527` ensures the server is only accessible through the reverse proxy, not directly from the internet.
+</Callout>
+
+Start the service:
+
+```bash
+docker compose up -d
+```
+
+View logs:
+
+```bash
+docker compose logs -f serverbee
+```
+
+## Systemd Services
+
+For deployments without Docker, use systemd to manage both the server and agent processes.
+
+### Server Service
+
+Create `/etc/systemd/system/serverbee-server.service`:
+
+```ini
+[Unit]
+Description=ServerBee Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/serverbee-server
+Restart=always
+RestartSec=5
+User=serverbee
+Group=serverbee
+WorkingDirectory=/var/lib/serverbee
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/serverbee /var/log/serverbee
+PrivateTmp=true
+
+# Resource limits
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Create the service user and directories:
+
+```bash
+# Create system user
+sudo useradd -r -s /sbin/nologin -d /var/lib/serverbee serverbee
+
+# Create directories
+sudo mkdir -p /var/lib/serverbee /var/log/serverbee /etc/serverbee
+sudo chown serverbee:serverbee /var/lib/serverbee /var/log/serverbee
+
+# Place configuration
+sudo cp server.toml /etc/serverbee/server.toml
+
+# Place binary
+sudo cp serverbee-server /usr/local/bin/
+sudo chmod +x /usr/local/bin/serverbee-server
+```
+
+A production `server.toml` for systemd:
+
+```toml
+[server]
+listen = "127.0.0.1:9527"
+data_dir = "/var/lib/serverbee"
+
+[admin]
+password = "change-this-immediately"
+
+[log]
+level = "info"
+file = "/var/log/serverbee/server.log"
+```
+
+Enable and start:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable serverbee-server
+sudo systemctl start serverbee-server
+sudo systemctl status serverbee-server
+```
+
+### Agent Service
+
+See the [Agent Setup](/docs/en/agent) guide for a complete systemd service unit file.
+
+## Reverse Proxy
+
+Running ServerBee behind a reverse proxy is strongly recommended for production. It provides TLS termination, HTTP/2, and additional security headers.
+
+### Nginx
+
+```nginx
+upstream serverbee {
+    server 127.0.0.1:9527;
+}
+
+server {
+    listen 80;
+    server_name monitor.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name monitor.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/monitor.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/monitor.example.com/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location / {
+        proxy_pass http://serverbee;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket support (required for agents, browser updates, and terminal)
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # Long timeouts for persistent WebSocket connections
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+
+        # Disable buffering for real-time data
+        proxy_buffering off;
+    }
+}
+```
+
+### Caddy
+
+Caddy handles TLS automatically with Let's Encrypt:
+
+```
+monitor.example.com {
+    reverse_proxy 127.0.0.1:9527 {
+        # WebSocket support is automatic in Caddy
+    }
+}
+```
+
+That is the entire Caddy configuration needed. Caddy handles HTTPS certificates, HTTP/2, WebSocket upgrades, and security headers by default.
+
+## TLS / HTTPS
+
+For production deployments, always use HTTPS. The recommended approaches:
+
+### Let's Encrypt with Certbot (Nginx)
+
+```bash
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d monitor.example.com
+```
+
+Certbot will automatically configure nginx and set up certificate renewal.
+
+### Let's Encrypt with Caddy
+
+Caddy obtains and renews certificates automatically. No additional setup is needed.
+
+### Manual Certificates
+
+If you have your own certificates, place them in a secure directory and reference them in your reverse proxy configuration. Ensure the certificate files are readable by the proxy process and that you have a renewal process in place.
+
+## Agent Configuration for HTTPS
+
+When your server is behind HTTPS, update the agent's `server_url` accordingly:
+
+```toml
+server_url = "https://monitor.example.com"
+```
+
+The agent automatically converts `https://` to `wss://` for WebSocket connections.
+
+<Callout type="warn">
+When using HTTPS, ensure `auth.secure_cookie = true` in your server configuration (this is the default). If you set it to `false`, session cookies will not be sent over HTTPS connections, breaking browser authentication.
+</Callout>
+
+## Backup and Restore
+
+### What to Back Up
+
+ServerBee stores all data in a single SQLite database file and the configuration files:
+
+| Item | Location | Description |
+|------|----------|-------------|
+| Database | `{data_dir}/serverbee.db` | All monitoring data, users, alerts, and settings |
+| WAL file | `{data_dir}/serverbee.db-wal` | Write-ahead log (include if backing up while running) |
+| SHM file | `{data_dir}/serverbee.db-shm` | Shared memory file (include if backing up while running) |
+| Server config | `/etc/serverbee/server.toml` | Server configuration |
+| Agent configs | `/etc/serverbee/agent.toml` | Agent configuration (on each monitored server) |
+| GeoIP database | Varies | MaxMind MMDB file (if used) |
+
+### Backup Strategy
+
+**Option 1: SQLite backup command (recommended for running server)**
+
+```bash
+sqlite3 /var/lib/serverbee/serverbee.db ".backup '/backups/serverbee-$(date +%Y%m%d).db'"
+```
+
+This creates a consistent point-in-time backup without stopping the server.
+
+**Option 2: File copy (requires stopping the server)**
+
+```bash
+sudo systemctl stop serverbee-server
+cp /var/lib/serverbee/serverbee.db /backups/serverbee-$(date +%Y%m%d).db
+sudo systemctl start serverbee-server
+```
+
+**Option 3: Docker volume backup**
+
+```bash
+docker compose stop
+docker run --rm \
+  -v serverbee-data:/data \
+  -v $(pwd)/backups:/backups \
+  alpine tar czf /backups/serverbee-$(date +%Y%m%d).tar.gz -C /data .
+docker compose start
+```
+
+### Restore
+
+To restore from a backup:
+
+1. Stop the server
+2. Replace the database file with the backup
+3. Start the server (migrations will run automatically if needed)
+
+```bash
+sudo systemctl stop serverbee-server
+cp /backups/serverbee-20260314.db /var/lib/serverbee/serverbee.db
+sudo chown serverbee:serverbee /var/lib/serverbee/serverbee.db
+sudo systemctl start serverbee-server
+```
+
+### Automated Backups
+
+Set up a cron job for daily backups:
+
+```bash
+# /etc/cron.d/serverbee-backup
+0 2 * * * root sqlite3 /var/lib/serverbee/serverbee.db ".backup '/backups/serverbee-$(date +\%Y\%m\%d).db'" && find /backups -name 'serverbee-*.db' -mtime +30 -delete
+```
+
+This runs at 2:00 AM daily and deletes backups older than 30 days.
+
+## Health Checks
+
+ServerBee exposes a health check endpoint:
+
+```
+GET /api/status/health
+```
+
+Use this to verify the server is running and responsive. Configure it in your monitoring system, Docker health check, or load balancer.
+
+### Docker Health Check
+
+The Docker Compose example above includes a health check configuration. Docker will automatically restart the container if the health check fails 3 consecutive times.
+
+### External Monitoring
+
+If you are using an external uptime monitoring service, point it at:
+
+```
+https://monitor.example.com/api/status/health
+```
+
+This creates a "monitor the monitor" setup, so you know if ServerBee itself goes down.
+
+## Resource Requirements
+
+ServerBee is designed for lightweight VPS instances:
+
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| Server CPU | 1 vCPU | 2 vCPU |
+| Server RAM | 128 MB | 256 MB |
+| Server Disk | 100 MB + data | 1 GB+ (depends on retention) |
+| Agent CPU | Negligible | < 1% of 1 core |
+| Agent RAM | 10 MB | 20 MB |
+
+Database size depends on the number of monitored servers and retention settings. As a rough guide, expect about 1 MB per server per day of raw records. With 50 servers and default 7-day retention, the database will be approximately 350 MB.
+
+## Security Checklist
+
+Before exposing ServerBee to the internet:
+
+- [ ] Change the default admin password
+- [ ] Use HTTPS with a valid TLS certificate
+- [ ] Set `auth.secure_cookie = true` (default)
+- [ ] Bind the server to localhost and use a reverse proxy
+- [ ] Set strong rate limits for login attempts
+- [ ] Enable TOTP two-factor authentication for admin accounts
+- [ ] Restrict agent discovery key distribution
+- [ ] Keep the GeoIP database updated (if used)
+- [ ] Set up automated backups
+- [ ] Monitor the server itself with an external health check

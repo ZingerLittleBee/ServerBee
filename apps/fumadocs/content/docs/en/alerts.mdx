@@ -1,0 +1,250 @@
+---
+title: Alerts & Notifications
+description: Configure alert rules with threshold monitoring and multi-channel notifications.
+icon: Bell
+---
+
+ServerBee includes a flexible alerting system that evaluates metric thresholds and sends notifications through multiple channels when conditions are met.
+
+## How Alerts Work
+
+The alert system runs as a background task that evaluates all enabled rules every 60 seconds:
+
+1. For each enabled alert rule, the server resolves which servers are covered
+2. For each covered server, it checks whether the rule's conditions are met
+3. If a rule triggers, a notification is sent (subject to debounce logic)
+4. If a previously triggered rule recovers, the alert state is cleared
+
+All alert state is persisted in the database and survives server restarts.
+
+## Creating Alert Rules
+
+An alert rule consists of:
+
+- **Name** -- A descriptive label for the rule
+- **Rules** -- One or more metric conditions (all must be true simultaneously -- AND logic)
+- **Trigger mode** -- `always` (repeat with debounce) or `once` (notify only on first trigger)
+- **Cover type** -- Which servers this rule applies to
+- **Notification group** -- Where to send notifications
+
+### Supported Metric Types
+
+| Rule Type | Description | Threshold Meaning |
+|-----------|-------------|-------------------|
+| `cpu` | CPU usage percentage | `min`: triggers when CPU >= value |
+| `memory` | Memory used (bytes) | `min`: triggers when usage >= value |
+| `swap` | Swap used (bytes) | `min`: triggers when usage >= value |
+| `disk` | Disk used (bytes) | `min`: triggers when usage >= value |
+| `load1` | 1-minute load average | `min`: triggers when load >= value |
+| `load5` | 5-minute load average | `min`: triggers when load >= value |
+| `load15` | 15-minute load average | `min`: triggers when load >= value |
+| `net_in_speed` | Download speed (bytes/s) | `min`: triggers when speed >= value |
+| `net_out_speed` | Upload speed (bytes/s) | `min`: triggers when speed >= value |
+| `tcp_conn` | TCP connections | `min`: triggers when count >= value |
+| `udp_conn` | UDP connections | `min`: triggers when count >= value |
+| `process` | Process count | `min`: triggers when count >= value |
+| `temperature` | CPU temperature (C) | `min`: triggers when temp >= value |
+| `gpu` | GPU utilization (%) | `min`: triggers when usage >= value |
+| `offline` | Server offline | Triggers when server has been offline for `duration` seconds |
+| `transfer_in_cycle` | Inbound traffic per cycle | Triggers when cumulative transfer >= `cycle_limit` bytes |
+| `transfer_out_cycle` | Outbound traffic per cycle | Triggers when cumulative transfer >= `cycle_limit` bytes |
+| `transfer_all_cycle` | Total traffic per cycle | Triggers when combined transfer >= `cycle_limit` bytes |
+| `expiration` | Server expiration date | Triggers when expired_at is within `duration` days |
+
+### Threshold Configuration
+
+Each rule item supports these fields:
+
+```json
+{
+  "rule_type": "cpu",
+  "min": 80.0,
+  "max": null,
+  "duration": null,
+  "cycle_interval": null,
+  "cycle_limit": null
+}
+```
+
+- **`min`** -- Lower bound. For most metrics, the alert triggers when the value is at or above this threshold.
+- **`max`** -- Upper bound. When both `min` and `max` are set, the alert triggers when the value falls within the range.
+- **`duration`** -- Used by `offline` (seconds before triggering) and `expiration` (days threshold).
+- **`cycle_interval`** -- Time window for transfer cycle rules: `hour`, `day`, `week`, `month`, `year`.
+- **`cycle_limit`** -- Traffic limit in bytes for transfer cycle rules.
+
+### Examples
+
+**CPU over 90%:**
+```json
+{ "rule_type": "cpu", "min": 90.0 }
+```
+
+**Memory over 8 GB:**
+```json
+{ "rule_type": "memory", "min": 8589934592 }
+```
+
+**Server offline for more than 2 minutes:**
+```json
+{ "rule_type": "offline", "duration": 120 }
+```
+
+**Monthly outbound traffic over 1 TB:**
+```json
+{
+  "rule_type": "transfer_out_cycle",
+  "cycle_interval": "month",
+  "cycle_limit": 1099511627776
+}
+```
+
+**Server expiring within 7 days:**
+```json
+{ "rule_type": "expiration", "duration": 7 }
+```
+
+## Sampling and Trigger Logic
+
+For resource threshold alerts (CPU, memory, disk, load, etc.), ServerBee does not trigger on a single spike. Instead:
+
+1. The evaluator looks at all raw metric records from the **last 10 minutes**
+2. It counts how many records exceed the threshold
+3. The alert triggers only if **70% or more** of the samples exceed the threshold
+
+This prevents false positives from brief, transient spikes.
+
+## Cover Types
+
+Each alert rule specifies which servers it applies to:
+
+| Cover Type | Behavior |
+|------------|----------|
+| `all` | Applies to every server in the system |
+| `include` | Applies only to the specified server IDs |
+| `exclude` | Applies to all servers except the specified IDs |
+
+## Trigger Modes and Debounce
+
+### `always` Mode (Default)
+
+- Sends a notification every time the condition is evaluated as true
+- **5-minute debounce** prevents notification spam: after a notification is sent, the next one is suppressed for 5 minutes even if the condition persists
+
+### `once` Mode
+
+- Sends a notification only on the **first trigger**
+- No further notifications are sent until the condition recovers and triggers again
+
+### Recovery
+
+When a previously triggered alert recovers (the condition is no longer met), the alert state is cleared in both the in-memory cache and the database. If the condition triggers again later, notifications will fire according to the trigger mode.
+
+## Notification Channels
+
+ServerBee supports four notification channel types. Each channel is configured as a separate entity that can be reused across multiple notification groups.
+
+### Webhook
+
+Send HTTP requests to any URL. Supports custom methods, headers, and body templates.
+
+```json
+{
+  "url": "https://hooks.slack.com/services/xxx",
+  "method": "POST",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body_template": "{\"text\": \"{{server_name}} {{event}}: {{message}}\"}"
+}
+```
+
+If no `body_template` is provided, the default template is used. If no `Content-Type` header is set, it defaults to `application/json`.
+
+### Telegram
+
+Send messages to a Telegram chat via the Bot API.
+
+```json
+{
+  "bot_token": "123456:ABC-DEF",
+  "chat_id": "-1001234567890"
+}
+```
+
+Messages are sent with HTML parse mode enabled.
+
+### Bark
+
+Send push notifications to iOS devices via [Bark](https://github.com/Finb/Bark).
+
+```json
+{
+  "server_url": "https://api.day.app",
+  "device_key": "your-device-key"
+}
+```
+
+### Email
+
+Send email notifications via SMTP.
+
+```json
+{
+  "smtp_host": "smtp.gmail.com",
+  "smtp_port": 587,
+  "username": "your-email@gmail.com",
+  "password": "your-app-password",
+  "from": "your-email@gmail.com",
+  "to": "alerts@example.com"
+}
+```
+
+The default SMTP port is 587 (STARTTLS). The email subject follows the format `[ServerBee] {server_name} {event}`.
+
+## Notification Groups
+
+Notification channels are organized into **groups**. An alert rule is linked to a notification group, and when the rule triggers, all enabled channels in the group are dispatched.
+
+This allows you to:
+
+- Send the same alert to multiple channels (e.g., Telegram + Email)
+- Reuse channel configurations across different alert rules
+- Enable/disable individual channels without modifying alert rules
+
+## Template Variables
+
+Notification messages support the following template variables:
+
+| Variable | Description |
+|----------|-------------|
+| `{{server_name}}` | Name of the affected server |
+| `{{server_id}}` | Unique ID of the affected server |
+| `{{rule_name}}` | Name of the triggered alert rule |
+| `{{event}}` | Event type (e.g., "triggered") |
+| `{{message}}` | Human-readable alert message |
+| `{{time}}` | Timestamp of the event (UTC) |
+| `{{cpu}}` | Current CPU usage string |
+| `{{memory}}` | Current memory usage string |
+
+The default notification template is:
+
+```
+[ServerBee] {{server_name}} {{event}}
+{{message}}
+Time: {{time}}
+```
+
+## Example: Complete Alert Setup
+
+Here is a typical setup for monitoring CPU usage across all servers with Telegram notifications:
+
+1. **Create a Telegram notification channel** with your bot token and chat ID
+2. **Create a notification group** that includes the Telegram channel
+3. **Create an alert rule:**
+   - Name: "High CPU Usage"
+   - Rules: `[{"rule_type": "cpu", "min": 90.0}]`
+   - Trigger mode: `always`
+   - Cover type: `all`
+   - Notification group: (the group you created)
+
+Now, when any server's CPU stays above 90% for at least 70% of a 10-minute sampling window, you will receive a Telegram message. Subsequent notifications are debounced to once every 5 minutes while the condition persists.

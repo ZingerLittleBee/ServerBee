@@ -1,0 +1,235 @@
+---
+title: Configuration Reference
+description: Complete reference for all ServerBee server and agent configuration options.
+icon: Settings
+---
+
+ServerBee uses [Figment](https://github.com/SergioBenitez/Figment) for configuration loading, which supports layered configuration from multiple sources. This page provides a complete reference for every configuration option.
+
+## Configuration Loading Priority
+
+Configuration values are merged in the following order. Later sources override earlier ones:
+
+1. **TOML file (system):** `/etc/serverbee/server.toml` or `/etc/serverbee/agent.toml`
+2. **TOML file (local):** `server.toml` or `agent.toml` in the working directory
+3. **Environment variables:** Prefixed with `SB_`, using `__` (double underscore) as the nested key separator
+
+## Environment Variable Mapping
+
+Every TOML configuration key maps directly to an environment variable. Replace dots with `__` and prefix with `SB_`:
+
+```
+TOML key                    Environment variable
+─────────────────────────   ──────────────────────────────────
+server.listen               SB_SERVER__LISTEN
+server.data_dir             SB_SERVER__DATA_DIR
+database.path               SB_DATABASE__PATH
+database.max_connections    SB_DATABASE__MAX_CONNECTIONS
+auth.session_ttl            SB_AUTH__SESSION_TTL
+auth.auto_discovery_key     SB_AUTH__AUTO_DISCOVERY_KEY
+auth.secure_cookie          SB_AUTH__SECURE_COOKIE
+admin.username              SB_ADMIN__USERNAME
+admin.password              SB_ADMIN__PASSWORD
+retention.records_days      SB_RETENTION__RECORDS_DAYS
+log.level                   SB_LOG__LEVEL
+geoip.enabled               SB_GEOIP__ENABLED
+geoip.mmdb_path             SB_GEOIP__MMDB_PATH
+oauth.base_url              SB_OAUTH__BASE_URL
+oauth.github.client_id      SB_OAUTH__GITHUB__CLIENT_ID
+collector.interval           SB_COLLECTOR__INTERVAL
+collector.enable_gpu         SB_COLLECTOR__ENABLE_GPU
+```
+
+## Server Configuration (server.toml)
+
+### `[server]` -- Core Server Settings
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `listen` | string | `"0.0.0.0:9527"` | IP address and port the server listens on |
+| `data_dir` | string | `"./data"` | Directory for database files and other persistent data |
+
+### `[database]` -- Database Settings
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `path` | string | `"serverbee.db"` | Database filename (relative to `data_dir`) |
+| `max_connections` | u32 | `10` | Maximum number of connections in the SQLite pool |
+
+### `[auth]` -- Authentication Settings
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `session_ttl` | i64 | `86400` | Session cookie lifetime in seconds (24 hours) |
+| `auto_discovery_key` | string | `""` | Fixed agent discovery key. If empty, auto-generated on first start |
+| `secure_cookie` | bool | `true` | Set the `Secure` flag on session cookies. Disable only for HTTP-only development |
+
+### `[admin]` -- Initial Admin Account
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `username` | string | `"admin"` | Admin username (used only on first startup when no users exist) |
+| `password` | string | `""` | Admin password. If empty, a random password is generated and logged |
+
+### `[retention]` -- Data Retention
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `records_days` | u32 | `7` | Days to keep raw metric records |
+| `records_hourly_days` | u32 | `90` | Days to keep hourly aggregated records |
+| `gpu_records_days` | u32 | `7` | Days to keep per-GPU metric records |
+| `ping_records_days` | u32 | `7` | Days to keep ping probe records |
+| `audit_logs_days` | u32 | `180` | Days to keep audit log entries |
+
+<Callout type="info">
+Raw metric records are collected every 60 seconds and retained for 7 days by default. The hourly aggregator computes averages so you can keep long-term trends for 90 days without excessive storage. Adjust these values based on your disk space and monitoring needs.
+</Callout>
+
+### `[rate_limit]` -- Rate Limiting
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `login_max` | u32 | `5` | Maximum login attempts per rate-limit window |
+| `register_max` | u32 | `3` | Maximum agent registration attempts per rate-limit window |
+
+### `[log]` -- Logging
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `level` | string | `"info"` | Log verbosity: `trace`, `debug`, `info`, `warn`, `error` |
+| `file` | string | `""` | Path to log file. If empty, logs go to stdout only |
+
+The log level can also be set via the `RUST_LOG` environment variable, which takes precedence.
+
+### `[geoip]` -- GeoIP Lookup
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | bool | `false` | Whether to perform GeoIP lookups on agent IP addresses |
+| `mmdb_path` | string | `""` | Path to a MaxMind GeoLite2-City MMDB file |
+
+### `[oauth]` -- OAuth / SSO
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `base_url` | string | `""` | Public URL of your ServerBee instance (for callback URLs) |
+| `allow_registration` | bool | `false` | Create new user accounts on first OAuth login |
+
+### `[oauth.github]` -- GitHub OAuth
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `client_id` | string | -- | GitHub OAuth App client ID |
+| `client_secret` | string | -- | GitHub OAuth App client secret |
+
+### `[oauth.google]` -- Google OAuth
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `client_id` | string | -- | Google OAuth client ID |
+| `client_secret` | string | -- | Google OAuth client secret |
+
+### `[oauth.oidc]` -- OpenID Connect
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `issuer_url` | string | -- | OIDC issuer URL (e.g., `https://auth.example.com/realms/main`) |
+| `client_id` | string | -- | OIDC client ID |
+| `client_secret` | string | -- | OIDC client secret |
+| `scopes` | string[] | `["openid", "email", "profile"]` | OAuth scopes to request |
+
+---
+
+## Agent Configuration (agent.toml)
+
+### Top-Level Options
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `server_url` | string | **required** | URL of the ServerBee server (e.g., `http://10.0.0.1:9527`) |
+| `token` | string | `""` | Agent authentication token (auto-populated after registration) |
+| `auto_discovery_key` | string | `""` | Discovery key for automatic registration (used only when `token` is empty) |
+
+### `[collector]` -- Metric Collection
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `interval` | u32 | `3` | Collection interval in seconds |
+| `enable_gpu` | bool | `false` | Enable NVIDIA GPU monitoring (requires `nvidia-smi`) |
+| `enable_temperature` | bool | `true` | Enable CPU temperature sensor monitoring |
+
+### `[log]` -- Logging
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `level` | string | `"info"` | Log verbosity: `trace`, `debug`, `info`, `warn`, `error` |
+| `file` | string | `""` | Path to log file. If empty, logs go to stdout only |
+
+---
+
+## Example: Minimal Server Configuration
+
+```toml
+[admin]
+password = "my-secure-password"
+```
+
+Everything else uses sensible defaults. This is sufficient to start a working server that listens on port 9527 with a SQLite database in `./data/`.
+
+## Example: Production Server Configuration
+
+```toml
+[server]
+listen = "127.0.0.1:9527"
+data_dir = "/var/lib/serverbee"
+
+[admin]
+username = "admin"
+password = "a-very-strong-password"
+
+[auth]
+secure_cookie = true
+
+[retention]
+records_days = 14
+records_hourly_days = 180
+
+[geoip]
+enabled = true
+mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"
+
+[log]
+level = "info"
+file = "/var/log/serverbee/server.log"
+
+[oauth]
+base_url = "https://monitor.example.com"
+allow_registration = false
+
+[oauth.github]
+client_id = "Iv1.abc123"
+client_secret = "secret123"
+```
+
+## Example: Minimal Agent Configuration
+
+```toml
+server_url = "http://your-server-ip:9527"
+auto_discovery_key = "your-key-here"
+```
+
+## Example: Production Agent Configuration
+
+```toml
+server_url = "https://monitor.example.com"
+token = "previously-obtained-token"
+
+[collector]
+interval = 3
+enable_gpu = true
+enable_temperature = true
+
+[log]
+level = "info"
+file = "/var/log/serverbee/agent.log"
+```

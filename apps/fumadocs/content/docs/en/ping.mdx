@@ -1,0 +1,117 @@
+---
+title: Ping Monitoring
+description: Monitor endpoint availability and latency with ICMP, TCP, and HTTP probes.
+icon: Radar
+---
+
+ServerBee includes built-in ping monitoring that lets you track the availability and latency of external endpoints from the perspective of your monitored servers. This is useful for verifying network connectivity, measuring latency between regions, and detecting outages.
+
+## Probe Types
+
+Three types of probes are available:
+
+| Type | Description | Target Format |
+|------|-------------|---------------|
+| **ICMP** | Standard ping (ICMP echo request/reply) | IP address or hostname (e.g., `8.8.8.8`, `google.com`) |
+| **TCP** | TCP connection test (SYN-ACK handshake) | Host and port (e.g., `google.com:443`) |
+| **HTTP** | HTTP(S) request and response time | Full URL (e.g., `https://example.com/health`) |
+
+Each probe type measures round-trip latency and reports success/failure status.
+
+## Creating Ping Tasks
+
+Ping tasks are created through the dashboard or API. Each task requires:
+
+- **Name** -- A descriptive label for the task
+- **Probe type** -- `icmp`, `tcp`, or `http`
+- **Target** -- The endpoint to probe (format depends on probe type)
+- **Interval** -- How often to run the probe, in seconds
+- **Server IDs** -- Which agents should run this probe (as a JSON array of server IDs)
+- **Enabled** -- Whether the task is active
+
+### Example: ICMP Ping
+
+Monitor basic connectivity to Google DNS:
+
+| Field | Value |
+|-------|-------|
+| Name | Google DNS |
+| Probe Type | icmp |
+| Target | 8.8.8.8 |
+| Interval | 60 |
+
+### Example: TCP Port Check
+
+Verify that a database port is reachable:
+
+| Field | Value |
+|-------|-------|
+| Name | PostgreSQL Primary |
+| Probe Type | tcp |
+| Target | db.internal:5432 |
+| Interval | 30 |
+
+### Example: HTTP Health Check
+
+Monitor a web service endpoint:
+
+| Field | Value |
+|-------|-------|
+| Name | API Health |
+| Probe Type | http |
+| Target | https://api.example.com/health |
+| Interval | 60 |
+
+## How Tasks Are Distributed
+
+When you create or update a ping task, the server syncs it to the appropriate agents:
+
+1. The server stores the task configuration in the database
+2. A `PingTasksSync` message is sent to each assigned agent containing all their active tasks
+3. Each agent starts (or updates) its local probe scheduler
+4. Probe results are sent back to the server as `PingResult` messages
+
+If an agent disconnects and reconnects, the server automatically re-syncs all assigned ping tasks.
+
+## Assigning Tasks to Servers
+
+The `server_ids_json` field controls which agents execute the probe:
+
+- **Specific servers** -- Provide an array of server IDs: `["srv-1", "srv-2"]`
+- **All servers** -- Use an empty array `[]` or the special value `["*"]` to assign to all connected agents
+
+This lets you measure latency from multiple geographic locations simultaneously and compare results.
+
+## Viewing Results
+
+Ping results are stored in the database with the following data:
+
+| Field | Description |
+|-------|-------------|
+| `task_id` | The ping task that generated this result |
+| `server_id` | The agent that ran the probe |
+| `latency` | Round-trip time in milliseconds |
+| `success` | Whether the probe succeeded |
+| `error` | Error message if the probe failed |
+| `time` | Timestamp of the measurement |
+
+Results can be viewed in the dashboard as:
+
+- **Latency charts** showing trends over time
+- **Success rate** percentages
+- **Per-agent breakdown** when multiple servers probe the same target
+
+## Data Retention
+
+Ping records are retained for **7 days** by default. This is configurable via the `retention.ping_records_days` setting in `server.toml`:
+
+```toml
+[retention]
+ping_records_days = 14
+```
+
+The cleanup task runs hourly and removes records older than the configured retention period.
+
+## Integration with Alerts
+
+You can combine ping monitoring with alert rules. For example, to alert when a critical endpoint becomes unreachable, you could create an alert rule that watches for failed ping probes. The ping data is stored alongside regular monitoring data, making it available for the same alerting infrastructure.

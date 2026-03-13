@@ -1,0 +1,277 @@
+---
+title: Server Setup
+description: Install, configure, and run the ServerBee server.
+icon: Server
+---
+
+The ServerBee server is the central component that hosts the web dashboard, manages agent connections, stores monitoring data, and evaluates alert rules. It is a single Rust binary with the React frontend embedded via `rust-embed`.
+
+## Installation
+
+### Pre-built Binary
+
+Download the latest release for your platform from the [releases page](https://github.com/ZingerBee/ServerBee/releases), then run it:
+
+```bash
+chmod +x serverbee-server
+./serverbee-server
+```
+
+### Docker
+
+```bash
+docker run -d \
+  --name serverbee \
+  -p 9527:9527 \
+  -v serverbee-data:/app/data \
+  ghcr.io/zingerbee/serverbee:latest
+```
+
+### Build from Source
+
+```bash
+# Build the frontend first
+cd apps/web && bun install && bun run build && cd ../..
+
+# Build the server binary
+cargo build --release -p serverbee-server
+```
+
+## Configuration File
+
+The server reads configuration from TOML files in the following order, with later sources overriding earlier ones:
+
+1. `/etc/serverbee/server.toml` (system-wide)
+2. `server.toml` (working directory)
+3. Environment variables with `SB_` prefix
+
+Here is a complete `server.toml` with all available options and their defaults:
+
+```toml
+[server]
+listen = "0.0.0.0:9527"       # Address and port to listen on
+data_dir = "./data"            # Directory for database and other data files
+
+[database]
+path = "serverbee.db"          # Database filename (relative to data_dir)
+max_connections = 10           # Maximum SQLite connection pool size
+
+[auth]
+session_ttl = 86400            # Session lifetime in seconds (default: 24 hours)
+auto_discovery_key = ""        # Fixed agent discovery key (auto-generated if empty)
+secure_cookie = true           # Set Secure flag on session cookies (disable for HTTP-only dev)
+
+[admin]
+username = "admin"             # Initial admin username
+password = ""                  # Initial admin password (auto-generated if empty)
+
+[retention]
+records_days = 7               # Raw metric records retention (days)
+records_hourly_days = 90       # Hourly aggregated records retention (days)
+gpu_records_days = 7           # GPU metric records retention (days)
+ping_records_days = 7          # Ping probe records retention (days)
+audit_logs_days = 180          # Audit log retention (days)
+
+[rate_limit]
+login_max = 5                  # Max login attempts per window
+register_max = 3               # Max agent registration attempts per window
+
+[log]
+level = "info"                 # Log level: trace, debug, info, warn, error
+file = ""                      # Log file path (empty = stdout only)
+
+[geoip]
+enabled = false                # Enable GeoIP lookups for agent IP addresses
+mmdb_path = ""                 # Path to MaxMind GeoLite2-City.mmdb file
+
+[oauth]
+base_url = ""                  # Public URL of your ServerBee instance
+allow_registration = false     # Allow new user creation on first OAuth login
+
+[oauth.github]
+client_id = ""
+client_secret = ""
+
+[oauth.google]
+client_id = ""
+client_secret = ""
+
+[oauth.oidc]
+issuer_url = ""
+client_id = ""
+client_secret = ""
+scopes = ["openid", "email", "profile"]
+```
+
+## Environment Variables
+
+Every configuration option can be set via environment variables using the `SB_` prefix and `__` (double underscore) as a nested key separator. Environment variables take precedence over TOML file values.
+
+Examples:
+
+```bash
+# server.listen
+export SB_SERVER__LISTEN="0.0.0.0:9527"
+
+# admin.password
+export SB_ADMIN__PASSWORD="my-secure-password"
+
+# retention.records_days
+export SB_RETENTION__RECORDS_DAYS=14
+
+# oauth.github.client_id
+export SB_OAUTH__GITHUB__CLIENT_ID="your-github-client-id"
+
+# geoip.enabled
+export SB_GEOIP__ENABLED=true
+```
+
+## Database
+
+ServerBee uses SQLite for all persistent storage. The database file is created automatically in the configured `data_dir` when the server starts for the first time.
+
+Key SQLite pragmas are set automatically:
+
+| Pragma | Value | Purpose |
+|--------|-------|---------|
+| `journal_mode` | WAL | Better concurrent read performance |
+| `synchronous` | NORMAL | Good balance of safety and speed |
+| `busy_timeout` | 5000ms | Wait up to 5 seconds for locked database |
+| `foreign_keys` | ON | Enforce referential integrity |
+
+Database migrations run automatically on startup. No manual schema management is required.
+
+## Initial Admin Account
+
+On first startup, if no users exist in the database, the server creates an admin account using the configured `admin.username` and `admin.password` values.
+
+- If no password is set, a random password is generated and printed to the logs
+- If the password is set to `admin`, a warning is displayed at startup
+
+<Callout type="warn">
+Always change the default admin password before exposing the server to the internet. Navigate to Settings > Security in the web UI to update it.
+</Callout>
+
+## Auto-Discovery Key
+
+The auto-discovery key allows agents to register themselves without manual token configuration. The server manages this key with the following priority:
+
+1. If `auth.auto_discovery_key` is set in the config, that value is used and persisted
+2. If a key already exists in the database (from a previous run), it is reused
+3. Otherwise, a random 32-byte base64url key is generated and persisted
+
+The key is printed to the logs at startup (first 8 characters shown). Copy it to your agent configuration to enable automatic registration.
+
+## GeoIP Setup
+
+To enable geographic location detection for your agents:
+
+1. Download the free [MaxMind GeoLite2-City](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data) MMDB database (requires a free MaxMind account)
+2. Place the `GeoLite2-City.mmdb` file in an accessible location
+3. Enable GeoIP in your configuration:
+
+```toml
+[geoip]
+enabled = true
+mmdb_path = "/path/to/GeoLite2-City.mmdb"
+```
+
+The server will resolve each agent's IP address to a region and country code when it connects.
+
+## OAuth Setup
+
+ServerBee supports third-party authentication through GitHub, Google, and any OpenID Connect provider.
+
+### Prerequisites
+
+Set `oauth.base_url` to the public URL of your ServerBee instance. This is used to construct callback URLs:
+
+```toml
+[oauth]
+base_url = "https://serverbee.example.com"
+allow_registration = true  # Set to true to create accounts on first OAuth login
+```
+
+### GitHub
+
+1. Go to [GitHub Developer Settings](https://github.com/settings/developers) and create a new OAuth App
+2. Set the callback URL to `https://serverbee.example.com/api/oauth/github/callback`
+3. Add credentials to the config:
+
+```toml
+[oauth.github]
+client_id = "your-client-id"
+client_secret = "your-client-secret"
+```
+
+### Google
+
+1. Create OAuth credentials in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+2. Set the callback URL to `https://serverbee.example.com/api/oauth/google/callback`
+3. Add credentials to the config:
+
+```toml
+[oauth.google]
+client_id = "your-client-id"
+client_secret = "your-client-secret"
+```
+
+### Generic OIDC
+
+For any OpenID Connect provider (e.g., Keycloak, Authentik, Authelia):
+
+```toml
+[oauth.oidc]
+issuer_url = "https://auth.example.com/realms/main"
+client_id = "serverbee"
+client_secret = "your-client-secret"
+scopes = ["openid", "email", "profile"]
+```
+
+## Reverse Proxy
+
+When running behind a reverse proxy, you must forward WebSocket connections correctly. Here is an nginx example:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name serverbee.example.com;
+
+    ssl_certificate     /etc/ssl/certs/serverbee.pem;
+    ssl_certificate_key /etc/ssl/private/serverbee.key;
+
+    location / {
+        proxy_pass http://127.0.0.1:9527;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+}
+```
+
+<Callout type="info">
+The long `proxy_read_timeout` and `proxy_send_timeout` values are important for WebSocket connections. Without them, nginx may close idle connections prematurely, causing agents and terminal sessions to disconnect.
+</Callout>
+
+## Background Tasks
+
+The server runs several background tasks automatically:
+
+| Task | Interval | Purpose |
+|------|----------|---------|
+| RecordWriter | 60s | Writes cached agent reports to the database |
+| OfflineChecker | 10s | Detects agents that stopped reporting (30s threshold) |
+| Aggregator | Hourly | Aggregates raw records into hourly summaries |
+| Cleanup | Hourly | Removes expired records based on retention settings |
+| SessionCleaner | Periodic | Removes expired user sessions |
+| AlertEvaluator | 60s | Evaluates all enabled alert rules |
+
+All tasks start automatically and require no manual configuration.
