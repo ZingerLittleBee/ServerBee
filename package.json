@@ -32,14 +32,19 @@
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
-    "check-types": "turbo check-types",
+    "build:web": "bun --filter @serverbee/web build",
+    "typecheck": "bun --filter @serverbee/ui check-types && bun --filter @serverbee/web typecheck && bun --filter fumadocs types:check",
+    "check-types": "bun run typecheck",
     "dev:web": "turbo -F web dev",
+    "test": "bun --filter @serverbee/web test",
+    "test:watch": "bun --filter @serverbee/web test:watch",
     "db:push": "turbo -F @serverbee/db db:push",
     "db:studio": "turbo -F @serverbee/db db:studio",
     "db:generate": "turbo -F @serverbee/db db:generate",
     "db:migrate": "turbo -F @serverbee/db db:migrate",
     "db:local": "turbo -F @serverbee/db db:local",
     "check": "ultracite check",
+    "lint": "bun run check",
     "fix": "ultracite fix"
   },
   "dependencies": {
