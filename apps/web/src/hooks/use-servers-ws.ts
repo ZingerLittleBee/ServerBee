@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react'
 import { WsClient } from '@/lib/ws-client'
 
 interface ServerMetrics {
+  capabilities?: number
   country_code: string | null
   cpu: number
   cpu_name: string | null
@@ -24,6 +25,7 @@ interface ServerMetrics {
   online: boolean
   os: string | null
   process_count: number
+  protocol_version?: number
   region: string | null
   swap_total: number
   swap_used: number
@@ -37,6 +39,8 @@ type WsMessage =
   | { type: 'update'; servers: ServerMetrics[] }
   | { type: 'server_online'; server_id: string }
   | { type: 'server_offline'; server_id: string }
+  | { type: 'capabilities_changed'; server_id: string; capabilities: number }
+  | { type: 'agent_info_updated'; server_id: string; protocol_version: number }
 
 export type { ServerMetrics }
 
@@ -114,6 +118,25 @@ export function useServersWs(): void {
             }
             return setServerOnlineStatus(prev, msg.server_id, false)
           })
+          break
+        }
+        case 'capabilities_changed': {
+          const { server_id, capabilities } = msg
+          queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
+            prev?.map((s) => (s.id === server_id ? { ...s, capabilities } : s))
+          )
+          queryClient.setQueryData(['servers', server_id], (prev: Record<string, unknown> | undefined) =>
+            prev ? { ...prev, capabilities } : prev
+          )
+          queryClient.invalidateQueries({ queryKey: ['servers-list'] })
+          break
+        }
+        case 'agent_info_updated': {
+          const { server_id, protocol_version } = msg
+          queryClient.setQueryData(['servers', server_id], (prev: Record<string, unknown> | undefined) =>
+            prev ? { ...prev, protocol_version } : prev
+          )
+          queryClient.invalidateQueries({ queryKey: ['servers-list'] })
           break
         }
         default:

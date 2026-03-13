@@ -6,7 +6,6 @@ import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
 import { useServer } from '@/hooks/use-api'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { useServersWs } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerGroup } from '@/lib/api-schema'
 import { cn, countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
@@ -51,8 +50,6 @@ function compareServers(a: ServerMetrics, b: ServerMetrics, sortKey: SortKey, gr
 }
 
 function ServersListPage() {
-  useServersWs()
-
   const queryClient = useQueryClient()
   const { data: servers = [] } = useQuery<ServerMetrics[]>({
     queryKey: ['servers'],

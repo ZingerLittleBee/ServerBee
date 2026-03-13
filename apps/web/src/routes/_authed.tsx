@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { Header } from '@/components/layout/header'
 import { Sidebar } from '@/components/layout/sidebar'
 import { useAuth } from '@/hooks/use-auth'
+import { useServersWs } from '@/hooks/use-servers-ws'
 
 const ADMIN_ONLY_ROUTES = [
   '/settings/notifications',
@@ -11,7 +12,8 @@ const ADMIN_ONLY_ROUTES = [
   '/settings/tasks',
   '/settings/ping-tasks',
   '/settings/audit-logs',
-  '/settings/users'
+  '/settings/users',
+  '/settings/capabilities'
 ]
 
 function isAdminRoute(pathname: string): boolean {
@@ -29,6 +31,7 @@ function AuthedLayout() {
   const { isAuthenticated, isLoading, user } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
+  useServersWs()
 
   useEffect(() => {
     if (!(isLoading || isAuthenticated)) {
