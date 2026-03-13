@@ -75,6 +75,7 @@ async fn handle_agent_ws(
         server_id: server_id.clone(),
         protocol_version: 1,
         report_interval: 3,
+        capabilities: None,
     };
     if let Err(e) = send_server_message(&mut ws_sink, &welcome).await {
         tracing::error!("Failed to send Welcome to {server_id}: {e}");
@@ -238,6 +239,11 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             if let Some(tx) = state.agent_manager.get_terminal_session(&session_id) {
                 let _ = tx.send(crate::service::agent_manager::TerminalSessionEvent::Error(error)).await;
             }
+        }
+        AgentMessage::CapabilityDenied { msg_id, session_id, capability } => {
+            tracing::warn!(
+                "Agent {server_id} denied capability '{capability}' (msg_id={msg_id:?}, session_id={session_id:?})"
+            );
         }
         AgentMessage::Pong => {
             // Agent responded to our protocol-level Ping; already handled by WS Pong frames
