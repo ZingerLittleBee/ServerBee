@@ -1,8 +1,10 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use rand::Rng;
-use serverbee_common::constants::{DEFAULT_COMMAND_TIMEOUT_SECS, DEFAULT_REPORT_INTERVAL, MAX_TASK_OUTPUT_SIZE};
+use serverbee_common::constants::{DEFAULT_COMMAND_TIMEOUT_SECS, MAX_TASK_OUTPUT_SIZE};
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
 use tokio::sync::mpsc;
 use tokio::time::interval;
@@ -49,8 +51,12 @@ impl Reporter {
     }
 
     async fn connect_and_report(&self) -> anyhow::Result<()> {
+        use serverbee_common::constants::*;
+
         let ws_url = build_ws_url(&self.config)?;
         tracing::info!("Connecting to {ws_url}...");
+
+        let capabilities = Arc::new(AtomicU32::new(u32::MAX));
 
         let (ws_stream, _response) = connect_async(&ws_url).await?;
         tracing::info!("WebSocket connected");
@@ -65,9 +71,15 @@ impl Reporter {
                     ServerMessage::Welcome {
                         server_id,
                         report_interval,
+                        capabilities: caps,
                         ..
                     } => {
                         tracing::info!("Welcome from server {server_id}, interval={report_interval}s");
+                        if let Some(c) = caps {
+                            capabilities.store(c, Ordering::SeqCst);
+                        } else {
+                            capabilities.store(u32::MAX, Ordering::SeqCst);
+                        }
                         report_interval
                     }
                     other => {
@@ -92,7 +104,10 @@ impl Reporter {
         let info = collector.system_info();
         let info_msg = AgentMessage::SystemInfo {
             msg_id: uuid::Uuid::new_v4().to_string(),
-            info,
+            info: serverbee_common::types::SystemInfo {
+                protocol_version: PROTOCOL_VERSION,
+                ..info
+            },
         };
         let json = serde_json::to_string(&info_msg)?;
         write.send(Message::Text(json.into())).await?;
@@ -158,7 +173,7 @@ impl Reporter {
                 server_msg = read.next() => {
                     match server_msg {
                         Some(Ok(Message::Text(text))) => {
-                            self.handle_server_message(&text, &mut write, &mut ping_manager, &mut terminal_manager, &cmd_result_tx).await?;
+                            self.handle_server_message(&text, &mut write, &mut ping_manager, &mut terminal_manager, &cmd_result_tx, &capabilities).await?;
                         }
                         Some(Ok(Message::Close(_))) => {
                             tracing::info!("Server closed connection");
@@ -195,10 +210,13 @@ impl Reporter {
         ping_manager: &mut PingManager,
         terminal_manager: &mut TerminalManager,
         cmd_result_tx: &mpsc::Sender<AgentMessage>,
+        capabilities: &Arc<AtomicU32>,
     ) -> anyhow::Result<()>
     where
         S: SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
     {
+        use serverbee_common::constants::*;
+
         let msg: ServerMessage = match serde_json::from_str(text) {
             Ok(m) => m,
             Err(e) => {
@@ -208,6 +226,10 @@ impl Reporter {
         };
 
         match msg {
+            ServerMessage::CapabilitiesSync { capabilities: caps } => {
+                tracing::info!("Capabilities updated: {caps}");
+                capabilities.store(caps, Ordering::SeqCst);
+            }
             ServerMessage::Ping => {
                 let pong = serde_json::to_string(&AgentMessage::Pong)?;
                 write.send(Message::Text(pong.into())).await?;
@@ -218,6 +240,20 @@ impl Reporter {
                 command,
                 timeout,
             } => {
+                let caps = capabilities.load(Ordering::SeqCst);
+                if !has_capability(caps, CAP_EXEC) {
+                    tracing::warn!("Exec denied: capability disabled (task_id={task_id})");
+                    let denied = AgentMessage::CapabilityDenied {
+                        msg_id: Some(task_id),
+                        session_id: None,
+                        capability: "exec".to_string(),
+                    };
+                    let tx = cmd_result_tx.clone();
+                    tokio::spawn(async move {
+                        let _ = tx.send(denied).await;
+                    });
+                    return Ok(());
+                }
                 tracing::info!("Executing command (task_id={task_id}): {command}");
                 let tx = cmd_result_tx.clone();
                 tokio::spawn(async move {
@@ -270,6 +306,18 @@ impl Reporter {
                 version,
                 download_url,
             } => {
+                let caps = capabilities.load(Ordering::SeqCst);
+                if !has_capability(caps, CAP_UPGRADE) {
+                    tracing::warn!("Upgrade denied: capability disabled");
+                    let denied = AgentMessage::CapabilityDenied {
+                        msg_id: None,
+                        session_id: None,
+                        capability: "upgrade".to_string(),
+                    };
+                    let json = serde_json::to_string(&denied)?;
+                    write.send(Message::Text(json.into())).await?;
+                    return Ok(());
+                }
                 tracing::info!("Upgrade requested: v{version} from {download_url}");
                 tokio::spawn(async move {
                     if let Err(e) = perform_upgrade(&version, &download_url).await {
