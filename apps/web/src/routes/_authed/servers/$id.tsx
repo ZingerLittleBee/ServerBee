@@ -8,7 +8,6 @@ import { StatusBadge } from '@/components/server/status-badge'
 import { Button } from '@/components/ui/button'
 import { useServer, useServerRecords } from '@/hooks/use-api'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { useServersWs } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import { cn, countryCodeToFlag, formatBytes } from '@/lib/utils'
 
@@ -89,8 +88,6 @@ function ServerDetailPage() {
       ),
     enabled: id.length > 0
   })
-
-  useServersWs()
 
   const { data: liveServers } = useQuery<ServerMetrics[]>({
     queryKey: ['servers'],
