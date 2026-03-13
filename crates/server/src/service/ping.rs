@@ -3,9 +3,10 @@ use sea_orm::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entity::{ping_record, ping_task};
+use crate::entity::{ping_record, ping_task, server};
 use crate::error::AppError;
 use crate::service::agent_manager::AgentManager;
+use serverbee_common::constants::{has_capability, probe_type_to_cap, CAP_DEFAULT};
 use serverbee_common::protocol::ServerMessage;
 use serverbee_common::types::PingTaskConfig;
 
@@ -184,21 +185,37 @@ impl PingService {
             }
         };
 
+        // Fetch server capabilities
+        let server_caps = server::Entity::find_by_id(server_id)
+            .one(db)
+            .await
+            .ok()
+            .flatten()
+            .map(|s| s.capabilities as u32)
+            .unwrap_or(CAP_DEFAULT);
+
         let mut task_configs: Vec<PingTaskConfig> = Vec::new();
         for task in &tasks {
             let server_ids: Vec<String> =
                 serde_json::from_str(&task.server_ids_json).unwrap_or_default();
             // Include task if server_ids is empty (all agents) or contains this server
             if server_ids.is_empty() || server_ids.contains(&server_id.to_string()) {
-                task_configs.push(PingTaskConfig {
-                    task_id: task.id.clone(),
-                    probe_type: task.probe_type.clone(),
-                    target: task.target.clone(),
-                    interval: task.interval as u32,
-                });
+                // Filter by capability
+                if probe_type_to_cap(&task.probe_type)
+                    .map(|cap| has_capability(server_caps, cap))
+                    .unwrap_or(false)
+                {
+                    task_configs.push(PingTaskConfig {
+                        task_id: task.id.clone(),
+                        probe_type: task.probe_type.clone(),
+                        target: task.target.clone(),
+                        interval: task.interval as u32,
+                    });
+                }
             }
         }
 
+        // Always send PingTasksSync (even if empty — tells Agent to stop all probes)
         if let Some(tx) = agent_manager.get_sender(server_id) {
             let msg = ServerMessage::PingTasksSync { tasks: task_configs };
             let _ = tx.send(msg).await;
@@ -219,9 +236,35 @@ impl PingService {
             }
         };
 
-        // Build per-agent task lists
+        // Fetch capabilities for all connected agents
+        let connected_ids = agent_manager.connected_server_ids();
+        let server_caps_map: std::collections::HashMap<String, u32> =
+            match server::Entity::find()
+                .filter(server::Column::Id.is_in(connected_ids.iter().cloned()))
+                .all(db)
+                .await
+            {
+                Ok(servers) => servers
+                    .into_iter()
+                    .map(|s| {
+                        let caps = s.capabilities as u32;
+                        (s.id, caps)
+                    })
+                    .collect(),
+                Err(e) => {
+                    tracing::error!("Failed to load server caps for ping sync: {e}");
+                    return;
+                }
+            };
+
+        // Build per-agent task lists filtered by capability
         let mut agent_tasks: std::collections::HashMap<String, Vec<PingTaskConfig>> =
             std::collections::HashMap::new();
+
+        // Ensure every connected agent gets an entry (even if empty)
+        for sid in &connected_ids {
+            agent_tasks.entry(sid.clone()).or_default();
+        }
 
         for task in &tasks {
             let server_ids: Vec<String> =
@@ -233,13 +276,18 @@ impl PingService {
                 interval: task.interval as u32,
             };
 
-            if server_ids.is_empty() {
-                // No specific servers = broadcast to all connected agents
-                for sid in agent_manager.connected_server_ids() {
-                    agent_tasks.entry(sid).or_default().push(config.clone());
-                }
+            let target_ids: Vec<String> = if server_ids.is_empty() {
+                connected_ids.clone()
             } else {
-                for sid in server_ids {
+                server_ids
+            };
+
+            for sid in target_ids {
+                let caps = server_caps_map.get(&sid).copied().unwrap_or(CAP_DEFAULT);
+                if probe_type_to_cap(&task.probe_type)
+                    .map(|cap| has_capability(caps, cap))
+                    .unwrap_or(false)
+                {
                     agent_tasks.entry(sid).or_default().push(config.clone());
                 }
             }
