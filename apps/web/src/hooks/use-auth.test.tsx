@@ -31,8 +31,8 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-function mockFetchResponse(body: unknown, options: { ok?: boolean; status?: number } = {}) {
-  const { ok = true, status = 200 } = options
+function mockFetchResponse(body: unknown, options: { status?: number } = {}) {
+  const { status = 200 } = options
   return vi.mocked(globalThis.fetch).mockResolvedValueOnce(
     new Response(JSON.stringify(body), {
       status,

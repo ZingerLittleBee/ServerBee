@@ -6,6 +6,7 @@ import {
   ClipboardList,
   Key,
   LayoutDashboard,
+  List,
   Server,
   Settings,
   Shield,
@@ -17,6 +18,7 @@ import { cn } from '@/lib/utils'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/servers', label: 'Servers', icon: List },
   { to: '/settings/users', label: 'Users', icon: Users, adminOnly: true },
   { to: '/settings/notifications', label: 'Notifications', icon: Bell, adminOnly: true },
   { to: '/settings/alerts', label: 'Alerts', icon: AlertTriangle, adminOnly: true },
