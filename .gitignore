@@ -54,3 +54,4 @@ agent.toml
 *.db
 *.db-wal
 *.db-shm
+.make-history
