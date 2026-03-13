@@ -36,9 +36,8 @@ pub enum AppError {
     BadRequest(String),
     #[error("Unauthorized")]
     Unauthorized,
-    #[error("Forbidden")]
-    #[allow(dead_code)]
-    Forbidden,
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
     #[error("Not found: {0}")]
     NotFound(String),
     #[error("Too many requests: {0}")]
@@ -56,7 +55,7 @@ impl IntoResponse for AppError {
         let (status, code) = match &self {
             AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, "BAD_REQUEST"),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED"),
-            AppError::Forbidden => (StatusCode::FORBIDDEN, "FORBIDDEN"),
+            AppError::Forbidden(_) => (StatusCode::FORBIDDEN, "FORBIDDEN"),
             AppError::TooManyRequests(_) => (StatusCode::TOO_MANY_REQUESTS, "TOO_MANY_REQUESTS"),
             AppError::NotFound(_) => (StatusCode::NOT_FOUND, "NOT_FOUND"),
             AppError::Conflict(_) => (StatusCode::CONFLICT, "CONFLICT"),
