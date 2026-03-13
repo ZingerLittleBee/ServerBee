@@ -123,8 +123,17 @@ AgentMessage::CapabilityDenied {
 
 6. **前端数据模型**:
    - `ServerResponse`（REST）增加 `protocol_version: number` 字段
-   - `ServerStatus`（Browser WS FullSync）增加 `protocol_version: Option<i32>`（FullSync 时从 DB 填充，Update 时为 None 不覆盖）
-   - 前端根据 `protocol_version < 2` 显示旧版 Agent 警告
+   - `ServerStatus`（Browser WS）**不新增** `protocol_version` 字段（与 capabilities 相同策略：避免 Update 时覆盖问题）
+   - 前端通过 REST query 获取 `protocol_version`，根据 `< 2` 显示旧版 Agent 警告
+
+7. **Agent 重连时 protocol_version 实时刷新**: 扩展 `BrowserMessage::ServerOnline` 消息，携带 `protocol_version`：
+   ```rust
+   BrowserMessage::ServerOnline {
+       server_id: String,
+       protocol_version: i32,  // 新增：从 AgentConnection 或 DB 读取
+   }
+   ```
+   前端收到 `server_online` 后，除了设 `online = true`，同时更新 `protocol_version` 到相关 query cache，并 invalidate `['servers-list']`。这样 Agent 升级重连后，前端版本警告会实时消失。
 
 **安全声明修正**: 双重校验仅在 Agent 版本 >= 2 时完整生效。旧版 Agent 仅有 Server 端单层防护。Dashboard 根据持久化的 `protocol_version` 提示管理员升级旧 Agent。
 
@@ -267,29 +276,47 @@ BrowserMessage::CapabilitiesChanged {
 - 如果加为必填字段，每 3 秒的 metric update 都需填充，填 0 或旧值会导致前端 merge 覆盖正确值
 - capabilities 变更频率极低（管理员偶尔操作），不应混入高频 metric update
 
-**前端 capabilities 数据来源**（三条独立路径，无矛盾）：
-1. **REST API**: `GET /api/servers` 和 `GET /api/servers/:id` 响应包含 `capabilities` 字段 → 填充 query cache `['servers-list']` 和 `['servers', id]`
-2. **Browser WS FullSync**: 浏览器连接时不依赖 WS 获取 capabilities，由 REST query 提供初始值
-3. **Browser WS CapabilitiesChanged**: 管理员修改后推送 → 前端 handler 需要同时 invalidate 或直接更新所有相关 query key：
-   - `['servers']`（Dashboard WS 缓存）
-   - `['servers', serverId]`（详情页）
-   - `['servers-list']`（任务页等列表页）
+### Browser WS 订阅位置
 
-前端 `use-servers-ws.ts` 新增 `capabilities_changed` 消息处理：
+**`useServersWs()` 必须上移到全局认证布局 `_authed.tsx`**，而非仅在 Dashboard 和 Servers 列表页调用。理由：
+
+- 当前 `useServersWs()` 只在 `DashboardPage` 和 `ServersListPage` 中挂载
+- 用户停留在 `/settings/tasks`、`/settings/capabilities` 等页面时不会建立 Browser WS 连接
+- `CapabilitiesChanged` 和 `ServerOnline`（含 protocol_version）等消息无法被接收
+- 导致 Toggle 状态、终端按钮禁用、exec 灰显等实时反馈失效
+
+变更：在 `_authed.tsx` 的 layout 组件中调用 `useServersWs()`，所有认证页面共享同一个 WS 连接。Dashboard 和 ServersListPage 中移除各自的 `useServersWs()` 调用。
+
+**前端 capabilities + protocol_version 数据来源**（三条独立路径，无矛盾）：
+1. **REST API**: `GET /api/servers` 和 `GET /api/servers/:id` 响应包含 `capabilities` 和 `protocol_version` 字段 → 填充 query cache `['servers-list']` 和 `['servers', id]`
+2. **Browser WS CapabilitiesChanged**: 管理员修改后推送 → 前端 handler 同时更新所有相关 query key
+3. **Browser WS ServerOnline**: Agent 重连后推送（含 protocol_version）→ 前端更新版本信息
+
+前端 `use-servers-ws.ts` 新增消息处理：
 
 ```typescript
-// use-servers-ws.ts 新增 handler
+// capabilities_changed handler
 case 'capabilities_changed': {
   const { server_id, capabilities } = msg
-  // 更新 Dashboard WS 缓存
   queryClient.setQueryData(['servers'], (prev) =>
     prev?.map(s => s.id === server_id ? { ...s, capabilities } : s)
   )
-  // 更新详情页缓存
   queryClient.setQueryData(['servers', server_id], (prev) =>
     prev ? { ...prev, capabilities } : prev
   )
-  // 失效列表页缓存（触发 refetch）
+  queryClient.invalidateQueries({ queryKey: ['servers-list'] })
+  break
+}
+
+// server_online handler（扩展现有逻辑）
+case 'server_online': {
+  const { server_id, protocol_version } = msg
+  queryClient.setQueryData(['servers'], (prev) =>
+    prev?.map(s => s.id === server_id ? { ...s, online: true, protocol_version } : s)
+  )
+  queryClient.setQueryData(['servers', server_id], (prev) =>
+    prev ? { ...prev, online: true, protocol_version } : prev
+  )
   queryClient.invalidateQueries({ queryKey: ['servers-list'] })
   break
 }
