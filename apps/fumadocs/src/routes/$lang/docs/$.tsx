@@ -15,7 +15,7 @@ import { Suspense } from 'react'
 
 import { useMDXComponents } from '@/components/mdx'
 import { baseOptions, gitConfig } from '@/lib/layout.shared'
-import { localizePageTree, source } from '@/lib/source'
+import { source } from '@/lib/source'
 
 export const Route = createFileRoute('/$lang/docs/$')({
   component: Page,
@@ -38,13 +38,12 @@ const serverLoader = createServerFn({
     }
 
     const pageTree = source.getPageTree(lang)
-    const localizedTree = localizePageTree(pageTree, lang)
 
     return {
       slugs: page.slugs,
       path: page.path,
       lang,
-      pageTree: await source.serializePageTree(localizedTree)
+      pageTree: await source.serializePageTree(pageTree)
     }
   })
 
