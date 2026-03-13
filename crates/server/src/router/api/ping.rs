@@ -11,14 +11,20 @@ use crate::error::{ok, ApiResponse, AppError};
 use crate::service::ping::{CreatePingTask, PingService, UpdatePingTask};
 use crate::state::AppState;
 
-pub fn router() -> Router<Arc<AppState>> {
+/// GET endpoints accessible to all authenticated users (admin + member).
+pub fn read_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/ping-tasks", get(list_tasks))
-        .route("/ping-tasks", post(create_task))
         .route("/ping-tasks/{id}", get(get_task))
+        .route("/ping-tasks/{id}/records", get(get_records))
+}
+
+/// Write endpoints (POST/PUT/DELETE) restricted to admin users only.
+pub fn write_router() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/ping-tasks", post(create_task))
         .route("/ping-tasks/{id}", put(update_task))
         .route("/ping-tasks/{id}", delete(delete_task))
-        .route("/ping-tasks/{id}/records", get(get_records))
 }
 
 #[utoipa::path(

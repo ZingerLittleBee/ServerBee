@@ -106,6 +106,9 @@ impl Reporter {
         let (term_tx, mut term_rx) = mpsc::channel(256);
         let mut terminal_manager = TerminalManager::new(term_tx);
 
+        // Channel for background command execution results
+        let (cmd_result_tx, mut cmd_result_rx) = mpsc::channel::<AgentMessage>(32);
+
         // Main loop: send reports and handle server messages
         let mut report_interval = interval(Duration::from_secs(report_interval as u64));
         report_interval.tick().await; // consume first immediate tick
@@ -124,6 +127,11 @@ impl Reporter {
                     let json = serde_json::to_string(&msg)?;
                     write.send(Message::Text(json.into())).await?;
                     tracing::debug!("Sent PingResult");
+                }
+                Some(cmd_msg) = cmd_result_rx.recv() => {
+                    let json = serde_json::to_string(&cmd_msg)?;
+                    write.send(Message::Text(json.into())).await?;
+                    tracing::debug!("Sent background command result");
                 }
                 Some(term_event) = term_rx.recv() => {
                     let msg = match term_event {
@@ -150,7 +158,7 @@ impl Reporter {
                 server_msg = read.next() => {
                     match server_msg {
                         Some(Ok(Message::Text(text))) => {
-                            self.handle_server_message(&text, &mut write, &mut ping_manager, &mut terminal_manager).await?;
+                            self.handle_server_message(&text, &mut write, &mut ping_manager, &mut terminal_manager, &cmd_result_tx).await?;
                         }
                         Some(Ok(Message::Close(_))) => {
                             tracing::info!("Server closed connection");
@@ -186,6 +194,7 @@ impl Reporter {
         write: &mut S,
         ping_manager: &mut PingManager,
         terminal_manager: &mut TerminalManager,
+        cmd_result_tx: &mpsc::Sender<AgentMessage>,
     ) -> anyhow::Result<()>
     where
         S: SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
@@ -210,14 +219,19 @@ impl Reporter {
                 timeout,
             } => {
                 tracing::info!("Executing command (task_id={task_id}): {command}");
-                let result = execute_command(&task_id, &command, timeout).await;
-                let msg = AgentMessage::TaskResult {
-                    msg_id: uuid::Uuid::new_v4().to_string(),
-                    result,
-                };
-                let json = serde_json::to_string(&msg)?;
-                write.send(Message::Text(json.into())).await?;
-                tracing::info!("Sent TaskResult for task_id={task_id}");
+                let tx = cmd_result_tx.clone();
+                tokio::spawn(async move {
+                    let result = execute_command(&task_id, &command, timeout).await;
+                    let msg = AgentMessage::TaskResult {
+                        msg_id: uuid::Uuid::new_v4().to_string(),
+                        result,
+                    };
+                    if tx.send(msg).await.is_err() {
+                        tracing::warn!("Failed to send TaskResult for task_id={task_id}: channel closed");
+                    } else {
+                        tracing::info!("TaskResult ready for task_id={task_id}");
+                    }
+                });
             }
             ServerMessage::Ack { msg_id } => {
                 tracing::debug!("Received Ack for msg_id={msg_id}");

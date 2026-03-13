@@ -175,6 +175,11 @@ impl AgentManager {
         self.connections.get(server_id).map(|c| c.tx.clone())
     }
 
+    /// Get all connected agent server IDs.
+    pub fn connected_server_ids(&self) -> Vec<String> {
+        self.connections.iter().map(|e| e.key().clone()).collect()
+    }
+
     /// Get the remote address of a connected agent.
     pub fn get_remote_addr(&self, server_id: &str) -> Option<SocketAddr> {
         self.connections.get(server_id).map(|c| c.remote_addr)

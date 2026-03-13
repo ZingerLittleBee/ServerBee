@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { Activity, Cpu, HardDrive, MemoryStick, Server, Wifi } from 'lucide-react'
 import { useMemo } from 'react'
@@ -41,8 +41,13 @@ function StatCard({
 function DashboardPage() {
   useServersWs()
 
-  const queryClient = useQueryClient()
-  const servers = queryClient.getQueryData<ServerMetrics[]>(['servers']) ?? []
+  const { data: servers = [] } = useQuery<ServerMetrics[]>({
+    queryKey: ['servers'],
+    queryFn: () => [],
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false
+  })
   const onlineServers = servers.filter((s) => s.online)
   const onlineCount = onlineServers.length
 

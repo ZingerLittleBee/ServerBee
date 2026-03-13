@@ -110,15 +110,21 @@ impl From<server::Model> for ServerResponse {
     }
 }
 
-pub fn router() -> Router<Arc<AppState>> {
+/// GET endpoints accessible to all authenticated users (admin + member).
+pub fn read_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/servers", get(list_servers))
         .route("/servers/{id}", get(get_server))
+        .route("/servers/{id}/records", get(get_records))
+        .route("/servers/{id}/gpu-records", get(get_gpu_records))
+}
+
+/// Write endpoints (PUT/DELETE/POST) restricted to admin users only.
+pub fn write_router() -> Router<Arc<AppState>> {
+    Router::new()
         .route("/servers/{id}", put(update_server))
         .route("/servers/{id}", delete(delete_server))
         .route("/servers/batch-delete", post(batch_delete))
-        .route("/servers/{id}/records", get(get_records))
-        .route("/servers/{id}/gpu-records", get(get_gpu_records))
         .route("/servers/{id}/upgrade", post(trigger_upgrade))
 }
 

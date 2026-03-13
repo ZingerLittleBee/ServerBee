@@ -12,6 +12,7 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 
 use crate::service::auth::AuthService;
+use crate::service::ping::PingService;
 use crate::service::record::RecordService;
 use crate::service::server::ServerService;
 use crate::state::AppState;
@@ -84,6 +85,9 @@ async fn handle_agent_ws(
     state
         .agent_manager
         .add_connection(server_id.clone(), server_name, tx, remote_addr);
+
+    // Send current ping tasks to the newly connected agent
+    PingService::sync_tasks_to_agent(&state.db, &state.agent_manager, &server_id).await;
 
     tracing::info!("Agent {server_id} connected from {remote_addr}");
 
