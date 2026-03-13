@@ -17,14 +17,14 @@
 | P2-a+review | 权限 + 审计 + 安全加固 | **已完成** | 1 (`020190b`) |
 | P2-b/c/d/e | 状态页 + 计费 + 升级 + 备份 | **已完成** | 1 (`6cb0f6a`) |
 | P3-a | 用户管理 + 缺失 API | **已完成** | 2 (`a464801`, `601f80b`) |
-| P3-b | 前端 UI 完善 | **已完成** | 2 (`044e568`, `3f33de9`) |
+| P3-b | 前端 UI 完善 | **已完成** | 3 (`044e568`, `3f33de9`, `1bea44d`) |
 | P3-c | 测试 | **已完成** | 2 (`7c0d681`, `3244eac`) |
 | P3-d | Agent 完善 | **已完成** | 1 (`9d5835e`) |
 | P3-e | 性能优化 | **部分完成** | 1 (`7c13b3d`) |
 | P3-f | CI/CD + 部署文档 | **部分完成** | 1 (`e6fee1a`) |
 | P4 | 端到端验证 + 上线前加固 | **已完成** | 1 (`51e8b40`) |
 
-**P0~P4 全部完成并已提交 (共 30 个 commits)。测试: 43 单元 + 2 集成 + 8 前端 = 53 个测试。P3-e/f 部分任务跳过 (OpenAPI 类型生成/Fumadocs/E2E)。**
+**P0~P4 全部完成并已提交 (共 31 个 commits)。测试: 43 单元 + 2 集成 + 8 前端 = 53 个测试。仅 P3-c T8 (E2E) / P3-e T2 (OpenAPI 类型生成) / P3-f T5 (Fumadocs) 跳过。**
 
 ---
 
@@ -379,6 +379,7 @@
 ## Git Commits
 
 ```
+1bea44d feat: add servers list page with table view and batch operations (P3-b T10)
 3244eac test: add Rust integration tests and frontend Vitest tests (P3-c T5-T7)
 4c0e026 docs: update progress for P4 end-to-end verification
 51e8b40 fix: end-to-end verification fixes and pre-launch hardening (P4)
@@ -604,7 +605,7 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 | T7 | Server Detail 补充信息 (region, agent_version, ipv6, kernel_version, cpu_arch) | **done** |
 | T8 | Ping 任务结果图表 (调用 GET /api/ping-tasks/:id/records + 延迟图表) | **done** |
 | T9 | 审计日志分页 placeholderData (TanStack Query keepPreviousData 防闪烁) | **done** |
-| T10 | 服务器列表/管理页面 (servers/index.tsx, 表格视图 + 批量操作) | **跳过** |
+| T10 | 服务器列表/管理页面 (servers/index.tsx, 表格视图 + 批量操作) | **done** |
 
 ### P3-c: 测试
 
@@ -685,7 +686,7 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 
 ### 可以不做
 
-- P3-b T10 服务器列表页 — Dashboard 卡片视图已够用
+- ~~P3-b T10 服务器列表页~~ — **已完成** (`1bea44d`)
 - P3-e T2 OpenAPI 类型生成 — 手写类型可用，只是维护成本高
 - P3-c T8 Playwright E2E — 有单元测试和手动验证足够
 - P3-f T5 Fumadocs — 有 README 和 Swagger UI 足够
