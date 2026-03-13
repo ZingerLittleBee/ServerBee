@@ -91,6 +91,14 @@ async fn main() -> anyhow::Result<()> {
     // Start server
     let listener = tokio::net::TcpListener::bind(&config.server.listen).await?;
 
+    // Warn if admin password is explicitly set to "admin"
+    if config.admin.password == "admin" {
+        tracing::warn!("========================================");
+        tracing::warn!("WARNING: Admin user is using the default password!");
+        tracing::warn!("Please change it immediately via Settings > Security.");
+        tracing::warn!("========================================");
+    }
+
     // Print startup info
     tracing::info!("========================================");
     tracing::info!(

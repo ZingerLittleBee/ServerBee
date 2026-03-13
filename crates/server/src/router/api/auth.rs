@@ -26,6 +26,7 @@ pub struct LoginResponse {
     user_id: String,
     username: String,
     role: String,
+    must_change_password: bool,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -33,6 +34,7 @@ pub struct MeResponse {
     user_id: String,
     username: String,
     role: String,
+    must_change_password: bool,
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -172,11 +174,15 @@ pub async fn login(
     )
     .await;
 
+    // Check if the user is still using the default "admin" password
+    let must_change_password = body.password == "admin" && user.username == "admin";
+
     let response = ApiResponse {
         data: LoginResponse {
             user_id: user.id,
             username: user.username,
             role: user.role,
+            must_change_password,
         },
     };
 
@@ -230,12 +236,28 @@ pub async fn logout(
     security(("session_cookie" = []), ("api_key" = []))
 )]
 pub async fn me(
+    State(state): State<Arc<AppState>>,
     Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<ApiResponse<MeResponse>>, AppError> {
+    // Check if the admin user still has the default password
+    let must_change_password = if current_user.username == "admin" {
+        if let Some(user) = crate::entity::user::Entity::find_by_id(&current_user.user_id)
+            .one(&state.db)
+            .await?
+        {
+            AuthService::verify_password("admin", &user.password_hash).unwrap_or(false)
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
     ok(MeResponse {
         user_id: current_user.user_id,
         username: current_user.username,
         role: current_user.role,
+        must_change_password,
     })
 }
 

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
 
 interface User {
+  must_change_password: boolean
   role: string
   user_id: string
   username: string
