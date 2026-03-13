@@ -39,7 +39,7 @@ totp-rs = { version = "5", features = ["qr", "gen_secret"] }
 oauth2 = "4"
 
 [dev-dependencies]
-reqwest = { version = "0.12", features = ["json", "cookies"] }
-tokio-tungstenite = "0.26"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "cookies"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 tempfile = "3"
 futures-util = "0.3"
