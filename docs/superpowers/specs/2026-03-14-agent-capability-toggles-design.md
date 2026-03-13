@@ -116,26 +116,42 @@ AgentMessage::CapabilityDenied {
 
 4. **Server 端行为差异**: 对旧 Agent，Server 不发送 `CapabilitiesSync`（避免解析错误日志）；所有 capability 检查仍在 Server 端执行。
 
-5. **持久化 Agent 协议版本**: Server 收到 SystemInfo 后，除了更新内存中 `AgentConnection.protocol_version`，还需将 `protocol_version` 持久化到 `servers` 表（新增 `protocol_version INTEGER` 列，默认 1）。这样：
-   - REST API `ServerResponse` 可以返回 `protocol_version` 字段
-   - 离线 Agent 也能在 Dashboard 上标注版本信息
-   - Browser WS 的 `FullSync`/`ServerOnline` 可以携带该信息
+5. **持久化 Agent 协议版本**: Server 收到 SystemInfo 后，除了更新内存中 `AgentConnection.protocol_version`，还需将 `protocol_version` 持久化到 `servers` 表（新增 `protocol_version INTEGER` 列，默认 1）。这样 REST API 和离线场景都能获取版本信息。
 
 6. **前端数据模型**:
    - `ServerResponse`（REST）增加 `protocol_version: number` 字段
-   - `ServerStatus`（Browser WS）**不新增** `protocol_version` 字段（与 capabilities 相同策略：避免 Update 时覆盖问题）
+   - `ServerStatus`（Browser WS）**不新增** `protocol_version` 字段（与 capabilities 相同策略）
    - 前端通过 REST query 获取 `protocol_version`，根据 `< 2` 显示旧版 Agent 警告
+   - **旧版 Agent 警告仅在详情页和 `/settings/capabilities` 页面显示**（这两个页面通过 REST query `['servers', id]` 和 `['servers-list']` 获取 protocol_version，数据通路完整）。Dashboard 不显示版本警告（Dashboard 的 `['servers']` 缓存来自 WS ServerStatus，不含 protocol_version，且版本信息对概览页价值有限）
 
-7. **Agent 重连时 protocol_version 实时刷新**: 扩展 `BrowserMessage::ServerOnline` 消息，携带 `protocol_version`：
+7. **Agent 连接后 protocol_version 实时刷新**:
+
+   **问题**: 当前 Agent WS handler 的时序是 `add_connection`（触发 `ServerOnline` 广播）→ 等待消息 → 收到 `SystemInfo` 才知道 protocol_version。如果在 `ServerOnline` 中携带 protocol_version，此时读到的是旧值/默认值。
+
+   **解决方案**: 不扩展 `ServerOnline`（保持只有 `server_id`）。改为在 `handle_agent_message` 处理 `SystemInfo` 时，持久化 protocol_version 到 DB 后，**广播一条新的 `BrowserMessage::AgentInfoUpdated` 消息**：
+
    ```rust
-   BrowserMessage::ServerOnline {
+   BrowserMessage::AgentInfoUpdated {
        server_id: String,
-       protocol_version: i32,  // 新增：从 AgentConnection 或 DB 读取
+       protocol_version: i32,
    }
    ```
-   前端收到 `server_online` 后，除了设 `online = true`，同时更新 `protocol_version` 到相关 query cache，并 invalidate `['servers-list']`。这样 Agent 升级重连后，前端版本警告会实时消失。
 
-**安全声明修正**: 双重校验仅在 Agent 版本 >= 2 时完整生效。旧版 Agent 仅有 Server 端单层防护。Dashboard 根据持久化的 `protocol_version` 提示管理员升级旧 Agent。
+   **时序**:
+   ```
+   Agent 连接
+     → add_connection → 广播 ServerOnline { server_id } (不含版本)
+     → 前端收到 server_online → 设 online = true
+   Agent 发送 SystemInfo { protocol_version: 2 }
+     → Server 更新 DB + AgentConnection
+     → 广播 AgentInfoUpdated { server_id, protocol_version: 2 }
+     → 前端收到 → invalidate ['servers-list'] 和更新 ['servers', id]
+     → 详情页/capabilities 页的版本警告实时消失
+   ```
+
+   这样 protocol_version 在 SystemInfo 处理完成后才广播，保证值是正确的。
+
+**安全声明修正**: 双重校验仅在 Agent 版本 >= 2 时完整生效。旧版 Agent 仅有 Server 端单层防护。详情页和 capabilities 设置页根据 `protocol_version` 提示管理员升级旧 Agent。
 
 ## 数据流
 
@@ -278,19 +294,19 @@ BrowserMessage::CapabilitiesChanged {
 
 ### Browser WS 订阅位置
 
-**`useServersWs()` 必须上移到全局认证布局 `_authed.tsx`**，而非仅在 Dashboard 和 Servers 列表页调用。理由：
+**`useServersWs()` 必须上移到全局认证布局 `_authed.tsx`**，而非仅在各页面独立调用。理由：
 
-- 当前 `useServersWs()` 只在 `DashboardPage` 和 `ServersListPage` 中挂载
+- 当前 `useServersWs()` 在 `DashboardPage`、`ServersListPage` 和 `servers/$id.tsx` 详情页中各自挂载
 - 用户停留在 `/settings/tasks`、`/settings/capabilities` 等页面时不会建立 Browser WS 连接
 - `CapabilitiesChanged` 和 `ServerOnline`（含 protocol_version）等消息无法被接收
 - 导致 Toggle 状态、终端按钮禁用、exec 灰显等实时反馈失效
 
-变更：在 `_authed.tsx` 的 layout 组件中调用 `useServersWs()`，所有认证页面共享同一个 WS 连接。Dashboard 和 ServersListPage 中移除各自的 `useServersWs()` 调用。
+变更：在 `_authed.tsx` 的 layout 组件中调用 `useServersWs()`，所有认证页面共享同一个 WS 连接。Dashboard（`_authed/index.tsx`）、ServersListPage（`servers/index.tsx`）和详情页（`servers/$id.tsx`）中各自的 `useServersWs()` 调用必须全部移除，避免重复连接。
 
 **前端 capabilities + protocol_version 数据来源**（三条独立路径，无矛盾）：
 1. **REST API**: `GET /api/servers` 和 `GET /api/servers/:id` 响应包含 `capabilities` 和 `protocol_version` 字段 → 填充 query cache `['servers-list']` 和 `['servers', id]`
 2. **Browser WS CapabilitiesChanged**: 管理员修改后推送 → 前端 handler 同时更新所有相关 query key
-3. **Browser WS ServerOnline**: Agent 重连后推送（含 protocol_version）→ 前端更新版本信息
+3. **Browser WS AgentInfoUpdated**: Agent 发送 SystemInfo 后，Server 广播 protocol_version → 前端更新详情页/设置页
 
 前端 `use-servers-ws.ts` 新增消息处理：
 
@@ -308,19 +324,20 @@ case 'capabilities_changed': {
   break
 }
 
-// server_online handler（扩展现有逻辑）
-case 'server_online': {
+// agent_info_updated handler — Agent 发送 SystemInfo 后触发
+case 'agent_info_updated': {
   const { server_id, protocol_version } = msg
-  queryClient.setQueryData(['servers'], (prev) =>
-    prev?.map(s => s.id === server_id ? { ...s, online: true, protocol_version } : s)
-  )
+  // 更新详情页缓存
   queryClient.setQueryData(['servers', server_id], (prev) =>
-    prev ? { ...prev, online: true, protocol_version } : prev
+    prev ? { ...prev, protocol_version } : prev
   )
+  // 失效列表页缓存（capabilities 设置页用的数据源）
   queryClient.invalidateQueries({ queryKey: ['servers-list'] })
   break
 }
 ```
+
+注意：`server_online` handler **不变**（保持只设 `online = true`），protocol_version 由后续的 `agent_info_updated` 异步刷新。
 
 ### 新增 API
 
