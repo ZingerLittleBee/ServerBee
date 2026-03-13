@@ -1,6 +1,6 @@
 # ServerBee 实现进度
 
-> 最后更新: 2026-03-13
+> 最后更新: 2026-03-14
 
 ## 总览
 
@@ -22,8 +22,9 @@
 | P3-d | Agent 完善 | **已完成** | 1 (`9d5835e`) |
 | P3-e | 性能优化 | **部分完成** | 1 (`7c13b3d`) |
 | P3-f | CI/CD + 部署文档 | **部分完成** | 1 (`e6fee1a`) |
+| P4 | 端到端验证 + 上线前加固 | **已完成** | 1 (`51e8b40`) |
 
-**P0~P3 全部完成并已提交 (共 27 个 commits)。P3-c/e/f 部分任务跳过 (集成测试/E2E/OpenAPI 类型生成/Fumadocs)。**
+**P0~P4 全部完成并已提交 (共 28 个 commits)。P3-c/e/f 部分任务跳过 (集成测试/E2E/OpenAPI 类型生成/Fumadocs)。**
 
 ---
 
@@ -376,6 +377,8 @@
 ## Git Commits
 
 ```
+51e8b40 fix: end-to-end verification fixes and pre-launch hardening (P4)
+c806f89 docs: add pre-launch checklist and next steps to PROGRESS.md
 f82eedc docs: update progress for P3-c through P3-f completion
 e6fee1a chore: add Windows CI build, cargo test step, and README (P3-f)
 7c13b3d perf: add Vite code splitting for xterm and recharts (P3-e)
@@ -637,17 +640,35 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 | T4 | 部署文档: 2FA/GeoIP MMDB/备份恢复 配置说明 | **done** (README 内) |
 | T5 | Fumadocs 文档站内容 (apps/fumadocs/ 当前仅占位符) | **跳过** |
 
+### P4: 端到端验证 + 上线前加固
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | 端到端集成验证 (server + agent 启动 → 注册 → WS → 48 个 API 验证) | **done** |
+| T2 | 前后端接口字段一致性检查 (所有类型定义匹配) | **done** |
+| T3 | 修复 Figment env split("_") → split("__") | **done** |
+| T4 | 修复 Alert 表单 (添加 cover_type/server_ids 选择器) | **done** |
+| T5 | 修复 Server Edit (添加 group_id 下拉选择器) | **done** |
+| T6 | 前端路由守卫 (非 admin 用户 admin-only 页面重定向) | **done** |
+| T7 | 默认密码提醒 (must_change_password API + banner + 启动 WARN) | **done** |
+
 ---
 
 ## 下一步：上线前待办
 
-### 必须做（上线前）
+### 必须做（上线前） — 全部完成 ✅
 
-| 优先级 | 任务 | 说明 |
-|--------|------|------|
-| **P0** | 端到端集成验证 | P1-P3 新增了告警/通知/Ping/终端/OAuth/2FA/用户管理等大量功能，自 P0 以来未做过集成验证。需启动 server + agent 跑完整流程，很可能发现接口不匹配等问题（参考 P0 时发现的 9 个 bug） |
-| **P1** | 前端路由守卫检查 | 非 admin 用户访问 admin-only 页面（/settings/users 等）时后端 403，需验证前端是否有对应错误处理和跳转 |
-| **P2** | 首次部署默认密码 | admin 默认密码是 `admin`，生产环境需强制首次登录修改密码，或在启动日志中强烈提醒 |
+| 优先级 | 任务 | 状态 | 说明 |
+|--------|------|------|------|
+| **P0** | 端到端集成验证 | **已完成** ✅ | 启动 server + agent 完整流程验证：注册→WS 连接→指标上报→全部 48 个 API 端点正常，无字段不匹配 |
+| **P1** | 前端路由守卫 | **已完成** ✅ | 非 admin 用户访问 admin-only 页面时自动重定向到 Dashboard |
+| **P2** | 首次部署默认密码 | **已完成** ✅ | Login/Me API 返回 `must_change_password`，前端 amber banner 提醒，启动日志 WARN |
+
+### 验证中修复的 Bug (3 个)
+
+1. **Figment env split** — `.split("_")` → `.split("__")`，修复环境变量含下划线字段名的解析问题 (server + agent)
+2. **Alert 表单缺失字段** — 添加 `cover_type` 和 `server_ids` 选择器，支持选择规则覆盖范围
+3. **Server 编辑缺失字段** — 添加 `group_id` 下拉选择器，支持修改服务器分组
 
 ### 建议做（提升质量）
 
