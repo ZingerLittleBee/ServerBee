@@ -245,3 +245,126 @@ impl AgentManager {
         let _ = self.browser_tx.send(msg);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    fn test_addr() -> SocketAddr {
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080)
+    }
+
+    fn make_manager() -> (AgentManager, broadcast::Receiver<BrowserMessage>) {
+        let (tx, rx) = broadcast::channel(16);
+        (AgentManager::new(tx), rx)
+    }
+
+    #[test]
+    fn test_add_and_remove_connection() {
+        let (mgr, _rx) = make_manager();
+        let (tx, _) = mpsc::channel(1);
+        mgr.add_connection("s1".into(), "Server1".into(), tx, test_addr());
+        assert!(mgr.is_online("s1"));
+        assert_eq!(mgr.online_count(), 1);
+        mgr.remove_connection("s1");
+        assert!(!mgr.is_online("s1"));
+        assert_eq!(mgr.online_count(), 0);
+    }
+
+    #[test]
+    fn test_broadcast_online_offline() {
+        let (mgr, mut rx) = make_manager();
+        let (tx, _) = mpsc::channel(1);
+        mgr.add_connection("s1".into(), "Srv".into(), tx, test_addr());
+        let msg = rx.try_recv().unwrap();
+        assert!(matches!(msg, BrowserMessage::ServerOnline { server_id } if server_id == "s1"));
+        mgr.remove_connection("s1");
+        let msg = rx.try_recv().unwrap();
+        assert!(matches!(msg, BrowserMessage::ServerOffline { server_id } if server_id == "s1"));
+    }
+
+    #[test]
+    fn test_update_report_and_cache() {
+        let (mgr, _rx) = make_manager();
+        let (tx, _) = mpsc::channel(1);
+        mgr.add_connection("s1".into(), "Srv".into(), tx, test_addr());
+        let report = SystemReport { cpu: 42.5, mem_used: 8_000_000_000, ..Default::default() };
+        mgr.update_report("s1", report);
+        let cached = mgr.get_latest_report("s1").unwrap();
+        assert!((cached.cpu - 42.5).abs() < f64::EPSILON);
+        assert_eq!(cached.mem_used, 8_000_000_000);
+    }
+
+    #[test]
+    fn test_all_latest_reports() {
+        let (mgr, _rx) = make_manager();
+        let (tx1, _) = mpsc::channel(1);
+        let (tx2, _) = mpsc::channel(1);
+        mgr.add_connection("s1".into(), "A".into(), tx1, test_addr());
+        mgr.add_connection("s2".into(), "B".into(), tx2, test_addr());
+        mgr.update_report("s1", SystemReport { cpu: 10.0, ..Default::default() });
+        mgr.update_report("s2", SystemReport { cpu: 20.0, ..Default::default() });
+        let all = mgr.all_latest_reports();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn test_connected_server_ids() {
+        let (mgr, _rx) = make_manager();
+        let (tx1, _) = mpsc::channel(1);
+        let (tx2, _) = mpsc::channel(1);
+        mgr.add_connection("s1".into(), "A".into(), tx1, test_addr());
+        mgr.add_connection("s2".into(), "B".into(), tx2, test_addr());
+        let ids = mgr.connected_server_ids();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&"s1".to_string()));
+        assert!(ids.contains(&"s2".to_string()));
+    }
+
+    #[test]
+    fn test_terminal_session_lifecycle() {
+        let (mgr, _rx) = make_manager();
+        let (tx, _) = mpsc::channel(1);
+        mgr.register_terminal_session("sess1".into(), tx);
+        assert!(mgr.get_terminal_session("sess1").is_some());
+        mgr.unregister_terminal_session("sess1");
+        assert!(mgr.get_terminal_session("sess1").is_none());
+    }
+
+    #[test]
+    fn test_check_offline() {
+        let (mgr, _rx) = make_manager();
+        let (tx, _) = mpsc::channel(1);
+        mgr.add_connection("s1".into(), "Old".into(), tx, test_addr());
+        let offline = mgr.check_offline(0);
+        assert_eq!(offline, vec!["s1"]);
+        assert!(!mgr.is_online("s1"));
+    }
+
+    #[test]
+    fn test_check_offline_within_threshold() {
+        let (mgr, _rx) = make_manager();
+        let (tx, _) = mpsc::channel(1);
+        mgr.add_connection("s1".into(), "Fresh".into(), tx, test_addr());
+        let offline = mgr.check_offline(9999);
+        assert!(offline.is_empty());
+        assert!(mgr.is_online("s1"));
+    }
+
+    #[test]
+    fn test_protocol_version() {
+        let (mgr, _rx) = make_manager();
+        let (tx, _) = mpsc::channel(1);
+        mgr.add_connection("s1".into(), "Srv".into(), tx, test_addr());
+        assert_eq!(mgr.get_protocol_version("s1"), Some(1));
+        mgr.set_protocol_version("s1", 2);
+        assert_eq!(mgr.get_protocol_version("s1"), Some(2));
+    }
+
+    #[test]
+    fn test_get_report_nonexistent() {
+        let (mgr, _rx) = make_manager();
+        assert!(mgr.get_latest_report("nope").is_none());
+    }
+}
