@@ -18,8 +18,8 @@ cargo run -p serverbee-server                   # Server on port 9527
 cargo run -p serverbee-agent                    # Agent (needs server_url configured)
 
 # Test
-cargo test --workspace                          # Rust: 54 unit + 2 integration tests
-bun run test                                    # Frontend: 11 vitest tests
+cargo test --workspace                          # Rust: 110 unit + 11 integration tests
+bun run test                                    # Frontend: 72 vitest tests
 cargo test -p serverbee-server --test integration  # Integration tests only
 cargo test -p serverbee-server test_name        # Single Rust test
 
