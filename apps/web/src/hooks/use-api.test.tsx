@@ -141,10 +141,9 @@ describe('useServerRecords', () => {
       })
     )
 
-    const { result } = renderHook(
-      () => useServerRecords('srv-1', '2026-01-01T00:00:00Z', '2026-01-01T01:00:00Z', '5m'),
-      { wrapper: createWrapper() }
-    )
+    const { result } = renderHook(() => useServerRecords('srv-1', 1, '5m'), {
+      wrapper: createWrapper()
+    })
 
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true)
@@ -156,7 +155,7 @@ describe('useServerRecords', () => {
   })
 
   it('does not fetch when id is empty', async () => {
-    const { result } = renderHook(() => useServerRecords('', '2026-01-01T00:00:00Z', '2026-01-01T01:00:00Z', '5m'), {
+    const { result } = renderHook(() => useServerRecords('', 1, '5m'), {
       wrapper: createWrapper()
     })
 

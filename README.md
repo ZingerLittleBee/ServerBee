@@ -70,8 +70,8 @@ cargo build --release
 
 ```bash
 # Set server URL and discovery key via environment variables
-SB_SERVER_URL=http://your-server:9527 \
-SB_AUTO_DISCOVERY_KEY=YOUR_KEY \
+SERVERBEE_SERVER_URL=http://your-server:9527 \
+SERVERBEE_AUTO_DISCOVERY_KEY=YOUR_KEY \
 ./serverbee-agent
 
 # Or create /etc/serverbee/agent.toml:
@@ -95,7 +95,7 @@ make dev-full
 
 # Or step by step:
 make server-dev                                    # Terminal 1: start server (admin/admin123)
-SB_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # Terminal 2: start agent
+SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # Terminal 2: start agent
 
 # Other useful targets:
 make server-run        # Run server without dev env vars
@@ -110,7 +110,7 @@ The server prints the full auto-discovery key on startup. Copy it to start the a
 
 ## Configuration
 
-All config options can be set via TOML files or environment variables with `SB_` prefix and `__` (double underscore) as nested separator.
+All config options can be set via TOML files or environment variables with `SERVERBEE_` prefix and `__` (double underscore) as nested separator.
 
 ### Server (`/etc/serverbee/server.toml`)
 
@@ -148,9 +148,9 @@ mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"
 
 Environment variable examples:
 ```bash
-export SB_ADMIN__PASSWORD="my-secure-password"
-export SB_GEOIP__ENABLED=true
-export SB_OAUTH__GITHUB__CLIENT_ID="..."
+export SERVERBEE_ADMIN__PASSWORD="my-secure-password"
+export SERVERBEE_GEOIP__ENABLED=true
+export SERVERBEE_OAUTH__GITHUB__CLIENT_ID="..."
 ```
 
 ### Agent (`/etc/serverbee/agent.toml`)

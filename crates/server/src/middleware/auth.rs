@@ -145,10 +145,10 @@ mod tests {
     #[test]
     fn test_extract_api_key_valid() {
         let req = HttpRequest::builder()
-            .header("x-api-key", "sb_abc123def456")
+            .header("x-api-key", "serverbee_abc123def456")
             .body(axum::body::Body::empty())
             .unwrap();
-        assert_eq!(extract_api_key(&req), Some("sb_abc123def456".to_string()));
+        assert_eq!(extract_api_key(&req), Some("serverbee_abc123def456".to_string()));
     }
 
     #[test]

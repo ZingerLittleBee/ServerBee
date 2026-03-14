@@ -12,32 +12,32 @@ Configuration values are merged in the following order. Later sources override e
 
 1. **TOML file (system):** `/etc/serverbee/server.toml` or `/etc/serverbee/agent.toml`
 2. **TOML file (local):** `server.toml` or `agent.toml` in the working directory
-3. **Environment variables:** Prefixed with `SB_`, using `__` (double underscore) as the nested key separator
+3. **Environment variables:** Prefixed with `SERVERBEE_`, using `__` (double underscore) as the nested key separator
 
 ## Environment Variable Mapping
 
-Every TOML configuration key maps directly to an environment variable. Replace dots with `__` and prefix with `SB_`:
+Every TOML configuration key maps directly to an environment variable. Replace dots with `__` and prefix with `SERVERBEE_`:
 
 ```
 TOML key                    Environment variable
 ─────────────────────────   ──────────────────────────────────
-server.listen               SB_SERVER__LISTEN
-server.data_dir             SB_SERVER__DATA_DIR
-database.path               SB_DATABASE__PATH
-database.max_connections    SB_DATABASE__MAX_CONNECTIONS
-auth.session_ttl            SB_AUTH__SESSION_TTL
-auth.auto_discovery_key     SB_AUTH__AUTO_DISCOVERY_KEY
-auth.secure_cookie          SB_AUTH__SECURE_COOKIE
-admin.username              SB_ADMIN__USERNAME
-admin.password              SB_ADMIN__PASSWORD
-retention.records_days      SB_RETENTION__RECORDS_DAYS
-log.level                   SB_LOG__LEVEL
-geoip.enabled               SB_GEOIP__ENABLED
-geoip.mmdb_path             SB_GEOIP__MMDB_PATH
-oauth.base_url              SB_OAUTH__BASE_URL
-oauth.github.client_id      SB_OAUTH__GITHUB__CLIENT_ID
-collector.interval           SB_COLLECTOR__INTERVAL
-collector.enable_gpu         SB_COLLECTOR__ENABLE_GPU
+server.listen               SERVERBEE_SERVER__LISTEN
+server.data_dir             SERVERBEE_SERVER__DATA_DIR
+database.path               SERVERBEE_DATABASE__PATH
+database.max_connections    SERVERBEE_DATABASE__MAX_CONNECTIONS
+auth.session_ttl            SERVERBEE_AUTH__SESSION_TTL
+auth.auto_discovery_key     SERVERBEE_AUTH__AUTO_DISCOVERY_KEY
+auth.secure_cookie          SERVERBEE_AUTH__SECURE_COOKIE
+admin.username              SERVERBEE_ADMIN__USERNAME
+admin.password              SERVERBEE_ADMIN__PASSWORD
+retention.records_days      SERVERBEE_RETENTION__RECORDS_DAYS
+log.level                   SERVERBEE_LOG__LEVEL
+geoip.enabled               SERVERBEE_GEOIP__ENABLED
+geoip.mmdb_path             SERVERBEE_GEOIP__MMDB_PATH
+oauth.base_url              SERVERBEE_OAUTH__BASE_URL
+oauth.github.client_id      SERVERBEE_OAUTH__GITHUB__CLIENT_ID
+collector.interval           SERVERBEE_COLLECTOR__INTERVAL
+collector.enable_gpu         SERVERBEE_COLLECTOR__ENABLE_GPU
 ```
 
 ## Server Configuration (server.toml)

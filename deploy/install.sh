@@ -81,7 +81,7 @@ After=network.target
 Type=simple
 ExecStart=/usr/local/bin/serverbee-server
 WorkingDirectory=/var/lib/serverbee
-Environment=SB_SERVER_DATA_DIR=/var/lib/serverbee
+Environment=SERVERBEE_SERVER_DATA_DIR=/var/lib/serverbee
 Restart=always
 RestartSec=5
 LimitNOFILE=65536

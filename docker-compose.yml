@@ -7,8 +7,8 @@ services:
     volumes:
       - serverbee-data:/data
     environment:
-      - SB_ADMIN_USERNAME=admin
-      - SB_ADMIN_PASSWORD=changeme
+      - SERVERBEE_ADMIN_USERNAME=admin
+      - SERVERBEE_ADMIN_PASSWORD=changeme
     restart: unless-stopped
 
 volumes:

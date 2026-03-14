@@ -22,7 +22,7 @@ COPY --from=rust-builder /app/target/release/serverbee-server /usr/local/bin/
 COPY --from=rust-builder /app/target/release/serverbee-agent /usr/local/bin/
 
 VOLUME /data
-ENV SB_SERVER_DATA_DIR=/data
+ENV SERVERBEE_SERVER_DATA_DIR=/data
 EXPOSE 9527
 
 CMD ["serverbee-server"]

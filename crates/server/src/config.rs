@@ -280,7 +280,7 @@ impl AppConfig {
         let config: AppConfig = Figment::new()
             .merge(Toml::file("/etc/serverbee/server.toml"))
             .merge(Toml::file("server.toml"))
-            .merge(Env::prefixed("SB_").split("__"))
+            .merge(Env::prefixed("SERVERBEE_").split("__"))
             .extract()?;
         Ok(config)
     }
