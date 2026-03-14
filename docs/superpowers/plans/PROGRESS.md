@@ -21,7 +21,7 @@
 | P3-c | 测试 | **已完成** | 2 (`7c0d681`, `3244eac`) |
 | P3-d | Agent 完善 | **已完成** | 1 (`9d5835e`) |
 | P3-e | 性能优化 | **已完成** | 2 (`7c13b3d`) |
-| P3-f | CI/CD + 部署文档 | **部分完成** | 1 (`e6fee1a`) |
+| P3-f | CI/CD + 部署文档 | **已完成** | 2 (`e6fee1a`, `03cd713`) |
 | P4 | 端到端验证 + 上线前加固 | **已完成** | 1 (`51e8b40`) |
 | P5 | Agent Capability Toggles | **已完成** | 22 (`bfc7d14`..`56c6058`) |
 
@@ -51,7 +51,7 @@
 | T14 | Record Service | **done** |
 | T15 | Agent Registration Endpoint | **done** |
 | T16 | Admin Init + Startup Integration | **done** |
-| T17 | OpenAPI Documentation | **跳过 (P1)** |
+| T17 | OpenAPI Documentation | **done** (P1-c 实现) |
 | T18 | CORS + Logging Middleware | **done** |
 
 ## Plan 2: Agent
