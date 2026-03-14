@@ -7,7 +7,7 @@ import {
   Key,
   LayoutDashboard,
   List,
-  Server,
+  Radar,
   Settings,
   Shield,
   Terminal,
@@ -39,7 +39,7 @@ export function Sidebar() {
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r bg-sidebar">
       <div className="flex h-14 items-center gap-2 border-b px-4">
-        <Server className="size-5 text-sidebar-primary" />
+        <Radar className="size-5 text-sidebar-primary" />
         <span className="font-semibold text-sm">ServerBee</span>
       </div>
       <nav className="flex-1 space-y-1 p-2">
