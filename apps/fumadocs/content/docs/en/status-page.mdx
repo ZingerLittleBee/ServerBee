@@ -1,0 +1,76 @@
+---
+title: Status Page
+description: A public page showing server online status without authentication.
+icon: Globe
+---
+
+ServerBee provides a public status page that shows server online status and basic metrics without requiring login. It is ideal for sharing service health with users or teams.
+
+## Access
+
+The status page is available at: `https://your-server/status`
+
+No authentication is required — anyone can access this page.
+
+## Page Content
+
+The status page displays:
+
+- **Online/Total count**: Current number of online servers vs total
+- **Server list**: All non-hidden servers organized by group
+- **Online status**: Each server shows an online/offline indicator
+- **Live metrics**: Online servers display CPU, memory, and disk usage progress bars
+- **Auto-refresh**: The page automatically fetches updated data every 10 seconds
+
+## Display Rules
+
+- Only **non-hidden** servers are shown (admins can set the `hidden` flag in server settings)
+- Servers are organized by their group
+- Offline servers show only the offline status without metric data
+
+## API Endpoint
+
+```
+GET /api/status
+```
+
+Public endpoint, no authentication required. Response structure:
+
+```json
+{
+  "data": {
+    "servers": [
+      {
+        "id": "server-uuid",
+        "name": "Web Server 1",
+        "hostname": "web1.example.com",
+        "is_online": true,
+        "group_name": "Production",
+        "cpu": 45.2,
+        "mem_used": 8589934592,
+        "mem_total": 17179869184,
+        "disk_used": 53687091200,
+        "disk_total": 107374182400
+      }
+    ],
+    "groups": [
+      { "id": "group-uuid", "name": "Production" }
+    ],
+    "online_count": 8,
+    "total_count": 10
+  }
+}
+```
+
+## Hiding Servers
+
+To exclude servers from the status page:
+
+1. Go to the server detail page → Edit
+2. Enable the **Hidden** option
+3. The server will no longer appear in the `/api/status` response
+
+<Cards>
+  <Card title="Monitoring" href="/docs/en/monitoring" />
+  <Card title="Deployment" href="/docs/en/deployment" />
+</Cards>

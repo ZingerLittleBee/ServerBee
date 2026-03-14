@@ -21,10 +21,10 @@ import { Route as AuthedSettingsTasksRouteImport } from './routes/_authed/settin
 import { Route as AuthedSettingsSecurityRouteImport } from './routes/_authed/settings/security'
 import { Route as AuthedSettingsPingTasksRouteImport } from './routes/_authed/settings/ping-tasks'
 import { Route as AuthedSettingsNotificationsRouteImport } from './routes/_authed/settings/notifications'
+import { Route as AuthedSettingsCapabilitiesRouteImport } from './routes/_authed/settings/capabilities'
 import { Route as AuthedSettingsAuditLogsRouteImport } from './routes/_authed/settings/audit-logs'
 import { Route as AuthedSettingsApiKeysRouteImport } from './routes/_authed/settings/api-keys'
 import { Route as AuthedSettingsAlertsRouteImport } from './routes/_authed/settings/alerts'
-import { Route as AuthedSettingsCapabilitiesRouteImport } from './routes/_authed/settings/capabilities'
 import { Route as AuthedServersIdRouteImport } from './routes/_authed/servers/$id'
 
 const StatusRoute = StatusRouteImport.update({
@@ -87,6 +87,12 @@ const AuthedSettingsNotificationsRoute =
     path: '/settings/notifications',
     getParentRoute: () => AuthedRoute,
   } as any)
+const AuthedSettingsCapabilitiesRoute =
+  AuthedSettingsCapabilitiesRouteImport.update({
+    id: '/settings/capabilities',
+    path: '/settings/capabilities',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 const AuthedSettingsAuditLogsRoute = AuthedSettingsAuditLogsRouteImport.update({
   id: '/settings/audit-logs',
   path: '/settings/audit-logs',
@@ -102,12 +108,6 @@ const AuthedSettingsAlertsRoute = AuthedSettingsAlertsRouteImport.update({
   path: '/settings/alerts',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedSettingsCapabilitiesRoute =
-  AuthedSettingsCapabilitiesRouteImport.update({
-    id: '/settings/capabilities',
-    path: '/settings/capabilities',
-    getParentRoute: () => AuthedRoute,
-  } as any)
 const AuthedServersIdRoute = AuthedServersIdRouteImport.update({
   id: '/servers/$id',
   path: '/servers/$id',
@@ -320,6 +320,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsNotificationsRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/settings/capabilities': {
+      id: '/_authed/settings/capabilities'
+      path: '/settings/capabilities'
+      fullPath: '/settings/capabilities'
+      preLoaderRoute: typeof AuthedSettingsCapabilitiesRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/settings/audit-logs': {
       id: '/_authed/settings/audit-logs'
       path: '/settings/audit-logs'
@@ -339,13 +346,6 @@ declare module '@tanstack/react-router' {
       path: '/settings/alerts'
       fullPath: '/settings/alerts'
       preLoaderRoute: typeof AuthedSettingsAlertsRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/capabilities': {
-      id: '/_authed/settings/capabilities'
-      path: '/settings/capabilities'
-      fullPath: '/settings/capabilities'
-      preLoaderRoute: typeof AuthedSettingsCapabilitiesRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/servers/$id': {
