@@ -256,4 +256,4 @@ Interactive API documentation is available at `/swagger-ui` when the server is r
 
 ## License
 
-MIT
+[AGPL-3.0](LICENSE)
