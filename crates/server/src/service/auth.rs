@@ -593,4 +593,148 @@ mod tests {
         );
         assert!(!qr.is_empty(), "QR code base64 must not be empty");
     }
+
+    // ── DB integration tests ──────────────────────────────────────────────────
+
+    use crate::test_utils::setup_test_db;
+
+    #[tokio::test]
+    async fn test_create_user_success() {
+        let (db, _tmp) = setup_test_db().await;
+        let user = AuthService::create_user(&db, "alice", "password123", "admin")
+            .await
+            .expect("create_user should succeed");
+        assert_eq!(user.username, "alice");
+        assert_eq!(user.role, "admin");
+        assert!(!user.id.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_create_user_duplicate() {
+        let (db, _tmp) = setup_test_db().await;
+        AuthService::create_user(&db, "alice", "password123", "admin")
+            .await
+            .expect("first create should succeed");
+        let result = AuthService::create_user(&db, "alice", "other_pass", "member").await;
+        assert!(result.is_err(), "duplicate username should return an error");
+    }
+
+    #[tokio::test]
+    async fn test_login_success() {
+        let (db, _tmp) = setup_test_db().await;
+        AuthService::create_user(&db, "bob", "secret123", "member")
+            .await
+            .expect("create_user should succeed");
+        let (session, user) =
+            AuthService::login(&db, "bob", "secret123", "127.0.0.1", "test-agent", 3600)
+                .await
+                .expect("login should succeed");
+        assert_eq!(user.username, "bob");
+        assert!(!session.token.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_login_wrong_password() {
+        let (db, _tmp) = setup_test_db().await;
+        AuthService::create_user(&db, "carol", "correct_pass", "member")
+            .await
+            .expect("create_user should succeed");
+        let result =
+            AuthService::login(&db, "carol", "wrong_pass", "127.0.0.1", "test-agent", 3600).await;
+        assert!(result.is_err(), "wrong password should return an error");
+    }
+
+    #[tokio::test]
+    async fn test_login_nonexistent_user() {
+        let (db, _tmp) = setup_test_db().await;
+        let result =
+            AuthService::login(&db, "nobody", "pass", "127.0.0.1", "test-agent", 3600).await;
+        assert!(
+            result.is_err(),
+            "logging in as nonexistent user should error"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_session_valid() {
+        let (db, _tmp) = setup_test_db().await;
+        AuthService::create_user(&db, "dave", "pass1234", "member")
+            .await
+            .expect("create_user should succeed");
+        let (session, _user) =
+            AuthService::login(&db, "dave", "pass1234", "127.0.0.1", "ua", 3600)
+                .await
+                .expect("login should succeed");
+        let validated = AuthService::validate_session(&db, &session.token, 3600)
+            .await
+            .expect("validate_session should not error");
+        assert!(validated.is_some(), "valid token should return a user");
+        assert_eq!(validated.unwrap().username, "dave");
+    }
+
+    #[tokio::test]
+    async fn test_validate_session_invalid_token() {
+        let (db, _tmp) = setup_test_db().await;
+        let result = AuthService::validate_session(&db, "fake_token_that_does_not_exist", 3600)
+            .await
+            .expect("validate_session should not error");
+        assert!(result.is_none(), "invalid token should return None");
+    }
+
+    #[tokio::test]
+    async fn test_create_and_validate_api_key() {
+        let (db, _tmp) = setup_test_db().await;
+        let user = AuthService::create_user(&db, "eve", "pass5678", "admin")
+            .await
+            .expect("create_user should succeed");
+        let (_model, raw_key) = AuthService::create_api_key(&db, &user.id, "my-key")
+            .await
+            .expect("create_api_key should succeed");
+        assert!(raw_key.starts_with("sb_"), "raw key should start with sb_");
+
+        let validated = AuthService::validate_api_key(&db, &raw_key)
+            .await
+            .expect("validate_api_key should not error");
+        assert!(validated.is_some(), "valid api key should return a user");
+        assert_eq!(validated.unwrap().username, "eve");
+    }
+
+    #[tokio::test]
+    async fn test_validate_api_key_invalid() {
+        let (db, _tmp) = setup_test_db().await;
+        let result = AuthService::validate_api_key(&db, "sb_totally_fake_key_here_xyz")
+            .await
+            .expect("validate_api_key should not error");
+        assert!(result.is_none(), "invalid api key should return None");
+    }
+
+    #[tokio::test]
+    async fn test_change_password_wrong_old() {
+        let (db, _tmp) = setup_test_db().await;
+        let user = AuthService::create_user(&db, "frank", "real_pass", "member")
+            .await
+            .expect("create_user should succeed");
+        let result =
+            AuthService::change_password(&db, &user.id, "wrong_old_pass", "new_pass123").await;
+        assert!(result.is_err(), "wrong old password should return an error");
+    }
+
+    #[tokio::test]
+    async fn test_change_password_success() {
+        let (db, _tmp) = setup_test_db().await;
+        let user = AuthService::create_user(&db, "grace", "old_pass1", "member")
+            .await
+            .expect("create_user should succeed");
+        AuthService::change_password(&db, &user.id, "old_pass1", "new_pass99")
+            .await
+            .expect("change_password should succeed");
+        // Login with new password should succeed
+        let result =
+            AuthService::login(&db, "grace", "new_pass99", "127.0.0.1", "ua", 3600).await;
+        assert!(result.is_ok(), "login with new password should succeed");
+        // Login with old password should fail
+        let result2 =
+            AuthService::login(&db, "grace", "old_pass1", "127.0.0.1", "ua", 3600).await;
+        assert!(result2.is_err(), "login with old password should fail");
+    }
 }

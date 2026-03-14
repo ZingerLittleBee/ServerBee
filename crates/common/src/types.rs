@@ -23,7 +23,7 @@ pub struct SystemInfo {
     pub protocol_version: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SystemReport {
     pub cpu: f64,
     pub mem_used: i64,

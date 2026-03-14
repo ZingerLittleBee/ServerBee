@@ -19,6 +19,8 @@ const typeLabels: Record<NotifyType, string> = {
   email: 'Email'
 }
 
+const SENSITIVE_FIELDS = new Set(['password', 'bot_token', 'device_key'])
+
 function NotificationsPage() {
   const queryClient = useQueryClient()
   const [showForm, setShowForm] = useState(false)
@@ -189,7 +191,7 @@ function NotificationsPage() {
                   onChange={(e) => setConfigFields((prev) => ({ ...prev, [key]: e.target.value }))}
                   placeholder={label}
                   required
-                  type="text"
+                  type={SENSITIVE_FIELDS.has(key) ? 'password' : 'text'}
                   value={configFields[key] ?? ''}
                 />
               ))}

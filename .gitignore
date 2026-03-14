@@ -12,6 +12,7 @@ target
 # Environment variables
 .env
 .env*.local
+.env.test
 
 # IDEs and editors
 .vscode/*

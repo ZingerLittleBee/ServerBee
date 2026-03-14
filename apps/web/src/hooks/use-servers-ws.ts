@@ -55,7 +55,7 @@ const STATIC_FIELDS = new Set([
   'group_id'
 ])
 
-function mergeServerUpdate(prev: ServerMetrics[], incoming: ServerMetrics[]): ServerMetrics[] {
+export function mergeServerUpdate(prev: ServerMetrics[], incoming: ServerMetrics[]): ServerMetrics[] {
   const updated = [...prev]
   for (const server of incoming) {
     const idx = updated.findIndex((s) => s.id === server.id)
@@ -73,7 +73,7 @@ function mergeServerUpdate(prev: ServerMetrics[], incoming: ServerMetrics[]): Se
   return updated
 }
 
-function setServerOnlineStatus(prev: ServerMetrics[], serverId: string, online: boolean): ServerMetrics[] {
+export function setServerOnlineStatus(prev: ServerMetrics[], serverId: string, online: boolean): ServerMetrics[] {
   return prev.map((s) => (s.id === serverId ? { ...s, online } : s))
 }
 

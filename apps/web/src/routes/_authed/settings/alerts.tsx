@@ -4,7 +4,7 @@ import { AlertTriangle, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
-import type { AlertRule, AlertRuleItem, NotificationGroup } from '@/lib/api-schema'
+import type { AlertRule, AlertRuleItem, AlertStateResponse, NotificationGroup } from '@/lib/api-schema'
 
 export const Route = createFileRoute('/_authed/settings/alerts')({
   component: AlertsPage
@@ -15,8 +15,30 @@ interface Server {
   name: string
 }
 
+const THRESHOLD_TYPES = new Set([
+  'cpu',
+  'memory',
+  'swap',
+  'disk',
+  'load1',
+  'load5',
+  'load15',
+  'tcp_conn',
+  'udp_conn',
+  'process',
+  'net_in_speed',
+  'net_out_speed',
+  'temperature',
+  'gpu'
+])
+
+const CYCLE_TYPES = new Set(['transfer_in_cycle', 'transfer_out_cycle', 'transfer_all_cycle'])
+
 const ruleTypes = [
   { label: 'CPU %', value: 'cpu' },
+  { label: 'Memory (bytes)', value: 'memory' },
+  { label: 'Swap (bytes)', value: 'swap' },
+  { label: 'Disk (bytes)', value: 'disk' },
   { label: 'Load 1m', value: 'load1' },
   { label: 'Load 5m', value: 'load5' },
   { label: 'Load 15m', value: 'load15' },
@@ -27,8 +49,34 @@ const ruleTypes = [
   { label: 'Network Out (B/s)', value: 'net_out_speed' },
   { label: 'Temperature', value: 'temperature' },
   { label: 'GPU %', value: 'gpu' },
-  { label: 'Offline', value: 'offline' }
+  { label: 'Offline', value: 'offline' },
+  { label: 'Transfer In (cycle)', value: 'transfer_in_cycle' },
+  { label: 'Transfer Out (cycle)', value: 'transfer_out_cycle' },
+  { label: 'Transfer Total (cycle)', value: 'transfer_all_cycle' },
+  { label: 'Expiration', value: 'expiration' }
 ]
+
+function formatRuleItem(item: AlertRuleItem): string {
+  if (item.rule_type === 'offline') {
+    return `offline ${item.duration ?? 60}s`
+  }
+  if (item.rule_type === 'expiration') {
+    return `expires in ${item.duration ?? 7}d`
+  }
+  if (item.cycle_limit) {
+    return `${item.rule_type} > ${item.cycle_limit}B/${item.cycle_interval ?? 'month'}`
+  }
+  if (item.min && item.max) {
+    return `${item.rule_type} [${item.min}, ${item.max}]`
+  }
+  if (item.min) {
+    return `${item.rule_type} ≥ ${item.min}`
+  }
+  if (item.max) {
+    return `${item.rule_type} ≥ ${item.max}`
+  }
+  return item.rule_type
+}
 
 function AlertsPage() {
   const queryClient = useQueryClient()
@@ -36,9 +84,10 @@ function AlertsPage() {
   const [name, setName] = useState('')
   const [triggerMode, setTriggerMode] = useState('always')
   const [groupId, setGroupId] = useState('')
-  const [ruleItems, setRuleItems] = useState<AlertRuleItem[]>([{ rule_type: 'cpu', max: 90 }])
+  const [ruleItems, setRuleItems] = useState<AlertRuleItem[]>([{ rule_type: 'cpu', min: 90 }])
   const [coverType, setCoverType] = useState<'all' | 'exclude' | 'include'>('all')
   const [serverIds, setServerIds] = useState<string[]>([])
+  const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null)
 
   const { data: rules, isLoading } = useQuery<AlertRule[]>({
     queryKey: ['alert-rules'],
@@ -54,6 +103,13 @@ function AlertsPage() {
     queryKey: ['servers'],
     queryFn: () => api.get<Server[]>('/api/servers'),
     enabled: showForm
+  })
+
+  const { data: states } = useQuery<AlertStateResponse[]>({
+    queryKey: ['alert-rule-states', expandedRuleId],
+    queryFn: () => api.get<AlertStateResponse[]>(`/api/alert-rules/${expandedRuleId}/states`),
+    enabled: !!expandedRuleId,
+    refetchInterval: 10_000
   })
 
   const createMutation = useMutation({
@@ -90,7 +146,7 @@ function AlertsPage() {
     setName('')
     setTriggerMode('always')
     setGroupId('')
-    setRuleItems([{ rule_type: 'cpu', max: 90 }])
+    setRuleItems([{ rule_type: 'cpu', min: 90 }])
     setCoverType('all')
     setServerIds([])
     setShowForm(false)
@@ -112,7 +168,7 @@ function AlertsPage() {
   }
 
   const addRuleItem = () => {
-    setRuleItems((prev) => [...prev, { rule_type: 'cpu', max: 90 }])
+    setRuleItems((prev) => [...prev, { rule_type: 'cpu', min: 90 }])
   }
 
   const removeRuleItem = (index: number) => {
@@ -236,14 +292,65 @@ function AlertsPage() {
                         </option>
                       ))}
                     </select>
-                    {item.rule_type !== 'offline' && (
+                    {THRESHOLD_TYPES.has(item.rule_type) && (
+                      <>
+                        <input
+                          className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                          onChange={(e) => updateRuleItem(index, 'min', Number.parseFloat(e.target.value) || 0)}
+                          placeholder="Threshold ≥"
+                          type="number"
+                          value={item.min ?? ''}
+                        />
+                        <input
+                          className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                          onChange={(e) => updateRuleItem(index, 'max', Number.parseFloat(e.target.value) || 0)}
+                          placeholder="and ≤ (opt)"
+                          type="number"
+                          value={item.max ?? ''}
+                        />
+                      </>
+                    )}
+                    {item.rule_type === 'offline' && (
                       <input
-                        className="flex h-9 w-24 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                        onChange={(e) => updateRuleItem(index, 'max', Number.parseFloat(e.target.value) || 0)}
-                        placeholder="Threshold"
+                        className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                        onChange={(e) => updateRuleItem(index, 'duration', Number.parseInt(e.target.value, 10) || 60)}
+                        placeholder="Duration (s)"
                         type="number"
-                        value={item.max ?? ''}
+                        value={item.duration ?? 60}
                       />
+                    )}
+                    {item.rule_type === 'expiration' && (
+                      <input
+                        className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                        onChange={(e) => updateRuleItem(index, 'duration', Number.parseInt(e.target.value, 10) || 7)}
+                        placeholder="Days before"
+                        type="number"
+                        value={item.duration ?? 7}
+                      />
+                    )}
+                    {CYCLE_TYPES.has(item.rule_type) && (
+                      <>
+                        <select
+                          className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                          onChange={(e) => updateRuleItem(index, 'cycle_interval', e.target.value)}
+                          value={item.cycle_interval ?? 'month'}
+                        >
+                          <option value="hour">Hour</option>
+                          <option value="day">Day</option>
+                          <option value="week">Week</option>
+                          <option value="month">Month</option>
+                          <option value="year">Year</option>
+                        </select>
+                        <input
+                          className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                          onChange={(e) =>
+                            updateRuleItem(index, 'cycle_limit', Number.parseInt(e.target.value, 10) || 0)
+                          }
+                          placeholder="Limit (bytes)"
+                          type="number"
+                          value={item.cycle_limit ?? ''}
+                        />
+                      </>
                     )}
                     {ruleItems.length > 1 && (
                       <Button onClick={() => removeRuleItem(index)} size="sm" type="button" variant="ghost">
@@ -280,41 +387,77 @@ function AlertsPage() {
               {rules.map((rule) => {
                 const items: AlertRuleItem[] = JSON.parse(rule.rules_json || '[]')
                 return (
-                  <div className="flex items-center justify-between px-4 py-3" key={rule.id}>
-                    <div className="flex items-center gap-3">
-                      <AlertTriangle
-                        className={`size-4 ${rule.enabled ? 'text-amber-500' : 'text-muted-foreground'}`}
-                      />
-                      <div>
-                        <p className="font-medium text-sm">
-                          {rule.name}
-                          {!rule.enabled && <span className="ml-2 text-muted-foreground text-xs">(disabled)</span>}
-                        </p>
-                        <p className="text-muted-foreground text-xs">
-                          {items.map((item) => `${item.rule_type}${item.max ? ` >= ${item.max}` : ''}`).join(' AND ')} |{' '}
-                          {rule.trigger_mode}
-                        </p>
+                  <>
+                    <div className="flex items-center justify-between px-4 py-3" key={rule.id}>
+                      <div className="flex items-center gap-3">
+                        <AlertTriangle
+                          className={`size-4 ${rule.enabled ? 'text-amber-500' : 'text-muted-foreground'}`}
+                        />
+                        <div>
+                          <p className="font-medium text-sm">
+                            {rule.name}
+                            {!rule.enabled && <span className="ml-2 text-muted-foreground text-xs">(disabled)</span>}
+                            <button
+                              className="ml-2 rounded-full bg-muted px-2 py-0.5 text-muted-foreground text-xs hover:bg-muted/80"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setExpandedRuleId(expandedRuleId === rule.id ? null : rule.id)
+                              }}
+                              type="button"
+                            >
+                              States
+                            </button>
+                          </p>
+                          <p className="text-muted-foreground text-xs">
+                            {items.map(formatRuleItem).join(' AND ')} | {rule.trigger_mode}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button
+                          onClick={() => toggleMutation.mutate({ id: rule.id, enabled: !rule.enabled })}
+                          size="sm"
+                          variant="outline"
+                        >
+                          {rule.enabled ? 'Disable' : 'Enable'}
+                        </Button>
+                        <Button
+                          aria-label={`Delete rule ${rule.name}`}
+                          disabled={deleteMutation.isPending}
+                          onClick={() => deleteMutation.mutate(rule.id)}
+                          size="sm"
+                          variant="destructive"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
                       </div>
                     </div>
-                    <div className="flex gap-1">
-                      <Button
-                        onClick={() => toggleMutation.mutate({ id: rule.id, enabled: !rule.enabled })}
-                        size="sm"
-                        variant="outline"
-                      >
-                        {rule.enabled ? 'Disable' : 'Enable'}
-                      </Button>
-                      <Button
-                        aria-label={`Delete rule ${rule.name}`}
-                        disabled={deleteMutation.isPending}
-                        onClick={() => deleteMutation.mutate(rule.id)}
-                        size="sm"
-                        variant="destructive"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </Button>
-                    </div>
-                  </div>
+                    {expandedRuleId === rule.id && (
+                      <div className="border-t bg-muted/20 px-4 py-2">
+                        {states && states.length > 0 ? (
+                          <div className="space-y-1">
+                            {states.map((s) => (
+                              <div className="flex items-center justify-between text-xs" key={s.server_id}>
+                                <span className="flex items-center gap-2">
+                                  <span
+                                    className={`size-2 rounded-full ${s.resolved ? 'bg-green-500' : 'bg-red-500'}`}
+                                  />
+                                  {s.server_name}
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {s.resolved ? 'Resolved' : `Triggered (${s.count}x)`}
+                                  {' · '}
+                                  {new Date(s.first_triggered_at).toLocaleString()}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-muted-foreground text-xs">No triggered states</p>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )
               })}
             </div>

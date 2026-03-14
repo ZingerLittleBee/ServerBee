@@ -36,6 +36,16 @@ export type AlertRuleItem = S['AlertRuleItem']
 export type CreateAlertRule = S['CreateAlertRule']
 export type UpdateAlertRule = S['UpdateAlertRule']
 
+export interface AlertStateResponse {
+  count: number
+  first_triggered_at: string
+  last_notified_at: string
+  resolved: boolean
+  resolved_at: string | null
+  server_id: string
+  server_name: string
+}
+
 // Notifications
 export type Notification = S['Notification']
 export type NotificationGroup = S['NotificationGroup']

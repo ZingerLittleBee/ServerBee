@@ -64,6 +64,17 @@ pub struct UpdateAlertRule {
     pub enabled: Option<bool>,
 }
 
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct AlertStateResponse {
+    pub server_id: String,
+    pub server_name: String,
+    pub first_triggered_at: chrono::DateTime<chrono::Utc>,
+    pub last_notified_at: chrono::DateTime<chrono::Utc>,
+    pub count: i32,
+    pub resolved: bool,
+    pub resolved_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
 // ── Alert State (hot cache + DB persistence) ──
 
 #[derive(Debug, Clone)]
@@ -273,6 +284,39 @@ impl AlertService {
         model.updated_at = Set(Utc::now());
 
         Ok(model.update(db).await?)
+    }
+
+    pub async fn list_states(
+        db: &DatabaseConnection,
+        rule_id: &str,
+    ) -> Result<Vec<AlertStateResponse>, AppError> {
+        let states = alert_state::Entity::find()
+            .filter(alert_state::Column::RuleId.eq(rule_id))
+            .order_by_desc(alert_state::Column::UpdatedAt)
+            .all(db)
+            .await
+            .map_err(AppError::from)?;
+
+        let mut result = Vec::new();
+        for state in states {
+            let server_name = server::Entity::find_by_id(&state.server_id)
+                .one(db)
+                .await
+                .map_err(AppError::from)?
+                .map(|s| s.name)
+                .unwrap_or_else(|| "Unknown".to_string());
+
+            result.push(AlertStateResponse {
+                server_id: state.server_id,
+                server_name,
+                first_triggered_at: state.first_triggered_at,
+                last_notified_at: state.last_notified_at,
+                count: state.count,
+                resolved: state.resolved,
+                resolved_at: state.resolved_at,
+            });
+        }
+        Ok(result)
     }
 
     pub async fn delete(db: &DatabaseConnection, id: &str) -> Result<(), AppError> {

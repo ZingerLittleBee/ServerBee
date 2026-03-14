@@ -63,3 +63,88 @@ impl ConfigService {
         Self::set(db, key, &json).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::setup_test_db;
+
+    #[tokio::test]
+    async fn test_get_set_config() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // Set a key-value pair
+        ConfigService::set(&db, "test_key", "test_value")
+            .await
+            .expect("set should succeed");
+
+        // Get it back and verify
+        let value = ConfigService::get(&db, "test_key")
+            .await
+            .expect("get should succeed");
+
+        assert_eq!(value, Some("test_value".to_string()), "Retrieved value should match what was set");
+    }
+
+    #[tokio::test]
+    async fn test_get_nonexistent() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // Get a key that was never set
+        let value = ConfigService::get(&db, "nonexistent_key")
+            .await
+            .expect("get for missing key should succeed (not error)");
+
+        assert_eq!(value, None, "Missing key should return None");
+    }
+
+    #[tokio::test]
+    async fn test_set_upsert() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // Set initial value
+        ConfigService::set(&db, "upsert_key", "initial")
+            .await
+            .expect("first set should succeed");
+
+        // Overwrite with new value
+        ConfigService::set(&db, "upsert_key", "updated")
+            .await
+            .expect("second set (upsert) should succeed");
+
+        let value = ConfigService::get(&db, "upsert_key")
+            .await
+            .expect("get after upsert should succeed");
+
+        assert_eq!(value, Some("updated".to_string()), "Value should be updated after upsert");
+    }
+
+    #[tokio::test]
+    async fn test_get_typed() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // Store a JSON-serializable typed value
+        let original: Vec<u32> = vec![1, 2, 3];
+        ConfigService::set_typed(&db, "typed_key", &original)
+            .await
+            .expect("set_typed should succeed");
+
+        // Retrieve and deserialize
+        let retrieved: Option<Vec<u32>> = ConfigService::get_typed(&db, "typed_key")
+            .await
+            .expect("get_typed should succeed");
+
+        assert_eq!(retrieved, Some(vec![1, 2, 3]), "Typed value should round-trip correctly");
+    }
+
+    #[tokio::test]
+    async fn test_get_typed_nonexistent() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let result: Option<u64> = ConfigService::get_typed(&db, "no_such_key")
+            .await
+            .expect("get_typed for missing key should return None, not error");
+
+        assert_eq!(result, None, "Missing key should return None for get_typed");
+    }
+}

@@ -303,3 +303,69 @@ impl PingService {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::setup_test_db;
+
+    fn test_agent_manager() -> crate::service::agent_manager::AgentManager {
+        let (tx, _) = tokio::sync::broadcast::channel(16);
+        crate::service::agent_manager::AgentManager::new(tx)
+    }
+
+    fn sample_create_ping_task() -> CreatePingTask {
+        CreatePingTask {
+            name: "Test HTTP Ping".to_string(),
+            probe_type: "http".to_string(),
+            target: "https://example.com".to_string(),
+            interval: 60,
+            server_ids: vec![],
+            enabled: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_and_list_ping_task() {
+        let (db, _tmp) = setup_test_db().await;
+        let agent_manager = test_agent_manager();
+
+        let input = sample_create_ping_task();
+        let created = PingService::create(&db, &agent_manager, input).await.unwrap();
+
+        let list = PingService::list(&db).await.unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, created.id);
+        assert_eq!(list[0].name, "Test HTTP Ping");
+        assert_eq!(list[0].probe_type, "http");
+    }
+
+    #[tokio::test]
+    async fn test_delete_ping_task() {
+        let (db, _tmp) = setup_test_db().await;
+        let agent_manager = test_agent_manager();
+
+        let input = sample_create_ping_task();
+        let created = PingService::create(&db, &agent_manager, input).await.unwrap();
+
+        PingService::delete(&db, &agent_manager, &created.id).await.unwrap();
+
+        let list = PingService::list(&db).await.unwrap();
+        assert!(list.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_ping_task() {
+        let (db, _tmp) = setup_test_db().await;
+        let agent_manager = test_agent_manager();
+
+        let input = sample_create_ping_task();
+        let created = PingService::create(&db, &agent_manager, input).await.unwrap();
+
+        let fetched = PingService::get(&db, &created.id).await.unwrap();
+        assert_eq!(fetched.id, created.id);
+        assert_eq!(fetched.target, "https://example.com");
+        assert_eq!(fetched.interval, 60);
+        assert!(fetched.enabled);
+    }
+}
