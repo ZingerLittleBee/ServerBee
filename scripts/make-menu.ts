@@ -376,9 +376,9 @@ const COMMANDS: CommandDefinition[] = [
     key: 'dev-full',
     name: 'dev:full',
     category: 'Workspace',
-    description: 'Build web + start server in dev mode (admin/admin123)',
+    description: 'Start server + web dev server concurrently (admin/admin123)',
     command:
-      'cd apps/web && bun install && bun run build && cd ../.. && SB_ADMIN__PASSWORD=admin123 SB_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server',
+      'SB_ADMIN__PASSWORD=admin123 SB_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server & cd apps/web && bun install && bun run dev',
     featured: true
   },
   {
