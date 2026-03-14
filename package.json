@@ -33,7 +33,7 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "build:web": "bun --filter @serverbee/web build",
-    "typecheck": "bun --filter @serverbee/ui check-types && bun --filter @serverbee/web typecheck && bun --filter fumadocs types:check",
+    "typecheck": "bun --filter @serverbee/ui check-types && bun --filter @serverbee/web typecheck && bun --filter @serverbee/docs types:check",
     "check-types": "bun run typecheck",
     "dev:web": "turbo -F web dev",
     "test": "bun --filter @serverbee/web test",

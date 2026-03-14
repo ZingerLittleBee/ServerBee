@@ -15,7 +15,7 @@
 ### Task 1: 修复 configuration.mdx 环境变量映射 (CN)
 
 **Files:**
-- Modify: `apps/fumadocs/content/docs/cn/configuration.mdx`
+- Modify: `apps/docs/content/docs/cn/configuration.mdx`
 
 代码中使用 `Env::prefixed("SB_").split("__")` (双下划线)，中文文档错误使用单下划线。
 
@@ -57,7 +57,7 @@ SB_COLLECTOR_ENABLE_GPU        →   SB_COLLECTOR__ENABLE_GPU
 ### Task 2: 修复 quick-start.mdx 环境变量 (CN)
 
 **Files:**
-- Modify: `apps/fumadocs/content/docs/cn/quick-start.mdx`
+- Modify: `apps/docs/content/docs/cn/quick-start.mdx`
 
 - [ ] **Step 1: 修复 Docker Compose 示例中的环境变量**
 
@@ -80,7 +80,7 @@ environment:
 ### Task 3: 修复 server.mdx 环境变量 (CN)
 
 **Files:**
-- Modify: `apps/fumadocs/content/docs/cn/server.mdx`
+- Modify: `apps/docs/content/docs/cn/server.mdx`
 
 - [ ] **Step 1: 修复环境变量章节**
 
@@ -95,7 +95,7 @@ environment:
 ### Task 4: 修复 agent.mdx 自动更新描述 (CN)
 
 **Files:**
-- Modify: `apps/fumadocs/content/docs/cn/agent.mdx`
+- Modify: `apps/docs/content/docs/cn/agent.mdx`
 
 - [ ] **Step 1: 更新自动更新章节**
 
@@ -132,7 +132,7 @@ curl -X POST https://your-server/api/servers/{id}/upgrade \
 ### Task 5: 修复 terminal.mdx 审计日志描述 (CN)
 
 **Files:**
-- Modify: `apps/fumadocs/content/docs/cn/terminal.mdx`
+- Modify: `apps/docs/content/docs/cn/terminal.mdx`
 
 - [ ] **Step 1: 更新安全说明中的审计日志描述**
 
@@ -159,7 +159,7 @@ Web 终端需要目标服务器启用 `terminal` 能力（CAP_TERMINAL）。如�
 ### Task 6: 更新 index.mdx 快速链接 (CN)
 
 **Files:**
-- Modify: `apps/fumadocs/content/docs/cn/index.mdx`
+- Modify: `apps/docs/content/docs/cn/index.mdx`
 
 - [ ] **Step 1: 在快速链接卡片中添加新页面入口**
 
@@ -188,7 +188,7 @@ Web 终端需要目标服务器启用 `terminal` 能力（CAP_TERMINAL）。如�
 - [ ] **Step 7: Commit**
 
 ```bash
-git add apps/fumadocs/content/docs/cn/
+git add apps/docs/content/docs/cn/
 git commit -m "docs(cn): fix env var mapping and update outdated feature descriptions"
 ```
 
@@ -199,7 +199,7 @@ git commit -m "docs(cn): fix env var mapping and update outdated feature descrip
 ### Task 7: 修复 terminal.mdx 审计描述 (EN)
 
 **Files:**
-- Modify: `apps/fumadocs/content/docs/en/terminal.mdx`
+- Modify: `apps/docs/content/docs/en/terminal.mdx`
 
 英文版 terminal.mdx 没有明确标记"P2 阶段"，但缺少 capability 限制说明。
 
@@ -218,7 +218,7 @@ Web terminal access also requires the **terminal** capability (CAP_TERMINAL) to 
 ### Task 8: 更新 index.mdx 快速链接 (EN)
 
 **Files:**
-- Modify: `apps/fumadocs/content/docs/en/index.mdx`
+- Modify: `apps/docs/content/docs/en/index.mdx`
 
 - [ ] **Step 1: 扩展 Cards 组件添加新页面链接**
 
@@ -244,7 +244,7 @@ Web terminal access also requires the **terminal** capability (CAP_TERMINAL) to 
 - [ ] **Step 2: Commit**
 
 ```bash
-git add apps/fumadocs/content/docs/en/terminal.mdx apps/fumadocs/content/docs/en/index.mdx
+git add apps/docs/content/docs/en/terminal.mdx apps/docs/content/docs/en/index.mdx
 git commit -m "docs(en): add capability warning to terminal and update quick links"
 ```
 
@@ -255,7 +255,7 @@ git commit -m "docs(en): add capability warning to terminal and update quick lin
 ### Task 9: 创建 capabilities.mdx (CN)
 
 **Files:**
-- Create: `apps/fumadocs/content/docs/cn/capabilities.mdx`
+- Create: `apps/docs/content/docs/cn/capabilities.mdx`
 
 - [ ] **Step 1: 编写中文功能开关文档**
 
@@ -375,7 +375,7 @@ ServerBee 采用 **defense in depth**（纵深防御）策略，在 Server 端�
 ### Task 10: 创建 capabilities.mdx (EN)
 
 **Files:**
-- Create: `apps/fumadocs/content/docs/en/capabilities.mdx`
+- Create: `apps/docs/content/docs/en/capabilities.mdx`
 
 - [ ] **Step 1: 编写英文功能开关文档**
 
@@ -398,7 +398,7 @@ icon: ToggleRight
 - [ ] **Step 2: Commit**
 
 ```bash
-git add apps/fumadocs/content/docs/cn/capabilities.mdx apps/fumadocs/content/docs/en/capabilities.mdx
+git add apps/docs/content/docs/cn/capabilities.mdx apps/docs/content/docs/en/capabilities.mdx
 git commit -m "docs: add capabilities documentation (CN + EN)"
 ```
 
@@ -409,7 +409,7 @@ git commit -m "docs: add capabilities documentation (CN + EN)"
 ### Task 11: 创建 security.mdx (CN)
 
 **Files:**
-- Create: `apps/fumadocs/content/docs/cn/security.mdx`
+- Create: `apps/docs/content/docs/cn/security.mdx`
 
 - [ ] **Step 1: 编写中文安全设置文档**
 
@@ -535,7 +535,7 @@ Agent 注册端点同样受限：
 ### Task 12: 创建 security.mdx (EN)
 
 **Files:**
-- Create: `apps/fumadocs/content/docs/en/security.mdx`
+- Create: `apps/docs/content/docs/en/security.mdx`
 
 - [ ] **Step 1: 编写英文安全设置文档**
 
@@ -554,7 +554,7 @@ icon: Shield
 - [ ] **Step 2: Commit**
 
 ```bash
-git add apps/fumadocs/content/docs/cn/security.mdx apps/fumadocs/content/docs/en/security.mdx
+git add apps/docs/content/docs/cn/security.mdx apps/docs/content/docs/en/security.mdx
 git commit -m "docs: add security settings documentation (CN + EN)"
 ```
 
@@ -565,7 +565,7 @@ git commit -m "docs: add security settings documentation (CN + EN)"
 ### Task 13: 创建 status-page.mdx (CN)
 
 **Files:**
-- Create: `apps/fumadocs/content/docs/cn/status-page.mdx`
+- Create: `apps/docs/content/docs/cn/status-page.mdx`
 
 - [ ] **Step 1: 编写中文公开状态页文档**
 
@@ -648,7 +648,7 @@ GET /api/status
 ### Task 14: 创建 status-page.mdx (EN)
 
 **Files:**
-- Create: `apps/fumadocs/content/docs/en/status-page.mdx`
+- Create: `apps/docs/content/docs/en/status-page.mdx`
 
 - [ ] **Step 1: 编写英文公开状态页文档**
 
@@ -667,7 +667,7 @@ icon: Globe
 - [ ] **Step 2: Commit**
 
 ```bash
-git add apps/fumadocs/content/docs/cn/status-page.mdx apps/fumadocs/content/docs/en/status-page.mdx
+git add apps/docs/content/docs/cn/status-page.mdx apps/docs/content/docs/en/status-page.mdx
 git commit -m "docs: add public status page documentation (CN + EN)"
 ```
 
@@ -678,7 +678,7 @@ git commit -m "docs: add public status page documentation (CN + EN)"
 ### Task 15: 创建 admin.mdx (CN)
 
 **Files:**
-- Create: `apps/fumadocs/content/docs/cn/admin.mdx`
+- Create: `apps/docs/content/docs/cn/admin.mdx`
 
 - [ ] **Step 1: 编写中文管理员指南文档**
 
@@ -837,7 +837,7 @@ GET /api/audit-logs?limit=50&offset=0
 ### Task 16: 创建 admin.mdx (EN)
 
 **Files:**
-- Create: `apps/fumadocs/content/docs/en/admin.mdx`
+- Create: `apps/docs/content/docs/en/admin.mdx`
 
 - [ ] **Step 1: 编写英文管理员指南文档**
 
@@ -856,7 +856,7 @@ icon: UserCog
 - [ ] **Step 2: Commit**
 
 ```bash
-git add apps/fumadocs/content/docs/cn/admin.mdx apps/fumadocs/content/docs/en/admin.mdx
+git add apps/docs/content/docs/cn/admin.mdx apps/docs/content/docs/en/admin.mdx
 git commit -m "docs: add admin guide documentation (CN + EN)"
 ```
 
@@ -867,7 +867,7 @@ git commit -m "docs: add admin guide documentation (CN + EN)"
 ### Task 17: 创建 api-reference.mdx (CN)
 
 **Files:**
-- Create: `apps/fumadocs/content/docs/cn/api-reference.mdx`
+- Create: `apps/docs/content/docs/cn/api-reference.mdx`
 
 - [ ] **Step 1: 编写中文 API 参考文档**
 
@@ -1001,7 +1001,7 @@ API Key 格式为 `sb_` 前缀 + 43 字符随机字符串，创建时仅显示�
 ### Task 18: 创建 api-reference.mdx (EN)
 
 **Files:**
-- Create: `apps/fumadocs/content/docs/en/api-reference.mdx`
+- Create: `apps/docs/content/docs/en/api-reference.mdx`
 
 - [ ] **Step 1: 编写英文 API 参考文档**
 
@@ -1020,7 +1020,7 @@ icon: FileCode
 - [ ] **Step 2: Commit**
 
 ```bash
-git add apps/fumadocs/content/docs/cn/api-reference.mdx apps/fumadocs/content/docs/en/api-reference.mdx
+git add apps/docs/content/docs/cn/api-reference.mdx apps/docs/content/docs/en/api-reference.mdx
 git commit -m "docs: add API reference documentation (CN + EN)"
 ```
 
@@ -1031,8 +1031,8 @@ git commit -m "docs: add API reference documentation (CN + EN)"
 ### Task 19: 更新 meta.json 导航 (CN + EN)
 
 **Files:**
-- Modify: `apps/fumadocs/content/docs/cn/meta.json`
-- Modify: `apps/fumadocs/content/docs/en/meta.json`
+- Modify: `apps/docs/content/docs/cn/meta.json`
+- Modify: `apps/docs/content/docs/en/meta.json`
 
 - [ ] **Step 1: 更新中文 meta.json**
 
@@ -1101,12 +1101,12 @@ git commit -m "docs: add API reference documentation (CN + EN)"
 ### Task 20: 构建验证
 
 **Files:**
-- Verify: `apps/fumadocs/` (TypeScript + MDX build)
+- Verify: `apps/docs/` (TypeScript + MDX build)
 
 - [ ] **Step 1: 运行类型检查**
 
 ```bash
-cd apps/fumadocs && bun run types:check
+cd apps/docs && bun run types:check
 ```
 
 Expected: 无 TypeScript 错误
@@ -1114,7 +1114,7 @@ Expected: 无 TypeScript 错误
 - [ ] **Step 2: 运行 lint**
 
 ```bash
-cd apps/fumadocs && bun run lint
+cd apps/docs && bun run lint
 ```
 
 Expected: 无 Biome 错误
@@ -1122,7 +1122,7 @@ Expected: 无 Biome 错误
 - [ ] **Step 3: 运行构建**
 
 ```bash
-cd apps/fumadocs && bun run build
+cd apps/docs && bun run build
 ```
 
 Expected: 构建成功，所有 MDX 文件被正确处理
@@ -1130,7 +1130,7 @@ Expected: 构建成功，所有 MDX 文件被正确处理
 - [ ] **Step 4: Commit meta.json + PROGRESS.md 更新**
 
 ```bash
-git add apps/fumadocs/content/docs/cn/meta.json apps/fumadocs/content/docs/en/meta.json
+git add apps/docs/content/docs/cn/meta.json apps/docs/content/docs/en/meta.json
 git commit -m "docs: update navigation with new documentation pages"
 ```
 
