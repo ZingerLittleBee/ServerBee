@@ -5,7 +5,7 @@ use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 
 use crate::error::{ok, ApiResponse, AppError};
-use crate::service::alert::{AlertService, CreateAlertRule, UpdateAlertRule};
+use crate::service::alert::{AlertService, AlertStateResponse, CreateAlertRule, UpdateAlertRule};
 use crate::state::AppState;
 
 pub fn router() -> Router<Arc<AppState>> {
@@ -15,6 +15,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/alert-rules/{id}", get(get_rule))
         .route("/alert-rules/{id}", put(update_rule))
         .route("/alert-rules/{id}", delete(delete_rule))
+        .route("/alert-rules/{id}/states", get(list_states))
 }
 
 #[utoipa::path(
@@ -109,4 +110,22 @@ async fn delete_rule(
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     AlertService::delete(&state.db, &id).await?;
     ok("ok")
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/alert-rules/{id}/states",
+    tag = "alert-rules",
+    params(("id" = String, Path, description = "Alert rule ID")),
+    responses(
+        (status = 200, description = "Alert states for this rule", body = Vec<AlertStateResponse>),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+async fn list_states(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<Vec<AlertStateResponse>>>, AppError> {
+    let states = AlertService::list_states(&state.db, &id).await?;
+    ok(states)
 }
