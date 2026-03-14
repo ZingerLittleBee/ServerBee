@@ -361,15 +361,15 @@ const COMMANDS: CommandDefinition[] = [
     name: 'server:dev',
     category: 'Rust',
     description: 'Run server in dev mode (admin/admin123, no secure cookie)',
-    command: 'SB_ADMIN__PASSWORD=admin123 SB_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server',
+    command: 'SERVERBEE_ADMIN__PASSWORD=admin123 SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server',
     featured: true
   },
   {
     key: 'agent-dev',
     name: 'agent:dev',
     category: 'Rust',
-    description: 'Run agent connecting to local server (set SB_AUTO_DISCOVERY_KEY)',
-    command: 'SB_SERVER_URL=http://127.0.0.1:9527 cargo run -p serverbee-agent',
+    description: 'Run agent connecting to local server (set SERVERBEE_AUTO_DISCOVERY_KEY)',
+    command: 'SERVERBEE_SERVER_URL=http://127.0.0.1:9527 cargo run -p serverbee-agent',
     featured: true
   },
   {
@@ -378,7 +378,7 @@ const COMMANDS: CommandDefinition[] = [
     category: 'Workspace',
     description: 'Start server + web dev server concurrently (admin/admin123)',
     command:
-      'SB_ADMIN__PASSWORD=admin123 SB_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server & cd apps/web && bun install && bun run dev',
+      'SERVERBEE_ADMIN__PASSWORD=admin123 SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server & cd apps/web && bun install && bun run dev',
     featured: true
   },
   {

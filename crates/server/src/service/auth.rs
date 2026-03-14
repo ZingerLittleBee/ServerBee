@@ -187,15 +187,15 @@ impl AuthService {
     }
 
     /// Create a new API key for a user. Returns the model and the plaintext key.
-    /// The key has the format "sb_" + random base64url bytes.
-    /// Only the argon2 hash and a prefix (first 8 chars after "sb_") are stored.
+    /// The key has the format "serverbee_" + random base64url bytes.
+    /// Only the argon2 hash and a prefix (first 8 chars after "serverbee_") are stored.
     pub async fn create_api_key(
         db: &DatabaseConnection,
         user_id: &str,
         name: &str,
     ) -> Result<(api_key::Model, String), AppError> {
         let raw_key = Self::generate_api_key_raw();
-        let after_prefix = &raw_key[3..]; // strip "sb_"
+        let after_prefix = &raw_key[10..]; // strip "serverbee_"
         let key_prefix = &after_prefix[..8.min(after_prefix.len())];
         let key_hash = Self::hash_password(&raw_key)?;
         let now = Utc::now();
@@ -251,11 +251,11 @@ impl AuthService {
         db: &DatabaseConnection,
         key: &str,
     ) -> Result<Option<user::Model>, AppError> {
-        if !key.starts_with("sb_") || key.len() < 11 {
+        if !key.starts_with("serverbee_") || key.len() < 18 {
             return Ok(None);
         }
 
-        let after_prefix = &key[3..];
+        let after_prefix = &key[10..];
         let key_prefix = &after_prefix[..8.min(after_prefix.len())];
 
         let candidates = api_key::Entity::find()
@@ -344,11 +344,11 @@ impl AuthService {
         URL_SAFE_NO_PAD.encode(bytes)
     }
 
-    /// Generate a raw API key: "sb_" + 32 random bytes (base64url encoded).
+    /// Generate a raw API key: "serverbee_" + 32 random bytes (base64url encoded).
     pub fn generate_api_key_raw() -> String {
         let mut bytes = [0u8; 32];
         OsRng.fill_bytes(&mut bytes);
-        format!("sb_{}", URL_SAFE_NO_PAD.encode(bytes))
+        format!("serverbee_{}", URL_SAFE_NO_PAD.encode(bytes))
     }
 
     /// Check if the given TOTP code is valid for the user's secret.
@@ -556,14 +556,14 @@ mod tests {
         let key = AuthService::generate_api_key_raw();
 
         assert!(
-            key.starts_with("sb_"),
-            "API key must start with 'sb_' prefix"
+            key.starts_with("serverbee_"),
+            "API key must start with 'serverbee_' prefix"
         );
-        // "sb_" + 43 chars of base64url = 46 total
+        // "serverbee_" + 43 chars of base64url = 53 total
         assert_eq!(
             key.len(),
-            46,
-            "API key should be 46 chars (sb_ + 43), got {}",
+            53,
+            "API key should be 53 chars (serverbee_ + 43), got {}",
             key.len()
         );
     }
@@ -690,7 +690,7 @@ mod tests {
         let (_model, raw_key) = AuthService::create_api_key(&db, &user.id, "my-key")
             .await
             .expect("create_api_key should succeed");
-        assert!(raw_key.starts_with("sb_"), "raw key should start with sb_");
+        assert!(raw_key.starts_with("serverbee_"), "raw key should start with serverbee_");
 
         let validated = AuthService::validate_api_key(&db, &raw_key)
             .await
@@ -702,7 +702,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_api_key_invalid() {
         let (db, _tmp) = setup_test_db().await;
-        let result = AuthService::validate_api_key(&db, "sb_totally_fake_key_here_xyz")
+        let result = AuthService::validate_api_key(&db, "serverbee_totally_fake_key_here_xyz")
             .await
             .expect("validate_api_key should not error");
         assert!(result.is_none(), "invalid api key should return None");

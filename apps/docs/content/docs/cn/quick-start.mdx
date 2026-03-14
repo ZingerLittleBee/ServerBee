@@ -29,8 +29,8 @@ services:
     volumes:
       - serverbee-data:/data
     environment:
-      - SB_ADMIN__USERNAME=admin
-      - SB_ADMIN__PASSWORD=your_secure_password
+      - SERVERBEE_ADMIN__USERNAME=admin
+      - SERVERBEE_ADMIN__PASSWORD=your_secure_password
     restart: unless-stopped
 
 volumes:
@@ -44,7 +44,7 @@ docker compose up -d
 ```
 
 <Callout type="warn">
-务必将 `SB_ADMIN__PASSWORD` 修改为你自己的强密码。如果不设置密码，系统会自动生成随机密码并打印到日志中。
+务必将 `SERVERBEE_ADMIN__PASSWORD` 修改为你自己的强密码。如果不设置密码，系统会自动生成随机密码并打印到日志中。
 </Callout>
 
 启动完成后，打开浏览器访问 `http://your-server-ip:9527` 即可进入管理面板。
@@ -150,7 +150,7 @@ level = "info"
 首次启动 Agent 时，使用 Discovery Key 进行自动注册：
 
 ```bash
-SB_TOKEN="" SB_AUTO_DISCOVERY_KEY=YOUR_KEY serverbee-agent
+SERVERBEE_TOKEN="" SERVERBEE_AUTO_DISCOVERY_KEY=YOUR_KEY serverbee-agent
 ```
 
 Agent 会自动向 Server 注册，获取 Token 并写回配置文件。后续启动无需再提供 Discovery Key。

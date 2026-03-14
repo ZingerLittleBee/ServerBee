@@ -257,7 +257,7 @@ Server 启动时通过 `tokio::spawn` 创建多个后台任务：
 ```
 请求进入
   +-- Cookie: session_token=xxx  --> Session 认证（浏览器）
-  +-- Header: X-API-Key: sb_xxx  --> API Key 认证（自动化）
+  +-- Header: X-API-Key: serverbee_xxx  --> API Key 认证（自动化）
   +-- Query: ?token=xxx           --> Agent Token 认证（Agent WebSocket）
 ```
 
@@ -270,7 +270,7 @@ Server 启动时通过 `tokio::spawn` 创建多个后台任务：
 
 ### API Key 认证
 
-- Key 格式：`sb_` + 32 字节随机 base64url
+- Key 格式：`serverbee_` + 32 字节随机 base64url
 - 存储 argon2 哈希 + 前 8 位明文前缀
 - 校验时用前缀缩小查询范围，再用 argon2 验证
 

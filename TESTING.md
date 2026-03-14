@@ -134,7 +134,7 @@ cd apps/web && bun install && bun run build && cd ../..
 cargo build --workspace
 
 # 3. 启动 Server（设置管理员密码，开发环境关闭 secure cookie）
-SB_ADMIN__PASSWORD=admin123 SB_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server &
+SERVERBEE_ADMIN__PASSWORD=admin123 SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server &
 
 # 4. 获取 auto-discovery key（登录后调用 API）
 curl -s -c /tmp/sb-cookies.txt -X POST http://localhost:9527/api/auth/login \
@@ -143,7 +143,7 @@ curl -s -b /tmp/sb-cookies.txt http://localhost:9527/api/settings/auto-discovery
 # 返回 {"data":{"key":"<discovery_key>"}}
 
 # 5. 启动 Agent（server_url 是 HTTP 基础地址，不是 WS 路径）
-SB_SERVER_URL="http://127.0.0.1:9527" SB_AUTO_DISCOVERY_KEY="<discovery_key>" cargo run -p serverbee-agent &
+SERVERBEE_SERVER_URL="http://127.0.0.1:9527" SERVERBEE_AUTO_DISCOVERY_KEY="<discovery_key>" cargo run -p serverbee-agent &
 
 # Docker 方式
 docker compose up -d
@@ -151,7 +151,7 @@ docker compose up -d
 
 默认地址：`http://localhost:9527`，管理员用户名：`admin`
 
-> **注意**：`SB_SERVER_URL` 应设置为 HTTP 基础地址（如 `http://127.0.0.1:9527`），Agent 会自动拼接 `/api/agent/register` 和 `/api/agent/ws?token=` 路径。不要传入 WebSocket 路径。
+> **注意**：`SERVERBEE_SERVER_URL` 应设置为 HTTP 基础地址（如 `http://127.0.0.1:9527`），Agent 会自动拼接 `/api/agent/register` 和 `/api/agent/ws?token=` 路径。不要传入 WebSocket 路径。
 
 ### 验证清单 — 页面渲染
 

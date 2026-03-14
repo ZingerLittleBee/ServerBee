@@ -69,8 +69,8 @@ Agent 首次连接 Server 需要通过 Auto Discovery Key 进行注册。
 **方式一：通过环境变量注册**
 
 ```bash
-SB_SERVER_URL=ws://your-server-ip:9527 \
-SB_AUTO_DISCOVERY_KEY=YOUR_KEY \
+SERVERBEE_SERVER_URL=ws://your-server-ip:9527 \
+SERVERBEE_AUTO_DISCOVERY_KEY=YOUR_KEY \
 serverbee-agent
 ```
 
@@ -83,7 +83,7 @@ token = ""
 ```
 
 ```bash
-SB_AUTO_DISCOVERY_KEY=YOUR_KEY serverbee-agent
+SERVERBEE_AUTO_DISCOVERY_KEY=YOUR_KEY serverbee-agent
 ```
 
 ### 注册过程
@@ -132,7 +132,7 @@ file = "/var/log/serverbee-agent.log"
 | `log.level` | string | `"info"` | 日志级别 |
 | `log.file` | string | `""` | 日志文件路径，留空输出到 stdout |
 
-环境变量覆盖：使用 `SB_` 前缀，嵌套字段用 `__` 分隔。如 `SB_SERVER_URL`（顶层）、`SB_COLLECTOR__INTERVAL`（嵌套）、`SB_LOG__LEVEL`（嵌套）。
+环境变量覆盖：使用 `SERVERBEE_` 前缀，嵌套字段用 `__` 分隔。如 `SERVERBEE_SERVER_URL`（顶层）、`SERVERBEE_COLLECTOR__INTERVAL`（嵌套）、`SERVERBEE_LOG__LEVEL`（嵌套）。
 
 ## GPU 监控
 

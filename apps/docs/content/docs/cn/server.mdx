@@ -26,7 +26,7 @@ docker run -d \
   --name serverbee \
   -p 9527:9527 \
   -v serverbee-data:/data \
-  -e SB_ADMIN__PASSWORD=your_password \
+  -e SERVERBEE_ADMIN__PASSWORD=your_password \
   --restart unless-stopped \
   ghcr.io/zingerbee/serverbee:latest
 ```
@@ -148,20 +148,20 @@ file = ""
 
 ## 环境变量
 
-所有配置项都可以通过环境变量覆盖。环境变量使用 `SB_` 前缀，层级用 `__`（双下划线）分隔。
+所有配置项都可以通过环境变量覆盖。环境变量使用 `SERVERBEE_` 前缀，层级用 `__`（双下划线）分隔。
 
 ```bash
 # 等同于 server.listen = "0.0.0.0:8080"
-export SB_SERVER__LISTEN="0.0.0.0:8080"
+export SERVERBEE_SERVER__LISTEN="0.0.0.0:8080"
 
 # 等同于 admin.password = "my_password"
-export SB_ADMIN__PASSWORD="my_password"
+export SERVERBEE_ADMIN__PASSWORD="my_password"
 
 # 等同于 retention.records_days = 14
-export SB_RETENTION__RECORDS_DAYS=14
+export SERVERBEE_RETENTION__RECORDS_DAYS=14
 
 # 等同于 geoip.enabled = true
-export SB_GEOIP__ENABLED=true
+export SERVERBEE_GEOIP__ENABLED=true
 ```
 
 环境变量的优先级高于配置文件。

@@ -26,7 +26,7 @@ pub const ALERT_DEBOUNCE_SECS: u64 = 300;
 pub const ALERT_SAMPLE_MINUTES: u32 = 10;
 pub const ALERT_TRIGGER_RATIO: f64 = 0.7;
 
-pub const API_KEY_PREFIX: &str = "sb_";
+pub const API_KEY_PREFIX: &str = "serverbee_";
 pub const API_KEY_PREFIX_LEN: usize = 8;
 
 // --- Capability Toggles ---
