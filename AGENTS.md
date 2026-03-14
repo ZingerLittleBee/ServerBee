@@ -103,13 +103,6 @@ Write code that is **accessible, performant, type-safe, and maintainable**. Focu
 
 ---
 
-## Testing
-
-- Write assertions inside `it()` or `test()` blocks
-- Avoid done callbacks in async tests - use async/await instead
-- Don't use `.only` or `.skip` in committed code
-- Keep test suites reasonably flat - avoid excessive `describe` nesting
-
 ## When Biome Can't Help
 
 Biome's linter will catch most issues automatically. Focus your attention on:
@@ -124,3 +117,59 @@ Biome's linter will catch most issues automatically. Focus your attention on:
 ---
 
 Most formatting and common issues are automatically fixed by Biome. Run `bun x ultracite fix` before committing to ensure compliance.
+
+---
+
+## Project Structure
+
+ServerBee is a VPS monitoring probe system (Rust backend + React frontend).
+
+```
+crates/
+  common/    — Shared types, protocol messages, capability constants
+  server/    — Axum HTTP/WS server, sea-orm entities, services, background tasks
+  agent/     — System metrics collector, WS reporter, PTY terminal, ping probes
+apps/
+  web/       — React 19 SPA (TanStack Router + Query, shadcn/ui, Recharts)
+  fumadocs/  — Documentation site (TanStack Start + Fumadocs MDX, CN+EN bilingual)
+```
+
+### Key Commands
+
+```bash
+cargo build --workspace                    # Build all Rust crates
+cargo run -p serverbee-server              # Run server (port 9527)
+cargo run -p serverbee-agent               # Run agent
+cd apps/web && bun install && bun run build # Build frontend (embedded into server binary)
+cargo clippy --workspace -- -D warnings    # Lint Rust (CI enforced, 0 warnings)
+bun x ultracite check                      # Lint frontend
+bun run typecheck                          # TypeScript check (web + fumadocs)
+```
+
+### Rust Conventions
+
+- **Error handling**: `AppError` enum with `thiserror`, return `Result<T, AppError>`
+- **Database**: SQLite via sea-orm, migrations in `crates/server/src/migration/`
+- **API annotations**: All endpoints use `#[utoipa::path]`, all DTOs use `#[derive(ToSchema)]`
+- **Config**: Figment with `SB_` env prefix, `__` (double underscore) as nested separator (e.g., `SB_ADMIN__PASSWORD` maps to `admin.password`)
+- **Capabilities**: u32 bitmask — `CAP_TERMINAL=1, CAP_EXEC=2, CAP_UPGRADE=4, CAP_PING_ICMP=8, CAP_PING_TCP=16, CAP_PING_HTTP=32`
+
+### Frontend Conventions
+
+- shadcn/ui components in `apps/web/src/components/ui/`
+- API client in `apps/web/src/lib/api-client.ts` (auto-unwraps `{ data: T }`)
+- WebSocket hooks in `apps/web/src/hooks/`
+- Route files in `apps/web/src/routes/` (TanStack Router file-based routing)
+
+---
+
+## Testing
+
+See `TESTING.md` for the full testing guide (commands, coverage, manual verification checklist).
+
+- Write assertions inside `it()` or `test()` blocks
+- Avoid done callbacks in async tests - use async/await instead
+- Don't use `.only` or `.skip` in committed code
+- Keep test suites reasonably flat - avoid excessive `describe` nesting
+
+**Keep `TESTING.md` in sync with code changes.** When adding/removing/modifying tests, API endpoints, or testable features, update `TESTING.md` accordingly — test counts, file locations, coverage tables, and the manual verification checklist must reflect the current state of the codebase.
