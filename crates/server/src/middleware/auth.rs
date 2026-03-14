@@ -101,3 +101,61 @@ fn extract_api_key(req: &Request) -> Option<String> {
         .ok()
         .map(|s| s.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::Request as HttpRequest;
+
+    #[test]
+    fn test_extract_session_cookie_valid() {
+        let req = HttpRequest::builder()
+            .header("cookie", "session_token=abc123; other=val")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(extract_session_cookie(&req), Some("abc123".to_string()));
+    }
+
+    #[test]
+    fn test_extract_session_cookie_only() {
+        let req = HttpRequest::builder()
+            .header("cookie", "session_token=tok42")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(extract_session_cookie(&req), Some("tok42".to_string()));
+    }
+
+    #[test]
+    fn test_extract_session_cookie_missing() {
+        let req = HttpRequest::builder()
+            .header("cookie", "other=val; foo=bar")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(extract_session_cookie(&req), None);
+    }
+
+    #[test]
+    fn test_extract_session_cookie_no_header() {
+        let req = HttpRequest::builder()
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(extract_session_cookie(&req), None);
+    }
+
+    #[test]
+    fn test_extract_api_key_valid() {
+        let req = HttpRequest::builder()
+            .header("x-api-key", "sb_abc123def456")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(extract_api_key(&req), Some("sb_abc123def456".to_string()));
+    }
+
+    #[test]
+    fn test_extract_api_key_missing() {
+        let req = HttpRequest::builder()
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(extract_api_key(&req), None);
+    }
+}

@@ -171,3 +171,90 @@ impl ServerService {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::setup_test_db;
+    use crate::service::auth::AuthService;
+    use chrono::Utc;
+    use sea_orm::ActiveModelTrait;
+    use sea_orm::Set;
+    use serverbee_common::constants::CAP_DEFAULT;
+
+    async fn insert_test_server(db: &DatabaseConnection, id: &str, name: &str) {
+        let token_hash = AuthService::hash_password("test").expect("hash_password should succeed");
+        let now = Utc::now();
+        server::ActiveModel {
+            id: Set(id.to_string()),
+            token_hash: Set(token_hash),
+            token_prefix: Set("sb_test".to_string()),
+            name: Set(name.to_string()),
+            weight: Set(0),
+            hidden: Set(false),
+            capabilities: Set(CAP_DEFAULT as i32),
+            protocol_version: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert test server should succeed");
+    }
+
+    #[tokio::test]
+    async fn test_list_servers() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-list-1", "Test Server List").await;
+
+        let servers = ServerService::list_servers(&db).await.expect("list_servers should succeed");
+        assert!(!servers.is_empty(), "Should return at least one server");
+        assert!(servers.iter().any(|s| s.id == "srv-list-1"), "Inserted server should be in list");
+    }
+
+    #[tokio::test]
+    async fn test_get_server_found() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-get-1", "Test Server Get").await;
+
+        let server = ServerService::get_server(&db, "srv-get-1").await.expect("get_server should succeed");
+        assert_eq!(server.id, "srv-get-1");
+        assert_eq!(server.name, "Test Server Get");
+    }
+
+    #[tokio::test]
+    async fn test_get_server_not_found() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let result = ServerService::get_server(&db, "nonexistent-id").await;
+        assert!(result.is_err(), "get_server for nonexistent ID should return error");
+    }
+
+    #[tokio::test]
+    async fn test_delete_server() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-del-1", "Test Server Delete").await;
+
+        ServerService::delete_server(&db, "srv-del-1").await.expect("delete_server should succeed");
+
+        let result = ServerService::get_server(&db, "srv-del-1").await;
+        assert!(result.is_err(), "get_server after deletion should return error");
+    }
+
+    #[tokio::test]
+    async fn test_batch_delete() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-batch-1", "Test Server Batch 1").await;
+        insert_test_server(&db, "srv-batch-2", "Test Server Batch 2").await;
+
+        let ids = vec!["srv-batch-1".to_string(), "srv-batch-2".to_string()];
+        let rows = ServerService::batch_delete(&db, &ids).await.expect("batch_delete should succeed");
+        assert_eq!(rows, 2, "Should have deleted 2 rows");
+
+        let result1 = ServerService::get_server(&db, "srv-batch-1").await;
+        let result2 = ServerService::get_server(&db, "srv-batch-2").await;
+        assert!(result1.is_err(), "First server should be gone");
+        assert!(result2.is_err(), "Second server should be gone");
+    }
+}

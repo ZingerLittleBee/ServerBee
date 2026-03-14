@@ -285,6 +285,104 @@ pub enum QueryHistoryResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entity::server;
+    use crate::service::auth::AuthService;
+    use crate::test_utils::setup_test_db;
+    use sea_orm::{ActiveModelTrait, Set};
+    use serverbee_common::constants::CAP_DEFAULT;
+    use serverbee_common::types::SystemReport;
+
+    async fn insert_test_server(db: &DatabaseConnection, id: &str) {
+        let token_hash = AuthService::hash_password("test").expect("hash_password should succeed");
+        let now = Utc::now();
+        server::ActiveModel {
+            id: Set(id.to_string()),
+            token_hash: Set(token_hash),
+            token_prefix: Set("sb_test".to_string()),
+            name: Set("Test Server".to_string()),
+            weight: Set(0),
+            hidden: Set(false),
+            capabilities: Set(CAP_DEFAULT as i32),
+            protocol_version: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert test server should succeed");
+    }
+
+    #[tokio::test]
+    async fn test_save_and_query_report() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-rec-1").await;
+
+        let report = SystemReport {
+            cpu: 42.5,
+            mem_used: 1024,
+            ..Default::default()
+        };
+
+        RecordService::save_report(&db, "srv-rec-1", &report)
+            .await
+            .expect("save_report should succeed");
+
+        let now = Utc::now();
+        let from = now - Duration::hours(1);
+        let result = RecordService::query_history(&db, "srv-rec-1", from, now, "raw")
+            .await
+            .expect("query_history should succeed");
+
+        match result {
+            QueryHistoryResult::Raw(records) => {
+                assert_eq!(records.len(), 1, "Should find exactly one record");
+                assert!((records[0].cpu - 42.5).abs() < f64::EPSILON, "CPU value should match");
+                assert_eq!(records[0].mem_used, 1024, "mem_used should match");
+                assert_eq!(records[0].server_id, "srv-rec-1", "server_id should match");
+            }
+            QueryHistoryResult::Hourly(_) => panic!("Expected Raw result for 'raw' interval"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_expired() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-rec-2").await;
+
+        let report = SystemReport::default();
+        RecordService::save_report(&db, "srv-rec-2", &report)
+            .await
+            .expect("save_report should succeed");
+
+        // Verify the record exists
+        let now = Utc::now();
+        let from = now - Duration::hours(1);
+        let before = RecordService::query_history(&db, "srv-rec-2", from, now, "raw")
+            .await
+            .expect("query_history should succeed");
+        match &before {
+            QueryHistoryResult::Raw(records) => assert_eq!(records.len(), 1, "Record should exist before cleanup"),
+            _ => panic!("Expected Raw result"),
+        }
+
+        // Cleanup with 0 retention days — cutoff is now, so all existing records (time < now) are deleted
+        let deleted = RecordService::cleanup_expired(&db, 0, "records")
+            .await
+            .expect("cleanup_expired should succeed");
+        assert!(deleted >= 1, "At least one record should have been deleted");
+
+        // Verify the record is gone
+        let now2 = Utc::now();
+        let from2 = now2 - Duration::hours(1);
+        let after = RecordService::query_history(&db, "srv-rec-2", from2, now2, "raw")
+            .await
+            .expect("query_history should succeed");
+        match after {
+            QueryHistoryResult::Raw(records) => assert_eq!(records.len(), 0, "Record should be deleted"),
+            _ => panic!("Expected Raw result"),
+        }
+    }
 
     // NOTE: All RecordService methods (save_report, query_history, aggregate_hourly,
     // cleanup_expired) require a DatabaseConnection. There are no pure helper

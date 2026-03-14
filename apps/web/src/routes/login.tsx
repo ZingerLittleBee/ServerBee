@@ -42,6 +42,15 @@ function LoginPage() {
     if (loginError.message.includes('2fa_required')) {
       return null
     }
+    // Parse JSON error response to extract user-friendly message
+    try {
+      const parsed = JSON.parse(loginError.message)
+      if (parsed?.error?.message) {
+        return parsed.error.message
+      }
+    } catch {
+      // Not JSON, use as-is
+    }
     return loginError.message || 'Login failed. Please try again.'
   })()
 

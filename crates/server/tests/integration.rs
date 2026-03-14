@@ -440,3 +440,485 @@ async fn test_backup_restore() {
         "Restore should mention restart"
     );
 }
+
+// ── Task 10: Authentication flow integration tests ────────────────────────────
+
+#[tokio::test]
+async fn test_login_logout_flow() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+
+    // Login
+    let login_body = login_admin(&client, &base_url).await;
+    assert_eq!(login_body["data"]["username"], "admin");
+
+    // GET /api/auth/me → should return 200 while session cookie is active
+    let me_resp = client
+        .get(format!("{}/api/auth/me", base_url))
+        .send()
+        .await
+        .expect("GET /api/auth/me failed");
+
+    assert_eq!(me_resp.status(), 200, "auth/me should return 200 when logged in");
+    let me_body: serde_json::Value = me_resp.json().await.unwrap();
+    assert_eq!(me_body["data"]["username"], "admin");
+    assert_eq!(me_body["data"]["role"], "admin");
+
+    // Logout
+    let logout_resp = client
+        .post(format!("{}/api/auth/logout", base_url))
+        .send()
+        .await
+        .expect("POST /api/auth/logout failed");
+
+    assert_eq!(logout_resp.status(), 200, "logout should succeed");
+
+    // After logout, GET /api/auth/me should return 401
+    let me_after_resp = client
+        .get(format!("{}/api/auth/me", base_url))
+        .send()
+        .await
+        .expect("GET /api/auth/me after logout failed");
+
+    assert_eq!(
+        me_after_resp.status(),
+        401,
+        "auth/me should return 401 after logout"
+    );
+}
+
+#[tokio::test]
+async fn test_api_key_lifecycle() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+
+    // Login as admin
+    login_admin(&client, &base_url).await;
+
+    // Create an API key
+    let create_resp = client
+        .post(format!("{}/api/auth/api-keys", base_url))
+        .json(&json!({ "name": "test-key" }))
+        .send()
+        .await
+        .expect("POST /api/auth/api-keys failed");
+
+    assert_eq!(create_resp.status(), 200, "API key creation should succeed");
+    let create_body: serde_json::Value = create_resp.json().await.unwrap();
+    let api_key = create_body["data"]["key"]
+        .as_str()
+        .expect("key field missing from API key response");
+    assert!(api_key.starts_with("sb_"), "API key should start with 'sb_'");
+
+    // Use the API key (X-API-Key header) to access a protected endpoint with a fresh client
+    // (no session cookies — purely API key auth)
+    let key_client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .expect("Failed to build key-only HTTP client");
+
+    let servers_resp = key_client
+        .get(format!("{}/api/servers", base_url))
+        .header("X-API-Key", api_key)
+        .send()
+        .await
+        .expect("GET /api/servers with API key failed");
+
+    assert_eq!(
+        servers_resp.status(),
+        200,
+        "API key should grant access to /api/servers"
+    );
+    let servers_body: serde_json::Value = servers_resp.json().await.unwrap();
+    assert!(
+        servers_body["data"].is_array(),
+        "data should be an array"
+    );
+}
+
+#[tokio::test]
+async fn test_member_read_only() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin_client = http_client();
+
+    // Login as admin and create a member user
+    login_admin(&admin_client, &base_url).await;
+
+    let create_resp = admin_client
+        .post(format!("{}/api/users", base_url))
+        .json(&json!({
+            "username": "testmember",
+            "password": "memberpass123",
+            "role": "member"
+        }))
+        .send()
+        .await
+        .expect("POST /api/users failed");
+
+    assert_eq!(create_resp.status(), 200, "Admin should be able to create member");
+
+    // Login as the member user in a separate client
+    let member_client = http_client();
+    let member_login = member_client
+        .post(format!("{}/api/auth/login", base_url))
+        .json(&json!({
+            "username": "testmember",
+            "password": "memberpass123"
+        }))
+        .send()
+        .await
+        .expect("Member login request failed");
+
+    assert_eq!(member_login.status(), 200, "Member login should succeed");
+
+    // Member can do GET /api/servers (read-only route)
+    let servers_resp = member_client
+        .get(format!("{}/api/servers", base_url))
+        .send()
+        .await
+        .expect("GET /api/servers as member failed");
+
+    assert_eq!(
+        servers_resp.status(),
+        200,
+        "Member should be able to read /api/servers"
+    );
+
+    // Member cannot POST /api/users (admin-only write route)
+    let create_user_resp = member_client
+        .post(format!("{}/api/users", base_url))
+        .json(&json!({
+            "username": "anothermember",
+            "password": "pass123",
+            "role": "member"
+        }))
+        .send()
+        .await
+        .expect("POST /api/users as member failed");
+
+    assert_eq!(
+        create_user_resp.status(),
+        403,
+        "Member should receive 403 when attempting to create users"
+    );
+}
+
+#[tokio::test]
+async fn test_public_status_no_auth() {
+    let (base_url, _tmp) = start_test_server().await;
+    // Use a plain client with NO cookies and NO auth headers
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .expect("Failed to build plain HTTP client");
+
+    let resp = client
+        .get(format!("{}/api/status", base_url))
+        .send()
+        .await
+        .expect("GET /api/status failed");
+
+    assert_eq!(resp.status(), 200, "Public /api/status should be accessible without auth");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["data"]["servers"].is_array(), "data.servers should be an array");
+    assert!(body["data"]["total_count"].is_number(), "data.total_count should be a number");
+}
+
+#[tokio::test]
+async fn test_audit_log_recorded() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+
+    // Login — this should create an audit log entry with action "login"
+    login_admin(&client, &base_url).await;
+
+    // Fetch audit logs
+    let audit_resp = client
+        .get(format!("{}/api/audit-logs", base_url))
+        .send()
+        .await
+        .expect("GET /api/audit-logs failed");
+
+    assert_eq!(audit_resp.status(), 200, "audit-logs endpoint should be accessible to admin");
+    let audit_body: serde_json::Value = audit_resp.json().await.unwrap();
+    let entries = audit_body["data"]["entries"]
+        .as_array()
+        .expect("entries should be an array");
+    let total = audit_body["data"]["total"].as_u64().unwrap_or(0);
+
+    assert!(total >= 1, "There should be at least one audit log entry after login");
+    assert!(
+        entries.iter().any(|e| e["action"].as_str() == Some("login")),
+        "Audit log should contain a 'login' entry"
+    );
+}
+
+// ── Task 11: CRUD integration tests ──────────────────────────────────────────
+
+#[tokio::test]
+async fn test_notification_and_alert_crud() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+
+    login_admin(&client, &base_url).await;
+
+    // ── Create notification channel ──
+    let notif_resp = client
+        .post(format!("{}/api/notifications", base_url))
+        .json(&json!({
+            "name": "Test Webhook",
+            "notify_type": "webhook",
+            "config_json": {
+                "type": "webhook",
+                "url": "https://example.com/hook",
+                "method": "POST",
+                "headers": {},
+                "body_template": null
+            },
+            "enabled": true
+        }))
+        .send()
+        .await
+        .expect("POST /api/notifications failed");
+
+    assert_eq!(notif_resp.status(), 200, "notification creation should succeed");
+    let notif_body: serde_json::Value = notif_resp.json().await.unwrap();
+    let notif_id = notif_body["data"]["id"].as_str().expect("notification id missing");
+
+    // ── Create notification group ──
+    let group_resp = client
+        .post(format!("{}/api/notification-groups", base_url))
+        .json(&json!({
+            "name": "Test Group",
+            "notification_ids": [notif_id]
+        }))
+        .send()
+        .await
+        .expect("POST /api/notification-groups failed");
+
+    assert_eq!(group_resp.status(), 200, "notification group creation should succeed");
+    let group_body: serde_json::Value = group_resp.json().await.unwrap();
+    let group_id = group_body["data"]["id"].as_str().expect("group id missing");
+
+    // ── Create alert rule ──
+    let alert_resp = client
+        .post(format!("{}/api/alert-rules", base_url))
+        .json(&json!({
+            "name": "High CPU Alert",
+            "rules": [
+                {
+                    "rule_type": "cpu",
+                    "min": 90.0
+                }
+            ],
+            "trigger_mode": "once",
+            "notification_group_id": group_id,
+            "cover_type": "all",
+            "enabled": true
+        }))
+        .send()
+        .await
+        .expect("POST /api/alert-rules failed");
+
+    assert_eq!(alert_resp.status(), 200, "alert rule creation should succeed");
+    let alert_body: serde_json::Value = alert_resp.json().await.unwrap();
+    let alert_id = alert_body["data"]["id"].as_str().expect("alert id missing");
+    assert_eq!(alert_body["data"]["name"], "High CPU Alert");
+
+    // ── List alert rules — verify the rule appears ──
+    let list_resp = client
+        .get(format!("{}/api/alert-rules", base_url))
+        .send()
+        .await
+        .expect("GET /api/alert-rules failed");
+
+    assert_eq!(list_resp.status(), 200);
+    let list_body: serde_json::Value = list_resp.json().await.unwrap();
+    let rules = list_body["data"].as_array().expect("data should be array");
+    assert!(
+        rules.iter().any(|r| r["id"].as_str() == Some(alert_id)),
+        "Created alert rule should appear in list"
+    );
+
+    // ── Delete alert rule ──
+    let delete_resp = client
+        .delete(format!("{}/api/alert-rules/{}", base_url, alert_id))
+        .send()
+        .await
+        .expect("DELETE /api/alert-rules/{id} failed");
+
+    assert_eq!(delete_resp.status(), 200, "alert rule deletion should succeed");
+
+    // Verify it's gone
+    let list_after_resp = client
+        .get(format!("{}/api/alert-rules", base_url))
+        .send()
+        .await
+        .expect("GET /api/alert-rules after delete failed");
+
+    let list_after_body: serde_json::Value = list_after_resp.json().await.unwrap();
+    let rules_after = list_after_body["data"].as_array().unwrap();
+    assert!(
+        !rules_after.iter().any(|r| r["id"].as_str() == Some(alert_id)),
+        "Deleted alert rule should not appear in list"
+    );
+}
+
+#[tokio::test]
+async fn test_user_management_crud() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+
+    login_admin(&client, &base_url).await;
+
+    // ── Create user ──
+    let create_resp = client
+        .post(format!("{}/api/users", base_url))
+        .json(&json!({
+            "username": "crudusr",
+            "password": "crudpass123",
+            "role": "member"
+        }))
+        .send()
+        .await
+        .expect("POST /api/users failed");
+
+    assert_eq!(create_resp.status(), 200, "user creation should succeed");
+    let create_body: serde_json::Value = create_resp.json().await.unwrap();
+    let user_id = create_body["data"]["id"].as_str().expect("user id missing");
+    assert_eq!(create_body["data"]["role"], "member");
+
+    // ── List users — verify the new user appears ──
+    let list_resp = client
+        .get(format!("{}/api/users", base_url))
+        .send()
+        .await
+        .expect("GET /api/users failed");
+
+    assert_eq!(list_resp.status(), 200);
+    let list_body: serde_json::Value = list_resp.json().await.unwrap();
+    let users = list_body["data"].as_array().expect("data should be array");
+    assert!(
+        users.iter().any(|u| u["id"].as_str() == Some(user_id)),
+        "Newly created user should appear in user list"
+    );
+
+    // ── Update role to admin ──
+    let update_resp = client
+        .put(format!("{}/api/users/{}", base_url, user_id))
+        .json(&json!({ "role": "admin" }))
+        .send()
+        .await
+        .expect("PUT /api/users/{id} failed");
+
+    assert_eq!(update_resp.status(), 200, "user role update should succeed");
+    let update_body: serde_json::Value = update_resp.json().await.unwrap();
+    assert_eq!(update_body["data"]["role"], "admin", "Role should be updated to admin");
+
+    // ── Delete user ──
+    let delete_resp = client
+        .delete(format!("{}/api/users/{}", base_url, user_id))
+        .send()
+        .await
+        .expect("DELETE /api/users/{id} failed");
+
+    assert_eq!(delete_resp.status(), 200, "user deletion should succeed");
+
+    // Verify user is gone
+    let list_after_resp = client
+        .get(format!("{}/api/users", base_url))
+        .send()
+        .await
+        .expect("GET /api/users after delete failed");
+
+    let list_after_body: serde_json::Value = list_after_resp.json().await.unwrap();
+    let users_after = list_after_body["data"].as_array().unwrap();
+    assert!(
+        !users_after.iter().any(|u| u["id"].as_str() == Some(user_id)),
+        "Deleted user should not appear in user list"
+    );
+}
+
+#[tokio::test]
+async fn test_settings_auto_discovery_key() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+
+    login_admin(&client, &base_url).await;
+
+    // ── GET current auto-discovery key ──
+    let get_resp = client
+        .get(format!("{}/api/settings/auto-discovery-key", base_url))
+        .send()
+        .await
+        .expect("GET /api/settings/auto-discovery-key failed");
+
+    assert_eq!(get_resp.status(), 200, "GET auto-discovery-key should succeed");
+    let get_body: serde_json::Value = get_resp.json().await.unwrap();
+    let original_key = get_body["data"]["key"]
+        .as_str()
+        .expect("key field missing")
+        .to_string();
+    assert!(!original_key.is_empty(), "Auto-discovery key should not be empty");
+
+    // ── PUT to regenerate the key ──
+    let regen_resp = client
+        .put(format!("{}/api/settings/auto-discovery-key", base_url))
+        .send()
+        .await
+        .expect("PUT /api/settings/auto-discovery-key failed");
+
+    assert_eq!(regen_resp.status(), 200, "Regenerate auto-discovery-key should succeed");
+    let regen_body: serde_json::Value = regen_resp.json().await.unwrap();
+    let new_key = regen_body["data"]["key"]
+        .as_str()
+        .expect("key field missing after regeneration")
+        .to_string();
+
+    assert!(!new_key.is_empty(), "New auto-discovery key should not be empty");
+    assert_ne!(
+        original_key, new_key,
+        "Regenerated key should differ from the original key"
+    );
+}
+
+#[tokio::test]
+async fn test_alert_states_endpoint() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    // Create an alert rule
+    let resp = client
+        .post(format!("{base_url}/api/alert-rules"))
+        .json(&serde_json::json!({
+            "name": "Test States",
+            "rules": [{"rule_type": "cpu", "min": 1.0}],
+            "cover_type": "all",
+            "trigger_mode": "always"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let rule_id = body["data"]["id"].as_str().unwrap();
+
+    // Query states (should be empty initially)
+    let resp = client
+        .get(format!("{base_url}/api/alert-rules/{rule_id}/states"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let states = body["data"].as_array().unwrap();
+    assert!(states.is_empty());
+
+    // Cleanup
+    client
+        .delete(format!("{base_url}/api/alert-rules/{rule_id}"))
+        .send()
+        .await
+        .unwrap();
+}
