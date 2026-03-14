@@ -6,10 +6,10 @@
 # 全量测试
 cargo test --workspace && bun run test
 
-# Rust 测试（52+ 单元 + 2 集成）
+# Rust 测试（54 单元 + 2 集成）
 cargo test --workspace
 
-# 前端测试（14 vitest）
+# 前端测试（11 vitest）
 bun run test
 
 # 代码质量
@@ -23,8 +23,8 @@ bun run typecheck
 ### 按 crate 运行
 
 ```bash
-cargo test -p serverbee-common          # 协议 + 能力常量 (15 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 (39 tests)
+cargo test -p serverbee-common          # 协议 + 能力常量 (11 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 (45 tests)
 ```
 
 ### 仅集成测试
@@ -46,11 +46,11 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 
 | 模块 | 测试数 | 覆盖内容 |
 |------|--------|----------|
-| `common/constants.rs` | 10 | 能力位运算、默认值、掩码 |
+| `common/constants.rs` | 6 | 能力位运算、默认值、掩码 |
 | `common/protocol.rs` | 5 | 消息序列化/反序列化 |
 | `server/service/alert.rs` | 15 | 阈值判定、指标提取、采样窗口 |
-| `server/service/auth.rs` | 7 | 密码哈希、session token、API key、TOTP |
-| `server/service/notification.rs` | 11 | 模板变量替换、渠道配置解析 |
+| `server/service/auth.rs` | 8 | 密码哈希、session token、API key、TOTP |
+| `server/service/notification.rs` | 16 | 模板变量替换、渠道配置解析 |
 | `server/service/record.rs` | 4 | 历史查询、聚合、清理策略 |
 
 ### 集成测试覆盖
@@ -74,7 +74,7 @@ cd apps/web && bunx vitest run src/lib/capabilities.test.ts
 
 | 文件 | 测试数 | 覆盖内容 |
 |------|--------|----------|
-| `capabilities.test.ts` | 6 | hasCap、toggle on/off、默认值 |
+| `capabilities.test.ts` | 3 | hasCap、toggle on/off、默认值 |
 | `use-auth.test.tsx` | 4 | 登录/登出状态、fetch mock |
 | `use-api.test.tsx` | 4 | server/records 数据获取、空 id 守卫 |
 
