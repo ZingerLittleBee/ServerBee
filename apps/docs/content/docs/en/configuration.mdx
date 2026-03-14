@@ -18,27 +18,54 @@ Configuration values are merged in the following order. Later sources override e
 
 Every TOML configuration key maps directly to an environment variable. Replace dots with `__` and prefix with `SERVERBEE_`:
 
-```
-TOML key                    Environment variable
-─────────────────────────   ──────────────────────────────────
-server.listen               SERVERBEE_SERVER__LISTEN
-server.data_dir             SERVERBEE_SERVER__DATA_DIR
-database.path               SERVERBEE_DATABASE__PATH
-database.max_connections    SERVERBEE_DATABASE__MAX_CONNECTIONS
-auth.session_ttl            SERVERBEE_AUTH__SESSION_TTL
-auth.auto_discovery_key     SERVERBEE_AUTH__AUTO_DISCOVERY_KEY
-auth.secure_cookie          SERVERBEE_AUTH__SECURE_COOKIE
-admin.username              SERVERBEE_ADMIN__USERNAME
-admin.password              SERVERBEE_ADMIN__PASSWORD
-retention.records_days      SERVERBEE_RETENTION__RECORDS_DAYS
-log.level                   SERVERBEE_LOG__LEVEL
-geoip.enabled               SERVERBEE_GEOIP__ENABLED
-geoip.mmdb_path             SERVERBEE_GEOIP__MMDB_PATH
-oauth.base_url              SERVERBEE_OAUTH__BASE_URL
-oauth.github.client_id      SERVERBEE_OAUTH__GITHUB__CLIENT_ID
-collector.interval           SERVERBEE_COLLECTOR__INTERVAL
-collector.enable_gpu         SERVERBEE_COLLECTOR__ENABLE_GPU
-```
+### Server Environment Variables
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `SERVERBEE_SERVER__LISTEN` | `0.0.0.0:9527` | Listen address and port |
+| `SERVERBEE_SERVER__DATA_DIR` | `./data` | Data directory for database and backups |
+| `SERVERBEE_DATABASE__PATH` | `serverbee.db` | SQLite database file path (relative to data_dir) |
+| `SERVERBEE_DATABASE__MAX_CONNECTIONS` | `10` | Maximum database connection pool size |
+| `SERVERBEE_AUTH__SESSION_TTL` | `86400` | Session token TTL in seconds (default 24h) |
+| `SERVERBEE_AUTH__AUTO_DISCOVERY_KEY` | auto-generated | Agent discovery key. Leave empty to auto-generate on first startup |
+| `SERVERBEE_AUTH__SECURE_COOKIE` | `true` | Set Secure flag on session cookies. Set `false` for HTTP-only dev |
+| `SERVERBEE_ADMIN__USERNAME` | `admin` | Initial admin username (only used when no users exist) |
+| `SERVERBEE_ADMIN__PASSWORD` | auto-generated | Initial admin password. Leave empty to auto-generate and print to log |
+| `SERVERBEE_RETENTION__RECORDS_DAYS` | `7` | Raw metric records retention in days |
+| `SERVERBEE_RETENTION__RECORDS_HOURLY_DAYS` | `90` | Hourly aggregated records retention in days |
+| `SERVERBEE_RETENTION__GPU_RECORDS_DAYS` | `7` | GPU metric records retention in days |
+| `SERVERBEE_RETENTION__PING_RECORDS_DAYS` | `7` | Ping probe records retention in days |
+| `SERVERBEE_RETENTION__AUDIT_LOGS_DAYS` | `180` | Audit log retention in days |
+| `SERVERBEE_RATE_LIMIT__LOGIN_MAX` | `5` | Max login attempts per IP within 15-minute window |
+| `SERVERBEE_RATE_LIMIT__REGISTER_MAX` | `3` | Max agent registrations per IP within 15-minute window |
+| `SERVERBEE_LOG__LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
+| `SERVERBEE_LOG__FILE` | `""` | Log file path. Empty means stdout only |
+| `SERVERBEE_GEOIP__ENABLED` | `false` | Enable GeoIP lookup for agent IP addresses |
+| `SERVERBEE_GEOIP__MMDB_PATH` | `""` | Path to MaxMind GeoLite2-City.mmdb file |
+| `SERVERBEE_OAUTH__BASE_URL` | `""` | Public server URL for constructing OAuth callback URLs |
+| `SERVERBEE_OAUTH__ALLOW_REGISTRATION` | `false` | Auto-create user accounts on first OAuth login |
+| `SERVERBEE_OAUTH__GITHUB__CLIENT_ID` | -- | GitHub OAuth App client ID |
+| `SERVERBEE_OAUTH__GITHUB__CLIENT_SECRET` | -- | GitHub OAuth App client secret |
+| `SERVERBEE_OAUTH__GOOGLE__CLIENT_ID` | -- | Google OAuth client ID |
+| `SERVERBEE_OAUTH__GOOGLE__CLIENT_SECRET` | -- | Google OAuth client secret |
+| `SERVERBEE_OAUTH__OIDC__ISSUER_URL` | -- | OIDC provider issuer URL |
+| `SERVERBEE_OAUTH__OIDC__CLIENT_ID` | -- | OIDC client ID |
+| `SERVERBEE_OAUTH__OIDC__CLIENT_SECRET` | -- | OIDC client secret |
+
+### Agent Environment Variables
+
+Agent top-level keys use single underscore. Nested keys use `__` (double underscore).
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `SERVERBEE_SERVER_URL` | -- (required) | Server HTTP base URL (e.g. `http://your-server:9527`). Agent appends API paths automatically |
+| `SERVERBEE_TOKEN` | auto-populated | Agent auth token. Auto-populated after registration, do not set manually |
+| `SERVERBEE_AUTO_DISCOVERY_KEY` | `""` | Discovery key for first-time registration. Only used when token is empty |
+| `SERVERBEE_COLLECTOR__INTERVAL` | `3` | Metric report interval in seconds |
+| `SERVERBEE_COLLECTOR__ENABLE_GPU` | `false` | Enable NVIDIA GPU monitoring (requires nvml) |
+| `SERVERBEE_COLLECTOR__ENABLE_TEMPERATURE` | `true` | Enable CPU temperature monitoring |
+| `SERVERBEE_LOG__LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
+| `SERVERBEE_LOG__FILE` | `""` | Log file path. Empty means stdout only |
 
 ## Server Configuration (server.toml)
 

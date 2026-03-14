@@ -113,7 +113,7 @@ The server prints the full auto-discovery key on startup. Copy it to start the a
 
 ## Configuration
 
-All config options can be set via TOML files or environment variables with `SERVERBEE_` prefix and `__` (double underscore) as nested separator.
+All config options can be set via TOML files or environment variables with `SERVERBEE_` prefix and `__` (double underscore) as nested separator. See [ENV.md](ENV.md) for the complete environment variable reference.
 
 ### Server (`/etc/serverbee/server.toml`)
 
