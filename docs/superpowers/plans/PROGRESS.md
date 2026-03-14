@@ -25,7 +25,7 @@
 | P4 | 端到端验证 + 上线前加固 | **已完成** | 1 (`51e8b40`) |
 | P5 | Agent Capability Toggles | **已完成** | 22 (`bfc7d14`..`56c6058`) |
 
-**P0~P5 全部完成并已提交。测试: 110 单元 + 11 集成 + 72 前端 + 26 E2E 浏览器 = 219 个测试。**
+**P0~P5 全部完成并已提交。测试: 110 单元 + 11 集成 + 72 前端 + 31 E2E 浏览器 = 224 个测试。**
 
 ---
 
@@ -596,12 +596,12 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 - [x] 代码质量: cargo check + tsc + vite build 全部通过 ✅
 
 ### P3-c: 测试
-- [x] Rust 单元测试 (100 个): AuthService (19) + AlertService (15) + NotificationService (16) + RecordService (4) + AgentManager (10) + ServerService (5) + UserService (4) + PingService (3) + middleware/auth (6) + common constants (6) + protocol (5) + agent collector (5) + agent pinger (2) ✅
+- [x] Rust 单元测试 (110 个): AuthService (19) + AlertService (15) + NotificationService (16) + RecordService (6) + AgentManager (10) + ServerService (5) + UserService (4) + PingService (3) + AuditService (3) + ConfigService (5) + middleware/auth (6) + common constants (6) + protocol (5) + agent collector (5) + agent pinger (2) ✅
 - [x] Rust 集成测试 (11 个): Agent 注册→WS→上报 + Backup/Restore + Login/Logout + API Key + RBAC + Public Status + Audit Log + Notification/Alert CRUD + User CRUD + Discovery Key + Alert States ✅
-- [x] 前端 Vitest 测试 (52 个): api-client (6) + utils (21) + ws-client (6) + capabilities (3) + use-auth (4) + use-api (4) + use-servers-ws (8) ✅
+- [x] 前端 Vitest 测试 (72 个): api-client (6) + utils (21) + ws-client (6) + capabilities (3) + use-auth (4) + use-api (4) + use-servers-ws (8) + use-terminal-ws (20) ✅
 - [x] CI 添加 `cargo test --workspace` 步骤 ✅
-- [x] E2E 浏览器测试 (22 个, agent-browser): 登录流程 (错误提示/正确跳转/登出) + Dashboard 实时更新 + 搜索过滤 + 编辑对话框 + 时间范围切换 + 用户 CRUD + 通知/API Key 展示 + Capabilities + 公共状态页 + 主题切换 + 告警全链路 (通知创建/测试发送/阈值触发/状态展示) ✅
-- [x] E2E Bug 修复: 登录错误消息 (`69af3e7`) + 通知密码掩码 (`82dcf15`) + 告警表单扩展 + 告警状态 API/UI (`a8defea`) ✅
+- [x] E2E 浏览器测试 (31 个, agent-browser): 登录流程 + Dashboard 实时更新 + 搜索过滤 + 编辑对话框 + 时间范围切换 + 用户 CRUD + 通知/API Key 展示 + Capabilities + 公共状态页 + 主题切换 + 告警全链路 + Swagger UI + Ping 创建/结果 + 终端页面加载 ✅
+- [x] Bug 修复 (5 个): 登录错误消息 + 通知密码掩码 + 告警表单扩展 + 告警状态 API/UI + Capabilities API Extension crash ✅
 
 ### P3-d: Agent 完善
 - [x] 虚拟化检测: DMI 文件 + 容器检测 + systemd-detect-virt fallback ✅
