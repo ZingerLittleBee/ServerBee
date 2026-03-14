@@ -90,23 +90,24 @@ docker compose up -d
 ### Development (Make)
 
 ```bash
-# One-shot: build frontend + start server (admin/admin123)
+# Start server (port 9527) + Vite dev server (port 5173) concurrently
 make dev-full
+# Visit http://localhost:5173, login with admin / admin123
 
 # Or step by step:
-make server-dev                                    # Terminal 1: start server (admin/admin123)
-SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # Terminal 2: start agent
+make server-dev                                           # Terminal 1: server on :9527
+SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # Terminal 2: agent
 
-# Other useful targets:
-make server-run        # Run server without dev env vars
-make agent-run         # Run agent without dev env vars
-make cargo-test        # Run all Rust tests
-make test              # Run frontend tests
+# Testing & code quality:
+make cargo-test        # Run all Rust tests (121)
+make test              # Run frontend tests (72)
 make cargo-clippy      # Lint Rust code
 make                   # Interactive menu (requires fzf)
 ```
 
 The server prints the full auto-discovery key on startup. Copy it to start the agent.
+
+> **Note**: `make dev-full` starts a Vite dev server with HMR at `http://localhost:5173` (proxies `/api/*` to the Rust server at `:9527`). For production builds, use `make build` then `make server-run`.
 
 ## Configuration
 
@@ -167,6 +168,12 @@ enable_gpu = false            # Requires NVIDIA GPU + nvml
 
 [log]
 level = "info"
+```
+
+Agent environment variables use the `SERVERBEE_` prefix without nesting (top-level keys):
+```bash
+export SERVERBEE_SERVER_URL="http://your-server:9527"
+export SERVERBEE_AUTO_DISCOVERY_KEY="YOUR_KEY"
 ```
 
 ### OAuth Setup
