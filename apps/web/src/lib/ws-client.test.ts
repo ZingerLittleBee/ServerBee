@@ -49,7 +49,7 @@ afterEach(() => {
 
 describe('WsClient', () => {
   it('constructs WebSocket with correct URL', () => {
-    const _ws = new WsClient('/api/ws/servers')
+    new WsClient('/api/ws/servers')
     expect(MockWebSocket.instances[0].url).toBe('ws://localhost:9527/api/ws/servers')
   })
 
@@ -93,7 +93,7 @@ describe('WsClient', () => {
   })
 
   it('schedules reconnect on close with backoff', () => {
-    const _ws = new WsClient('/api/ws/test')
+    new WsClient('/api/ws/test')
     const sock = MockWebSocket.instances[0]
     // Simulate server-side close without going through ws.close() so closed flag stays false
     sock.onclose?.()
