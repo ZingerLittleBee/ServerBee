@@ -881,3 +881,44 @@ async fn test_settings_auto_discovery_key() {
         "Regenerated key should differ from the original key"
     );
 }
+
+#[tokio::test]
+async fn test_alert_states_endpoint() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    // Create an alert rule
+    let resp = client
+        .post(format!("{base_url}/api/alert-rules"))
+        .json(&serde_json::json!({
+            "name": "Test States",
+            "rules": [{"rule_type": "cpu", "min": 1.0}],
+            "cover_type": "all",
+            "trigger_mode": "always"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let rule_id = body["data"]["id"].as_str().unwrap();
+
+    // Query states (should be empty initially)
+    let resp = client
+        .get(format!("{base_url}/api/alert-rules/{rule_id}/states"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let states = body["data"].as_array().unwrap();
+    assert!(states.is_empty());
+
+    // Cleanup
+    client
+        .delete(format!("{base_url}/api/alert-rules/{rule_id}"))
+        .send()
+        .await
+        .unwrap();
+}
