@@ -1,5 +1,7 @@
 # ServerBee
 
+Language: English | [简体中文](./README.zh-CN.md)
+
 A lightweight, self-hosted VPS monitoring system built with Rust and React.
 
 ## Features
