@@ -11,6 +11,7 @@ export const Route = createFileRoute('/_authed/settings/tasks')({
 })
 
 interface ServerInfo {
+  capabilities?: number
   id: string
   name: string
 }
@@ -113,19 +114,27 @@ function TasksPage() {
                 <p className="text-muted-foreground text-sm">No servers available</p>
               ) : (
                 <div className="grid grid-cols-2 gap-1">
-                  {servers.map((srv) => (
-                    <label
-                      className="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5"
-                      key={srv.id}
-                    >
-                      <input
-                        checked={selectedServerIds.includes(srv.id)}
-                        onChange={() => toggleServer(srv.id)}
-                        type="checkbox"
-                      />
-                      {srv.name}
-                    </label>
-                  ))}
+                  {servers.map((srv) => {
+                    // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
+                    const execEnabled = !srv.capabilities || (srv.capabilities & 2) !== 0
+                    return (
+                      <label
+                        className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5 ${
+                          execEnabled ? '' : 'cursor-not-allowed opacity-50'
+                        }`}
+                        key={srv.id}
+                        title={execEnabled ? undefined : 'Remote Exec is disabled for this server'}
+                      >
+                        <input
+                          checked={selectedServerIds.includes(srv.id)}
+                          disabled={!execEnabled}
+                          onChange={() => toggleServer(srv.id)}
+                          type="checkbox"
+                        />
+                        {srv.name}
+                      </label>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -178,23 +187,36 @@ function TasksPage() {
                   <div className="divide-y">
                     {taskResults.map((result) => {
                       const serverName = servers?.find((s) => s.id === result.server_id)?.name ?? result.server_id
+                      const isSkipped = result.exit_code === -2
                       return (
                         <div className="px-6 py-3" key={result.id}>
                           <div className="mb-1 flex items-center gap-2">
                             <span className="font-medium text-sm">{serverName}</span>
-                            <span
-                              className={`rounded px-1.5 py-0.5 text-xs ${
-                                result.exit_code === 0
-                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                                  : 'bg-red-500/10 text-red-600 dark:text-red-400'
-                              }`}
-                            >
-                              exit {result.exit_code}
-                            </span>
+                            {isSkipped ? (
+                              <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">
+                                skipped
+                              </span>
+                            ) : (
+                              <span
+                                className={`rounded px-1.5 py-0.5 text-xs ${
+                                  result.exit_code === 0
+                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                    : 'bg-red-500/10 text-red-600 dark:text-red-400'
+                                }`}
+                              >
+                                exit {result.exit_code}
+                              </span>
+                            )}
                           </div>
-                          <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-2 font-mono text-xs">
-                            {result.output || '(no output)'}
-                          </pre>
+                          {isSkipped ? (
+                            <p className="text-muted-foreground text-xs italic">
+                              Remote Exec is disabled for this server — command was not executed
+                            </p>
+                          ) : (
+                            <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-2 font-mono text-xs">
+                              {result.output || '(no output)'}
+                            </pre>
+                          )}
                         </div>
                       )
                     })}

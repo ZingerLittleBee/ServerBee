@@ -4,7 +4,6 @@ import { Activity, Cpu, HardDrive, MemoryStick, Server, Wifi } from 'lucide-reac
 import { useMemo } from 'react'
 import { ServerCard } from '@/components/server/server-card'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { useServersWs } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerGroup } from '@/lib/api-schema'
 import { formatBytes } from '@/lib/utils'
@@ -39,8 +38,6 @@ function StatCard({
 }
 
 function DashboardPage() {
-  useServersWs()
-
   const { data: servers = [] } = useQuery<ServerMetrics[]>({
     queryKey: ['servers'],
     queryFn: () => [],

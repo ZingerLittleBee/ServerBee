@@ -1,7 +1,10 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
+use serverbee_common::constants::{has_capability, probe_type_to_cap};
 use serverbee_common::types::{PingResult, PingTaskConfig};
 use tokio::sync::mpsc;
 
@@ -10,19 +13,32 @@ use tokio::sync::mpsc;
 pub struct PingManager {
     tasks: HashMap<String, tokio::task::JoinHandle<()>>,
     result_tx: mpsc::Sender<PingResult>,
+    capabilities: Arc<AtomicU32>,
 }
 
 impl PingManager {
-    pub fn new(result_tx: mpsc::Sender<PingResult>) -> Self {
+    pub fn new(result_tx: mpsc::Sender<PingResult>, capabilities: Arc<AtomicU32>) -> Self {
         Self {
             tasks: HashMap::new(),
             result_tx,
+            capabilities,
         }
     }
 
     /// Reconcile running tasks with the new config list.
     /// Stops tasks no longer in the list, starts new ones, restarts changed ones.
     pub fn sync(&mut self, configs: Vec<PingTaskConfig>) {
+        // Filter by capability bitmap
+        let caps = self.capabilities.load(Ordering::SeqCst);
+        let configs: Vec<_> = configs
+            .into_iter()
+            .filter(|c| {
+                probe_type_to_cap(&c.probe_type)
+                    .map(|cap| has_capability(caps, cap))
+                    .unwrap_or(false)
+            })
+            .collect();
+
         let new_ids: HashMap<String, &PingTaskConfig> =
             configs.iter().map(|c| (c.task_id.clone(), c)).collect();
 

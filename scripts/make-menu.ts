@@ -158,7 +158,7 @@ const COMMANDS: CommandDefinition[] = [
     name: 'docs:dev',
     category: 'Docs',
     description: 'Start the docs development server',
-    command: 'bun --filter fumadocs dev',
+    command: 'bun --filter @serverbee/docs dev',
     featured: true
   },
   {
@@ -166,7 +166,7 @@ const COMMANDS: CommandDefinition[] = [
     name: 'docs:build',
     category: 'Docs',
     description: 'Build the docs app',
-    command: 'bun --filter fumadocs build',
+    command: 'bun --filter @serverbee/docs build',
     featured: true
   },
   {
@@ -174,35 +174,35 @@ const COMMANDS: CommandDefinition[] = [
     name: 'docs:start',
     category: 'Docs',
     description: 'Start the built docs app',
-    command: 'bun --filter fumadocs start'
+    command: 'bun --filter @serverbee/docs start'
   },
   {
     key: 'docs-preview',
     name: 'docs:preview',
     category: 'Docs',
     description: 'Preview the built docs app',
-    command: 'bun --filter fumadocs preview'
+    command: 'bun --filter @serverbee/docs preview'
   },
   {
     key: 'docs-typecheck',
     name: 'docs:typecheck',
     category: 'Docs',
     description: 'Type-check the docs app',
-    command: 'bun --filter fumadocs types:check'
+    command: 'bun --filter @serverbee/docs types:check'
   },
   {
     key: 'docs-lint',
     name: 'docs:lint',
     category: 'Docs',
     description: 'Run docs lint checks',
-    command: 'bun --filter fumadocs lint'
+    command: 'bun --filter @serverbee/docs lint'
   },
   {
     key: 'docs-format',
     name: 'docs:format',
     category: 'Docs',
     description: 'Format docs app files',
-    command: 'bun --filter fumadocs format'
+    command: 'bun --filter @serverbee/docs format'
   },
   {
     key: 'db-local',

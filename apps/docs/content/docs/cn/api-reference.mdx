@@ -1,0 +1,128 @@
+---
+title: API 参考
+description: ServerBee REST API 概览、认证方式和 Swagger UI 交互式文档。
+icon: FileCode
+---
+
+ServerBee 提供完整的 REST API，支持所有 Dashboard 功能的程序化访问。所有 API 均通过 OpenAPI 3.0 规范文档化。
+
+## Swagger UI
+
+ServerBee 内置 Swagger UI 交互式 API 文档：
+
+```
+https://your-server/swagger-ui/
+```
+
+你可以在 Swagger UI 中浏览所有 50+ 个 API 端点、查看请求/响应模型、直接发送测试请求。
+
+## 认证方式
+
+ServerBee API 支持两种认证方式：
+
+### Session Cookie
+
+浏览器登录后自动使用。调用 `/api/auth/login` 获取 session：
+
+```bash
+curl -X POST https://your-server/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "your-password"}' \
+  -c cookies.txt
+
+# 后续请求带上 cookie
+curl https://your-server/api/servers -b cookies.txt
+```
+
+### API Key
+
+适合自动化场景。在 Settings → API Keys 页面创建：
+
+```bash
+curl https://your-server/api/servers \
+  -H "X-API-Key: sb_your-api-key-here"
+```
+
+API Key 格式为 `sb_` 前缀 + 43 字符随机字符串，创建时仅显示一次。
+
+## 端点概览
+
+### 公开端点（无需认证）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/auth/login` | 用户登录 |
+| GET | `/api/auth/oauth/{provider}` | OAuth 授权跳转 |
+| GET | `/api/auth/oauth/{provider}/callback` | OAuth 回调 |
+| GET | `/api/status` | 公开状态页数据 |
+
+### 认证端点（Session 或 API Key）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/auth/logout` | 用户登出 |
+| GET | `/api/auth/me` | 获取当前用户信息 |
+| POST | `/api/auth/change-password` | 修改密码 |
+| GET/POST | `/api/auth/2fa/*` | 2FA 管理 |
+| GET/DELETE | `/api/auth/oauth/accounts` | OAuth 账号管理 |
+| GET | `/api/servers` | 列出服务器 |
+| GET | `/api/servers/{id}` | 获取服务器详情 |
+| GET | `/api/servers/{id}/records` | 获取指标记录 |
+| GET | `/api/servers/{id}/gpu-records` | 获取 GPU 记录 |
+| GET | `/api/server-groups` | 列出服务器分组 |
+| GET | `/api/ping-tasks` | 列出 Ping 任务 |
+| GET | `/api/ping-tasks/{id}/records` | 获取 Ping 记录 |
+
+### 管理员端点（需要 Admin 角色）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST/PUT/DELETE | `/api/servers/*` | 服务器管理 |
+| PUT | `/api/servers/batch-capabilities` | 批量更新功能开关 |
+| POST | `/api/servers/{id}/upgrade` | 触发 Agent 升级 |
+| CRUD | `/api/server-groups/*` | 服务器分组管理 |
+| CRUD | `/api/notifications/*` | 通知渠道管理 |
+| CRUD | `/api/notification-groups/*` | 通知组管理 |
+| CRUD | `/api/alert-rules/*` | 告警规则管理 |
+| CRUD | `/api/ping-tasks/*` | Ping 任务管理 |
+| POST | `/api/tasks` | 创建远程命令任务 |
+| GET | `/api/tasks/{id}` | 获取任务详情和结果 |
+| CRUD | `/api/users/*` | 用户管理 |
+| GET | `/api/audit-logs` | 审计日志 |
+| GET/PUT | `/api/settings/*` | 系统设置 |
+| POST | `/api/settings/backup` | 数据库备份 |
+| POST | `/api/settings/restore` | 数据库恢复 |
+
+### WebSocket 端点
+
+| 路径 | 说明 |
+|------|------|
+| `/api/ws/browser` | 浏览器实时数据推送 |
+| `/api/ws/terminal/{server_id}` | Web 终端代理 |
+
+## 错误响应
+
+所有 API 错误返回统一格式：
+
+```json
+{
+  "error": "Error message describing what went wrong"
+}
+```
+
+常见状态码：
+
+| 状态码 | 说明 |
+|--------|------|
+| 400 | 请求参数错误 |
+| 401 | 未认证 |
+| 403 | 无权限（角色不足或功能被禁用） |
+| 404 | 资源不存在 |
+| 429 | 请求过于频繁（限流） |
+| 500 | 服务器内部错误 |
+
+<Cards>
+  <Card title="功能开关" href="/docs/cn/capabilities" />
+  <Card title="管理员指南" href="/docs/cn/admin" />
+  <Card title="架构设计" href="/docs/cn/architecture" />
+</Cards>

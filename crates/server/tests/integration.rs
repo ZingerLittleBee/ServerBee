@@ -188,7 +188,7 @@ async fn test_agent_register_connect_report() {
         serde_json::from_str(&welcome_text).expect("Failed to parse Welcome");
     assert_eq!(welcome["type"], "welcome");
     assert_eq!(welcome["server_id"], server_id);
-    assert_eq!(welcome["protocol_version"], 1);
+    assert_eq!(welcome["protocol_version"], 2);
 
     // ── Step 3: Send SystemInfo ──
     let system_info = json!({
@@ -213,21 +213,25 @@ async fn test_agent_register_connect_report() {
         .await
         .expect("Failed to send SystemInfo");
 
-    // Read the Ack for SystemInfo
-    let ack_msg = tokio::time::timeout(Duration::from_secs(5), ws_reader.next())
-        .await
-        .expect("Timeout waiting for Ack")
-        .expect("WebSocket stream ended")
-        .expect("WebSocket read error");
+    // Read messages until we get the Ack for SystemInfo (skip ping_tasks_sync etc.)
+    let ack = loop {
+        let msg = tokio::time::timeout(Duration::from_secs(5), ws_reader.next())
+            .await
+            .expect("Timeout waiting for Ack")
+            .expect("WebSocket stream ended")
+            .expect("WebSocket read error");
 
-    let ack_text = match ack_msg {
-        tungstenite::Message::Text(t) => t.to_string(),
-        other => panic!("Expected Text Ack, got: {:?}", other),
+        let text = match msg {
+            tungstenite::Message::Text(t) => t.to_string(),
+            other => panic!("Expected Text message, got: {:?}", other),
+        };
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&text).expect("Failed to parse message");
+        if parsed["type"] == "ack" {
+            break parsed;
+        }
     };
-
-    let ack: serde_json::Value =
-        serde_json::from_str(&ack_text).expect("Failed to parse Ack");
-    assert_eq!(ack["type"], "ack");
     assert_eq!(ack["msg_id"], "test-msg-1");
 
     // ── Step 4: Send Report ──

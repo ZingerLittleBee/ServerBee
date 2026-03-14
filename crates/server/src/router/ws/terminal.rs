@@ -41,6 +41,24 @@ async fn terminal_ws_handler(
                 )
                     .into_response();
             }
+            // Check terminal capability
+            match crate::service::server::ServerService::get_server(&state.db, &server_id).await {
+                Ok(server) => {
+                    if !serverbee_common::constants::has_capability(
+                        server.capabilities as u32,
+                        serverbee_common::constants::CAP_TERMINAL,
+                    ) {
+                        return (
+                            axum::http::StatusCode::FORBIDDEN,
+                            "Terminal is disabled for this server",
+                        )
+                            .into_response();
+                    }
+                }
+                Err(_) => {
+                    return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+            }
             ws.on_upgrade(move |socket| handle_terminal_ws(socket, state, server_id))
         }
         None => axum::http::StatusCode::UNAUTHORIZED.into_response(),

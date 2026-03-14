@@ -1,0 +1,76 @@
+---
+title: 公开状态页
+description: 为访客提供无需登录的服务器在线状态展示页面。
+icon: Globe
+---
+
+ServerBee 提供一个公开状态页面，无需登录即可查看服务器的在线状态和基本指标。适合向用户或团队展示服务运行状况。
+
+## 访问方式
+
+状态页面地址：`https://your-server/status`
+
+该页面不需要任何认证，任何人都可以访问。
+
+## 页面内容
+
+状态页展示以下信息：
+
+- **在线/总数统计**：显示当前在线服务器数量和总服务器数量
+- **服务器列表**：按分组展示所有非隐藏的服务器
+- **在线状态**：每台服务器显示在线/离线状态指示
+- **实时指标**：在线服务器显示 CPU、内存、磁盘使用率进度条
+- **自动刷新**：页面每 10 秒自动从 API 获取最新数据
+
+## 显示规则
+
+- 仅展示 **非隐藏** 的服务器（管理员可在服务器编辑中设置 `hidden` 属性）
+- 按服务器分组（Group）组织展示
+- 离线服务器不显示指标数据，仅显示离线状态
+
+## API 端点
+
+```
+GET /api/status
+```
+
+公开端点，无需认证。返回结构：
+
+```json
+{
+  "data": {
+    "servers": [
+      {
+        "id": "server-uuid",
+        "name": "Web Server 1",
+        "hostname": "web1.example.com",
+        "is_online": true,
+        "group_name": "Production",
+        "cpu": 45.2,
+        "mem_used": 8589934592,
+        "mem_total": 17179869184,
+        "disk_used": 53687091200,
+        "disk_total": 107374182400
+      }
+    ],
+    "groups": [
+      { "id": "group-uuid", "name": "Production" }
+    ],
+    "online_count": 8,
+    "total_count": 10
+  }
+}
+```
+
+## 隐藏服务器
+
+如果某些服务器不希望出现在状态页上：
+
+1. 进入服务器详情页 → 编辑
+2. 勾选 **Hidden** 选项
+3. 该服务器不会出现在 `/api/status` 返回的列表中
+
+<Cards>
+  <Card title="监控功能" href="/docs/cn/monitoring" />
+  <Card title="部署指南" href="/docs/cn/deployment" />
+</Cards>

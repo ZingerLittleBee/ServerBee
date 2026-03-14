@@ -1,0 +1,120 @@
+---
+title: Security
+description: Configure two-factor authentication, OAuth login, password management, and login security policies.
+icon: Shield
+---
+
+ServerBee provides multiple layers of security including two-factor authentication (2FA), OAuth social login, password policies, and login rate limiting.
+
+## Two-Factor Authentication (2FA)
+
+ServerBee supports TOTP (Time-based One-Time Password) based two-factor authentication, compatible with all standard authenticator apps (Google Authenticator, Authy, 1Password, etc.).
+
+### Enabling 2FA
+
+1. Log in and go to Settings → Security
+2. In the "Two-Factor Authentication" section, click **Setup**
+3. Scan the QR code (or manually enter the Base32 secret)
+4. Generate a 6-digit verification code in your authenticator app
+5. Enter the code and click **Enable** to complete setup
+
+<Callout type="info">
+Once enabled, a 6-digit TOTP code is required for every login. Codes refresh every 30 seconds.
+</Callout>
+
+### Disabling 2FA
+
+1. Go to Settings → Security
+2. Click **Disable 2FA**
+3. Enter your current password to confirm
+4. 2FA is disabled
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/auth/2fa/setup` | POST | Generate TOTP secret and QR code |
+| `/api/auth/2fa/enable` | POST | Verify code and enable 2FA |
+| `/api/auth/2fa/disable` | POST | Verify password and disable 2FA |
+| `/api/auth/2fa/status` | GET | Check current 2FA status |
+
+## OAuth Social Login
+
+ServerBee supports three OAuth providers:
+
+| Provider | Config Section | Callback URL |
+|----------|---------------|--------------|
+| GitHub | `[oauth.github]` | `{base_url}/api/auth/oauth/github/callback` |
+| Google | `[oauth.google]` | `{base_url}/api/auth/oauth/google/callback` |
+| OIDC | `[oauth.oidc]` | `{base_url}/api/auth/oauth/oidc/callback` |
+
+### Configuring OAuth
+
+Add OAuth configuration to `server.toml` (see [Server Setup](/docs/en/server)):
+
+```toml
+[oauth]
+base_url = "https://monitor.example.com"
+allow_registration = false
+
+[oauth.github]
+client_id = "your-github-client-id"
+client_secret = "your-github-client-secret"
+```
+
+### OAuth Account Management
+
+- View linked OAuth accounts in Settings → Security
+- Click **Unlink** to disconnect an OAuth account
+- If `allow_registration = false` (default), first-time OAuth logins do not create new users — an admin must create the user first
+
+### Login Flow
+
+1. Click an OAuth provider button on the login page (e.g., "Login with GitHub")
+2. Redirect to the provider's authorization page
+3. After authorization, redirect back to ServerBee
+4. If the OAuth account is linked to an existing user, log in directly
+5. If not linked and `allow_registration = true`, create a new Member user and log in
+6. If not linked and `allow_registration = false`, return an error
+
+## Password Management
+
+### Changing Password
+
+1. Go to Settings → Security
+2. Enter your current password and new password in "Change Password"
+3. Click **Change Password**
+
+Passwords are hashed with argon2, following OWASP recommendations.
+
+### Default Password Warning
+
+If `admin.password` is not set during first deployment, ServerBee generates a random password and prints it to the startup log. After login, a prominent warning banner appears at the top of the Dashboard, prompting immediate password change.
+
+## Login Security
+
+### Login Rate Limiting
+
+ServerBee enforces IP-level rate limiting on the login endpoint:
+
+- Maximum **5 failed attempts** per 15-minute window by default (configurable via `rate_limit.login_max`)
+- Returns 429 Too Many Requests when exceeded
+- Expired rate limit records are cleaned up by the background session_cleaner task
+
+### Agent Registration Rate Limiting
+
+Agent registration endpoints are also rate limited:
+
+- Maximum **3 registration attempts** per 15-minute window by default (configurable via `rate_limit.register_max`)
+
+### Session Security
+
+- Session cookies are set with `HttpOnly` + `Secure` flags by default
+- Session lifetime is 24 hours (configurable via `auth.session_ttl`)
+- For HTTP-only development, set `auth.secure_cookie = false`
+
+<Cards>
+  <Card title="Server Setup" href="/docs/en/server" />
+  <Card title="Admin Guide" href="/docs/en/admin" />
+  <Card title="Configuration" href="/docs/en/configuration" />
+</Cards>

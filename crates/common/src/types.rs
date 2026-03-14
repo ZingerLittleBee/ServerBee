@@ -1,6 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+fn default_protocol_version() -> u32 {
+    1
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemInfo {
     pub cpu_name: String,
@@ -15,6 +19,8 @@ pub struct SystemInfo {
     pub ipv6: Option<String>,
     pub virtualization: Option<String>,
     pub agent_version: String,
+    #[serde(default = "default_protocol_version")]
+    pub protocol_version: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

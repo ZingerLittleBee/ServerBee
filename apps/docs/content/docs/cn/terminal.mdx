@@ -70,6 +70,10 @@ Web 终端使用 Tokyo Night 配色方案，提供舒适的视觉体验，与 Se
 | 单帧数据上限 | 64 KB | 单条 WebSocket Binary 帧最大体积 |
 | 访问权限 | 仅管理员 | Member 角色无法使用终端功能 |
 
+<Callout type="warn">
+Web 终端需要目标服务器启用 `terminal` 能力（CAP_TERMINAL）。如果该能力被禁用，服务器将返回 403 Forbidden。管理员可以在 Settings → Capabilities 中管理此设置。
+</Callout>
+
 ## 安全说明
 
 ### PTY 运行用户
@@ -94,7 +98,7 @@ ExecStart=/usr/local/bin/serverbee-agent
 
 ### 审计日志
 
-终端连接和断开事件会记录到审计日志中（P2 阶段），包括：
+终端连接和断开事件会记录到审计日志中。管理员可以在 Settings → Audit Logs 页面查看所有终端会话的访问记录，包括：
 
 - 操作者用户名
 - 目标服务器

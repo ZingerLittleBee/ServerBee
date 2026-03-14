@@ -132,7 +132,7 @@ file = "/var/log/serverbee-agent.log"
 | `log.level` | string | `"info"` | 日志级别 |
 | `log.file` | string | `""` | 日志文件路径，留空输出到 stdout |
 
-环境变量覆盖：使用 `SB_` 前缀，如 `SB_SERVER_URL`、`SB_TOKEN`、`SB_LOG_LEVEL`。
+环境变量覆盖：使用 `SB_` 前缀，嵌套字段用 `__` 分隔。如 `SB_SERVER_URL`（顶层）、`SB_COLLECTOR__INTERVAL`（嵌套）、`SB_LOG__LEVEL`（嵌套）。
 
 ## GPU 监控
 
@@ -236,18 +236,27 @@ Agent 与 Server 之间的 WebSocket 连接断开后，会自动尝试重连：
 
 ## 自动更新
 
-<Callout type="info">
-自动更新功能计划在 P2 阶段实现。
+Server 可以向在线 Agent 推送升级命令。触发升级时：
+
+1. Server 发送 `Upgrade` 消息，包含下载 URL 和版本号
+2. Agent 下载新版本二进制文件
+3. 验证 SHA-256 校验和（通过 `x-checksum-sha256` 响应头）
+4. 备份当前二进制文件（`.bak` 后缀）
+5. 替换为新二进制
+6. 自动重启进程
+
+管理员可以在 Dashboard 的服务器详情页面触发升级，也可以通过 API：
+
+```bash
+curl -X POST https://your-server/api/servers/{id}/upgrade \
+  -H "Cookie: session=..." \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://github.com/.../releases/download/v1.2.0/serverbee-agent", "version": "1.2.0"}'
+```
+
+<Callout type="warn">
+自动更新需要 Agent 具有 `upgrade` 能力（CAP_UPGRADE）。默认情况下该能力是关闭的，需要管理员在 Settings → Capabilities 中手动启用。
 </Callout>
-
-Server 可以向 Agent 下发升级指令，Agent 收到后会自动执行以下流程：
-
-1. 从指定 URL 下载新版本二进制
-2. 校验 checksum 确保文件完整
-3. 替换自身二进制文件
-4. 重启进程
-
-在自动更新功能可用之前，可以通过重新运行安装脚本来手动更新 Agent。
 
 <Cards>
   <Card title="Server 安装配置" href="/docs/cn/server" />
