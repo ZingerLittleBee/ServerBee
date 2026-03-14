@@ -157,21 +157,22 @@ function ServerDetailPage() {
   const [editOpen, setEditOpen] = useState(false)
 
   const range = TIME_RANGES[selectedRange]
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally re-compute when selectedRange changes
-  const now = useMemo(() => new Date(), [selectedRange])
-  const from = new Date(now.getTime() - range.hours * 3600 * 1000).toISOString()
-  const to = now.toISOString()
 
   const { data: server, isLoading: serverLoading } = useServer(id)
-  const { data: records } = useServerRecords(id, from, to, range.interval)
+  const { data: records } = useServerRecords(id, range.hours, range.interval)
 
   const { data: gpuRecords } = useQuery<GpuRecordAggregated[]>({
-    queryKey: ['servers', id, 'gpu-records', from, to],
-    queryFn: () =>
-      api.get<GpuRecordAggregated[]>(
-        `/api/servers/${id}/gpu-records?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
-      ),
-    enabled: id.length > 0
+    queryKey: ['servers', id, 'gpu-records', range.hours],
+    queryFn: () => {
+      const now = new Date()
+      const gpuFrom = new Date(now.getTime() - range.hours * 3600 * 1000).toISOString()
+      const gpuTo = now.toISOString()
+      return api.get<GpuRecordAggregated[]>(
+        `/api/servers/${id}/gpu-records?from=${encodeURIComponent(gpuFrom)}&to=${encodeURIComponent(gpuTo)}`
+      )
+    },
+    enabled: id.length > 0,
+    refetchInterval: 60_000
   })
 
   const { data: liveServers } = useQuery<ServerMetrics[]>({
