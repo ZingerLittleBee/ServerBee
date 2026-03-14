@@ -1,4 +1,5 @@
 import { createRootRoute, Outlet } from '@tanstack/react-router'
+import { Agentation } from 'agentation'
 import { ThemeProvider } from '@/components/theme-provider'
 
 export const Route = createRootRoute({
@@ -7,10 +8,13 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   return (
-    <ThemeProvider>
-      <div className="min-h-screen bg-background text-foreground">
-        <Outlet />
-      </div>
-    </ThemeProvider>
+    <>
+      {import.meta.env.DEV && <Agentation />}
+      <ThemeProvider>
+        <div className="min-h-screen bg-background text-foreground">
+          <Outlet />
+        </div>
+      </ThemeProvider>
+    </>
   )
 }
