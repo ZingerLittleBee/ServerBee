@@ -4,7 +4,7 @@ import { AlertTriangle, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
-import type { AlertRule, AlertRuleItem, NotificationGroup } from '@/lib/api-schema'
+import type { AlertRule, AlertRuleItem, AlertStateResponse, NotificationGroup } from '@/lib/api-schema'
 
 export const Route = createFileRoute('/_authed/settings/alerts')({
   component: AlertsPage
@@ -87,6 +87,7 @@ function AlertsPage() {
   const [ruleItems, setRuleItems] = useState<AlertRuleItem[]>([{ rule_type: 'cpu', min: 90 }])
   const [coverType, setCoverType] = useState<'all' | 'exclude' | 'include'>('all')
   const [serverIds, setServerIds] = useState<string[]>([])
+  const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null)
 
   const { data: rules, isLoading } = useQuery<AlertRule[]>({
     queryKey: ['alert-rules'],
@@ -102,6 +103,13 @@ function AlertsPage() {
     queryKey: ['servers'],
     queryFn: () => api.get<Server[]>('/api/servers'),
     enabled: showForm
+  })
+
+  const { data: states } = useQuery<AlertStateResponse[]>({
+    queryKey: ['alert-rule-states', expandedRuleId],
+    queryFn: () => api.get<AlertStateResponse[]>(`/api/alert-rules/${expandedRuleId}/states`),
+    enabled: !!expandedRuleId,
+    refetchInterval: 10_000
   })
 
   const createMutation = useMutation({
@@ -379,40 +387,77 @@ function AlertsPage() {
               {rules.map((rule) => {
                 const items: AlertRuleItem[] = JSON.parse(rule.rules_json || '[]')
                 return (
-                  <div className="flex items-center justify-between px-4 py-3" key={rule.id}>
-                    <div className="flex items-center gap-3">
-                      <AlertTriangle
-                        className={`size-4 ${rule.enabled ? 'text-amber-500' : 'text-muted-foreground'}`}
-                      />
-                      <div>
-                        <p className="font-medium text-sm">
-                          {rule.name}
-                          {!rule.enabled && <span className="ml-2 text-muted-foreground text-xs">(disabled)</span>}
-                        </p>
-                        <p className="text-muted-foreground text-xs">
-                          {items.map(formatRuleItem).join(' AND ')} | {rule.trigger_mode}
-                        </p>
+                  <>
+                    <div className="flex items-center justify-between px-4 py-3" key={rule.id}>
+                      <div className="flex items-center gap-3">
+                        <AlertTriangle
+                          className={`size-4 ${rule.enabled ? 'text-amber-500' : 'text-muted-foreground'}`}
+                        />
+                        <div>
+                          <p className="font-medium text-sm">
+                            {rule.name}
+                            {!rule.enabled && <span className="ml-2 text-muted-foreground text-xs">(disabled)</span>}
+                            <button
+                              className="ml-2 rounded-full bg-muted px-2 py-0.5 text-muted-foreground text-xs hover:bg-muted/80"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setExpandedRuleId(expandedRuleId === rule.id ? null : rule.id)
+                              }}
+                              type="button"
+                            >
+                              States
+                            </button>
+                          </p>
+                          <p className="text-muted-foreground text-xs">
+                            {items.map(formatRuleItem).join(' AND ')} | {rule.trigger_mode}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button
+                          onClick={() => toggleMutation.mutate({ id: rule.id, enabled: !rule.enabled })}
+                          size="sm"
+                          variant="outline"
+                        >
+                          {rule.enabled ? 'Disable' : 'Enable'}
+                        </Button>
+                        <Button
+                          aria-label={`Delete rule ${rule.name}`}
+                          disabled={deleteMutation.isPending}
+                          onClick={() => deleteMutation.mutate(rule.id)}
+                          size="sm"
+                          variant="destructive"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
                       </div>
                     </div>
-                    <div className="flex gap-1">
-                      <Button
-                        onClick={() => toggleMutation.mutate({ id: rule.id, enabled: !rule.enabled })}
-                        size="sm"
-                        variant="outline"
-                      >
-                        {rule.enabled ? 'Disable' : 'Enable'}
-                      </Button>
-                      <Button
-                        aria-label={`Delete rule ${rule.name}`}
-                        disabled={deleteMutation.isPending}
-                        onClick={() => deleteMutation.mutate(rule.id)}
-                        size="sm"
-                        variant="destructive"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </Button>
-                    </div>
-                  </div>
+                    {expandedRuleId === rule.id && (
+                      <div className="border-t bg-muted/20 px-4 py-2">
+                        {states && states.length > 0 ? (
+                          <div className="space-y-1">
+                            {states.map((s) => (
+                              <div className="flex items-center justify-between text-xs" key={s.server_id}>
+                                <span className="flex items-center gap-2">
+                                  <span
+                                    className={`size-2 rounded-full ${s.resolved ? 'bg-green-500' : 'bg-red-500'}`}
+                                  />
+                                  {s.server_name}
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {s.resolved ? 'Resolved' : `Triggered (${s.count}x)`}
+                                  {' · '}
+                                  {new Date(s.first_triggered_at).toLocaleString()}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-muted-foreground text-xs">No triggered states</p>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )
               })}
             </div>
