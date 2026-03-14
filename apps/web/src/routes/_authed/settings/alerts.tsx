@@ -15,8 +15,30 @@ interface Server {
   name: string
 }
 
+const THRESHOLD_TYPES = new Set([
+  'cpu',
+  'memory',
+  'swap',
+  'disk',
+  'load1',
+  'load5',
+  'load15',
+  'tcp_conn',
+  'udp_conn',
+  'process',
+  'net_in_speed',
+  'net_out_speed',
+  'temperature',
+  'gpu'
+])
+
+const CYCLE_TYPES = new Set(['transfer_in_cycle', 'transfer_out_cycle', 'transfer_all_cycle'])
+
 const ruleTypes = [
   { label: 'CPU %', value: 'cpu' },
+  { label: 'Memory (bytes)', value: 'memory' },
+  { label: 'Swap (bytes)', value: 'swap' },
+  { label: 'Disk (bytes)', value: 'disk' },
   { label: 'Load 1m', value: 'load1' },
   { label: 'Load 5m', value: 'load5' },
   { label: 'Load 15m', value: 'load15' },
@@ -27,8 +49,34 @@ const ruleTypes = [
   { label: 'Network Out (B/s)', value: 'net_out_speed' },
   { label: 'Temperature', value: 'temperature' },
   { label: 'GPU %', value: 'gpu' },
-  { label: 'Offline', value: 'offline' }
+  { label: 'Offline', value: 'offline' },
+  { label: 'Transfer In (cycle)', value: 'transfer_in_cycle' },
+  { label: 'Transfer Out (cycle)', value: 'transfer_out_cycle' },
+  { label: 'Transfer Total (cycle)', value: 'transfer_all_cycle' },
+  { label: 'Expiration', value: 'expiration' }
 ]
+
+function formatRuleItem(item: AlertRuleItem): string {
+  if (item.rule_type === 'offline') {
+    return `offline ${item.duration ?? 60}s`
+  }
+  if (item.rule_type === 'expiration') {
+    return `expires in ${item.duration ?? 7}d`
+  }
+  if (item.cycle_limit) {
+    return `${item.rule_type} > ${item.cycle_limit}B/${item.cycle_interval ?? 'month'}`
+  }
+  if (item.min && item.max) {
+    return `${item.rule_type} [${item.min}, ${item.max}]`
+  }
+  if (item.min) {
+    return `${item.rule_type} ≥ ${item.min}`
+  }
+  if (item.max) {
+    return `${item.rule_type} ≥ ${item.max}`
+  }
+  return item.rule_type
+}
 
 function AlertsPage() {
   const queryClient = useQueryClient()
@@ -36,7 +84,7 @@ function AlertsPage() {
   const [name, setName] = useState('')
   const [triggerMode, setTriggerMode] = useState('always')
   const [groupId, setGroupId] = useState('')
-  const [ruleItems, setRuleItems] = useState<AlertRuleItem[]>([{ rule_type: 'cpu', max: 90 }])
+  const [ruleItems, setRuleItems] = useState<AlertRuleItem[]>([{ rule_type: 'cpu', min: 90 }])
   const [coverType, setCoverType] = useState<'all' | 'exclude' | 'include'>('all')
   const [serverIds, setServerIds] = useState<string[]>([])
 
@@ -90,7 +138,7 @@ function AlertsPage() {
     setName('')
     setTriggerMode('always')
     setGroupId('')
-    setRuleItems([{ rule_type: 'cpu', max: 90 }])
+    setRuleItems([{ rule_type: 'cpu', min: 90 }])
     setCoverType('all')
     setServerIds([])
     setShowForm(false)
@@ -112,7 +160,7 @@ function AlertsPage() {
   }
 
   const addRuleItem = () => {
-    setRuleItems((prev) => [...prev, { rule_type: 'cpu', max: 90 }])
+    setRuleItems((prev) => [...prev, { rule_type: 'cpu', min: 90 }])
   }
 
   const removeRuleItem = (index: number) => {
@@ -236,14 +284,65 @@ function AlertsPage() {
                         </option>
                       ))}
                     </select>
-                    {item.rule_type !== 'offline' && (
+                    {THRESHOLD_TYPES.has(item.rule_type) && (
+                      <>
+                        <input
+                          className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                          onChange={(e) => updateRuleItem(index, 'min', Number.parseFloat(e.target.value) || 0)}
+                          placeholder="Threshold ≥"
+                          type="number"
+                          value={item.min ?? ''}
+                        />
+                        <input
+                          className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                          onChange={(e) => updateRuleItem(index, 'max', Number.parseFloat(e.target.value) || 0)}
+                          placeholder="and ≤ (opt)"
+                          type="number"
+                          value={item.max ?? ''}
+                        />
+                      </>
+                    )}
+                    {item.rule_type === 'offline' && (
                       <input
-                        className="flex h-9 w-24 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                        onChange={(e) => updateRuleItem(index, 'max', Number.parseFloat(e.target.value) || 0)}
-                        placeholder="Threshold"
+                        className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                        onChange={(e) => updateRuleItem(index, 'duration', Number.parseInt(e.target.value, 10) || 60)}
+                        placeholder="Duration (s)"
                         type="number"
-                        value={item.max ?? ''}
+                        value={item.duration ?? 60}
                       />
+                    )}
+                    {item.rule_type === 'expiration' && (
+                      <input
+                        className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                        onChange={(e) => updateRuleItem(index, 'duration', Number.parseInt(e.target.value, 10) || 7)}
+                        placeholder="Days before"
+                        type="number"
+                        value={item.duration ?? 7}
+                      />
+                    )}
+                    {CYCLE_TYPES.has(item.rule_type) && (
+                      <>
+                        <select
+                          className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                          onChange={(e) => updateRuleItem(index, 'cycle_interval', e.target.value)}
+                          value={item.cycle_interval ?? 'month'}
+                        >
+                          <option value="hour">Hour</option>
+                          <option value="day">Day</option>
+                          <option value="week">Week</option>
+                          <option value="month">Month</option>
+                          <option value="year">Year</option>
+                        </select>
+                        <input
+                          className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                          onChange={(e) =>
+                            updateRuleItem(index, 'cycle_limit', Number.parseInt(e.target.value, 10) || 0)
+                          }
+                          placeholder="Limit (bytes)"
+                          type="number"
+                          value={item.cycle_limit ?? ''}
+                        />
+                      </>
                     )}
                     {ruleItems.length > 1 && (
                       <Button onClick={() => removeRuleItem(index)} size="sm" type="button" variant="ghost">
@@ -291,8 +390,7 @@ function AlertsPage() {
                           {!rule.enabled && <span className="ml-2 text-muted-foreground text-xs">(disabled)</span>}
                         </p>
                         <p className="text-muted-foreground text-xs">
-                          {items.map((item) => `${item.rule_type}${item.max ? ` >= ${item.max}` : ''}`).join(' AND ')} |{' '}
-                          {rule.trigger_mode}
+                          {items.map(formatRuleItem).join(' AND ')} | {rule.trigger_mode}
                         </p>
                       </div>
                     </div>
