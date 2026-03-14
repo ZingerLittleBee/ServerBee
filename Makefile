@@ -50,6 +50,9 @@ COMMAND_TARGETS := \
 	server-run \
 	agent-build \
 	agent-run \
+	server-dev \
+	agent-dev \
+	dev-full \
 	docker-build \
 	docker-up \
 	docker-down \

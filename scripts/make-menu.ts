@@ -357,6 +357,31 @@ const COMMANDS: CommandDefinition[] = [
     featured: true
   },
   {
+    key: 'server-dev',
+    name: 'server:dev',
+    category: 'Rust',
+    description: 'Run server in dev mode (admin/admin123, no secure cookie)',
+    command: 'SB_ADMIN__PASSWORD=admin123 SB_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server',
+    featured: true
+  },
+  {
+    key: 'agent-dev',
+    name: 'agent:dev',
+    category: 'Rust',
+    description: 'Run agent connecting to local server (set SB_AUTO_DISCOVERY_KEY)',
+    command: 'SB_SERVER_URL=http://127.0.0.1:9527 cargo run -p serverbee-agent',
+    featured: true
+  },
+  {
+    key: 'dev-full',
+    name: 'dev:full',
+    category: 'Workspace',
+    description: 'Build web + start server in dev mode (admin/admin123)',
+    command:
+      'cd apps/web && bun install && bun run build && cd ../.. && SB_ADMIN__PASSWORD=admin123 SB_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server',
+    featured: true
+  },
+  {
     key: 'docker-build',
     name: 'docker:build',
     category: 'Docker',
