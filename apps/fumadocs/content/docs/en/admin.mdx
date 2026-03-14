@@ -1,0 +1,153 @@
+---
+title: Admin Guide
+description: User management, audit logs, remote commands, and billing management.
+icon: UserCog
+---
+
+This page covers features available only to administrators (Admin role).
+
+## User Management
+
+ServerBee supports multiple users with two roles:
+
+| Role | Permissions |
+|------|-------------|
+| **Admin** | Full management: users, server config, alert rules, notifications, audit logs, etc. |
+| **Member** | Read-only: view Dashboard, server details, Ping results |
+
+### Managing Users
+
+Go to Settings → Users:
+
+- **Create user**: Enter username, password, and role
+- **Edit role**: Change a user's role (Admin/Member)
+- **Delete user**: Remove a user account (cannot delete the last Admin)
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/users` | GET | List all users |
+| `/api/users` | POST | Create a user |
+| `/api/users/{id}` | GET | Get user details |
+| `/api/users/{id}` | PUT | Update user role |
+| `/api/users/{id}` | DELETE | Delete a user |
+
+## Audit Logs
+
+ServerBee automatically records audit logs for critical operations, helping administrators track security events.
+
+### Recorded Events
+
+- User login (success/failure)
+- Password changes
+- 2FA enable/disable
+- Terminal connect/disconnect
+- Capability denial events
+
+### Viewing Audit Logs
+
+Go to Settings → Audit Logs:
+
+- Browse all audit records (paginated)
+- View user, action type, details, IP address, and timestamp
+
+### API Endpoint
+
+```
+GET /api/audit-logs?limit=50&offset=0
+```
+
+Returns a paginated audit log list. Each entry contains:
+
+```json
+{
+  "id": 1,
+  "user_id": "user-uuid",
+  "action": "login",
+  "detail": "Login successful",
+  "ip": "192.168.1.100",
+  "created_at": "2026-03-14T10:30:00Z"
+}
+```
+
+Audit logs are retained for 180 days by default (configurable via `retention.audit_logs_days`).
+
+## Remote Commands
+
+Administrators can dispatch commands to online servers and retrieve execution results.
+
+### Usage
+
+1. Go to Settings → Tasks
+2. Enter the command to execute
+3. Select target servers (multi-select supported)
+4. Click **Execute**
+
+### Execution Flow
+
+1. Server creates a Task record
+2. Sends the command to each target agent via WebSocket
+3. Agent executes the command, reports stdout/stderr and exit_code
+4. Results are stored in the `task_results` table
+
+### Limitations
+
+- Command execution timeout: 300 seconds
+- Requires `exec` capability (CAP_EXEC) on target servers
+- Servers without CAP_EXEC receive a synthetic result: `exit_code = -2`, message: "Capability disabled"
+- Only Admin role can create tasks
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/tasks` | POST | Create and dispatch a command |
+| `/api/tasks/{id}` | GET | Get task details |
+| `/api/tasks/{id}/results` | GET | Get execution results |
+
+Request body for creating a task:
+
+```json
+{
+  "command": "uptime",
+  "server_ids": ["server-id-1", "server-id-2"],
+  "timeout": 60
+}
+```
+
+## Billing Information
+
+Administrators can record billing details for each server to track VPS costs and expiration dates.
+
+### Managing Billing Info
+
+1. Go to server detail page → click Edit
+2. Fill in the "Billing" section:
+
+| Field | Description |
+|-------|-------------|
+| `price` | Price amount |
+| `billing_cycle` | Billing cycle (monthly/quarterly/yearly, etc.) |
+| `currency` | Currency unit (CNY/USD, etc.) |
+| `expired_at` | Expiration date |
+| `traffic_limit` | Traffic limit in bytes |
+
+### Expiration Alerts
+
+Create an `expiration` alert rule to receive notifications before a server expires:
+
+1. Go to Settings → Alerts
+2. Create a new rule with metric type **expiration**
+3. Set the threshold to the number of days before expiration (e.g., 7 for 7-day advance notice)
+4. Link a notification group
+
+### Traffic Alerts
+
+Use `transfer_in_cycle` / `transfer_out_cycle` / `transfer_all_cycle` alert types to monitor cumulative traffic within the current billing cycle. See [Alerts](/docs/en/alerts) for details.
+
+<Cards>
+  <Card title="Capabilities" href="/docs/en/capabilities" />
+  <Card title="Security" href="/docs/en/security" />
+  <Card title="Alerts" href="/docs/en/alerts" />
+</Cards>

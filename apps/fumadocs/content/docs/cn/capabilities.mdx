@@ -1,0 +1,114 @@
+---
+title: 功能开关
+description: 为每台服务器独立控制 Agent 的功能权限，实现最小权限原则。
+icon: ToggleRight
+---
+
+ServerBee 支持为每台 Agent 独立控制可用功能。通过功能开关（Capability Toggles），管理员可以精确控制每台服务器允许执行的操作，实现最小权限原则。
+
+## 功能列表
+
+ServerBee 定义了 6 个功能位，分为两个风险等级：
+
+### 高风险功能（默认关闭）
+
+| 功能 | 位值 | 说明 |
+|------|------|------|
+| **Web Terminal** | `CAP_TERMINAL` (1) | 允许通过浏览器打开远程终端 |
+| **Remote Exec** | `CAP_EXEC` (2) | 允许远程执行命令 |
+| **Auto Upgrade** | `CAP_UPGRADE` (4) | 允许远程推送二进制升级 |
+
+<Callout type="warn">
+这三个功能涉及在目标服务器上执行任意代码或替换二进制文件，因此默认关闭。请仅在信任的服务器上启用。
+</Callout>
+
+### 低风险功能（默认启用）
+
+| 功能 | 位值 | 说明 |
+|------|------|------|
+| **ICMP Ping** | `CAP_PING_ICMP` (8) | 允许执行 ICMP 探测任务 |
+| **TCP Probe** | `CAP_PING_TCP` (16) | 允许执行 TCP 端口探测任务 |
+| **HTTP Probe** | `CAP_PING_HTTP` (32) | 允许执行 HTTP 探测任务 |
+
+新注册的 Agent 默认 capabilities 值为 `56`（即三个 Ping 功能全部启用）。
+
+## 配置方式
+
+### 单台服务器配置
+
+1. 进入 Dashboard → 点击目标服务器 → 服务器详情页
+2. 在 **Capabilities** 区域，使用 toggle 开关启用或禁用各项功能
+3. 更改立即生效，Server 会通过 WebSocket 实时推送 `CapabilitiesSync` 消息到 Agent
+
+### 批量配置
+
+1. 进入 Settings → Capabilities
+2. 搜索或多选服务器
+3. 批量启用或禁用指定功能
+4. 点击保存，所有选中服务器的功能开关同时更新
+
+### API 配置
+
+单台更新（通过 `PUT /api/servers/{id}`）：
+
+```bash
+curl -X PUT https://your-server/api/servers/{id} \
+  -H "Cookie: session=..." \
+  -H "Content-Type: application/json" \
+  -d '{"capabilities": 63}'
+```
+
+批量更新：
+
+```bash
+curl -X PUT https://your-server/api/servers/batch-capabilities \
+  -H "Cookie: session=..." \
+  -H "Content-Type: application/json" \
+  -d '{"server_ids": ["id1", "id2"], "capabilities": 63}'
+```
+
+capabilities 值是各功能位的按位或（OR）结果。例如：
+- `56` = ICMP + TCP + HTTP（默认值）
+- `63` = 全部功能启用
+- `0` = 全部功能禁用
+
+## 双重验证机制
+
+ServerBee 采用纵深防御（defense in depth）策略，在 Server 端和 Agent 端同时验证功能权限：
+
+### Server 端拦截
+
+- **Terminal**：WebSocket 升级请求被 403 拦截
+- **Exec**：`POST /api/tasks` 过滤无权限服务器，写入合成结果（`exit_code = -2`，提示 "Capability 'exec' is disabled"）
+- **Ping**：按 capability 过滤任务，不向无权限 Agent 同步相关探测任务
+
+### Agent 端拒绝
+
+即使 Server 端消息被绕过，Agent 本地也会检查 capabilities：
+
+- 收到不允许的命令时返回 `CapabilityDenied` 消息
+- Server 收到 `CapabilityDenied` 后写入合成结果（`exit_code = -1`）
+- 审计日志记录拒绝事件
+
+### 实时同步
+
+当管理员修改 capabilities 后：
+
+1. Server 通过 WebSocket 发送 `CapabilitiesSync` 到目标 Agent
+2. Agent 使用 `AtomicU32` 原子更新本地 capabilities 值
+3. Server 通过 WebSocket 发送 `CapabilitiesChanged` 到所有连接的浏览器
+4. 前端实时更新 UI 状态
+5. 如果 Ping 相关 capability 发生变化，Server 自动触发 Ping 任务重同步
+
+## 前端表现
+
+- **Server Detail 页面**：capabilities toggle 区域，在线服务器可实时切换
+- **Settings → Capabilities**：批量管理页面，支持搜索和多选
+- **Tasks 页面**：无 `CAP_EXEC` 权限的服务器显示为灰色，任务结果标记为 "skipped"
+- **Terminal 按钮**：无 `CAP_TERMINAL` 权限的服务器不显示 Terminal 按钮
+
+<Cards>
+  <Card title="Web 终端" href="/docs/cn/terminal" />
+  <Card title="Ping 探测" href="/docs/cn/ping" />
+  <Card title="管理员指南" href="/docs/cn/admin" />
+</Cards>

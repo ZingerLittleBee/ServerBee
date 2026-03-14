@@ -1,0 +1,114 @@
+---
+title: Capabilities
+description: Control which features each agent is allowed to use with per-server capability toggles.
+icon: ToggleRight
+---
+
+ServerBee supports per-agent capability toggles that let administrators control exactly which operations each server is allowed to perform, enforcing the principle of least privilege.
+
+## Capability List
+
+ServerBee defines 6 capability bits, divided into two risk levels:
+
+### High Risk (Disabled by Default)
+
+| Capability | Bit Value | Description |
+|------------|-----------|-------------|
+| **Web Terminal** | `CAP_TERMINAL` (1) | Allow opening a remote terminal via browser |
+| **Remote Exec** | `CAP_EXEC` (2) | Allow remote command execution |
+| **Auto Upgrade** | `CAP_UPGRADE` (4) | Allow remote binary upgrades |
+
+<Callout type="warn">
+These capabilities involve executing arbitrary code or replacing binaries on the target server. They are disabled by default. Only enable them on trusted servers.
+</Callout>
+
+### Low Risk (Enabled by Default)
+
+| Capability | Bit Value | Description |
+|------------|-----------|-------------|
+| **ICMP Ping** | `CAP_PING_ICMP` (8) | Allow ICMP probe tasks |
+| **TCP Probe** | `CAP_PING_TCP` (16) | Allow TCP port probe tasks |
+| **HTTP Probe** | `CAP_PING_HTTP` (32) | Allow HTTP probe tasks |
+
+Newly registered agents default to a capabilities value of `56` (all three ping capabilities enabled).
+
+## Configuration
+
+### Single Server
+
+1. Go to Dashboard → click a server → server detail page
+2. In the **Capabilities** section, use toggle switches to enable or disable features
+3. Changes take effect immediately — the server pushes a `CapabilitiesSync` message to the agent via WebSocket
+
+### Batch Configuration
+
+1. Go to Settings → Capabilities
+2. Search or multi-select servers
+3. Enable or disable specific capabilities in bulk
+4. Click save to update all selected servers at once
+
+### API Configuration
+
+Update a single server (via `PUT /api/servers/{id}`):
+
+```bash
+curl -X PUT https://your-server/api/servers/{id} \
+  -H "Cookie: session=..." \
+  -H "Content-Type: application/json" \
+  -d '{"capabilities": 63}'
+```
+
+Batch update:
+
+```bash
+curl -X PUT https://your-server/api/servers/batch-capabilities \
+  -H "Cookie: session=..." \
+  -H "Content-Type: application/json" \
+  -d '{"server_ids": ["id1", "id2"], "capabilities": 63}'
+```
+
+The capabilities value is a bitwise OR of individual capability bits. Examples:
+- `56` = ICMP + TCP + HTTP (default)
+- `63` = all capabilities enabled
+- `0` = all capabilities disabled
+
+## Defense in Depth
+
+ServerBee validates capabilities on both the server side and agent side:
+
+### Server-Side Enforcement
+
+- **Terminal**: WebSocket upgrade rejected with 403
+- **Exec**: `POST /api/tasks` filters out disabled servers and writes synthetic results (`exit_code = -2`, message: "Capability 'exec' is disabled")
+- **Ping**: Tasks filtered by capability — disabled agents do not receive probe tasks
+
+### Agent-Side Enforcement
+
+Even if a server-side message is bypassed, the agent checks capabilities locally:
+
+- Returns a `CapabilityDenied` message for unauthorized commands
+- The server writes a synthetic result (`exit_code = -1`) upon receiving `CapabilityDenied`
+- Denial events are recorded in the audit log
+
+### Real-Time Sync
+
+When an administrator changes capabilities:
+
+1. Server sends `CapabilitiesSync` to the target agent via WebSocket
+2. Agent atomically updates its local capabilities value using `AtomicU32`
+3. Server sends `CapabilitiesChanged` to all connected browsers via WebSocket
+4. Frontend updates the UI state in real time
+5. If ping-related capability bits change, the server automatically re-syncs ping tasks
+
+## Frontend Behavior
+
+- **Server Detail page**: Capabilities toggle section — online servers can be toggled in real time
+- **Settings → Capabilities**: Batch management page with search and multi-select
+- **Tasks page**: Servers without `CAP_EXEC` are greyed out, results marked as "skipped"
+- **Terminal button**: Hidden for servers without `CAP_TERMINAL`
+
+<Cards>
+  <Card title="Web Terminal" href="/docs/en/terminal" />
+  <Card title="Ping Monitoring" href="/docs/en/ping" />
+  <Card title="Admin Guide" href="/docs/en/admin" />
+</Cards>

@@ -1,0 +1,128 @@
+---
+title: API Reference
+description: ServerBee REST API overview, authentication, and Swagger UI interactive docs.
+icon: FileCode
+---
+
+ServerBee provides a complete REST API for programmatic access to all Dashboard features. All endpoints are documented via OpenAPI 3.0.
+
+## Swagger UI
+
+ServerBee includes a built-in Swagger UI for interactive API exploration:
+
+```
+https://your-server/swagger-ui/
+```
+
+You can browse all 50+ API endpoints, inspect request/response schemas, and send test requests directly.
+
+## Authentication
+
+The ServerBee API supports two authentication methods:
+
+### Session Cookie
+
+Used automatically after browser login. Call `/api/auth/login` to obtain a session:
+
+```bash
+curl -X POST https://your-server/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "your-password"}' \
+  -c cookies.txt
+
+# Use the cookie for subsequent requests
+curl https://your-server/api/servers -b cookies.txt
+```
+
+### API Key
+
+Suitable for automation. Create one in Settings → API Keys:
+
+```bash
+curl https://your-server/api/servers \
+  -H "X-API-Key: sb_your-api-key-here"
+```
+
+API keys use the format `sb_` prefix + 43-character random string. The key is shown only once at creation time.
+
+## Endpoint Overview
+
+### Public Endpoints (No Auth Required)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/auth/login` | User login |
+| GET | `/api/auth/oauth/{provider}` | OAuth authorization redirect |
+| GET | `/api/auth/oauth/{provider}/callback` | OAuth callback |
+| GET | `/api/status` | Public status page data |
+
+### Authenticated Endpoints (Session or API Key)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/auth/logout` | User logout |
+| GET | `/api/auth/me` | Get current user info |
+| POST | `/api/auth/change-password` | Change password |
+| GET/POST | `/api/auth/2fa/*` | 2FA management |
+| GET/DELETE | `/api/auth/oauth/accounts` | OAuth account management |
+| GET | `/api/servers` | List servers |
+| GET | `/api/servers/{id}` | Get server details |
+| GET | `/api/servers/{id}/records` | Get metric records |
+| GET | `/api/servers/{id}/gpu-records` | Get GPU records |
+| GET | `/api/server-groups` | List server groups |
+| GET | `/api/ping-tasks` | List ping tasks |
+| GET | `/api/ping-tasks/{id}/records` | Get ping records |
+
+### Admin Endpoints (Admin Role Required)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST/PUT/DELETE | `/api/servers/*` | Server management |
+| PUT | `/api/servers/batch-capabilities` | Batch update capabilities |
+| POST | `/api/servers/{id}/upgrade` | Trigger agent upgrade |
+| CRUD | `/api/server-groups/*` | Server group management |
+| CRUD | `/api/notifications/*` | Notification channel management |
+| CRUD | `/api/notification-groups/*` | Notification group management |
+| CRUD | `/api/alert-rules/*` | Alert rule management |
+| CRUD | `/api/ping-tasks/*` | Ping task management |
+| POST | `/api/tasks` | Create a remote command task |
+| GET | `/api/tasks/{id}` | Get task details and results |
+| CRUD | `/api/users/*` | User management |
+| GET | `/api/audit-logs` | Audit logs |
+| GET/PUT | `/api/settings/*` | System settings |
+| POST | `/api/settings/backup` | Database backup |
+| POST | `/api/settings/restore` | Database restore |
+
+### WebSocket Endpoints
+
+| Path | Description |
+|------|-------------|
+| `/api/ws/browser` | Browser real-time data push |
+| `/api/ws/terminal/{server_id}` | Web terminal proxy |
+
+## Error Responses
+
+All API errors use a consistent format:
+
+```json
+{
+  "error": "Error message describing what went wrong"
+}
+```
+
+Common status codes:
+
+| Code | Description |
+|------|-------------|
+| 400 | Bad request / invalid parameters |
+| 401 | Not authenticated |
+| 403 | Forbidden (insufficient role or capability disabled) |
+| 404 | Resource not found |
+| 429 | Too many requests (rate limited) |
+| 500 | Internal server error |
+
+<Cards>
+  <Card title="Capabilities" href="/docs/en/capabilities" />
+  <Card title="Admin Guide" href="/docs/en/admin" />
+  <Card title="Architecture" href="/docs/en/architecture" />
+</Cards>

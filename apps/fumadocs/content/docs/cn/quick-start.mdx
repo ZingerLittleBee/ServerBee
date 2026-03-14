@@ -29,8 +29,8 @@ services:
     volumes:
       - serverbee-data:/data
     environment:
-      - SB_ADMIN_USERNAME=admin
-      - SB_ADMIN_PASSWORD=your_secure_password
+      - SB_ADMIN__USERNAME=admin
+      - SB_ADMIN__PASSWORD=your_secure_password
     restart: unless-stopped
 
 volumes:
@@ -44,7 +44,7 @@ docker compose up -d
 ```
 
 <Callout type="warn">
-务必将 `SB_ADMIN_PASSWORD` 修改为你自己的强密码。如果不设置密码，系统会自动生成随机密码并打印到日志中。
+务必将 `SB_ADMIN__PASSWORD` 修改为你自己的强密码。如果不设置密码，系统会自动生成随机密码并打印到日志中。
 </Callout>
 
 启动完成后，打开浏览器访问 `http://your-server-ip:9527` 即可进入管理面板。

@@ -21,8 +21,8 @@ services:
     volumes:
       - serverbee-data:/data
     environment:
-      - SB_ADMIN_USERNAME=admin
-      - SB_ADMIN_PASSWORD=your_secure_password
+      - SB_ADMIN__USERNAME=admin
+      - SB_ADMIN__PASSWORD=your_secure_password
     restart: unless-stopped
 
 volumes:
@@ -55,14 +55,14 @@ services:
       - serverbee-data:/data
       - ./GeoLite2-City.mmdb:/data/GeoLite2-City.mmdb:ro
     environment:
-      - SB_ADMIN_USERNAME=admin
-      - SB_ADMIN_PASSWORD=your_secure_password
-      - SB_SERVER_DATA_DIR=/data
-      - SB_GEOIP_ENABLED=true
-      - SB_GEOIP_MMDB_PATH=/data/GeoLite2-City.mmdb
-      - SB_RETENTION_RECORDS_DAYS=14
-      - SB_RETENTION_RECORDS_HOURLY_DAYS=365
-      - SB_LOG_LEVEL=info
+      - SB_ADMIN__USERNAME=admin
+      - SB_ADMIN__PASSWORD=your_secure_password
+      - SB_SERVER__DATA_DIR=/data
+      - SB_GEOIP__ENABLED=true
+      - SB_GEOIP__MMDB_PATH=/data/GeoLite2-City.mmdb
+      - SB_RETENTION__RECORDS_DAYS=14
+      - SB_RETENTION__RECORDS_HOURLY_DAYS=365
+      - SB_LOG__LEVEL=info
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:9527/api/health"]

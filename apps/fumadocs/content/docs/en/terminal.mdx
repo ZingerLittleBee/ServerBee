@@ -40,6 +40,10 @@ You can:
 Web terminal access is restricted to users with the **admin** role only. Non-admin users will receive a 403 Forbidden response when attempting to open a terminal session.
 </Callout>
 
+<Callout type="warn">
+Web terminal access also requires the **terminal** capability (CAP_TERMINAL) to be enabled on the target server. If disabled, the WebSocket upgrade will be rejected with 403 Forbidden. Administrators can manage capabilities in Settings → Capabilities.
+</Callout>
+
 Authentication works through the same mechanisms as the REST API:
 
 - **Session cookie** -- Automatically sent by the browser after login
