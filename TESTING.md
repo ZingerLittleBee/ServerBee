@@ -6,10 +6,10 @@
 # 全量测试
 cargo test --workspace && bun run test
 
-# Rust 测试（100 单元 + 11 集成）
+# Rust 测试（110 单元 + 11 集成）
 cargo test --workspace
 
-# 前端测试（52 vitest）
+# 前端测试（72 vitest）
 bun run test
 
 # 代码质量
@@ -24,7 +24,7 @@ bun run typecheck
 
 ```bash
 cargo test -p serverbee-common          # 协议 + 能力常量 (11 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 (93 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 (103 tests)
 cargo test -p serverbee-agent           # Agent 采集器 + Pinger (7 tests)
 ```
 
@@ -52,7 +52,7 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `server/service/alert.rs` | 15 | 阈值判定、指标提取、采样窗口 |
 | `server/service/auth.rs` | 19 | 密码哈希、session、API key、TOTP、登录、改密 |
 | `server/service/notification.rs` | 16 | 模板变量替换、渠道配置解析 |
-| `server/service/record.rs` | 4 | 历史查询、聚合、清理策略 |
+| `server/service/record.rs` | 6 | 历史查询、聚合、清理策略、保存上报、过期清理 |
 | `server/service/agent_manager.rs` | 10 | 连接管理、广播、缓存、终端会话、离线检测 |
 | `server/service/server.rs` | 5 | 服务器 CRUD、批量删除 |
 | `server/service/user.rs` | 4 | 用户 CRUD、级联删除、最后 admin 保护 |
@@ -60,6 +60,8 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `server/middleware/auth.rs` | 6 | Cookie/API Key 提取 |
 | `agent/collector/` | 5 | 系统信息、指标范围、使用量约束 |
 | `agent/pinger.rs` | 2 | TCP 探测（开放/关闭端口） |
+| `server/service/audit.rs` | 3 | 审计日志记录、列表、排序 |
+| `server/service/config.rs` | 5 | KV 存取、upsert、类型化读写 |
 
 ### 集成测试覆盖
 
@@ -98,6 +100,7 @@ cd apps/web && bunx vitest run src/lib/capabilities.test.ts
 | `utils.test.ts` | 21 | formatBytes/Speed/Uptime、countryCodeToFlag |
 | `ws-client.test.ts` | 6 | URL 构造、handler 分发、重连、关闭 |
 | `use-servers-ws.test.ts` | 8 | 数据合并、静态字段保护、在线状态切换 |
+| `use-terminal-ws.test.ts` | 20 | WS URL 构造、状态机、base64 编码、resize、onData 回调 |
 
 ### 测试工具
 
@@ -203,7 +206,11 @@ docker compose up -d
 | A4 | 阈值告警触发 | 创建 cpu ≥ 1% 规则 → 60s 后触发 → Webhook + Telegram 收到告警通知 | ✅ |
 | A5 | 告警状态展示 | 点击 States → 显示 "New Server" 🔴 Triggered (2x) + 时间戳 | ✅ |
 | A6 | 告警条件格式 | 规则摘要正确显示 `cpu ≥ 1 | always` 和 `offline 30s | once` | ✅ |
-| A7 | 离线告警触发 | 创建 offline 30s 规则 → 停 Agent → 等待触发 | ⚠️ 未触发（需排查评估逻辑） |
+| A7 | 离线告警触发 | 创建 offline 30s 规则 → 停 Agent → 等待触发 | ⚠️ 未触发（时序窗口问题，非代码 bug） |
+| A8 | Swagger UI | 访问 `/swagger-ui/` → 显示 ServerBee API 0.1.0 OAS 3.1 | ✅ |
+| A9 | Ping 任务创建 | 创建 HTTP ping → 列表显示 "Ping Google" | ✅ |
+| A10 | Ping 结果收集 | 等待 25s → 7 条记录，全部成功，延迟 387-402ms | ✅ |
+| A11 | 终端 E2E | 需启用 CAP_TERMINAL → capabilities toggle API 有 Extension bug | ⚠️ 阻塞（已知 bug） |
 
 ### E2E 测试中发现并修复的 Bug
 
@@ -232,6 +239,7 @@ crates/server/src/test_utils.rs         # 测试辅助 (setup_test_db)
 crates/server/tests/integration.rs      # 集成测试 (11 tests)
 crates/agent/src/collector/tests.rs     # Agent 采集器测试
 crates/agent/src/pinger.rs              # Agent Pinger 测试
+apps/web/src/hooks/use-terminal-ws.test.ts # Terminal WS hook 测试
 apps/web/src/lib/capabilities.test.ts   # 能力位测试
 apps/web/src/lib/api-client.test.ts     # API Client 测试
 apps/web/src/lib/utils.test.ts          # 工具函数测试
