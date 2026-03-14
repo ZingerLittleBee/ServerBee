@@ -1,175 +1,123 @@
-# Ultracite Code Standards
+# CLAUDE.md
 
-This project uses **Ultracite**, a zero-config preset that enforces strict code quality standards through automated formatting and linting.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Quick Reference
+## Project Overview
 
-- **Format code**: `bun x ultracite fix`
-- **Check for issues**: `bun x ultracite check`
-- **Diagnose setup**: `bun x ultracite doctor`
+ServerBee is a lightweight VPS monitoring probe system built with Rust and React. It follows a hub-and-spoke architecture: a central **Server** receives metrics from distributed **Agents** over WebSocket, stores them in SQLite, and serves a React SPA dashboard.
 
-Biome (the underlying engine) provides robust linting and formatting. Most issues are automatically fixable.
+## Build & Run Commands
 
----
+```bash
+# Build
+cargo build --workspace                         # All Rust crates
+cd apps/web && bun install && bun run build     # Frontend (embedded into server binary via rust-embed)
 
-## Core Principles
+# Run
+cargo run -p serverbee-server                   # Server on port 9527
+cargo run -p serverbee-agent                    # Agent (needs server_url configured)
 
-Write code that is **accessible, performant, type-safe, and maintainable**. Focus on clarity and explicit intent over brevity.
+# Test
+cargo test --workspace                          # Rust: 54 unit + 2 integration tests
+bun run test                                    # Frontend: 11 vitest tests
+cargo test -p serverbee-server --test integration  # Integration tests only
+cargo test -p serverbee-server test_name        # Single Rust test
 
-### Type Safety & Explicitness
+# Lint & Format
+cargo clippy --workspace -- -D warnings         # Rust (CI enforced, 0 warnings)
+bun x ultracite check                           # Frontend (Biome)
+bun x ultracite fix                             # Frontend auto-fix
+bun run typecheck                               # TypeScript (web + fumadocs)
+```
 
-- Use explicit types for function parameters and return values when they enhance clarity
-- Prefer `unknown` over `any` when the type is genuinely unknown
-- Use const assertions (`as const`) for immutable values and literal types
-- Leverage TypeScript's type narrowing instead of type assertions
-- Use meaningful variable names instead of magic numbers - extract constants with descriptive names
-
-### Modern JavaScript/TypeScript
-
-- Use arrow functions for callbacks and short functions
-- Prefer `for...of` loops over `.forEach()` and indexed `for` loops
-- Use optional chaining (`?.`) and nullish coalescing (`??`) for safer property access
-- Prefer template literals over string concatenation
-- Use destructuring for object and array assignments
-- Use `const` by default, `let` only when reassignment is needed, never `var`
-
-### Async & Promises
-
-- Always `await` promises in async functions - don't forget to use the return value
-- Use `async/await` syntax instead of promise chains for better readability
-- Handle errors appropriately in async code with try-catch blocks
-- Don't use async functions as Promise executors
-
-### React & JSX
-
-- Use function components over class components
-- Call hooks at the top level only, never conditionally
-- Specify all dependencies in hook dependency arrays correctly
-- Use the `key` prop for elements in iterables (prefer unique IDs over array indices)
-- Nest children between opening and closing tags instead of passing as props
-- Don't define components inside other components
-- Use semantic HTML and ARIA attributes for accessibility:
-  - Provide meaningful alt text for images
-  - Use proper heading hierarchy
-  - Add labels for form inputs
-  - Include keyboard event handlers alongside mouse events
-  - Use semantic elements (`<button>`, `<nav>`, etc.) instead of divs with roles
-
-### Error Handling & Debugging
-
-- Remove `console.log`, `debugger`, and `alert` statements from production code
-- Throw `Error` objects with descriptive messages, not strings or other values
-- Use `try-catch` blocks meaningfully - don't catch errors just to rethrow them
-- Prefer early returns over nested conditionals for error cases
-
-### Code Organization
-
-- Keep functions focused and under reasonable cognitive complexity limits
-- Extract complex conditions into well-named boolean variables
-- Use early returns to reduce nesting
-- Prefer simple conditionals over nested ternary operators
-- Group related code together and separate concerns
-
-### Security
-
-- Add `rel="noopener"` when using `target="_blank"` on links
-- Avoid `dangerouslySetInnerHTML` unless absolutely necessary
-- Don't use `eval()` or assign directly to `document.cookie`
-- Validate and sanitize user input
-
-### Performance
-
-- Avoid spread syntax in accumulators within loops
-- Use top-level regex literals instead of creating them in loops
-- Prefer specific imports over namespace imports
-- Avoid barrel files (index files that re-export everything)
-- Use proper image components (e.g., Next.js `<Image>`) over `<img>` tags
-
-### Framework-Specific Guidance
-
-**Next.js:**
-
-- Use Next.js `<Image>` component for images
-- Use `next/head` or App Router metadata API for head elements
-- Use Server Components for async data fetching instead of async Client Components
-
-**React 19+:**
-
-- Use ref as a prop instead of `React.forwardRef`
-
-**Solid/Svelte/Vue/Qwik:**
-
-- Use `class` and `for` attributes (not `className` or `htmlFor`)
-
----
-
-## When Biome Can't Help
-
-Biome's linter will catch most issues automatically. Focus your attention on:
-
-1. **Business logic correctness** - Biome can't validate your algorithms
-2. **Meaningful naming** - Use descriptive names for functions, variables, and types
-3. **Architecture decisions** - Component structure, data flow, and API design
-4. **Edge cases** - Handle boundary conditions and error states
-5. **User experience** - Accessibility, performance, and usability considerations
-6. **Documentation** - Add comments for complex logic, but prefer self-documenting code
-
----
-
-Most formatting and common issues are automatically fixed by Biome. Run `bun x ultracite fix` before committing to ensure compliance.
-
----
-
-## Project Structure
-
-ServerBee is a VPS monitoring probe system (Rust backend + React frontend).
+## Architecture
 
 ```
 crates/
-  common/    — Shared types, protocol messages, capability constants
-  server/    — Axum HTTP/WS server, sea-orm entities, services, background tasks
-  agent/     — System metrics collector, WS reporter, PTY terminal, ping probes
+  common/     — Protocol messages (ServerMessage/AgentMessage/BrowserMessage),
+                capability bitmask constants, shared types
+  server/     — Axum 0.8 HTTP/WS server
+    entity/   — sea-orm entities (21 tables)
+    service/  — Business logic (auth, alert, notification, record, ping, etc.)
+    router/   — REST API (api/) + WebSocket handlers (ws/agent, ws/browser, ws/terminal)
+    task/     — Background jobs (record_writer, aggregator, cleanup, alert_evaluator, etc.)
+    migration/ — Database migrations
+  agent/      — Lightweight system probe
+    collector/ — CPU, memory, disk, network, load, process, temperature, GPU metrics
+    reporter   — WS connection with exponential backoff reconnect
+    pinger     — ICMP/TCP/HTTP probe execution
+    terminal   — PTY session management (portable-pty)
 apps/
-  web/       — React 19 SPA (TanStack Router + Query, shadcn/ui, Recharts)
-  fumadocs/  — Documentation site (TanStack Start + Fumadocs MDX, CN+EN bilingual)
+  web/        — React 19 SPA (TanStack Router + Query, shadcn/ui, Recharts, xterm.js)
+  fumadocs/   — Documentation site (TanStack Start + Fumadocs MDX, CN+EN bilingual)
 ```
 
-### Key Commands
+### Data Flow
 
-```bash
-cargo build --workspace                    # Build all Rust crates
-cargo run -p serverbee-server              # Run server (port 9527)
-cargo run -p serverbee-agent               # Run agent
-cd apps/web && bun install && bun run build # Build frontend (embedded into server binary)
-cargo clippy --workspace -- -D warnings    # Lint Rust (CI enforced, 0 warnings)
-bun x ultracite check                      # Lint frontend
-bun run typecheck                          # TypeScript check (web + fumadocs)
+```
+Agent → WebSocket (JSON) → Server → SQLite (sea-orm)
+                                  → broadcast::Sender → Browser WebSocket → React SPA
 ```
 
-### Rust Conventions
+- **Agent→Server**: `AgentMessage` variants (SystemInfo, Report, PingResult, TaskResult, CapabilityDenied)
+- **Server→Agent**: `ServerMessage` variants (Welcome, Ack, Execute, TerminalOpen, CapabilitiesSync, Upgrade)
+- **Server→Browser**: `BrowserMessage` variants (ServerUpdate, ServerOnline/Offline, CapabilitiesChanged)
+- Terminal data uses Binary WebSocket frames (session_id prefix + payload)
 
-- **Error handling**: `AppError` enum with `thiserror`, return `Result<T, AppError>`
-- **Database**: SQLite via sea-orm, migrations in `crates/server/src/migration/`
-- **API annotations**: All endpoints use `#[utoipa::path]`, all DTOs use `#[derive(ToSchema)]`
-- **Config**: Figment with `SB_` env prefix, `__` (double underscore) as nested separator (e.g., `SB_ADMIN__PASSWORD` maps to `admin.password`)
-- **Capabilities**: u32 bitmask — `CAP_TERMINAL=1, CAP_EXEC=2, CAP_UPGRADE=4, CAP_PING_ICMP=8, CAP_PING_TCP=16, CAP_PING_HTTP=32`
+### AppState
 
-### Frontend Conventions
+Shared state passed to all handlers via `Arc<AppState>`:
+- `db: DatabaseConnection` — sea-orm SQLite pool
+- `agent_manager: AgentManager` — DashMap of connected agents with WS senders
+- `browser_tx: broadcast::Sender<BrowserMessage>` — fan-out to browser clients
+- `config: AppConfig` — Figment-loaded configuration
+- `login_rate_limit / register_rate_limit: DashMap` — IP-based rate limiting (15min window)
 
-- shadcn/ui components in `apps/web/src/components/ui/`
-- API client in `apps/web/src/lib/api-client.ts` (auto-unwraps `{ data: T }`)
-- WebSocket hooks in `apps/web/src/hooks/`
-- Route files in `apps/web/src/routes/` (TanStack Router file-based routing)
+### Authentication Model
 
----
+Three auth paths, all checked in `middleware/auth.rs`:
+1. **Session cookie** — Browser login via `/api/auth/login`, argon2 password hash
+2. **API key** — `X-API-Key` header, `sb_` prefix + argon2 hash stored
+3. **Agent token** — WebSocket query param, per-server token from registration
+
+RBAC: Admin (full access) vs Member (read-only). `require_admin` middleware on write routes.
+
+## Key Conventions
+
+### Rust
+
+- **Errors**: `AppError` enum → automatic HTTP status code mapping via `IntoResponse`
+- **API responses**: All endpoints return `Json<ApiResponse<T>>` wrapping data in `{ data: T }`
+- **OpenAPI**: Every endpoint annotated with `#[utoipa::path]`, every DTO with `#[derive(ToSchema)]`. Swagger UI at `/swagger-ui/`
+- **Config**: Figment loads TOML then env vars. Prefix `SB_`, nested separator `__` (double underscore). Example: `SB_ADMIN__PASSWORD` → `admin.password`
+- **Capabilities**: u32 bitmask per server — `CAP_TERMINAL=1, CAP_EXEC=2, CAP_UPGRADE=4, CAP_PING_ICMP=8, CAP_PING_TCP=16, CAP_PING_HTTP=32`. Default `CAP_DEFAULT=56` (ping only). Defense-in-depth: validated on both server and agent side.
+- **Migrations**: sea-orm migrations in `crates/server/src/migration/`. Run automatically on startup.
+
+### Frontend
+
+- **Routing**: TanStack Router file-based routing in `apps/web/src/routes/`. `_authed/` directory requires login.
+- **API client**: `apps/web/src/lib/api-client.ts` auto-unwraps `{ data: T }` from responses
+- **WebSocket**: Global WS connection in layout, hooks in `apps/web/src/hooks/use-servers-ws.ts`
+- **UI components**: shadcn/ui in `apps/web/src/components/ui/`
+- **Dev proxy**: Vite proxies `/api/*` to `http://localhost:9527` in dev mode
+
+### Code Quality (Ultracite/Biome)
+
+This project uses **Ultracite** (Biome-based) for frontend linting and formatting:
+- `bun x ultracite check` — verify
+- `bun x ultracite fix` — auto-fix
+- Line width 120, single quotes (JS), double quotes (JSX), no trailing commas
+- Organize imports automatically
 
 ## Testing
 
-See `TESTING.md` for the full testing guide (commands, coverage, manual verification checklist).
+See `TESTING.md` for the full testing guide with commands, coverage tables, and manual verification checklist.
 
-- Write assertions inside `it()` or `test()` blocks
-- Avoid done callbacks in async tests - use async/await instead
-- Don't use `.only` or `.skip` in committed code
-- Keep test suites reasonably flat - avoid excessive `describe` nesting
+**Keep `TESTING.md` in sync with code changes.** When adding/removing tests or testable features, update test counts, file locations, and the verification checklist to reflect the current codebase.
 
-**Keep `TESTING.md` in sync with code changes.** When adding/removing/modifying tests, API endpoints, or testable features, update `TESTING.md` accordingly — test counts, file locations, coverage tables, and the manual verification checklist must reflect the current state of the codebase.
+## Documentation
+
+- **Fumadocs site**: `apps/fumadocs/content/docs/{cn,en}/` — 16 MDX pages per language
+- **OpenAPI**: Auto-generated at `/swagger-ui/` and `/api-docs/openapi.json`
+- **Architecture spec**: `docs/superpowers/specs/2026-03-12-serverbee-architecture-design.md`
+- **Progress tracking**: `docs/superpowers/plans/PROGRESS.md`
