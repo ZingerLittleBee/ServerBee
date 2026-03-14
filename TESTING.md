@@ -149,7 +149,7 @@ docker compose up -d
 
 > **注意**：`SB_SERVER_URL` 应设置为 HTTP 基础地址（如 `http://127.0.0.1:9527`），Agent 会自动拼接 `/api/agent/register` 和 `/api/agent/ws?token=` 路径。不要传入 WebSocket 路径。
 
-### 验证清单
+### 验证清单 — 页面渲染
 
 | 功能 | 路由/地址 | 验证方法 | 状态 |
 |------|-----------|----------|------|
@@ -171,6 +171,32 @@ docker compose up -d
 | Swagger UI | `/swagger-ui/` | OpenAPI 文档加载正常 | — |
 | 终端 | `/terminal/:serverId` | 需启用 Web Terminal capability 后测试 | — |
 | 备份恢复 | Settings → Backup | 创建数据 → 备份 → 恢复 → 验证完整性 | — |
+
+### 验证清单 — E2E 用户操作（agent-browser）
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| 1a | 错误密码提示 | 输入错误密码 → 显示 "Unauthorized" 错误文本 | ✅ |
+| 1b | 正确登录跳转 | 输入正确密码 → 跳转到 `/` (Dashboard) | ✅ |
+| 1c | 登出回到登录页 | 点击 Log out → 跳转到 `/login` | ✅ |
+| 2 | Dashboard 实时更新 | 等待 5s → CPU/Memory/Network 数值发生变化 (WebSocket 推送) | ✅ |
+| 3a | 搜索匹配 | 输入 "New" → 表格显示匹配的服务器 | ✅ |
+| 3b | 搜索无匹配 | 输入不存在的名称 → 表格为空 | ✅ |
+| 3c | 编辑对话框 | 点击 Edit → 弹出对话框含 BASIC + BILLING 字段 | ✅ |
+| 4 | 时间范围切换 | 点击 6h → 图表更新时间轴和数据 | ✅ |
+| 5a | 创建用户 | Add User → 填写 username/password → Create → 列表出现新用户 | ✅ |
+| 5b | 删除用户 | 删除 testuser → 列表仅剩 admin | ✅ |
+| 6 | 通知渠道展示 | 创建 Webhook 通知渠道 → 列表显示名称和类型 | ✅ |
+| 7 | API Key 展示 | 创建 API Key → Active Keys 显示 prefix 和创建日期 | ✅ |
+| 8a | Capabilities 展示 | 页面显示 6 个开关，默认 3 关 3 开 | ✅ |
+| 8b | 公共状态页 | 无需登录访问 `/status` → 显示服务器卡片和指标 | ✅ |
+| 8c | 主题切换 | 点击 Toggle theme → 深色/浅色模式正确渲染 | ✅ |
+
+### E2E 测试中发现并修复的 Bug
+
+| Bug | 描述 | 修复 |
+|-----|------|------|
+| 登录错误消息 | 显示原始 JSON `{"error":{"code":"UNAUTHORIZED",...}}` | 解析 JSON 提取 `error.message` 字段 (`69af3e7`) |
 
 ## 测试文件位置
 
