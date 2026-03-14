@@ -508,7 +508,7 @@ async fn test_api_key_lifecycle() {
     let api_key = create_body["data"]["key"]
         .as_str()
         .expect("key field missing from API key response");
-    assert!(api_key.starts_with("sb_"), "API key should start with 'sb_'");
+    assert!(api_key.starts_with("serverbee_"), "API key should start with 'serverbee_'");
 
     // Use the API key (X-API-Key header) to access a protected endpoint with a fresh client
     // (no session cookies — purely API key auth)

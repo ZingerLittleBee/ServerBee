@@ -1,5 +1,7 @@
 # ServerBee
 
+Language: English | [简体中文](./README.zh-CN.md)
+
 A lightweight, self-hosted VPS monitoring system built with Rust and React.
 
 ## Features
@@ -70,8 +72,8 @@ cargo build --release
 
 ```bash
 # Set server URL and discovery key via environment variables
-SB_SERVER_URL=http://your-server:9527 \
-SB_AUTO_DISCOVERY_KEY=YOUR_KEY \
+SERVERBEE_SERVER_URL=http://your-server:9527 \
+SERVERBEE_AUTO_DISCOVERY_KEY=YOUR_KEY \
 ./serverbee-agent
 
 # Or create /etc/serverbee/agent.toml:
@@ -87,9 +89,31 @@ After registration, the agent saves its token to config and reconnects automatic
 docker compose up -d
 ```
 
+### Development (Make)
+
+```bash
+# Start server (port 9527) + Vite dev server (port 5173) concurrently
+make dev-full
+# Visit http://localhost:5173, login with admin / admin123
+
+# Or step by step:
+make server-dev                                           # Terminal 1: server on :9527
+SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # Terminal 2: agent
+
+# Testing & code quality:
+make cargo-test        # Run all Rust tests (121)
+make test              # Run frontend tests (72)
+make cargo-clippy      # Lint Rust code
+make                   # Interactive menu (requires fzf)
+```
+
+The server prints the full auto-discovery key on startup. Copy it to start the agent.
+
+> **Note**: `make dev-full` starts a Vite dev server with HMR at `http://localhost:5173` (proxies `/api/*` to the Rust server at `:9527`). For production builds, use `make build` then `make server-run`.
+
 ## Configuration
 
-All config options can be set via TOML files or environment variables with `SB_` prefix and `__` (double underscore) as nested separator.
+All config options can be set via TOML files or environment variables with `SERVERBEE_` prefix and `__` (double underscore) as nested separator. See [ENV.md](ENV.md) for the complete environment variable reference.
 
 ### Server (`/etc/serverbee/server.toml`)
 
@@ -127,9 +151,9 @@ mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"
 
 Environment variable examples:
 ```bash
-export SB_ADMIN__PASSWORD="my-secure-password"
-export SB_GEOIP__ENABLED=true
-export SB_OAUTH__GITHUB__CLIENT_ID="..."
+export SERVERBEE_ADMIN__PASSWORD="my-secure-password"
+export SERVERBEE_GEOIP__ENABLED=true
+export SERVERBEE_OAUTH__GITHUB__CLIENT_ID="..."
 ```
 
 ### Agent (`/etc/serverbee/agent.toml`)
@@ -146,6 +170,12 @@ enable_gpu = false            # Requires NVIDIA GPU + nvml
 
 [log]
 level = "info"
+```
+
+Agent environment variables use the `SERVERBEE_` prefix without nesting (top-level keys):
+```bash
+export SERVERBEE_SERVER_URL="http://your-server:9527"
+export SERVERBEE_AUTO_DISCOVERY_KEY="YOUR_KEY"
 ```
 
 ### OAuth Setup
@@ -228,4 +258,4 @@ Interactive API documentation is available at `/swagger-ui` when the server is r
 
 ## License
 
-MIT
+[AGPL-3.0](LICENSE)

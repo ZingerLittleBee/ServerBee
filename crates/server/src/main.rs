@@ -97,7 +97,7 @@ async fn main() -> anyhow::Result<()> {
         serverbee_common::constants::VERSION
     );
     tracing::info!("Listening on {}", listener.local_addr()?);
-    tracing::info!("Auto-discovery key: {}...", &auto_discovery_key[..8]);
+    tracing::info!("Auto-discovery key: {}", auto_discovery_key);
     tracing::info!("========================================");
 
     axum::serve(

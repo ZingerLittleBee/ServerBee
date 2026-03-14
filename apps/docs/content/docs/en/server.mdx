@@ -43,7 +43,7 @@ The server reads configuration from TOML files in the following order, with late
 
 1. `/etc/serverbee/server.toml` (system-wide)
 2. `server.toml` (working directory)
-3. Environment variables with `SB_` prefix
+3. Environment variables with `SERVERBEE_` prefix
 
 Here is a complete `server.toml` with all available options and their defaults:
 
@@ -105,25 +105,25 @@ scopes = ["openid", "email", "profile"]
 
 ## Environment Variables
 
-Every configuration option can be set via environment variables using the `SB_` prefix and `__` (double underscore) as a nested key separator. Environment variables take precedence over TOML file values.
+Every configuration option can be set via environment variables using the `SERVERBEE_` prefix and `__` (double underscore) as a nested key separator. Environment variables take precedence over TOML file values.
 
 Examples:
 
 ```bash
 # server.listen
-export SB_SERVER__LISTEN="0.0.0.0:9527"
+export SERVERBEE_SERVER__LISTEN="0.0.0.0:9527"
 
 # admin.password
-export SB_ADMIN__PASSWORD="my-secure-password"
+export SERVERBEE_ADMIN__PASSWORD="my-secure-password"
 
 # retention.records_days
-export SB_RETENTION__RECORDS_DAYS=14
+export SERVERBEE_RETENTION__RECORDS_DAYS=14
 
 # oauth.github.client_id
-export SB_OAUTH__GITHUB__CLIENT_ID="your-github-client-id"
+export SERVERBEE_OAUTH__GITHUB__CLIENT_ID="your-github-client-id"
 
 # geoip.enabled
-export SB_GEOIP__ENABLED=true
+export SERVERBEE_GEOIP__ENABLED=true
 ```
 
 ## Database
