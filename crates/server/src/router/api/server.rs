@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use axum::extract::{Extension, Path, Query, State};
+use axum::http::HeaderMap;
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
@@ -9,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::entity::server;
 use crate::error::{ok, ApiResponse, AppError};
+use crate::middleware::auth::CurrentUser;
 use crate::service::audit::AuditService;
 use crate::service::ping::PingService;
 use crate::service::record::{QueryHistoryResult, RecordService};
@@ -186,11 +188,14 @@ async fn get_server(
 )]
 async fn update_server(
     State(state): State<Arc<AppState>>,
-    Extension((user_id, _role, ip)): Extension<(String, String, String)>,
+    Extension(current_user): Extension<CurrentUser>,
+    headers: HeaderMap,
     Path(id): Path<String>,
     Json(input): Json<UpdateServerInput>,
 ) -> Result<Json<ApiResponse<ServerResponse>>, AppError> {
     use serverbee_common::constants::{CAP_PING_HTTP, CAP_PING_ICMP, CAP_PING_TCP};
+    let user_id = &current_user.user_id;
+    let ip = extract_client_ip(&headers);
 
     // Capture old caps before update for diffing
     let old_caps = if input.capabilities.is_some() {
@@ -243,7 +248,7 @@ async fn update_server(
         })
         .to_string();
         let _ =
-            AuditService::log(&state.db, &user_id, "capabilities_changed", Some(&detail), &ip)
+            AuditService::log(&state.db, user_id, "capabilities_changed", Some(&detail), &ip)
                 .await;
     }
 
@@ -420,10 +425,13 @@ pub struct BatchCapabilitiesResponse {
 )]
 async fn batch_update_capabilities(
     State(state): State<Arc<AppState>>,
-    Extension((user_id, _role, ip)): Extension<(String, String, String)>,
+    Extension(current_user): Extension<CurrentUser>,
+    headers: HeaderMap,
     Json(input): Json<BatchCapabilitiesRequest>,
 ) -> Result<Json<ApiResponse<BatchCapabilitiesResponse>>, AppError> {
     use serverbee_common::constants::*;
+    let user_id = &current_user.user_id;
+    let ip = extract_client_ip(&headers);
 
     // Validate bits within mask
     if input.set & !CAP_VALID_MASK != 0 || input.unset & !CAP_VALID_MASK != 0 {
@@ -483,8 +491,22 @@ async fn batch_update_capabilities(
             "new": new_caps,
         })
         .to_string();
-        let _ = AuditService::log(&state.db, &user_id, "capabilities_changed", Some(&detail), &ip).await;
+        let _ = AuditService::log(&state.db, user_id, "capabilities_changed", Some(&detail), &ip).await;
     }
 
     ok(BatchCapabilitiesResponse { updated: count })
+}
+
+fn extract_client_ip(headers: &HeaderMap) -> String {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').next().unwrap_or("unknown").trim().to_string())
+        .or_else(|| {
+            headers
+                .get("x-real-ip")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "unknown".to_string())
 }
