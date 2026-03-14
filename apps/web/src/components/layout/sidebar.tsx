@@ -47,7 +47,7 @@ export function Sidebar() {
           if ('adminOnly' in item && item.adminOnly && !isAdmin) {
             return null
           }
-          const isActive = matchRoute({ to: item.to, fuzzy: true })
+          const isActive = matchRoute({ to: item.to, fuzzy: item.to === '/servers' })
           return (
             <Link
               className={cn(
