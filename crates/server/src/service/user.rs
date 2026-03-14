@@ -185,3 +185,96 @@ impl UserService {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::setup_test_db;
+
+    #[tokio::test]
+    async fn test_list_users() {
+        let (db, _tmp) = setup_test_db().await;
+        UserService::create_user(&db, "user_one", "password1", "admin")
+            .await
+            .expect("create user_one should succeed");
+        UserService::create_user(&db, "user_two", "password2", "member")
+            .await
+            .expect("create user_two should succeed");
+
+        let users = UserService::list_users(&db)
+            .await
+            .expect("list_users should succeed");
+        assert_eq!(users.len(), 2, "should list exactly 2 users");
+    }
+
+    #[tokio::test]
+    async fn test_delete_user_cascading() {
+        let (db, _tmp) = setup_test_db().await;
+        // Create an admin (so we have more than one admin / can delete member)
+        let admin = UserService::create_user(&db, "admin_user", "admin_pass1", "admin")
+            .await
+            .expect("create admin should succeed");
+        let member = UserService::create_user(&db, "member_user", "member_pass1", "member")
+            .await
+            .expect("create member should succeed");
+
+        // Create an API key for the member
+        use crate::service::auth::AuthService;
+        AuthService::create_api_key(&db, &member.id, "member-key")
+            .await
+            .expect("create_api_key should succeed");
+
+        // Delete the member
+        UserService::delete_user(&db, &member.id)
+            .await
+            .expect("delete_user should succeed");
+
+        // get_user for deleted member should now return NotFound
+        let result = UserService::get_user(&db, &member.id).await;
+        assert!(result.is_err(), "get_user for deleted user should error");
+
+        // Admin should still exist
+        let still_there = UserService::get_user(&db, &admin.id).await;
+        assert!(still_there.is_ok(), "admin user should still exist");
+    }
+
+    #[tokio::test]
+    async fn test_delete_last_admin_blocked() {
+        let (db, _tmp) = setup_test_db().await;
+        let admin = UserService::create_user(&db, "sole_admin", "admin_pass2", "admin")
+            .await
+            .expect("create sole_admin should succeed");
+
+        let result = UserService::delete_user(&db, &admin.id).await;
+        assert!(
+            result.is_err(),
+            "deleting the last admin should return an error"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_update_role() {
+        let (db, _tmp) = setup_test_db().await;
+        // Need two admins so we can safely operate; start with one admin and one member
+        UserService::create_user(&db, "admin_a", "admin_pass3", "admin")
+            .await
+            .expect("create admin_a should succeed");
+        let member = UserService::create_user(&db, "member_b", "member_pass3", "member")
+            .await
+            .expect("create member_b should succeed");
+
+        // Promote member to admin
+        let updated = UserService::update_user(
+            &db,
+            &member.id,
+            UpdateUserInput {
+                role: Some("admin".to_string()),
+                password: None,
+            },
+        )
+        .await
+        .expect("update_user should succeed");
+
+        assert_eq!(updated.role, "admin", "member should now have admin role");
+    }
+}
