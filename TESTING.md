@@ -192,11 +192,26 @@ docker compose up -d
 | 8b | 公共状态页 | 无需登录访问 `/status` → 显示服务器卡片和指标 | ✅ |
 | 8c | 主题切换 | 点击 Toggle theme → 深色/浅色模式正确渲染 | ✅ |
 
+### 验证清单 — 告警 & 通知全链路
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| A1 | 通知渠道创建 | 创建 Webhook + Telegram → 列表显示 2 个渠道 | ✅ |
+| A2 | 通知组创建 | 创建 "E2E Test Group" 关联 2 个渠道 → 列表显示 "2 channel(s)" | ✅ |
+| A3 | 测试通知发送 | 点击测试按钮 → Webhook (webhook.site) + Telegram 均收到消息 | ✅ |
+| A4 | 阈值告警触发 | 创建 cpu ≥ 1% 规则 → 60s 后触发 → Webhook + Telegram 收到告警通知 | ✅ |
+| A5 | 告警状态展示 | 点击 States → 显示 "New Server" 🔴 Triggered (2x) + 时间戳 | ✅ |
+| A6 | 告警条件格式 | 规则摘要正确显示 `cpu ≥ 1 | always` 和 `offline 30s | once` | ✅ |
+| A7 | 离线告警触发 | 创建 offline 30s 规则 → 停 Agent → 等待触发 | ⚠️ 未触发（需排查评估逻辑） |
+
 ### E2E 测试中发现并修复的 Bug
 
 | Bug | 描述 | 修复 |
 |-----|------|------|
 | 登录错误消息 | 显示原始 JSON `{"error":{"code":"UNAUTHORIZED",...}}` | 解析 JSON 提取 `error.message` 字段 (`69af3e7`) |
+| 通知表单明文密码 | password/bot_token/device_key 使用 `type="text"` | 改为 `type="password"` 掩码 (`82dcf15`) |
+| 告警表单缺失字段 | 仅 12 种规则类型 + 仅 `max` 字段 | 扩展到 19 种 + 条件 min/duration/cycle 字段 |
+| 告警状态无 UI | 后端有 alert_state 但前端无展示 | 新增 API + 可展开 per-server 状态面板 (`a8defea`) |
 
 ## 测试文件位置
 
