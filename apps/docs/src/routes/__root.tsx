@@ -31,7 +31,10 @@ export const Route = createRootRoute({
         title: 'ServerBee Docs'
       }
     ],
-    links: [{ rel: 'stylesheet', href: appCss }]
+    links: [
+      { rel: 'stylesheet', href: appCss },
+      { rel: 'icon', href: '/favicon.ico' }
+    ]
   }),
   component: RootComponent
 })

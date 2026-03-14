@@ -113,7 +113,7 @@ function ApiKeysPage() {
                   <div>
                     <p className="font-medium text-sm">{apiKey.name}</p>
                     <div className="flex gap-3 text-muted-foreground text-xs">
-                      <span className="font-mono">sb_{apiKey.key_prefix}...</span>
+                      <span className="font-mono">serverbee_{apiKey.key_prefix}...</span>
                       <span>Created: {new Date(apiKey.created_at).toLocaleDateString()}</span>
                     </div>
                   </div>

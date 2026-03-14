@@ -24,8 +24,8 @@ services:
       - serverbee-data:/app/data
       - ./server.toml:/app/server.toml:ro
     environment:
-      - SB_ADMIN__PASSWORD=change-this-password
-      - SB_AUTH__SECURE_COOKIE=true
+      - SERVERBEE_ADMIN__PASSWORD=change-this-password
+      - SERVERBEE_AUTH__SECURE_COOKIE=true
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9527/api/status/health"]
       interval: 30s

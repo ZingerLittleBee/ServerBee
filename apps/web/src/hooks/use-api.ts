@@ -32,14 +32,19 @@ export function useServer(id: string) {
   })
 }
 
-export function useServerRecords(id: string, from: string, to: string, interval: string) {
+export function useServerRecords(id: string, hours: number, interval: string) {
   return useQuery<ServerRecord[]>({
-    queryKey: ['servers', id, 'records', from, to, interval],
-    queryFn: () =>
-      api.get<ServerRecord[]>(
+    queryKey: ['servers', id, 'records', hours, interval],
+    queryFn: () => {
+      const now = new Date()
+      const from = new Date(now.getTime() - hours * 3600 * 1000).toISOString()
+      const to = now.toISOString()
+      return api.get<ServerRecord[]>(
         `/api/servers/${id}/records?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&interval=${encodeURIComponent(interval)}`
-      ),
-    enabled: id.length > 0
+      )
+    },
+    enabled: id.length > 0,
+    refetchInterval: 60_000
   })
 }
 

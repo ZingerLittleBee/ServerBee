@@ -77,7 +77,7 @@ The agent reads configuration from TOML files in the following order:
 
 1. `/etc/serverbee/agent.toml` (system-wide, preferred)
 2. `agent.toml` (working directory)
-3. Environment variables with `SB_` prefix
+3. Environment variables with `SERVERBEE_` prefix
 
 Here is a complete `agent.toml` with all available options:
 
@@ -103,13 +103,13 @@ file = ""                      # Log file path (empty = stdout only)
 
 ### Environment Variables
 
-Like the server, all options support `SB_` prefixed environment variables:
+Like the server, all options support `SERVERBEE_` prefixed environment variables:
 
 ```bash
-export SB_SERVER_URL="http://your-server-ip:9527"
-export SB_TOKEN="your-agent-token"
-export SB_COLLECTOR__INTERVAL=5
-export SB_COLLECTOR__ENABLE_GPU=true
+export SERVERBEE_SERVER_URL="http://your-server-ip:9527"
+export SERVERBEE_TOKEN="your-agent-token"
+export SERVERBEE_COLLECTOR__INTERVAL=5
+export SERVERBEE_COLLECTOR__ENABLE_GPU=true
 ```
 
 ## GPU Monitoring
