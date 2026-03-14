@@ -289,3 +289,25 @@ fn parse_ping_time(output: &str) -> Option<f64> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_tcp_ping_open_port() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let target = format!("127.0.0.1:{}", addr.port());
+        let result = probe_tcp("test-task", &target).await;
+        assert!(result.success);
+        assert!(result.latency > 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_tcp_ping_closed_port() {
+        // Port 1 is reserved and should be closed/refused on loopback
+        let result = probe_tcp("test-task", "127.0.0.1:1").await;
+        assert!(!result.success);
+    }
+}
