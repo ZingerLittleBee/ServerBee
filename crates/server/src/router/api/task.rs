@@ -8,9 +8,10 @@ use sea_orm::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entity::{task, task_result};
+use crate::entity::{server, task, task_result};
 use crate::error::{ok, ApiResponse, AppError};
 use crate::state::AppState;
+use serverbee_common::constants::{has_capability, CAP_EXEC};
 use serverbee_common::protocol::ServerMessage;
 
 pub fn router() -> Router<Arc<AppState>> {
@@ -73,9 +74,36 @@ async fn create_task(
     };
     new_task.insert(&state.db).await?;
 
-    // Dispatch command to each online agent
+    // Fetch capabilities for all target servers
+    let servers = server::Entity::find()
+        .filter(server::Column::Id.is_in(input.server_ids.iter().cloned()))
+        .all(&state.db)
+        .await?;
+
+    let (capable, disabled): (Vec<_>, Vec<_>) = input.server_ids.iter().partition(|sid| {
+        servers
+            .iter()
+            .find(|s| &s.id == *sid)
+            .map(|s| has_capability(s.capabilities as u32, CAP_EXEC))
+            .unwrap_or(false)
+    });
+
+    // Write synthetic results for disabled servers
+    for sid in &disabled {
+        let result = task_result::ActiveModel {
+            id: NotSet,
+            task_id: Set(task_id.clone()),
+            server_id: Set(sid.to_string()),
+            output: Set("Capability 'exec' is disabled for this server".to_string()),
+            exit_code: Set(-2),
+            finished_at: Set(now),
+        };
+        result.insert(&state.db).await?;
+    }
+
+    // Dispatch command to each online capable agent
     let mut dispatched = 0;
-    for sid in &input.server_ids {
+    for sid in &capable {
         if let Some(tx) = state.agent_manager.get_sender(sid) {
             let msg = ServerMessage::Exec {
                 task_id: task_id.clone(),

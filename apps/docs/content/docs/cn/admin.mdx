@@ -1,0 +1,153 @@
+---
+title: 管理员指南
+description: 用户管理、审计日志、远程命令和计费信息管理。
+icon: UserCog
+---
+
+本页介绍仅管理员（Admin 角色）可使用的功能。
+
+## 用户管理
+
+ServerBee 支持多用户，分为两种角色：
+
+| 角色 | 权限 |
+|------|------|
+| **Admin** | 完全管理权限：用户管理、服务器配置、告警规则、通知渠道、审计日志等 |
+| **Member** | 只读权限：查看 Dashboard、服务器详情、Ping 结果 |
+
+### 管理用户
+
+进入 Settings → Users 页面：
+
+- **创建用户**：输入用户名、密码和角色
+- **编辑角色**：修改用户的角色（Admin/Member）
+- **删除用户**：删除用户账号（禁止删除最后一个 Admin）
+
+### API 端点
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/users` | GET | 列出所有用户 |
+| `/api/users` | POST | 创建用户 |
+| `/api/users/{id}` | GET | 获取用户详情 |
+| `/api/users/{id}` | PUT | 更新用户角色 |
+| `/api/users/{id}` | DELETE | 删除用户 |
+
+## 审计日志
+
+ServerBee 自动记录关键操作的审计日志，帮助管理员追踪安全事件。
+
+### 记录的事件
+
+- 用户登录（成功/失败）
+- 密码修改
+- 2FA 启用/禁用
+- 终端连接/断开
+- Capability 拒绝事件
+
+### 查看审计日志
+
+进入 Settings → Audit Logs 页面，可以：
+
+- 浏览所有审计记录（分页显示）
+- 查看用户、操作类型、详情、IP 地址和时间
+
+### API 端点
+
+```
+GET /api/audit-logs?limit=50&offset=0
+```
+
+返回审计日志列表，支持分页参数 `limit` 和 `offset`。每条记录包含：
+
+```json
+{
+  "id": 1,
+  "user_id": "user-uuid",
+  "action": "login",
+  "detail": "Login successful",
+  "ip": "192.168.1.100",
+  "created_at": "2026-03-14T10:30:00Z"
+}
+```
+
+审计日志默认保留 180 天（可通过 `retention.audit_logs_days` 配置）。
+
+## 远程命令
+
+管理员可以向在线服务器下发远程命令并获取执行结果。
+
+### 使用方式
+
+1. 进入 Settings → Tasks 页面
+2. 输入要执行的命令
+3. 选择目标服务器（可多选）
+4. 点击 **Execute**
+
+### 执行流程
+
+1. Server 创建 Task 记录
+2. 通过 WebSocket 向每台目标 Agent 发送执行命令
+3. Agent 执行命令，将 stdout/stderr 和 exit_code 回写
+4. 结果存储在 `task_results` 表中
+
+### 限制
+
+- 命令执行超时：300 秒
+- 需要目标服务器启用 `exec` 能力（CAP_EXEC）
+- 未启用 CAP_EXEC 的服务器会收到合成结果：`exit_code = -2`，提示功能被禁用
+- 仅 Admin 角色可以创建任务
+
+### API 端点
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/tasks` | POST | 创建并下发命令 |
+| `/api/tasks/{id}` | GET | 获取任务详情 |
+| `/api/tasks/{id}/results` | GET | 获取执行结果 |
+
+创建任务请求体：
+
+```json
+{
+  "command": "uptime",
+  "server_ids": ["server-id-1", "server-id-2"],
+  "timeout": 60
+}
+```
+
+## 计费信息
+
+管理员可以为每台服务器记录计费相关信息，方便追踪 VPS 费用和到期时间。
+
+### 管理计费信息
+
+1. 进入服务器详情页 → 点击编辑按钮
+2. 在 "Billing" 区域填写以下信息：
+
+| 字段 | 说明 |
+|------|------|
+| `price` | 价格 |
+| `billing_cycle` | 计费周期（monthly/quarterly/yearly 等） |
+| `currency` | 货币单位（CNY/USD 等） |
+| `expired_at` | 到期时间 |
+| `traffic_limit` | 流量限额（字节） |
+
+### 到期告警
+
+可以创建 `expiration` 类型的告警规则，在服务器到期前 N 天自动发送通知：
+
+1. 进入 Settings → Alerts
+2. 创建新规则，指标类型选择 **expiration**
+3. 设置阈值为提前提醒天数（如 7 表示到期前 7 天告警）
+4. 关联通知组
+
+### 流量告警
+
+使用 `transfer_in_cycle` / `transfer_out_cycle` / `transfer_all_cycle` 告警类型，可以监控当前计费周期内的累计流量是否超过设定阈值。详见 [告警与通知](/docs/cn/alerts)。
+
+<Cards>
+  <Card title="功能开关" href="/docs/cn/capabilities" />
+  <Card title="安全设置" href="/docs/cn/security" />
+  <Card title="告警与通知" href="/docs/cn/alerts" />
+</Cards>

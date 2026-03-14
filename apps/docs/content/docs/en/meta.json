@@ -13,6 +13,12 @@
     "alerts",
     "terminal",
     "ping",
+    "capabilities",
+    "status-page",
+    "---Administration---",
+    "security",
+    "admin",
+    "api-reference",
     "---Reference---",
     "architecture",
     "deployment"

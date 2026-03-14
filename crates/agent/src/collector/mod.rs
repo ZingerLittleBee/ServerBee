@@ -86,6 +86,7 @@ impl Collector {
 
     pub fn system_info(&self) -> SystemInfo {
         SystemInfo {
+            protocol_version: 0,
             cpu_name: cpu::name(&self.sys),
             cpu_cores: cpu::cores(&self.sys),
             cpu_arch: cpu::arch(),

@@ -195,7 +195,7 @@ allow_registration = true  # Set to true to create accounts on first OAuth login
 ### GitHub
 
 1. Go to [GitHub Developer Settings](https://github.com/settings/developers) and create a new OAuth App
-2. Set the callback URL to `https://serverbee.example.com/api/oauth/github/callback`
+2. Set the callback URL to `https://serverbee.example.com/api/auth/oauth/github/callback`
 3. Add credentials to the config:
 
 ```toml
@@ -207,7 +207,7 @@ client_secret = "your-client-secret"
 ### Google
 
 1. Create OAuth credentials in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
-2. Set the callback URL to `https://serverbee.example.com/api/oauth/google/callback`
+2. Set the callback URL to `https://serverbee.example.com/api/auth/oauth/google/callback`
 3. Add credentials to the config:
 
 ```toml

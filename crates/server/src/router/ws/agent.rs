@@ -16,7 +16,7 @@ use crate::service::ping::PingService;
 use crate::service::record::RecordService;
 use crate::service::server::ServerService;
 use crate::state::AppState;
-use serverbee_common::protocol::{AgentMessage, ServerMessage};
+use serverbee_common::protocol::{AgentMessage, BrowserMessage, ServerMessage};
 
 #[derive(Debug, Deserialize)]
 pub struct WsQuery {
@@ -53,9 +53,10 @@ async fn agent_ws_handler(
 
     let server_id = server.id.clone();
     let server_name = server.name.clone();
+    let server_capabilities = server.capabilities;
     tracing::info!("Agent WS upgrading for server {server_id} ({server_name}) from {addr}");
 
-    ws.on_upgrade(move |socket| handle_agent_ws(socket, state, server_id, server_name, addr))
+    ws.on_upgrade(move |socket| handle_agent_ws(socket, state, server_id, server_name, server_capabilities, addr))
 }
 
 async fn handle_agent_ws(
@@ -63,6 +64,7 @@ async fn handle_agent_ws(
     state: Arc<AppState>,
     server_id: String,
     server_name: String,
+    server_capabilities: i32,
     remote_addr: SocketAddr,
 ) {
     let (mut ws_sink, mut ws_stream) = socket.split();
@@ -73,8 +75,9 @@ async fn handle_agent_ws(
     // Send Welcome message
     let welcome = ServerMessage::Welcome {
         server_id: server_id.clone(),
-        protocol_version: 1,
+        protocol_version: serverbee_common::constants::PROTOCOL_VERSION,
         report_interval: 3,
+        capabilities: Some(server_capabilities as u32),
     };
     if let Err(e) = send_server_message(&mut ws_sink, &welcome).await {
         tracing::error!("Failed to send Welcome to {server_id}: {e}");
@@ -195,6 +198,17 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             if let Err(e) = ServerService::update_system_info(&state.db, server_id, &info, region, country_code).await {
                 tracing::error!("Failed to update system info for {server_id}: {e}");
             }
+
+            // Update in-memory protocol_version
+            let agent_pv = info.protocol_version;
+            state.agent_manager.set_protocol_version(server_id, agent_pv);
+
+            // Broadcast to browsers
+            state.agent_manager.broadcast_browser(BrowserMessage::AgentInfoUpdated {
+                server_id: server_id.to_string(),
+                protocol_version: agent_pv,
+            });
+
             // Send Ack
             if let Some(tx) = state.agent_manager.get_sender(server_id) {
                 let _ = tx.send(ServerMessage::Ack { msg_id }).await;
@@ -237,6 +251,31 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         AgentMessage::TerminalError { session_id, error } => {
             if let Some(tx) = state.agent_manager.get_terminal_session(&session_id) {
                 let _ = tx.send(crate::service::agent_manager::TerminalSessionEvent::Error(error)).await;
+            }
+        }
+        AgentMessage::CapabilityDenied { msg_id, session_id, capability } => {
+            tracing::warn!(
+                "Agent {server_id} denied capability '{capability}' (msg_id={msg_id:?}, session_id={session_id:?})"
+            );
+            // For exec: write synthetic task_result so frontend polling resolves
+            if let Some(task_id) = &msg_id {
+                use crate::entity::task_result;
+                use sea_orm::{ActiveModelTrait, NotSet, Set};
+                let result = task_result::ActiveModel {
+                    id: NotSet,
+                    task_id: Set(task_id.clone()),
+                    server_id: Set(server_id.to_string()),
+                    output: Set("Capability denied by agent".to_string()),
+                    exit_code: Set(-1),
+                    finished_at: Set(chrono::Utc::now()),
+                };
+                if let Err(e) = result.insert(&state.db).await {
+                    tracing::error!("Failed to write CapabilityDenied task result: {e}");
+                }
+            }
+            // For terminal: unregister session so browser gets notified
+            if let Some(sid) = &session_id {
+                state.agent_manager.unregister_terminal_session(sid);
             }
         }
         AgentMessage::Pong => {

@@ -21,6 +21,7 @@ import { Route as AuthedSettingsTasksRouteImport } from './routes/_authed/settin
 import { Route as AuthedSettingsSecurityRouteImport } from './routes/_authed/settings/security'
 import { Route as AuthedSettingsPingTasksRouteImport } from './routes/_authed/settings/ping-tasks'
 import { Route as AuthedSettingsNotificationsRouteImport } from './routes/_authed/settings/notifications'
+import { Route as AuthedSettingsCapabilitiesRouteImport } from './routes/_authed/settings/capabilities'
 import { Route as AuthedSettingsAuditLogsRouteImport } from './routes/_authed/settings/audit-logs'
 import { Route as AuthedSettingsApiKeysRouteImport } from './routes/_authed/settings/api-keys'
 import { Route as AuthedSettingsAlertsRouteImport } from './routes/_authed/settings/alerts'
@@ -86,6 +87,12 @@ const AuthedSettingsNotificationsRoute =
     path: '/settings/notifications',
     getParentRoute: () => AuthedRoute,
   } as any)
+const AuthedSettingsCapabilitiesRoute =
+  AuthedSettingsCapabilitiesRouteImport.update({
+    id: '/settings/capabilities',
+    path: '/settings/capabilities',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 const AuthedSettingsAuditLogsRoute = AuthedSettingsAuditLogsRouteImport.update({
   id: '/settings/audit-logs',
   path: '/settings/audit-logs',
@@ -115,6 +122,7 @@ export interface FileRoutesByFullPath {
   '/settings/alerts': typeof AuthedSettingsAlertsRoute
   '/settings/api-keys': typeof AuthedSettingsApiKeysRoute
   '/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
+  '/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
   '/settings/notifications': typeof AuthedSettingsNotificationsRoute
   '/settings/ping-tasks': typeof AuthedSettingsPingTasksRoute
   '/settings/security': typeof AuthedSettingsSecurityRoute
@@ -132,6 +140,7 @@ export interface FileRoutesByTo {
   '/settings/alerts': typeof AuthedSettingsAlertsRoute
   '/settings/api-keys': typeof AuthedSettingsApiKeysRoute
   '/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
+  '/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
   '/settings/notifications': typeof AuthedSettingsNotificationsRoute
   '/settings/ping-tasks': typeof AuthedSettingsPingTasksRoute
   '/settings/security': typeof AuthedSettingsSecurityRoute
@@ -151,6 +160,7 @@ export interface FileRoutesById {
   '/_authed/settings/alerts': typeof AuthedSettingsAlertsRoute
   '/_authed/settings/api-keys': typeof AuthedSettingsApiKeysRoute
   '/_authed/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
+  '/_authed/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
   '/_authed/settings/notifications': typeof AuthedSettingsNotificationsRoute
   '/_authed/settings/ping-tasks': typeof AuthedSettingsPingTasksRoute
   '/_authed/settings/security': typeof AuthedSettingsSecurityRoute
@@ -170,6 +180,7 @@ export interface FileRouteTypes {
     | '/settings/alerts'
     | '/settings/api-keys'
     | '/settings/audit-logs'
+    | '/settings/capabilities'
     | '/settings/notifications'
     | '/settings/ping-tasks'
     | '/settings/security'
@@ -187,6 +198,7 @@ export interface FileRouteTypes {
     | '/settings/alerts'
     | '/settings/api-keys'
     | '/settings/audit-logs'
+    | '/settings/capabilities'
     | '/settings/notifications'
     | '/settings/ping-tasks'
     | '/settings/security'
@@ -205,6 +217,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/alerts'
     | '/_authed/settings/api-keys'
     | '/_authed/settings/audit-logs'
+    | '/_authed/settings/capabilities'
     | '/_authed/settings/notifications'
     | '/_authed/settings/ping-tasks'
     | '/_authed/settings/security'
@@ -307,6 +320,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsNotificationsRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/settings/capabilities': {
+      id: '/_authed/settings/capabilities'
+      path: '/settings/capabilities'
+      fullPath: '/settings/capabilities'
+      preLoaderRoute: typeof AuthedSettingsCapabilitiesRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/settings/audit-logs': {
       id: '/_authed/settings/audit-logs'
       path: '/settings/audit-logs'
@@ -344,6 +364,7 @@ interface AuthedRouteChildren {
   AuthedSettingsAlertsRoute: typeof AuthedSettingsAlertsRoute
   AuthedSettingsApiKeysRoute: typeof AuthedSettingsApiKeysRoute
   AuthedSettingsAuditLogsRoute: typeof AuthedSettingsAuditLogsRoute
+  AuthedSettingsCapabilitiesRoute: typeof AuthedSettingsCapabilitiesRoute
   AuthedSettingsNotificationsRoute: typeof AuthedSettingsNotificationsRoute
   AuthedSettingsPingTasksRoute: typeof AuthedSettingsPingTasksRoute
   AuthedSettingsSecurityRoute: typeof AuthedSettingsSecurityRoute
@@ -360,6 +381,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedSettingsAlertsRoute: AuthedSettingsAlertsRoute,
   AuthedSettingsApiKeysRoute: AuthedSettingsApiKeysRoute,
   AuthedSettingsAuditLogsRoute: AuthedSettingsAuditLogsRoute,
+  AuthedSettingsCapabilitiesRoute: AuthedSettingsCapabilitiesRoute,
   AuthedSettingsNotificationsRoute: AuthedSettingsNotificationsRoute,
   AuthedSettingsPingTasksRoute: AuthedSettingsPingTasksRoute,
   AuthedSettingsSecurityRoute: AuthedSettingsSecurityRoute,

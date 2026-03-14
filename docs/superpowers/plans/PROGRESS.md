@@ -21,10 +21,11 @@
 | P3-c | 测试 | **已完成** | 2 (`7c0d681`, `3244eac`) |
 | P3-d | Agent 完善 | **已完成** | 1 (`9d5835e`) |
 | P3-e | 性能优化 | **已完成** | 2 (`7c13b3d`) |
-| P3-f | CI/CD + 部署文档 | **部分完成** | 1 (`e6fee1a`) |
+| P3-f | CI/CD + 部署文档 | **已完成** | 2 (`e6fee1a`, `03cd713`) |
 | P4 | 端到端验证 + 上线前加固 | **已完成** | 1 (`51e8b40`) |
+| P5 | Agent Capability Toggles | **已完成** | 22 (`bfc7d14`..`56c6058`) |
 
-**P0~P4 全部完成并已提交 (共 32 个 commits)。测试: 43 单元 + 2 集成 + 8 前端 = 53 个测试。仅 P3-c T8 (E2E) / P3-f T5 (Fumadocs) 跳过。**
+**P0~P5 全部完成并已提交 (共 54 个 commits)。测试: 49 单元 + 2 集成 + 11 前端 = 62 个测试。仅 P3-c T8 (E2E) 跳过。**
 
 ---
 
@@ -50,7 +51,7 @@
 | T14 | Record Service | **done** |
 | T15 | Agent Registration Endpoint | **done** |
 | T16 | Admin Init + Startup Integration | **done** |
-| T17 | OpenAPI Documentation | **跳过 (P1)** |
+| T17 | OpenAPI Documentation | **done** (P1-c 实现) |
 | T18 | CORS + Logging Middleware | **done** |
 
 ## Plan 2: Agent
@@ -239,7 +240,7 @@
 
 ## 已实现的文件清单
 
-### Rust (87 files)
+### Rust (88 files)
 
 **crates/common/src/** (4 files)
 - `lib.rs`, `types.rs`, `constants.rs`, `protocol.rs`
@@ -247,7 +248,7 @@
 **crates/server/src/** (67 files)
 - `main.rs`, `lib.rs`, `config.rs`, `state.rs`, `error.rs`, **`openapi.rs`**
 - `entity/` (21 files): user, session, api_key, server, server_group, server_tag, record, record_hourly, gpu_record, config, alert_rule, alert_state, notification, notification_group, ping_task, ping_record, task, task_result, audit_log, **oauth_account**
-- `migration/` (3 files): mod.rs, m20260312_000001_init.rs, **m20260312_000002_oauth.rs**
+- `migration/` (4 files): mod.rs, m20260312_000001_init.rs, **m20260312_000002_oauth.rs**, **m20260314_000001_capabilities.rs**
 - `middleware/` (2 files): mod.rs, auth.rs
 - `service/` (13 files): mod.rs, auth.rs, server.rs, config.rs, record.rs, agent_manager.rs, **notification.rs**, **alert.rs**, **ping.rs**, **geoip.rs**, **oauth.rs**, **audit.rs**, **user.rs**
 - `router/api/` (13 files): mod.rs, auth.rs, server.rs, server_group.rs, setting.rs, agent.rs, **notification.rs**, **alert.rs**, **task.rs**, **ping.rs**, **oauth.rs**, **audit.rs**, **user.rs**
@@ -259,11 +260,11 @@
 - `main.rs`, `config.rs`, `register.rs`, `reporter.rs`, **`pinger.rs`**, **`terminal.rs`**
 - `collector/` (9 files): mod.rs, cpu.rs, memory.rs, disk.rs, network.rs, load.rs, process.rs, temperature.rs, **gpu.rs**
 
-### Frontend (34 files)
+### Frontend (37 files)
 
 **apps/web/src/**
 - `main.tsx`, `router.tsx`, `routeTree.gen.ts`
-- `lib/`: api-client.ts, ws-client.ts, utils.ts
+- `lib/`: api-client.ts, ws-client.ts, utils.ts, **capabilities.ts**, **capabilities.test.ts**
 - `hooks/`: use-auth.ts, use-servers-ws.ts, use-api.ts, **use-terminal-ws.ts**
 - `components/ui/`: button.tsx
 - `components/layout/`: sidebar.tsx, header.tsx, theme-toggle.tsx
@@ -272,7 +273,7 @@
 - `components/`: theme-provider.tsx
 - `routes/`: __root.tsx, login.tsx, **status.tsx**, _authed.tsx, index.tsx (redirect)
 - `routes/_authed/`: index.tsx (dashboard), servers/$id.tsx (detail), **terminal.$serverId.tsx**
-- `routes/_authed/settings/`: index.tsx, api-keys.tsx, **notifications.tsx**, **alerts.tsx**, **tasks.tsx**, **ping-tasks.tsx**, **security.tsx**, **audit-logs.tsx**, **users.tsx**
+- `routes/_authed/settings/`: index.tsx, api-keys.tsx, **notifications.tsx**, **alerts.tsx**, **tasks.tsx**, **ping-tasks.tsx**, **security.tsx**, **audit-logs.tsx**, **users.tsx**, **capabilities.tsx**
 
 ### 部署 (7 files)
 
@@ -367,9 +368,9 @@
 - [x] 计费信息管理 (UpdateServerInput 计费字段 + 到期告警 + 前端编辑对话框) ✅
 
 ### 代码质量
-- [x] 单元测试 (43 个, AuthService/AlertService/NotificationService/RecordService) ✅
+- [x] 单元测试 (49 个, AuthService/AlertService/NotificationService/RecordService + capabilities/protocol) ✅
 - [x] 集成测试 (2 个, Agent 注册→WS→上报 + 备份恢复) ✅
-- [x] 前端测试 (8 个, use-auth/use-api hooks) ✅
+- [x] 前端测试 (11 个, use-auth/use-api hooks + capabilities) ✅
 - [x] 代码审查 (P3 代码审查, 修复 10 个 C/I 级别问题) ✅
 - [x] `bun x ultracite fix` 格式化前端代码 ✅
 - [x] `cargo clippy -- -D warnings` 全量通过 ✅
@@ -379,6 +380,28 @@
 ## Git Commits
 
 ```
+56c6058 fix(server): write task_result on CapabilityDenied, add audit log and selective ping re-sync to update_server
+c0bb58a fix(web): wrap ShieldAlert icon in span for title tooltip
+f59eb98 test: add unit tests for capability helpers, protocol serialization, and frontend toggles
+d247e41 chore: add batch-capabilities to OpenAPI, fix clippy collapsible-if warnings
+daef9f8 feat(web): grey out exec-disabled servers and show skipped results
+42ae8bc feat(web): add capabilities settings page with batch management
+ed13196 feat(web): add capability toggles section to server detail page
+8efa1b5 feat(web): move WS hook to global layout, add capabilities_changed + agent_info_updated handlers
+d817273 feat(web): add shared capabilities constants
+ef271c1 fix(test): update integration test for protocol v2 and async ping sync
+6f268d4 feat(agent): filter ping tasks by capability, check CAP_TERMINAL before PTY open
+f42a78c feat(agent): add capabilities enforcement — CAP_EXEC, CAP_UPGRADE, CapabilitiesSync
+c9b81ad feat(server): broadcast capabilities changes and re-sync pings from update handler
+697173e feat(server): filter ping tasks by CAP_PING_* capability
+e76128b feat(server): filter tasks by CAP_EXEC, write synthetic results for disabled servers
+2f655f5 feat(server): block terminal WS if CAP_TERMINAL disabled
+76321b6 feat(server): send capabilities in Welcome, persist protocol_version, handle CapabilityDenied
+28370c5 feat(server): add capabilities to API responses and batch update endpoint
+b385007 feat(server): add protocol_version tracking, browser broadcast, and Forbidden(String)
+68a2717 feat(server): add capabilities and protocol_version columns via migration
+af8f47a feat(common): extend protocol with capability messages and version negotiation
+bfc7d14 feat(common): add capability bitmap constants and helpers
 1bea44d feat: add servers list page with table view and batch operations (P3-b T10)
 3244eac test: add Rust integration tests and frontend Vitest tests (P3-c T5-T7)
 4c0e026 docs: update progress for P4 end-to-end verification
@@ -482,6 +505,7 @@ GET    /api/auth/oauth/:provider/callback OAuth 回调
 ### 服务器管理扩展 (Session|API Key 认证)
 ```
 POST   /api/servers/:id/upgrade           触发 Agent 远程升级
+PUT    /api/servers/batch-capabilities     批量更新服务器 capabilities
 ```
 
 ### 设置扩展 (Admin, Session|API Key 认证)
@@ -539,6 +563,19 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 - [x] 非管理员用户隐藏 admin-only 侧边栏链接 ✅
 - [x] OAuth 自动注册配置开关 (`allow_registration`, 默认 false) ✅
 
+### P5: Agent Capability Toggles (Per-Agent 功能开关)
+- [x] 能力位图 (u32): CAP_TERMINAL=1, CAP_EXEC=2, CAP_UPGRADE=4, CAP_PING_ICMP=8, CAP_PING_TCP=16, CAP_PING_HTTP=32, CAP_DEFAULT=56 ✅
+- [x] 协议版本 PROTOCOL_VERSION 1→2, SystemInfo 携带 protocol_version ✅
+- [x] Server 端验证: Terminal WS 403 拦截, Task API CAP_EXEC 过滤, Ping 按 capability 过滤 ✅
+- [x] Agent 端验证: Arc<AtomicU32> 本地 capabilities, CapabilitiesSync 实时更新, 拒绝执行 → CapabilityDenied ✅
+- [x] 双重验证 (defense in depth): Server 拦截 + Agent 拒绝执行 ✅
+- [x] 实时推送: 修改 capabilities 后 → CapabilitiesSync 到 Agent + CapabilitiesChanged 到 Browser ✅
+- [x] 选择性 ping 重同步: 仅当 ping 相关 capability bits 变化时触发 ✅
+- [x] 合成 task_result: Server 拦截 exit_code=-2, Agent 拒绝 exit_code=-1 ✅
+- [x] 前端: Settings/Capabilities 管理页, Server Detail toggle, Tasks 灰显, 侧边栏导航 ✅
+- [x] 测试: 6 个 constants 单元测试 + 5 个 protocol 序列化测试 + 3 个前端 vitest ✅
+- [x] 代码审查修复: CapabilityDenied 写 task_result, audit log, selective ping re-sync, clippy collapsible-if ✅
+
 ### P3-a: 用户管理 + 缺失 API
 - [x] User CRUD API: UserService + 5 个 admin-only 端点 (GET/POST /users, GET/PUT/DELETE /users/:id) ✅
 - [x] 前端用户管理页面: 列表/创建/编辑角色/删除, 侧边栏导航 ✅
@@ -579,7 +616,7 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 - [x] CI Windows 构建: x86_64-pc-windows-msvc target + .exe artifact 处理 ✅
 - [x] README.md: 功能列表 + 技术栈 + 快速开始 + 配置 + 部署指南 ✅
 - [x] 部署文档: OAuth/2FA/GeoIP/备份恢复配置说明 (README 内) ✅
-- [ ] Fumadocs 文档站 — 跳过 (占位符)
+- [x] Fumadocs 文档站: 中英文双语 16 个页面 (修复环境变量映射 + 新增 capabilities/security/status-page/admin/api-reference) ✅
 
 ## P3: 后续任务
 
@@ -645,7 +682,7 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 | T2 | README.md 内容 (功能列表, 快速开始, 安装指南, 截图) | **done** |
 | T3 | 部署文档: OAuth 配置 (GitHub/Google/OIDC credentials) | **done** (README 内) |
 | T4 | 部署文档: 2FA/GeoIP MMDB/备份恢复 配置说明 | **done** (README 内) |
-| T5 | Fumadocs 文档站内容 (apps/fumadocs/ 当前仅占位符) | **跳过** |
+| T5 | Fumadocs 文档站内容 (16 页中英文双语文档) | **done** |
 
 ### P4: 端到端验证 + 上线前加固
 
@@ -658,6 +695,39 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 | T5 | 修复 Server Edit (添加 group_id 下拉选择器) | **done** |
 | T6 | 前端路由守卫 (非 admin 用户 admin-only 页面重定向) | **done** |
 | T7 | 默认密码提醒 (must_change_password API + banner + 启动 WARN) | **done** |
+
+### P5: Agent Capability Toggles (Per-Agent 功能开关)
+
+**设计文档**: `docs/superpowers/specs/2026-03-14-agent-capability-toggles-design.md`
+**实现计划**: `docs/superpowers/plans/2026-03-14-agent-capability-toggles-plan.md`
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | Common: 能力位图常量 (CAP_TERMINAL=1..CAP_PING_HTTP=32, CAP_DEFAULT=56) | **done** |
+| T2 | Common: 协议扩展 (CapabilitiesSync, CapabilityDenied, BrowserMessage 新变体) | **done** |
+| T3 | Server: DB migration 添加 capabilities + protocol_version 列 | **done** |
+| T4 | Server: AgentManager protocol_version 追踪 + broadcast_browser | **done** |
+| T5 | Server: AppError::Forbidden(String) 变体 | **done** |
+| T6 | Server: API 响应添加 capabilities + batch-capabilities 端点 | **done** |
+| T7 | Server: Agent WS Welcome 发送实际 capabilities, 处理 CapabilityDenied | **done** |
+| T8 | Server: Terminal WS CAP_TERMINAL 拦截 (403) | **done** |
+| T9 | Server: Task API CAP_EXEC 过滤 + 合成 task_result (exit_code=-2) | **done** |
+| T10 | Server: PingService 按 CAP_PING_* 过滤任务 | **done** |
+| T11 | Server: update_server/batch 实时推送 CapabilitiesSync + Browser 广播 + 选择性 ping 重同步 | **done** |
+| T12 | Agent: reporter.rs capabilities Arc\<AtomicU32\> + Welcome 解析 + CAP_EXEC/CAP_UPGRADE 校验 | **done** |
+| T13 | Agent: PingManager 按 capability 过滤 incoming configs | **done** |
+| T14 | Agent: TerminalManager CAP_TERMINAL 校验 | **done** |
+| T15 | Integration: 集成测试修复 (protocol_version=2, ping_tasks_sync 消息顺序) | **done** |
+| T16 | Frontend: 共享 capabilities 常量 + hasCap helper | **done** |
+| T17 | Frontend: WS hook capabilities_changed + agent_info_updated 处理 | **done** |
+| T18 | Frontend: Server Detail 页面 CapabilitiesSection + Terminal 按钮条件隐藏 | **done** |
+| T19 | Frontend: Settings/Capabilities 管理页面 (批量 toggle + 搜索 + 多选) | **done** |
+| T20 | Frontend: Tasks 页面灰显无 CAP_EXEC 服务器 + skipped 标记 | **done** |
+| T21 | Server: OpenAPI 更新 (batch-capabilities 路径 + schema) | **done** |
+| T22 | Common: constants.rs 单元测试 (6 个) | **done** |
+| T23 | Common: protocol.rs 序列化测试 (5 个) | **done** |
+| T24 | Frontend: capabilities.test.ts (3 个 vitest 测试) | **done** |
+| T25 | 代码审查修复 (CapabilityDenied 写 task_result, audit log, selective ping re-sync, clippy) | **done** |
 
 ---
 
