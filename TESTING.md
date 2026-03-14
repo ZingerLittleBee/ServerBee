@@ -6,7 +6,7 @@
 # 全量测试
 cargo test --workspace && bun run test
 
-# Rust 测试（100 单元 + 10 集成）
+# Rust 测试（100 单元 + 11 集成）
 cargo test --workspace
 
 # 前端测试（52 vitest）
@@ -24,7 +24,7 @@ bun run typecheck
 
 ```bash
 cargo test -p serverbee-common          # 协议 + 能力常量 (11 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 (92 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 (93 tests)
 cargo test -p serverbee-agent           # Agent 采集器 + Pinger (7 tests)
 ```
 
@@ -75,6 +75,7 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `test_notification_and_alert_crud` | 通知 → 通知组 → 告警规则 CRUD |
 | `test_user_management_crud` | 用户创建 → 列表 → 改角色 → 删除 |
 | `test_settings_auto_discovery_key` | 获取 → 重新生成 → 验证不同 |
+| `test_alert_states_endpoint` | 创建规则 → GET states 返回空 → 删除规则 |
 
 ## 前端测试
 
@@ -228,7 +229,7 @@ crates/server/src/service/user.rs       # 用户服务测试
 crates/server/src/service/ping.rs       # Ping 服务测试
 crates/server/src/middleware/auth.rs    # 中间件 Cookie/Key 提取测试
 crates/server/src/test_utils.rs         # 测试辅助 (setup_test_db)
-crates/server/tests/integration.rs      # 集成测试 (10 tests)
+crates/server/tests/integration.rs      # 集成测试 (11 tests)
 crates/agent/src/collector/tests.rs     # Agent 采集器测试
 crates/agent/src/pinger.rs              # Agent Pinger 测试
 apps/web/src/lib/capabilities.test.ts   # 能力位测试
