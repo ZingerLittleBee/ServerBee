@@ -12,15 +12,15 @@ describe('capability toggles', () => {
 
   it('toggle on adds bit', () => {
     const caps = CAP_DEFAULT
-    // biome-ignore lint/style/noNonNullAssertion: test code
+    // biome-ignore lint/suspicious/noBitwiseOperators: capability bitmask
     const newCaps = caps | CAP_TERMINAL
     expect(hasCap(newCaps, CAP_TERMINAL)).toBe(true)
   })
 
   it('toggle off removes bit', () => {
-    // biome-ignore lint/style/noNonNullAssertion: test code
+    // biome-ignore lint/suspicious/noBitwiseOperators: capability bitmask
     const caps = CAP_DEFAULT | CAP_TERMINAL
-    // biome-ignore lint/style/noNonNullAssertion: test code
+    // biome-ignore lint/suspicious/noBitwiseOperators: capability bitmask
     const newCaps = caps & ~CAP_TERMINAL
     expect(hasCap(newCaps, CAP_TERMINAL)).toBe(false)
   })
