@@ -6,10 +6,10 @@
 # 全量测试
 cargo test --workspace && bun run test
 
-# Rust 测试（110 单元 + 11 集成）
+# Rust 测试（110 单元 + 11 集成 = 121）
 cargo test --workspace
 
-# 前端测试（72 vitest）
+# 前端测试（72 vitest，8 个测试文件）
 bun run test
 
 # 代码质量
