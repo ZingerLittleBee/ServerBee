@@ -7,8 +7,8 @@ COPY apps/web/ .
 RUN bun run build
 
 # Stage 2: Build Rust binaries
-FROM rust:1.85-alpine AS rust-builder
-RUN apk add --no-cache musl-dev
+FROM rust:1-alpine AS rust-builder
+RUN apk add --no-cache musl-dev curl
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
@@ -22,7 +22,7 @@ COPY --from=rust-builder /app/target/release/serverbee-server /usr/local/bin/
 COPY --from=rust-builder /app/target/release/serverbee-agent /usr/local/bin/
 
 VOLUME /data
-ENV SERVERBEE_SERVER_DATA_DIR=/data
+ENV SERVERBEE_SERVER__DATA_DIR=/data
 EXPOSE 9527
 
 CMD ["serverbee-server"]
