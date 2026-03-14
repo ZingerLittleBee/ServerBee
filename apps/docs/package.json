@@ -1,5 +1,5 @@
 {
-  "name": "fumadocs",
+  "name": "@serverbee/docs",
   "private": true,
   "type": "module",
   "sideEffects": false,

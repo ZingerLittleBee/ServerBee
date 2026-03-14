@@ -117,7 +117,7 @@ See `TESTING.md` for the full testing guide with commands, coverage tables, and 
 
 ## Documentation
 
-- **Fumadocs site**: `apps/fumadocs/content/docs/{cn,en}/` — 16 MDX pages per language
+- **Fumadocs site**: `apps/docs/content/docs/{cn,en}/` — 16 MDX pages per language
 - **OpenAPI**: Auto-generated at `/swagger-ui/` and `/api-docs/openapi.json`
 - **Architecture spec**: `docs/superpowers/specs/2026-03-12-serverbee-architecture-design.md`
 - **Progress tracking**: `docs/superpowers/plans/PROGRESS.md`
