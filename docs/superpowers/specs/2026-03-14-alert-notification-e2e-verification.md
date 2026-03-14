@@ -52,31 +52,56 @@ TEST_EMAIL_TO=target@example.com
 
 **Security**: `.env.test` is gitignored. Screenshots are taken only on list views (which do NOT display `config_json`), never on form views with credentials filled in.
 
-## Feature Fix 1: Alert Form Missing Fields
+## Feature Fix 1: Alert Form — Complete Rule Types + Missing Fields
 
 ### Current State
 
-`alerts.tsx` only renders `rule_type` (dropdown) + `max` (number input) per rule item. The backend `AlertRuleItem` struct supports 5 additional fields: `min`, `duration`, `cycle_interval`, `cycle_limit`.
+`alerts.tsx` has two problems:
+1. The `ruleTypes` dropdown only lists 12 of the 19 supported rule types — missing `memory`, `swap`, `disk`, `transfer_in_cycle`, `transfer_out_cycle`, `transfer_all_cycle`, `expiration`
+2. Only `rule_type` + `max` fields are rendered per rule item. The backend also supports `min`, `duration`, `cycle_interval`, `cycle_limit`.
+
+### Backend Threshold Semantics (Important)
+
+The backend `evaluate_threshold` logic works as follows:
+- `(Some(min), None)` → triggers when `value >= min` (i.e., "alert when above min")
+- `(None, Some(max))` → triggers when `value >= max` (NOTE: same direction, not "below max")
+- `(Some(min), Some(max))` → triggers when `min <= value <= max` (range)
+- `(None, None)` → never triggers
+
+For a "CPU above 80%" alert, the correct field is `min: 80` (not `max: 80`).
+
+The current UI only exposes `max` and labels it "Threshold", which is confusing. The fix should rename fields:
+- `min` → label "Alert when ≥" (trigger floor)
+- `max` → label "Alert when ≤" (trigger ceiling, only shown when range alerting is needed)
+
+For simplicity and to match the most common use case (alert when a value exceeds a threshold), the primary field shown should be `min` with label "Threshold ≥".
 
 ### Changes
 
 Modify `apps/web/src/routes/_authed/settings/alerts.tsx`:
 
-- Add `min` number input (shown when rule_type is a threshold type, label "Min threshold")
-- Add `duration` number input (shown when rule_type is `offline`, label "Duration (seconds)")
-- Add `cycle_interval` dropdown (shown when rule_type contains `transfer_*_cycle`, options: hour/day/week/month/year)
-- Add `cycle_limit` number input (shown alongside cycle_interval, label "Limit (bytes)")
-- Conditionally render fields based on `rule_type`:
-  - Threshold types (cpu, memory, load, etc.): show `min` + `max`
-  - `offline`: show `duration` (default 60)
-  - `transfer_*_cycle`: show `cycle_interval` + `cycle_limit`
-  - `expiration`: show `duration` (label "Days before expiry", default 7)
+1. **Expand `ruleTypes` array** to include all 19 backend-supported types:
+   - Add: `{ label: 'Memory (bytes)', value: 'memory' }`
+   - Add: `{ label: 'Swap (bytes)', value: 'swap' }`
+   - Add: `{ label: 'Disk (bytes)', value: 'disk' }`
+   - Add: `{ label: 'Transfer In (cycle)', value: 'transfer_in_cycle' }`
+   - Add: `{ label: 'Transfer Out (cycle)', value: 'transfer_out_cycle' }`
+   - Add: `{ label: 'Transfer Total (cycle)', value: 'transfer_all_cycle' }`
+   - Add: `{ label: 'Expiration', value: 'expiration' }`
+
+2. **Replace single `max` input** with conditional fields based on `rule_type`:
+   - Threshold types: show `min` (label "Threshold ≥", primary) + optional `max` (label "and ≤", for range)
+   - `offline`: show `duration` (label "Duration (seconds)", default 60)
+   - `transfer_*_cycle`: show `cycle_interval` (dropdown: hour/day/week/month/year) + `cycle_limit` (label "Limit (bytes)")
+   - `expiration`: show `duration` (label "Days before expiry", default 7)
+
+3. **Update default `ruleItems`** to use `min` instead of `max`: `{ rule_type: 'cpu', min: 90 }`
 
 ### Rule Type → Field Mapping
 
 | rule_type | Fields shown |
 |-----------|-------------|
-| cpu, memory, swap, disk, load*, *_conn, process, net_*_speed, temperature, gpu | min (optional), max (optional) |
+| cpu, memory, swap, disk, load*, *_conn, process, net_*_speed, temperature, gpu | min ("Threshold ≥", primary), max ("and ≤", optional toggle for range) |
 | offline | duration (seconds, default 60) |
 | transfer_in_cycle, transfer_out_cycle, transfer_all_cycle | cycle_interval (dropdown), cycle_limit (bytes) |
 | expiration | duration (days, default 7) |
@@ -107,7 +132,7 @@ Response:
 }
 ```
 
-Implementation: Query `alert_state` table filtered by `rule_id`, join with `server` table for name, return only unresolved states (or all with resolved flag).
+Implementation: Query `alert_state` table filtered by `rule_id`, join with `server` table for name, return **all** states (both active and resolved). The `resolved` boolean allows the frontend to display recovery status. Sorted by `updated_at` descending.
 
 ### Frontend: Alert State Display
 
@@ -163,12 +188,12 @@ For each channel, click the test send button (paper plane icon):
 - Bark: push notification on device
 - Email: message in inbox
 
-### Phase 4: Threshold Alert (CPU max: 1%)
+### Phase 4: Threshold Alert (CPU ≥ 1%)
 
 1. Navigate to `/settings/alerts`
 2. Create rule via UI:
    - Name: "High CPU Test"
-   - Add condition: rule_type=cpu, max=1 (any CPU above 1% triggers)
+   - Add condition: rule_type=cpu, min=1 (triggers when CPU ≥ 1%, i.e., always)
    - trigger_mode: "always"
    - notification_group: select the group from Phase 2
    - cover_type: "include", server_ids: [the connected Agent's server_id]
@@ -208,12 +233,20 @@ For each channel, click the test send button (paper plane icon):
 ## Files Modified
 
 ### Frontend
-- `apps/web/src/routes/_authed/settings/alerts.tsx` — Add min/duration/cycle fields, add state display
+- `apps/web/src/routes/_authed/settings/alerts.tsx` — Expand ruleTypes dropdown (add 7 missing types), replace single `max` field with conditional min/duration/cycle fields, add alert state display section
 - `apps/web/src/routes/_authed/settings/notifications.tsx` — Sensitive fields use `type="password"`
 
 ### Backend
-- `crates/server/src/router/api/alert.rs` — Add `GET /api/alert-rules/:id/states` endpoint
-- `crates/server/src/service/alert.rs` — Add `list_states(db, rule_id)` service method
+- `crates/server/src/router/api/alert.rs` — Add `GET /api/alert-rules/:id/states` endpoint with utoipa annotation
+- `crates/server/src/service/alert.rs` — Add `list_states(db, rule_id)` service method, add `AlertStateResponse` DTO with `ToSchema` derive
+- `crates/server/src/openapi.rs` — Register new path + schema for alert states endpoint
+
+### OpenAPI + Types
+- `apps/web/src/lib/api-schema.ts` — Add `AlertStateResponse` type (or regenerate via openapi-typescript)
+
+### Tests
+- `crates/server/tests/integration.rs` — Add `test_alert_states_endpoint` (create rule → trigger via report → GET states → verify)
+- `apps/web/src/routes/_authed/settings/alerts.test.tsx` — Add vitest for conditional field rendering (threshold → shows min, offline → shows duration, transfer → shows cycle fields)
 
 ### Config
 - `.env.test` — Credential template (gitignored)
