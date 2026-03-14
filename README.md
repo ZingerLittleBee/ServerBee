@@ -87,6 +87,27 @@ After registration, the agent saves its token to config and reconnects automatic
 docker compose up -d
 ```
 
+### Development (Make)
+
+```bash
+# One-shot: build frontend + start server (admin/admin123)
+make dev-full
+
+# Or step by step:
+make server-dev                                    # Terminal 1: start server (admin/admin123)
+SB_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # Terminal 2: start agent
+
+# Other useful targets:
+make server-run        # Run server without dev env vars
+make agent-run         # Run agent without dev env vars
+make cargo-test        # Run all Rust tests
+make test              # Run frontend tests
+make cargo-clippy      # Lint Rust code
+make                   # Interactive menu (requires fzf)
+```
+
+The server prints the full auto-discovery key on startup. Copy it to start the agent.
+
 ## Configuration
 
 All config options can be set via TOML files or environment variables with `SB_` prefix and `__` (double underscore) as nested separator.
