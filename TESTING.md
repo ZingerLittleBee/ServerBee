@@ -210,7 +210,9 @@ docker compose up -d
 | A8 | Swagger UI | 访问 `/swagger-ui/` → 显示 ServerBee API 0.1.0 OAS 3.1 | ✅ |
 | A9 | Ping 任务创建 | 创建 HTTP ping → 列表显示 "Ping Google" | ✅ |
 | A10 | Ping 结果收集 | 等待 25s → 7 条记录，全部成功，延迟 387-402ms | ✅ |
-| A11 | 终端 E2E | 需启用 CAP_TERMINAL → capabilities toggle API 有 Extension bug | ⚠️ 阻塞（已知 bug） |
+| A11 | Capabilities API 修复 | `update_server`/`batch_capabilities` Extension bug 已修复 → API 正常返回 | ✅ |
+| A12 | 终端页面加载 | 启用 CAP_TERMINAL → 打开 `/terminal/:id` → xterm.js 容器渲染正常 | ✅ |
+| A13 | 终端 WS 连接 | WebSocket 连接状态显示 "closed" — Agent 需要重连以获取 CapabilitiesSync | ⚠️ 需 Agent 重连 |
 
 ### E2E 测试中发现并修复的 Bug
 
@@ -220,6 +222,7 @@ docker compose up -d
 | 通知表单明文密码 | password/bot_token/device_key 使用 `type="text"` | 改为 `type="password"` 掩码 (`82dcf15`) |
 | 告警表单缺失字段 | 仅 12 种规则类型 + 仅 `max` 字段 | 扩展到 19 种 + 条件 min/duration/cycle 字段 |
 | 告警状态无 UI | 后端有 alert_state 但前端无展示 | 新增 API + 可展开 per-server 状态面板 (`a8defea`) |
+| Capabilities API 500 | `update_server`/`batch_capabilities` 使用 `Extension<(String,String,String)>` 无人注入 | 改为 `Extension<CurrentUser>` + `HeaderMap` |
 
 ## 测试文件位置
 
