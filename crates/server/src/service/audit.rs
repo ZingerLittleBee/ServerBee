@@ -46,3 +46,72 @@ impl AuditService {
         Ok((entries, total))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::setup_test_db;
+
+    #[tokio::test]
+    async fn test_log_and_list() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // Log an audit action
+        AuditService::log(&db, "user-1", "login", Some("via password"), "127.0.0.1")
+            .await
+            .expect("log should succeed");
+
+        // List and verify the entry appears
+        let (entries, total) = AuditService::list(&db, 10, 0)
+            .await
+            .expect("list should succeed");
+
+        assert_eq!(total, 1, "Should have exactly one audit log entry");
+        assert_eq!(entries.len(), 1, "entries vec should have one item");
+
+        let entry = &entries[0];
+        assert_eq!(entry.user_id, "user-1", "user_id should match");
+        assert_eq!(entry.action, "login", "action should match");
+        assert_eq!(entry.detail, Some("via password".to_string()), "detail should match");
+        assert_eq!(entry.ip, "127.0.0.1", "ip should match");
+    }
+
+    #[tokio::test]
+    async fn test_log_without_detail() {
+        let (db, _tmp) = setup_test_db().await;
+
+        AuditService::log(&db, "user-2", "logout", None, "10.0.0.1")
+            .await
+            .expect("log without detail should succeed");
+
+        let (entries, total) = AuditService::list(&db, 10, 0)
+            .await
+            .expect("list should succeed");
+
+        assert_eq!(total, 1, "Should have one entry");
+        assert_eq!(entries[0].detail, None, "detail should be None");
+        assert_eq!(entries[0].action, "logout", "action should match");
+    }
+
+    #[tokio::test]
+    async fn test_list_ordering() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // Insert two entries — list should return newest first
+        AuditService::log(&db, "user-3", "action-first", None, "1.1.1.1")
+            .await
+            .expect("first log should succeed");
+        AuditService::log(&db, "user-3", "action-second", None, "1.1.1.1")
+            .await
+            .expect("second log should succeed");
+
+        let (entries, total) = AuditService::list(&db, 10, 0)
+            .await
+            .expect("list should succeed");
+
+        assert_eq!(total, 2, "Should have two entries");
+        // Newest first: action-second should come before action-first
+        assert_eq!(entries[0].action, "action-second", "newest entry should be first");
+        assert_eq!(entries[1].action, "action-first", "older entry should be second");
+    }
+}
