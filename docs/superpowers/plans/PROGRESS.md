@@ -25,7 +25,7 @@
 | P4 | 端到端验证 + 上线前加固 | **已完成** | 1 (`51e8b40`) |
 | P5 | Agent Capability Toggles | **已完成** | 22 (`bfc7d14`..`56c6058`) |
 
-**P0~P5 全部完成并已提交 (共 54 个 commits)。测试: 49 单元 + 2 集成 + 11 前端 = 62 个测试。仅 P3-c T8 (E2E) 跳过。**
+**P0~P5 全部完成并已提交。测试: 100 单元 + 10 集成 + 52 前端 = 162 个测试 (从 62 扩展至 162)。仅 P3-c T8 (E2E) 跳过。**
 
 ---
 
@@ -368,9 +368,9 @@
 - [x] 计费信息管理 (UpdateServerInput 计费字段 + 到期告警 + 前端编辑对话框) ✅
 
 ### 代码质量
-- [x] 单元测试 (49 个, AuthService/AlertService/NotificationService/RecordService + capabilities/protocol) ✅
-- [x] 集成测试 (2 个, Agent 注册→WS→上报 + 备份恢复) ✅
-- [x] 前端测试 (11 个, use-auth/use-api hooks + capabilities) ✅
+- [x] Rust 单元测试 (100 个, 13 个模块覆盖: auth/alert/notification/record/agent_manager/server/user/ping/middleware + agent collector/pinger + common constants/protocol) ✅
+- [x] Rust 集成测试 (10 个, Agent 注册→WS→上报 + 备份恢复 + 认证流程 + RBAC + CRUD + API Key + 审计日志 + 状态页 + auto-discovery) ✅
+- [x] 前端测试 (52 个, 7 个测试文件: api-client/utils/ws-client/capabilities + use-auth/use-api/use-servers-ws hooks) ✅
 - [x] 代码审查 (P3 代码审查, 修复 10 个 C/I 级别问题) ✅
 - [x] `bun x ultracite fix` 格式化前端代码 ✅
 - [x] `cargo clippy -- -D warnings` 全量通过 ✅
@@ -596,11 +596,11 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 - [x] 代码质量: cargo check + tsc + vite build 全部通过 ✅
 
 ### P3-c: 测试
-- [x] 43 个单元测试: AuthService (8) + AlertService (15) + NotificationService (16) + RecordService (4) ✅
+- [x] Rust 单元测试 (100 个): AuthService (19) + AlertService (15) + NotificationService (16) + RecordService (4) + AgentManager (10) + ServerService (5) + UserService (4) + PingService (3) + middleware/auth (6) + common constants (6) + protocol (5) + agent collector (5) + agent pinger (2) ✅
+- [x] Rust 集成测试 (10 个): Agent 注册→WS→上报 + Backup/Restore + Login/Logout + API Key + RBAC + Public Status + Audit Log + Notification/Alert CRUD + User CRUD + Discovery Key ✅
+- [x] 前端 Vitest 测试 (52 个): api-client (6) + utils (21) + ws-client (6) + capabilities (3) + use-auth (4) + use-api (4) + use-servers-ws (8) ✅
 - [x] CI 添加 `cargo test --workspace` 步骤 ✅
-- [x] Rust 集成测试: Agent 注册→WS→SystemInfo→Report + Backup/Restore (2 个测试) ✅
-- [x] 前端 Vitest 测试: use-auth (4 个) + use-api (4 个) = 8 个测试 ✅
-- [ ] E2E 测试 (Playwright) — 跳过 (有集成测试 + 单元测试覆盖)
+- [ ] E2E 测试 (Playwright) — 跳过 (有集成测试 + 手动 E2E 验证覆盖)
 
 ### P3-d: Agent 完善
 - [x] 虚拟化检测: DMI 文件 + 容器检测 + systemd-detect-virt fallback ✅
@@ -751,8 +751,8 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 
 | 优先级 | 任务 | 状态 | 说明 |
 |--------|------|------|------|
-| **P3** | Rust 集成测试 (P3-c T5-T6) | **已完成** ✅ | Agent 注册→WS→SystemInfo→Report + Backup/Restore 2 个测试 |
-| **P4** | 前端 Vitest 测试 (P3-c T7) | **已完成** ✅ | use-auth (4 个) + use-api (4 个) = 8 个测试 |
+| **P3** | Rust 测试 (100 单元 + 10 集成) | **已完成** ✅ | 13 模块全覆盖 + 10 个端到端集成测试 |
+| **P4** | 前端 Vitest 测试 (52 个) | **已完成** ✅ | 7 个测试文件：api-client/utils/ws-client/capabilities + hooks |
 
 ### 可以不做
 
