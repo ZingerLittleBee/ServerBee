@@ -25,7 +25,7 @@
 | P4 | 端到端验证 + 上线前加固 | **已完成** | 1 (`51e8b40`) |
 | P5 | Agent Capability Toggles | **已完成** | 22 (`bfc7d14`..`56c6058`) |
 
-**P0~P5 全部完成并已提交。测试: 100 单元 + 10 集成 + 52 前端 = 162 个测试 (从 62 扩展至 162)。仅 P3-c T8 (E2E) 跳过。**
+**P0~P5 全部完成并已提交。测试: 100 单元 + 10 集成 + 52 前端 + 15 E2E 浏览器 = 177 个测试。**
 
 ---
 
@@ -600,7 +600,8 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 - [x] Rust 集成测试 (10 个): Agent 注册→WS→上报 + Backup/Restore + Login/Logout + API Key + RBAC + Public Status + Audit Log + Notification/Alert CRUD + User CRUD + Discovery Key ✅
 - [x] 前端 Vitest 测试 (52 个): api-client (6) + utils (21) + ws-client (6) + capabilities (3) + use-auth (4) + use-api (4) + use-servers-ws (8) ✅
 - [x] CI 添加 `cargo test --workspace` 步骤 ✅
-- [ ] E2E 测试 (Playwright) — 跳过 (有集成测试 + 手动 E2E 验证覆盖)
+- [x] E2E 浏览器测试 (15 个, agent-browser): 登录流程 (错误提示/正确跳转/登出) + Dashboard 实时更新 + 搜索过滤 + 编辑对话框 + 时间范围切换 + 用户 CRUD + 通知/API Key 展示 + Capabilities + 公共状态页 + 主题切换 ✅
+- [x] E2E Bug 修复: 登录错误消息解析 JSON 提取友好文本 (`69af3e7`) ✅
 
 ### P3-d: Agent 完善
 - [x] 虚拟化检测: DMI 文件 + 容器检测 + systemd-detect-virt fallback ✅
