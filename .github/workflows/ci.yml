@@ -83,7 +83,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y musl-tools
-          curl -fsSL https://musl.cc/aarch64-linux-musl-cross.tgz | sudo tar xz -C /opt
+          curl -fsSL -o /tmp/aarch64-musl-cross.tgz \
+            https://github.com/just-containers/musl-cross-make/releases/download/v8/aarch64-linux-musl-cross.tgz \
+            || curl -fsSL -o /tmp/aarch64-musl-cross.tgz \
+            https://musl.cc/aarch64-linux-musl-cross.tgz
+          sudo tar xz -C /opt -f /tmp/aarch64-musl-cross.tgz
           echo "/opt/aarch64-linux-musl-cross/bin" >> "$GITHUB_PATH"
 
       - name: Build frontend
