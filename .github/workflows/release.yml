@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version (e.g. 0.2.1)"
-        required: true
+        description: "Release version (e.g. 0.2.1). Leave empty to use the selected tag."
+        required: false
 
 permissions:
   contents: write
