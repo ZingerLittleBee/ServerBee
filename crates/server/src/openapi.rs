@@ -4,7 +4,7 @@ use utoipa::OpenApi;
 #[openapi(
     info(
         title = "ServerBee API",
-        version = "0.1.0",
+        version = "0.2.0",
         description = "ServerBee VPS monitoring probe API. All responses are wrapped in `{\"data\": <value>}`. Errors return `{\"error\": {\"code\": \"...\", \"message\": \"...\"}}`.",
     ),
     paths(
