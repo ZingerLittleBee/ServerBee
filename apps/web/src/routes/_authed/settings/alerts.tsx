@@ -30,7 +30,9 @@ const THRESHOLD_TYPES = new Set([
   'net_in_speed',
   'net_out_speed',
   'temperature',
-  'gpu'
+  'gpu',
+  'network_latency',
+  'network_packet_loss'
 ])
 
 const CYCLE_TYPES = new Set(['transfer_in_cycle', 'transfer_out_cycle', 'transfer_all_cycle'])
@@ -88,7 +90,9 @@ function AlertsPage() {
     { label: t('alerts.metric_transfer_in'), value: 'transfer_in_cycle' },
     { label: t('alerts.metric_transfer_out'), value: 'transfer_out_cycle' },
     { label: t('alerts.metric_transfer_total'), value: 'transfer_all_cycle' },
-    { label: t('alerts.metric_expiration'), value: 'expiration' }
+    { label: t('alerts.metric_expiration'), value: 'expiration' },
+    { label: 'Network Latency', value: 'network_latency' },
+    { label: 'Network Packet Loss', value: 'network_packet_loss' }
   ]
 
   const { data: rules, isLoading } = useQuery<AlertRule[]>({
