@@ -50,6 +50,8 @@
   "confirm_delete_target": "Are you sure you want to delete this target?",
   "save": "Save",
   "cancel": "Cancel",
+  "select_all": "Select All",
+  "deselect_all": "Deselect All",
   "back_to_overview": "Back to overview",
   "server_not_found": "Server not found",
   "online": "Online",
