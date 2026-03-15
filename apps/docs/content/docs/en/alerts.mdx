@@ -45,6 +45,8 @@ An alert rule consists of:
 | `process` | Process count | `min`: triggers when count >= value |
 | `temperature` | CPU temperature (C) | `min`: triggers when temp >= value |
 | `gpu` | GPU utilization (%) | `min`: triggers when usage >= value |
+| `network_latency` | Network latency (ms) | `min`: triggers when average probe latency >= value |
+| `network_packet_loss` | Network packet loss (%) | `min`: triggers when packet loss percentage >= value |
 | `offline` | Server offline | Triggers when server has been offline for `duration` seconds |
 | `transfer_in_cycle` | Inbound traffic per cycle | Triggers when cumulative transfer >= `cycle_limit` bytes |
 | `transfer_out_cycle` | Outbound traffic per cycle | Triggers when cumulative transfer >= `cycle_limit` bytes |

@@ -3298,7 +3298,7 @@ dependencies = [
 
 [[package]]
 name = "serverbee-agent"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3324,7 +3324,7 @@ dependencies = [
 
 [[package]]
 name = "serverbee-common"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "serde",
@@ -3334,7 +3334,7 @@ dependencies = [
 
 [[package]]
 name = "serverbee-server"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "argon2",
