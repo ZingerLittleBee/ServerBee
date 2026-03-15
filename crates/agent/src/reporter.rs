@@ -220,6 +220,7 @@ impl Reporter {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn handle_server_message<S>(
         &self,
         text: &str,

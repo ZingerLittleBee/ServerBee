@@ -194,26 +194,26 @@ pub fn parse_ping_batch_output(output: &str, packet_sent: u32) -> BatchIcmpResul
                 packet_received = received.parse::<u32>().unwrap_or(0);
             }
             // Extract packet loss percentage: look for "N% packet loss"
-            if let Some(loss_str) = parse_field_before(line, "% packet loss") {
-                if let Ok(pct) = loss_str.parse::<f64>() {
-                    packet_loss = pct / 100.0;
-                }
+            if let Some(loss_str) = parse_field_before(line, "% packet loss")
+                && let Ok(pct) = loss_str.parse::<f64>()
+            {
+                packet_loss = pct / 100.0;
             }
         }
 
         // Parse "rtt min/avg/max/mdev = A/B/C/D ms"
         // Also handles "round-trip min/avg/max/stddev = A/B/C/D ms" (macOS)
-        if line.contains("min/avg/max") {
-            if let Some(eq_pos) = line.find('=') {
-                let values_part = line[eq_pos + 1..].trim();
-                // Remove trailing " ms" if present
-                let values_str = values_part.trim_end_matches(" ms").trim();
-                let parts: Vec<&str> = values_str.splitn(4, '/').collect();
-                if parts.len() >= 3 {
-                    min_latency = parts[0].trim().parse::<f64>().ok();
-                    avg_latency = parts[1].trim().parse::<f64>().ok();
-                    max_latency = parts[2].trim().parse::<f64>().ok();
-                }
+        if line.contains("min/avg/max")
+            && let Some(eq_pos) = line.find('=')
+        {
+            let values_part = line[eq_pos + 1..].trim();
+            // Remove trailing " ms" if present
+            let values_str = values_part.trim_end_matches(" ms").trim();
+            let parts: Vec<&str> = values_str.splitn(4, '/').collect();
+            if parts.len() >= 3 {
+                min_latency = parts[0].trim().parse::<f64>().ok();
+                avg_latency = parts[1].trim().parse::<f64>().ok();
+                max_latency = parts[2].trim().parse::<f64>().ok();
             }
         }
     }

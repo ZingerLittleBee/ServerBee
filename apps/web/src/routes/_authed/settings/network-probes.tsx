@@ -312,10 +312,12 @@ function NetworkProbeSettingsPage() {
 
       {/* Add/Edit Target Dialog */}
       {showDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={closeDialog}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div aria-hidden="true" className="absolute inset-0 bg-black/50" />
           <div
-            className="w-full max-w-md rounded-lg border bg-background p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
+            aria-modal="true"
+            className="relative w-full max-w-md rounded-lg border bg-background p-6 shadow-xl"
+            role="dialog"
           >
             <h3 className="mb-4 font-semibold text-lg">{editingTarget ? t('edit_target') : t('add_target')}</h3>
             <form className="space-y-3" onSubmit={handleSubmitTarget}>
@@ -405,13 +407,12 @@ function NetworkProbeSettingsPage() {
 
       {/* Delete Confirmation Dialog */}
       {deleteTargetId && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-          onClick={() => setDeleteTargetId(null)}
-        >
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div aria-hidden="true" className="absolute inset-0 bg-black/50" />
           <div
-            className="w-full max-w-sm rounded-lg border bg-background p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
+            aria-modal="true"
+            className="relative w-full max-w-sm rounded-lg border bg-background p-6 shadow-xl"
+            role="dialog"
           >
             <h3 className="mb-3 font-semibold text-lg">{t('delete_target')}</h3>
             <p className="mb-5 text-muted-foreground text-sm">{t('confirm_delete_target')}</p>
