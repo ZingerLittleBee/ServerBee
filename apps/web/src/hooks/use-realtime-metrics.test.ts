@@ -51,13 +51,13 @@ describe('toRealtimeDataPoint', () => {
   })
 
   it('handles zero mem_total without division by zero', () => {
-    const metrics = makeMetrics({ mem_total: 0, mem_used: 0 })
+    const metrics = makeMetrics({ mem_total: 0, mem_used: 1000 })
     const point = toRealtimeDataPoint(metrics)
     expect(point.memory_pct).toBe(0)
   })
 
   it('handles zero disk_total without division by zero', () => {
-    const metrics = makeMetrics({ disk_total: 0, disk_used: 0 })
+    const metrics = makeMetrics({ disk_total: 0, disk_used: 1000 })
     const point = toRealtimeDataPoint(metrics)
     expect(point.disk_pct).toBe(0)
   })
