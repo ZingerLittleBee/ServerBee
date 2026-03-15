@@ -8,6 +8,7 @@ import { LatencyChart } from '@/components/network/latency-chart'
 import { TargetCard } from '@/components/network/target-card'
 import { StatusBadge } from '@/components/server/status-badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useServer } from '@/hooks/use-api'
 import { useAuth } from '@/hooks/use-auth'
@@ -403,14 +404,14 @@ function NetworkDetailPage() {
           ) : (
             <div className="max-h-80 space-y-1.5 overflow-y-auto rounded-md border p-3">
               {allTargets.map((target) => (
+                // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
                 <label
                   className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40"
                   key={target.id}
                 >
-                  <input
+                  <Checkbox
                     checked={selectedTargetIds.has(target.id)}
-                    onChange={() => toggleSelectedTarget(target.id)}
-                    type="checkbox"
+                    onCheckedChange={() => toggleSelectedTarget(target.id)}
                   />
                   <span className="flex-1 font-medium">{target.name}</span>
                   {target.provider && <span className="text-muted-foreground text-xs">{target.provider}</span>}

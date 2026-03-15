@@ -5,6 +5,7 @@ import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { api } from '@/lib/api-client'
 import type { TaskResponse, TaskResult } from '@/lib/api-schema'
@@ -138,6 +139,7 @@ function TasksPage() {
                     // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
                     const execEnabled = !srv.capabilities || (srv.capabilities & 2) !== 0
                     return (
+                      // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
                       <label
                         className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5 ${
                           execEnabled ? '' : 'cursor-not-allowed opacity-50'
@@ -145,11 +147,10 @@ function TasksPage() {
                         key={srv.id}
                         title={execEnabled ? undefined : t('tasks.exec_disabled')}
                       >
-                        <input
+                        <Checkbox
                           checked={selectedServerIds.includes(srv.id)}
                           disabled={!execEnabled}
-                          onChange={() => toggleServer(srv.id)}
-                          type="checkbox"
+                          onCheckedChange={() => toggleServer(srv.id)}
                         />
                         {srv.name}
                       </label>

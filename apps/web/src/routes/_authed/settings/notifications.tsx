@@ -5,6 +5,7 @@ import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -309,15 +310,13 @@ function NotificationsPage() {
               <fieldset className="space-y-1">
                 <legend className="text-sm">{t('notifications.select_channels')}</legend>
                 {notifications.map((n) => (
+                  // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
                   <label className="flex items-center gap-2 text-sm" key={n.id}>
-                    <input
+                    <Checkbox
                       checked={selectedIds.includes(n.id)}
-                      onChange={(e) => {
-                        setSelectedIds((prev) =>
-                          e.target.checked ? [...prev, n.id] : prev.filter((id) => id !== n.id)
-                        )
+                      onCheckedChange={(checked) => {
+                        setSelectedIds((prev) => (checked ? [...prev, n.id] : prev.filter((id) => id !== n.id)))
                       }}
-                      type="checkbox"
                     />
                     {n.name} ({typeLabels[n.notify_type as NotifyType] ?? n.notify_type})
                   </label>

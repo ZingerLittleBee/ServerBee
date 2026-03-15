@@ -5,6 +5,7 @@ import { type FormEvent, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { DataTable } from '@/components/ui/data-table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -347,11 +348,11 @@ function NetworkProbeSettingsPage() {
                 {targets && targets.length > 0 ? (
                   <div className="max-h-48 space-y-1.5 overflow-y-auto rounded-md border p-3">
                     {targets.map((target) => (
+                      // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
                       <label className="flex cursor-pointer items-center gap-2 text-sm" key={target.id}>
-                        <input
+                        <Checkbox
                           checked={defaultTargetIds.includes(target.id)}
-                          onChange={() => toggleDefaultTarget(target.id)}
-                          type="checkbox"
+                          onCheckedChange={() => toggleDefaultTarget(target.id)}
                         />
                         <span>{target.name}</span>
                         <span className="text-muted-foreground text-xs">({target.probe_type.toUpperCase()})</span>
