@@ -17,6 +17,7 @@ export interface RealtimeDataPoint {
   net_out_speed: number
   net_out_transfer: number
   timestamp: string
+  [key: string]: number | string
 }
 
 export function toRealtimeDataPoint(metrics: ServerMetrics): RealtimeDataPoint {
