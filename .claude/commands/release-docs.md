@@ -1,6 +1,6 @@
 # Release Documentation Updater
 
-Update version numbers, CHANGELOG.md, README.md, README.zh-CN.md, and Fumadocs based on the current branch's changes vs main.
+Update version numbers, CHANGELOG.md, README.md, README.zh-CN.md, ENV.md, and Fumadocs based on the current branch's changes vs main.
 
 ## Arguments
 
@@ -76,26 +76,47 @@ Also update:
 
 Apply the same changes as README.md but in Chinese. Read the existing `README.zh-CN.md` to match its translation style. The Chinese README should be a mirror of the English one with all content translated.
 
-### Step 7: Update Fumadocs (if applicable)
+### Step 7: Update ENV.md (if applicable)
 
-If the changes include new user-facing features, configuration options, or architectural changes:
+If new environment variables were added or existing ones changed:
 
-Check `apps/docs/content/docs/en/` and `apps/docs/content/docs/cn/` for relevant MDX files that need updating. Common files to check:
-- `configuration.mdx` — if new env vars or config options added
-- `architecture.mdx` — if architectural changes
-- `monitoring.mdx` — if monitoring features changed
-- Feature-specific pages if they exist
+1. Read `ENV.md` to understand its table format
+2. Add new env vars to the appropriate section (Server or Agent), maintaining alphabetical order within each section
+3. Each entry must include: Environment Variable, TOML Key, Type, Default, Description
+4. **Cross-check**: Ensure every env var in `ENV.md` also exists in `apps/docs/content/docs/{en,cn}/configuration.mdx` (and vice versa). If one is missing from the other, add it.
 
-Only update docs pages that are directly affected by the changes. Don't create new doc pages unless the feature is significant enough to warrant its own page.
+### Step 8: Update Fumadocs (REQUIRED)
 
-### Step 8: Verify and commit
+**This step is NOT optional.** Always check and update the Fumadocs documentation site when the branch includes user-facing changes.
+
+1. List all MDX files: `ls apps/docs/content/docs/en/` and `ls apps/docs/content/docs/cn/`
+2. For each changed feature area, read the corresponding MDX files in BOTH `en/` and `cn/` directories
+3. Update or add content to reflect the changes. Both languages must be kept in sync.
+
+**Mandatory cross-check — go through each file and verify:**
+
+| MDX File | Check when... |
+|----------|---------------|
+| `configuration.mdx` | New env vars, config options, or retention settings added. Must match `ENV.md` |
+| `monitoring.mdx` | Monitoring features changed (new metrics, new pages, data flow changes) |
+| `alerts.mdx` | New alert rule types, threshold logic changes |
+| `architecture.mdx` | Database schema changes, new modules, protocol changes |
+| `ping.mdx` | Ping/probe feature changes |
+| `capabilities.mdx` | New capability toggles |
+| `server.mdx` | Server-side behavior changes |
+| `agent.mdx` | Agent-side behavior changes |
+| Other feature pages | If the feature has a dedicated page, update it |
+
+**For new major features**: If a feature is significant enough (e.g., an entire new subsystem), consider adding a dedicated MDX page. Add it to both `en/` and `cn/` directories, and register it in the corresponding `meta.json` files.
+
+### Step 9: Verify and commit
 
 ```bash
 # Verify the changes look correct
 git diff --stat
 
 # Stage all changed files (version files + docs)
-git add Cargo.toml Cargo.lock CHANGELOG.md README.md README.zh-CN.md apps/docs/
+git add Cargo.toml Cargo.lock CHANGELOG.md README.md README.zh-CN.md ENV.md apps/docs/
 git commit -m "release: v{version} — update version and documentation"
 ```
 
@@ -108,3 +129,6 @@ git commit -m "release: v{version} — update version and documentation"
 - Don't add features to README/CHANGELOG that were already listed in previous versions
 - Today's date should be used for the CHANGELOG entry
 - If unsure whether a change is user-facing, err on the side of including it in CHANGELOG but NOT in README (README is for feature highlights only)
+- **Fumadocs is REQUIRED** — never skip the docs update. Both `en/` and `cn/` must be updated together
+- **ENV.md ↔ configuration.mdx consistency** — these two files must always be in sync. If one has an env var the other doesn't, add it
+- Per CLAUDE.md: "When adding/changing env vars, update `ENV.md` and `apps/docs/content/docs/{en,cn}/configuration.mdx` simultaneously"
