@@ -325,6 +325,15 @@ impl Reporter {
                     }
                 });
             }
+            ServerMessage::NetworkProbeSync { targets, interval, packet_count } => {
+                tracing::info!(
+                    "Received NetworkProbeSync: {} targets, interval={}s, packet_count={}",
+                    targets.len(),
+                    interval,
+                    packet_count
+                );
+                // NetworkProber integration handled in Task 6; ignored here for now
+            }
         }
 
         Ok(())
