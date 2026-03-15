@@ -3,8 +3,11 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { ExternalLink, Search, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useServer } from '@/hooks/use-api'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
@@ -136,7 +139,15 @@ function ServersListPage() {
     if (selected.size === 0) {
       return
     }
-    batchDeleteMutation.mutate([...selected])
+    const count = selected.size
+    batchDeleteMutation.mutate([...selected], {
+      onSuccess: () => {
+        toast.success(`Deleted ${count} server(s)`)
+      },
+      onError: (err) => {
+        toast.error(err instanceof Error ? err.message : 'Operation failed')
+      }
+    })
   }
 
   const sortIcon = (key: SortKey) => {
@@ -160,8 +171,8 @@ function ServersListPage() {
       <div className="mb-4 flex items-center gap-3">
         <div className="relative flex-1">
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            className="h-9 w-full rounded-md border bg-background pr-3 pl-9 text-sm outline-none focus:ring-2 focus:ring-ring"
+          <Input
+            className="pl-9"
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('search_placeholder')}
             type="text"
@@ -387,7 +398,7 @@ function EditWrapper({ serverId, onClose }: { onClose: () => void; serverId: str
   if (isLoading) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-        <div className="size-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
+        <Skeleton className="size-8 rounded-full" />
       </div>
     )
   }

@@ -2,11 +2,13 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, Download, Settings2 } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { AnomalyTable } from '@/components/network/anomaly-table'
 import { LatencyChart } from '@/components/network/latency-chart'
 import { TargetCard } from '@/components/network/target-card'
 import { StatusBadge } from '@/components/server/status-badge'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useServer } from '@/hooks/use-api'
 import { useAuth } from '@/hooks/use-auth'
 import {
@@ -207,6 +209,7 @@ function NetworkDetailPage() {
     link.download = `network-${serverId}-${timeRange}.csv`
     link.click()
     URL.revokeObjectURL(url)
+    toast.success('CSV exported')
   }, [records, serverId, timeRange])
 
   const openManageDialog = useCallback(() => {
@@ -215,10 +218,6 @@ function NetworkDetailPage() {
     setSelectedTargetIds(currentIds)
     setShowManageDialog(true)
   }, [targets])
-
-  const closeManageDialog = useCallback(() => {
-    setShowManageDialog(false)
-  }, [])
 
   const toggleSelectedTarget = useCallback((id: string) => {
     setSelectedTargetIds((prev) => {
@@ -242,7 +241,13 @@ function NetworkDetailPage() {
 
   const handleSaveTargets = useCallback(() => {
     setServerTargets.mutate(Array.from(selectedRef.current), {
-      onSuccess: () => setShowManageDialog(false)
+      onSuccess: () => {
+        toast.success('Server targets updated')
+        setShowManageDialog(false)
+      },
+      onError: (err) => {
+        toast.error(err instanceof Error ? err.message : 'Failed to update server targets')
+      }
     })
   }, [setServerTargets])
 
@@ -370,16 +375,18 @@ function NetworkDetailPage() {
       <AnomalyTable anomalies={anomalies} />
 
       {/* Manage Targets Dialog */}
-      {showManageDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div aria-hidden="true" className="absolute inset-0 bg-black/50" onClick={closeManageDialog} />
-          <div
-            aria-modal="true"
-            className="relative w-full max-w-lg rounded-lg border bg-background p-6 shadow-xl"
-            role="dialog"
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="font-semibold text-lg">{t('manage_targets')}</h3>
+      <Dialog
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowManageDialog(false)
+          }
+        }}
+        open={showManageDialog}
+      >
+        <DialogContent className="sm:max-w-lg" showCloseButton={false}>
+          <DialogHeader>
+            <div className="flex items-center justify-between">
+              <DialogTitle>{t('manage_targets')}</DialogTitle>
               <div className="flex gap-2">
                 <Button onClick={selectAllTargets} size="sm" type="button" variant="ghost">
                   {t('select_all')}
@@ -389,41 +396,39 @@ function NetworkDetailPage() {
                 </Button>
               </div>
             </div>
+          </DialogHeader>
 
-            {allTargets.length === 0 ? (
-              <p className="py-4 text-center text-muted-foreground text-sm">{t('no_targets')}</p>
-            ) : (
-              <div className="max-h-80 space-y-1.5 overflow-y-auto rounded-md border p-3">
-                {allTargets.map((target) => (
-                  <label
-                    className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40"
-                    key={target.id}
-                  >
-                    <input
-                      checked={selectedTargetIds.has(target.id)}
-                      onChange={() => toggleSelectedTarget(target.id)}
-                      type="checkbox"
-                    />
-                    <span className="flex-1 font-medium">{target.name}</span>
-                    {target.provider && <span className="text-muted-foreground text-xs">{target.provider}</span>}
-                    {target.location && <span className="text-muted-foreground text-xs">{target.location}</span>}
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs uppercase">{target.probe_type}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-
-            <div className="mt-4 flex gap-2">
-              <Button disabled={setServerTargets.isPending} onClick={handleSaveTargets} size="sm">
-                {t('save')}
-              </Button>
-              <Button onClick={closeManageDialog} size="sm" type="button" variant="ghost">
-                {t('cancel')}
-              </Button>
+          {allTargets.length === 0 ? (
+            <p className="py-4 text-center text-muted-foreground text-sm">{t('no_targets')}</p>
+          ) : (
+            <div className="max-h-80 space-y-1.5 overflow-y-auto rounded-md border p-3">
+              {allTargets.map((target) => (
+                <label
+                  className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40"
+                  key={target.id}
+                >
+                  <input
+                    checked={selectedTargetIds.has(target.id)}
+                    onChange={() => toggleSelectedTarget(target.id)}
+                    type="checkbox"
+                  />
+                  <span className="flex-1 font-medium">{target.name}</span>
+                  {target.provider && <span className="text-muted-foreground text-xs">{target.provider}</span>}
+                  {target.location && <span className="text-muted-foreground text-xs">{target.location}</span>}
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs uppercase">{target.probe_type}</span>
+                </label>
+              ))}
             </div>
+          )}
+
+          <div className="flex gap-2">
+            <Button disabled={setServerTargets.isPending} onClick={handleSaveTargets} size="sm">
+              {t('save')}
+            </Button>
+            <DialogClose render={<Button size="sm" variant="ghost" />}>{t('cancel')}</DialogClose>
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
