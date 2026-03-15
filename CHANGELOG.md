@@ -9,7 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Real-time Metrics Charts** -- Server detail page now defaults to real-time mode, streaming live CPU, memory, disk, network, and load data from WebSocket updates at ~3s intervals. Data is accumulated in a 10-minute ring buffer (~200 data points). Users can switch between real-time and historical views (1h/6h/24h/7d/30d). Time axis shows `mm:ss` format with `HH:mm:ss` on the first data point.
+- **Real-time Metrics Charts** -- Server detail page now defaults to real-time mode, streaming live CPU, memory, disk, network, and load data from WebSocket updates at ~3s intervals. Data is accumulated in a 10-minute ring buffer (~200 data points). Users can switch between real-time and historical views (1h/6h/24h/7d/30d). Time axis shows `mm:ss` format with `HH:mm:ss` on the first data point
+- **`useRealtimeMetrics` hook** -- New React hook that subscribes to TanStack Query cache updates, deduplicates via server-side `last_active` timestamp, and manages a ring buffer with automatic trimming
+- **`useServerRecords` enabled option** -- Added optional `{ enabled }` parameter to disable REST API queries when in real-time mode
+
+### Changed
+
+- Server detail page defaults to "Real-time" mode instead of "1h" historical view
+- Temperature and GPU charts are hidden in real-time mode (data not available in WebSocket stream)
+- REST API queries for historical records and GPU records are disabled when real-time mode is active
+
+### Fixed
+
+- Query cache subscription now handles TanStack Query v5 event types correctly (removed incorrect `event.type === 'updated'` filter)
+- Ring buffer uses spread operator instead of `push` to ensure new array references for React dependency tracking
+
+### Testing
+
+- 86 frontend Vitest tests across 9 test files (was 72 across 8)
+- 13 new tests for `useRealtimeMetrics`: pure function conversion (4) + hook integration via `renderHook` (9)
+- 1 new test for `useServerRecords` with `enabled: false`
+- 8 new E2E verification scenarios for real-time mode (4a-4h)
 
 ## [0.1.0] - 2026-03-14
 
