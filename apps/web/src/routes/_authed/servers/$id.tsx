@@ -8,6 +8,7 @@ import { StatusBadge } from '@/components/server/status-badge'
 import { Button } from '@/components/ui/button'
 import { useServer, useServerRecords } from '@/hooks/use-api'
 import { useAuth } from '@/hooks/use-auth'
+import { useRealtimeMetrics } from '@/hooks/use-realtime-metrics'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerResponse } from '@/lib/api-schema'
@@ -39,6 +40,7 @@ interface ServerWithCaps {
 }
 
 const TIME_RANGES: TimeRange[] = [
+  { label: 'Real-time', hours: 0, interval: 'realtime' },
   { label: '1h', hours: 1, interval: 'raw' },
   { label: '6h', hours: 6, interval: 'raw' },
   { label: '24h', hours: 24, interval: 'raw' },
@@ -153,13 +155,15 @@ function CapabilitiesSection({ server }: { server: ServerWithCaps }) {
 
 function ServerDetailPage() {
   const { id } = Route.useParams()
-  const [selectedRange, setSelectedRange] = useState(1)
+  const [selectedRange, setSelectedRange] = useState(0)
   const [editOpen, setEditOpen] = useState(false)
 
   const range = TIME_RANGES[selectedRange]
+  const isRealtime = range.interval === 'realtime'
 
   const { data: server, isLoading: serverLoading } = useServer(id)
-  const { data: records } = useServerRecords(id, range.hours, range.interval)
+  const realtimeData = useRealtimeMetrics(id)
+  const { data: records } = useServerRecords(id, range.hours, range.interval, { enabled: !isRealtime })
 
   const { data: gpuRecords } = useQuery<GpuRecordAggregated[]>({
     queryKey: ['servers', id, 'gpu-records', range.hours],
@@ -171,7 +175,7 @@ function ServerDetailPage() {
         `/api/servers/${id}/gpu-records?from=${encodeURIComponent(gpuFrom)}&to=${encodeURIComponent(gpuTo)}`
       )
     },
-    enabled: id.length > 0,
+    enabled: id.length > 0 && !isRealtime,
     refetchInterval: 60_000
   })
 
@@ -184,7 +188,10 @@ function ServerDetailPage() {
   })
   const liveData = liveServers?.find((s) => s.id === id)
 
-  const chartData = useMemo(() => {
+  const chartData: Record<string, unknown>[] = useMemo(() => {
+    if (isRealtime) {
+      return realtimeData as unknown as Record<string, unknown>[]
+    }
     if (!records) {
       return []
     }
@@ -202,7 +209,21 @@ function ServerDetailPage() {
       load15: r.load15,
       temperature: r.temperature
     }))
-  }, [records, server])
+  }, [isRealtime, realtimeData, records, server])
+
+  const realtimeFormatTime = useMemo(() => {
+    if (!isRealtime) {
+      return undefined
+    }
+    const firstTimestamp = realtimeData.length > 0 ? realtimeData[0].timestamp : ''
+    return (time: string) => {
+      if (time === firstTimestamp) {
+        return new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      }
+      const d = new Date(time)
+      return `${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
+    }
+  }, [isRealtime, realtimeData])
 
   const gpuChartData = useMemo(() => {
     if (!gpuRecords || gpuRecords.length === 0) {
@@ -216,8 +237,9 @@ function ServerDetailPage() {
     }))
   }, [gpuRecords])
 
-  const hasTemperature = chartData.some((d) => d.temperature != null && d.temperature > 0)
-  const hasGpu = gpuChartData.length > 0
+  const hasTemperature =
+    !isRealtime && chartData.some((d) => 'temperature' in d && d.temperature != null && (d.temperature as number) > 0)
+  const hasGpu = !isRealtime && gpuChartData.length > 0
 
   if (serverLoading) {
     return (
@@ -314,19 +336,35 @@ function ServerDetailPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <MetricsChart color="var(--color-chart-1)" data={chartData} dataKey="cpu" title="CPU Usage" unit="%" />
+        <MetricsChart
+          color="var(--color-chart-1)"
+          data={chartData}
+          dataKey="cpu"
+          formatTime={realtimeFormatTime}
+          title="CPU Usage"
+          unit="%"
+        />
         <MetricsChart
           color="var(--color-chart-2)"
           data={chartData}
           dataKey="memory_pct"
+          formatTime={realtimeFormatTime}
           title="Memory Usage"
           unit="%"
         />
-        <MetricsChart color="var(--color-chart-3)" data={chartData} dataKey="disk_pct" title="Disk Usage" unit="%" />
+        <MetricsChart
+          color="var(--color-chart-3)"
+          data={chartData}
+          dataKey="disk_pct"
+          formatTime={realtimeFormatTime}
+          title="Disk Usage"
+          unit="%"
+        />
         <MetricsChart
           color="var(--color-chart-4)"
           data={chartData}
           dataKey="net_in_speed"
+          formatTime={realtimeFormatTime}
           formatValue={(v) => formatBytes(v)}
           title="Network In"
         />
@@ -334,16 +372,24 @@ function ServerDetailPage() {
           color="var(--color-chart-5)"
           data={chartData}
           dataKey="net_out_speed"
+          formatTime={realtimeFormatTime}
           formatValue={(v) => formatBytes(v)}
           title="Network Out"
         />
-        <MetricsChart color="var(--color-chart-1)" data={chartData} dataKey="load1" title="Load Average (1m)" />
+        <MetricsChart
+          color="var(--color-chart-1)"
+          data={chartData}
+          dataKey="load1"
+          formatTime={realtimeFormatTime}
+          title="Load Average (1m)"
+        />
 
         {hasTemperature && (
           <MetricsChart
             color="var(--color-chart-4)"
             data={chartData}
             dataKey="temperature"
+            formatTime={realtimeFormatTime}
             title="Temperature"
             unit="°C"
           />
@@ -355,6 +401,7 @@ function ServerDetailPage() {
               color="var(--color-chart-5)"
               data={gpuChartData}
               dataKey="gpu_usage"
+              formatTime={realtimeFormatTime}
               title="GPU Usage"
               unit="%"
             />
@@ -362,6 +409,7 @@ function ServerDetailPage() {
               color="var(--color-chart-2)"
               data={gpuChartData}
               dataKey="gpu_temp"
+              formatTime={realtimeFormatTime}
               title="GPU Temperature"
               unit="°C"
             />

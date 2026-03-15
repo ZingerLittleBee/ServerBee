@@ -139,11 +139,39 @@ Groups can represent environments (production, staging), regions (US-East, EU-We
 
 Each server has a detail page showing:
 
-- Real-time metric gauges and charts
+- Real-time streaming charts (default mode)
 - System information (hardware, OS, network)
 - Historical trend charts with time range selection
 - Server metadata (group, tags, remarks, pricing)
 - Actions (terminal access, edit, delete)
+
+### Real-Time Charts
+
+The server detail page defaults to **Real-time mode**. In this mode, charts display live data streamed from WebSocket updates:
+
+- **Data source**: Accumulated from `BrowserMessage::Update` events via the `['servers']` TanStack Query cache
+- **Update interval**: ~3 seconds (matches the agent report interval)
+- **Buffer size**: 10-minute ring buffer (~200 data points), automatically trimmed
+- **Deduplication**: Uses the server-side `last_active` timestamp to filter duplicate events
+- **Available charts**: CPU, Memory, Disk, Network In/Out, Load Average (1m)
+- **Time axis**: First tick shows `HH:mm:ss`, subsequent ticks show `mm:ss`
+
+Temperature and GPU charts are not available in real-time mode because the WebSocket `ServerStatus` message does not include these fields. Switch to a historical view to see temperature and GPU data.
+
+### Time Range Selector
+
+The time range bar offers these options:
+
+| Mode | Data Source | Description |
+|------|-------------|-------------|
+| **Real-time** | WebSocket ring buffer | Live streaming data (default) |
+| **1h** | REST API (raw records) | Last 1 hour from database |
+| **6h** | REST API (raw records) | Last 6 hours |
+| **24h** | REST API (raw records) | Last 24 hours |
+| **7d** | REST API (hourly records) | Last 7 days (aggregated) |
+| **30d** | REST API (hourly records) | Last 30 days (aggregated) |
+
+When switching from Real-time to a historical view, the REST API queries are enabled and chart data loads from the database. When switching back to Real-time, the accumulated buffer data is displayed immediately (data continues to accumulate in the background even while viewing historical data).
 
 ## Data Flow
 
