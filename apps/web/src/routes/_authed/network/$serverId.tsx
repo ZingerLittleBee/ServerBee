@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, Download } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AnomalyTable } from '@/components/network/anomaly-table'
 import { LatencyChart } from '@/components/network/latency-chart'
 import { TargetCard } from '@/components/network/target-card'
@@ -48,6 +49,7 @@ const TIME_RANGES: TimeRangeOption[] = [
 ]
 
 function NetworkDetailPage() {
+  const { t } = useTranslation('network')
   const { serverId } = Route.useParams()
   const [timeRange, setTimeRange] = useState<TimeRangeValue>('realtime')
   const [visibleTargets, setVisibleTargets] = useState<Set<string> | null>(null)
@@ -188,7 +190,7 @@ function NetworkDetailPage() {
   if (!(server && summary)) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
-        <p className="text-muted-foreground">Server not found</p>
+        <p className="text-muted-foreground">{t('server_not_found')}</p>
       </div>
     )
   }
@@ -202,7 +204,7 @@ function NetworkDetailPage() {
           to="/network"
         >
           <ArrowLeft className="size-4" />
-          Back to overview
+          {t('back_to_overview')}
         </Link>
 
         <div className="flex items-start justify-between">
@@ -212,7 +214,7 @@ function NetworkDetailPage() {
           </div>
           <Button disabled={records.length === 0} onClick={exportCsv} size="sm" variant="outline">
             <Download className="mr-1 size-4" />
-            Export CSV
+            {t('export_csv')}
           </Button>
         </div>
       </div>
@@ -246,7 +248,7 @@ function NetworkDetailPage() {
             size="sm"
             variant={timeRange === tr.value ? 'default' : 'outline'}
           >
-            {tr.label}
+            {tr.value === 'realtime' ? t('realtime') : tr.label}
           </Button>
         ))}
       </div>
@@ -277,15 +279,15 @@ function NetworkDetailPage() {
           <p className="font-mono font-semibold text-lg">
             {stats.avgLatency != null ? `${stats.avgLatency.toFixed(1)} ms` : 'N/A'}
           </p>
-          <p className="text-muted-foreground text-xs">Avg Latency</p>
+          <p className="text-muted-foreground text-xs">{t('avg_latency')}</p>
         </div>
         <div className="rounded-lg border bg-card p-4 text-center">
           <p className="font-mono font-semibold text-lg">{stats.availability.toFixed(1)}%</p>
-          <p className="text-muted-foreground text-xs">Availability</p>
+          <p className="text-muted-foreground text-xs">{t('availability')}</p>
         </div>
         <div className="rounded-lg border bg-card p-4 text-center">
           <p className="font-mono font-semibold text-lg">{stats.targetCount}</p>
-          <p className="text-muted-foreground text-xs">Targets</p>
+          <p className="text-muted-foreground text-xs">{t('targets')}</p>
         </div>
       </div>
 
