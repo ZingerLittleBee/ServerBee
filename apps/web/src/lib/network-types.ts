@@ -1,13 +1,14 @@
 export interface NetworkProbeTarget {
-  created_at: string
+  created_at: string | null
   id: string
-  is_builtin: boolean
   location: string
   name: string
   probe_type: string
   provider: string
+  source: string | null
+  source_name: string | null
   target: string
-  updated_at: string
+  updated_at: string | null
 }
 
 export interface NetworkProbeSetting {

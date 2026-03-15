@@ -220,17 +220,17 @@ function NetworkProbeSettingsPage() {
         )
       },
       {
-        accessorKey: 'is_builtin',
+        accessorKey: 'source',
         header: 'Status',
         enableSorting: false,
         cell: ({ row }) =>
-          row.original.is_builtin ? (
+          row.original.source ? (
             <span className="flex items-center gap-1 text-muted-foreground text-xs">
               <Lock className="size-3" />
-              {t('builtin')}
+              {row.original.source_name ?? t('preset')}
             </span>
           ) : (
-            <span className="text-green-600 text-xs dark:text-green-400">{t('custom')}</span>
+            <span className="text-muted-foreground text-xs">{t('custom')}</span>
           )
       },
       {
@@ -239,7 +239,7 @@ function NetworkProbeSettingsPage() {
         enableSorting: false,
         meta: { className: 'text-right' },
         cell: ({ row }) =>
-          !row.original.is_builtin && (
+          !row.original.source && (
             <div className="flex justify-end gap-1">
               <Button
                 aria-label={`Edit ${row.original.name}`}
