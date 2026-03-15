@@ -5,6 +5,7 @@ import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -282,15 +283,13 @@ function AlertsPage() {
                   <div className="flex flex-wrap gap-2 rounded-md border p-2">
                     {servers && servers.length > 0 ? (
                       servers.map((s) => (
+                        // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
                         <label className="flex items-center gap-1.5 text-sm" key={s.id}>
-                          <input
+                          <Checkbox
                             checked={serverIds.includes(s.id)}
-                            onChange={(e) => {
-                              setServerIds((prev) =>
-                                e.target.checked ? [...prev, s.id] : prev.filter((id) => id !== s.id)
-                              )
+                            onCheckedChange={(checked) => {
+                              setServerIds((prev) => (checked ? [...prev, s.id] : prev.filter((id) => id !== s.id)))
                             }}
-                            type="checkbox"
                           />
                           {s.name}
                         </label>

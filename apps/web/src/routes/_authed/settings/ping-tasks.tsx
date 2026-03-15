@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -273,15 +274,15 @@ function PingTasksPage() {
                 <fieldset className="space-y-1">
                   <legend className="text-sm">{t('ping.run_from_servers')}</legend>
                   {servers.map((s) => (
+                    // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
                     <label className="flex items-center gap-2 text-sm" key={s.id}>
-                      <input
+                      <Checkbox
                         checked={selectedServerIds.includes(s.id)}
-                        onChange={(e) => {
+                        onCheckedChange={(checked) => {
                           setSelectedServerIds((prev) =>
-                            e.target.checked ? [...prev, s.id] : prev.filter((sid) => sid !== s.id)
+                            checked ? [...prev, s.id] : prev.filter((sid) => sid !== s.id)
                           )
                         }}
-                        type="checkbox"
                       />
                       {s.name}
                     </label>

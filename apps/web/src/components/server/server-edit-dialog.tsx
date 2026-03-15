@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -124,13 +125,9 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                 />
               </Field>
               <Field label={t('edit_hidden')}>
+                {/* biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element */}
                 <label className="flex cursor-pointer items-center gap-2 pt-1">
-                  <input
-                    checked={hidden}
-                    className="size-4 rounded border accent-primary"
-                    onChange={(e) => setHidden(e.target.checked)}
-                    type="checkbox"
-                  />
+                  <Checkbox checked={hidden} onCheckedChange={(checked) => setHidden(!!checked)} />
                   <span className="text-sm">{t('edit_hide_status')}</span>
                 </label>
               </Field>
