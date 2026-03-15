@@ -74,26 +74,21 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      - name: Install musl tools
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-
-      - name: Install cross-compilation tools (aarch64-musl)
-        if: matrix.target == 'aarch64-unknown-linux-musl'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y musl-tools
-          curl -fsSL https://musl.cc/aarch64-linux-musl-cross.tgz | sudo tar xz -C /opt
-          echo "/opt/aarch64-linux-musl-cross/bin" >> "$GITHUB_PATH"
+      - name: Install cargo-zigbuild
+        if: contains(matrix.target, '-musl')
+        run: pip install cargo-zigbuild
 
       - name: Build frontend
         working-directory: apps/web
         run: bun install --frozen-lockfile && bun run build
 
-      - name: Build
+      - name: Build (zigbuild)
+        if: contains(matrix.target, '-musl')
+        run: cargo zigbuild --release --target ${{ matrix.target }}
+
+      - name: Build (native)
+        if: "!contains(matrix.target, '-musl')"
         run: cargo build --release --target ${{ matrix.target }}
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-musl-gcc
 
       - name: Upload artifacts (Unix)
         if: runner.os != 'Windows'
