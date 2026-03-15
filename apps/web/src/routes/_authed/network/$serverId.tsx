@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeft, Download } from 'lucide-react'
+import { ArrowLeft, Download, Settings2 } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AnomalyTable } from '@/components/network/anomaly-table'
@@ -8,7 +8,14 @@ import { TargetCard } from '@/components/network/target-card'
 import { StatusBadge } from '@/components/server/status-badge'
 import { Button } from '@/components/ui/button'
 import { useServer } from '@/hooks/use-api'
-import { useNetworkAnomalies, useNetworkRecords, useNetworkServerSummary } from '@/hooks/use-network-api'
+import { useAuth } from '@/hooks/use-auth'
+import {
+  useNetworkAnomalies,
+  useNetworkRecords,
+  useNetworkServerSummary,
+  useNetworkTargets,
+  useSetServerTargets
+} from '@/hooks/use-network-api'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
 import type { NetworkProbeRecord } from '@/lib/network-types'
 import { cn } from '@/lib/utils'
@@ -51,8 +58,15 @@ const TIME_RANGES: TimeRangeOption[] = [
 function NetworkDetailPage() {
   const { t } = useTranslation('network')
   const { serverId } = Route.useParams()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+
   const [timeRange, setTimeRange] = useState<TimeRangeValue>('realtime')
   const [visibleTargets, setVisibleTargets] = useState<Set<string> | null>(null)
+
+  // Manage Targets dialog state
+  const [showManageDialog, setShowManageDialog] = useState(false)
+  const [selectedTargetIds, setSelectedTargetIds] = useState<Set<string>>(new Set())
 
   const isRealtime = timeRange === 'realtime'
   const hours = isRealtime ? 1 : timeRange
@@ -62,6 +76,8 @@ function NetworkDetailPage() {
   const { data: historicalRecords } = useNetworkRecords(serverId, hours, { enabled: !isRealtime })
   const { data: anomalies = [] } = useNetworkAnomalies(serverId, hours)
   const { data: realtimeData, reset: resetRealtime } = useNetworkRealtime(serverId)
+  const { data: allTargets = [] } = useNetworkTargets()
+  const setServerTargets = useSetServerTargets(serverId)
 
   const targets = useMemo(() => summary?.targets ?? [], [summary])
 
@@ -179,6 +195,34 @@ function NetworkDetailPage() {
     URL.revokeObjectURL(url)
   }, [records, serverId, timeRange])
 
+  const openManageDialog = useCallback(() => {
+    // Pre-select targets currently assigned to this server
+    const currentIds = new Set(targets.map((t) => t.target_id))
+    setSelectedTargetIds(currentIds)
+    setShowManageDialog(true)
+  }, [targets])
+
+  const closeManageDialog = useCallback(() => {
+    setShowManageDialog(false)
+  }, [])
+
+  const toggleSelectedTarget = useCallback((id: string) => {
+    setSelectedTargetIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }, [])
+
+  const handleSaveTargets = useCallback(async () => {
+    await setServerTargets.mutateAsync(Array.from(selectedTargetIds))
+    setShowManageDialog(false)
+  }, [setServerTargets, selectedTargetIds])
+
   if (serverLoading || summaryLoading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
@@ -212,10 +256,18 @@ function NetworkDetailPage() {
             <h1 className="font-bold text-2xl">{summary.server_name}</h1>
             <StatusBadge online={summary.online} />
           </div>
-          <Button disabled={records.length === 0} onClick={exportCsv} size="sm" variant="outline">
-            <Download className="mr-1 size-4" />
-            {t('export_csv')}
-          </Button>
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <Button onClick={openManageDialog} size="sm" variant="outline">
+                <Settings2 className="mr-1 size-4" />
+                {t('manage_targets')}
+              </Button>
+            )}
+            <Button disabled={records.length === 0} onClick={exportCsv} size="sm" variant="outline">
+              <Download className="mr-1 size-4" />
+              {t('export_csv')}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -293,6 +345,52 @@ function NetworkDetailPage() {
 
       {/* Anomaly table */}
       <AnomalyTable anomalies={anomalies} />
+
+      {/* Manage Targets Dialog */}
+      {showManageDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div aria-hidden="true" className="absolute inset-0 bg-black/50" onClick={closeManageDialog} />
+          <div
+            aria-modal="true"
+            className="relative w-full max-w-lg rounded-lg border bg-background p-6 shadow-xl"
+            role="dialog"
+          >
+            <h3 className="mb-4 font-semibold text-lg">{t('manage_targets')}</h3>
+
+            {allTargets.length === 0 ? (
+              <p className="py-4 text-center text-muted-foreground text-sm">{t('no_targets')}</p>
+            ) : (
+              <div className="max-h-80 space-y-1.5 overflow-y-auto rounded-md border p-3">
+                {allTargets.map((target) => (
+                  <label
+                    className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40"
+                    key={target.id}
+                  >
+                    <input
+                      checked={selectedTargetIds.has(target.id)}
+                      onChange={() => toggleSelectedTarget(target.id)}
+                      type="checkbox"
+                    />
+                    <span className="flex-1 font-medium">{target.name}</span>
+                    {target.provider && <span className="text-muted-foreground text-xs">{target.provider}</span>}
+                    {target.location && <span className="text-muted-foreground text-xs">{target.location}</span>}
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs uppercase">{target.probe_type}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-4 flex gap-2">
+              <Button disabled={setServerTargets.isPending} onClick={handleSaveTargets} size="sm">
+                {t('save')}
+              </Button>
+              <Button onClick={closeManageDialog} size="sm" type="button" variant="ghost">
+                {t('cancel')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
