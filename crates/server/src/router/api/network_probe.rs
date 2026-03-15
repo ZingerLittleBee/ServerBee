@@ -8,7 +8,7 @@ use serde::Deserialize;
 use crate::error::{ok, ApiResponse, AppError};
 use crate::service::network_probe::{
     CreateNetworkProbeTarget, NetworkProbeAnomaly, NetworkProbeSetting, NetworkProbeService,
-    ServerOverview, UpdateNetworkProbeTarget,
+    ServerOverview, TargetDto, UpdateNetworkProbeTarget,
 };
 use crate::state::AppState;
 use serverbee_common::protocol::ServerMessage;
@@ -46,7 +46,7 @@ pub fn write_router() -> Router<Arc<AppState>> {
 )]
 async fn list_targets(
     State(state): State<Arc<AppState>>,
-) -> Result<Json<ApiResponse<Vec<crate::entity::network_probe_target::Model>>>, AppError> {
+) -> Result<Json<ApiResponse<Vec<TargetDto>>>, AppError> {
     let targets = NetworkProbeService::list_targets(&state.db).await?;
     ok(targets)
 }
@@ -259,7 +259,7 @@ pub struct NetworkProbeAnomalyQuery {
 pub async fn get_server_network_targets(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<Vec<crate::entity::network_probe_target::Model>>>, AppError> {
+) -> Result<Json<ApiResponse<Vec<TargetDto>>>, AppError> {
     let targets = NetworkProbeService::get_server_targets(&state.db, &id).await?;
     ok(targets)
 }
@@ -282,12 +282,10 @@ pub async fn get_server_network_records(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     axum::extract::Query(q): axum::extract::Query<NetworkProbeRecordQuery>,
-) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
-    let result =
+) -> Result<Json<ApiResponse<Vec<crate::service::network_probe::ProbeRecordDto>>>, AppError> {
+    let records =
         NetworkProbeService::query_records(&state.db, &id, q.target_id, q.from, q.to).await?;
-    let data = serde_json::to_value(result)
-        .map_err(|e| AppError::Internal(format!("Serialization error: {e}")))?;
-    ok(data)
+    ok(records)
 }
 
 #[utoipa::path(
