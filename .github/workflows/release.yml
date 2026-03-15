@@ -90,9 +90,16 @@ jobs:
             target/${{ matrix.target }}/release/serverbee-agent-${{ matrix.suffix }}*
 
   docker:
-    name: Docker Image
+    name: Docker (${{ matrix.component }})
     needs: [build]
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - component: server
+            image: serverbee-server
+          - component: agent
+            image: serverbee-agent
     steps:
       - uses: actions/checkout@v4
 
@@ -106,10 +113,8 @@ jobs:
       - name: Prepare binaries
         run: |
           mkdir -p docker-bins/linux-amd64 docker-bins/linux-arm64
-          mv docker-bins/serverbee-server-linux-amd64 docker-bins/linux-amd64/serverbee-server
-          mv docker-bins/serverbee-agent-linux-amd64 docker-bins/linux-amd64/serverbee-agent
-          mv docker-bins/serverbee-server-linux-arm64 docker-bins/linux-arm64/serverbee-server
-          mv docker-bins/serverbee-agent-linux-arm64 docker-bins/linux-arm64/serverbee-agent
+          mv docker-bins/serverbee-${{ matrix.component }}-linux-amd64 docker-bins/linux-amd64/serverbee-${{ matrix.component }}
+          mv docker-bins/serverbee-${{ matrix.component }}-linux-arm64 docker-bins/linux-arm64/serverbee-${{ matrix.component }}
           chmod +x docker-bins/linux-amd64/* docker-bins/linux-arm64/*
 
       - name: Set up QEMU
@@ -145,12 +150,12 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.release
+          file: Dockerfile.${{ matrix.component }}
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ steps.owner.outputs.lowercase }}/serverbee:latest
-            ghcr.io/${{ steps.owner.outputs.lowercase }}/serverbee:${{ steps.version.outputs.version }}
+            ghcr.io/${{ steps.owner.outputs.lowercase }}/${{ matrix.image }}:latest
+            ghcr.io/${{ steps.owner.outputs.lowercase }}/${{ matrix.image }}:${{ steps.version.outputs.version }}
 
   release:
     name: Create Release

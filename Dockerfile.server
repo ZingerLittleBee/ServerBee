@@ -4,7 +4,6 @@ RUN apk add --no-cache ca-certificates
 ARG TARGETARCH
 
 COPY docker-bins/linux-${TARGETARCH}/serverbee-server /usr/local/bin/
-COPY docker-bins/linux-${TARGETARCH}/serverbee-agent /usr/local/bin/
 
 VOLUME /data
 ENV SERVERBEE_SERVER__DATA_DIR=/data
