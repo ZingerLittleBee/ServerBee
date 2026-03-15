@@ -5,7 +5,7 @@ use sea_orm::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entity::{alert_rule, alert_state, record, server};
+use crate::entity::{alert_rule, alert_state, network_probe_record, record, server};
 use crate::error::AppError;
 use crate::service::agent_manager::AgentManager;
 use crate::service::notification::{NotificationService, NotifyContext};
@@ -415,6 +415,12 @@ impl AlertService {
                     // Check if server's expired_at is within N days (default 7)
                     check_expiration(db, server_id, item).await
                 }
+                "network_latency" => {
+                    check_network_latency(db, server_id, item).await
+                }
+                "network_packet_loss" => {
+                    check_network_packet_loss(db, server_id, item).await
+                }
                 _ => {
                     // Resource threshold type: check recent records
                     check_threshold(db, server_id, item).await
@@ -663,6 +669,80 @@ async fn check_expiration(
     let days_threshold = item.duration.unwrap_or(7) as i64;
     let deadline = Utc::now() + Duration::days(days_threshold);
     expired_at <= deadline
+}
+
+/// Check network latency alert: worst (highest) avg_latency across all probe targets in the last
+/// 10 minutes must meet the threshold. NULL latency records are skipped.
+async fn check_network_latency(
+    db: &DatabaseConnection,
+    server_id: &str,
+    item: &AlertRuleItem,
+) -> bool {
+    let ten_min_ago = Utc::now() - Duration::minutes(10);
+
+    let records = match network_probe_record::Entity::find()
+        .filter(network_probe_record::Column::ServerId.eq(server_id))
+        .filter(network_probe_record::Column::Timestamp.gte(ten_min_ago))
+        .all(db)
+        .await
+    {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+
+    let latencies: Vec<f64> = records
+        .iter()
+        .filter_map(|r| r.avg_latency)
+        .collect();
+
+    if latencies.is_empty() {
+        return false;
+    }
+
+    let worst = latencies.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+    match (item.min, item.max) {
+        (Some(min), Some(max)) => worst >= min && worst <= max,
+        (Some(min), None) => worst >= min,
+        (None, Some(max)) => worst >= max,
+        (None, None) => false,
+    }
+}
+
+/// Check network packet loss alert: worst (highest) packet_loss percentage across all probe
+/// targets in the last 10 minutes must meet the threshold (e.g. 10.0 for 10%).
+async fn check_network_packet_loss(
+    db: &DatabaseConnection,
+    server_id: &str,
+    item: &AlertRuleItem,
+) -> bool {
+    let ten_min_ago = Utc::now() - Duration::minutes(10);
+
+    let records = match network_probe_record::Entity::find()
+        .filter(network_probe_record::Column::ServerId.eq(server_id))
+        .filter(network_probe_record::Column::Timestamp.gte(ten_min_ago))
+        .all(db)
+        .await
+    {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+
+    if records.is_empty() {
+        return false;
+    }
+
+    let worst = records
+        .iter()
+        .map(|r| r.packet_loss)
+        .fold(f64::NEG_INFINITY, f64::max);
+
+    match (item.min, item.max) {
+        (Some(min), Some(max)) => worst >= min && worst <= max,
+        (Some(min), None) => worst >= min,
+        (None, Some(max)) => worst >= max,
+        (None, None) => false,
+    }
 }
 
 fn extract_metric(rec: &record::Model, rule_type: &str) -> f64 {
