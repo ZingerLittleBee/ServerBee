@@ -20,6 +20,8 @@
   "nav_users": "Users",
   "nav_notifications": "Notifications",
   "nav_alerts": "Alerts",
+  "nav_network": "Network",
+  "nav_network_probes": "Network Probes",
   "nav_ping_tasks": "Ping Tasks",
   "nav_commands": "Commands",
   "nav_capabilities": "Capabilities",
