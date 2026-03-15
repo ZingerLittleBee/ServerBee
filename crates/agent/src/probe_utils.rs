@@ -189,8 +189,10 @@ pub fn parse_ping_batch_output(output: &str, packet_sent: u32) -> BatchIcmpResul
     for line in output.lines() {
         // Parse "X packets transmitted, Y received, Z% packet loss, ..."
         if line.contains("packet loss") {
-            // Extract received count: look for ", N received,"
-            if let Some(received) = parse_field_before(line, " received") {
+            // Extract received count: look for "N received" or "N packets received" (macOS)
+            if let Some(received) = parse_field_before(line, " packets received")
+                .or_else(|| parse_field_before(line, " received"))
+            {
                 packet_received = received.parse::<u32>().unwrap_or(0);
             }
             // Extract packet loss percentage: look for "N% packet loss"
@@ -286,6 +288,18 @@ mod tests {
         assert_eq!(result.packet_received, 0);
         assert!((result.packet_loss - 1.0).abs() < 0.01);
         assert!(result.avg_latency.is_none());
+    }
+
+    #[test]
+    fn test_parse_batch_output_macos_format() {
+        let output = "PING 1.1.1.1 (1.1.1.1): 56 data bytes\n64 bytes from 1.1.1.1: icmp_seq=0 ttl=53 time=5.123 ms\n\n--- 1.1.1.1 ping statistics ---\n3 packets transmitted, 3 packets received, 0.0% packet loss\nround-trip min/avg/max/stddev = 4.123/5.456/6.789/1.234 ms";
+        let result = parse_ping_batch_output(output, 3);
+        assert_eq!(result.packet_sent, 3);
+        assert_eq!(result.packet_received, 3);
+        assert!((result.packet_loss - 0.0).abs() < 0.01);
+        assert!((result.min_latency.unwrap() - 4.123).abs() < 0.001);
+        assert!((result.avg_latency.unwrap() - 5.456).abs() < 0.001);
+        assert!((result.max_latency.unwrap() - 6.789).abs() < 0.001);
     }
 
     #[test]
