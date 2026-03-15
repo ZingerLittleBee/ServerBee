@@ -56,7 +56,7 @@ export function useRealtimeMetrics(serverId: string): RealtimeDataPoint[] {
 
     // Subscribe to cache updates
     const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
-      if (event.type !== 'updated' || event.query.queryHash !== '["servers"]') {
+      if (event.query.queryHash !== '["servers"]') {
         return
       }
 
