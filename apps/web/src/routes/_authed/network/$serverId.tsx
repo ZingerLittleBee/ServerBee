@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, Download, Settings2 } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AnomalyTable } from '@/components/network/anomaly-table'
 import { LatencyChart } from '@/components/network/latency-chart'
@@ -67,6 +67,8 @@ function NetworkDetailPage() {
   // Manage Targets dialog state
   const [showManageDialog, setShowManageDialog] = useState(false)
   const [selectedTargetIds, setSelectedTargetIds] = useState<Set<string>>(new Set())
+  const selectedRef = useRef(selectedTargetIds)
+  selectedRef.current = selectedTargetIds
 
   const isRealtime = timeRange === 'realtime'
   const hours = isRealtime ? 1 : timeRange
@@ -239,11 +241,8 @@ function NetworkDetailPage() {
   }, [])
 
   const handleSaveTargets = useCallback(() => {
-    setSelectedTargetIds((current) => {
-      setServerTargets.mutate(Array.from(current), {
-        onSuccess: () => setShowManageDialog(false)
-      })
-      return current
+    setServerTargets.mutate(Array.from(selectedRef.current), {
+      onSuccess: () => setShowManageDialog(false)
     })
   }, [setServerTargets])
 
