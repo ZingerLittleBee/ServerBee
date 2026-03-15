@@ -13,13 +13,11 @@ The user MUST provide a version number (e.g., `v0.2.2` or `0.2.2`). If not provi
 ```
 1. Parse version from argument, strip leading 'v' if present (e.g., "v0.2.2" -> "0.2.2")
 2. Read current version from Cargo.toml [workspace.package] version field
-3. Read current version from package.json "version" field (if exists, may not have one)
-4. If the new version differs from Cargo.toml version:
+3. If the new version differs from Cargo.toml version:
    - Update Cargo.toml [workspace.package] version to the new version
-   - Update package.json "version" to the new version (if field exists)
    - Run `cargo check --workspace` to regenerate Cargo.lock
-   - Note: Do NOT add 'v' prefix — Cargo.toml and package.json use bare semver (e.g., "0.2.2")
-5. If versions already match, skip this step
+   - Note: Do NOT add 'v' prefix — Cargo.toml uses bare semver (e.g., "0.2.2")
+4. If versions already match, skip this step
 ```
 
 ### Step 2: Gather change context
@@ -97,7 +95,7 @@ Only update docs pages that are directly affected by the changes. Don't create n
 git diff --stat
 
 # Stage all changed files (version files + docs)
-git add Cargo.toml Cargo.lock package.json CHANGELOG.md README.md README.zh-CN.md apps/docs/
+git add Cargo.toml Cargo.lock CHANGELOG.md README.md README.zh-CN.md apps/docs/
 git commit -m "release: v{version} — update version and documentation"
 ```
 
