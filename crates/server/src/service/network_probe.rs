@@ -358,7 +358,7 @@ impl NetworkProbeService {
         }
         for id in &setting.default_target_ids {
             if !Self::is_valid_target(db, id).await {
-                return Err(AppError::BadRequest(format!(
+                return Err(AppError::Validation(format!(
                     "Invalid target ID in default_target_ids: {id}"
                 )));
             }

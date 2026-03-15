@@ -662,7 +662,7 @@ async fn test_network_probe_target_crud() {
 
     login_admin(&client, &base_url).await;
 
-    // ── Step 1: GET /api/network-probes/targets — verify 12 builtin targets ──
+    // ── Step 1: GET /api/network-probes/targets — verify 96 preset targets ──
     let list_resp = client
         .get(format!("{}/api/network-probes/targets", base_url))
         .send()
