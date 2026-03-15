@@ -79,7 +79,7 @@ async fn get_setting(
 async fn get_overview(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<Vec<ServerOverview>>>, AppError> {
-    let overview = NetworkProbeService::get_overview(&state.db).await?;
+    let overview = NetworkProbeService::get_overview(&state.db, &state.agent_manager).await?;
     ok(overview)
 }
 
@@ -305,7 +305,8 @@ pub async fn get_server_network_summary(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<crate::service::network_probe::ServerSummary>>, AppError> {
-    let summary = NetworkProbeService::get_server_summary(&state.db, &id).await?;
+    let summary =
+        NetworkProbeService::get_server_summary(&state.db, &state.agent_manager, &id).await?;
     ok(summary)
 }
 

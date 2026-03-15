@@ -6,8 +6,10 @@ use uuid::Uuid;
 use crate::config::RetentionConfig;
 use crate::entity::{
     network_probe_config, network_probe_record, network_probe_record_hourly, network_probe_target,
+    server,
 };
 use crate::error::AppError;
+use crate::service::agent_manager::AgentManager;
 use crate::service::config::ConfigService;
 use serverbee_common::types::NetworkProbeResultData;
 
@@ -67,26 +69,32 @@ pub struct NetworkProbeAnomaly {
 pub struct TargetSummary {
     pub target_id: String,
     pub target_name: String,
+    pub provider: String,
     pub avg_latency: Option<f64>,
     pub min_latency: Option<f64>,
     pub max_latency: Option<f64>,
     pub packet_loss: f64,
+    pub availability: f64,
 }
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct ServerSummary {
     pub server_id: String,
+    pub server_name: String,
+    pub online: bool,
     pub targets: Vec<TargetSummary>,
     pub last_probe_at: Option<String>,
+    pub anomaly_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct ServerOverview {
     pub server_id: String,
-    pub avg_latency: Option<f64>,
-    pub avg_packet_loss: f64,
-    pub target_count: usize,
+    pub server_name: String,
+    pub online: bool,
     pub last_probe_at: Option<String>,
+    pub targets: Vec<TargetSummary>,
+    pub anomaly_count: i64,
 }
 
 /// Result type for query_records supporting both raw and hourly records.
@@ -220,7 +228,7 @@ impl NetworkProbeService {
         // Remove from default_target_ids in setting
         let mut setting = Self::get_setting(db).await?;
         setting.default_target_ids.retain(|tid| tid != id);
-        Self::update_setting(db, &setting).await?;
+        Self::save_setting(db, &setting).await?;
 
         // Delete the target itself
         network_probe_target::Entity::delete_by_id(id)
@@ -241,8 +249,26 @@ impl NetworkProbeService {
         Ok(setting.unwrap_or_default())
     }
 
-    /// Update global network probe setting.
+    /// Update global network probe setting with validation.
     pub async fn update_setting(
+        db: &DatabaseConnection,
+        setting: &NetworkProbeSetting,
+    ) -> Result<(), AppError> {
+        if !(30..=600).contains(&setting.interval) {
+            return Err(AppError::BadRequest(
+                "interval must be between 30 and 600 seconds".to_string(),
+            ));
+        }
+        if !(5..=20).contains(&setting.packet_count) {
+            return Err(AppError::BadRequest(
+                "packet_count must be between 5 and 20".to_string(),
+            ));
+        }
+        Self::save_setting(db, setting).await
+    }
+
+    /// Save setting without validation (internal use, e.g. removing a deleted target from defaults).
+    async fn save_setting(
         db: &DatabaseConnection,
         setting: &NetworkProbeSetting,
     ) -> Result<(), AppError> {
@@ -278,6 +304,7 @@ impl NetworkProbeService {
     }
 
     /// Replace target assignments for a server. Enforces max 20 targets.
+    /// Wrapped in a transaction for atomicity.
     pub async fn set_server_targets(
         db: &DatabaseConnection,
         server_id: &str,
@@ -289,10 +316,12 @@ impl NetworkProbeService {
             ));
         }
 
+        let txn = db.begin().await?;
+
         // Delete existing config for this server
         network_probe_config::Entity::delete_many()
             .filter(network_probe_config::Column::ServerId.eq(server_id))
-            .exec(db)
+            .exec(&txn)
             .await?;
 
         // Insert new assignments
@@ -304,8 +333,10 @@ impl NetworkProbeService {
                 target_id: Set(target_id),
                 created_at: Set(now),
             };
-            config.insert(db).await?;
+            config.insert(&txn).await?;
         }
+
+        txn.commit().await?;
 
         Ok(())
     }
@@ -400,8 +431,17 @@ impl NetworkProbeService {
     /// Get a summary of the latest probe result per target for a server.
     pub async fn get_server_summary(
         db: &DatabaseConnection,
+        agent_manager: &AgentManager,
         server_id: &str,
     ) -> Result<ServerSummary, AppError> {
+        // Get server name
+        let srv = server::Entity::find_by_id(server_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Server {server_id} not found")))?;
+        let server_name = srv.name;
+        let online = agent_manager.is_online(server_id);
+
         // Get all targets assigned to this server
         let targets = Self::get_server_targets(db, server_id).await?;
 
@@ -432,24 +472,34 @@ impl NetworkProbeService {
                 target_summaries.push(TargetSummary {
                     target_id: target.id.clone(),
                     target_name: target.name.clone(),
+                    provider: target.provider.clone(),
                     avg_latency: record.avg_latency,
                     min_latency: record.min_latency,
                     max_latency: record.max_latency,
                     packet_loss: record.packet_loss,
+                    availability: 1.0 - record.packet_loss,
                 });
             }
         }
 
+        // Count anomalies from the last 24 hours
+        let anomaly_from = Utc::now() - Duration::hours(24);
+        let anomaly_count = Self::count_anomalies(db, server_id, anomaly_from).await?;
+
         Ok(ServerSummary {
             server_id: server_id.to_string(),
+            server_name,
+            online,
             targets: target_summaries,
             last_probe_at: last_probe_at.map(|t| t.to_rfc3339()),
+            anomaly_count,
         })
     }
 
     /// Get an overview of all servers' network probe status.
     pub async fn get_overview(
         db: &DatabaseConnection,
+        agent_manager: &AgentManager,
     ) -> Result<Vec<ServerOverview>, AppError> {
         // Get all distinct server_ids from config
         let configs = network_probe_config::Entity::find().all(db).await?;
@@ -458,19 +508,40 @@ impl NetworkProbeService {
         server_ids.sort();
         server_ids.dedup();
 
+        // Load all servers to get names
+        let servers = server::Entity::find()
+            .filter(server::Column::Id.is_in(server_ids.iter().cloned()))
+            .all(db)
+            .await?;
+        let server_map: std::collections::HashMap<String, String> = servers
+            .into_iter()
+            .map(|s| (s.id, s.name))
+            .collect();
+
+        // Load all targets for provider lookup
+        let all_targets = network_probe_target::Entity::find().all(db).await?;
+        let target_map: std::collections::HashMap<String, &network_probe_target::Model> =
+            all_targets.iter().map(|t| (t.id.clone(), t)).collect();
+
+        let anomaly_from = Utc::now() - Duration::hours(24);
+
         let mut overviews = Vec::new();
 
         for server_id in &server_ids {
+            let server_name = server_map
+                .get(server_id)
+                .cloned()
+                .unwrap_or_else(|| server_id.clone());
+            let online = agent_manager.is_online(server_id);
+
             // Get the latest record per target for this server
             let target_configs: Vec<&network_probe_config::Model> =
                 configs.iter().filter(|c| &c.server_id == server_id).collect();
 
             let target_ids: Vec<String> =
                 target_configs.iter().map(|c| c.target_id.clone()).collect();
-            let target_count = target_ids.len();
 
-            let mut latencies = Vec::new();
-            let mut packet_losses = Vec::new();
+            let mut target_summaries = Vec::new();
             let mut last_probe_at: Option<DateTime<Utc>> = None;
 
             for target_id in &target_ids {
@@ -482,11 +553,6 @@ impl NetworkProbeService {
                     .await?;
 
                 if let Some(record) = latest {
-                    if let Some(lat) = record.avg_latency {
-                        latencies.push(lat);
-                    }
-                    packet_losses.push(record.packet_loss);
-
                     match last_probe_at {
                         Some(existing) if record.timestamp > existing => {
                             last_probe_at = Some(record.timestamp);
@@ -496,27 +562,38 @@ impl NetworkProbeService {
                         }
                         _ => {}
                     }
+
+                    let target_name = target_map
+                        .get(target_id)
+                        .map(|t| t.name.clone())
+                        .unwrap_or_else(|| target_id.clone());
+                    let provider = target_map
+                        .get(target_id)
+                        .map(|t| t.provider.clone())
+                        .unwrap_or_default();
+
+                    target_summaries.push(TargetSummary {
+                        target_id: target_id.clone(),
+                        target_name,
+                        provider,
+                        avg_latency: record.avg_latency,
+                        min_latency: record.min_latency,
+                        max_latency: record.max_latency,
+                        packet_loss: record.packet_loss,
+                        availability: 1.0 - record.packet_loss,
+                    });
                 }
             }
 
-            let avg_latency = if latencies.is_empty() {
-                None
-            } else {
-                Some(latencies.iter().sum::<f64>() / latencies.len() as f64)
-            };
-
-            let avg_packet_loss = if packet_losses.is_empty() {
-                0.0
-            } else {
-                packet_losses.iter().sum::<f64>() / packet_losses.len() as f64
-            };
+            let anomaly_count = Self::count_anomalies(db, server_id, anomaly_from).await?;
 
             overviews.push(ServerOverview {
                 server_id: server_id.clone(),
-                avg_latency,
-                avg_packet_loss,
-                target_count,
+                server_name,
+                online,
                 last_probe_at: last_probe_at.map(|t| t.to_rfc3339()),
+                targets: target_summaries,
+                anomaly_count,
             });
         }
 
@@ -611,12 +688,38 @@ impl NetworkProbeService {
         Ok(anomalies)
     }
 
+    /// Count anomalous records for a server since a given time.
+    /// Anomalies: unreachable (packet_loss == 1.0), high latency (>200ms), high packet loss (>0.1).
+    async fn count_anomalies(
+        db: &DatabaseConnection,
+        server_id: &str,
+        from: DateTime<Utc>,
+    ) -> Result<i64, AppError> {
+        let records = network_probe_record::Entity::find()
+            .filter(network_probe_record::Column::ServerId.eq(server_id))
+            .filter(network_probe_record::Column::Timestamp.gte(from))
+            .all(db)
+            .await?;
+
+        let count = records
+            .iter()
+            .filter(|r| {
+                (r.packet_loss - 1.0).abs() < f64::EPSILON
+                    || r.avg_latency.is_some_and(|l| l > 200.0)
+                    || r.packet_loss > 0.1
+            })
+            .count();
+
+        Ok(count as i64)
+    }
+
     // -----------------------------------------------------------------------
     // Background task methods
     // -----------------------------------------------------------------------
 
     /// Aggregate raw probe records from the last hour into hourly averages.
-    /// Groups by (server_id, target_id, hour) and inserts into the hourly table.
+    /// Groups by (server_id, target_id, hour) and upserts into the hourly table.
+    /// Uses INSERT OR REPLACE for idempotency on re-runs.
     pub async fn aggregate_hourly(db: &DatabaseConnection) -> Result<u64, AppError> {
         let now = Utc::now();
         let one_hour_ago = now - Duration::hours(1);
@@ -653,6 +756,8 @@ impl NetworkProbeService {
             .and_then(|t| t.with_nanosecond(0))
             .unwrap_or(one_hour_ago);
 
+        let hour_str = hour.to_rfc3339();
+
         for ((server_id, target_id), group) in &grouped {
             let count = group.len() as f64;
 
@@ -678,19 +783,32 @@ impl NetworkProbeService {
             let avg_packet_loss =
                 group.iter().map(|r| r.packet_loss).sum::<f64>() / count;
 
-            let hourly = network_probe_record_hourly::ActiveModel {
-                id: NotSet,
-                server_id: Set(server_id.clone()),
-                target_id: Set(target_id.clone()),
-                avg_latency: Set(avg_latency),
-                min_latency: Set(min_latency),
-                max_latency: Set(max_latency),
-                avg_packet_loss: Set(avg_packet_loss),
-                sample_count: Set(group.len() as i32),
-                hour: Set(hour),
-            };
+            let sample_count = group.len() as i32;
 
-            hourly.insert(db).await?;
+            // Use raw SQL INSERT OR REPLACE for idempotency on the UNIQUE(server_id, target_id, hour) constraint
+            let avg_lat_sql = avg_latency
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "NULL".to_string());
+            let min_lat_sql = min_latency
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "NULL".to_string());
+            let max_lat_sql = max_latency
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "NULL".to_string());
+
+            let sql = format!(
+                "INSERT INTO network_probe_record_hourly (server_id, target_id, avg_latency, min_latency, max_latency, avg_packet_loss, sample_count, hour) \
+                 VALUES ('{server_id}', '{target_id}', {avg_lat_sql}, {min_lat_sql}, {max_lat_sql}, {avg_packet_loss}, {sample_count}, '{hour_str}') \
+                 ON CONFLICT (server_id, target_id, hour) DO UPDATE SET \
+                 avg_latency = excluded.avg_latency, \
+                 min_latency = excluded.min_latency, \
+                 max_latency = excluded.max_latency, \
+                 avg_packet_loss = excluded.avg_packet_loss, \
+                 sample_count = excluded.sample_count"
+            );
+
+            let stmt = Statement::from_string(DatabaseBackend::Sqlite, sql);
+            db.execute(stmt).await?;
             inserted += 1;
         }
 
