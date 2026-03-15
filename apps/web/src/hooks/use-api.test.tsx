@@ -165,4 +165,16 @@ describe('useServerRecords', () => {
 
     expect(globalThis.fetch).not.toHaveBeenCalled()
   })
+
+  it('does not fetch when enabled is false', async () => {
+    const { result } = renderHook(() => useServerRecords('srv-1', 1, '5m', { enabled: false }), {
+      wrapper: createWrapper()
+    })
+
+    await waitFor(() => {
+      expect(result.current.fetchStatus).toBe('idle')
+    })
+
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+  })
 })
