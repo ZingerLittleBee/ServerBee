@@ -694,7 +694,6 @@ async fn test_network_probe_target_crud() {
         .as_str()
         .expect("target id missing");
     assert_eq!(create_body["data"]["name"], "My Custom Target");
-    assert_eq!(create_body["data"]["is_builtin"], false);
 
     // ── Step 3: GET /api/network-probes/targets — verify 97 targets ──
     let list_resp2 = client
@@ -893,26 +892,11 @@ async fn test_builtin_target_cannot_be_deleted() {
 
     login_admin(&client, &base_url).await;
 
-    // ── Step 1: GET /api/network-probes/targets — get a builtin target id ──
-    let list_resp = client
-        .get(format!("{}/api/network-probes/targets", base_url))
-        .send()
-        .await
-        .expect("GET /api/network-probes/targets failed");
+    // ── Step 1: Try to DELETE a known preset target id ──
+    let preset_id = "cn-bj-ct";
 
-    assert_eq!(list_resp.status(), 200);
-    let list_body: serde_json::Value = list_resp.json().await.unwrap();
-    let targets = list_body["data"].as_array().unwrap();
-
-    let builtin = targets
-        .iter()
-        .find(|t| t["is_builtin"].as_bool() == Some(true))
-        .expect("Should have at least one builtin target");
-    let builtin_id = builtin["id"].as_str().expect("builtin target id missing");
-
-    // ── Step 2: DELETE /api/network-probes/targets/{id} — verify returns error ──
     let delete_resp = client
-        .delete(format!("{}/api/network-probes/targets/{}", base_url, builtin_id))
+        .delete(format!("{}/api/network-probes/targets/{}", base_url, preset_id))
         .send()
         .await
         .expect("DELETE /api/network-probes/targets/{id} failed");
@@ -923,7 +907,7 @@ async fn test_builtin_target_cannot_be_deleted() {
         delete_resp.status()
     );
 
-    // ── Step 3: Verify builtin target still exists ──
+    // ── Step 2: Verify preset target still exists ──
     let list_resp2 = client
         .get(format!("{}/api/network-probes/targets", base_url))
         .send()
@@ -933,10 +917,10 @@ async fn test_builtin_target_cannot_be_deleted() {
     assert_eq!(list_resp2.status(), 200);
     let list_body2: serde_json::Value = list_resp2.json().await.unwrap();
     let targets2 = list_body2["data"].as_array().unwrap();
-    assert_eq!(targets2.len(), 96, "builtin targets should remain 96 after failed delete");
+    assert_eq!(targets2.len(), 96, "preset targets should remain 96 after failed delete");
     assert!(
-        targets2.iter().any(|t| t["id"].as_str() == Some(builtin_id)),
-        "Builtin target should still be present after failed delete"
+        targets2.iter().any(|t| t["id"].as_str() == Some(preset_id)),
+        "Preset target should still be present after failed delete"
     );
 }
 

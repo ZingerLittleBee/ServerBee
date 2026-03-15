@@ -989,7 +989,7 @@ mod tests {
         let new_setting = NetworkProbeSetting {
             interval: 120,
             packet_count: 5,
-            default_target_ids: vec!["t1".to_string(), "t2".to_string()],
+            default_target_ids: vec!["cn-bj-ct".to_string(), "cn-bj-cu".to_string()],
         };
         NetworkProbeService::update_setting(&db, &new_setting)
             .await
