@@ -501,22 +501,16 @@ impl NetworkProbeService {
         db: &DatabaseConnection,
         agent_manager: &AgentManager,
     ) -> Result<Vec<ServerOverview>, AppError> {
-        // Get all distinct server_ids from config
-        let configs = network_probe_config::Entity::find().all(db).await?;
-
-        let mut server_ids: Vec<String> = configs.iter().map(|c| c.server_id.clone()).collect();
-        server_ids.sort();
-        server_ids.dedup();
-
-        // Load all servers to get names
-        let servers = server::Entity::find()
-            .filter(server::Column::Id.is_in(server_ids.iter().cloned()))
-            .all(db)
-            .await?;
+        // Load ALL servers (not just ones with probe config)
+        let servers = server::Entity::find().all(db).await?;
         let server_map: std::collections::HashMap<String, String> = servers
-            .into_iter()
-            .map(|s| (s.id, s.name))
+            .iter()
+            .map(|s| (s.id.clone(), s.name.clone()))
             .collect();
+        let server_ids: Vec<String> = servers.into_iter().map(|s| s.id).collect();
+
+        // Load all probe configs for target lookup
+        let configs = network_probe_config::Entity::find().all(db).await?;
 
         // Load all targets for provider lookup
         let all_targets = network_probe_target::Entity::find().all(db).await?;
