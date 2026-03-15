@@ -30,6 +30,7 @@ Add a network quality monitoring subsystem to ServerBee. Each VPS can probe mult
 | port | INTEGER NULL | Port for TCP/HTTP probes |
 | is_builtin | BOOLEAN NOT NULL DEFAULT false | true = builtin (not deletable), false = user-created |
 | created_at | DATETIME NOT NULL | |
+| updated_at | DATETIME NOT NULL | |
 
 ### `network_probe_config` — Per-VPS Probe Configuration
 
@@ -40,14 +41,17 @@ Add a network quality monitoring subsystem to ServerBee. Each VPS can probe mult
 | target_id | TEXT NOT NULL FK → network_probe_target | |
 | enabled | BOOLEAN NOT NULL DEFAULT true | |
 | created_at | DATETIME NOT NULL | |
+| updated_at | DATETIME NOT NULL | |
 
 Unique constraint: `(server_id, target_id)`
 
-### `network_probe_setting` — Global Probe Settings
+### `network_probe_setting` — Global Probe Settings (singleton)
+
+Singleton row with `id = "default"`, created during migration seed.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| id | TEXT PK | |
+| id | TEXT PK | Fixed value: `"default"` |
 | interval | INTEGER NOT NULL DEFAULT 60 | Probe interval in seconds (30-600) |
 | packet_count | INTEGER NOT NULL DEFAULT 10 | Packets per round (5-20) |
 | default_target_ids | TEXT NOT NULL DEFAULT '[]' | JSON array of target IDs auto-assigned to new VPS |
@@ -121,7 +125,18 @@ pub struct NetworkProbeResultData {
     pub packet_received: u32,
     pub timestamp: DateTime<Utc>,
 }
+
+/// Anomaly info returned in summary/overview APIs
+pub struct NetworkProbeAnomaly {
+    pub timestamp: DateTime<Utc>,
+    pub target_id: String,
+    pub target_name: String,
+    pub anomaly_type: String,  // "high_latency" / "very_high_latency" / "high_packet_loss" / "very_high_packet_loss" / "unreachable"
+    pub value: f64,
+}
 ```
+
+Note: `NetworkProbeTarget` is the agent-facing wire type (minimal fields for probing). REST API responses use a server-side DTO that includes all DB fields (`provider`, `location`, `is_builtin`, `created_at`, `updated_at`).
 
 ### ServerMessage (Server → Agent)
 
@@ -135,17 +150,17 @@ NetworkProbeSync {
 }
 ```
 
-Sent on: agent connect (after Welcome), config change (settings update or per-VPS target change).
+Sent on: agent connect (after Welcome), config change (settings update or per-VPS target change). An empty `targets` array signals the agent to stop all network probe tasks (same semantics as `PingTasksSync` with empty tasks).
 
 ### AgentMessage (Agent → Server)
 
 New variant:
 
 ```rust
-NetworkProbeResult(NetworkProbeResultData)
+NetworkProbeResults(Vec<NetworkProbeResultData>)
 ```
 
-Sent after each probe round completes for each target.
+Sent once per probe round, batching all target results into a single message. This aligns with the `BrowserMessage::NetworkProbeUpdate` which also uses `Vec<NetworkProbeResultData>`.
 
 ### BrowserMessage (Server → Browser)
 
@@ -193,12 +208,14 @@ Refactor existing `pinger.rs` to call these shared functions. No behavior change
 3. Compute aggregated stats: avg/min/max latency, packet_loss = 1 - (received / sent)
 4. Send `NetworkProbeResultData` via mpsc channel to Reporter
 
+All targets run their probe rounds independently. The Reporter collects results arriving within a short time window and batches them into a single `AgentMessage::NetworkProbeResults(Vec<...>)` message.
+
 **No capability gating needed** — network probing is outbound-only with no security implications.
 
 ### Reporter Integration (`crates/agent/src/reporter.rs`)
 
 Add 6th channel to `tokio::select!` loop:
-- Receive `NetworkProbeResultData` from network_prober → serialize as `AgentMessage::NetworkProbeResult` → send to WebSocket
+- Receive `NetworkProbeResultData` from network_prober → collect into batch → serialize as `AgentMessage::NetworkProbeResults` → send to WebSocket
 - Handle `ServerMessage::NetworkProbeSync` → call `network_prober.sync()`
 
 ## Server Implementation
@@ -209,13 +226,13 @@ Add 6th channel to `tokio::select!` loop:
 - `list_targets() -> Vec<Target>` — all targets (builtin + custom)
 - `create_target(input) -> Target` — create custom target
 - `update_target(id, input) -> Target` — update custom target (builtin targets immutable)
-- `delete_target(id)` — delete custom target (cascade delete config + records)
+- `delete_target(id)` — delete custom target (cascade delete config + records). After deletion, push updated `NetworkProbeSync` to all online agents that had this target assigned.
 
 **Configuration:**
 - `get_setting() -> Setting` — global probe settings
 - `update_setting(input)` — update settings; push `NetworkProbeSync` to all online agents
 - `get_server_targets(server_id) -> Vec<Target>` — targets assigned to a VPS
-- `set_server_targets(server_id, target_ids)` — replace VPS target assignments; push `NetworkProbeSync` to agent if online
+- `set_server_targets(server_id, target_ids)` — replace VPS target assignments. Target assignments are always persisted to `network_probe_config` regardless of agent online status. If the agent is online, push `NetworkProbeSync` immediately; if offline, the agent receives correct config on next connection (via the Welcome flow).
 - `apply_defaults(server_id)` — assign default targets to newly registered VPS
 
 **Records:**
@@ -237,19 +254,20 @@ Add 6th channel to `tokio::select!` loop:
 | POST | `/api/network-probes/targets` | admin | Create custom target |
 | PUT | `/api/network-probes/targets/{id}` | admin | Update target |
 | DELETE | `/api/network-probes/targets/{id}` | admin | Delete target |
-| GET | `/api/network-probes/setting` | admin | Get global settings |
+| GET | `/api/network-probes/setting` | read | Get global settings |
 | PUT | `/api/network-probes/setting` | admin | Update global settings |
 | GET | `/api/network-probes/servers/{id}/targets` | read | Get VPS probe targets |
 | PUT | `/api/network-probes/servers/{id}/targets` | admin | Set VPS probe targets |
 | GET | `/api/network-probes/servers/{id}/records` | read | Query probe records (params: target_id?, hours) |
 | GET | `/api/network-probes/servers/{id}/summary` | read | VPS network summary |
+| GET | `/api/network-probes/servers/{id}/anomalies` | read | VPS anomalies in time range (params: hours) |
 | GET | `/api/network-probes/overview` | read | All VPS network overview |
 
 ### WebSocket Integration
 
 **Agent WS handler (`ws/agent.rs`):**
 - After Welcome + existing sync messages, also send `NetworkProbeSync` with the agent's configured targets
-- On `AgentMessage::NetworkProbeResult`: save to DB, broadcast `BrowserMessage::NetworkProbeUpdate`
+- On `AgentMessage::NetworkProbeResults`: save each result to DB, broadcast `BrowserMessage::NetworkProbeUpdate` with the batch
 
 **Browser WS handler (`ws/browser.rs`):**
 - `NetworkProbeUpdate` flows through existing `broadcast::Sender<BrowserMessage>` — no handler changes needed
@@ -270,7 +288,7 @@ Extend `AlertService.evaluate_all()` with two new metric types:
 - `network_latency` — triggers when a VPS's average latency to a target exceeds threshold (e.g. > 200ms for 70% of samples in 10-minute window)
 - `network_packet_loss` — triggers when packet loss exceeds threshold (e.g. > 10%)
 
-These reuse existing alert rule model (`alert_rule` table) and notification dispatch. No new tables needed. The `alert_rule.metric` field accepts the new metric type strings.
+These reuse the existing alert rule model (`alert_rule` table with `rules_json` containing `Vec<AlertRuleItem>`) and notification dispatch. No new tables needed. Two new `rule_type` values (`network_latency`, `network_packet_loss`) are added to `AlertRuleItem`. The `check_server` function in `AlertService` gets new match arms that query `network_probe_record` for recent samples instead of the `record` table. Alert rules apply per-server (across all targets for that server); the highest latency / worst packet loss among all targets is used for threshold comparison.
 
 ## Frontend
 
@@ -348,7 +366,7 @@ Two tabs:
 
 ### i18n
 
-Add `network` namespace to translation files (`locales/en/network.json`, `locales/cn/network.json`) covering:
+Add `network` namespace to translation files (`locales/en/network.json`, `locales/zh/network.json`) covering:
 - Page titles, stat labels, anomaly messages, form labels, tooltip text
 
 ## Anomaly Detection
@@ -369,14 +387,17 @@ The overview API and summary API include anomaly flags in their responses. The f
 
 ## Data Retention
 
-New constants in `crates/common/src/constants.rs`:
+Add two new fields to `RetentionConfig` in `crates/server/src/config.rs` (consistent with existing retention configuration pattern):
 
 ```rust
-pub const NETWORK_PROBE_RETENTION_DAYS: u32 = 7;
-pub const NETWORK_PROBE_HOURLY_RETENTION_DAYS: u32 = 90;
+// In RetentionConfig
+pub network_probe_days: u32,         // default 7
+pub network_probe_hourly_days: u32,  // default 90
 ```
 
-Cleanup runs as part of existing `cleanup` background task.
+Configurable via env vars: `SERVERBEE_RETENTION__NETWORK_PROBE_DAYS`, `SERVERBEE_RETENTION__NETWORK_PROBE_HOURLY_DAYS`.
+
+Cleanup runs as part of existing `cleanup` background task. The `timestamp` column in `network_probe_record` serves as both probe time and retention cutoff reference.
 
 ## Data Export
 
