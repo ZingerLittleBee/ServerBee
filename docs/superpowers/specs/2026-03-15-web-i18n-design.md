@@ -38,9 +38,13 @@ Rationale:
 
 ```
 i18next
-react-i18next
+react-i18next (>= 13.0 required for CustomTypeOptions type safety)
 i18next-browser-languagedetector
 ```
+
+### Prerequisites
+
+- `tsconfig.app.json`: ensure `resolveJsonModule: true` is set (needed for JSON imports)
 
 ### Initialization
 
@@ -224,11 +228,12 @@ import { useTranslation } from 'react-i18next'
 
 function LanguageSwitcher() {
   const { i18n } = useTranslation()
-  const toggle = () => i18n.changeLanguage(i18n.language === 'en' ? 'zh' : 'en')
+  const isZh = (i18n.resolvedLanguage ?? i18n.language).startsWith('zh')
+  const toggle = () => i18n.changeLanguage(isZh ? 'en' : 'zh')
 
   return (
     <Button variant="ghost" size="icon" onClick={toggle}>
-      {i18n.language === 'en' ? '中文' : 'EN'}
+      {isZh ? 'EN' : '中文'}
     </Button>
   )
 }
@@ -237,6 +242,7 @@ function LanguageSwitcher() {
 - Simple toggle for two languages (no dropdown needed)
 - `changeLanguage()` triggers re-render of all components using `useTranslation()`
 - Language preference auto-persisted to localStorage by the LanguageDetector plugin
+- Uses `resolvedLanguage` to handle browser locale variants (`zh-CN`, `zh-TW` → resolved to `zh`; `en-US` → resolved to `en`)
 
 ## File Change Summary
 
@@ -261,15 +267,17 @@ function LanguageSwitcher() {
 | `src/locales/zh/login.json` | Chinese login translations |
 | `src/locales/zh/status.json` | Chinese status page translations |
 
-### Modified Files (~20)
+### Modified Files (25)
 
 | File | Change |
 |------|--------|
+| `tsconfig.app.json` | Ensure `resolveJsonModule: true` for JSON imports |
 | `src/main.tsx` | Add `import '@/lib/i18n'` |
 | `src/components/layout/header.tsx` | Add LanguageSwitcher component |
 | `src/components/layout/sidebar.tsx` | Extract nav item labels to `common` namespace |
 | `src/routes/login.tsx` | Extract text to `login` namespace |
-| `src/routes/status.tsx` | Extract text to `status` namespace |
+| `src/routes/status.tsx` | Extract text to `status` namespace; add LanguageSwitcher to status page header |
+| `src/routes/_authed.tsx` | Extract "Loading..." and DefaultPasswordBanner text to `common` namespace |
 | `src/routes/_authed/index.tsx` | Extract text to `dashboard` namespace |
 | `src/routes/_authed/servers/index.tsx` | Extract text to `servers` namespace |
 | `src/routes/_authed/servers/$id.tsx` | Extract text to `servers` namespace |
@@ -286,6 +294,8 @@ function LanguageSwitcher() {
 | `src/routes/_authed/settings/tasks.tsx` | Extract text to `settings` namespace |
 | `src/components/server/server-card.tsx` | Extract text to `servers` namespace |
 | `src/components/server/server-edit-dialog.tsx` | Extract text to `servers` namespace |
+| `src/components/server/status-badge.tsx` | Extract "Online"/"Offline" to `common` namespace |
+| `src/lib/capabilities.ts` | Extract capability labels and risk labels to `servers` namespace |
 
 ### Unchanged
 
