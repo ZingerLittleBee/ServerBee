@@ -101,14 +101,16 @@ Aggregation note: `AVG(avg_latency)` naturally ignores NULL rows (SQL standard b
 
 ### Builtin Probe Targets (seed data)
 
+China ISP targets use [Zstatic CDN](https://zstaticcdn.com/nodes) TCP Ping nodes — CDN backbone IPs from major cloud vendors (Baidu Cloud, Volcano Engine, Huawei Cloud), auto-updated DNS every 30 minutes, stable and reliable. International targets use well-known IPs that reliably respond to ICMP.
+
 ```
-China Telecom:  Shanghai (61.129.2.3), Beijing (106.37.67.29), Guangzhou (14.215.116.1)
-China Unicom:   Shanghai (210.22.84.3), Beijing (202.106.50.1), Guangzhou (221.5.88.88)
-China Mobile:   Shanghai (117.131.19.23), Beijing (221.179.155.161), Guangzhou (120.196.165.24)
-International:  Cloudflare (1.1.1.1), Google (8.8.8.8), AWS Tokyo (13.112.63.251)
+China Telecom (TCP):  Beijing (bj-ct-v4.ip.zstaticcdn.com:80), Shanghai (sh-ct-v4.ip.zstaticcdn.com:80), Guangzhou (gd-ct-v4.ip.zstaticcdn.com:80)
+China Unicom  (TCP):  Beijing (bj-cu-v4.ip.zstaticcdn.com:80), Shanghai (sh-cu-v4.ip.zstaticcdn.com:80), Guangzhou (gd-cu-v4.ip.zstaticcdn.com:80)
+China Mobile  (TCP):  Beijing (bj-cm-v4.ip.zstaticcdn.com:80), Shanghai (sh-cm-v4.ip.zstaticcdn.com:80), Guangzhou (gd-cm-v4.ip.zstaticcdn.com:80)
+International (ICMP): Cloudflare (1.1.1.1), Google (8.8.8.8), AWS Tokyo (13.112.63.251)
 ```
 
-All builtin targets use `probe_type: "icmp"`, `is_builtin: true`.
+China ISP targets use `probe_type: "tcp"`, international targets use `probe_type: "icmp"`. All have `is_builtin: true`.
 
 ## Protocol Messages
 

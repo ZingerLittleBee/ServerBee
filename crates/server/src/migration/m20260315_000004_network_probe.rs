@@ -73,24 +73,27 @@ impl MigrationTrait for Migration {
 
         // Seed builtin probe targets
         let now = chrono::Utc::now().to_rfc3339();
+        // China ISP targets use Zstatic CDN TCP Ping nodes (CDN backbone, auto-updated DNS, stable)
+        // Format: domain:port for TCP probe type
+        // International targets use well-known IPs that reliably respond to ICMP
         let targets = [
-            ("cn-telecom-shanghai",  "Shanghai Telecom",  "Telecom",    "Shanghai",  "61.129.2.3"),
-            ("cn-telecom-beijing",   "Beijing Telecom",   "Telecom",    "Beijing",   "106.37.67.29"),
-            ("cn-telecom-guangzhou", "Guangzhou Telecom", "Telecom",    "Guangzhou", "14.215.116.1"),
-            ("cn-unicom-shanghai",   "Shanghai Unicom",   "Unicom",     "Shanghai",  "210.22.84.3"),
-            ("cn-unicom-beijing",    "Beijing Unicom",    "Unicom",     "Beijing",   "202.106.50.1"),
-            ("cn-unicom-guangzhou",  "Guangzhou Unicom",  "Unicom",     "Guangzhou", "221.5.88.88"),
-            ("cn-mobile-shanghai",   "Shanghai Mobile",   "Mobile",     "Shanghai",  "117.131.19.23"),
-            ("cn-mobile-beijing",    "Beijing Mobile",    "Mobile",     "Beijing",   "221.179.155.161"),
-            ("cn-mobile-guangzhou",  "Guangzhou Mobile",  "Mobile",     "Guangzhou", "120.196.165.24"),
-            ("intl-cloudflare",      "Cloudflare",        "Cloudflare", "US",        "1.1.1.1"),
-            ("intl-google",          "Google DNS",        "Google",     "US",        "8.8.8.8"),
-            ("intl-aws-tokyo",       "AWS Tokyo",         "AWS",        "Tokyo",     "13.112.63.251"),
+            ("cn-telecom-beijing",   "Beijing Telecom",   "Telecom", "Beijing",   "bj-ct-v4.ip.zstaticcdn.com:80",  "tcp"),
+            ("cn-telecom-shanghai",  "Shanghai Telecom",  "Telecom", "Shanghai",  "sh-ct-v4.ip.zstaticcdn.com:80",  "tcp"),
+            ("cn-telecom-guangzhou", "Guangzhou Telecom", "Telecom", "Guangzhou", "gd-ct-v4.ip.zstaticcdn.com:80",  "tcp"),
+            ("cn-unicom-beijing",    "Beijing Unicom",    "Unicom",  "Beijing",   "bj-cu-v4.ip.zstaticcdn.com:80",  "tcp"),
+            ("cn-unicom-shanghai",   "Shanghai Unicom",   "Unicom",  "Shanghai",  "sh-cu-v4.ip.zstaticcdn.com:80",  "tcp"),
+            ("cn-unicom-guangzhou",  "Guangzhou Unicom",  "Unicom",  "Guangzhou", "gd-cu-v4.ip.zstaticcdn.com:80",  "tcp"),
+            ("cn-mobile-beijing",    "Beijing Mobile",    "Mobile",  "Beijing",   "bj-cm-v4.ip.zstaticcdn.com:80",  "tcp"),
+            ("cn-mobile-shanghai",   "Shanghai Mobile",   "Mobile",  "Shanghai",  "sh-cm-v4.ip.zstaticcdn.com:80",  "tcp"),
+            ("cn-mobile-guangzhou",  "Guangzhou Mobile",  "Mobile",  "Guangzhou", "gd-cm-v4.ip.zstaticcdn.com:80",  "tcp"),
+            ("intl-cloudflare",      "Cloudflare",        "Cloudflare", "US",     "1.1.1.1",                        "icmp"),
+            ("intl-google",          "Google DNS",        "Google",     "US",      "8.8.8.8",                        "icmp"),
+            ("intl-aws-tokyo",       "AWS Tokyo",         "AWS",        "Tokyo",   "13.112.63.251",                  "icmp"),
         ];
 
-        for (id, name, provider, location, target) in &targets {
+        for (id, name, provider, location, target, probe_type) in &targets {
             db.execute_unprepared(&format!(
-                "INSERT INTO network_probe_target (id, name, provider, location, target, probe_type, is_builtin, created_at, updated_at) VALUES ('{id}', '{name}', '{provider}', '{location}', '{target}', 'icmp', 1, '{now}', '{now}')"
+                "INSERT INTO network_probe_target (id, name, provider, location, target, probe_type, is_builtin, created_at, updated_at) VALUES ('{id}', '{name}', '{provider}', '{location}', '{target}', '{probe_type}', 1, '{now}', '{now}')"
             )).await?;
         }
 
