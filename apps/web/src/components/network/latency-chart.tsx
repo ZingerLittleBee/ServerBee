@@ -108,9 +108,11 @@ export function LatencyChart({ records, targets, isRealtime = false }: LatencyCh
               borderRadius: '8px',
               fontSize: '12px'
             }}
-            formatter={(value: number | null, name: string) => {
-              const label = targetNameMap[name] ?? name
-              return [value != null ? `${value.toFixed(1)} ms` : 'N/A', label]
+            formatter={(value, name) => {
+              const strName = typeof name === 'string' ? name : String(name ?? '')
+              const label = targetNameMap[strName] ?? strName
+              const numValue = typeof value === 'number' ? value : null
+              return [numValue != null ? `${numValue.toFixed(1)} ms` : 'N/A', label]
             }}
             labelFormatter={(label) => {
               const date = new Date(label)

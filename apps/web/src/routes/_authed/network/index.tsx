@@ -171,8 +171,10 @@ function NetworkOverviewPage() {
       <div className="mb-4">
         <div className="relative">
           <svg
+            aria-hidden="true"
             className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
             fill="none"
+            focusable="false"
             stroke="currentColor"
             strokeWidth={2}
             viewBox="0 0 24 24"
