@@ -1,0 +1,13 @@
+{
+  "title": "Sign in to ServerBee",
+  "subtitle": "Enter your credentials to continue",
+  "username": "Username",
+  "username_placeholder": "admin",
+  "password": "Password",
+  "two_factor_code": "Two-Factor Code",
+  "two_factor_hint": "Enter the code from your authenticator app",
+  "signing_in": "Signing in...",
+  "sign_in": "Sign in",
+  "login_failed": "Login failed. Please try again.",
+  "or_continue_with": "Or continue with"
+}

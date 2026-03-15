@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import type React from 'react'
 import { type FormEvent, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/use-auth'
 import { ApiError, api } from '@/lib/api-client'
@@ -12,6 +13,7 @@ export const Route = createFileRoute('/login')({
 })
 
 function LoginPage() {
+  const { t } = useTranslation('login')
   const navigate = useNavigate()
   const { login, loginError, isLoggingIn } = useAuth()
   const [username, setUsername] = useState('')
@@ -51,15 +53,15 @@ function LoginPage() {
     } catch {
       // Not JSON, use as-is
     }
-    return loginError.message || 'Login failed. Please try again.'
+    return loginError.message || t('login_failed')
   })()
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
-          <h1 className="font-bold text-2xl">Sign in to ServerBee</h1>
-          <p className="mt-1 text-muted-foreground text-sm">Enter your credentials to continue</p>
+          <h1 className="font-bold text-2xl">{t('title')}</h1>
+          <p className="mt-1 text-muted-foreground text-sm">{t('subtitle')}</p>
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
@@ -69,7 +71,7 @@ function LoginPage() {
 
           <div className="space-y-2">
             <label className="font-medium text-sm" htmlFor="username">
-              Username
+              {t('username')}
             </label>
             <input
               autoComplete="username"
@@ -77,7 +79,7 @@ function LoginPage() {
               disabled={needs2FA}
               id="username"
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="admin"
+              placeholder={t('username_placeholder')}
               required
               type="text"
               value={username}
@@ -86,7 +88,7 @@ function LoginPage() {
 
           <div className="space-y-2">
             <label className="font-medium text-sm" htmlFor="password">
-              Password
+              {t('password')}
             </label>
             <input
               autoComplete="current-password"
@@ -103,7 +105,7 @@ function LoginPage() {
           {needs2FA && (
             <div className="space-y-2">
               <label className="font-medium text-sm" htmlFor="totp">
-                Two-Factor Code
+                {t('two_factor_code')}
               </label>
               <input
                 autoComplete="one-time-code"
@@ -117,12 +119,12 @@ function LoginPage() {
                 required
                 value={totpCode}
               />
-              <p className="text-muted-foreground text-xs">Enter the code from your authenticator app</p>
+              <p className="text-muted-foreground text-xs">{t('two_factor_hint')}</p>
             </div>
           )}
 
           <Button className="w-full" disabled={isLoggingIn} type="submit">
-            {isLoggingIn ? 'Signing in...' : 'Sign in'}
+            {isLoggingIn ? t('signing_in') : t('sign_in')}
           </Button>
         </form>
 
@@ -138,6 +140,7 @@ const providerConfig: Record<string, { label: string; icon: () => React.JSX.Elem
 }
 
 function OAuthButtons() {
+  const { t } = useTranslation('login')
   const { data } = useQuery<OAuthProvidersResponse>({
     queryKey: ['auth', 'oauth', 'providers'],
     queryFn: () => api.get<OAuthProvidersResponse>('/api/auth/oauth/providers'),
@@ -157,7 +160,7 @@ function OAuthButtons() {
           <span className="w-full border-t" />
         </div>
         <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
+          <span className="bg-background px-2 text-muted-foreground">{t('or_continue_with')}</span>
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
 import type { ServerGroup, ServerResponse, UpdateServerInput } from '@/lib/api-schema'
@@ -12,6 +13,7 @@ interface ServerEditDialogProps {
 }
 
 export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProps) {
+  const { t } = useTranslation(['servers', 'common'])
   const queryClient = useQueryClient()
   const [name, setName] = useState(server.name)
   const [weight, setWeight] = useState(server.weight)
@@ -104,13 +106,15 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
           <X className="size-4" />
         </button>
 
-        <h2 className="mb-4 font-semibold text-lg">Edit Server</h2>
+        <h2 className="mb-4 font-semibold text-lg">{t('edit_title')}</h2>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           {/* Basic */}
           <fieldset className="space-y-3">
-            <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">Basic</legend>
-            <Field label="Name">
+            <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">
+              {t('edit_basic')}
+            </legend>
+            <Field label={t('edit_name')}>
               <input
                 className="input-field"
                 onChange={(e) => setName(e.target.value)}
@@ -120,7 +124,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
               />
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Weight">
+              <Field label={t('edit_weight')}>
                 <input
                   className="input-field"
                   onChange={(e) => setWeight(Number.parseInt(e.target.value, 10) || 0)}
@@ -128,7 +132,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                   value={weight}
                 />
               </Field>
-              <Field label="Hidden">
+              <Field label={t('edit_hidden')}>
                 <label className="flex cursor-pointer items-center gap-2 pt-1">
                   <input
                     checked={hidden}
@@ -136,13 +140,13 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                     onChange={(e) => setHidden(e.target.checked)}
                     type="checkbox"
                   />
-                  <span className="text-sm">Hide from status page</span>
+                  <span className="text-sm">{t('edit_hide_status')}</span>
                 </label>
               </Field>
             </div>
-            <Field label="Group">
+            <Field label={t('edit_group')}>
               <select className="input-field" onChange={(e) => setGroupId(e.target.value)} value={groupId}>
-                <option value="">No Group</option>
+                <option value="">{t('edit_no_group')}</option>
                 {groups?.map((g) => (
                   <option key={g.id} value={g.id}>
                     {g.name}
@@ -150,20 +154,20 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                 ))}
               </select>
             </Field>
-            <Field label="Remark (private)">
+            <Field label={t('edit_remark')}>
               <input
                 className="input-field"
                 onChange={(e) => setRemark(e.target.value)}
-                placeholder="Internal notes..."
+                placeholder={t('edit_remark_placeholder')}
                 type="text"
                 value={remark}
               />
             </Field>
-            <Field label="Public Remark">
+            <Field label={t('edit_public_remark')}>
               <input
                 className="input-field"
                 onChange={(e) => setPublicRemark(e.target.value)}
-                placeholder="Shown on status page..."
+                placeholder={t('edit_public_remark_placeholder')}
                 type="text"
                 value={publicRemark}
               />
@@ -172,9 +176,11 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
 
           {/* Billing */}
           <fieldset className="space-y-3">
-            <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">Billing</legend>
+            <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">
+              {t('edit_billing')}
+            </legend>
             <div className="grid grid-cols-3 gap-3">
-              <Field label="Price">
+              <Field label={t('edit_price')}>
                 <input
                   className="input-field"
                   min="0"
@@ -185,7 +191,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                   value={price}
                 />
               </Field>
-              <Field label="Currency">
+              <Field label={t('edit_currency')}>
                 <select className="input-field" onChange={(e) => setCurrency(e.target.value)} value={currency}>
                   <option value="USD">USD</option>
                   <option value="EUR">EUR</option>
@@ -194,16 +200,16 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                   <option value="GBP">GBP</option>
                 </select>
               </Field>
-              <Field label="Billing Cycle">
+              <Field label={t('edit_billing_cycle')}>
                 <select className="input-field" onChange={(e) => setBillingCycle(e.target.value)} value={billingCycle}>
-                  <option value="">None</option>
-                  <option value="monthly">Monthly</option>
-                  <option value="quarterly">Quarterly</option>
-                  <option value="yearly">Yearly</option>
+                  <option value="">{t('edit_none')}</option>
+                  <option value="monthly">{t('edit_monthly')}</option>
+                  <option value="quarterly">{t('edit_quarterly')}</option>
+                  <option value="yearly">{t('edit_yearly')}</option>
                 </select>
               </Field>
             </div>
-            <Field label="Expiration Date">
+            <Field label={t('edit_expiration')}>
               <input
                 className="input-field"
                 onChange={(e) => setExpiredAt(e.target.value)}
@@ -212,26 +218,26 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
               />
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Traffic Limit (GB)">
+              <Field label={t('edit_traffic_limit')}>
                 <input
                   className="input-field"
                   min="0"
                   onChange={(e) => setTrafficLimit(e.target.value)}
-                  placeholder="Unlimited"
+                  placeholder={t('edit_unlimited')}
                   step="0.1"
                   type="number"
                   value={trafficLimit}
                 />
               </Field>
-              <Field label="Limit Type">
+              <Field label={t('edit_limit_type')}>
                 <select
                   className="input-field"
                   onChange={(e) => setTrafficLimitType(e.target.value)}
                   value={trafficLimitType}
                 >
-                  <option value="sum">Total (In+Out)</option>
-                  <option value="up">Upload Only</option>
-                  <option value="down">Download Only</option>
+                  <option value="sum">{t('edit_total_in_out')}</option>
+                  <option value="up">{t('edit_upload_only')}</option>
+                  <option value="down">{t('edit_download_only')}</option>
                 </select>
               </Field>
             </div>
@@ -239,16 +245,16 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
 
           {mutation.error && (
             <div className="rounded-md bg-destructive/10 px-3 py-2 text-destructive text-sm">
-              {mutation.error.message || 'Failed to update server'}
+              {mutation.error.message || t('edit_failed')}
             </div>
           )}
 
           <div className="flex justify-end gap-2 pt-2">
             <Button onClick={onClose} type="button" variant="outline">
-              Cancel
+              {t('common:cancel')}
             </Button>
             <Button disabled={mutation.isPending} type="submit">
-              {mutation.isPending ? 'Saving...' : 'Save'}
+              {mutation.isPending ? t('common:saving') : t('common:save')}
             </Button>
           </div>
         </form>

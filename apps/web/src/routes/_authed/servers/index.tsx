@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ExternalLink, Search, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
 import { useServer } from '@/hooks/use-api'
@@ -50,6 +51,7 @@ function compareServers(a: ServerMetrics, b: ServerMetrics, sortKey: SortKey, gr
 }
 
 function ServersListPage() {
+  const { t } = useTranslation('servers')
   const queryClient = useQueryClient()
   const { data: servers = [] } = useQuery<ServerMetrics[]>({
     queryKey: ['servers'],
@@ -148,9 +150,9 @@ function ServersListPage() {
     <div>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="font-bold text-2xl">Servers</h1>
+          <h1 className="font-bold text-2xl">{t('title')}</h1>
           <p className="text-muted-foreground text-sm">
-            {servers.filter((s) => s.online).length} of {servers.length} servers online
+            {t('servers_online', { online: servers.filter((s) => s.online).length, total: servers.length })}
           </p>
         </div>
       </div>
@@ -161,7 +163,7 @@ function ServersListPage() {
           <input
             className="h-9 w-full rounded-md border bg-background pr-3 pl-9 text-sm outline-none focus:ring-2 focus:ring-ring"
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search servers..."
+            placeholder={t('search_placeholder')}
             type="text"
             value={search}
           />
@@ -174,7 +176,7 @@ function ServersListPage() {
             type="button"
           >
             <Trash2 className="size-3.5" />
-            Delete {selected.size}
+            {t('delete_selected', { count: selected.size })}
           </button>
         )}
       </div>
@@ -182,10 +184,8 @@ function ServersListPage() {
       {servers.length === 0 ? (
         <div className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed">
           <div className="text-center">
-            <p className="text-muted-foreground text-sm">No servers connected yet</p>
-            <p className="mt-1 text-muted-foreground text-xs">
-              Servers will appear here once they connect via the agent
-            </p>
+            <p className="text-muted-foreground text-sm">{t('no_servers_title')}</p>
+            <p className="mt-1 text-muted-foreground text-xs">{t('no_servers_description')}</p>
           </div>
         </div>
       ) : (
@@ -198,43 +198,48 @@ function ServersListPage() {
                 </th>
                 <Th
                   active={sortKey === 'name'}
-                  label="Name"
+                  label={t('col_name')}
                   onClick={() => toggleSort('name')}
                   suffix={sortIcon('name')}
                 />
                 <Th
                   active={sortKey === 'status'}
-                  label="Status"
+                  label={t('col_status')}
                   onClick={() => toggleSort('status')}
                   suffix={sortIcon('status')}
                 />
-                <Th active={sortKey === 'cpu'} label="CPU" onClick={() => toggleSort('cpu')} suffix={sortIcon('cpu')} />
+                <Th
+                  active={sortKey === 'cpu'}
+                  label={t('col_cpu')}
+                  onClick={() => toggleSort('cpu')}
+                  suffix={sortIcon('cpu')}
+                />
                 <Th
                   active={sortKey === 'memory'}
-                  label="Memory"
+                  label={t('col_memory')}
                   onClick={() => toggleSort('memory')}
                   suffix={sortIcon('memory')}
                 />
                 <Th
                   active={sortKey === 'disk'}
-                  label="Disk"
+                  label={t('col_disk')}
                   onClick={() => toggleSort('disk')}
                   suffix={sortIcon('disk')}
                 />
                 <th className="hidden px-3 py-2.5 text-left font-medium text-muted-foreground lg:table-cell">
-                  Network
+                  {t('col_network')}
                 </th>
                 <Th
                   active={sortKey === 'uptime'}
                   className="hidden xl:table-cell"
-                  label="Uptime"
+                  label={t('col_uptime')}
                   onClick={() => toggleSort('uptime')}
                   suffix={sortIcon('uptime')}
                 />
                 <Th
                   active={sortKey === 'group'}
                   className="hidden xl:table-cell"
-                  label="Group"
+                  label={t('col_group')}
                   onClick={() => toggleSort('group')}
                   suffix={sortIcon('group')}
                 />
@@ -310,8 +315,8 @@ function ServersListPage() {
 
       {filtered.length > 0 && (
         <p className="mt-3 text-muted-foreground text-xs">
-          Showing {sorted.length} of {servers.length} servers
-          {selected.size > 0 && ` · ${selected.size} selected`}
+          {t('showing_servers', { shown: sorted.length, total: servers.length })}
+          {selected.size > 0 && ` · ${t('selected_count', { count: selected.size })}`}
         </p>
       )}
 

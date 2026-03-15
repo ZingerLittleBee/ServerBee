@@ -13,27 +13,29 @@ import {
   Terminal,
   Users
 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils'
 
 const navItems = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/servers', label: 'Servers', icon: List },
-  { to: '/settings/users', label: 'Users', icon: Users, adminOnly: true },
-  { to: '/settings/notifications', label: 'Notifications', icon: Bell, adminOnly: true },
-  { to: '/settings/alerts', label: 'Alerts', icon: AlertTriangle, adminOnly: true },
-  { to: '/settings/ping-tasks', label: 'Ping Tasks', icon: Activity },
-  { to: '/settings/tasks', label: 'Commands', icon: Terminal, adminOnly: true },
-  { to: '/settings/capabilities', label: 'Capabilities', icon: Shield, adminOnly: true },
-  { to: '/settings/api-keys', label: 'API Keys', icon: Key },
-  { to: '/settings/security', label: 'Security', icon: Shield },
-  { to: '/settings/audit-logs', label: 'Audit Logs', icon: ClipboardList, adminOnly: true },
-  { to: '/settings', label: 'Settings', icon: Settings, adminOnly: true }
+  { to: '/', labelKey: 'nav_dashboard' as const, icon: LayoutDashboard },
+  { to: '/servers', labelKey: 'nav_servers' as const, icon: List },
+  { to: '/settings/users', labelKey: 'nav_users' as const, icon: Users, adminOnly: true },
+  { to: '/settings/notifications', labelKey: 'nav_notifications' as const, icon: Bell, adminOnly: true },
+  { to: '/settings/alerts', labelKey: 'nav_alerts' as const, icon: AlertTriangle, adminOnly: true },
+  { to: '/settings/ping-tasks', labelKey: 'nav_ping_tasks' as const, icon: Activity },
+  { to: '/settings/tasks', labelKey: 'nav_commands' as const, icon: Terminal, adminOnly: true },
+  { to: '/settings/capabilities', labelKey: 'nav_capabilities' as const, icon: Shield, adminOnly: true },
+  { to: '/settings/api-keys', labelKey: 'nav_api_keys' as const, icon: Key },
+  { to: '/settings/security', labelKey: 'nav_security' as const, icon: Shield },
+  { to: '/settings/audit-logs', labelKey: 'nav_audit_logs' as const, icon: ClipboardList, adminOnly: true },
+  { to: '/settings', labelKey: 'nav_settings' as const, icon: Settings, adminOnly: true }
 ] as const
 
 export function Sidebar() {
   const matchRoute = useMatchRoute()
   const { user } = useAuth()
+  const { t } = useTranslation()
   const isAdmin = user?.role === 'admin'
 
   return (
@@ -60,7 +62,7 @@ export function Sidebar() {
               to={item.to}
             >
               <item.icon className="size-4" />
-              {item.label}
+              {t(item.labelKey)}
             </Link>
           )
         })}

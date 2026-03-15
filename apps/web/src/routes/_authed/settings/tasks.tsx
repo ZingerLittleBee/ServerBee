@@ -2,6 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { ChevronDown, ChevronRight, Play, Terminal } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
 import type { TaskResponse, TaskResult } from '@/lib/api-schema'
@@ -17,6 +18,7 @@ interface ServerInfo {
 }
 
 function TasksPage() {
+  const { t } = useTranslation(['settings', 'common'])
   const [command, setCommand] = useState('')
   const [selectedServerIds, setSelectedServerIds] = useState<string[]>([])
   const [timeout, setTimeout] = useState(30)
@@ -67,17 +69,17 @@ function TasksPage() {
 
   return (
     <div>
-      <h1 className="mb-6 font-bold text-2xl">Remote Commands</h1>
+      <h1 className="mb-6 font-bold text-2xl">{t('tasks.title')}</h1>
 
       <div className="max-w-3xl space-y-6">
         {/* Command form */}
         <div className="rounded-lg border bg-card p-6">
-          <h2 className="mb-4 font-semibold text-lg">Execute Command</h2>
+          <h2 className="mb-4 font-semibold text-lg">{t('tasks.execute')}</h2>
 
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div>
               <label className="mb-1 block font-medium text-sm" htmlFor="command-input">
-                Command
+                {t('tasks.command')}
               </label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
@@ -86,7 +88,7 @@ function TasksPage() {
                     className="flex h-9 w-full rounded-md border border-input bg-transparent py-1 pr-3 pl-9 font-mono text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     id="command-input"
                     onChange={(e) => setCommand(e.target.value)}
-                    placeholder="e.g. uptime, df -h, free -m"
+                    placeholder={t('tasks.command_placeholder')}
                     required
                     type="text"
                     value={command}
@@ -96,7 +98,7 @@ function TasksPage() {
                   className="flex h-9 w-20 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                   min={1}
                   onChange={(e) => setTimeout(Number.parseInt(e.target.value, 10) || 30)}
-                  title="Timeout (seconds)"
+                  title={t('tasks.timeout')}
                   type="number"
                   value={timeout}
                 />
@@ -105,13 +107,15 @@ function TasksPage() {
 
             <div>
               <div className="mb-2 flex items-center justify-between">
-                <span className="font-medium text-sm">Target Servers</span>
+                <span className="font-medium text-sm">{t('tasks.target_servers')}</span>
                 <Button onClick={selectAll} size="sm" type="button" variant="ghost">
-                  {servers && selectedServerIds.length === servers.length ? 'Deselect All' : 'Select All'}
+                  {servers && selectedServerIds.length === servers.length
+                    ? t('tasks.deselect_all')
+                    : t('tasks.select_all')}
                 </Button>
               </div>
               {!servers || servers.length === 0 ? (
-                <p className="text-muted-foreground text-sm">No servers available</p>
+                <p className="text-muted-foreground text-sm">{t('tasks.no_servers')}</p>
               ) : (
                 <div className="grid grid-cols-2 gap-1">
                   {servers.map((srv) => {
@@ -123,7 +127,7 @@ function TasksPage() {
                           execEnabled ? '' : 'cursor-not-allowed opacity-50'
                         }`}
                         key={srv.id}
-                        title={execEnabled ? undefined : 'Remote Exec is disabled for this server'}
+                        title={execEnabled ? undefined : t('tasks.exec_disabled')}
                       >
                         <input
                           checked={selectedServerIds.includes(srv.id)}
@@ -144,7 +148,10 @@ function TasksPage() {
               type="submit"
             >
               <Play className="size-4" />
-              Execute ({selectedServerIds.length} server{selectedServerIds.length !== 1 ? 's' : ''})
+              {t('tasks.execute_count', {
+                count: selectedServerIds.length,
+                plural: selectedServerIds.length !== 1 ? 's' : ''
+              })}
             </Button>
           </form>
         </div>
@@ -181,7 +188,7 @@ function TasksPage() {
                 {!taskResults || taskResults.length === 0 ? (
                   <div className="flex items-center gap-2 px-6 py-4 text-muted-foreground text-sm">
                     <div className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                    Waiting for results...
+                    {t('tasks.waiting')}
                   </div>
                 ) : (
                   <div className="divide-y">
@@ -194,7 +201,7 @@ function TasksPage() {
                             <span className="font-medium text-sm">{serverName}</span>
                             {isSkipped ? (
                               <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">
-                                skipped
+                                {t('tasks.skipped')}
                               </span>
                             ) : (
                               <span
@@ -204,17 +211,15 @@ function TasksPage() {
                                     : 'bg-red-500/10 text-red-600 dark:text-red-400'
                                 }`}
                               >
-                                exit {result.exit_code}
+                                {t('tasks.exit_code', { code: result.exit_code })}
                               </span>
                             )}
                           </div>
                           {isSkipped ? (
-                            <p className="text-muted-foreground text-xs italic">
-                              Remote Exec is disabled for this server — command was not executed
-                            </p>
+                            <p className="text-muted-foreground text-xs italic">{t('tasks.exec_disabled')}</p>
                           ) : (
                             <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-2 font-mono text-xs">
-                              {result.output || '(no output)'}
+                              {result.output || t('tasks.no_output')}
                             </pre>
                           )}
                         </div>

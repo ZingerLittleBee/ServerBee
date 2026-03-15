@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { TerminalView } from '@/components/terminal/terminal-view'
 import { Button } from '@/components/ui/button'
 import { useTerminalWs } from '@/hooks/use-terminal-ws'
@@ -19,7 +20,18 @@ function statusColor(status: string): string {
   return 'bg-red-500'
 }
 
+function statusLabel(status: string, t: (key: string) => string): string {
+  if (status === 'connected') {
+    return t('status_connected')
+  }
+  if (status === 'connecting') {
+    return t('status_connecting')
+  }
+  return t('status_closed')
+}
+
 function TerminalPage() {
+  const { t } = useTranslation('terminal')
   const { serverId } = Route.useParams()
   const { connect, disconnect, error, onData, sendInput, sendResize, status } = useTerminalWs(serverId)
   const writeRef = useRef<((data: string) => void) | null>(null)
@@ -61,18 +73,18 @@ function TerminalPage() {
         <Link params={{ id: serverId }} to="/servers/$id">
           <Button size="sm" variant="ghost">
             <ArrowLeft className="size-4" />
-            Back
+            {t('back')}
           </Button>
         </Link>
-        <h1 className="font-semibold text-lg">Terminal</h1>
+        <h1 className="font-semibold text-lg">{t('title')}</h1>
         <span className="text-muted-foreground text-sm">{serverId.slice(0, 8)}...</span>
         <div className="ml-auto flex items-center gap-2">
           <span className={`inline-block size-2 rounded-full ${statusColor(status)}`} />
-          <span className="text-muted-foreground text-xs">{status}</span>
+          <span className="text-muted-foreground text-xs">{statusLabel(status, t)}</span>
           {error && <span className="text-red-500 text-xs">{error}</span>}
           {status === 'closed' && (
             <Button onClick={connect} size="sm" variant="outline">
-              Reconnect
+              {t('reconnect')}
             </Button>
           )}
         </div>
