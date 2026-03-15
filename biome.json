@@ -91,7 +91,8 @@
         "apps/docs/src/routes/$lang.tsx",
         "apps/docs/src/routes/$lang/docs/$.tsx",
         "apps/docs/src/routes/llms*",
-        "apps/web/src/routes/_authed/terminal.$serverId.tsx"
+        "apps/web/src/routes/_authed/terminal.$serverId.tsx",
+        "apps/web/src/routes/_authed/network/$serverId.tsx"
       ],
       "linter": {
         "rules": {
