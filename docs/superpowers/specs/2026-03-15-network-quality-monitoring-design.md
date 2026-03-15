@@ -42,6 +42,8 @@ Add a network quality monitoring subsystem to ServerBee. Each VPS can probe mult
 
 Unique constraint: `(server_id, target_id)`. Row existence means enabled; `set_server_targets` is a full replacement (delete all + insert new).
 
+Foreign key `server_id` uses `on_delete(Cascade)` — when a server is deleted, all its `network_probe_config` rows are automatically removed (consistent with `server_tags` FK behavior).
+
 Max 20 targets per VPS to prevent configuration amplification.
 
 ### Global Probe Settings — stored in `config` table
@@ -73,6 +75,8 @@ struct NetworkProbeSetting {
 
 Index: `(server_id, target_id, timestamp)`
 
+Foreign key `server_id` uses `on_delete(Cascade)` — server deletion cascades to its probe records.
+
 Note: for TCP/HTTP probes, `packet_sent`/`packet_received`/`packet_loss` represent probe attempt counts, not network packets. This is a common convention in monitoring tools.
 
 ### `network_probe_record_hourly` — Hourly Aggregation
@@ -90,6 +94,10 @@ Note: for TCP/HTTP probes, `packet_sent`/`packet_received`/`packet_loss` represe
 | hour | DATETIME NOT NULL | Hour timestamp |
 
 Unique constraint: `(server_id, target_id, hour)` — ensures idempotent aggregation.
+
+Foreign key `server_id` uses `on_delete(Cascade)` — server deletion cascades to its hourly records.
+
+Aggregation note: `AVG(avg_latency)` naturally ignores NULL rows (SQL standard behavior), so hourly averages only reflect rounds where at least one packet was received. If all raw records in an hour have NULL latency (100% loss throughout), the hourly `avg_latency` is also NULL.
 
 ### Builtin Probe Targets (seed data)
 
@@ -156,10 +164,12 @@ Sent on: agent connect (after Welcome), config change (settings update or per-VP
 New variant:
 
 ```rust
-NetworkProbeResults(Vec<NetworkProbeResultData>)
+NetworkProbeResults {
+    results: Vec<NetworkProbeResultData>,
+}
 ```
 
-Sent once per probe round, batching all target results into a single message. This aligns with the `BrowserMessage::NetworkProbeUpdate` which also uses `Vec<NetworkProbeResultData>`.
+Sent once per probe round, batching all target results into a single message. Uses named-field style consistent with `PingTasksSync { tasks }` and `BrowserMessage::NetworkProbeUpdate`.
 
 ### BrowserMessage (Server → Browser)
 
