@@ -15,12 +15,16 @@ interface LatencyChartProps {
   targets: TargetInfo[]
 }
 
-function formatTime(timestamp: string, isRealtime: boolean): string {
-  const date = new Date(timestamp)
-  if (isRealtime) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  }
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+function formatTimeFull(timestamp: string): string {
+  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+function formatTimeShort(timestamp: string): string {
+  return new Date(timestamp).toLocaleTimeString([], { minute: '2-digit', second: '2-digit' })
+}
+
+function formatTimeHM(timestamp: string): string {
+  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
 export function LatencyChart({ records, targets, isRealtime = false }: LatencyChartProps) {
@@ -88,7 +92,14 @@ export function LatencyChart({ records, targets, isRealtime = false }: LatencyCh
             dataKey="timestamp"
             stroke="var(--color-muted-foreground)"
             tick={{ fontSize: 11 }}
-            tickFormatter={(v) => formatTime(v, isRealtime)}
+            tickFormatter={(v, index) => {
+              if (!isRealtime) {
+                return formatTimeHM(v)
+              }
+              // Realtime: first and last tick show HH:mm:ss, middle ticks show mm:ss
+              const isEdge = index === 0
+              return isEdge ? formatTimeFull(v) : formatTimeShort(v)
+            }}
             tickLine={false}
           />
           <YAxis
