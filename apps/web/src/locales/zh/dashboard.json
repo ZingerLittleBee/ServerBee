@@ -1,0 +1,17 @@
+{
+  "title": "仪表盘",
+  "servers_online": "{{total}} 台服务器中 {{online}} 台在线",
+  "stat_servers": "服务器",
+  "offline_count": "{{count}} 台离线",
+  "avg_cpu": "平均 CPU",
+  "avg_memory": "平均内存",
+  "total_bandwidth": "总带宽",
+  "per_second": "/s",
+  "online": "在线",
+  "healthy": "健康",
+  "no_data": "暂无数据",
+  "no_servers_title": "暂无服务器连接",
+  "no_servers_description": "服务器通过 Agent 连接后将显示在此处",
+  "ungrouped": "未分组",
+  "unknown": "未知"
+}

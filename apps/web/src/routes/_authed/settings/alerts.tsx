@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { AlertTriangle, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
 import type { AlertRule, AlertRuleItem, AlertStateResponse, NotificationGroup } from '@/lib/api-schema'
@@ -34,51 +35,30 @@ const THRESHOLD_TYPES = new Set([
 
 const CYCLE_TYPES = new Set(['transfer_in_cycle', 'transfer_out_cycle', 'transfer_all_cycle'])
 
-const ruleTypes = [
-  { label: 'CPU %', value: 'cpu' },
-  { label: 'Memory (bytes)', value: 'memory' },
-  { label: 'Swap (bytes)', value: 'swap' },
-  { label: 'Disk (bytes)', value: 'disk' },
-  { label: 'Load 1m', value: 'load1' },
-  { label: 'Load 5m', value: 'load5' },
-  { label: 'Load 15m', value: 'load15' },
-  { label: 'TCP Connections', value: 'tcp_conn' },
-  { label: 'UDP Connections', value: 'udp_conn' },
-  { label: 'Processes', value: 'process' },
-  { label: 'Network In (B/s)', value: 'net_in_speed' },
-  { label: 'Network Out (B/s)', value: 'net_out_speed' },
-  { label: 'Temperature', value: 'temperature' },
-  { label: 'GPU %', value: 'gpu' },
-  { label: 'Offline', value: 'offline' },
-  { label: 'Transfer In (cycle)', value: 'transfer_in_cycle' },
-  { label: 'Transfer Out (cycle)', value: 'transfer_out_cycle' },
-  { label: 'Transfer Total (cycle)', value: 'transfer_all_cycle' },
-  { label: 'Expiration', value: 'expiration' }
-]
-
-function formatRuleItem(item: AlertRuleItem): string {
+function formatRuleItem(item: AlertRuleItem, t: (key: string, options?: Record<string, unknown>) => string): string {
   if (item.rule_type === 'offline') {
-    return `offline ${item.duration ?? 60}s`
+    return `${t('alerts.display_offline')} ${item.duration ?? 60}s`
   }
   if (item.rule_type === 'expiration') {
-    return `expires in ${item.duration ?? 7}d`
+    return t('alerts.display_expires', { count: item.duration ?? 7 })
   }
   if (item.cycle_limit) {
-    return `${item.rule_type} > ${item.cycle_limit}B/${item.cycle_interval ?? 'month'}`
+    return t('alerts.display_transfer', { value: item.cycle_limit, period: item.cycle_interval ?? 'month' })
   }
   if (item.min && item.max) {
     return `${item.rule_type} [${item.min}, ${item.max}]`
   }
   if (item.min) {
-    return `${item.rule_type} ≥ ${item.min}`
+    return `${item.rule_type} >= ${item.min}`
   }
   if (item.max) {
-    return `${item.rule_type} ≥ ${item.max}`
+    return `${item.rule_type} >= ${item.max}`
   }
   return item.rule_type
 }
 
 function AlertsPage() {
+  const { t } = useTranslation(['settings', 'common'])
   const queryClient = useQueryClient()
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
@@ -88,6 +68,28 @@ function AlertsPage() {
   const [coverType, setCoverType] = useState<'all' | 'exclude' | 'include'>('all')
   const [serverIds, setServerIds] = useState<string[]>([])
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null)
+
+  const ruleTypes = [
+    { label: t('alerts.metric_cpu'), value: 'cpu' },
+    { label: t('alerts.metric_memory'), value: 'memory' },
+    { label: t('alerts.metric_swap'), value: 'swap' },
+    { label: t('alerts.metric_disk'), value: 'disk' },
+    { label: t('alerts.metric_load1'), value: 'load1' },
+    { label: t('alerts.metric_load5'), value: 'load5' },
+    { label: t('alerts.metric_load15'), value: 'load15' },
+    { label: t('alerts.metric_tcp'), value: 'tcp_conn' },
+    { label: t('alerts.metric_udp'), value: 'udp_conn' },
+    { label: t('alerts.metric_processes'), value: 'process' },
+    { label: t('alerts.metric_net_in'), value: 'net_in_speed' },
+    { label: t('alerts.metric_net_out'), value: 'net_out_speed' },
+    { label: t('alerts.metric_temperature'), value: 'temperature' },
+    { label: t('alerts.metric_gpu'), value: 'gpu' },
+    { label: t('alerts.metric_offline'), value: 'offline' },
+    { label: t('alerts.metric_transfer_in'), value: 'transfer_in_cycle' },
+    { label: t('alerts.metric_transfer_out'), value: 'transfer_out_cycle' },
+    { label: t('alerts.metric_transfer_total'), value: 'transfer_all_cycle' },
+    { label: t('alerts.metric_expiration'), value: 'expiration' }
+  ]
 
   const { data: rules, isLoading } = useQuery<AlertRule[]>({
     queryKey: ['alert-rules'],
@@ -181,15 +183,15 @@ function AlertsPage() {
 
   return (
     <div>
-      <h1 className="mb-6 font-bold text-2xl">Alert Rules</h1>
+      <h1 className="mb-6 font-bold text-2xl">{t('alerts.title')}</h1>
 
       <div className="max-w-2xl space-y-6">
         <div className="rounded-lg border bg-card p-6">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold text-lg">Rules</h2>
+            <h2 className="font-semibold text-lg">{t('alerts.rules')}</h2>
             <Button onClick={() => setShowForm(!showForm)} size="sm" variant="outline">
               <Plus className="size-4" />
-              Add
+              {t('common:add')}
             </Button>
           </div>
 
@@ -198,7 +200,7 @@ function AlertsPage() {
               <input
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Rule name"
+                placeholder={t('alerts.rule_name')}
                 required
                 type="text"
                 value={name}
@@ -210,8 +212,8 @@ function AlertsPage() {
                   onChange={(e) => setTriggerMode(e.target.value)}
                   value={triggerMode}
                 >
-                  <option value="always">Always (5min debounce)</option>
-                  <option value="once">Once (until resolved)</option>
+                  <option value="always">{t('alerts.trigger_always')}</option>
+                  <option value="once">{t('alerts.trigger_once')}</option>
                 </select>
 
                 <select
@@ -219,7 +221,7 @@ function AlertsPage() {
                   onChange={(e) => setGroupId(e.target.value)}
                   value={groupId}
                 >
-                  <option value="">No notification</option>
+                  <option value="">{t('alerts.no_notification')}</option>
                   {groups?.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.name}
@@ -229,7 +231,7 @@ function AlertsPage() {
               </div>
 
               <div className="space-y-2">
-                <span className="font-medium text-sm">Coverage</span>
+                <span className="font-medium text-sm">{t('alerts.coverage')}</span>
                 <div className="flex gap-3">
                   <select
                     className="flex h-9 flex-1 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
@@ -242,9 +244,9 @@ function AlertsPage() {
                     }}
                     value={coverType}
                   >
-                    <option value="all">All servers</option>
-                    <option value="include">Include servers</option>
-                    <option value="exclude">Exclude servers</option>
+                    <option value="all">{t('alerts.all_servers')}</option>
+                    <option value="include">{t('alerts.include_servers')}</option>
+                    <option value="exclude">{t('alerts.exclude_servers')}</option>
                   </select>
                 </div>
                 {(coverType === 'include' || coverType === 'exclude') && (
@@ -265,7 +267,7 @@ function AlertsPage() {
                         </label>
                       ))
                     ) : (
-                      <span className="text-muted-foreground text-xs">No servers found</span>
+                      <span className="text-muted-foreground text-xs">{t('alerts.no_servers')}</span>
                     )}
                   </div>
                 )}
@@ -273,10 +275,10 @@ function AlertsPage() {
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm">Conditions (AND)</span>
+                  <span className="font-medium text-sm">{t('alerts.conditions')}</span>
                   <Button onClick={addRuleItem} size="sm" type="button" variant="ghost">
                     <Plus className="size-3" />
-                    Add condition
+                    {t('alerts.add_condition')}
                   </Button>
                 </div>
                 {ruleItems.map((item, index) => (
@@ -297,14 +299,14 @@ function AlertsPage() {
                         <input
                           className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                           onChange={(e) => updateRuleItem(index, 'min', Number.parseFloat(e.target.value) || 0)}
-                          placeholder="Threshold ≥"
+                          placeholder={t('alerts.threshold_gte')}
                           type="number"
                           value={item.min ?? ''}
                         />
                         <input
                           className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                           onChange={(e) => updateRuleItem(index, 'max', Number.parseFloat(e.target.value) || 0)}
-                          placeholder="and ≤ (opt)"
+                          placeholder={t('alerts.threshold_lte')}
                           type="number"
                           value={item.max ?? ''}
                         />
@@ -314,7 +316,7 @@ function AlertsPage() {
                       <input
                         className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                         onChange={(e) => updateRuleItem(index, 'duration', Number.parseInt(e.target.value, 10) || 60)}
-                        placeholder="Duration (s)"
+                        placeholder={t('alerts.duration')}
                         type="number"
                         value={item.duration ?? 60}
                       />
@@ -323,7 +325,7 @@ function AlertsPage() {
                       <input
                         className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                         onChange={(e) => updateRuleItem(index, 'duration', Number.parseInt(e.target.value, 10) || 7)}
-                        placeholder="Days before"
+                        placeholder={t('alerts.days_before')}
                         type="number"
                         value={item.duration ?? 7}
                       />
@@ -335,18 +337,18 @@ function AlertsPage() {
                           onChange={(e) => updateRuleItem(index, 'cycle_interval', e.target.value)}
                           value={item.cycle_interval ?? 'month'}
                         >
-                          <option value="hour">Hour</option>
-                          <option value="day">Day</option>
-                          <option value="week">Week</option>
-                          <option value="month">Month</option>
-                          <option value="year">Year</option>
+                          <option value="hour">{t('alerts.period_hour')}</option>
+                          <option value="day">{t('alerts.period_day')}</option>
+                          <option value="week">{t('alerts.period_week')}</option>
+                          <option value="month">{t('alerts.period_month')}</option>
+                          <option value="year">{t('alerts.period_year')}</option>
                         </select>
                         <input
                           className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                           onChange={(e) =>
                             updateRuleItem(index, 'cycle_limit', Number.parseInt(e.target.value, 10) || 0)
                           }
-                          placeholder="Limit (bytes)"
+                          placeholder={t('alerts.limit_bytes')}
                           type="number"
                           value={item.cycle_limit ?? ''}
                         />
@@ -363,10 +365,10 @@ function AlertsPage() {
 
               <div className="flex gap-2">
                 <Button disabled={createMutation.isPending} size="sm" type="submit">
-                  Create Rule
+                  {t('alerts.create_rule')}
                 </Button>
                 <Button onClick={resetForm} size="sm" type="button" variant="ghost">
-                  Cancel
+                  {t('common:cancel')}
                 </Button>
               </div>
             </form>
@@ -380,7 +382,7 @@ function AlertsPage() {
             </div>
           )}
           {!isLoading && (!rules || rules.length === 0) && (
-            <p className="text-center text-muted-foreground text-sm">No alert rules configured</p>
+            <p className="text-center text-muted-foreground text-sm">{t('alerts.no_rules')}</p>
           )}
           {rules && rules.length > 0 && (
             <div className="divide-y rounded-md border">
@@ -396,7 +398,9 @@ function AlertsPage() {
                         <div>
                           <p className="font-medium text-sm">
                             {rule.name}
-                            {!rule.enabled && <span className="ml-2 text-muted-foreground text-xs">(disabled)</span>}
+                            {!rule.enabled && (
+                              <span className="ml-2 text-muted-foreground text-xs">{t('notifications.disabled')}</span>
+                            )}
                             <button
                               className="ml-2 rounded-full bg-muted px-2 py-0.5 text-muted-foreground text-xs hover:bg-muted/80"
                               onClick={(e) => {
@@ -405,11 +409,11 @@ function AlertsPage() {
                               }}
                               type="button"
                             >
-                              States
+                              {t('alerts.states')}
                             </button>
                           </p>
                           <p className="text-muted-foreground text-xs">
-                            {items.map(formatRuleItem).join(' AND ')} | {rule.trigger_mode}
+                            {items.map((item) => formatRuleItem(item, t)).join(' AND ')} | {rule.trigger_mode}
                           </p>
                         </div>
                       </div>
@@ -419,7 +423,7 @@ function AlertsPage() {
                           size="sm"
                           variant="outline"
                         >
-                          {rule.enabled ? 'Disable' : 'Enable'}
+                          {rule.enabled ? t('common:disable') : t('common:enable')}
                         </Button>
                         <Button
                           aria-label={`Delete rule ${rule.name}`}
@@ -445,7 +449,7 @@ function AlertsPage() {
                                   {s.server_name}
                                 </span>
                                 <span className="text-muted-foreground">
-                                  {s.resolved ? 'Resolved' : `Triggered (${s.count}x)`}
+                                  {s.resolved ? t('alerts.resolved') : `${t('alerts.triggered')} (${s.count}x)`}
                                   {' · '}
                                   {new Date(s.first_triggered_at).toLocaleString()}
                                 </span>
@@ -453,7 +457,7 @@ function AlertsPage() {
                             ))}
                           </div>
                         ) : (
-                          <p className="text-muted-foreground text-xs">No triggered states</p>
+                          <p className="text-muted-foreground text-xs">{t('alerts.no_triggered')}</p>
                         )}
                       </div>
                     )}

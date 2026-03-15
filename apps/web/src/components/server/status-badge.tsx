@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 
 interface StatusBadgeProps {
@@ -6,6 +7,7 @@ interface StatusBadgeProps {
 }
 
 export function StatusBadge({ online, className }: StatusBadgeProps) {
+  const { t } = useTranslation()
   return (
     <span
       className={cn(
@@ -17,7 +19,7 @@ export function StatusBadge({ online, className }: StatusBadgeProps) {
       )}
     >
       <span className={cn('size-1.5 rounded-full', online ? 'bg-emerald-500' : 'bg-red-500')} />
-      {online ? 'Online' : 'Offline'}
+      {online ? t('online') : t('offline')}
     </span>
   )
 }

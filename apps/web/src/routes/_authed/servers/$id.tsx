@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, CreditCard, Pencil, Terminal as TerminalIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { MetricsChart } from '@/components/server/metrics-chart'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
@@ -40,12 +41,12 @@ interface ServerWithCaps {
 }
 
 const TIME_RANGES: TimeRange[] = [
-  { label: 'Real-time', hours: 0, interval: 'realtime' },
-  { label: '1h', hours: 1, interval: 'raw' },
-  { label: '6h', hours: 6, interval: 'raw' },
-  { label: '24h', hours: 24, interval: 'raw' },
-  { label: '7d', hours: 168, interval: 'hourly' },
-  { label: '30d', hours: 720, interval: 'hourly' }
+  { label: 'range_realtime', hours: 0, interval: 'realtime' },
+  { label: 'range_1h', hours: 1, interval: 'raw' },
+  { label: 'range_6h', hours: 6, interval: 'raw' },
+  { label: 'range_24h', hours: 24, interval: 'raw' },
+  { label: 'range_7d', hours: 168, interval: 'hourly' },
+  { label: 'range_30d', hours: 720, interval: 'hourly' }
 ]
 
 function formatCurrency(price: number, currency: string): string {
@@ -57,17 +58,26 @@ function formatCurrency(price: number, currency: string): string {
 }
 
 function ServerInfoMeta({ server }: { server: ServerResponse }) {
+  const { t } = useTranslation('servers')
   return (
     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground text-sm">
-      {server.os && <span>OS: {server.os}</span>}
+      {server.os && (
+        <span>
+          {t('detail_os')} {server.os}
+        </span>
+      )}
       {server.cpu_name && (
         <span>
-          CPU: {server.cpu_name}
-          {server.cpu_cores && ` (${server.cpu_cores} cores)`}
+          {t('detail_cpu')} {server.cpu_name}
+          {server.cpu_cores && ` (${t('detail_cores', { count: server.cpu_cores })})`}
           {server.cpu_arch && ` ${server.cpu_arch}`}
         </span>
       )}
-      {server.mem_total != null && <span>RAM: {formatBytes(server.mem_total)}</span>}
+      {server.mem_total != null && (
+        <span>
+          {t('detail_ram')} {formatBytes(server.mem_total)}
+        </span>
+      )}
       {server.ipv4 && <span>IPv4: {server.ipv4}</span>}
       {server.ipv6 && <span>IPv6: {server.ipv6}</span>}
       {server.kernel_version && <span>Kernel: {server.kernel_version}</span>}
@@ -78,6 +88,7 @@ function ServerInfoMeta({ server }: { server: ServerResponse }) {
 }
 
 function CapabilitiesSection({ server }: { server: ServerWithCaps }) {
+  const { t } = useTranslation('servers')
   const { user } = useAuth()
   const queryClient = useQueryClient()
 
@@ -103,18 +114,18 @@ function CapabilitiesSection({ server }: { server: ServerWithCaps }) {
   return (
     <div className="mt-6 rounded-lg border bg-card p-6">
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="font-semibold">Capability Toggles</h3>
+        <h3 className="font-semibold">{t('cap_toggles')}</h3>
         {server.protocol_version != null && server.protocol_version < 2 && (
           <span className="rounded bg-amber-100 px-2 py-1 text-amber-600 text-xs dark:bg-amber-900/30 dark:text-amber-400">
-            Agent does not support capability enforcement — upgrade recommended
+            {t('cap_upgrade_warning')}
           </span>
         )}
       </div>
       <div className="space-y-3">
-        {CAPABILITIES.map(({ bit, label, risk }) => (
+        {CAPABILITIES.map(({ bit, labelKey, risk }) => (
           <div className="flex items-center justify-between" key={bit}>
             <div className="flex items-center gap-2">
-              <span>{label}</span>
+              <span>{t(labelKey)}</span>
               <span
                 className={`rounded px-1.5 py-0.5 text-xs ${
                   risk === 'high'
@@ -122,7 +133,7 @@ function CapabilitiesSection({ server }: { server: ServerWithCaps }) {
                     : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
                 }`}
               >
-                {risk === 'high' ? 'High Risk' : 'Low Risk'}
+                {risk === 'high' ? t('cap_high_risk') : t('cap_low_risk')}
               </span>
             </div>
             <button
@@ -154,6 +165,7 @@ function CapabilitiesSection({ server }: { server: ServerWithCaps }) {
 }
 
 function ServerDetailPage() {
+  const { t } = useTranslation('servers')
   const { id } = Route.useParams()
   const [selectedRange, setSelectedRange] = useState(0)
   const [editOpen, setEditOpen] = useState(false)
@@ -252,7 +264,7 @@ function ServerDetailPage() {
   if (!server) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
-        <p className="text-muted-foreground">Server not found</p>
+        <p className="text-muted-foreground">{t('detail_not_found')}</p>
       </div>
     )
   }
@@ -276,7 +288,7 @@ function ServerDetailPage() {
           to="/"
         >
           <ArrowLeft className="size-4" />
-          Back to Dashboard
+          {t('detail_back')}
         </Link>
 
         <div className="flex items-start justify-between">
@@ -291,13 +303,13 @@ function ServerDetailPage() {
           <div className="flex gap-2">
             <Button onClick={() => setEditOpen(true)} size="sm" variant="outline">
               <Pencil className="mr-1 size-4" />
-              Edit
+              {t('detail_edit')}
             </Button>
             {isOnline && terminalEnabled && (
               <Link params={{ serverId: id }} to="/terminal/$serverId">
                 <Button size="sm" variant="outline">
                   <TerminalIcon className="mr-1 size-4" />
-                  Terminal
+                  {t('detail_terminal')}
                 </Button>
               </Link>
             )}
@@ -310,13 +322,14 @@ function ServerDetailPage() {
       {isOnline && (liveNetIn > 0 || liveNetOut > 0) && (
         <div className="mb-6 flex flex-wrap gap-6 rounded-lg border bg-card p-3 text-sm">
           <span className="text-muted-foreground">
-            Network In: <span className="font-medium text-foreground">{formatBytes(liveNetIn)}</span>
+            {t('detail_network_in')} <span className="font-medium text-foreground">{formatBytes(liveNetIn)}</span>
           </span>
           <span className="text-muted-foreground">
-            Network Out: <span className="font-medium text-foreground">{formatBytes(liveNetOut)}</span>
+            {t('detail_network_out')} <span className="font-medium text-foreground">{formatBytes(liveNetOut)}</span>
           </span>
           <span className="text-muted-foreground">
-            Total: <span className="font-medium text-foreground">{formatBytes(liveNetIn + liveNetOut)}</span>
+            {t('detail_network_total')}{' '}
+            <span className="font-medium text-foreground">{formatBytes(liveNetIn + liveNetOut)}</span>
           </span>
         </div>
       )}
@@ -330,7 +343,7 @@ function ServerDetailPage() {
             size="sm"
             variant={selectedRange === i ? 'default' : 'outline'}
           >
-            {tr.label}
+            {t(tr.label)}
           </Button>
         ))}
       </div>
@@ -341,7 +354,7 @@ function ServerDetailPage() {
           data={chartData}
           dataKey="cpu"
           formatTime={realtimeFormatTime}
-          title="CPU Usage"
+          title={t('chart_cpu')}
           unit="%"
         />
         <MetricsChart
@@ -349,7 +362,7 @@ function ServerDetailPage() {
           data={chartData}
           dataKey="memory_pct"
           formatTime={realtimeFormatTime}
-          title="Memory Usage"
+          title={t('chart_memory')}
           unit="%"
         />
         <MetricsChart
@@ -357,7 +370,7 @@ function ServerDetailPage() {
           data={chartData}
           dataKey="disk_pct"
           formatTime={realtimeFormatTime}
-          title="Disk Usage"
+          title={t('chart_disk')}
           unit="%"
         />
         <MetricsChart
@@ -366,7 +379,7 @@ function ServerDetailPage() {
           dataKey="net_in_speed"
           formatTime={realtimeFormatTime}
           formatValue={(v) => formatBytes(v)}
-          title="Network In"
+          title={t('chart_net_in')}
         />
         <MetricsChart
           color="var(--color-chart-5)"
@@ -374,14 +387,14 @@ function ServerDetailPage() {
           dataKey="net_out_speed"
           formatTime={realtimeFormatTime}
           formatValue={(v) => formatBytes(v)}
-          title="Network Out"
+          title={t('chart_net_out')}
         />
         <MetricsChart
           color="var(--color-chart-1)"
           data={chartData}
           dataKey="load1"
           formatTime={realtimeFormatTime}
-          title="Load Average (1m)"
+          title={t('chart_load')}
         />
 
         {hasTemperature && (
@@ -390,7 +403,7 @@ function ServerDetailPage() {
             data={chartData}
             dataKey="temperature"
             formatTime={realtimeFormatTime}
-            title="Temperature"
+            title={t('chart_temperature')}
             unit="°C"
           />
         )}
@@ -402,7 +415,7 @@ function ServerDetailPage() {
               data={gpuChartData}
               dataKey="gpu_usage"
               formatTime={realtimeFormatTime}
-              title="GPU Usage"
+              title={t('chart_gpu')}
               unit="%"
             />
             <MetricsChart
@@ -410,7 +423,7 @@ function ServerDetailPage() {
               data={gpuChartData}
               dataKey="gpu_temp"
               formatTime={realtimeFormatTime}
-              title="GPU Temperature"
+              title={t('chart_gpu_temp')}
               unit="°C"
             />
           </>
@@ -432,6 +445,7 @@ function BillingInfoBar({
     'billing_cycle' | 'currency' | 'expired_at' | 'price' | 'traffic_limit' | 'traffic_limit_type'
   >
 }) {
+  const { t } = useTranslation('servers')
   const isExpired = server.expired_at ? new Date(server.expired_at) < new Date() : false
   const daysUntilExpiry = server.expired_at
     ? Math.ceil((new Date(server.expired_at).getTime() - Date.now()) / 86_400_000)
@@ -459,14 +473,14 @@ function BillingInfoBar({
       {server.expired_at && (
         <span className={cn(expiryColor)}>
           {isExpired
-            ? `Expired ${new Date(server.expired_at).toLocaleDateString()}`
-            : `Expires ${new Date(server.expired_at).toLocaleDateString()}`}
-          {daysUntilExpiry != null && !isExpired && ` (${daysUntilExpiry}d)`}
+            ? `${t('detail_expired')} ${new Date(server.expired_at).toLocaleDateString()}`
+            : `${t('detail_expires')} ${new Date(server.expired_at).toLocaleDateString()}`}
+          {daysUntilExpiry != null && !isExpired && ` (${t('detail_expires_days', { count: daysUntilExpiry })})`}
         </span>
       )}
       {server.traffic_limit != null && (
         <span className="text-muted-foreground">
-          Traffic: {formatBytes(server.traffic_limit)}
+          {t('detail_traffic')} {formatBytes(server.traffic_limit)}
           {server.traffic_limit_type && server.traffic_limit_type !== 'sum' && ` (${server.traffic_limit_type})`}
         </span>
       )}

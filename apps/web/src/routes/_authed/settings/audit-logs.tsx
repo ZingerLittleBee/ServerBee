@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
 import type { AuditListResponse } from '@/lib/api-schema'
@@ -13,6 +14,7 @@ export const Route = createFileRoute('/_authed/settings/audit-logs')({
 const PAGE_SIZE = 25
 
 function AuditLogsPage() {
+  const { t } = useTranslation('settings')
   const [page, setPage] = useState(0)
 
   const { data, isLoading } = useQuery<AuditListResponse>({
@@ -27,7 +29,7 @@ function AuditLogsPage() {
 
   return (
     <div>
-      <h1 className="mb-6 font-bold text-2xl">Audit Logs</h1>
+      <h1 className="mb-6 font-bold text-2xl">{t('audit.title')}</h1>
 
       <div className="max-w-4xl">
         <div className="rounded-lg border bg-card">
@@ -35,11 +37,11 @@ function AuditLogsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b">
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Time</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Action</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">User</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">IP</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Detail</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('audit.col_time')}</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('audit.col_action')}</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('audit.col_user')}</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('audit.col_ip')}</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t('audit.col_detail')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -54,7 +56,7 @@ function AuditLogsPage() {
                 {!isLoading && entries.length === 0 && (
                   <tr>
                     <td className="px-4 py-8 text-center text-muted-foreground" colSpan={5}>
-                      No audit log entries
+                      {t('audit.no_entries')}
                     </td>
                   </tr>
                 )}
@@ -78,7 +80,7 @@ function AuditLogsPage() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between border-t px-4 py-3">
               <span className="text-muted-foreground text-sm">
-                {total} entries, page {page + 1} of {totalPages}
+                {t('audit.pagination', { total, page: page + 1, pages: totalPages })}
               </span>
               <div className="flex gap-1">
                 <Button disabled={page === 0} onClick={() => setPage((p) => p - 1)} size="sm" variant="outline">

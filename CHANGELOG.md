@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-03-15
+
+### Added
+
+- **Full-site i18n** -- Chinese + English internationalization for the entire web frontend (~250 translated strings across all pages)
+- **react-i18next** integration with `i18next-browser-languagedetector` for automatic browser language detection and `localStorage` persistence
+- **Language switcher** -- Toggle button in the header (and public status page) to switch between English and 中文
+- **7 translation namespaces** -- `common`, `dashboard`, `servers`, `terminal`, `settings`, `login`, `status`, each with en/zh JSON files
+- **TypeScript type-safe translation keys** -- Module augmentation ensures all `t()` calls reference valid keys at compile time
+- **14 i18n E2E verification scenarios** added to TESTING.md
+
+### Changed
+
+- `capabilities.ts` uses `labelKey` (translation key) instead of hardcoded `label` string
+- Sidebar `navItems` uses `labelKey` pattern for translatable navigation labels
+- All 25 component/page files refactored to use `useTranslation()` hook instead of hardcoded English strings
+
 ## [0.2.0] - 2026-03-15
 
 ### Added

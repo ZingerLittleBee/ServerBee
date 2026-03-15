@@ -7,12 +7,12 @@ export const CAP_PING_HTTP = 32
 export const CAP_DEFAULT = 56
 
 export const CAPABILITIES = [
-  { bit: CAP_TERMINAL, key: 'terminal', label: 'Web Terminal', risk: 'high' as const },
-  { bit: CAP_EXEC, key: 'exec', label: 'Remote Exec', risk: 'high' as const },
-  { bit: CAP_UPGRADE, key: 'upgrade', label: 'Auto Upgrade', risk: 'high' as const },
-  { bit: CAP_PING_ICMP, key: 'ping_icmp', label: 'ICMP Ping', risk: 'low' as const },
-  { bit: CAP_PING_TCP, key: 'ping_tcp', label: 'TCP Probe', risk: 'low' as const },
-  { bit: CAP_PING_HTTP, key: 'ping_http', label: 'HTTP Probe', risk: 'low' as const }
+  { bit: CAP_TERMINAL, key: 'terminal', labelKey: 'cap_terminal' as const, risk: 'high' as const },
+  { bit: CAP_EXEC, key: 'exec', labelKey: 'cap_exec' as const, risk: 'high' as const },
+  { bit: CAP_UPGRADE, key: 'upgrade', labelKey: 'cap_upgrade' as const, risk: 'high' as const },
+  { bit: CAP_PING_ICMP, key: 'ping_icmp', labelKey: 'cap_ping_icmp' as const, risk: 'low' as const },
+  { bit: CAP_PING_TCP, key: 'ping_tcp', labelKey: 'cap_ping_tcp' as const, risk: 'low' as const },
+  { bit: CAP_PING_HTTP, key: 'ping_http', labelKey: 'cap_ping_http' as const, risk: 'low' as const }
 ] as const
 
 export function hasCap(capabilities: number, bit: number): boolean {
