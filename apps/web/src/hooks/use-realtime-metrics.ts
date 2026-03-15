@@ -46,7 +46,7 @@ export function useRealtimeMetrics(serverId: string): RealtimeDataPoint[] {
     const servers = queryClient.getQueryData<ServerMetrics[]>(['servers'])
     if (servers) {
       const server = servers.find((s) => s.id === serverId)
-      if (server?.online) {
+      if (server?.online && server.last_active > 0) {
         const point = toRealtimeDataPoint(server)
         bufferRef.current = [point]
         lastActiveRef.current = server.last_active
@@ -76,7 +76,7 @@ export function useRealtimeMetrics(serverId: string): RealtimeDataPoint[] {
 
       lastActiveRef.current = server.last_active
       const point = toRealtimeDataPoint(server)
-      bufferRef.current = [...bufferRef.current, point]
+      bufferRef.current.push(point)
 
       if (bufferRef.current.length > TRIM_THRESHOLD) {
         bufferRef.current = bufferRef.current.slice(-MAX_BUFFER_SIZE)
