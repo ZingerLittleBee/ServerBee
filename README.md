@@ -8,7 +8,7 @@ A lightweight, self-hosted VPS monitoring system built with Rust and React.
 
 - **Real-time Dashboard** -- Server status, CPU/memory/disk/network metrics with live WebSocket updates
 - **Server Groups** -- Organize servers by group with country flag display
-- **Detailed Metrics** -- Historical charts (1h/6h/24h/7d/30d) for CPU, memory, disk, network, load, temperature, GPU
+- **Detailed Metrics** -- Real-time streaming charts + historical views (1h/6h/24h/7d/30d) for CPU, memory, disk, network, load, temperature, GPU
 - **Alert System** -- 14+ metric types, threshold/offline/traffic/expiration rules, AND logic, 70% sampling
 - **Notifications** -- Webhook, Telegram, Bark, Email (SMTP) channels with notification groups
 - **Ping Monitoring** -- ICMP, TCP, HTTP probes with latency charts and success rate
