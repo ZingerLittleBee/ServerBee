@@ -1,20 +1,25 @@
 # Release Documentation Updater
 
-Update CHANGELOG.md, README.md, README.zh-CN.md, and Fumadocs based on the current branch's changes vs main.
+Update version numbers, CHANGELOG.md, README.md, README.zh-CN.md, and Fumadocs based on the current branch's changes vs main.
 
 ## Arguments
 
-The user may provide a version number (e.g., `v0.2.2` or `0.2.2`). If not provided, read the version from the workspace `Cargo.toml` field `workspace.package.version`.
+The user MUST provide a version number (e.g., `v0.2.2` or `0.2.2`). If not provided, ask the user to specify one.
 
 ## Process
 
-### Step 1: Determine version
+### Step 1: Determine and sync version
 
 ```
-If argument provided:
-  version = strip leading 'v' if present
-Else:
-  version = read from Cargo.toml [workspace.package] version field
+1. Parse version from argument, strip leading 'v' if present (e.g., "v0.2.2" -> "0.2.2")
+2. Read current version from Cargo.toml [workspace.package] version field
+3. Read current version from package.json "version" field (if exists, may not have one)
+4. If the new version differs from Cargo.toml version:
+   - Update Cargo.toml [workspace.package] version to the new version
+   - Update package.json "version" to the new version (if field exists)
+   - Run `cargo check --workspace` to regenerate Cargo.lock
+   - Note: Do NOT add 'v' prefix — Cargo.toml and package.json use bare semver (e.g., "0.2.2")
+5. If versions already match, skip this step
 ```
 
 ### Step 2: Gather change context
@@ -91,9 +96,9 @@ Only update docs pages that are directly affected by the changes. Don't create n
 # Verify the changes look correct
 git diff --stat
 
-# Stage and commit
-git add CHANGELOG.md README.md README.zh-CN.md apps/docs/
-git commit -m "docs: update release documentation for v{version}"
+# Stage all changed files (version files + docs)
+git add Cargo.toml Cargo.lock package.json CHANGELOG.md README.md README.zh-CN.md apps/docs/
+git commit -m "release: v{version} — update version and documentation"
 ```
 
 ## Important Notes
