@@ -80,7 +80,12 @@ probe_type = "icmp"
 
 Four presets organized by ISP: China Telecom (31), China Unicom (31), China Mobile (31), International (3). Total: 96 targets.
 
-Parsed once at startup via `LazyLock`, cached in memory.
+Parsed at startup (fail-fast: panics on invalid TOML). Cached in memory via `LazyLock` or explicit init.
+
+**Startup validation:** `load()` asserts:
+- All target IDs are globally unique across all presets
+- `probe_type` is one of `tcp`, `icmp`, `http`
+- Required fields (id, name, target) are non-empty
 
 ### Database Changes
 
@@ -144,6 +149,26 @@ pub struct PresetTarget {
 }
 ```
 
+At load time, targets are flattened into a runtime struct that carries group metadata:
+
+```rust
+/// Flattened preset target with group info, used at runtime.
+pub struct FlatPresetTarget {
+    // All PresetTarget fields
+    pub id: String,
+    pub name: String,
+    pub provider: String,
+    pub location: String,
+    pub target: String,
+    pub probe_type: String,
+    // Group metadata
+    pub group_id: String,     // "china-telecom"
+    pub group_name: String,   // "中国电信"
+}
+```
+
+`PresetTargets::load()` returns `&'static [FlatPresetTarget]`. The `group_id` is used to construct `TargetDto.source` (`"preset:{group_id}"`), and `group_name` maps to `TargetDto.source_name`.
+
 **Unified DTO returned by API:**
 
 ```rust
@@ -154,13 +179,14 @@ pub struct TargetDto {
     pub location: String,
     pub target: String,
     pub probe_type: String,
-    pub source: Option<String>,  // "preset:china-telecom" | None
+    pub source: Option<String>,       // "preset:china-telecom" | None
+    pub source_name: Option<String>,  // "中国电信" | None (for frontend display)
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }
 ```
 
-`created_at` and `updated_at` are `Option<String>` — preset targets return `None`, user-created targets return timestamps.
+`created_at`, `updated_at` are `Option<String>` — preset targets return `None`, user-created targets return timestamps. `source_name` provides a human-readable label so the frontend does not need a hardcoded mapping.
 
 **Changes to `network_probe.rs`:**
 
@@ -169,13 +195,18 @@ pub struct TargetDto {
 | `list_targets` | Merge preset targets (from TOML) + custom targets (from DB), return `Vec<TargetDto>` |
 | `create_target` | Unchanged, creates in DB with `source = None` |
 | `update_target` | Check `PresetTargets::is_preset(id)` **before** DB lookup → 403. Then proceed with DB update |
-| `delete_target` | Check `PresetTargets::is_preset(id)` **before** DB lookup → 403. Then proceed with DB delete |
+| `delete_target` | Check `PresetTargets::is_preset(id)` **before** DB lookup → 403. Then wrap cascade deletes (config + records + hourly + target + remove from default_target_ids) in a **single transaction** |
+| `update_setting` | Add validation: reject any `default_target_ids` that are not valid (not a preset and not in DB) |
 | `get_server_targets` | Resolve target IDs from `network_probe_config` against both `PresetTargets::find(id)` and DB, return `Vec<TargetDto>` instead of `Vec<network_probe_target::Model>` |
 | `get_overview` | Merge `PresetTargets::load()` into the `target_map` so preset target names display correctly |
 | `get_anomalies` | Inherits fix from `get_server_targets` — uses TargetDto for name lookup |
 | `get_server_summary` | Mechanical change: `get_server_targets` now returns `Vec<TargetDto>`, update field access accordingly |
 | `set_server_targets` | Validate target IDs via `PresetTargets::is_preset(id) \|\| exists_in_db(id)`, reject invalid IDs with 400 |
 | `apply_defaults` | Unchanged (inserts config rows referencing preset IDs; works because FK constraints are removed) |
+
+**Shared helper:** Extract a `resolve_target(id) -> Option<TargetDto>` method that checks `PresetTargets::find(id)` first, then falls back to DB lookup. Used by `get_server_targets`, `get_overview`, `get_anomalies`, `get_server_summary`, and `set_server_targets` validation — avoids duplicating merge logic in 5+ functions.
+
+**Merge ordering:** `list_targets` returns presets first (grouped by preset group), then custom targets. Both sorted by name within their group.
 
 ### API Changes
 
@@ -197,11 +228,14 @@ No new endpoints. Existing endpoints change behavior:
   export interface NetworkProbeTarget {
 -   is_builtin: boolean
 +   source: string | null
++   source_name: string | null
++   created_at: string | null   // was required string
++   updated_at: string | null   // was required string
   }
 ```
 
 **`settings/network-probes.tsx`:**
-- Replace `is_builtin` column with `source` column: `null` shows nothing, `"preset:xxx"` shows preset name tag
+- Replace `is_builtin` column with `source` column: `null` shows nothing, `source !== null` shows `source_name` as a tag label
 - Actions column: hide edit/delete buttons when `source !== null`
 
 **No new components or hooks needed.** Existing `useNetworkTargets()` automatically receives the merged list.
@@ -219,6 +253,14 @@ International targets use fixed well-known IPs with ICMP probe type.
 ### ID Collision Prevention
 
 Custom targets use UUID-based IDs (`Uuid::new_v4().to_string()`), while preset targets use structured IDs like `cn-bj-ct`. UUID format makes collisions impossible in practice. No additional guard needed since `create_target` always generates UUIDs server-side.
+
+### Preset ID Freeze Policy
+
+**Preset target IDs are immutable contracts.** Once a preset ID (e.g., `cn-bj-ct`) is published in a release, it must never be renamed or reassigned. Reason: `network_probe_config`, `network_probe_record`, `network_probe_record_hourly`, and `NetworkProbeSetting.default_target_ids` all reference these IDs. Renaming would orphan existing data.
+
+- To change a target's address/name: update the `target`/`name` fields in TOML, keep the same `id`
+- To replace a target entirely: add a new ID, deprecate the old one (remove from TOML; orphaned records remain but cause no errors)
+- Document this policy in a comment at the top of `targets.toml`
 
 ## Files Changed
 
