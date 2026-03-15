@@ -696,22 +696,20 @@ impl NetworkProbeService {
         server_id: &str,
         from: DateTime<Utc>,
     ) -> Result<i64, AppError> {
-        let records = network_probe_record::Entity::find()
-            .filter(network_probe_record::Column::ServerId.eq(server_id))
-            .filter(network_probe_record::Column::Timestamp.gte(from))
-            .all(db)
-            .await?;
-
-        let count = records
-            .iter()
-            .filter(|r| {
-                (r.packet_loss - 1.0).abs() < f64::EPSILON
-                    || r.avg_latency.is_some_and(|l| l > 200.0)
-                    || r.packet_loss > 0.1
-            })
-            .count();
-
-        Ok(count as i64)
+        let from_str = from.to_rfc3339();
+        let sql = "SELECT COUNT(*) as count FROM network_probe_record \
+                   WHERE server_id = ? AND timestamp >= ? AND \
+                   (packet_loss >= 1.0 OR (avg_latency IS NOT NULL AND avg_latency > 200.0) OR packet_loss > 0.1)";
+        let stmt = Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            sql,
+            vec![server_id.into(), from_str.into()],
+        );
+        let result = db.query_one(stmt).await?;
+        let count = result
+            .and_then(|row| row.try_get_by_index::<i64>(0).ok())
+            .unwrap_or(0);
+        Ok(count)
     }
 
     // -----------------------------------------------------------------------
@@ -735,31 +733,30 @@ impl NetworkProbeService {
             return Ok(0);
         }
 
-        // Group by (server_id, target_id)
+        // Group by (server_id, target_id, hour_str) so records spanning two clock hours
+        // get aggregated into the correct hour bucket rather than all sharing the same hour.
         let mut grouped: std::collections::HashMap<
-            (String, String),
+            (String, String, String),
             Vec<&network_probe_record::Model>,
         > = std::collections::HashMap::new();
 
         for r in &records {
+            let hour = r
+                .timestamp
+                .with_minute(0)
+                .and_then(|t| t.with_second(0))
+                .and_then(|t| t.with_nanosecond(0))
+                .unwrap_or(r.timestamp);
+            let hour_str = hour.to_rfc3339();
             grouped
-                .entry((r.server_id.clone(), r.target_id.clone()))
+                .entry((r.server_id.clone(), r.target_id.clone(), hour_str))
                 .or_default()
                 .push(r);
         }
 
         let mut inserted = 0u64;
 
-        // Truncate to the start of the hour
-        let hour = one_hour_ago
-            .with_minute(0)
-            .and_then(|t| t.with_second(0))
-            .and_then(|t| t.with_nanosecond(0))
-            .unwrap_or(one_hour_ago);
-
-        let hour_str = hour.to_rfc3339();
-
-        for ((server_id, target_id), group) in &grouped {
+        for ((server_id, target_id, hour_str), group) in &grouped {
             let count = group.len() as f64;
 
             let latencies: Vec<f64> = group.iter().filter_map(|r| r.avg_latency).collect();
@@ -770,45 +767,46 @@ impl NetworkProbeService {
             };
 
             let min_latencies: Vec<f64> = group.iter().filter_map(|r| r.min_latency).collect();
-            let min_latency = min_latencies
-                .iter()
-                .cloned()
-                .reduce(f64::min);
+            let min_latency = min_latencies.iter().cloned().reduce(f64::min);
 
             let max_latencies: Vec<f64> = group.iter().filter_map(|r| r.max_latency).collect();
-            let max_latency = max_latencies
-                .iter()
-                .cloned()
-                .reduce(f64::max);
+            let max_latency = max_latencies.iter().cloned().reduce(f64::max);
 
-            let avg_packet_loss =
-                group.iter().map(|r| r.packet_loss).sum::<f64>() / count;
+            let avg_packet_loss = group.iter().map(|r| r.packet_loss).sum::<f64>() / count;
 
             let sample_count = group.len() as i32;
 
-            // Use raw SQL INSERT OR REPLACE for idempotency on the UNIQUE(server_id, target_id, hour) constraint
-            let avg_lat_sql = avg_latency
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "NULL".to_string());
-            let min_lat_sql = min_latency
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "NULL".to_string());
-            let max_lat_sql = max_latency
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "NULL".to_string());
+            // Use parameterized INSERT … ON CONFLICT to prevent SQL injection.
+            let sql = "INSERT INTO network_probe_record_hourly \
+                       (server_id, target_id, avg_latency, min_latency, max_latency, avg_packet_loss, sample_count, hour) \
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?) \
+                       ON CONFLICT (server_id, target_id, hour) DO UPDATE SET \
+                       avg_latency = excluded.avg_latency, \
+                       min_latency = excluded.min_latency, \
+                       max_latency = excluded.max_latency, \
+                       avg_packet_loss = excluded.avg_packet_loss, \
+                       sample_count = excluded.sample_count";
 
-            let sql = format!(
-                "INSERT INTO network_probe_record_hourly (server_id, target_id, avg_latency, min_latency, max_latency, avg_packet_loss, sample_count, hour) \
-                 VALUES ('{server_id}', '{target_id}', {avg_lat_sql}, {min_lat_sql}, {max_lat_sql}, {avg_packet_loss}, {sample_count}, '{hour_str}') \
-                 ON CONFLICT (server_id, target_id, hour) DO UPDATE SET \
-                 avg_latency = excluded.avg_latency, \
-                 min_latency = excluded.min_latency, \
-                 max_latency = excluded.max_latency, \
-                 avg_packet_loss = excluded.avg_packet_loss, \
-                 sample_count = excluded.sample_count"
+            let stmt = Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                sql,
+                vec![
+                    server_id.clone().into(),
+                    target_id.clone().into(),
+                    avg_latency
+                        .map(|v| Value::Double(Some(v)))
+                        .unwrap_or(Value::Double(None)),
+                    min_latency
+                        .map(|v| Value::Double(Some(v)))
+                        .unwrap_or(Value::Double(None)),
+                    max_latency
+                        .map(|v| Value::Double(Some(v)))
+                        .unwrap_or(Value::Double(None)),
+                    avg_packet_loss.into(),
+                    sample_count.into(),
+                    hour_str.clone().into(),
+                ],
             );
-
-            let stmt = Statement::from_string(DatabaseBackend::Sqlite, sql);
             db.execute(stmt).await?;
             inserted += 1;
         }
