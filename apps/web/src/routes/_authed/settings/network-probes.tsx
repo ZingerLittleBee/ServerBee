@@ -1,9 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { type ColumnDef, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { Lock, Pencil, Plus, Trash2 } from 'lucide-react'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { DataTable } from '@/components/ui/data-table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -82,7 +84,7 @@ function NetworkProbeSettingsPage() {
     setShowDialog(true)
   }
 
-  const openEditDialog = (target: NetworkProbeTarget) => {
+  const openEditDialog = useCallback((target: NetworkProbeTarget) => {
     setEditingTarget(target)
     setForm({
       name: target.name,
@@ -92,7 +94,7 @@ function NetworkProbeSettingsPage() {
       probe_type: target.probe_type as ProbeType
     })
     setShowDialog(true)
-  }
+  }, [])
 
   const closeDialog = () => {
     setShowDialog(false)
@@ -182,6 +184,92 @@ function NetworkProbeSettingsPage() {
     { value: 'http', label: 'HTTP' }
   ]
 
+  const targetColumns = useMemo<ColumnDef<NetworkProbeTarget>[]>(
+    () => [
+      {
+        accessorKey: 'name',
+        header: t('target_name'),
+        enableSorting: false,
+        cell: ({ row }) => <span className="font-medium">{row.original.name}</span>
+      },
+      {
+        accessorKey: 'provider',
+        header: t('target_provider'),
+        enableSorting: false,
+        cell: ({ row }) => <span className="text-muted-foreground">{row.original.provider || '\u2014'}</span>
+      },
+      {
+        accessorKey: 'location',
+        header: t('target_location'),
+        enableSorting: false,
+        cell: ({ row }) => <span className="text-muted-foreground">{row.original.location || '\u2014'}</span>
+      },
+      {
+        accessorKey: 'target',
+        header: t('target_address'),
+        enableSorting: false,
+        cell: ({ row }) => <span className="font-mono text-muted-foreground text-xs">{row.original.target}</span>
+      },
+      {
+        accessorKey: 'probe_type',
+        header: t('target_type'),
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs uppercase">{row.original.probe_type}</span>
+        )
+      },
+      {
+        accessorKey: 'is_builtin',
+        header: 'Status',
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.is_builtin ? (
+            <span className="flex items-center gap-1 text-muted-foreground text-xs">
+              <Lock className="size-3" />
+              {t('builtin')}
+            </span>
+          ) : (
+            <span className="text-green-600 text-xs dark:text-green-400">{t('custom')}</span>
+          )
+      },
+      {
+        id: 'actions',
+        header: 'Actions',
+        enableSorting: false,
+        meta: { className: 'text-right' },
+        cell: ({ row }) =>
+          !row.original.is_builtin && (
+            <div className="flex justify-end gap-1">
+              <Button
+                aria-label={`Edit ${row.original.name}`}
+                onClick={() => openEditDialog(row.original)}
+                size="sm"
+                variant="outline"
+              >
+                <Pencil className="size-3.5" />
+              </Button>
+              <Button
+                aria-label={`Delete ${row.original.name}`}
+                onClick={() => setDeleteTargetId(row.original.id)}
+                size="sm"
+                variant="destructive"
+              >
+                <Trash2 className="size-3.5" />
+              </Button>
+            </div>
+          )
+      }
+    ],
+    [t, openEditDialog]
+  )
+
+  const targetsTable = useReactTable({
+    data: targets ?? [],
+    columns: targetColumns,
+    getCoreRowModel: getCoreRowModel(),
+    getRowId: (row) => row.id
+  })
+
   return (
     <div>
       <h1 className="mb-6 font-bold text-2xl">{t('settings_title')}</h1>
@@ -212,74 +300,7 @@ function NetworkProbeSettingsPage() {
                 </div>
               )}
 
-              {!targetsLoading && (!targets || targets.length === 0) && (
-                <p className="py-6 text-center text-muted-foreground text-sm">{t('no_targets')}</p>
-              )}
-
-              {targets && targets.length > 0 && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b text-muted-foreground text-xs">
-                        <th className="pb-2 text-left font-medium">{t('target_name')}</th>
-                        <th className="pb-2 text-left font-medium">{t('target_provider')}</th>
-                        <th className="pb-2 text-left font-medium">{t('target_location')}</th>
-                        <th className="pb-2 text-left font-medium">{t('target_address')}</th>
-                        <th className="pb-2 text-left font-medium">{t('target_type')}</th>
-                        <th className="pb-2 text-left font-medium">Status</th>
-                        <th className="pb-2 text-right font-medium">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {targets.map((target) => (
-                        <tr className="hover:bg-muted/30" key={target.id}>
-                          <td className="py-2.5 pr-4 font-medium">{target.name}</td>
-                          <td className="py-2.5 pr-4 text-muted-foreground">{target.provider || '—'}</td>
-                          <td className="py-2.5 pr-4 text-muted-foreground">{target.location || '—'}</td>
-                          <td className="py-2.5 pr-4 font-mono text-muted-foreground text-xs">{target.target}</td>
-                          <td className="py-2.5 pr-4">
-                            <span className="rounded-full bg-muted px-2 py-0.5 text-xs uppercase">
-                              {target.probe_type}
-                            </span>
-                          </td>
-                          <td className="py-2.5 pr-4">
-                            {target.is_builtin ? (
-                              <span className="flex items-center gap-1 text-muted-foreground text-xs">
-                                <Lock className="size-3" />
-                                {t('builtin')}
-                              </span>
-                            ) : (
-                              <span className="text-green-600 text-xs dark:text-green-400">{t('custom')}</span>
-                            )}
-                          </td>
-                          <td className="py-2.5 text-right">
-                            {!target.is_builtin && (
-                              <div className="flex justify-end gap-1">
-                                <Button
-                                  aria-label={`Edit ${target.name}`}
-                                  onClick={() => openEditDialog(target)}
-                                  size="sm"
-                                  variant="outline"
-                                >
-                                  <Pencil className="size-3.5" />
-                                </Button>
-                                <Button
-                                  aria-label={`Delete ${target.name}`}
-                                  onClick={() => setDeleteTargetId(target.id)}
-                                  size="sm"
-                                  variant="destructive"
-                                >
-                                  <Trash2 className="size-3.5" />
-                                </Button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              {!targetsLoading && <DataTable noResults={t('no_targets')} table={targetsTable} />}
             </div>
           </div>
         </TabsContent>

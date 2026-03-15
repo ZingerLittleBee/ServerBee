@@ -18,6 +18,7 @@
     "@tailwindcss/vite": "^4.1.17",
     "@tanstack/react-query": "^5.90.21",
     "@tanstack/react-router": "^1.166.7",
+    "@tanstack/react-table": "^8.21.3",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/xterm": "^6.0.0",

@@ -1,4 +1,6 @@
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import type { ColumnDef } from '@tanstack/react-table'
+import { getCoreRowModel, useReactTable } from '@tanstack/react-table'
+import { DataTable } from '@/components/ui/data-table'
 import type { NetworkProbeAnomaly } from '@/lib/network-types'
 import { cn } from '@/lib/utils'
 
@@ -32,7 +34,57 @@ function formatTimestamp(ts: string): string {
   })
 }
 
+const columns: ColumnDef<NetworkProbeAnomaly>[] = [
+  {
+    accessorKey: 'timestamp',
+    header: 'Time',
+    enableSorting: false,
+    cell: ({ row }) => <span className="font-mono text-xs">{formatTimestamp(row.original.timestamp)}</span>
+  },
+  {
+    accessorKey: 'target_name',
+    header: 'Target',
+    enableSorting: false,
+    cell: ({ row }) => <span className="text-sm">{row.original.target_name}</span>
+  },
+  {
+    accessorKey: 'anomaly_type',
+    header: 'Type',
+    enableSorting: false,
+    cell: ({ row }) => {
+      const critical = isCritical(row.original.anomaly_type)
+      return (
+        <span
+          className={cn(
+            'inline-flex items-center rounded-full px-2 py-0.5 font-medium text-xs',
+            critical
+              ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+              : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+          )}
+        >
+          {row.original.anomaly_type}
+        </span>
+      )
+    }
+  },
+  {
+    id: 'value',
+    header: 'Value',
+    enableSorting: false,
+    cell: ({ row }) => (
+      <span className="font-mono text-sm">{formatAnomalyValue(row.original.anomaly_type, row.original.value)}</span>
+    ),
+    meta: { className: 'text-right' }
+  }
+]
+
 export function AnomalyTable({ anomalies }: AnomalyTableProps) {
+  const table = useReactTable({
+    data: anomalies,
+    columns,
+    getCoreRowModel: getCoreRowModel()
+  })
+
   if (anomalies.length === 0) {
     return null
   }
@@ -42,42 +94,7 @@ export function AnomalyTable({ anomalies }: AnomalyTableProps) {
       <div className="border-b px-4 py-3">
         <h3 className="font-semibold text-sm">Anomalies ({anomalies.length})</h3>
       </div>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Time</TableHead>
-            <TableHead>Target</TableHead>
-            <TableHead>Type</TableHead>
-            <TableHead className="text-right">Value</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {anomalies.map((a) => {
-            const critical = isCritical(a.anomaly_type)
-            return (
-              <TableRow key={`${a.timestamp}-${a.target_id}-${a.anomaly_type}`}>
-                <TableCell className="font-mono text-xs">{formatTimestamp(a.timestamp)}</TableCell>
-                <TableCell className="text-sm">{a.target_name}</TableCell>
-                <TableCell>
-                  <span
-                    className={cn(
-                      'inline-flex items-center rounded-full px-2 py-0.5 font-medium text-xs',
-                      critical
-                        ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                        : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                    )}
-                  >
-                    {a.anomaly_type}
-                  </span>
-                </TableCell>
-                <TableCell className="text-right font-mono text-sm">
-                  {formatAnomalyValue(a.anomaly_type, a.value)}
-                </TableCell>
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
+      <DataTable className="rounded-none border-0" table={table} />
     </div>
   )
 }
