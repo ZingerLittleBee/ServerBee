@@ -672,7 +672,7 @@ async fn test_network_probe_target_crud() {
     assert_eq!(list_resp.status(), 200, "list targets should succeed");
     let list_body: serde_json::Value = list_resp.json().await.unwrap();
     let targets = list_body["data"].as_array().expect("data should be an array");
-    assert_eq!(targets.len(), 12, "should have 12 builtin targets");
+    assert_eq!(targets.len(), 96, "should have 96 builtin targets");
 
     // ── Step 2: POST /api/network-probes/targets — create a custom target ──
     let create_resp = client
@@ -696,7 +696,7 @@ async fn test_network_probe_target_crud() {
     assert_eq!(create_body["data"]["name"], "My Custom Target");
     assert_eq!(create_body["data"]["is_builtin"], false);
 
-    // ── Step 3: GET /api/network-probes/targets — verify 13 targets ──
+    // ── Step 3: GET /api/network-probes/targets — verify 97 targets ──
     let list_resp2 = client
         .get(format!("{}/api/network-probes/targets", base_url))
         .send()
@@ -706,7 +706,7 @@ async fn test_network_probe_target_crud() {
     assert_eq!(list_resp2.status(), 200);
     let list_body2: serde_json::Value = list_resp2.json().await.unwrap();
     let targets2 = list_body2["data"].as_array().unwrap();
-    assert_eq!(targets2.len(), 13, "should have 13 targets after creating custom one");
+    assert_eq!(targets2.len(), 97, "should have 97 targets after creating custom one");
     assert!(
         targets2.iter().any(|t| t["id"].as_str() == Some(target_id)),
         "Custom target should appear in list"
@@ -750,7 +750,7 @@ async fn test_network_probe_target_crud() {
     assert_eq!(list_resp3.status(), 200);
     let list_body3: serde_json::Value = list_resp3.json().await.unwrap();
     let targets3 = list_body3["data"].as_array().unwrap();
-    assert_eq!(targets3.len(), 12, "should be back to 12 builtin targets after delete");
+    assert_eq!(targets3.len(), 96, "should be back to 96 builtin targets after delete");
     assert!(
         !targets3.iter().any(|t| t["id"].as_str() == Some(target_id)),
         "Deleted target should not appear in list"
@@ -933,7 +933,7 @@ async fn test_builtin_target_cannot_be_deleted() {
     assert_eq!(list_resp2.status(), 200);
     let list_body2: serde_json::Value = list_resp2.json().await.unwrap();
     let targets2 = list_body2["data"].as_array().unwrap();
-    assert_eq!(targets2.len(), 12, "builtin targets should remain 12 after failed delete");
+    assert_eq!(targets2.len(), 96, "builtin targets should remain 96 after failed delete");
     assert!(
         targets2.iter().any(|t| t["id"].as_str() == Some(builtin_id)),
         "Builtin target should still be present after failed delete"

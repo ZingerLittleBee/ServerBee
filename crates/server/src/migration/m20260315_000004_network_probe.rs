@@ -73,27 +73,48 @@ impl MigrationTrait for Migration {
 
         // Seed builtin probe targets
         let now = chrono::Utc::now().to_rfc3339();
-        // China ISP targets use Zstatic CDN TCP Ping nodes (CDN backbone, auto-updated DNS, stable)
-        // Format: domain:port for TCP probe type
+        // China ISP targets: 31 provinces × 3 ISPs using Zstatic CDN TCP Ping nodes
+        // (CDN backbone, auto-updated DNS every 30min, stable and reliable)
+        // Format: {province_code}-{isp_code}-v4.ip.zstaticcdn.com:80 for TCP probe type
         // International targets use well-known IPs that reliably respond to ICMP
-        let targets = [
-            ("cn-telecom-beijing",   "Beijing Telecom",   "Telecom", "Beijing",   "bj-ct-v4.ip.zstaticcdn.com:80",  "tcp"),
-            ("cn-telecom-shanghai",  "Shanghai Telecom",  "Telecom", "Shanghai",  "sh-ct-v4.ip.zstaticcdn.com:80",  "tcp"),
-            ("cn-telecom-guangzhou", "Guangzhou Telecom", "Telecom", "Guangzhou", "gd-ct-v4.ip.zstaticcdn.com:80",  "tcp"),
-            ("cn-unicom-beijing",    "Beijing Unicom",    "Unicom",  "Beijing",   "bj-cu-v4.ip.zstaticcdn.com:80",  "tcp"),
-            ("cn-unicom-shanghai",   "Shanghai Unicom",   "Unicom",  "Shanghai",  "sh-cu-v4.ip.zstaticcdn.com:80",  "tcp"),
-            ("cn-unicom-guangzhou",  "Guangzhou Unicom",  "Unicom",  "Guangzhou", "gd-cu-v4.ip.zstaticcdn.com:80",  "tcp"),
-            ("cn-mobile-beijing",    "Beijing Mobile",    "Mobile",  "Beijing",   "bj-cm-v4.ip.zstaticcdn.com:80",  "tcp"),
-            ("cn-mobile-shanghai",   "Shanghai Mobile",   "Mobile",  "Shanghai",  "sh-cm-v4.ip.zstaticcdn.com:80",  "tcp"),
-            ("cn-mobile-guangzhou",  "Guangzhou Mobile",  "Mobile",  "Guangzhou", "gd-cm-v4.ip.zstaticcdn.com:80",  "tcp"),
-            ("intl-cloudflare",      "Cloudflare",        "Cloudflare", "US",     "1.1.1.1",                        "icmp"),
-            ("intl-google",          "Google DNS",        "Google",     "US",      "8.8.8.8",                        "icmp"),
-            ("intl-aws-tokyo",       "AWS Tokyo",         "AWS",        "Tokyo",   "13.112.63.251",                  "icmp"),
+        let provinces: &[(&str, &str)] = &[
+            ("bj", "Beijing"), ("tj", "Tianjin"), ("he", "Hebei"), ("sx", "Shanxi"), ("nm", "InnerMongolia"),
+            ("ln", "Liaoning"), ("jl", "Jilin"), ("hl", "Heilongjiang"),
+            ("sh", "Shanghai"), ("js", "Jiangsu"), ("zj", "Zhejiang"), ("ah", "Anhui"), ("fj", "Fujian"),
+            ("jx", "Jiangxi"), ("sd", "Shandong"),
+            ("ha", "Henan"), ("hb", "Hubei"), ("hn", "Hunan"), ("gd", "Guangdong"), ("gx", "Guangxi"), ("hi", "Hainan"),
+            ("cq", "Chongqing"), ("sc", "Sichuan"), ("gz", "Guizhou"), ("yn", "Yunnan"), ("xz", "Tibet"),
+            ("sn", "Shaanxi"), ("gs", "Gansu"), ("qh", "Qinghai"), ("nx", "Ningxia"), ("xj", "Xinjiang"),
         ];
 
-        for (id, name, provider, location, target, probe_type) in &targets {
+        let isps: &[(&str, &str)] = &[
+            ("ct", "Telecom"),
+            ("cu", "Unicom"),
+            ("cm", "Mobile"),
+        ];
+
+        for (code, location) in provinces {
+            for (isp_code, isp_name) in isps {
+                let id = format!("cn-{code}-{isp_code}");
+                let name = format!("{location} {isp_name}");
+                let target = format!("{code}-{isp_code}-v4.ip.zstaticcdn.com:80");
+                db.execute_unprepared(&format!(
+                    "INSERT INTO network_probe_target (id, name, provider, location, target, probe_type, is_builtin, created_at, updated_at) \
+                     VALUES ('{id}', '{name}', '{isp_name}', '{location}', '{target}', 'tcp', 1, '{now}', '{now}')"
+                )).await?;
+            }
+        }
+
+        // International targets (ICMP)
+        let intl_targets = [
+            ("intl-cloudflare", "Cloudflare", "Cloudflare", "US", "1.1.1.1", "icmp"),
+            ("intl-google", "Google DNS", "Google", "US", "8.8.8.8", "icmp"),
+            ("intl-aws-tokyo", "AWS Tokyo", "AWS", "Tokyo", "13.112.63.251", "icmp"),
+        ];
+        for (id, name, provider, location, target, probe_type) in &intl_targets {
             db.execute_unprepared(&format!(
-                "INSERT INTO network_probe_target (id, name, provider, location, target, probe_type, is_builtin, created_at, updated_at) VALUES ('{id}', '{name}', '{provider}', '{location}', '{target}', '{probe_type}', 1, '{now}', '{now}')"
+                "INSERT INTO network_probe_target (id, name, provider, location, target, probe_type, is_builtin, created_at, updated_at) \
+                 VALUES ('{id}', '{name}', '{provider}', '{location}', '{target}', '{probe_type}', 1, '{now}', '{now}')"
             )).await?;
         }
 
