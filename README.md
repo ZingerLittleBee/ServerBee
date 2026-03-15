@@ -102,7 +102,7 @@ SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # Terminal 2: agent
 
 # Testing & code quality:
 make cargo-test        # Run all Rust tests (121)
-make test              # Run frontend tests (72)
+make test              # Run frontend tests (86)
 make cargo-clippy      # Lint Rust code
 make                   # Interactive menu (requires fzf)
 ```

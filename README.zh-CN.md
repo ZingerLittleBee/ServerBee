@@ -102,7 +102,7 @@ SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # 终端 2: Agent
 
 # 测试与代码质量:
 make cargo-test        # 运行全部 Rust 测试 (121)
-make test              # 运行前端测试 (72)
+make test              # 运行前端测试 (86)
 make cargo-clippy      # Rust 代码检查
 make                   # 交互式菜单 (需要 fzf)
 ```
