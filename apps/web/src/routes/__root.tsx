@@ -15,7 +15,7 @@ function RootLayout() {
         <div className="min-h-screen bg-background text-foreground">
           <Outlet />
         </div>
-        <Toaster richColors />
+        <Toaster />
       </ThemeProvider>
     </>
   )
