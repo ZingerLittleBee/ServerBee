@@ -27,33 +27,31 @@ export function LatencyChart({ records, targets, isRealtime = false }: LatencyCh
   const visibleTargets = useMemo(() => targets.filter((t) => t.visible), [targets])
 
   const chartData = useMemo(() => {
-    const timeMap = new Map<string, Record<string, unknown>>()
+    // Bucket records into time slots to align different targets' data points.
+    // Without bucketing, each target gets its own timestamp and Recharts
+    // only draws a line when the data entry has a value for that target.
+    const bucketMs = isRealtime ? 10_000 : 60_000 // 10s realtime, 60s historical
+    const bucketMap = new Map<number, Record<string, unknown>>()
 
     for (const record of records) {
-      const key = record.timestamp
-      if (!timeMap.has(key)) {
-        timeMap.set(key, { timestamp: key })
+      const ts = new Date(record.timestamp).getTime()
+      const bucketKey = Math.floor(ts / bucketMs) * bucketMs
+
+      if (!bucketMap.has(bucketKey)) {
+        bucketMap.set(bucketKey, { timestamp: new Date(bucketKey).toISOString() })
       }
-      const entry = timeMap.get(key)
+      const entry = bucketMap.get(bucketKey)
       if (entry) {
+        // If multiple records for same target in same bucket, keep the latest
         entry[record.target_id] = record.avg_latency
       }
     }
 
-    const entries = Array.from(timeMap.values())
-    entries.sort((a, b) => {
-      const ta = a.timestamp as string
-      const tb = b.timestamp as string
-      if (ta < tb) {
-        return -1
-      }
-      if (ta > tb) {
-        return 1
-      }
-      return 0
-    })
+    const entries = Array.from(bucketMap.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([, v]) => v)
     return entries
-  }, [records])
+  }, [records, isRealtime])
 
   const targetNameMap = useMemo(() => {
     const map: Record<string, string> = {}
