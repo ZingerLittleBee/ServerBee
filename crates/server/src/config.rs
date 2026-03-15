@@ -119,6 +119,10 @@ pub struct RetentionConfig {
     pub ping_records_days: u32,
     #[serde(default = "default_180")]
     pub audit_logs_days: u32,
+    #[serde(default = "default_7")]
+    pub network_probe_days: u32,
+    #[serde(default = "default_90")]
+    pub network_probe_hourly_days: u32,
 }
 
 impl Default for RetentionConfig {
@@ -129,6 +133,8 @@ impl Default for RetentionConfig {
             gpu_records_days: 7,
             ping_records_days: 7,
             audit_logs_days: 180,
+            network_probe_days: 7,
+            network_probe_hourly_days: 90,
         }
     }
 }
