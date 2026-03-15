@@ -103,10 +103,23 @@ Aggregation note: `AVG(avg_latency)` naturally ignores NULL rows (SQL standard b
 
 China ISP targets use [Zstatic CDN](https://zstaticcdn.com/nodes) TCP Ping nodes — CDN backbone IPs from major cloud vendors (Baidu Cloud, Volcano Engine, Huawei Cloud), auto-updated DNS every 30 minutes, stable and reliable. International targets use well-known IPs that reliably respond to ICMP.
 
+**96 builtin targets**: 31 provinces × 3 ISPs (Telecom/Unicom/Mobile) + 3 international = 96 total.
+
+Province codes (from NodeQuality project's province.json, province < 70):
 ```
-China Telecom (TCP):  Beijing (bj-ct-v4.ip.zstaticcdn.com:80), Shanghai (sh-ct-v4.ip.zstaticcdn.com:80), Guangzhou (gd-ct-v4.ip.zstaticcdn.com:80)
-China Unicom  (TCP):  Beijing (bj-cu-v4.ip.zstaticcdn.com:80), Shanghai (sh-cu-v4.ip.zstaticcdn.com:80), Guangzhou (gd-cu-v4.ip.zstaticcdn.com:80)
-China Mobile  (TCP):  Beijing (bj-cm-v4.ip.zstaticcdn.com:80), Shanghai (sh-cm-v4.ip.zstaticcdn.com:80), Guangzhou (gd-cm-v4.ip.zstaticcdn.com:80)
+BJ Beijing, TJ Tianjin, HE Hebei, SX Shanxi, NM InnerMongolia,
+LN Liaoning, JL Jilin, HL Heilongjiang,
+SH Shanghai, JS Jiangsu, ZJ Zhejiang, AH Anhui, FJ Fujian, JX Jiangxi, SD Shandong,
+HA Henan, HB Hubei, HN Hunan, GD Guangdong, GX Guangxi, HI Hainan,
+CQ Chongqing, SC Sichuan, GZ Guizhou, YN Yunnan, XZ Tibet,
+SN Shaanxi, GS Gansu, QH Qinghai, NX Ningxia, XJ Xinjiang
+```
+
+Each province gets 3 targets with the pattern:
+- ID: `cn-{code}-{ct|cu|cm}`, e.g. `cn-bj-ct`
+- Target: `{code}-{ct|cu|cm}-v4.ip.zstaticcdn.com:80`, e.g. `bj-ct-v4.ip.zstaticcdn.com:80`
+
+```
 International (ICMP): Cloudflare (1.1.1.1), Google (8.8.8.8), AWS Tokyo (13.112.63.251)
 ```
 
@@ -277,7 +290,7 @@ Add 6th channel to `tokio::select!` loop:
 - `query_records(server_id, target_id?, from, to) -> Vec<Record>` — smart interval selection: < 1 day raw, 1-30 days hourly, > 30 days hourly
 - `get_server_summary(server_id) -> Summary` — current latency, packet loss, availability per target; includes `last_probe_at` timestamp to distinguish stale data from live data
 - `get_overview() -> Vec<ServerNetworkSummary>` — all VPS network summaries for overview page; includes `last_probe_at` per VPS
-- `get_anomalies(server_id, from, to) -> Vec<Anomaly>` — targets with high latency (> 200ms) or high packet loss (> 10%) in the given time range
+- `get_anomalies(server_id, from, to) -> Vec<Anomaly>` — targets with high latency (> 150ms) or high packet loss (> 10%) in the given time range
 
 **Aggregation (called by background tasks):**
 - `aggregate_hourly()` — raw records → hourly aggregates (idempotent via unique constraint on `(server_id, target_id, hour)`)
@@ -324,7 +337,7 @@ In `POST /api/agent/register` handler, after creating the server record, call `n
 
 Extend `AlertService.evaluate_all()` with two new metric types:
 
-- `network_latency` — triggers when a VPS's average latency to a target exceeds threshold (e.g. > 200ms for 70% of samples in 10-minute window)
+- `network_latency` — triggers when a VPS's average latency to a target exceeds threshold (e.g. > 150ms for 70% of samples in 10-minute window)
 - `network_packet_loss` — triggers when packet loss exceeds threshold (e.g. > 10%)
 
 These reuse the existing alert rule model (`alert_rule` table with `rules_json` containing `Vec<AlertRuleItem>`) and notification dispatch. No new tables needed. Two new `rule_type` values (`network_latency`, `network_packet_loss`) are added to `AlertRuleItem`. The `check_server` function in `AlertService` gets new match arms that query `network_probe_record` for recent samples instead of the `record` table. Alert rules apply per-server (across all targets for that server); the highest latency / worst packet loss among all targets is used for threshold comparison.
@@ -344,7 +357,7 @@ Sidebar: add "Network" nav item below "Servers". Settings: add "Network Probes" 
 ### Overview Page (`/network`)
 
 - **Top stats bar**: total VPS count, online count, anomaly count (VPS with high latency or high packet loss)
-- **Anomaly banner**: prominent alert if anomalies exist (e.g. "3 VPS have latency > 200ms to Shanghai Telecom")
+- **Anomaly banner**: prominent alert if anomalies exist (e.g. "3 VPS have latency > 150ms to Shanghai Telecom")
 - **VPS card list** (searchable, filterable by group):
   - Each card: VPS name, online status, average latency, availability %, target count, worst-line summary
   - Click → navigate to `/network/{serverId}`
@@ -416,8 +429,8 @@ Anomalies are computed dynamically (no separate storage):
 
 | Anomaly Type | Condition | Severity |
 |--------------|-----------|----------|
-| High Latency | avg_latency > 200ms | warning |
-| Very High Latency | avg_latency > 500ms | critical |
+| High Latency | avg_latency > 150ms | warning |
+| Very High Latency | avg_latency > 240ms | critical |
 | High Packet Loss | packet_loss > 0.1 (10%) | warning |
 | Very High Packet Loss | packet_loss > 0.5 (50%) | critical |
 | Unreachable | packet_loss = 1.0 | critical |

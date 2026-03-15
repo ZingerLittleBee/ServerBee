@@ -601,7 +601,7 @@ impl NetworkProbeService {
     }
 
     /// Get anomalous probe records for a server within a time range.
-    /// Anomalies: avg_latency > 200ms OR packet_loss > 0.1 (10%).
+    /// Anomalies: avg_latency > 150ms OR packet_loss > 0.1 (10%).
     pub async fn get_anomalies(
         db: &DatabaseConnection,
         server_id: &str,
@@ -647,7 +647,7 @@ impl NetworkProbeService {
 
             // Check latency anomalies
             if let Some(latency) = record.avg_latency {
-                if latency > 500.0 {
+                if latency > 240.0 {
                     anomalies.push(NetworkProbeAnomaly {
                         timestamp: record.timestamp.to_rfc3339(),
                         target_id: record.target_id.clone(),
@@ -655,7 +655,7 @@ impl NetworkProbeService {
                         anomaly_type: "very_high_latency".to_string(),
                         value: latency,
                     });
-                } else if latency > 200.0 {
+                } else if latency > 150.0 {
                     anomalies.push(NetworkProbeAnomaly {
                         timestamp: record.timestamp.to_rfc3339(),
                         target_id: record.target_id.clone(),
@@ -690,7 +690,7 @@ impl NetworkProbeService {
     }
 
     /// Count anomalous records for a server since a given time.
-    /// Anomalies: unreachable (packet_loss == 1.0), high latency (>200ms), high packet loss (>0.1).
+    /// Anomalies: unreachable (packet_loss == 1.0), high latency (>150ms), high packet loss (>0.1).
     async fn count_anomalies(
         db: &DatabaseConnection,
         server_id: &str,
@@ -699,7 +699,7 @@ impl NetworkProbeService {
         let from_str = from.to_rfc3339();
         let sql = "SELECT COUNT(*) as count FROM network_probe_record \
                    WHERE server_id = ? AND timestamp >= ? AND \
-                   (packet_loss >= 1.0 OR (avg_latency IS NOT NULL AND avg_latency > 200.0) OR packet_loss > 0.1)";
+                   (packet_loss >= 1.0 OR (avg_latency IS NOT NULL AND avg_latency > 150.0) OR packet_loss > 0.1)";
         let stmt = Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
             sql,
@@ -971,14 +971,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_anomaly_thresholds() {
-        // Verify anomaly classification logic
-        let high_latency = 250.0_f64;
-        let very_high_latency = 600.0_f64;
+        // Verify anomaly classification logic (NodeQuality-aligned thresholds)
+        let high_latency = 200.0_f64;
+        let very_high_latency = 300.0_f64;
         let normal_latency = 50.0_f64;
 
-        assert!(high_latency > 200.0 && high_latency <= 500.0);
-        assert!(very_high_latency > 500.0);
-        assert!(normal_latency <= 200.0);
+        assert!(high_latency > 150.0 && high_latency <= 240.0);
+        assert!(very_high_latency > 240.0);
+        assert!(normal_latency <= 150.0);
 
         let high_loss = 0.15_f64;
         let very_high_loss = 0.6_f64;
