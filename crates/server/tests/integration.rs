@@ -924,6 +924,103 @@ async fn test_builtin_target_cannot_be_deleted() {
     );
 }
 
+#[tokio::test]
+async fn test_preset_target_source_field() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    // ── Step 1: Verify preset targets have source field ──
+    let list_resp = client
+        .get(format!("{}/api/network-probes/targets", base_url))
+        .send()
+        .await
+        .expect("GET targets failed");
+
+    let body: serde_json::Value = list_resp.json().await.unwrap();
+    let targets = body["data"].as_array().unwrap();
+
+    // Find a known preset target
+    let preset = targets.iter().find(|t| t["id"] == "cn-bj-ct").unwrap();
+    assert_eq!(preset["source"], "preset:china-telecom");
+    assert_eq!(preset["source_name"], "中国电信");
+    assert!(preset["created_at"].is_null());
+
+    let intl = targets.iter().find(|t| t["id"] == "intl-cloudflare").unwrap();
+    assert_eq!(intl["source"], "preset:international");
+    assert_eq!(intl["source_name"], "国际节点");
+
+    // ── Step 2: Create a custom target and verify no source ──
+    let create_resp = client
+        .post(format!("{}/api/network-probes/targets", base_url))
+        .json(&serde_json::json!({
+            "name": "Custom Test",
+            "provider": "Test",
+            "location": "Test",
+            "target": "10.0.0.1",
+            "probe_type": "tcp"
+        }))
+        .send()
+        .await
+        .expect("POST targets failed");
+
+    let create_body: serde_json::Value = create_resp.json().await.unwrap();
+
+    // Verify custom target via list (create returns Model, not TargetDto)
+    let list_resp2 = client
+        .get(format!("{}/api/network-probes/targets", base_url))
+        .send()
+        .await
+        .expect("GET targets failed");
+
+    let body2: serde_json::Value = list_resp2.json().await.unwrap();
+    let targets2 = body2["data"].as_array().unwrap();
+    let custom_id = create_body["data"]["id"].as_str().unwrap();
+    let custom = targets2
+        .iter()
+        .find(|t| t["id"].as_str() == Some(custom_id))
+        .unwrap();
+    assert!(custom["source"].is_null());
+    assert!(custom["source_name"].is_null());
+    assert!(!custom["created_at"].is_null());
+
+    // ── Step 3: Cleanup ──
+    client
+        .delete(format!(
+            "{}/api/network-probes/targets/{}",
+            base_url, custom_id
+        ))
+        .send()
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn test_preset_target_cannot_be_updated() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let update_resp = client
+        .put(format!("{}/api/network-probes/targets/cn-bj-ct", base_url))
+        .json(&serde_json::json!({
+            "name": "Hacked",
+            "provider": null,
+            "location": null,
+            "target": null,
+            "probe_type": null
+        }))
+        .send()
+        .await
+        .expect("PUT preset target failed");
+
+    assert_eq!(
+        update_resp.status(),
+        403,
+        "Updating a preset target should return 403"
+    );
+}
+
 // ── Task 11: CRUD integration tests ──────────────────────────────────────────
 
 #[tokio::test]

@@ -1118,4 +1118,129 @@ mod tests {
         assert!(very_high_loss > 0.5);
         assert!(normal_loss <= 0.1);
     }
+
+    #[tokio::test]
+    async fn test_list_targets_presets_first() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // Create a custom target
+        let input = CreateNetworkProbeTarget {
+            name: "ZZZ Custom".to_string(),
+            provider: "P".to_string(),
+            location: "L".to_string(),
+            target: "1.2.3.4".to_string(),
+            probe_type: "tcp".to_string(),
+        };
+        NetworkProbeService::create_target(&db, input).await.unwrap();
+
+        let list = NetworkProbeService::list_targets(&db).await.unwrap();
+        assert_eq!(list.len(), 97); // 96 presets + 1 custom
+
+        // First 96 should be presets (have source set)
+        assert!(list[0].source.is_some());
+        assert!(list[0].source.as_ref().unwrap().starts_with("preset:"));
+        assert!(list[0].source_name.is_some());
+
+        // Last one should be custom (source = None)
+        let custom = list.iter().find(|t| t.name == "ZZZ Custom").unwrap();
+        assert!(custom.source.is_none());
+        assert!(custom.source_name.is_none());
+        assert!(custom.created_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_update_preset_target_forbidden() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let update = UpdateNetworkProbeTarget {
+            name: Some("Hacked".to_string()),
+            provider: None,
+            location: None,
+            target: None,
+            probe_type: None,
+        };
+        let result = NetworkProbeService::update_target(&db, "cn-bj-ct", update).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AppError::Forbidden(_) => {} // expected
+            other => panic!("Expected Forbidden, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_delete_preset_target_forbidden() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let result = NetworkProbeService::delete_target(&db, "cn-bj-ct").await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AppError::Forbidden(_) => {}
+            other => panic!("Expected Forbidden, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_setting_rejects_invalid_target_ids() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let setting = NetworkProbeSetting {
+            interval: 60,
+            packet_count: 10,
+            default_target_ids: vec!["nonexistent-target-id".to_string()],
+        };
+        let result = NetworkProbeService::update_setting(&db, &setting).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_set_server_targets_validates_ids() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let result = NetworkProbeService::set_server_targets(
+            &db,
+            "srv-1",
+            vec!["nonexistent-id".to_string()],
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_set_server_targets_accepts_preset_ids() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // Create a server record with all required fields
+        use crate::entity::server;
+        use sea_orm::{ActiveModelTrait, Set};
+
+        let now = chrono::Utc::now();
+        let srv = server::ActiveModel {
+            id: Set("srv-test".to_string()),
+            token_hash: Set("hash".to_string()),
+            token_prefix: Set("prefix".to_string()),
+            name: Set("Test Server".to_string()),
+            weight: Set(0),
+            hidden: Set(false),
+            capabilities: Set(0),
+            protocol_version: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        };
+        srv.insert(&db).await.unwrap();
+
+        let result = NetworkProbeService::set_server_targets(
+            &db,
+            "srv-test",
+            vec!["cn-bj-ct".to_string(), "intl-cloudflare".to_string()],
+        )
+        .await;
+        assert!(result.is_ok());
+
+        let targets = NetworkProbeService::get_server_targets(&db, "srv-test")
+            .await
+            .unwrap();
+        assert_eq!(targets.len(), 2);
+        assert!(targets.iter().all(|t| t.source.is_some()));
+    }
 }
