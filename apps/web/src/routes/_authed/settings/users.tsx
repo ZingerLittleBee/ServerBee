@@ -3,7 +3,11 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Plus, Trash2, UserCog } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { UserResponse } from '@/lib/api-schema'
 
@@ -36,6 +40,10 @@ function UsersPage() {
     onSuccess: () => {
       invalidate()
       resetForm()
+      toast.success('User created')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Operation failed')
     }
   })
 
@@ -44,12 +52,22 @@ function UsersPage() {
     onSuccess: () => {
       invalidate()
       setEditingId(null)
+      toast.success('User role updated')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Operation failed')
     }
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/api/users/${id}`),
-    onSuccess: () => invalidate()
+    onSuccess: () => {
+      invalidate()
+      toast.success('User deleted')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Operation failed')
+    }
   })
 
   const resetForm = () => {
@@ -87,16 +105,14 @@ function UsersPage() {
 
           {showForm && (
             <form className="mb-4 space-y-3 rounded-md border bg-muted/30 p-4" onSubmit={handleCreate}>
-              <input
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              <Input
                 onChange={(e) => setNewUsername(e.target.value)}
                 placeholder={t('users.username')}
                 required
                 type="text"
                 value={newUsername}
               />
-              <input
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              <Input
                 minLength={6}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder={t('users.password_hint')}
@@ -104,14 +120,15 @@ function UsersPage() {
                 type="password"
                 value={newPassword}
               />
-              <select
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                onChange={(e) => setNewRole(e.target.value)}
-                value={newRole}
-              >
-                <option value="member">{t('users.role_member')}</option>
-                <option value="admin">{t('users.role_admin')}</option>
-              </select>
+              <Select onValueChange={(val) => setNewRole(val)} value={newRole}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="member">{t('users.role_member')}</SelectItem>
+                  <SelectItem value="admin">{t('users.role_admin')}</SelectItem>
+                </SelectContent>
+              </Select>
               <div className="flex gap-2">
                 <Button disabled={createMutation.isPending} size="sm" type="submit">
                   {t('common:create')}
@@ -127,7 +144,7 @@ function UsersPage() {
           {isLoading && (
             <div className="space-y-2">
               {Array.from({ length: 3 }, (_, i) => (
-                <div className="h-12 animate-pulse rounded bg-muted" key={`skel-${i.toString()}`} />
+                <Skeleton className="h-12" key={`skel-${i.toString()}`} />
               ))}
             </div>
           )}
@@ -152,14 +169,15 @@ function UsersPage() {
                       <p className="text-muted-foreground text-xs">
                         {editingId === user.id ? (
                           <span className="inline-flex items-center gap-2">
-                            <select
-                              className="rounded border border-input bg-transparent px-1 py-0.5 text-xs"
-                              onChange={(e) => setEditRole(e.target.value)}
-                              value={editRole}
-                            >
-                              <option value="member">member</option>
-                              <option value="admin">admin</option>
-                            </select>
+                            <Select onValueChange={(val) => setEditRole(val)} value={editRole}>
+                              <SelectTrigger className="h-6 text-xs" size="sm">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="member">member</SelectItem>
+                                <SelectItem value="admin">admin</SelectItem>
+                              </SelectContent>
+                            </Select>
                             <button
                               className="text-primary hover:underline"
                               onClick={() => updateMutation.mutate({ id: user.id, role: editRole })}

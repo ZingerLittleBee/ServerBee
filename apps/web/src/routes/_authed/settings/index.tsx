@@ -3,7 +3,9 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Copy, Eye, EyeOff } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { AutoDiscoveryKeyResponse } from '@/lib/api-schema'
 
@@ -14,7 +16,6 @@ export const Route = createFileRoute('/_authed/settings/')({
 function SettingsPage() {
   const { t } = useTranslation('settings')
   const [showKey, setShowKey] = useState(false)
-  const [copied, setCopied] = useState(false)
 
   const { data: config } = useQuery<AutoDiscoveryKeyResponse>({
     queryKey: ['settings', 'discovery'],
@@ -27,8 +28,7 @@ function SettingsPage() {
     }
     try {
       await navigator.clipboard.writeText(config.key)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      toast.success('Copied to clipboard')
     } catch {
       // Clipboard access denied
     }
@@ -59,10 +59,9 @@ function SettingsPage() {
               <Button aria-label={t('copy_key')} onClick={handleCopy} size="icon" variant="outline">
                 <Copy className="size-4" />
               </Button>
-              {copied && <span className="text-emerald-600 text-xs dark:text-emerald-400">{t('copied')}</span>}
             </div>
           ) : (
-            <div className="h-10 animate-pulse rounded-md bg-muted" />
+            <Skeleton className="h-10 rounded-md" />
           )}
         </div>
       </div>

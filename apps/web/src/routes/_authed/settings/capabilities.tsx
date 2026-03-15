@@ -3,7 +3,11 @@ import { createFileRoute } from '@tanstack/react-router'
 import { RotateCcw, Search, ShieldAlert } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api-client'
 import { CAP_DEFAULT, CAPABILITIES } from '@/lib/capabilities'
 
@@ -43,6 +47,10 @@ function CapabilitiesPage() {
       api.put(`/api/servers/${id}`, { capabilities }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['servers-list'] })
+      toast.success('Capability updated')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to update capability')
     }
   })
 
@@ -52,6 +60,10 @@ function CapabilitiesPage() {
     onSuccess: () => {
       setSelected(new Set())
       queryClient.invalidateQueries({ queryKey: ['servers-list'] })
+      toast.success('Batch capabilities updated')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to update batch capabilities')
     }
   })
 
@@ -115,8 +127,8 @@ function CapabilitiesPage() {
       <div className="mb-4 flex items-center gap-3">
         <div className="relative max-w-sm flex-1">
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            className="h-9 w-full rounded-md border bg-background pr-3 pl-9 text-sm outline-none focus:ring-2 focus:ring-ring"
+          <Input
+            className="pl-9"
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('capabilities.search')}
             type="text"
@@ -170,7 +182,7 @@ function CapabilitiesPage() {
             <thead>
               <tr className="border-b bg-muted/50">
                 <th className="w-10 px-3 py-2.5">
-                  <input checked={allSelected} className="rounded" onChange={toggleAll} type="checkbox" />
+                  <Checkbox checked={allSelected} onCheckedChange={toggleAll} />
                 </th>
                 <th className="px-3 py-2.5 text-left font-medium text-muted-foreground">{t('capabilities.server')}</th>
                 {CAPABILITIES.map(({ bit, key, risk }) => (
@@ -190,12 +202,7 @@ function CapabilitiesPage() {
                 return (
                   <tr className="border-b transition-colors last:border-b-0 hover:bg-muted/30" key={server.id}>
                     <td className="px-3 py-2">
-                      <input
-                        checked={selected.has(server.id)}
-                        className="rounded"
-                        onChange={() => toggleOne(server.id)}
-                        type="checkbox"
-                      />
+                      <Checkbox checked={selected.has(server.id)} onCheckedChange={() => toggleOne(server.id)} />
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">
@@ -212,23 +219,11 @@ function CapabilitiesPage() {
                       const isEnabled = (caps & bit) !== 0
                       return (
                         <td className="px-3 py-2 text-center" key={bit}>
-                          <button
-                            aria-checked={isEnabled}
-                            aria-label={`Toggle ${bit} for ${server.name}`}
-                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                              isEnabled ? 'bg-primary' : 'bg-muted'
-                            }`}
+                          <Switch
+                            checked={isEnabled}
                             disabled={isPending}
-                            onClick={() => toggleCap(server, bit)}
-                            role="switch"
-                            type="button"
-                          >
-                            <span
-                              className={`inline-block size-3 rounded-full bg-white transition-transform ${
-                                isEnabled ? 'translate-x-5' : 'translate-x-1'
-                              }`}
-                            />
-                          </button>
+                            onCheckedChange={() => toggleCap(server, bit)}
+                          />
                         </td>
                       )
                     })}

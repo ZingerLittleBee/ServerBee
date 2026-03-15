@@ -3,7 +3,9 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import type React from 'react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { useAuth } from '@/hooks/use-auth'
 import { ApiError, api } from '@/lib/api-client'
 import type { OAuthProvidersResponse } from '@/lib/api-schema'
@@ -33,6 +35,8 @@ function LoginPage() {
     } catch (err) {
       if (err instanceof ApiError && err.message.includes('2fa_required')) {
         setNeeds2FA(true)
+      } else {
+        toast.error(err instanceof Error ? err.message : t('login_failed'))
       }
     }
   }
@@ -73,9 +77,8 @@ function LoginPage() {
             <label className="font-medium text-sm" htmlFor="username">
               {t('username')}
             </label>
-            <input
+            <Input
               autoComplete="username"
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               disabled={needs2FA}
               id="username"
               onChange={(e) => setUsername(e.target.value)}
@@ -90,9 +93,8 @@ function LoginPage() {
             <label className="font-medium text-sm" htmlFor="password">
               {t('password')}
             </label>
-            <input
+            <Input
               autoComplete="current-password"
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               disabled={needs2FA}
               id="password"
               onChange={(e) => setPassword(e.target.value)}
@@ -107,9 +109,9 @@ function LoginPage() {
               <label className="font-medium text-sm" htmlFor="totp">
                 {t('two_factor_code')}
               </label>
-              <input
+              <Input
                 autoComplete="one-time-code"
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-sm tracking-widest shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="font-mono tracking-widest"
                 id="totp"
                 inputMode="numeric"
                 maxLength={6}

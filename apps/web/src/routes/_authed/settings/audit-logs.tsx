@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { AuditListResponse } from '@/lib/api-schema'
 
@@ -49,7 +50,7 @@ function AuditLogsPage() {
                   Array.from({ length: 5 }, (_, i) => (
                     <tr className="border-b" key={`skeleton-${i.toString()}`}>
                       <td className="px-4 py-3" colSpan={5}>
-                        <div className="h-5 animate-pulse rounded bg-muted" />
+                        <Skeleton className="h-5" />
                       </td>
                     </tr>
                   ))}

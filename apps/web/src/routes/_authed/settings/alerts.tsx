@@ -3,7 +3,11 @@ import { createFileRoute } from '@tanstack/react-router'
 import { AlertTriangle, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { AlertRule, AlertRuleItem, AlertStateResponse, NotificationGroup } from '@/lib/api-schema'
 
@@ -130,18 +134,34 @@ function AlertsPage() {
     onSuccess: () => {
       invalidate()
       resetForm()
+      toast.success('Alert rule created')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to create alert rule')
     }
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/api/alert-rules/${id}`),
-    onSuccess: () => invalidate()
+    onSuccess: () => {
+      invalidate()
+      toast.success('Alert rule deleted')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete alert rule')
+    }
   })
 
   const toggleMutation = useMutation({
     mutationFn: ({ enabled, id }: { enabled: boolean; id: string }) =>
       api.put<AlertRule>(`/api/alert-rules/${id}`, { enabled }),
-    onSuccess: () => invalidate()
+    onSuccess: () => {
+      invalidate()
+      toast.success('Alert rule updated')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to update alert rule')
+    }
   })
 
   const invalidate = () => {
@@ -201,8 +221,7 @@ function AlertsPage() {
 
           {showForm && (
             <form className="mb-4 space-y-3 rounded-md border bg-muted/30 p-4" onSubmit={handleCreate}>
-              <input
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              <Input
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t('alerts.rule_name')}
                 required
@@ -211,47 +230,53 @@ function AlertsPage() {
               />
 
               <div className="flex gap-3">
-                <select
-                  className="flex h-9 flex-1 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                  onChange={(e) => setTriggerMode(e.target.value)}
-                  value={triggerMode}
-                >
-                  <option value="always">{t('alerts.trigger_always')}</option>
-                  <option value="once">{t('alerts.trigger_once')}</option>
-                </select>
+                <Select onValueChange={setTriggerMode} value={triggerMode}>
+                  <SelectTrigger className="h-9 w-full flex-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="always">{t('alerts.trigger_always')}</SelectItem>
+                    <SelectItem value="once">{t('alerts.trigger_once')}</SelectItem>
+                  </SelectContent>
+                </Select>
 
-                <select
-                  className="flex h-9 flex-1 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                  onChange={(e) => setGroupId(e.target.value)}
-                  value={groupId}
-                >
-                  <option value="">{t('alerts.no_notification')}</option>
-                  {groups?.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name}
-                    </option>
-                  ))}
-                </select>
+                <Select onValueChange={setGroupId} value={groupId}>
+                  <SelectTrigger className="h-9 w-full flex-1">
+                    <SelectValue placeholder={t('alerts.no_notification')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">{t('alerts.no_notification')}</SelectItem>
+                    {groups?.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">
                 <span className="font-medium text-sm">{t('alerts.coverage')}</span>
                 <div className="flex gap-3">
-                  <select
-                    className="flex h-9 flex-1 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                    onChange={(e) => {
-                      const val = e.target.value as 'all' | 'exclude' | 'include'
-                      setCoverType(val)
-                      if (val === 'all') {
+                  <Select
+                    onValueChange={(val) => {
+                      const v = val as 'all' | 'exclude' | 'include'
+                      setCoverType(v)
+                      if (v === 'all') {
                         setServerIds([])
                       }
                     }}
                     value={coverType}
                   >
-                    <option value="all">{t('alerts.all_servers')}</option>
-                    <option value="include">{t('alerts.include_servers')}</option>
-                    <option value="exclude">{t('alerts.exclude_servers')}</option>
-                  </select>
+                    <SelectTrigger className="h-9 w-full flex-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t('alerts.all_servers')}</SelectItem>
+                      <SelectItem value="include">{t('alerts.include_servers')}</SelectItem>
+                      <SelectItem value="exclude">{t('alerts.exclude_servers')}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 {(coverType === 'include' || coverType === 'exclude') && (
                   <div className="flex flex-wrap gap-2 rounded-md border p-2">
@@ -287,28 +312,29 @@ function AlertsPage() {
                 </div>
                 {ruleItems.map((item, index) => (
                   <div className="flex gap-2" key={`rule-${index.toString()}`}>
-                    <select
-                      className="flex h-9 flex-1 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                      onChange={(e) => updateRuleItem(index, 'rule_type', e.target.value)}
-                      value={item.rule_type}
-                    >
-                      {ruleTypes.map((rt) => (
-                        <option key={rt.value} value={rt.value}>
-                          {rt.label}
-                        </option>
-                      ))}
-                    </select>
+                    <Select onValueChange={(val) => updateRuleItem(index, 'rule_type', val)} value={item.rule_type}>
+                      <SelectTrigger className="h-9 w-full flex-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ruleTypes.map((rt) => (
+                          <SelectItem key={rt.value} value={rt.value}>
+                            {rt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     {THRESHOLD_TYPES.has(item.rule_type) && (
                       <>
-                        <input
-                          className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                        <Input
+                          className="w-28"
                           onChange={(e) => updateRuleItem(index, 'min', Number.parseFloat(e.target.value) || 0)}
                           placeholder={t('alerts.threshold_gte')}
                           type="number"
                           value={item.min ?? ''}
                         />
-                        <input
-                          className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                        <Input
+                          className="w-28"
                           onChange={(e) => updateRuleItem(index, 'max', Number.parseFloat(e.target.value) || 0)}
                           placeholder={t('alerts.threshold_lte')}
                           type="number"
@@ -317,8 +343,8 @@ function AlertsPage() {
                       </>
                     )}
                     {item.rule_type === 'offline' && (
-                      <input
-                        className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                      <Input
+                        className="w-28"
                         onChange={(e) => updateRuleItem(index, 'duration', Number.parseInt(e.target.value, 10) || 60)}
                         placeholder={t('alerts.duration')}
                         type="number"
@@ -326,8 +352,8 @@ function AlertsPage() {
                       />
                     )}
                     {item.rule_type === 'expiration' && (
-                      <input
-                        className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                      <Input
+                        className="w-28"
                         onChange={(e) => updateRuleItem(index, 'duration', Number.parseInt(e.target.value, 10) || 7)}
                         placeholder={t('alerts.days_before')}
                         type="number"
@@ -336,19 +362,23 @@ function AlertsPage() {
                     )}
                     {CYCLE_TYPES.has(item.rule_type) && (
                       <>
-                        <select
-                          className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                          onChange={(e) => updateRuleItem(index, 'cycle_interval', e.target.value)}
+                        <Select
+                          onValueChange={(val) => updateRuleItem(index, 'cycle_interval', val)}
                           value={item.cycle_interval ?? 'month'}
                         >
-                          <option value="hour">{t('alerts.period_hour')}</option>
-                          <option value="day">{t('alerts.period_day')}</option>
-                          <option value="week">{t('alerts.period_week')}</option>
-                          <option value="month">{t('alerts.period_month')}</option>
-                          <option value="year">{t('alerts.period_year')}</option>
-                        </select>
-                        <input
-                          className="flex h-9 w-28 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                          <SelectTrigger className="h-9 w-28">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="hour">{t('alerts.period_hour')}</SelectItem>
+                            <SelectItem value="day">{t('alerts.period_day')}</SelectItem>
+                            <SelectItem value="week">{t('alerts.period_week')}</SelectItem>
+                            <SelectItem value="month">{t('alerts.period_month')}</SelectItem>
+                            <SelectItem value="year">{t('alerts.period_year')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          className="w-28"
                           onChange={(e) =>
                             updateRuleItem(index, 'cycle_limit', Number.parseInt(e.target.value, 10) || 0)
                           }
@@ -381,7 +411,7 @@ function AlertsPage() {
           {isLoading && (
             <div className="space-y-2">
               {Array.from({ length: 2 }, (_, i) => (
-                <div className="h-12 animate-pulse rounded bg-muted" key={`skel-${i.toString()}`} />
+                <Skeleton className="h-12" key={`skel-${i.toString()}`} />
               ))}
             </div>
           )}
