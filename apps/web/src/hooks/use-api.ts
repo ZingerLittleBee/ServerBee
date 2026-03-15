@@ -32,7 +32,7 @@ export function useServer(id: string) {
   })
 }
 
-export function useServerRecords(id: string, hours: number, interval: string) {
+export function useServerRecords(id: string, hours: number, interval: string, options?: { enabled?: boolean }) {
   return useQuery<ServerRecord[]>({
     queryKey: ['servers', id, 'records', hours, interval],
     queryFn: () => {
@@ -43,7 +43,7 @@ export function useServerRecords(id: string, hours: number, interval: string) {
         `/api/servers/${id}/records?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&interval=${encodeURIComponent(interval)}`
       )
     },
-    enabled: id.length > 0,
+    enabled: id.length > 0 && (options?.enabled ?? true),
     refetchInterval: 60_000
   })
 }
