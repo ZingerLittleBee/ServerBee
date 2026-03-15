@@ -9,7 +9,7 @@ cargo test --workspace && bun run test
 # Rust 测试（110 单元 + 11 集成 = 121）
 cargo test --workspace
 
-# 前端测试（77 vitest，9 个测试文件）
+# 前端测试（86 vitest，9 个测试文件）
 bun run test
 
 # 代码质量
@@ -99,7 +99,7 @@ cd apps/web && bunx vitest run src/lib/capabilities.test.ts
 | `api-client.test.ts` | 6 | 数据解包、JSON 序列化、204、错误处理 |
 | `utils.test.ts` | 21 | formatBytes/Speed/Uptime、countryCodeToFlag |
 | `ws-client.test.ts` | 6 | URL 构造、handler 分发、重连、关闭 |
-| `use-realtime-metrics.test.ts` | 4 | toRealtimeDataPoint 转换、百分比计算、零值除法守卫、字段映射 |
+| `use-realtime-metrics.test.tsx` | 13 | toRealtimeDataPoint 转换（百分比、零值除法、字段映射）、hook 集成（缓存 seed、去重、追加、裁剪、serverId 切换） |
 | `use-servers-ws.test.ts` | 8 | 数据合并、静态字段保护、在线状态切换 |
 | `use-terminal-ws.test.ts` | 20 | WS URL 构造、状态机、base64 编码、resize、onData 回调 |
 
@@ -188,7 +188,15 @@ docker compose up -d
 | 3a | 搜索匹配 | 输入 "New" → 表格显示匹配的服务器 | ✅ |
 | 3b | 搜索无匹配 | 输入不存在的名称 → 表格为空 | ✅ |
 | 3c | 编辑对话框 | 点击 Edit → 弹出对话框含 BASIC + BILLING 字段 | ✅ |
-| 4 | 时间范围切换 | 点击 6h → 图表更新时间轴和数据 | ✅ |
+| 4a | 实时模式默认 | 进入 `/servers/:id` → "Real-time" 按钮高亮选中（默认模式） | — |
+| 4b | 实时图表更新 | 实时模式下等待 10s → CPU/Memory/Disk/Network/Load 图表出现多个数据点，X 轴显示 mm:ss 格式 | — |
+| 4c | 实时首点时间格式 | X 轴第一个 tick 显示 HH:mm:ss（含小时），后续 tick 显示 mm:ss | — |
+| 4d | 实时→历史切换 | 点击 1h → 图表切换为历史数据，X 轴切换为 HH:mm 格式 | — |
+| 4e | 历史→实时切换 | 从 1h 切回 Real-time → 图表显示累积的实时数据（非空，之前已积累的点保留） | — |
+| 4f | 实时模式隐藏温度/GPU | 实时模式下 Temperature 和 GPU 图表不可见（WS 数据不含温度和 GPU） | — |
+| 4g | 历史模式显示温度 | 切换到 1h → 若有温度数据，Temperature 图表可见 | — |
+| 4h | 离线服务器实时模式 | 离线服务器进入详情页 → 实时模式默认选中，图表为空（可接受） | — |
+| 4i | 时间范围切换 | 点击 6h → 图表更新时间轴和数据 | ✅ |
 | 5a | 创建用户 | Add User → 填写 username/password → Create → 列表出现新用户 | ✅ |
 | 5b | 删除用户 | 删除 testuser → 列表仅剩 admin | ✅ |
 | 6 | 通知渠道展示 | 创建 Webhook 通知渠道 → 列表显示名称和类型 | ✅ |
@@ -250,7 +258,7 @@ apps/web/src/lib/utils.test.ts          # 工具函数测试
 apps/web/src/lib/ws-client.test.ts      # WebSocket Client 测试
 apps/web/src/hooks/use-auth.test.tsx    # Auth hook 测试
 apps/web/src/hooks/use-api.test.tsx     # API hook 测试
-apps/web/src/hooks/use-realtime-metrics.test.ts # 实时指标 hook 测试
+apps/web/src/hooks/use-realtime-metrics.test.tsx # 实时指标 hook 测试（纯函数 + renderHook 集成）
 apps/web/src/hooks/use-servers-ws.test.ts # WS 数据合并测试
 apps/web/vitest.config.ts               # Vitest 配置
 .github/workflows/ci.yml               # CI 流水线
