@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::{DateTime, Duration, Timelike, Utc};
 use sea_orm::*;
 use serde::{Deserialize, Serialize};
@@ -97,12 +99,66 @@ pub struct ServerOverview {
     pub anomaly_count: i64,
 }
 
-/// Result type for query_records supporting both raw and hourly records.
-#[derive(Debug, Serialize)]
-#[serde(untagged)]
-pub enum ProbeQueryResult {
-    Raw(Vec<network_probe_record::Model>),
-    Hourly(Vec<network_probe_record_hourly::Model>),
+/// Unified record DTO returned by query_records.
+/// Maps both raw and hourly records to a single shape the frontend expects.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct ProbeRecordDto {
+    pub server_id: String,
+    pub target_id: String,
+    pub timestamp: String,
+    pub avg_latency: Option<f64>,
+    pub min_latency: Option<f64>,
+    pub max_latency: Option<f64>,
+    pub packet_loss: f64,
+    pub packet_sent: i32,
+    pub packet_received: i32,
+}
+
+/// Unified target DTO merging preset and custom targets.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct TargetDto {
+    pub id: String,
+    pub name: String,
+    pub provider: String,
+    pub location: String,
+    pub target: String,
+    pub probe_type: String,
+    pub source: Option<String>,
+    pub source_name: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+impl TargetDto {
+    pub fn from_preset(t: &crate::presets::FlatPresetTarget) -> Self {
+        Self {
+            id: t.id.clone(),
+            name: t.name.clone(),
+            provider: t.provider.clone(),
+            location: t.location.clone(),
+            target: t.target.clone(),
+            probe_type: t.probe_type.clone(),
+            source: Some(format!("preset:{}", t.group_id)),
+            source_name: Some(t.group_name.clone()),
+            created_at: None,
+            updated_at: None,
+        }
+    }
+
+    pub fn from_model(m: &network_probe_target::Model) -> Self {
+        Self {
+            id: m.id.clone(),
+            name: m.name.clone(),
+            provider: m.provider.clone(),
+            location: m.location.clone(),
+            target: m.target.clone(),
+            probe_type: m.probe_type.clone(),
+            source: None,
+            source_name: None,
+            created_at: Some(m.created_at.to_rfc3339()),
+            updated_at: Some(m.updated_at.to_rfc3339()),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -111,14 +167,50 @@ pub enum ProbeQueryResult {
 
 impl NetworkProbeService {
     // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
+    /// Check if a target ID is valid (exists as preset or in DB).
+    async fn is_valid_target(db: &DatabaseConnection, id: &str) -> bool {
+        crate::presets::PresetTargets::is_preset(id)
+            || network_probe_target::Entity::find_by_id(id)
+                .one(db)
+                .await
+                .ok()
+                .flatten()
+                .is_some()
+    }
+
+    /// Build a target name+provider lookup map from presets + DB.
+    async fn build_target_map(db: &DatabaseConnection) -> HashMap<String, (String, String)> {
+        let mut map: HashMap<String, (String, String)> = HashMap::new();
+        for t in crate::presets::PresetTargets::load() {
+            map.insert(t.id.clone(), (t.name.clone(), t.provider.clone()));
+        }
+        if let Ok(custom) = network_probe_target::Entity::find().all(db).await {
+            for t in custom {
+                map.insert(t.id.clone(), (t.name.clone(), t.provider.clone()));
+            }
+        }
+        map
+    }
+
+    // -----------------------------------------------------------------------
     // Target management
     // -----------------------------------------------------------------------
 
-    /// List all probe targets (builtin + custom).
-    pub async fn list_targets(
-        db: &DatabaseConnection,
-    ) -> Result<Vec<network_probe_target::Model>, AppError> {
-        Ok(network_probe_target::Entity::find().all(db).await?)
+    /// List all probe targets (preset + custom).
+    pub async fn list_targets(db: &DatabaseConnection) -> Result<Vec<TargetDto>, AppError> {
+        let mut targets: Vec<TargetDto> = crate::presets::PresetTargets::load()
+            .iter()
+            .map(TargetDto::from_preset)
+            .collect();
+        let custom = network_probe_target::Entity::find()
+            .order_by_asc(network_probe_target::Column::Name)
+            .all(db)
+            .await?;
+        targets.extend(custom.iter().map(TargetDto::from_model));
+        Ok(targets)
     }
 
     /// Create a custom probe target.
@@ -140,7 +232,6 @@ impl NetworkProbeService {
             location: Set(input.location),
             target: Set(input.target),
             probe_type: Set(input.probe_type),
-            is_builtin: Set(false),
             created_at: Set(now),
             updated_at: Set(now),
         };
@@ -148,22 +239,22 @@ impl NetworkProbeService {
         Ok(model.insert(db).await?)
     }
 
-    /// Update a custom probe target. Builtin targets cannot be modified.
+    /// Update a custom probe target. Preset targets cannot be modified.
     pub async fn update_target(
         db: &DatabaseConnection,
         id: &str,
         input: UpdateNetworkProbeTarget,
     ) -> Result<network_probe_target::Model, AppError> {
+        if crate::presets::PresetTargets::is_preset(id) {
+            return Err(AppError::Forbidden(
+                "Cannot modify a preset probe target".to_string(),
+            ));
+        }
+
         let existing = network_probe_target::Entity::find_by_id(id)
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Probe target {id} not found")))?;
-
-        if existing.is_builtin {
-            return Err(AppError::Forbidden(
-                "Cannot modify a builtin probe target".to_string(),
-            ));
-        }
 
         let mut active: network_probe_target::ActiveModel = existing.into();
 
@@ -192,20 +283,21 @@ impl NetworkProbeService {
         Ok(active.update(db).await?)
     }
 
-    /// Delete a custom probe target. Builtin targets cannot be deleted.
+    /// Delete a custom probe target. Preset targets cannot be deleted.
     /// Cascade-deletes associated config and records, and removes the target
     /// from `default_target_ids` in the global setting.
     pub async fn delete_target(db: &DatabaseConnection, id: &str) -> Result<(), AppError> {
-        let existing = network_probe_target::Entity::find_by_id(id)
+        if crate::presets::PresetTargets::is_preset(id) {
+            return Err(AppError::Forbidden(
+                "Cannot delete a preset probe target".to_string(),
+            ));
+        }
+
+        // Verify the target exists in the DB
+        network_probe_target::Entity::find_by_id(id)
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Probe target {id} not found")))?;
-
-        if existing.is_builtin {
-            return Err(AppError::Forbidden(
-                "Cannot delete a builtin probe target".to_string(),
-            ));
-        }
 
         // Cascade delete config entries
         network_probe_config::Entity::delete_many()
@@ -264,6 +356,13 @@ impl NetworkProbeService {
                 "packet_count must be between 5 and 20".to_string(),
             ));
         }
+        for id in &setting.default_target_ids {
+            if !Self::is_valid_target(db, id).await {
+                return Err(AppError::BadRequest(format!(
+                    "Invalid target ID in default_target_ids: {id}"
+                )));
+            }
+        }
         Self::save_setting(db, setting).await
     }
 
@@ -279,11 +378,11 @@ impl NetworkProbeService {
     // Server target config
     // -----------------------------------------------------------------------
 
-    /// Get targets assigned to a server (join config with target table).
+    /// Get targets assigned to a server, resolving both presets and DB targets.
     pub async fn get_server_targets(
         db: &DatabaseConnection,
         server_id: &str,
-    ) -> Result<Vec<network_probe_target::Model>, AppError> {
+    ) -> Result<Vec<TargetDto>, AppError> {
         let configs = network_probe_config::Entity::find()
             .filter(network_probe_config::Column::ServerId.eq(server_id))
             .all(db)
@@ -293,12 +392,25 @@ impl NetworkProbeService {
             return Ok(Vec::new());
         }
 
-        let target_ids: Vec<String> = configs.into_iter().map(|c| c.target_id).collect();
+        let target_ids: Vec<String> = configs.iter().map(|c| c.target_id.clone()).collect();
 
-        let targets = network_probe_target::Entity::find()
-            .filter(network_probe_target::Column::Id.is_in(target_ids))
-            .all(db)
-            .await?;
+        let mut targets = Vec::new();
+        let mut db_ids = Vec::new();
+        for id in &target_ids {
+            if let Some(preset) = crate::presets::PresetTargets::find(id) {
+                targets.push(TargetDto::from_preset(preset));
+            } else {
+                db_ids.push(id.clone());
+            }
+        }
+
+        if !db_ids.is_empty() {
+            let db_targets = network_probe_target::Entity::find()
+                .filter(network_probe_target::Column::Id.is_in(db_ids))
+                .all(db)
+                .await?;
+            targets.extend(db_targets.iter().map(TargetDto::from_model));
+        }
 
         Ok(targets)
     }
@@ -314,6 +426,12 @@ impl NetworkProbeService {
             return Err(AppError::Validation(
                 "Cannot assign more than 20 targets to a server".to_string(),
             ));
+        }
+
+        for id in &target_ids {
+            if !Self::is_valid_target(db, id).await {
+                return Err(AppError::Validation(format!("Invalid target ID: {id}")));
+            }
         }
 
         let txn = db.begin().await?;
@@ -384,13 +502,14 @@ impl NetworkProbeService {
 
     /// Query probe records for a server with smart interval selection.
     /// < 1 day: raw records, >= 1 day: hourly aggregates.
+    /// Both are mapped to a unified `ProbeRecordDto`.
     pub async fn query_records(
         db: &DatabaseConnection,
         server_id: &str,
         target_id: Option<String>,
         from: DateTime<Utc>,
         to: DateTime<Utc>,
-    ) -> Result<ProbeQueryResult, AppError> {
+    ) -> Result<Vec<ProbeRecordDto>, AppError> {
         let duration = to - from;
         let use_hourly = duration >= Duration::days(1);
 
@@ -409,7 +528,20 @@ impl NetworkProbeService {
                 .order_by_asc(network_probe_record_hourly::Column::Hour)
                 .all(db)
                 .await?;
-            Ok(ProbeQueryResult::Hourly(records))
+            Ok(records
+                .into_iter()
+                .map(|r| ProbeRecordDto {
+                    server_id: r.server_id,
+                    target_id: r.target_id,
+                    timestamp: r.hour.to_rfc3339(),
+                    avg_latency: r.avg_latency,
+                    min_latency: r.min_latency,
+                    max_latency: r.max_latency,
+                    packet_loss: r.avg_packet_loss,
+                    packet_sent: r.sample_count,
+                    packet_received: r.sample_count,
+                })
+                .collect())
         } else {
             let mut query = network_probe_record::Entity::find()
                 .filter(network_probe_record::Column::ServerId.eq(server_id))
@@ -424,7 +556,20 @@ impl NetworkProbeService {
                 .order_by_asc(network_probe_record::Column::Timestamp)
                 .all(db)
                 .await?;
-            Ok(ProbeQueryResult::Raw(records))
+            Ok(records
+                .into_iter()
+                .map(|r| ProbeRecordDto {
+                    server_id: r.server_id,
+                    target_id: r.target_id,
+                    timestamp: r.timestamp.to_rfc3339(),
+                    avg_latency: r.avg_latency,
+                    min_latency: r.min_latency,
+                    max_latency: r.max_latency,
+                    packet_loss: r.packet_loss,
+                    packet_sent: r.packet_sent,
+                    packet_received: r.packet_received,
+                })
+                .collect())
         }
     }
 
@@ -503,7 +648,7 @@ impl NetworkProbeService {
     ) -> Result<Vec<ServerOverview>, AppError> {
         // Load ALL servers (not just ones with probe config)
         let servers = server::Entity::find().all(db).await?;
-        let server_map: std::collections::HashMap<String, String> = servers
+        let server_map: HashMap<String, String> = servers
             .iter()
             .map(|s| (s.id.clone(), s.name.clone()))
             .collect();
@@ -512,10 +657,8 @@ impl NetworkProbeService {
         // Load all probe configs for target lookup
         let configs = network_probe_config::Entity::find().all(db).await?;
 
-        // Load all targets for provider lookup
-        let all_targets = network_probe_target::Entity::find().all(db).await?;
-        let target_map: std::collections::HashMap<String, &network_probe_target::Model> =
-            all_targets.iter().map(|t| (t.id.clone(), t)).collect();
+        // Build target name+provider lookup map from presets + DB
+        let target_map: HashMap<String, (String, String)> = Self::build_target_map(db).await;
 
         let anomaly_from = Utc::now() - Duration::hours(24);
 
@@ -557,14 +700,10 @@ impl NetworkProbeService {
                         _ => {}
                     }
 
-                    let target_name = target_map
+                    let (target_name, provider) = target_map
                         .get(target_id)
-                        .map(|t| t.name.clone())
-                        .unwrap_or_else(|| target_id.clone());
-                    let provider = target_map
-                        .get(target_id)
-                        .map(|t| t.provider.clone())
-                        .unwrap_or_default();
+                        .cloned()
+                        .unwrap_or_else(|| (target_id.clone(), String::new()));
 
                     target_summaries.push(TargetSummary {
                         target_id: target_id.clone(),
@@ -604,10 +743,8 @@ impl NetworkProbeService {
     ) -> Result<Vec<NetworkProbeAnomaly>, AppError> {
         // Load target names for display
         let targets = Self::get_server_targets(db, server_id).await?;
-        let target_map: std::collections::HashMap<String, String> = targets
-            .into_iter()
-            .map(|t| (t.id.clone(), t.name.clone()))
-            .collect();
+        let target_map: HashMap<String, String> =
+            targets.into_iter().map(|t| (t.id, t.name)).collect();
 
         // Query raw records in the time range (capped at 500 to bound memory usage)
         let records = network_probe_record::Entity::find()
@@ -729,10 +866,10 @@ impl NetworkProbeService {
 
         // Group by (server_id, target_id, hour_str) so records spanning two clock hours
         // get aggregated into the correct hour bucket rather than all sharing the same hour.
-        let mut grouped: std::collections::HashMap<
+        let mut grouped: HashMap<
             (String, String, String),
             Vec<&network_probe_record::Model>,
-        > = std::collections::HashMap::new();
+        > = HashMap::new();
 
         for r in &records {
             let hour = r
@@ -785,8 +922,8 @@ impl NetworkProbeService {
                 DatabaseBackend::Sqlite,
                 sql,
                 vec![
-                    server_id.clone().into(),
-                    target_id.clone().into(),
+                    Value::from(server_id.clone()),
+                    Value::from(target_id.clone()),
                     avg_latency
                         .map(|v| Value::Double(Some(v)))
                         .unwrap_or(Value::Double(None)),
@@ -796,9 +933,9 @@ impl NetworkProbeService {
                     max_latency
                         .map(|v| Value::Double(Some(v)))
                         .unwrap_or(Value::Double(None)),
-                    avg_packet_loss.into(),
-                    sample_count.into(),
-                    hour_str.clone().into(),
+                    Value::from(avg_packet_loss),
+                    Value::from(sample_count),
+                    Value::from(hour_str.clone()),
                 ],
             );
             db.execute(stmt).await?;
@@ -880,7 +1017,6 @@ mod tests {
 
         let created = NetworkProbeService::create_target(&db, input).await.unwrap();
         assert_eq!(created.name, "Test Target");
-        assert!(!created.is_builtin);
 
         let list = NetworkProbeService::list_targets(&db).await.unwrap();
         assert_eq!(list.len(), before_count + 1);
