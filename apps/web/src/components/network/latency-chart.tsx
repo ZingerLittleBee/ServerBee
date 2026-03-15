@@ -32,13 +32,17 @@ export function LatencyChart({ records, targets, isRealtime = false }: LatencyCh
 
   const chartData = useMemo(() => {
     // Bucket records into time slots to align different targets' data points.
-    // Without bucketing, each target gets its own timestamp and Recharts
-    // only draws a line when the data entry has a value for that target.
-    const bucketMs = isRealtime ? 10_000 : 60_000 // 10s realtime, 60s historical
+    // Realtime: 60s buckets (matches probe interval), Historical: 60s buckets
+    const bucketMs = 60_000
+    const now = Date.now()
     const bucketMap = new Map<number, Record<string, unknown>>()
 
     for (const record of records) {
       const ts = new Date(record.timestamp).getTime()
+      // Skip future timestamps
+      if (ts > now + 30_000) {
+        continue
+      }
       const bucketKey = Math.floor(ts / bucketMs) * bucketMs
 
       if (!bucketMap.has(bucketKey)) {
@@ -46,7 +50,6 @@ export function LatencyChart({ records, targets, isRealtime = false }: LatencyCh
       }
       const entry = bucketMap.get(bucketKey)
       if (entry) {
-        // If multiple records for same target in same bucket, keep the latest
         entry[record.target_id] = record.avg_latency
       }
     }
@@ -55,7 +58,7 @@ export function LatencyChart({ records, targets, isRealtime = false }: LatencyCh
       .sort((a, b) => a[0] - b[0])
       .map(([, v]) => v)
     return entries
-  }, [records, isRealtime])
+  }, [records])
 
   const targetNameMap = useMemo(() => {
     const map: Record<string, string> = {}
@@ -64,6 +67,14 @@ export function LatencyChart({ records, targets, isRealtime = false }: LatencyCh
     }
     return map
   }, [targets])
+
+  // Calculate tick interval to show ~8-12 ticks max
+  const tickInterval = useMemo(() => {
+    if (chartData.length <= 12) {
+      return 0
+    }
+    return Math.ceil(chartData.length / 10) - 1
+  }, [chartData.length])
 
   if (chartData.length === 0) {
     return (
@@ -90,15 +101,15 @@ export function LatencyChart({ records, targets, isRealtime = false }: LatencyCh
           <XAxis
             axisLine={false}
             dataKey="timestamp"
+            interval={tickInterval}
             stroke="var(--color-muted-foreground)"
             tick={{ fontSize: 11 }}
             tickFormatter={(v, index) => {
               if (!isRealtime) {
                 return formatTimeHM(v)
               }
-              // Realtime: first and last tick show HH:mm:ss, middle ticks show mm:ss
-              const isEdge = index === 0
-              return isEdge ? formatTimeFull(v) : formatTimeShort(v)
+              const isFirst = index === 0
+              return isFirst ? formatTimeFull(v) : formatTimeShort(v)
             }}
             tickLine={false}
           />
