@@ -99,6 +99,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Lowercase owner
+        id: owner
+        run: echo "lowercase=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
       - name: Extract version
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
@@ -110,8 +114,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository_owner }}/serverbee:latest
-            ghcr.io/${{ github.repository_owner }}/serverbee:${{ steps.version.outputs.version }}
+            ghcr.io/${{ steps.owner.outputs.lowercase }}/serverbee:latest
+            ghcr.io/${{ steps.owner.outputs.lowercase }}/serverbee:${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -121,6 +125,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract changelog
+        id: changelog
+        run: |
+          # Extract the section between ## [version] and the next ## [
+          awk '/^## \[${{ steps.version.outputs.version }}\]/{found=1; next} /^## \[/{if(found) exit} found' CHANGELOG.md > changelog_body.md
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -132,5 +146,5 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: changelog_body.md
           files: artifacts/*
