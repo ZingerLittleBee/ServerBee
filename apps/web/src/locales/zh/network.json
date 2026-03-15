@@ -50,6 +50,8 @@
   "confirm_delete_target": "确定要删除此目标吗？",
   "save": "保存",
   "cancel": "取消",
+  "select_all": "全选",
+  "deselect_all": "取消全选",
   "back_to_overview": "返回总览",
   "server_not_found": "未找到服务器",
   "online": "在线",

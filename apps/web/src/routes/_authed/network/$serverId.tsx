@@ -230,10 +230,22 @@ function NetworkDetailPage() {
     })
   }, [])
 
-  const handleSaveTargets = useCallback(async () => {
-    await setServerTargets.mutateAsync(Array.from(selectedTargetIds))
-    setShowManageDialog(false)
-  }, [setServerTargets, selectedTargetIds])
+  const selectAllTargets = useCallback(() => {
+    setSelectedTargetIds(new Set(allTargets.map((t) => t.id)))
+  }, [allTargets])
+
+  const deselectAllTargets = useCallback(() => {
+    setSelectedTargetIds(new Set())
+  }, [])
+
+  const handleSaveTargets = useCallback(() => {
+    setSelectedTargetIds((current) => {
+      setServerTargets.mutate(Array.from(current), {
+        onSuccess: () => setShowManageDialog(false)
+      })
+      return current
+    })
+  }, [setServerTargets])
 
   if (serverLoading || summaryLoading) {
     return (
@@ -367,7 +379,17 @@ function NetworkDetailPage() {
             className="relative w-full max-w-lg rounded-lg border bg-background p-6 shadow-xl"
             role="dialog"
           >
-            <h3 className="mb-4 font-semibold text-lg">{t('manage_targets')}</h3>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="font-semibold text-lg">{t('manage_targets')}</h3>
+              <div className="flex gap-2">
+                <Button onClick={selectAllTargets} size="sm" type="button" variant="ghost">
+                  {t('select_all')}
+                </Button>
+                <Button onClick={deselectAllTargets} size="sm" type="button" variant="ghost">
+                  {t('deselect_all')}
+                </Button>
+              </div>
+            </div>
 
             {allTargets.length === 0 ? (
               <p className="py-4 text-center text-muted-foreground text-sm">{t('no_targets')}</p>
