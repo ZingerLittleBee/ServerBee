@@ -1,11 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
+import {
+  type ColumnDef,
+  getCoreRowModel,
+  getSortedRowModel,
+  type RowSelectionState,
+  type SortingState,
+  useReactTable
+} from '@tanstack/react-table'
 import { ExternalLink, Search, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
+import { Button } from '@/components/ui/button'
+import { createSelectColumn, DataTable, DataTableColumnHeader } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useServer } from '@/hooks/use-api'
@@ -17,41 +27,6 @@ import { cn, countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@
 export const Route = createFileRoute('/_authed/servers/')({
   component: ServersListPage
 })
-
-type SortKey = 'name' | 'status' | 'cpu' | 'memory' | 'disk' | 'uptime' | 'group'
-type SortDir = 'asc' | 'desc'
-
-function memPctOf(s: ServerMetrics): number {
-  return s.mem_total > 0 ? s.mem_used / s.mem_total : 0
-}
-
-function diskPctOf(s: ServerMetrics): number {
-  return s.disk_total > 0 ? s.disk_used / s.disk_total : 0
-}
-
-function compareServers(a: ServerMetrics, b: ServerMetrics, sortKey: SortKey, groupMap: Map<string, string>): number {
-  switch (sortKey) {
-    case 'name':
-      return a.name.localeCompare(b.name)
-    case 'status':
-      return Number(b.online) - Number(a.online)
-    case 'cpu':
-      return a.cpu - b.cpu
-    case 'memory':
-      return memPctOf(a) - memPctOf(b)
-    case 'disk':
-      return diskPctOf(a) - diskPctOf(b)
-    case 'uptime':
-      return a.uptime - b.uptime
-    case 'group': {
-      const aG = (a.group_id && groupMap.get(a.group_id)) || ''
-      const bG = (b.group_id && groupMap.get(b.group_id)) || ''
-      return aG.localeCompare(bG)
-    }
-    default:
-      return 0
-  }
-}
 
 function ServersListPage() {
   const { t } = useTranslation('servers')
@@ -71,9 +46,8 @@ function ServersListPage() {
   })
 
   const [search, setSearch] = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('name')
-  const [sortDir, setSortDir] = useState<SortDir>('asc')
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'name', desc: false }])
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [editingId, setEditingId] = useState<string | null>(null)
 
   const groupMap = useMemo(() => new Map(groups?.map((g) => [g.id, g.name]) ?? []), [groups])
@@ -93,54 +67,138 @@ function ServersListPage() {
     )
   }, [servers, search, groupMap])
 
-  const sorted = useMemo(() => {
-    const list = [...filtered]
-    const dir = sortDir === 'asc' ? 1 : -1
-    list.sort((a, b) => compareServers(a, b, sortKey, groupMap) * dir)
-    return list
-  }, [filtered, sortKey, sortDir, groupMap])
+  const columns = useMemo<ColumnDef<ServerMetrics>[]>(
+    () => [
+      createSelectColumn<ServerMetrics>(),
+      {
+        accessorKey: 'name',
+        header: ({ column }) => <DataTableColumnHeader column={column} title={t('col_name')} />,
+        cell: ({ row }) => {
+          const s = row.original
+          const flag = countryCodeToFlag(s.country_code)
+          return (
+            <Link className="group/link flex items-center gap-1.5" params={{ id: s.id }} to="/servers/$id">
+              {flag && <span className="text-xs">{flag}</span>}
+              <span className="font-medium group-hover/link:underline">{s.name}</span>
+            </Link>
+          )
+        }
+      },
+      {
+        accessorKey: 'online',
+        header: ({ column }) => <DataTableColumnHeader column={column} title={t('col_status')} />,
+        cell: ({ row }) => <StatusBadge online={row.original.online} />
+      },
+      {
+        accessorKey: 'cpu',
+        header: ({ column }) => <DataTableColumnHeader column={column} title={t('col_cpu')} />,
+        cell: ({ row }) => <MiniBar pct={row.original.cpu} />
+      },
+      {
+        accessorFn: (row) => (row.mem_total > 0 ? row.mem_used / row.mem_total : 0),
+        id: 'memory',
+        header: ({ column }) => <DataTableColumnHeader column={column} title={t('col_memory')} />,
+        cell: ({ row }) => {
+          const s = row.original
+          const memPct = s.mem_total > 0 ? (s.mem_used / s.mem_total) * 100 : 0
+          return <MiniBar pct={memPct} sub={formatBytes(s.mem_used)} />
+        }
+      },
+      {
+        accessorFn: (row) => (row.disk_total > 0 ? row.disk_used / row.disk_total : 0),
+        id: 'disk',
+        header: ({ column }) => <DataTableColumnHeader column={column} title={t('col_disk')} />,
+        cell: ({ row }) => {
+          const s = row.original
+          const diskPct = s.disk_total > 0 ? (s.disk_used / s.disk_total) * 100 : 0
+          return <MiniBar pct={diskPct} sub={formatBytes(s.disk_used)} />
+        }
+      },
+      {
+        id: 'network',
+        enableSorting: false,
+        header: () => <span className="text-muted-foreground text-xs">{t('col_network')}</span>,
+        cell: ({ row }) => {
+          const s = row.original
+          return (
+            <span className="text-muted-foreground text-xs">
+              <span>↓{formatSpeed(s.net_in_speed)}</span>
+              <span className="ml-2">↑{formatSpeed(s.net_out_speed)}</span>
+            </span>
+          )
+        },
+        meta: { className: 'hidden lg:table-cell' }
+      },
+      {
+        accessorKey: 'uptime',
+        header: ({ column }) => <DataTableColumnHeader column={column} title={t('col_uptime')} />,
+        cell: ({ row }) => {
+          const s = row.original
+          return <span className="text-muted-foreground text-xs">{s.online ? formatUptime(s.uptime) : '-'}</span>
+        },
+        meta: { className: 'hidden xl:table-cell' }
+      },
+      {
+        accessorFn: (row) => (row.group_id ? (groupMap.get(row.group_id) ?? '') : ''),
+        id: 'group',
+        header: ({ column }) => <DataTableColumnHeader column={column} title={t('col_group')} />,
+        cell: ({ row }) => {
+          const s = row.original
+          return (
+            <span className="text-muted-foreground text-xs">
+              {s.group_id ? (groupMap.get(s.group_id) ?? '-') : '-'}
+            </span>
+          )
+        },
+        meta: { className: 'hidden xl:table-cell' }
+      },
+      {
+        id: 'actions',
+        enableSorting: false,
+        cell: ({ row }) => (
+          <button
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={() => setEditingId(row.original.id)}
+            title="Edit server"
+            type="button"
+          >
+            <ExternalLink className="size-3.5" />
+          </button>
+        ),
+        meta: { className: 'w-10' }
+      }
+    ],
+    [t, groupMap]
+  )
 
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortKey(key)
-      setSortDir('asc')
-    }
-  }
+  const table = useReactTable({
+    data: filtered,
+    columns,
+    state: { sorting, rowSelection },
+    onSortingChange: setSorting,
+    onRowSelectionChange: setRowSelection,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getRowId: (row) => row.id
+  })
 
-  const allSelected = sorted.length > 0 && selected.size === sorted.length
-  const toggleAll = () => {
-    if (allSelected) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(sorted.map((s) => s.id)))
-    }
-  }
-  const toggleOne = (id: string) => {
-    const next = new Set(selected)
-    if (next.has(id)) {
-      next.delete(id)
-    } else {
-      next.add(id)
-    }
-    setSelected(next)
-  }
+  const selectedIds = table.getSelectedRowModel().rows.map((r) => r.original.id)
+  const selectedCount = selectedIds.length
 
   const batchDeleteMutation = useMutation({
     mutationFn: (ids: string[]) => api.post<{ deleted: number }>('/api/servers/batch-delete', { ids }),
     onSuccess: () => {
-      setSelected(new Set())
+      setRowSelection({})
       queryClient.invalidateQueries({ queryKey: ['servers'] })
     }
   })
 
   const handleBatchDelete = () => {
-    if (selected.size === 0) {
+    if (selectedCount === 0) {
       return
     }
-    const count = selected.size
-    batchDeleteMutation.mutate([...selected], {
+    const count = selectedCount
+    batchDeleteMutation.mutate(selectedIds, {
       onSuccess: () => {
         toast.success(`Deleted ${count} server(s)`)
       },
@@ -148,13 +206,6 @@ function ServersListPage() {
         toast.error(err instanceof Error ? err.message : 'Operation failed')
       }
     })
-  }
-
-  const sortIcon = (key: SortKey) => {
-    if (sortKey !== key) {
-      return null
-    }
-    return sortDir === 'asc' ? ' ↑' : ' ↓'
   }
 
   return (
@@ -179,16 +230,11 @@ function ServersListPage() {
             value={search}
           />
         </div>
-        {selected.size > 0 && (
-          <button
-            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-destructive px-3 text-destructive-foreground text-sm hover:bg-destructive/90 disabled:opacity-50"
-            disabled={batchDeleteMutation.isPending}
-            onClick={handleBatchDelete}
-            type="button"
-          >
+        {selectedCount > 0 && (
+          <Button disabled={batchDeleteMutation.isPending} onClick={handleBatchDelete} size="sm" variant="destructive">
             <Trash2 className="size-3.5" />
-            {t('delete_selected', { count: selected.size })}
-          </button>
+            {t('delete_selected', { count: selectedCount })}
+          </Button>
         )}
       </div>
 
@@ -200,169 +246,18 @@ function ServersListPage() {
           </div>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-muted/50">
-                <th className="w-10 px-3 py-2.5">
-                  <input checked={allSelected} className="rounded" onChange={toggleAll} type="checkbox" />
-                </th>
-                <Th
-                  active={sortKey === 'name'}
-                  label={t('col_name')}
-                  onClick={() => toggleSort('name')}
-                  suffix={sortIcon('name')}
-                />
-                <Th
-                  active={sortKey === 'status'}
-                  label={t('col_status')}
-                  onClick={() => toggleSort('status')}
-                  suffix={sortIcon('status')}
-                />
-                <Th
-                  active={sortKey === 'cpu'}
-                  label={t('col_cpu')}
-                  onClick={() => toggleSort('cpu')}
-                  suffix={sortIcon('cpu')}
-                />
-                <Th
-                  active={sortKey === 'memory'}
-                  label={t('col_memory')}
-                  onClick={() => toggleSort('memory')}
-                  suffix={sortIcon('memory')}
-                />
-                <Th
-                  active={sortKey === 'disk'}
-                  label={t('col_disk')}
-                  onClick={() => toggleSort('disk')}
-                  suffix={sortIcon('disk')}
-                />
-                <th className="hidden px-3 py-2.5 text-left font-medium text-muted-foreground lg:table-cell">
-                  {t('col_network')}
-                </th>
-                <Th
-                  active={sortKey === 'uptime'}
-                  className="hidden xl:table-cell"
-                  label={t('col_uptime')}
-                  onClick={() => toggleSort('uptime')}
-                  suffix={sortIcon('uptime')}
-                />
-                <Th
-                  active={sortKey === 'group'}
-                  className="hidden xl:table-cell"
-                  label={t('col_group')}
-                  onClick={() => toggleSort('group')}
-                  suffix={sortIcon('group')}
-                />
-                <th className="w-10 px-3 py-2.5" />
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((s) => {
-                const memPct = s.mem_total > 0 ? (s.mem_used / s.mem_total) * 100 : 0
-                const diskPct = s.disk_total > 0 ? (s.disk_used / s.disk_total) * 100 : 0
-                const flag = countryCodeToFlag(s.country_code)
-                return (
-                  <tr
-                    className={cn(
-                      'border-b transition-colors last:border-b-0 hover:bg-muted/30',
-                      selected.has(s.id) && 'bg-muted/20'
-                    )}
-                    key={s.id}
-                  >
-                    <td className="px-3 py-2">
-                      <input
-                        checked={selected.has(s.id)}
-                        className="rounded"
-                        onChange={() => toggleOne(s.id)}
-                        type="checkbox"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <Link className="group/link flex items-center gap-1.5" params={{ id: s.id }} to="/servers/$id">
-                        {flag && <span className="text-xs">{flag}</span>}
-                        <span className="font-medium group-hover/link:underline">{s.name}</span>
-                      </Link>
-                    </td>
-                    <td className="px-3 py-2">
-                      <StatusBadge online={s.online} />
-                    </td>
-                    <td className="px-3 py-2">
-                      <MiniBar pct={s.cpu} />
-                    </td>
-                    <td className="px-3 py-2">
-                      <MiniBar pct={memPct} sub={formatBytes(s.mem_used)} />
-                    </td>
-                    <td className="px-3 py-2">
-                      <MiniBar pct={diskPct} sub={formatBytes(s.disk_used)} />
-                    </td>
-                    <td className="hidden px-3 py-2 text-muted-foreground text-xs lg:table-cell">
-                      <span>↓{formatSpeed(s.net_in_speed)}</span>
-                      <span className="ml-2">↑{formatSpeed(s.net_out_speed)}</span>
-                    </td>
-                    <td className="hidden px-3 py-2 text-muted-foreground text-xs xl:table-cell">
-                      {s.online ? formatUptime(s.uptime) : '-'}
-                    </td>
-                    <td className="hidden px-3 py-2 text-muted-foreground text-xs xl:table-cell">
-                      {s.group_id ? (groupMap.get(s.group_id) ?? '-') : '-'}
-                    </td>
-                    <td className="px-3 py-2">
-                      <button
-                        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                        onClick={() => setEditingId(s.id)}
-                        title="Edit server"
-                        type="button"
-                      >
-                        <ExternalLink className="size-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+        <DataTable noResults={t('no_servers_title')} table={table} />
       )}
 
       {filtered.length > 0 && (
         <p className="mt-3 text-muted-foreground text-xs">
-          {t('showing_servers', { shown: sorted.length, total: servers.length })}
-          {selected.size > 0 && ` · ${t('selected_count', { count: selected.size })}`}
+          {t('showing_servers', { shown: filtered.length, total: servers.length })}
+          {selectedCount > 0 && ` · ${t('selected_count', { count: selectedCount })}`}
         </p>
       )}
 
       {editingId !== null && <EditWrapper onClose={() => setEditingId(null)} serverId={editingId} />}
     </div>
-  )
-}
-
-function Th({
-  label,
-  active,
-  suffix,
-  onClick,
-  className
-}: {
-  active: boolean
-  className?: string
-  label: string
-  onClick: () => void
-  suffix: string | null
-}) {
-  return (
-    <th className={cn('px-3 py-2.5 text-left', className)}>
-      <button
-        className={cn(
-          'font-medium text-xs',
-          active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
-        )}
-        onClick={onClick}
-        type="button"
-      >
-        {label}
-        {suffix}
-      </button>
-    </th>
   )
 }
 
