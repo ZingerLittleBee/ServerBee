@@ -188,9 +188,9 @@ function ServerDetailPage() {
   })
   const liveData = liveServers?.find((s) => s.id === id)
 
-  const chartData = useMemo(() => {
+  const chartData: Record<string, unknown>[] = useMemo(() => {
     if (isRealtime) {
-      return realtimeData
+      return realtimeData as unknown as Record<string, unknown>[]
     }
     if (!records) {
       return []
@@ -238,11 +238,7 @@ function ServerDetailPage() {
   }, [gpuRecords])
 
   const hasTemperature =
-    !isRealtime &&
-    chartData.some(
-      (d) =>
-        (d as Record<string, unknown>).temperature != null && ((d as Record<string, unknown>).temperature as number) > 0
-    )
+    !isRealtime && chartData.some((d) => 'temperature' in d && d.temperature != null && (d.temperature as number) > 0)
   const hasGpu = !isRealtime && gpuChartData.length > 0
 
   if (serverLoading) {
