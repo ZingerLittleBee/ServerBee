@@ -10,7 +10,7 @@ Add a network quality monitoring subsystem to ServerBee. Each VPS can probe mult
 |----------|--------|-----------|
 | Integration strategy | Independent subsystem + shared probe utils | Clean module boundaries, no impact on existing ping system, reuse ICMP/TCP/HTTP probe logic |
 | ISP target organization | Provider x City | Most common in VPS monitoring tools (Nezha-style), users care about specific ISP + region combinations |
-| Probing method | Agent-side batch probing | Agent sends N packets per round, computes aggregated stats locally, reports single result. Reduces WS traffic and server computation |
+| Probing method | Agent-side batch probing | Agent sends N packets per round via `ping -c N`, computes aggregated stats locally, reports single result. Reduces WS traffic and server computation |
 | Configuration model | Two-level (global defaults + per-VPS override) | Global defaults for convenience, per-VPS override for flexibility |
 | Probe frequency | User-configurable (default 60s interval, 10 packets/round) | Different users have different real-time and accuracy needs |
 | UI layout | Card list overview + multi-line chart detail page | Overview for quick scanning, detail page inspired by Nezha-style network monitoring |
@@ -25,9 +25,8 @@ Add a network quality monitoring subsystem to ServerBee. Each VPS can probe mult
 | name | TEXT NOT NULL | Display name, e.g. "Shanghai Telecom" |
 | provider | TEXT NOT NULL | ISP/provider, e.g. "Telecom", "Unicom", "Mobile", "Cloudflare" |
 | location | TEXT NOT NULL | Region, e.g. "Shanghai", "Beijing", "US" |
-| host | TEXT NOT NULL | Probe address (IP or domain) |
+| target | TEXT NOT NULL | Probe address: IP for ICMP, `host:port` for TCP, full URL for HTTP |
 | probe_type | TEXT NOT NULL | "icmp" / "tcp" / "http" |
-| port | INTEGER NULL | Port for TCP/HTTP probes |
 | is_builtin | BOOLEAN NOT NULL DEFAULT false | true = builtin (not deletable), false = user-created |
 | created_at | DATETIME NOT NULL | |
 | updated_at | DATETIME NOT NULL | |
@@ -39,57 +38,58 @@ Add a network quality monitoring subsystem to ServerBee. Each VPS can probe mult
 | id | TEXT PK | UUID |
 | server_id | TEXT NOT NULL FK → servers | |
 | target_id | TEXT NOT NULL FK → network_probe_target | |
-| enabled | BOOLEAN NOT NULL DEFAULT true | |
 | created_at | DATETIME NOT NULL | |
-| updated_at | DATETIME NOT NULL | |
 
-Unique constraint: `(server_id, target_id)`
+Unique constraint: `(server_id, target_id)`. Row existence means enabled; `set_server_targets` is a full replacement (delete all + insert new).
 
-### `network_probe_setting` — Global Probe Settings (singleton)
+Max 20 targets per VPS to prevent configuration amplification.
 
-Singleton row with `id = "default"`, created during migration seed.
+### Global Probe Settings — stored in `config` table
 
-| Column | Type | Description |
-|--------|------|-------------|
-| id | TEXT PK | Fixed value: `"default"` |
-| interval | INTEGER NOT NULL DEFAULT 60 | Probe interval in seconds (30-600) |
-| packet_count | INTEGER NOT NULL DEFAULT 10 | Packets per round (5-20) |
-| default_target_ids | TEXT NOT NULL DEFAULT '[]' | JSON array of target IDs auto-assigned to new VPS |
-| created_at | DATETIME NOT NULL | |
-| updated_at | DATETIME NOT NULL | |
+Use existing `ConfigService::get_typed/set_typed` with key `"network_probe_setting"`. No dedicated table.
+
+```rust
+struct NetworkProbeSetting {
+    interval: u32,              // Probe interval in seconds (30-600), default 60
+    packet_count: u32,          // Packets per round (5-20), default 10
+    default_target_ids: Vec<String>,  // Target IDs auto-assigned to new VPS
+}
+```
 
 ### `network_probe_record` — Probe Records (per-round aggregated)
 
 | Column | Type | Description |
 |--------|------|-------------|
-| id | TEXT PK | UUID |
+| id | INTEGER PK | rowid (auto-increment) |
 | server_id | TEXT NOT NULL FK → servers | |
 | target_id | TEXT NOT NULL FK → network_probe_target | |
-| avg_latency | REAL NOT NULL | Average latency in ms |
-| min_latency | REAL NOT NULL | Minimum latency in ms |
-| max_latency | REAL NOT NULL | Maximum latency in ms |
+| avg_latency | REAL NULL | Average latency in ms. NULL when packet_received == 0 (100% loss) |
+| min_latency | REAL NULL | Minimum latency in ms. NULL when packet_received == 0 |
+| max_latency | REAL NULL | Maximum latency in ms. NULL when packet_received == 0 |
 | packet_loss | REAL NOT NULL | Packet loss rate 0.0-1.0 |
 | packet_sent | INTEGER NOT NULL | Packets sent |
 | packet_received | INTEGER NOT NULL | Packets received |
-| timestamp | DATETIME NOT NULL | Probe time |
+| timestamp | DATETIME NOT NULL | Probe time (also used as retention cutoff reference) |
 
 Index: `(server_id, target_id, timestamp)`
+
+Note: for TCP/HTTP probes, `packet_sent`/`packet_received`/`packet_loss` represent probe attempt counts, not network packets. This is a common convention in monitoring tools.
 
 ### `network_probe_record_hourly` — Hourly Aggregation
 
 | Column | Type | Description |
 |--------|------|-------------|
-| id | TEXT PK | |
+| id | INTEGER PK | rowid (auto-increment) |
 | server_id | TEXT NOT NULL FK → servers | |
 | target_id | TEXT NOT NULL FK → network_probe_target | |
-| avg_latency | REAL NOT NULL | Hourly average latency |
-| min_latency | REAL NOT NULL | Hourly minimum latency |
-| max_latency | REAL NOT NULL | Hourly maximum latency |
+| avg_latency | REAL NULL | Hourly average latency. NULL if all samples had 100% loss |
+| min_latency | REAL NULL | Hourly minimum latency |
+| max_latency | REAL NULL | Hourly maximum latency |
 | avg_packet_loss | REAL NOT NULL | Hourly average packet loss |
 | sample_count | INTEGER NOT NULL | Number of raw records aggregated |
 | hour | DATETIME NOT NULL | Hour timestamp |
 
-Index: `(server_id, target_id, hour)`
+Unique constraint: `(server_id, target_id, hour)` — ensures idempotent aggregation.
 
 ### Builtin Probe Targets (seed data)
 
@@ -110,16 +110,15 @@ All builtin targets use `probe_type: "icmp"`, `is_builtin: true`.
 pub struct NetworkProbeTarget {
     pub target_id: String,
     pub name: String,
-    pub host: String,
-    pub probe_type: String,  // "icmp" / "tcp" / "http"
-    pub port: Option<u16>,
+    pub target: String,       // IP for ICMP, host:port for TCP, URL for HTTP
+    pub probe_type: String,   // "icmp" / "tcp" / "http"
 }
 
 pub struct NetworkProbeResultData {
     pub target_id: String,
-    pub avg_latency: f64,
-    pub min_latency: f64,
-    pub max_latency: f64,
+    pub avg_latency: Option<f64>,  // None when packet_received == 0
+    pub min_latency: Option<f64>,
+    pub max_latency: Option<f64>,
     pub packet_loss: f64,
     pub packet_sent: u32,
     pub packet_received: u32,
@@ -188,35 +187,61 @@ pub struct ProbeResult {
     pub error: Option<String>,
 }
 
+/// Single-packet probe (used by existing PingManager)
 pub async fn probe_icmp(host: &str, timeout: Duration) -> ProbeResult;
 pub async fn probe_tcp(host: &str, port: u16, timeout: Duration) -> ProbeResult;
 pub async fn probe_http(url: &str, timeout: Duration) -> ProbeResult;
+
+/// Batch ICMP probe using `ping -c N`. Returns per-packet results parsed from
+/// the summary line (min/avg/max/mdev) and packet loss from statistics line.
+/// Much more efficient than forking N separate processes.
+pub struct BatchIcmpResult {
+    pub avg_latency: Option<f64>,  // None if 100% loss
+    pub min_latency: Option<f64>,
+    pub max_latency: Option<f64>,
+    pub packet_loss: f64,
+    pub packet_sent: u32,
+    pub packet_received: u32,
+}
+
+pub async fn probe_icmp_batch(host: &str, count: u32, timeout: Duration) -> BatchIcmpResult;
 ```
 
-Refactor existing `pinger.rs` to call these shared functions. No behavior change.
+Refactor existing `pinger.rs` to call the single-packet `probe_icmp`/`probe_tcp`/`probe_http` functions. No behavior change.
+
+For network quality monitoring:
+- ICMP: use `probe_icmp_batch` (runs `ping -c N` once, parses summary line for min/avg/max/loss)
+- TCP/HTTP: run `probe_tcp`/`probe_http` N times sequentially, compute stats from individual results
 
 ### NetworkProber (`crates/agent/src/network_prober.rs`)
 
 **Responsibilities:**
 - Manage concurrent probe tasks per target (HashMap of JoinHandle, same pattern as PingManager)
-- `sync(targets, interval, packet_count)` — reconcile running tasks with server config
+- `sync(targets, interval, packet_count, capabilities)` — reconcile running tasks with server config; filter targets by capability (see Capability Gating below)
 - `stop_all()` — abort all tasks on shutdown
 
 **Per-target task loop:**
-1. Wait `interval` seconds
-2. Send `packet_count` probes sequentially (calling `probe_utils` functions)
-3. Compute aggregated stats: avg/min/max latency, packet_loss = 1 - (received / sent)
-4. Send `NetworkProbeResultData` via mpsc channel to Reporter
+1. On first iteration, add random initial jitter (0 to `interval` seconds) to prevent all agents from probing simultaneously after receiving `NetworkProbeSync`
+2. Wait `interval` seconds (using `tokio::time::interval` with `MissedTickBehavior::Skip` to prevent round overlap when probes exceed interval duration)
+3. For ICMP: call `probe_icmp_batch(host, packet_count)`. For TCP/HTTP: run `probe_tcp`/`probe_http` sequentially `packet_count` times, compute avg/min/max/loss
+4. When `packet_received == 0`, set avg/min/max_latency to `None`
+5. Send `NetworkProbeResultData` via mpsc channel to Reporter
 
 All targets run their probe rounds independently. The Reporter collects results arriving within a short time window and batches them into a single `AgentMessage::NetworkProbeResults(Vec<...>)` message.
 
-**No capability gating needed** — network probing is outbound-only with no security implications.
+**Capability Gating:** Network probes reuse existing capability bits. `sync()` filters targets by `probe_type`:
+- `"icmp"` → requires `CAP_PING_ICMP`
+- `"tcp"` → requires `CAP_PING_TCP`
+- `"http"` → requires `CAP_PING_HTTP`
+
+Targets whose capability is disabled are silently skipped (not started). When capabilities change via `CapabilitiesSync`, the prober re-syncs to start/stop affected targets.
 
 ### Reporter Integration (`crates/agent/src/reporter.rs`)
 
 Add 6th channel to `tokio::select!` loop:
 - Receive `NetworkProbeResultData` from network_prober → collect into batch → serialize as `AgentMessage::NetworkProbeResults` → send to WebSocket
 - Handle `ServerMessage::NetworkProbeSync` → call `network_prober.sync()`
+- Handle `ServerMessage::CapabilitiesSync` → also re-sync network_prober with updated capabilities
 
 ## Server Implementation
 
@@ -226,24 +251,24 @@ Add 6th channel to `tokio::select!` loop:
 - `list_targets() -> Vec<Target>` — all targets (builtin + custom)
 - `create_target(input) -> Target` — create custom target
 - `update_target(id, input) -> Target` — update custom target (builtin targets immutable)
-- `delete_target(id)` — delete custom target (cascade delete config + records). After deletion, push updated `NetworkProbeSync` to all online agents that had this target assigned.
+- `delete_target(id)` — delete custom target (cascade delete config + records). After deletion, push updated `NetworkProbeSync` to all online agents that had this target assigned. Also remove the target ID from `default_target_ids` in the global setting to prevent dangling references.
 
 **Configuration:**
-- `get_setting() -> Setting` — global probe settings
-- `update_setting(input)` — update settings; push `NetworkProbeSync` to all online agents
+- `get_setting() -> NetworkProbeSetting` — read from `ConfigService::get_typed("network_probe_setting")`, return defaults if not set
+- `update_setting(input)` — write via `ConfigService::set_typed`; push `NetworkProbeSync` to all online agents
 - `get_server_targets(server_id) -> Vec<Target>` — targets assigned to a VPS
-- `set_server_targets(server_id, target_ids)` — replace VPS target assignments. Target assignments are always persisted to `network_probe_config` regardless of agent online status. If the agent is online, push `NetworkProbeSync` immediately; if offline, the agent receives correct config on next connection (via the Welcome flow).
+- `set_server_targets(server_id, target_ids)` — replace VPS target assignments (max 20). Target assignments are always persisted to `network_probe_config` regardless of agent online status. If the agent is online, push `NetworkProbeSync` immediately; if offline, the agent receives correct config on next connection (via the Welcome flow).
 - `apply_defaults(server_id)` — assign default targets to newly registered VPS
 
 **Records:**
-- `save_result(server_id, result)` — insert into `network_probe_record`
-- `query_records(server_id, target_id?, time_range) -> Vec<Record>` — smart interval selection: < 1 day raw, 1-30 days hourly, > 30 days hourly
-- `get_server_summary(server_id) -> Summary` — current latency, packet loss, availability per target
-- `get_overview() -> Vec<ServerNetworkSummary>` — all VPS network summaries for overview page
-- `get_anomalies(server_id) -> Vec<Anomaly>` — targets with high latency (> 200ms) or high packet loss (> 10%)
+- `save_results(server_id, results: Vec<NetworkProbeResultData>)` — insert all results in a single DB transaction for efficiency
+- `query_records(server_id, target_id?, from, to) -> Vec<Record>` — smart interval selection: < 1 day raw, 1-30 days hourly, > 30 days hourly
+- `get_server_summary(server_id) -> Summary` — current latency, packet loss, availability per target; includes `last_probe_at` timestamp to distinguish stale data from live data
+- `get_overview() -> Vec<ServerNetworkSummary>` — all VPS network summaries for overview page; includes `last_probe_at` per VPS
+- `get_anomalies(server_id, from, to) -> Vec<Anomaly>` — targets with high latency (> 200ms) or high packet loss (> 10%) in the given time range
 
 **Aggregation (called by background tasks):**
-- `aggregate_hourly()` — raw records → hourly aggregates
+- `aggregate_hourly()` — raw records → hourly aggregates (idempotent via unique constraint on `(server_id, target_id, hour)`)
 - `cleanup_old_records()` — delete records older than retention period
 
 ### API Routes (`crates/server/src/router/api/network_probe.rs`)
@@ -256,18 +281,20 @@ Add 6th channel to `tokio::select!` loop:
 | DELETE | `/api/network-probes/targets/{id}` | admin | Delete target |
 | GET | `/api/network-probes/setting` | read | Get global settings |
 | PUT | `/api/network-probes/setting` | admin | Update global settings |
-| GET | `/api/network-probes/servers/{id}/targets` | read | Get VPS probe targets |
-| PUT | `/api/network-probes/servers/{id}/targets` | admin | Set VPS probe targets |
-| GET | `/api/network-probes/servers/{id}/records` | read | Query probe records (params: target_id?, hours) |
-| GET | `/api/network-probes/servers/{id}/summary` | read | VPS network summary |
-| GET | `/api/network-probes/servers/{id}/anomalies` | read | VPS anomalies in time range (params: hours) |
 | GET | `/api/network-probes/overview` | read | All VPS network overview |
+| GET | `/api/servers/{id}/network-probes/targets` | read | Get VPS probe targets |
+| PUT | `/api/servers/{id}/network-probes/targets` | admin | Set VPS probe targets |
+| GET | `/api/servers/{id}/network-probes/records` | read | Query probe records (params: target_id?, from, to) |
+| GET | `/api/servers/{id}/network-probes/summary` | read | VPS network summary |
+| GET | `/api/servers/{id}/network-probes/anomalies` | read | VPS anomalies (params: from, to) |
+
+Per-server endpoints are nested under `/api/servers/{id}/` consistent with existing routes (`/api/servers/{id}/records`, `/api/servers/{id}/gpu-records`). Global resources (targets, setting, overview) remain under `/api/network-probes/`.
 
 ### WebSocket Integration
 
 **Agent WS handler (`ws/agent.rs`):**
 - After Welcome + existing sync messages, also send `NetworkProbeSync` with the agent's configured targets
-- On `AgentMessage::NetworkProbeResults`: save each result to DB, broadcast `BrowserMessage::NetworkProbeUpdate` with the batch
+- On `AgentMessage::NetworkProbeResults`: save all results to DB in a single transaction, broadcast `BrowserMessage::NetworkProbeUpdate` with the batch
 
 **Browser WS handler (`ws/browser.rs`):**
 - `NetworkProbeUpdate` flows through existing `broadcast::Sender<BrowserMessage>` — no handler changes needed
@@ -319,20 +346,22 @@ Inspired by the user's reference screenshot (Nezha-style):
 - **VPS info bar**: IPv4, IPv6, region, country, virtualization type (from existing `servers` table)
 - **Target cards row**: one card per probe target showing:
   - Target name (color-coded label matching chart line)
-  - Current average latency
+  - Current average latency (or "N/A" when NULL / 100% loss)
   - Current packet loss rate
   - Eye icon toggle to show/hide line on chart
   - Cards grouped by provider
 - **Multi-line area chart** (Recharts):
   - X-axis: time, Y-axis: latency (ms)
   - One line per target, colors match card labels
+  - Data points with NULL latency (100% loss) render as gaps in the line
   - Hover tooltip: timestamp + each target's latency value
   - Realtime mode: data pushed from WebSocket into ring buffer (reuse `use-realtime-metrics` pattern, 200-point buffer)
-  - Historical mode: data from `GET /api/network-probes/servers/{id}/records`
+  - Historical mode: data from `GET /api/servers/{id}/network-probes/records`
 - **Bottom stats bar**: overall average latency | availability % (1 - avg packet loss) | target count n/n
 - **Anomaly summary table** (below chart):
   - Lists anomalous periods in selected time range
   - Columns: time | target | type (high latency / high packet loss / unreachable) | value
+  - Data from `GET /api/servers/{id}/network-probes/anomalies`
 - **Admin actions**: "Manage Targets" button → dialog to add/remove targets for this VPS
 
 ### Settings Page (`/settings/network-probes`)
@@ -341,7 +370,7 @@ Two tabs:
 
 **Tab 1: Target Management**
 - Table of all targets (builtin marked with lock icon, custom editable/deletable)
-- "Add Target" button → dialog: name, provider, location, host, probe_type, port
+- "Add Target" button → dialog: name, provider, location, target address, probe_type
 - Builtin targets are read-only
 
 **Tab 2: Global Settings**
@@ -359,7 +388,7 @@ Two tabs:
 **API hooks (extend `use-api.ts`)**:
 - `useNetworkOverview()` — overview data
 - `useNetworkServerSummary(serverId)` — VPS network summary
-- `useNetworkRecords(serverId, targetId?, timeRange)` — historical records
+- `useNetworkRecords(serverId, targetId?, from, to)` — historical records
 - `useNetworkTargets()` — target list
 - `useNetworkSetting()` — global settings
 - Mutation hooks for CRUD operations
@@ -381,7 +410,7 @@ Anomalies are computed dynamically (no separate storage):
 | Very High Packet Loss | packet_loss > 0.5 (50%) | critical |
 | Unreachable | packet_loss = 1.0 | critical |
 
-Thresholds are hardcoded constants (not user-configurable) to keep complexity low. If needed later, they can be moved to `network_probe_setting`.
+Thresholds are hardcoded constants (not user-configurable) to keep complexity low. If needed later, they can be moved to the global probe setting.
 
 The overview API and summary API include anomaly flags in their responses. The frontend uses these to render anomaly banners and badges.
 
@@ -397,7 +426,7 @@ pub network_probe_hourly_days: u32,  // default 90
 
 Configurable via env vars: `SERVERBEE_RETENTION__NETWORK_PROBE_DAYS`, `SERVERBEE_RETENTION__NETWORK_PROBE_HOURLY_DAYS`.
 
-Cleanup runs as part of existing `cleanup` background task. The `timestamp` column in `network_probe_record` serves as both probe time and retention cutoff reference.
+Cleanup runs as part of existing `cleanup` background task.
 
 ## Data Export
 
