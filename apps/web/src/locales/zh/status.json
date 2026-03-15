@@ -1,0 +1,13 @@
+{
+  "servers": "台服务器",
+  "online": "在线",
+  "loading": "加载状态中...",
+  "load_failed": "加载状态数据失败",
+  "no_servers": "暂无可用服务器",
+  "ungrouped": "未分组",
+  "unknown": "未知",
+  "cpu": "CPU",
+  "memory": "内存",
+  "disk": "磁盘",
+  "offline": "离线"
+}

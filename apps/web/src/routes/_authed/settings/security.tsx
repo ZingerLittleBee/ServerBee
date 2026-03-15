@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { Check, Link2Off, Loader2, Shield, ShieldOff, Smartphone } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
 import type { OAuthAccount, TotpSetupResponse, TotpStatusResponse } from '@/lib/api-schema'
@@ -11,9 +12,10 @@ export const Route = createFileRoute('/_authed/settings/security')({
 })
 
 function SecurityPage() {
+  const { t } = useTranslation(['settings', 'common'])
   return (
     <div>
-      <h1 className="mb-6 font-bold text-2xl">Security</h1>
+      <h1 className="mb-6 font-bold text-2xl">{t('security.title')}</h1>
       <div className="max-w-2xl space-y-8">
         <TwoFactorSection />
         <ChangePasswordSection />
@@ -24,6 +26,7 @@ function SecurityPage() {
 }
 
 function TwoFactorSection() {
+  const { t } = useTranslation(['settings', 'common'])
   const queryClient = useQueryClient()
   const [setupData, setSetupData] = useState<TotpSetupResponse | null>(null)
   const [verifyCode, setVerifyCode] = useState('')
@@ -87,31 +90,31 @@ function TwoFactorSection() {
     <div className="rounded-lg border bg-card p-6">
       <div className="mb-4 flex items-center gap-2">
         <Smartphone className="size-5" />
-        <h2 className="font-semibold text-lg">Two-Factor Authentication</h2>
+        <h2 className="font-semibold text-lg">{t('security.two_factor')}</h2>
       </div>
 
       {status?.enabled && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
             <Shield className="size-4" />
-            <span className="font-medium text-sm">2FA is enabled</span>
+            <span className="font-medium text-sm">{t('security.two_factor_enabled')}</span>
           </div>
 
           {showDisable ? (
             <form className="space-y-3" onSubmit={handleDisable}>
-              <p className="text-muted-foreground text-sm">Enter your password to disable 2FA:</p>
+              <p className="text-muted-foreground text-sm">{t('security.enter_password_disable')}</p>
               <input
                 autoComplete="current-password"
                 className="flex h-9 w-full max-w-xs rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onChange={(e) => setDisablePassword(e.target.value)}
-                placeholder="Current password"
+                placeholder={t('security.current_password')}
                 required
                 type="password"
                 value={disablePassword}
               />
               <div className="flex gap-2">
                 <Button disabled={disableMutation.isPending} type="submit" variant="destructive">
-                  Confirm Disable
+                  {t('security.confirm_disable')}
                 </Button>
                 <Button
                   onClick={() => {
@@ -121,30 +124,30 @@ function TwoFactorSection() {
                   type="button"
                   variant="outline"
                 >
-                  Cancel
+                  {t('common:cancel')}
                 </Button>
               </div>
               {disableMutation.error && (
-                <p className="text-destructive text-sm">{disableMutation.error.message || 'Failed to disable 2FA'}</p>
+                <p className="text-destructive text-sm">
+                  {disableMutation.error.message || t('security.disable_failed')}
+                </p>
               )}
             </form>
           ) : (
             <Button onClick={() => setShowDisable(true)} variant="destructive">
               <ShieldOff className="size-4" />
-              Disable 2FA
+              {t('security.disable_2fa')}
             </Button>
           )}
         </div>
       )}
       {!status?.enabled && setupData && (
         <div className="space-y-4">
-          <p className="text-muted-foreground text-sm">
-            Scan the QR code with your authenticator app (Google Authenticator, Authy, etc.)
-          </p>
+          <p className="text-muted-foreground text-sm">{t('security.scan_qr')}</p>
 
           <div className="flex justify-center rounded-md border bg-white p-4">
             <img
-              alt="TOTP QR Code"
+              alt={t('security.qr_alt')}
               height={192}
               src={`data:image/png;base64,${setupData.qr_code_base64}`}
               width={192}
@@ -152,7 +155,7 @@ function TwoFactorSection() {
           </div>
 
           <details className="text-sm">
-            <summary className="cursor-pointer text-muted-foreground">Can&apos;t scan? Enter this key manually</summary>
+            <summary className="cursor-pointer text-muted-foreground">{t('security.cant_scan')}</summary>
             <code className="mt-1 block break-all rounded bg-muted px-2 py-1 font-mono text-xs">
               {setupData.secret}
             </code>
@@ -160,7 +163,7 @@ function TwoFactorSection() {
 
           <form className="space-y-3" onSubmit={handleEnable}>
             <label className="font-medium text-sm" htmlFor="totp-code">
-              Enter the 6-digit code from your authenticator
+              {t('security.enter_code')}
             </label>
             <input
               autoComplete="one-time-code"
@@ -177,7 +180,7 @@ function TwoFactorSection() {
             <div className="flex gap-2">
               <Button disabled={enableMutation.isPending || verifyCode.length !== 6} type="submit">
                 {enableMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-                Verify & Enable
+                {t('security.verify_enable')}
               </Button>
               <Button
                 onClick={() => {
@@ -187,21 +190,19 @@ function TwoFactorSection() {
                 type="button"
                 variant="outline"
               >
-                Cancel
+                {t('common:cancel')}
               </Button>
             </div>
-            {enableMutation.error && <p className="text-destructive text-sm">Invalid code. Please try again.</p>}
+            {enableMutation.error && <p className="text-destructive text-sm">{t('security.invalid_code')}</p>}
           </form>
         </div>
       )}
       {!(status?.enabled || setupData) && (
         <div className="space-y-3">
-          <p className="text-muted-foreground text-sm">
-            Add an extra layer of security to your account using a time-based one-time password (TOTP).
-          </p>
+          <p className="text-muted-foreground text-sm">{t('security.two_factor_description')}</p>
           <Button disabled={setupMutation.isPending} onClick={() => setupMutation.mutate()}>
             <Shield className="size-4" />
-            Set Up 2FA
+            {t('security.setup_2fa')}
           </Button>
         </div>
       )}
@@ -210,6 +211,7 @@ function TwoFactorSection() {
 }
 
 function ChangePasswordSection() {
+  const { t } = useTranslation(['settings', 'common'])
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [success, setSuccess] = useState(false)
@@ -231,12 +233,12 @@ function ChangePasswordSection() {
 
   return (
     <div className="rounded-lg border bg-card p-6">
-      <h2 className="mb-4 font-semibold text-lg">Change Password</h2>
+      <h2 className="mb-4 font-semibold text-lg">{t('security.change_password')}</h2>
 
       <form className="max-w-xs space-y-3" onSubmit={handleSubmit}>
         <div className="space-y-1">
           <label className="font-medium text-sm" htmlFor="old-pw">
-            Current password
+            {t('security.current_password')}
           </label>
           <input
             autoComplete="current-password"
@@ -250,7 +252,7 @@ function ChangePasswordSection() {
         </div>
         <div className="space-y-1">
           <label className="font-medium text-sm" htmlFor="new-pw">
-            New password
+            {t('security.new_password')}
           </label>
           <input
             autoComplete="new-password"
@@ -265,12 +267,12 @@ function ChangePasswordSection() {
         </div>
 
         {mutation.error && (
-          <p className="text-destructive text-sm">{mutation.error.message || 'Failed to change password'}</p>
+          <p className="text-destructive text-sm">{mutation.error.message || t('security.change_failed')}</p>
         )}
-        {success && <p className="text-emerald-600 text-sm dark:text-emerald-400">Password changed successfully</p>}
+        {success && <p className="text-emerald-600 text-sm dark:text-emerald-400">{t('security.password_changed')}</p>}
 
         <Button disabled={mutation.isPending} type="submit">
-          {mutation.isPending ? 'Changing...' : 'Change Password'}
+          {mutation.isPending ? t('security.changing') : t('security.change_password')}
         </Button>
       </form>
     </div>
@@ -278,6 +280,7 @@ function ChangePasswordSection() {
 }
 
 function OAuthAccountsSection() {
+  const { t } = useTranslation(['settings', 'common'])
   const queryClient = useQueryClient()
 
   const { data: accounts, isLoading } = useQuery<OAuthAccount[]>({
@@ -294,7 +297,7 @@ function OAuthAccountsSection() {
 
   return (
     <div className="rounded-lg border bg-card p-6">
-      <h2 className="mb-4 font-semibold text-lg">Linked Accounts</h2>
+      <h2 className="mb-4 font-semibold text-lg">{t('security.linked_accounts')}</h2>
 
       {isLoading && (
         <div className="space-y-2">
@@ -303,7 +306,7 @@ function OAuthAccountsSection() {
         </div>
       )}
       {!isLoading && (!accounts || accounts.length === 0) && (
-        <p className="text-muted-foreground text-sm">No linked OAuth accounts</p>
+        <p className="text-muted-foreground text-sm">{t('security.no_linked_accounts')}</p>
       )}
       {!isLoading && accounts && accounts.length > 0 && (
         <div className="space-y-2">
@@ -321,14 +324,14 @@ function OAuthAccountsSection() {
                 )}
               </div>
               <Button
-                aria-label={`Unlink ${acct.provider} account`}
+                aria-label={`${t('security.unlink')} ${acct.provider}`}
                 disabled={unlinkMutation.isPending}
                 onClick={() => unlinkMutation.mutate(acct.id)}
                 size="sm"
                 variant="outline"
               >
                 <Link2Off className="size-3.5" />
-                Unlink
+                {t('security.unlink')}
               </Button>
             </div>
           ))}

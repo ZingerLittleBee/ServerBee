@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { RotateCcw, Search, ShieldAlert } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
 import { CAP_DEFAULT, CAPABILITIES } from '@/lib/capabilities'
@@ -18,9 +19,19 @@ interface ServerInfo {
 }
 
 function CapabilitiesPage() {
+  const { t } = useTranslation(['settings', 'servers'])
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  const capLabelMap: Record<string, string> = {
+    terminal: t('cap_terminal', { ns: 'servers' }),
+    exec: t('cap_exec', { ns: 'servers' }),
+    upgrade: t('cap_upgrade', { ns: 'servers' }),
+    ping_icmp: t('cap_ping_icmp', { ns: 'servers' }),
+    ping_tcp: t('cap_ping_tcp', { ns: 'servers' }),
+    ping_http: t('cap_ping_http', { ns: 'servers' })
+  }
 
   const { data: servers = [], isLoading } = useQuery<ServerInfo[]>({
     queryKey: ['servers-list'],
@@ -97,10 +108,8 @@ function CapabilitiesPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="font-bold text-2xl">Capabilities</h1>
-        <p className="text-muted-foreground text-sm">
-          Control which features each agent is allowed to use. Changes take effect on the next agent connection.
-        </p>
+        <h1 className="font-bold text-2xl">{t('capabilities.title')}</h1>
+        <p className="text-muted-foreground text-sm">{t('capabilities.description')}</p>
       </div>
 
       <div className="mb-4 flex items-center gap-3">
@@ -109,17 +118,19 @@ function CapabilitiesPage() {
           <input
             className="h-9 w-full rounded-md border bg-background pr-3 pl-9 text-sm outline-none focus:ring-2 focus:ring-ring"
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search servers..."
+            placeholder={t('capabilities.search')}
             type="text"
             value={search}
           />
         </div>
         {selected.size > 0 && (
           <div className="flex items-center gap-2">
-            <span className="text-muted-foreground text-sm">{selected.size} selected —</span>
+            <span className="text-muted-foreground text-sm">
+              {t('capabilities.selected', { count: selected.size })}
+            </span>
             <Button disabled={isPending} onClick={batchReset} size="sm" variant="outline">
               <RotateCcw className="mr-1 size-3.5" />
-              Reset to Default
+              {t('capabilities.reset_default')}
             </Button>
           </div>
         )}
@@ -127,14 +138,14 @@ function CapabilitiesPage() {
 
       {selected.size > 0 && (
         <div className="mb-4 flex flex-wrap gap-2 rounded-lg border bg-muted/30 p-3">
-          <span className="self-center text-muted-foreground text-sm">Batch toggle:</span>
-          {CAPABILITIES.map(({ bit, label }) => (
+          <span className="self-center text-muted-foreground text-sm">{t('capabilities.batch_toggle')}</span>
+          {CAPABILITIES.map(({ bit, key }) => (
             <div className="flex gap-1" key={bit}>
               <Button disabled={isPending} onClick={() => batchEnable(bit)} size="sm" variant="outline">
-                +{label}
+                +{capLabelMap[key]}
               </Button>
               <Button disabled={isPending} onClick={() => batchDisable(bit)} size="sm" variant="outline">
-                -{label}
+                -{capLabelMap[key]}
               </Button>
             </div>
           ))}
@@ -149,7 +160,7 @@ function CapabilitiesPage() {
 
       {!isLoading && servers.length === 0 && (
         <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-dashed">
-          <p className="text-muted-foreground text-sm">No servers registered yet</p>
+          <p className="text-muted-foreground text-sm">{t('capabilities.no_servers')}</p>
         </div>
       )}
 
@@ -161,10 +172,13 @@ function CapabilitiesPage() {
                 <th className="w-10 px-3 py-2.5">
                   <input checked={allSelected} className="rounded" onChange={toggleAll} type="checkbox" />
                 </th>
-                <th className="px-3 py-2.5 text-left font-medium text-muted-foreground">Server</th>
-                {CAPABILITIES.map(({ bit, label }) => (
+                <th className="px-3 py-2.5 text-left font-medium text-muted-foreground">{t('capabilities.server')}</th>
+                {CAPABILITIES.map(({ bit, key, risk }) => (
                   <th className="px-3 py-2.5 text-center font-medium text-muted-foreground text-xs" key={bit}>
-                    {label}
+                    <div>{capLabelMap[key]}</div>
+                    <div className={`text-[10px] ${risk === 'high' ? 'text-red-500' : 'text-muted-foreground'}`}>
+                      {t(risk === 'high' ? 'cap_high_risk' : 'cap_low_risk', { ns: 'servers' })}
+                    </div>
                   </th>
                 ))}
               </tr>
@@ -187,7 +201,7 @@ function CapabilitiesPage() {
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{server.name}</span>
                         {hasOldAgent && (
-                          <span title="Agent does not support capability enforcement — upgrade recommended">
+                          <span title={t('cap_upgrade_warning', { ns: 'servers' })}>
                             <ShieldAlert className="size-3.5 text-amber-500" />
                           </span>
                         )}

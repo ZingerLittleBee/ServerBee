@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { cn, countryCodeToFlag, formatSpeed, formatUptime } from '@/lib/utils'
 import { StatusBadge } from './status-badge'
@@ -43,6 +44,7 @@ function osIcon(os: string | null): string {
 }
 
 export function ServerCard({ server }: ServerCardProps) {
+  const { t } = useTranslation('servers')
   const memoryPct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
   const diskPct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
   const flag = countryCodeToFlag(server.country_code)
@@ -72,17 +74,17 @@ export function ServerCard({ server }: ServerCardProps) {
       </div>
 
       <div className="space-y-2.5">
-        <ProgressBar color="bg-chart-1" label="CPU" value={server.cpu} />
-        <ProgressBar color="bg-chart-2" label="Memory" value={memoryPct} />
-        <ProgressBar color="bg-chart-3" label="Disk" value={diskPct} />
+        <ProgressBar color="bg-chart-1" label={t('col_cpu')} value={server.cpu} />
+        <ProgressBar color="bg-chart-2" label={t('col_memory')} value={memoryPct} />
+        <ProgressBar color="bg-chart-3" label={t('col_disk')} value={diskPct} />
       </div>
 
       <div className="mt-3 flex items-center justify-between text-muted-foreground text-xs">
         <div className="flex gap-3">
-          <span title="Network In">{formatSpeed(server.net_in_speed)}</span>
-          <span title="Network Out">{formatSpeed(server.net_out_speed)}</span>
+          <span title={t('chart_net_in')}>{formatSpeed(server.net_in_speed)}</span>
+          <span title={t('chart_net_out')}>{formatSpeed(server.net_out_speed)}</span>
         </div>
-        <span title="Uptime">{formatUptime(server.uptime)}</span>
+        <span title={t('col_uptime')}>{formatUptime(server.uptime)}</span>
       </div>
     </Link>
   )

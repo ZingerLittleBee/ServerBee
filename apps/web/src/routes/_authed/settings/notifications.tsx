@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { Bell, Plus, Send, Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
 import type { Notification, NotificationGroup } from '@/lib/api-schema'
@@ -12,16 +13,10 @@ export const Route = createFileRoute('/_authed/settings/notifications')({
 
 type NotifyType = 'bark' | 'email' | 'telegram' | 'webhook'
 
-const typeLabels: Record<NotifyType, string> = {
-  webhook: 'Webhook',
-  telegram: 'Telegram',
-  bark: 'Bark',
-  email: 'Email'
-}
-
 const SENSITIVE_FIELDS = new Set(['password', 'bot_token', 'device_key'])
 
 function NotificationsPage() {
+  const { t } = useTranslation(['settings', 'common'])
   const queryClient = useQueryClient()
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
@@ -29,6 +24,13 @@ function NotificationsPage() {
   const [configFields, setConfigFields] = useState<Record<string, string>>({
     url: ''
   })
+
+  const typeLabels: Record<NotifyType, string> = {
+    webhook: t('notifications.type_webhook'),
+    telegram: t('notifications.type_telegram'),
+    bark: t('notifications.type_bark'),
+    email: t('notifications.type_email')
+  }
 
   const { data: notifications, isLoading } = useQuery<Notification[]>({
     queryKey: ['notifications'],
@@ -135,31 +137,31 @@ function NotificationsPage() {
   }
 
   const configFieldLabels: Record<string, Record<string, string>> = {
-    webhook: { url: 'Webhook URL' },
-    telegram: { bot_token: 'Bot Token', chat_id: 'Chat ID' },
-    bark: { server_url: 'Server URL', device_key: 'Device Key' },
+    webhook: { url: t('notifications.webhook_url') },
+    telegram: { bot_token: t('notifications.bot_token'), chat_id: t('notifications.chat_id') },
+    bark: { server_url: t('notifications.bark_server'), device_key: t('notifications.bark_device_key') },
     email: {
-      smtp_host: 'SMTP Host',
-      smtp_port: 'SMTP Port',
-      username: 'Username',
-      password: 'Password',
-      from: 'From Address',
-      to: 'To Address'
+      smtp_host: t('notifications.smtp_host'),
+      smtp_port: t('notifications.smtp_port'),
+      username: t('notifications.smtp_username'),
+      password: t('notifications.smtp_password'),
+      from: t('notifications.from_address'),
+      to: t('notifications.to_address')
     }
   }
 
   return (
     <div>
-      <h1 className="mb-6 font-bold text-2xl">Notifications</h1>
+      <h1 className="mb-6 font-bold text-2xl">{t('notifications.title')}</h1>
 
       <div className="max-w-2xl space-y-6">
         {/* Create notification */}
         <div className="rounded-lg border bg-card p-6">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold text-lg">Notification Channels</h2>
+            <h2 className="font-semibold text-lg">{t('notifications.channels')}</h2>
             <Button onClick={() => setShowForm(!showForm)} size="sm" variant="outline">
               <Plus className="size-4" />
-              Add
+              {t('common:add')}
             </Button>
           </div>
 
@@ -168,7 +170,7 @@ function NotificationsPage() {
               <input
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Channel name"
+                placeholder={t('notifications.channel_name')}
                 required
                 type="text"
                 value={name}
@@ -197,10 +199,10 @@ function NotificationsPage() {
               ))}
               <div className="flex gap-2">
                 <Button disabled={createMutation.isPending} size="sm" type="submit">
-                  Create
+                  {t('common:create')}
                 </Button>
                 <Button onClick={resetForm} size="sm" type="button" variant="ghost">
-                  Cancel
+                  {t('common:cancel')}
                 </Button>
               </div>
             </form>
@@ -214,7 +216,7 @@ function NotificationsPage() {
             </div>
           )}
           {!isLoading && (!notifications || notifications.length === 0) && (
-            <p className="text-center text-muted-foreground text-sm">No notification channels configured</p>
+            <p className="text-center text-muted-foreground text-sm">{t('notifications.no_channels')}</p>
           )}
           {notifications && notifications.length > 0 && (
             <div className="divide-y rounded-md border">
@@ -226,7 +228,7 @@ function NotificationsPage() {
                       <p className="font-medium text-sm">{n.name}</p>
                       <p className="text-muted-foreground text-xs">
                         {typeLabels[n.notify_type as NotifyType] ?? n.notify_type}
-                        {n.enabled ? '' : ' (disabled)'}
+                        {n.enabled ? '' : ` ${t('notifications.disabled')}`}
                       </p>
                     </div>
                   </div>
@@ -259,10 +261,10 @@ function NotificationsPage() {
         {/* Notification Groups */}
         <div className="rounded-lg border bg-card p-6">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold text-lg">Notification Groups</h2>
+            <h2 className="font-semibold text-lg">{t('notifications.groups')}</h2>
             <Button onClick={() => setShowGroupForm(!showGroupForm)} size="sm" variant="outline">
               <Plus className="size-4" />
-              Add
+              {t('common:add')}
             </Button>
           </div>
 
@@ -271,13 +273,13 @@ function NotificationsPage() {
               <input
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onChange={(e) => setGroupName(e.target.value)}
-                placeholder="Group name"
+                placeholder={t('notifications.group_name')}
                 required
                 type="text"
                 value={groupName}
               />
               <fieldset className="space-y-1">
-                <legend className="text-sm">Select channels:</legend>
+                <legend className="text-sm">{t('notifications.select_channels')}</legend>
                 {notifications.map((n) => (
                   <label className="flex items-center gap-2 text-sm" key={n.id}>
                     <input
@@ -294,13 +296,13 @@ function NotificationsPage() {
                 ))}
               </fieldset>
               <Button disabled={createGroupMutation.isPending || selectedIds.length === 0} size="sm" type="submit">
-                Create Group
+                {t('notifications.create_group')}
               </Button>
             </form>
           )}
 
           {!groups || groups.length === 0 ? (
-            <p className="text-center text-muted-foreground text-sm">No notification groups</p>
+            <p className="text-center text-muted-foreground text-sm">{t('notifications.no_groups')}</p>
           ) : (
             <div className="divide-y rounded-md border">
               {groups.map((g) => {
@@ -309,7 +311,9 @@ function NotificationsPage() {
                   <div className="flex items-center justify-between px-4 py-3" key={g.id}>
                     <div>
                       <p className="font-medium text-sm">{g.name}</p>
-                      <p className="text-muted-foreground text-xs">{ids.length} channel(s)</p>
+                      <p className="text-muted-foreground text-xs">
+                        {t('notifications.channel_count', { count: ids.length })}
+                      </p>
                     </div>
                     <Button
                       aria-label={`Delete group ${g.name}`}
