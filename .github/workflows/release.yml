@@ -18,10 +18,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
+          - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             suffix: linux-amd64
-          - target: aarch64-unknown-linux-gnu
+          - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
             suffix: linux-arm64
           - target: x86_64-apple-darwin
@@ -46,11 +46,18 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      - name: Install cross-compilation tools
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
+      - name: Install musl tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Install cross-compilation tools (aarch64-musl)
+        if: matrix.target == 'aarch64-unknown-linux-musl'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
+          sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu
+          # Install aarch64 musl cross toolchain
+          curl -fsSL https://musl.cc/aarch64-linux-musl-cross.tgz | sudo tar xz -C /opt
+          echo "/opt/aarch64-linux-musl-cross/bin" >> "$GITHUB_PATH"
 
       - name: Build frontend
         working-directory: apps/web
@@ -59,7 +66,7 @@ jobs:
       - name: Build release
         run: cargo build --release --target ${{ matrix.target }}
         env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-musl-gcc
 
       - name: Package binaries (Unix)
         if: runner.os != 'Windows'
@@ -85,9 +92,29 @@ jobs:
 
   docker:
     name: Docker Image
+    needs: [build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: docker-bins
+          pattern: release-linux-*
+          merge-multiple: true
+
+      - name: Prepare binaries
+        run: |
+          mkdir -p docker-bins/linux-amd64 docker-bins/linux-arm64
+          mv docker-bins/serverbee-server-linux-amd64 docker-bins/linux-amd64/serverbee-server
+          mv docker-bins/serverbee-agent-linux-amd64 docker-bins/linux-amd64/serverbee-agent
+          mv docker-bins/serverbee-server-linux-arm64 docker-bins/linux-arm64/serverbee-server
+          mv docker-bins/serverbee-agent-linux-arm64 docker-bins/linux-arm64/serverbee-agent
+          chmod +x docker-bins/linux-amd64/* docker-bins/linux-arm64/*
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -111,13 +138,12 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile.release
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
             ghcr.io/${{ steps.owner.outputs.lowercase }}/serverbee:latest
             ghcr.io/${{ steps.owner.outputs.lowercase }}/serverbee:${{ steps.version.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   release:
     name: Create Release
