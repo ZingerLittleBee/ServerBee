@@ -6,7 +6,7 @@
 # 全量测试
 cargo test --workspace && bun run test
 
-# Rust 测试（110 单元 + 11 集成 = 121）
+# Rust 测试（126 单元 + 15 集成 = 141）
 cargo test --workspace
 
 # 前端测试（86 vitest，9 个测试文件）
@@ -24,8 +24,8 @@ bun run typecheck
 
 ```bash
 cargo test -p serverbee-common          # 协议 + 能力常量 (11 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 (103 tests)
-cargo test -p serverbee-agent           # Agent 采集器 + Pinger (7 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 (119 tests)
+cargo test -p serverbee-agent           # Agent 采集器 + Pinger (11 tests)
 ```
 
 ### 仅集成测试
@@ -62,6 +62,9 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `agent/pinger.rs` | 2 | TCP 探测（开放/关闭端口） |
 | `server/service/audit.rs` | 3 | 审计日志记录、列表、排序 |
 | `server/service/config.rs` | 5 | KV 存取、upsert、类型化读写 |
+| `server/service/network_probe.rs` | 6 | 网络探测目标 CRUD、内置目标保护、探测记录查询 |
+| `agent/probe_utils.rs` | 2 | 批量探测结果解析、地址解析 |
+| `agent/network_prober.rs` | 2 | 网络探测任务调度、结果上报 |
 
 ### 集成测试覆盖
 
@@ -78,6 +81,10 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `test_user_management_crud` | 用户创建 → 列表 → 改角色 → 删除 |
 | `test_settings_auto_discovery_key` | 获取 → 重新生成 → 验证不同 |
 | `test_alert_states_endpoint` | 创建规则 → GET states 返回空 → 删除规则 |
+| `test_network_probe_target_crud` | 创建目标 → 列表 → 更新 → 删除 |
+| `test_network_probe_setting_crud` | 读取默认配置 → 更新间隔 → 验证持久化 |
+| `test_network_probe_server_targets` | 获取 server 关联目标列表 → 验证内置目标存在 |
+| `test_network_probe_builtin_protection` | 删除内置目标 → 返回 403 |
 
 ## 前端测试
 
@@ -284,6 +291,9 @@ crates/server/src/test_utils.rs         # 测试辅助 (setup_test_db)
 crates/server/tests/integration.rs      # 集成测试 (11 tests)
 crates/agent/src/collector/tests.rs     # Agent 采集器测试
 crates/agent/src/pinger.rs              # Agent Pinger 测试
+crates/agent/src/probe_utils.rs         # 批量探测解析测试
+crates/agent/src/network_prober.rs      # 网络探测模块测试
+crates/server/src/service/network_probe.rs # 网络探测服务单元测试
 apps/web/src/hooks/use-terminal-ws.test.ts # Terminal WS hook 测试
 apps/web/src/lib/capabilities.test.ts   # 能力位测试
 apps/web/src/lib/api-client.test.ts     # API Client 测试
