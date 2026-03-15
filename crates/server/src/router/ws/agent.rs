@@ -278,6 +278,17 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 state.agent_manager.unregister_terminal_session(sid);
             }
         }
+        AgentMessage::NetworkProbeResults { results } => {
+            // TODO(Task 10): save results and broadcast to browsers
+            if let Err(e) =
+                crate::service::network_probe::NetworkProbeService::save_results(
+                    &state.db, server_id, results,
+                )
+                .await
+            {
+                tracing::error!("Failed to save network probe results for {server_id}: {e}");
+            }
+        }
         AgentMessage::Pong => {
             // Agent responded to our protocol-level Ping; already handled by WS Pong frames
         }

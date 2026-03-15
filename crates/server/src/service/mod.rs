@@ -4,6 +4,7 @@ pub mod audit;
 pub mod auth;
 pub mod config;
 pub mod geoip;
+pub mod network_probe;
 pub mod notification;
 pub mod oauth;
 pub mod ping;
