@@ -3362,6 +3362,7 @@ dependencies = [
  "tokio",
  "tokio-cron-scheduler",
  "tokio-tungstenite 0.26.2",
+ "toml",
  "totp-rs",
  "tower",
  "tower-http",
