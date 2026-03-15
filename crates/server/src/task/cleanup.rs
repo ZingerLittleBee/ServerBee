@@ -5,6 +5,7 @@ use chrono::{Duration as ChronoDuration, Utc};
 use sea_orm::*;
 
 use crate::entity::{audit_log, ping_record};
+use crate::service::network_probe::NetworkProbeService;
 use crate::service::record::RecordService;
 use crate::state::AppState;
 
@@ -55,6 +56,19 @@ pub async fn run(state: Arc<AppState>) {
 
         // Clean up audit logs
         cleanup_audit_logs(&state.db, retention.audit_logs_days).await;
+
+        // Clean up network probe records
+        match NetworkProbeService::cleanup_old_records(&state.db, retention).await {
+            Ok((raw, hourly)) => {
+                if raw > 0 {
+                    tracing::info!("Cleaned up {raw} expired network probe raw records");
+                }
+                if hourly > 0 {
+                    tracing::info!("Cleaned up {hourly} expired network probe hourly records");
+                }
+            }
+            Err(e) => tracing::error!("Failed to clean up network probe records: {e}"),
+        }
     }
 }
 

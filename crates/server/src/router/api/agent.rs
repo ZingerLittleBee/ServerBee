@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::error::{ok, ApiResponse, AppError};
 use crate::service::auth::AuthService;
 use crate::service::config::ConfigService;
+use crate::service::network_probe::NetworkProbeService;
 use crate::state::AppState;
 
 const CONFIG_KEY_AUTO_DISCOVERY: &str = "auto_discovery_key";
@@ -140,6 +141,11 @@ async fn register(
 
     use sea_orm::ActiveModelTrait;
     new_server.insert(&state.db).await?;
+
+    // Apply default network probe targets to the newly registered server
+    if let Err(e) = NetworkProbeService::apply_defaults(&state.db, &server_id).await {
+        tracing::warn!("Failed to apply default network probe targets to {server_id}: {e}");
+    }
 
     ok(RegisterResponse {
         server_id,
