@@ -83,7 +83,7 @@ function ServerNetworkCard({ summary }: { summary: NetworkServerSummary }) {
               variant="outline"
             >
               <span className={cn('size-1.5 rounded-full', summary.online ? 'bg-emerald-500' : 'bg-red-500')} />
-              {summary.online ? 'Online' : 'Offline'}
+              {summary.online ? t('online') : t('offline')}
             </Badge>
           </div>
         </CardHeader>
@@ -208,7 +208,7 @@ function NetworkOverviewPage() {
 
       {!isLoading && totalServers > 0 && filtered.length === 0 && (
         <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-dashed">
-          <p className="text-muted-foreground text-sm">No servers match your search.</p>
+          <p className="text-muted-foreground text-sm">{t('no_search_results')}</p>
         </div>
       )}
 

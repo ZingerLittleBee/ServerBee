@@ -49,5 +49,10 @@
   "no_targets": "未配置探测目标",
   "confirm_delete_target": "确定要删除此目标吗？",
   "save": "保存",
-  "cancel": "取消"
+  "cancel": "取消",
+  "back_to_overview": "返回总览",
+  "server_not_found": "未找到服务器",
+  "online": "在线",
+  "offline": "离线",
+  "no_search_results": "没有符合搜索条件的服务器。"
 }

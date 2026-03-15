@@ -615,12 +615,13 @@ impl NetworkProbeService {
             .map(|t| (t.id.clone(), t.name.clone()))
             .collect();
 
-        // Query raw records in the time range
+        // Query raw records in the time range (capped at 500 to bound memory usage)
         let records = network_probe_record::Entity::find()
             .filter(network_probe_record::Column::ServerId.eq(server_id))
             .filter(network_probe_record::Column::Timestamp.gte(from))
             .filter(network_probe_record::Column::Timestamp.lte(to))
             .order_by_asc(network_probe_record::Column::Timestamp)
+            .limit(500)
             .all(db)
             .await?;
 

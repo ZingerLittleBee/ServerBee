@@ -32,6 +32,8 @@ export interface NetworkProbeRecord {
 export interface NetworkTargetSummary {
   availability: number
   avg_latency: number | null
+  max_latency: number | null
+  min_latency: number | null
   packet_loss: number
   provider: string
   target_id: string
