@@ -176,13 +176,17 @@ impl Reporter {
                     let json = serde_json::to_string(&msg)?;
                     write.send(Message::Text(json.into())).await?;
                 }
-                Some(probe_result) = network_probe_rx.recv() => {
-                    let msg = AgentMessage::NetworkProbeResults {
-                        results: vec![probe_result],
-                    };
+                Some(first_result) = network_probe_rx.recv() => {
+                    let mut results = vec![first_result];
+                    // Drain any additional results that arrived at the same time
+                    while let Ok(additional) = network_probe_rx.try_recv() {
+                        results.push(additional);
+                    }
+                    let count = results.len();
+                    let msg = AgentMessage::NetworkProbeResults { results };
                     let json = serde_json::to_string(&msg)?;
                     write.send(Message::Text(json.into())).await?;
-                    tracing::debug!("Sent NetworkProbeResults");
+                    tracing::debug!("Sent NetworkProbeResults ({count} results)");
                 }
                 server_msg = read.next() => {
                     match server_msg {

@@ -7,8 +7,7 @@ interface AnomalyTableProps {
 }
 
 function isCritical(type: string): boolean {
-  const lower = type.toLowerCase()
-  return lower.includes('unreachable') || lower.includes('critical') || lower.includes('100')
+  return type === 'unreachable' || type === 'very_high_latency' || type === 'very_high_packet_loss'
 }
 
 function formatAnomalyValue(type: string, value: number): string {
