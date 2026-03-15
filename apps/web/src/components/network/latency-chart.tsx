@@ -15,12 +15,13 @@ interface LatencyChartProps {
   targets: TargetInfo[]
 }
 
-function formatTimeFull(timestamp: string): string {
-  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-}
-
-function formatTimeShort(timestamp: string): string {
-  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+function formatTime24(timestamp: string): string {
+  return new Date(timestamp).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
 }
 
 function formatTimeHM(timestamp: string): string {
@@ -104,12 +105,8 @@ export function LatencyChart({ records, targets, isRealtime = false }: LatencyCh
             interval={tickInterval}
             stroke="var(--color-muted-foreground)"
             tick={{ fontSize: 11 }}
-            tickFormatter={(v, index) => {
-              if (!isRealtime) {
-                return formatTimeHM(v)
-              }
-              const isFirst = index === 0
-              return isFirst ? formatTimeFull(v) : formatTimeShort(v)
+            tickFormatter={(v) => {
+              return isRealtime ? formatTime24(v) : formatTimeHM(v)
             }}
             tickLine={false}
           />
