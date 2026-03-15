@@ -739,7 +739,7 @@ async fn test_network_probe_target_crud() {
 
     assert_eq!(delete_resp.status(), 200, "delete target should succeed");
 
-    // ── Step 6: GET /api/network-probes/targets — verify back to 12 ──
+    // ── Step 6: GET /api/network-probes/targets — verify back to 96 ──
     let list_resp3 = client
         .get(format!("{}/api/network-probes/targets", base_url))
         .send()

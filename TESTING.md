@@ -6,7 +6,7 @@
 # 全量测试
 cargo test --workspace && bun run test
 
-# Rust 测试（140 单元 + 15 集成 = 155）
+# Rust 测试（147 单元 + 17 集成 = 164）
 cargo test --workspace
 
 # 前端测试（86 vitest，9 个测试文件）
@@ -24,8 +24,8 @@ bun run typecheck
 
 ```bash
 cargo test -p serverbee-common          # 协议 + 能力常量 (14 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 (122 tests)
-cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber (19 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 (130 tests)
+cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber (20 tests)
 ```
 
 ### 仅集成测试
@@ -63,7 +63,7 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `server/service/audit.rs` | 3 | 审计日志记录、列表、排序 |
 | `server/service/config.rs` | 5 | KV 存取、upsert、类型化读写 |
 | `server/presets/mod.rs` | 8 | 预设目标加载、ID 唯一性、查找、分组元数据、探测类型校验 |
-| `server/service/network_probe.rs` | 7 | 网络探测目标 CRUD、预设目标保护、探测记录查询 |
+| `server/service/network_probe.rs` | 13 | 网络探测目标 CRUD、预设目标保护（update/delete 403）、default_target_ids 校验、server targets 分配+校验、探测记录查询 |
 | `agent/probe_utils.rs` | 2 | 批量探测结果解析、地址解析 |
 | `agent/network_prober.rs` | 2 | 网络探测任务调度、结果上报 |
 
@@ -86,6 +86,8 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `test_network_probe_setting_crud` | 读取默认配置 → 更新间隔 → 验证持久化 |
 | `test_network_probe_server_targets` | 获取 server 关联目标列表 → 验证预设目标存在 |
 | `test_network_probe_builtin_protection` | 删除预设目标 → 返回 403 |
+| `test_preset_target_source_field` | 验证预设 source/source_name 字段正确、自建目标 source 为 null |
+| `test_preset_target_cannot_be_updated` | PUT 预设目标 → 返回 403 |
 
 ## 前端测试
 
@@ -319,7 +321,7 @@ crates/server/src/service/user.rs       # 用户服务测试
 crates/server/src/service/ping.rs       # Ping 服务测试
 crates/server/src/middleware/auth.rs    # 中间件 Cookie/Key 提取测试
 crates/server/src/test_utils.rs         # 测试辅助 (setup_test_db)
-crates/server/tests/integration.rs      # 集成测试 (15 tests)
+crates/server/tests/integration.rs      # 集成测试 (17 tests)
 crates/agent/src/collector/tests.rs     # Agent 采集器测试
 crates/agent/src/pinger.rs              # Agent Pinger 测试
 crates/agent/src/probe_utils.rs         # 批量探测解析测试
