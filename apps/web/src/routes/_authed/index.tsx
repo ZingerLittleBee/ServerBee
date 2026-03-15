@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { Activity, Cpu, HardDrive, MemoryStick, Server, Wifi } from 'lucide-react'
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ServerCard } from '@/components/server/server-card'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
@@ -38,6 +39,7 @@ function StatCard({
 }
 
 function DashboardPage() {
+  const { t } = useTranslation('dashboard')
   const { data: servers = [] } = useQuery<ServerMetrics[]>({
     queryKey: ['servers'],
     queryFn: () => [],
@@ -101,9 +103,9 @@ function DashboardPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="font-bold text-2xl">Dashboard</h1>
+        <h1 className="font-bold text-2xl">{t('title')}</h1>
         <p className="text-muted-foreground text-sm">
-          {onlineCount} of {servers.length} servers online
+          {t('servers_online', { online: onlineCount, total: servers.length })}
         </p>
       </div>
 
@@ -111,17 +113,22 @@ function DashboardPage() {
         <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <StatCard
             icon={Server}
-            label="Servers"
-            sub={`${servers.length - onlineCount} offline`}
+            label={t('stat_servers')}
+            sub={t('offline_count', { count: servers.length - onlineCount })}
             value={`${onlineCount} / ${servers.length}`}
           />
-          <StatCard icon={Cpu} label="Avg CPU" value={`${stats.avgCpu.toFixed(1)}%`} />
-          <StatCard icon={MemoryStick} label="Avg Memory" value={`${stats.avgMem.toFixed(1)}%`} />
-          <StatCard icon={Wifi} label="Total Bandwidth" sub="/s" value={formatBytes(stats.totalBandwidth)} />
+          <StatCard icon={Cpu} label={t('avg_cpu')} value={`${stats.avgCpu.toFixed(1)}%`} />
+          <StatCard icon={MemoryStick} label={t('avg_memory')} value={`${stats.avgMem.toFixed(1)}%`} />
+          <StatCard
+            icon={Wifi}
+            label={t('total_bandwidth')}
+            sub={t('per_second')}
+            value={formatBytes(stats.totalBandwidth)}
+          />
           <StatCard
             icon={onlineCount > 0 ? Activity : HardDrive}
-            label="Online"
-            value={onlineCount > 0 ? 'Healthy' : 'No data'}
+            label={t('online')}
+            value={onlineCount > 0 ? t('healthy') : t('no_data')}
           />
         </div>
       )}
@@ -129,10 +136,8 @@ function DashboardPage() {
       {servers.length === 0 && (
         <div className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed">
           <div className="text-center">
-            <p className="text-muted-foreground text-sm">No servers connected yet</p>
-            <p className="mt-1 text-muted-foreground text-xs">
-              Servers will appear here once they connect via the agent
-            </p>
+            <p className="text-muted-foreground text-sm">{t('no_servers_title')}</p>
+            <p className="mt-1 text-muted-foreground text-xs">{t('no_servers_description')}</p>
           </div>
         </div>
       )}
@@ -140,7 +145,7 @@ function DashboardPage() {
         <div className="space-y-8">
           {sortedKeys.map((key) => {
             const groupServers = grouped.get(key) ?? []
-            const groupName = key === '__ungrouped__' ? 'Ungrouped' : (groupMap.get(key) ?? 'Unknown')
+            const groupName = key === '__ungrouped__' ? t('ungrouped') : (groupMap.get(key) ?? t('unknown'))
             return (
               <section key={key}>
                 <h2 className="mb-3 font-semibold text-lg">{groupName}</h2>

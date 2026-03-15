@@ -1,0 +1,17 @@
+{
+  "title": "Dashboard",
+  "servers_online": "{{online}} of {{total}} servers online",
+  "stat_servers": "Servers",
+  "offline_count": "{{count}} offline",
+  "avg_cpu": "Avg CPU",
+  "avg_memory": "Avg Memory",
+  "total_bandwidth": "Total Bandwidth",
+  "per_second": "/s",
+  "online": "Online",
+  "healthy": "Healthy",
+  "no_data": "No data",
+  "no_servers_title": "No servers connected yet",
+  "no_servers_description": "Servers will appear here once they connect via the agent",
+  "ungrouped": "Ungrouped",
+  "unknown": "Unknown"
+}

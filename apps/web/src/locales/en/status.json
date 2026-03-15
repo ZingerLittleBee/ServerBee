@@ -1,0 +1,13 @@
+{
+  "servers": "servers",
+  "online": "online",
+  "loading": "Loading status...",
+  "load_failed": "Failed to load status data",
+  "no_servers": "No servers available",
+  "ungrouped": "Ungrouped",
+  "unknown": "Unknown",
+  "cpu": "CPU",
+  "memory": "Memory",
+  "disk": "Disk",
+  "offline": "Offline"
+}

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { Activity, BarChart3, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
@@ -18,13 +19,8 @@ interface Server {
 
 type ProbeType = 'http' | 'icmp' | 'tcp'
 
-const probeTypeLabels: Record<ProbeType, string> = {
-  icmp: 'ICMP Ping',
-  tcp: 'TCP Connect',
-  http: 'HTTP Request'
-}
-
 function PingResultsChart({ taskId }: { taskId: string }) {
+  const { t } = useTranslation('settings')
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally re-compute when taskId changes
   const now = useMemo(() => new Date(), [taskId])
   const from = new Date(now.getTime() - 24 * 3600 * 1000).toISOString()
@@ -43,7 +39,7 @@ function PingResultsChart({ taskId }: { taskId: string }) {
   }
 
   if (!records || records.length === 0) {
-    return <p className="py-4 text-center text-muted-foreground text-xs">No records in the last 24 hours</p>
+    return <p className="py-4 text-center text-muted-foreground text-xs">{t('ping.no_records')}</p>
   }
 
   const chartData = records.map((r) => ({
@@ -59,13 +55,9 @@ function PingResultsChart({ taskId }: { taskId: string }) {
   return (
     <div className="space-y-2">
       <div className="flex gap-4 text-muted-foreground text-xs">
-        <span>
-          Success: <span className="font-medium text-foreground">{successRate}%</span>
-        </span>
-        <span>
-          Avg Latency: <span className="font-medium text-foreground">{avgLatency.toFixed(1)}ms</span>
-        </span>
-        <span>{records.length} records (24h)</span>
+        <span>{t('ping.success_rate', { rate: successRate })}</span>
+        <span>{t('ping.avg_latency', { value: avgLatency.toFixed(1) })}</span>
+        <span>{t('ping.record_count', { count: records.length })}</span>
       </div>
       <ResponsiveContainer height={180} width="100%">
         <AreaChart data={chartData}>
@@ -81,7 +73,7 @@ function PingResultsChart({ taskId }: { taskId: string }) {
             dataKey="timestamp"
             stroke="var(--color-muted-foreground)"
             tick={{ fontSize: 10 }}
-            tickFormatter={(t: string) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            tickFormatter={(v: string) => new Date(v).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             tickLine={false}
           />
           <YAxis
@@ -116,6 +108,7 @@ function PingResultsChart({ taskId }: { taskId: string }) {
 }
 
 function PingTasksPage() {
+  const { t } = useTranslation(['settings', 'common'])
   const queryClient = useQueryClient()
   const [showForm, setShowForm] = useState(false)
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null)
@@ -124,6 +117,12 @@ function PingTasksPage() {
   const [target, setTarget] = useState('')
   const [interval, setInterval] = useState(60)
   const [selectedServerIds, setSelectedServerIds] = useState<string[]>([])
+
+  const probeTypeLabels: Record<ProbeType, string> = {
+    icmp: t('ping.type_icmp'),
+    tcp: t('ping.type_tcp'),
+    http: t('ping.type_http')
+  }
 
   const { data: tasks, isLoading } = useQuery<PingTask[]>({
     queryKey: ['ping-tasks'],
@@ -190,22 +189,22 @@ function PingTasksPage() {
   }
 
   const targetPlaceholder: Record<ProbeType, string> = {
-    icmp: 'e.g. 8.8.8.8 or google.com',
-    tcp: 'e.g. google.com:443',
-    http: 'e.g. https://google.com'
+    icmp: t('ping.placeholder_icmp'),
+    tcp: t('ping.placeholder_tcp'),
+    http: t('ping.placeholder_http')
   }
 
   return (
     <div>
-      <h1 className="mb-6 font-bold text-2xl">Ping Tasks</h1>
+      <h1 className="mb-6 font-bold text-2xl">{t('ping.title')}</h1>
 
       <div className="max-w-3xl space-y-6">
         <div className="rounded-lg border bg-card p-6">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold text-lg">Probe Tasks</h2>
+            <h2 className="font-semibold text-lg">{t('ping.probe_tasks')}</h2>
             <Button onClick={() => setShowForm(!showForm)} size="sm" variant="outline">
               <Plus className="size-4" />
-              Add
+              {t('common:add')}
             </Button>
           </div>
 
@@ -214,7 +213,7 @@ function PingTasksPage() {
               <input
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Task name"
+                placeholder={t('ping.task_name')}
                 required
                 type="text"
                 value={name}
@@ -237,7 +236,7 @@ function PingTasksPage() {
                   className="flex h-9 w-24 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                   min={5}
                   onChange={(e) => setInterval(Number.parseInt(e.target.value, 10) || 60)}
-                  placeholder="Interval"
+                  placeholder={t('ping.interval')}
                   type="number"
                   value={interval}
                 />
@@ -255,7 +254,7 @@ function PingTasksPage() {
 
               {servers && servers.length > 0 && (
                 <fieldset className="space-y-1">
-                  <legend className="text-sm">Run from servers (leave empty for all):</legend>
+                  <legend className="text-sm">{t('ping.run_from_servers')}</legend>
                   {servers.map((s) => (
                     <label className="flex items-center gap-2 text-sm" key={s.id}>
                       <input
@@ -275,10 +274,10 @@ function PingTasksPage() {
 
               <div className="flex gap-2">
                 <Button disabled={createMutation.isPending} size="sm" type="submit">
-                  Create
+                  {t('common:create')}
                 </Button>
                 <Button onClick={resetForm} size="sm" type="button" variant="ghost">
-                  Cancel
+                  {t('common:cancel')}
                 </Button>
               </div>
             </form>
@@ -292,7 +291,7 @@ function PingTasksPage() {
             </div>
           )}
           {!isLoading && (!tasks || tasks.length === 0) && (
-            <p className="text-center text-muted-foreground text-sm">No ping tasks configured</p>
+            <p className="text-center text-muted-foreground text-sm">{t('ping.no_tasks')}</p>
           )}
           {tasks && tasks.length > 0 && (
             <div className="divide-y rounded-md border">
@@ -312,12 +311,16 @@ function PingTasksPage() {
                         <div>
                           <p className="font-medium text-sm">
                             {task.name}
-                            {!task.enabled && <span className="ml-2 text-muted-foreground text-xs">(disabled)</span>}
+                            {!task.enabled && (
+                              <span className="ml-2 text-muted-foreground text-xs">{t('ping.disabled')}</span>
+                            )}
                           </p>
                           <p className="text-muted-foreground text-xs">
                             {probeTypeLabels[task.probe_type as ProbeType] ?? task.probe_type} | {task.target} |{' '}
                             {task.interval}s
-                            {serverIds.length > 0 ? ` | ${serverIds.length} server(s)` : ' | all servers'}
+                            {serverIds.length > 0
+                              ? ` | ${t('ping.server_count', { count: serverIds.length })}`
+                              : ` | ${t('ping.all_servers')}`}
                           </p>
                         </div>
                       </div>
@@ -334,7 +337,7 @@ function PingTasksPage() {
                           size="sm"
                           variant="outline"
                         >
-                          {task.enabled ? 'Disable' : 'Enable'}
+                          {task.enabled ? t('common:disable') : t('common:enable')}
                         </Button>
                         <Button
                           aria-label={`Delete task ${task.name}`}

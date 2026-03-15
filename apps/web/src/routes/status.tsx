@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { Activity, Globe, Server } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { StatusBadge } from '@/components/server/status-badge'
 import { api } from '@/lib/api-client'
 import type { StatusPageResponse, StatusServer } from '@/lib/api-schema'
@@ -26,6 +27,7 @@ function ProgressBar({ value, label, color }: { color: string; label: string; va
 }
 
 function ServerStatusCard({ server }: { server: StatusServer }) {
+  const { t } = useTranslation('status')
   const m = server.metrics
   const memPct = m && m.mem_total > 0 ? (m.mem_used / m.mem_total) * 100 : 0
   const diskPct = m && m.disk_total > 0 ? (m.disk_used / m.disk_total) * 100 : 0
@@ -47,9 +49,9 @@ function ServerStatusCard({ server }: { server: StatusServer }) {
       {m ? (
         <>
           <div className="space-y-2.5">
-            <ProgressBar color="bg-chart-1" label="CPU" value={m.cpu} />
-            <ProgressBar color="bg-chart-2" label="Memory" value={memPct} />
-            <ProgressBar color="bg-chart-3" label="Disk" value={diskPct} />
+            <ProgressBar color="bg-chart-1" label={t('cpu')} value={m.cpu} />
+            <ProgressBar color="bg-chart-2" label={t('memory')} value={memPct} />
+            <ProgressBar color="bg-chart-3" label={t('disk')} value={diskPct} />
           </div>
           <div className="mt-3 flex items-center justify-between text-muted-foreground text-xs">
             <div className="flex gap-3">
@@ -62,7 +64,7 @@ function ServerStatusCard({ server }: { server: StatusServer }) {
       ) : (
         <div className="flex h-24 items-center justify-center text-muted-foreground text-xs">
           {server.os && <span className="mr-2">{server.os}</span>}
-          {!server.online && <span>Offline</span>}
+          {!server.online && <span>{t('offline')}</span>}
         </div>
       )}
     </div>
@@ -70,6 +72,8 @@ function ServerStatusCard({ server }: { server: StatusServer }) {
 }
 
 function StatusPage() {
+  const { t, i18n } = useTranslation('status')
+  const isZh = (i18n.resolvedLanguage ?? i18n.language).startsWith('zh')
   const { data, isLoading, error } = useQuery<StatusPageResponse>({
     queryKey: ['status'],
     queryFn: () => api.get<StatusPageResponse>('/api/status'),
@@ -83,16 +87,23 @@ function StatusPage() {
           <div className="flex items-center gap-2">
             <Server className="size-5 text-primary" />
             <span className="font-semibold text-lg">ServerBee</span>
+            <button
+              className="text-sm opacity-70 hover:opacity-100"
+              onClick={() => i18n.changeLanguage(isZh ? 'en' : 'zh')}
+              type="button"
+            >
+              {isZh ? 'EN' : '中文'}
+            </button>
           </div>
           {data && (
             <div className="flex items-center gap-4 text-sm">
               <span className="flex items-center gap-1.5 text-muted-foreground">
                 <Globe className="size-4" />
-                {data.total_count} servers
+                {data.total_count} {t('servers')}
               </span>
               <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
                 <Activity className="size-4" />
-                {data.online_count} online
+                {data.online_count} {t('online')}
               </span>
             </div>
           )}
@@ -104,14 +115,14 @@ function StatusPage() {
           <div className="flex min-h-[300px] items-center justify-center">
             <div className="space-y-4 text-center">
               <div className="mx-auto size-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
-              <p className="text-muted-foreground text-sm">Loading status...</p>
+              <p className="text-muted-foreground text-sm">{t('loading')}</p>
             </div>
           </div>
         )}
 
         {error && (
           <div className="flex min-h-[300px] items-center justify-center">
-            <p className="text-destructive text-sm">Failed to load status data</p>
+            <p className="text-destructive text-sm">{t('load_failed')}</p>
           </div>
         )}
 
@@ -122,6 +133,7 @@ function StatusPage() {
 }
 
 function StatusContent({ data }: { data: StatusPageResponse }) {
+  const { t } = useTranslation('status')
   const groupMap = new Map(data.groups.map((g) => [g.id, g.name]))
 
   const grouped = new Map<string, StatusServer[]>()
@@ -150,7 +162,7 @@ function StatusContent({ data }: { data: StatusPageResponse }) {
   if (data.servers.length === 0) {
     return (
       <div className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed">
-        <p className="text-muted-foreground text-sm">No servers available</p>
+        <p className="text-muted-foreground text-sm">{t('no_servers')}</p>
       </div>
     )
   }
@@ -161,7 +173,7 @@ function StatusContent({ data }: { data: StatusPageResponse }) {
     <div className="space-y-8">
       {sortedKeys.map((key) => {
         const servers = grouped.get(key) ?? []
-        const groupName = key === '__ungrouped__' ? 'Ungrouped' : (groupMap.get(key) ?? 'Unknown')
+        const groupName = key === '__ungrouped__' ? t('ungrouped') : (groupMap.get(key) ?? t('unknown'))
 
         return (
           <section key={key}>

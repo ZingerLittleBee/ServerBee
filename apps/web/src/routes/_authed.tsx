@@ -1,6 +1,7 @@
 import { createFileRoute, Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { TriangleAlert } from 'lucide-react'
 import { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Header } from '@/components/layout/header'
 import { Sidebar } from '@/components/layout/sidebar'
 import { useAuth } from '@/hooks/use-auth'
@@ -29,6 +30,7 @@ export const Route = createFileRoute('/_authed')({
 
 function AuthedLayout() {
   const { isAuthenticated, isLoading, user } = useAuth()
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { pathname } = useLocation()
   useServersWs()
@@ -54,7 +56,7 @@ function AuthedLayout() {
       <div className="flex min-h-screen items-center justify-center">
         <div className="space-y-4 text-center">
           <div className="mx-auto size-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
-          <p className="text-muted-foreground text-sm">Loading...</p>
+          <p className="text-muted-foreground text-sm">{t('loading')}</p>
         </div>
       </div>
     )
@@ -83,15 +85,16 @@ function AuthedLayout() {
 }
 
 function DefaultPasswordBanner() {
+  const { t } = useTranslation()
   return (
     <div className="flex items-center gap-2 border-amber-300 border-b bg-amber-50 px-6 py-2.5 text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
       <TriangleAlert className="size-4 shrink-0" />
       <p className="text-sm">
-        You are using the default password. Please{' '}
+        {t('default_password_warning')}{' '}
         <Link className="font-medium underline underline-offset-2 hover:no-underline" to="/settings/security">
-          change your password
+          {t('change_your_password')}
         </Link>{' '}
-        to secure your account.
+        {t('to_secure_account')}
       </p>
     </div>
   )
