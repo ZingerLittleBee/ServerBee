@@ -19,7 +19,7 @@ pub struct NetworkProbeService;
 // DTOs
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct NetworkProbeSetting {
     pub interval: u32,
     pub packet_count: u32,
