@@ -237,7 +237,7 @@ For network quality monitoring:
 4. When `packet_received == 0`, set avg/min/max_latency to `None`
 5. Send `NetworkProbeResultData` via mpsc channel to Reporter
 
-All targets run their probe rounds independently. The Reporter collects results arriving within a short time window and batches them into a single `AgentMessage::NetworkProbeResults(Vec<...>)` message.
+All targets run their probe rounds independently. The Reporter collects results arriving within a short time window and batches them into a single `AgentMessage::NetworkProbeResults { results: ... }` message.
 
 **Capability Gating:** Network probes reuse existing capability bits. `sync()` filters targets by `probe_type`:
 - `"icmp"` → requires `CAP_PING_ICMP`
