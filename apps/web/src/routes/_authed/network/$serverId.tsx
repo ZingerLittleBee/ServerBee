@@ -74,8 +74,10 @@ function NetworkDetailPage() {
   const { data: server, isLoading: serverLoading } = useServer(serverId)
   const { data: summary, isLoading: summaryLoading } = useNetworkServerSummary(serverId)
   const { data: historicalRecords } = useNetworkRecords(serverId, hours, { enabled: !isRealtime })
+  // Fetch last 10 min of data as seed for realtime chart (immediate data on first load)
+  const { data: seedRecords } = useNetworkRecords(serverId, 1, { enabled: isRealtime })
   const { data: anomalies = [] } = useNetworkAnomalies(serverId, hours)
-  const { data: realtimeData, reset: resetRealtime } = useNetworkRealtime(serverId)
+  const { data: realtimeData } = useNetworkRealtime(serverId)
   const { data: allTargets = [] } = useNetworkTargets()
   const setServerTargets = useSetServerTargets(serverId)
 
@@ -129,10 +131,10 @@ function NetworkDetailPage() {
       return historicalRecords ?? []
     }
     // Transform realtime data map into flat records array
-    const flat: NetworkProbeRecord[] = []
+    const realtimeFlat: NetworkProbeRecord[] = []
     for (const [targetId, points] of Object.entries(realtimeData)) {
       for (const point of points) {
-        flat.push({
+        realtimeFlat.push({
           id: 0,
           server_id: serverId,
           target_id: targetId,
@@ -146,8 +148,24 @@ function NetworkDetailPage() {
         })
       }
     }
-    return flat
-  }, [isRealtime, historicalRecords, realtimeData, serverId])
+    // Merge seed (historical last 1h) with realtime data for immediate chart display.
+    // Realtime points override seed points at the same timestamp via the chart's bucketing.
+    const seed = seedRecords ?? []
+    const merged = [...seed, ...realtimeFlat]
+    // Deduplicate: keep latest entry per (target_id, timestamp_bucket)
+    const seen = new Set<string>()
+    const deduped: NetworkProbeRecord[] = []
+    for (let i = merged.length - 1; i >= 0; i--) {
+      const r = merged[i]
+      const key = `${r.target_id}:${r.timestamp}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        deduped.push(r)
+      }
+    }
+    deduped.reverse()
+    return deduped
+  }, [isRealtime, historicalRecords, realtimeData, serverId, seedRecords])
 
   // Stats computed from current records
   const stats = useMemo(() => {
@@ -166,15 +184,9 @@ function NetworkDetailPage() {
     return { avgLatency, availability, targetCount }
   }, [records])
 
-  const handleTimeRangeChange = useCallback(
-    (value: TimeRangeValue) => {
-      if (value === 'realtime' && timeRange !== 'realtime') {
-        resetRealtime()
-      }
-      setTimeRange(value)
-    },
-    [timeRange, resetRealtime]
-  )
+  const handleTimeRangeChange = useCallback((value: TimeRangeValue) => {
+    setTimeRange(value)
+  }, [])
 
   const exportCsv = useCallback(() => {
     if (records.length === 0) {
