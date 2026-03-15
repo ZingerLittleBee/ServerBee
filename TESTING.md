@@ -6,7 +6,7 @@
 # 全量测试
 cargo test --workspace && bun run test
 
-# Rust 测试（126 单元 + 15 集成 = 141）
+# Rust 测试（132 单元 + 15 集成 = 147）
 cargo test --workspace
 
 # 前端测试（86 vitest，9 个测试文件）
@@ -23,9 +23,9 @@ bun run typecheck
 ### 按 crate 运行
 
 ```bash
-cargo test -p serverbee-common          # 协议 + 能力常量 (11 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 (119 tests)
-cargo test -p serverbee-agent           # Agent 采集器 + Pinger (11 tests)
+cargo test -p serverbee-common          # 协议 + 能力常量 (14 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 (114 tests)
+cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber (19 tests)
 ```
 
 ### 仅集成测试
@@ -48,7 +48,7 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | 模块 | 测试数 | 覆盖内容 |
 |------|--------|----------|
 | `common/constants.rs` | 6 | 能力位运算、默认值、掩码 |
-| `common/protocol.rs` | 5 | 消息序列化/反序列化 |
+| `common/protocol.rs` | 8 | 消息序列化/反序列化（含 NetworkProbeSync/Results/Update） |
 | `server/service/alert.rs` | 15 | 阈值判定、指标提取、采样窗口 |
 | `server/service/auth.rs` | 19 | 密码哈希、session、API key、TOTP、登录、改密 |
 | `server/service/notification.rs` | 16 | 模板变量替换、渠道配置解析 |
@@ -212,6 +212,9 @@ docker compose up -d
 | API Keys | `/settings/api-keys` | 创建表单（key name + Create）+ Active Keys 列表 | ✅ |
 | Security | `/settings/security` | 2FA 设置（Set Up 2FA）+ 密码修改表单 | ✅ |
 | 审计日志 | `/settings/audit-logs` | 表格显示操作记录（Time/Action/User/IP/Detail） | ✅ |
+| 网络质量总览 | `/network` | 显示 VPS 网络质量卡片列表，统计栏显示总数/在线/异常 | — |
+| 网络质量详情 | `/network/:id` | 目标卡片 + 多线延迟图表 + 异常摘要 + 底部统计 + CSV 导出 | — |
+| 网络探测设置 | `/settings/network-probes` | 目标管理（12 内置 + 自定义 CRUD）+ 全局设置（间隔/包数/默认目标） | — |
 | 公共状态页 | `/status` | 无需登录，显示服务器在线状态和实时指标 | ✅ |
 | Swagger UI | `/swagger-ui/` | OpenAPI 文档加载正常 | — |
 | 终端 | `/terminal/:serverId` | 需启用 Web Terminal capability 后测试 | — |
@@ -244,6 +247,33 @@ docker compose up -d
 | 8a | Capabilities 展示 | 页面显示 6 个开关，默认 3 关 3 开 | ✅ |
 | 8b | 公共状态页 | 无需登录访问 `/status` → 显示服务器卡片和指标 | ✅ |
 | 8c | 主题切换 | 点击 Toggle theme → 深色/浅色模式正确渲染 | ✅ |
+
+### 验证清单 — 网络质量监控
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| N1 | 总览页渲染 | 登录后点击侧边栏「网络质量」→ `/network` 显示 VPS 卡片列表 | — |
+| N2 | 内置目标展示 | 打开 `/settings/network-probes` → Tab 1 目标管理 → 表格显示 12 个内置目标（带锁图标） | — |
+| N3 | 自定义目标 CRUD | 点击添加目标 → 填写名称/运营商/地区/地址/类型 → 创建 → 列表 13 条 → 编辑 → 删除 → 回到 12 条 | — |
+| N4 | 全局设置持久化 | Tab 2 全局设置 → 改间隔为 120s → 保存 → 刷新页面 → 间隔仍为 120s | — |
+| N5 | 默认目标配置 | Tab 2 → 勾选 3 个默认目标 → 保存 → 新注册 Agent → 该 server 自动分配 3 个目标 | — |
+| N6 | 服务器目标配置 | 详情页 → 管理目标 → 选择 4 个目标 → 保存 → 目标卡片显示 4 个 | — |
+| N7 | 详情页多线图表 | `/network/:serverId` → 选择 24h → 图表显示多条彩色延迟线（每个目标一条） | — |
+| N8 | 图表目标显隐 | 点击目标卡片上的眼睛图标 → 对应线条从图表中隐藏/显示 | — |
+| N9 | 实时模式 | 详情页选择「实时」→ 等待 2 分钟 → 图表有新数据点持续追加 | — |
+| N10 | 时间范围切换 | 依次点击 1h/6h/24h/7d/30d → 图表时间轴和数据正确切换 | — |
+| N11 | Tooltip 展示 | 鼠标悬停图表 → Tooltip 显示时间戳 + 各目标延迟值 | — |
+| N12 | 丢包显示 | 目标卡片显示丢包率百分比 → 100% 丢包时延迟显示 "N/A"，图表线条中断 | — |
+| N13 | 异常摘要表 | 图表下方异常摘要表 → 显示高延迟/高丢包/不可达的异常记录（如存在） | — |
+| N14 | 异常横幅 | 总览页 → 如有异常 VPS → 页面顶部显示黄色告警横幅 | — |
+| N15 | CSV 导出 | 详情页 → 点击导出 CSV → 下载文件包含时间/目标/延迟/丢包数据 | — |
+| N16 | 内置目标不可删 | 设置页 → 内置目标无删除按钮 → API 直接 DELETE 返回 400/403 | — |
+| N17 | 能力控制 | 服务器禁用 CAP_PING_ICMP → Agent 停止该目标的 ICMP 探测 → 重新启用 → 恢复探测 | — |
+| N18 | 告警规则类型 | `/settings/alerts` → 新建规则 → 类型下拉包含「Network Latency」和「Network Packet Loss」 | — |
+| N19 | 底部统计栏 | 详情页底部显示：综合平均延迟 \| 可用性百分比 \| 目标数 n/n | — |
+| N20 | 服务器信息栏 | 详情页显示 VPS 基本信息：IPv4、IPv6、地区、OS | — |
+| N21 | 最大目标数限制 | 为某 VPS 配置超过 20 个目标 → API 返回错误 | — |
+| N22 | i18n 切换 | 网络质量相关页面 → 中英文切换 → 标题/标签/按钮/Tooltip 全部正确翻译 | — |
 
 ### 验证清单 — 告警 & 通知全链路
 
@@ -288,7 +318,7 @@ crates/server/src/service/user.rs       # 用户服务测试
 crates/server/src/service/ping.rs       # Ping 服务测试
 crates/server/src/middleware/auth.rs    # 中间件 Cookie/Key 提取测试
 crates/server/src/test_utils.rs         # 测试辅助 (setup_test_db)
-crates/server/tests/integration.rs      # 集成测试 (11 tests)
+crates/server/tests/integration.rs      # 集成测试 (15 tests)
 crates/agent/src/collector/tests.rs     # Agent 采集器测试
 crates/agent/src/pinger.rs              # Agent Pinger 测试
 crates/agent/src/probe_utils.rs         # 批量探测解析测试
