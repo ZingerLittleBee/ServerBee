@@ -12,7 +12,6 @@ pub struct Model {
     pub location: String,
     pub target: String,
     pub probe_type: String,
-    pub is_builtin: bool,
     #[schema(value_type = String, format = DateTime)]
     pub created_at: DateTimeUtc,
     #[schema(value_type = String, format = DateTime)]
