@@ -1,7 +1,7 @@
 {
-  "loading": "Loading...",
+  "loading": "Loading\u2026",
   "save": "Save",
-  "saving": "Saving...",
+  "saving": "Saving\u2026",
   "cancel": "Cancel",
   "create": "Create",
   "delete": "Delete",
@@ -28,5 +28,10 @@
   "nav_api_keys": "API Keys",
   "nav_security": "Security",
   "nav_audit_logs": "Audit Logs",
-  "nav_settings": "Settings"
+  "nav_settings": "Settings",
+  "search": "Search",
+  "search_placeholder_ellipsis": "Search\u2026",
+  "confirm_title": "Confirm",
+  "confirm_delete_message": "This action cannot be undone. Are you sure?",
+  "main_navigation": "Main navigation"
 }

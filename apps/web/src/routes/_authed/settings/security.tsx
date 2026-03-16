@@ -106,14 +106,14 @@ function TwoFactorSection() {
   return (
     <div className="rounded-lg border bg-card p-6">
       <div className="mb-4 flex items-center gap-2">
-        <Smartphone className="size-5" />
+        <Smartphone aria-hidden="true" className="size-5" />
         <h2 className="font-semibold text-lg">{t('security.two_factor')}</h2>
       </div>
 
       {status?.enabled && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
-            <Shield className="size-4" />
+            <Shield aria-hidden="true" className="size-4" />
             <span className="font-medium text-sm">{t('security.two_factor_enabled')}</span>
           </div>
 
@@ -121,6 +121,7 @@ function TwoFactorSection() {
             <form className="space-y-3" onSubmit={handleDisable}>
               <p className="text-muted-foreground text-sm">{t('security.enter_password_disable')}</p>
               <Input
+                aria-label={t('security.current_password')}
                 autoComplete="current-password"
                 className="max-w-xs"
                 onChange={(e) => setDisablePassword(e.target.value)}
@@ -152,7 +153,7 @@ function TwoFactorSection() {
             </form>
           ) : (
             <Button onClick={() => setShowDisable(true)} variant="destructive">
-              <ShieldOff className="size-4" />
+              <ShieldOff aria-hidden="true" className="size-4" />
               {t('security.disable_2fa')}
             </Button>
           )}
@@ -218,7 +219,7 @@ function TwoFactorSection() {
         <div className="space-y-3">
           <p className="text-muted-foreground text-sm">{t('security.two_factor_description')}</p>
           <Button disabled={setupMutation.isPending} onClick={() => setupMutation.mutate()}>
-            <Shield className="size-4" />
+            <Shield aria-hidden="true" className="size-4" />
             {t('security.setup_2fa')}
           </Button>
         </div>

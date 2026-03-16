@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { AlertTriangle, Globe, Server, Wifi } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,6 +10,9 @@ import { formatLatency, type NetworkServerSummary, type NetworkTargetSummary } f
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/network/')({
+  validateSearch: (search: Record<string, unknown>) => ({
+    q: (search.q as string) || ''
+  }),
   component: NetworkOverviewPage
 })
 
@@ -41,7 +44,7 @@ function StatCard({ icon: Icon, label, value }: { icon: typeof Server; label: st
   return (
     <div className="flex items-center gap-3 rounded-lg border bg-card p-4">
       <div className="rounded-md bg-muted p-2">
-        <Icon className="size-5 text-muted-foreground" />
+        <Icon aria-hidden="true" className="size-5 text-muted-foreground" />
       </div>
       <div>
         <p className="font-semibold text-lg leading-tight">{value}</p>
@@ -98,7 +101,7 @@ function ServerNetworkCard({ summary }: { summary: NetworkServerSummary }) {
 
           {worst != null && (
             <div className="flex items-center gap-1.5 rounded-md border border-amber-200/60 bg-amber-50/50 px-2.5 py-1.5 dark:border-amber-800/40 dark:bg-amber-900/20">
-              <AlertTriangle className="size-3 shrink-0 text-amber-500" />
+              <AlertTriangle aria-hidden="true" className="size-3 shrink-0 text-amber-500" />
               <p className="truncate text-amber-700 text-xs dark:text-amber-400">
                 <span className="font-medium">{t('worst_line')}:</span> {worst.target_name}{' '}
                 <span className="font-mono">{formatLatency(worst.avg_latency)}</span>
@@ -123,7 +126,8 @@ function ServerNetworkCard({ summary }: { summary: NetworkServerSummary }) {
 function NetworkOverviewPage() {
   const { t } = useTranslation('network')
   const { data: summaries = [], isLoading } = useNetworkOverview()
-  const [search, setSearch] = useState('')
+  const { q: search } = Route.useSearch()
+  const navigate = Route.useNavigate()
 
   const totalServers = summaries.length
   const onlineServers = summaries.filter((s) => s.online).length
@@ -156,7 +160,7 @@ function NetworkOverviewPage() {
 
       {anomalyServers > 0 && (
         <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-300/60 bg-amber-50/70 px-4 py-3 dark:border-amber-700/50 dark:bg-amber-900/20">
-          <AlertTriangle className="size-4 shrink-0 text-amber-500" />
+          <AlertTriangle aria-hidden="true" className="size-4 shrink-0 text-amber-500" />
           <p className="text-amber-800 text-sm dark:text-amber-300">{t('anomaly_banner', { count: anomalyServers })}</p>
         </div>
       )}
@@ -176,8 +180,11 @@ function NetworkOverviewPage() {
             <path d="m21 21-4.35-4.35" />
           </svg>
           <Input
+            aria-label={t('servers:search_placeholder')}
+            autoComplete="off"
             className="pl-9"
-            onChange={(e) => setSearch(e.target.value)}
+            name="search"
+            onChange={(e) => navigate({ search: { q: e.target.value } })}
             placeholder="Search servers..."
             type="text"
             value={search}

@@ -25,7 +25,7 @@ export function FilePreview({ serverId, entry, readOnly = false }: FilePreviewPr
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
         <div className="text-center">
-          <FileText className="mx-auto mb-2 size-10 opacity-30" />
+          <FileText aria-hidden="true" className="mx-auto mb-2 size-10 opacity-30" />
           <p>{t('select_file')}</p>
         </div>
       </div>
@@ -82,7 +82,7 @@ function TextPreview({
             })
           },
           onError: (err) => {
-            toast.error(err instanceof Error ? err.message : 'Save failed')
+            toast.error(err instanceof Error ? err.message : t('save_failed'))
           }
         }
       )
@@ -106,9 +106,9 @@ function TextPreview({
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
-      </div>
+      <output className="flex h-full items-center justify-center">
+        <Loader2 aria-hidden="true" className="size-6 animate-spin text-muted-foreground" />
+      </output>
     )
   }
 
@@ -116,7 +116,7 @@ function TextPreview({
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
         <div className="text-center">
-          <FileText className="mx-auto mb-2 size-10 opacity-30" />
+          <FileText aria-hidden="true" className="mx-auto mb-2 size-10 opacity-30" />
           <p className="text-destructive text-sm">{error instanceof Error ? error.message : t('read_error')}</p>
         </div>
       </div>
@@ -198,7 +198,7 @@ function FileInfoPanel({ serverId, entry }: { entry: FileEntry; serverId: string
           toast.success(t('download_started'))
         },
         onError: (err) => {
-          toast.error(err instanceof Error ? err.message : 'Download failed')
+          toast.error(err instanceof Error ? err.message : t('download_failed'))
         }
       }
     )
@@ -209,7 +209,7 @@ function FileInfoPanel({ serverId, entry }: { entry: FileEntry; serverId: string
 
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
-      <FileText className="size-12 text-muted-foreground opacity-40" />
+      <FileText aria-hidden="true" className="size-12 text-muted-foreground opacity-40" />
       <div className="space-y-1 text-center">
         <p className="font-medium">{entry.name}</p>
         <p className="text-muted-foreground text-sm">

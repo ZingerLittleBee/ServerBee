@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { ArrowLeft, FolderPlus, RefreshCw, Upload } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -23,7 +23,10 @@ function getErrorMessage(err: unknown, fallback: string): string {
 }
 
 export const Route = createFileRoute('/_authed/files/$serverId')({
-  component: FilesPage
+  component: FilesPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    path: (typeof search.path === 'string' && search.path) || '/'
+  })
 })
 
 interface ContextMenuState {
@@ -34,11 +37,11 @@ interface ContextMenuState {
 function FilesPage() {
   const { t } = useTranslation('file')
   const { serverId } = Route.useParams()
+  const { path: currentPath } = Route.useSearch()
+  const navigate = useNavigate({ from: Route.fullPath })
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-
-  const [currentPath, setCurrentPath] = useState('/')
   const [selectedFile, setSelectedFile] = useState<FileEntry | null>(null)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [mkdirOpen, setMkdirOpen] = useState(false)
@@ -52,10 +55,13 @@ function FilesPage() {
 
   const parentPath = currentPath === '/' ? null : currentPath.substring(0, currentPath.lastIndexOf('/')) || '/'
 
-  const handleNavigate = useCallback((path: string) => {
-    setCurrentPath(path)
-    setSelectedFile(null)
-  }, [])
+  const handleNavigate = useCallback(
+    (path: string) => {
+      navigate({ search: { path } })
+      setSelectedFile(null)
+    },
+    [navigate]
+  )
 
   const handleFileSelect = useCallback((entry: FileEntry) => {
     setSelectedFile(entry)
@@ -78,7 +84,7 @@ function FilesPage() {
         { path: entry.path },
         {
           onSuccess: () => toast.success(t('download_started')),
-          onError: (err) => toast.error(err instanceof Error ? err.message : 'Download failed')
+          onError: (err) => toast.error(err instanceof Error ? err.message : t('download_failed'))
         }
       )
     },
@@ -104,7 +110,7 @@ function FilesPage() {
           setDeleteConfirm(null)
         },
         onError: (err) => {
-          toast.error(err instanceof Error ? err.message : 'Delete failed')
+          toast.error(err instanceof Error ? err.message : t('delete_failed'))
           setDeleteConfirm(null)
         }
       }
@@ -130,7 +136,7 @@ function FilesPage() {
       <div className="flex items-center gap-3 border-b px-4 py-2">
         <Link params={{ id: serverId }} to="/servers/$id">
           <Button size="sm" variant="ghost">
-            <ArrowLeft className="size-4" />
+            <ArrowLeft aria-hidden="true" className="size-4" />
             {t('back_to_server')}
           </Button>
         </Link>
@@ -143,18 +149,18 @@ function FilesPage() {
         <FileBreadcrumb onNavigate={handleNavigate} path={currentPath} />
         <div className="ml-auto flex gap-1">
           {isAdmin && (
-            <Button onClick={() => setUploadOpen(true)} size="sm" variant="outline">
+            <Button aria-label={t('upload')} onClick={() => setUploadOpen(true)} size="sm" variant="outline">
               <Upload className="size-3.5" />
               <span className="hidden sm:inline">{t('upload')}</span>
             </Button>
           )}
           {isAdmin && (
-            <Button onClick={() => setMkdirOpen(true)} size="sm" variant="outline">
+            <Button aria-label={t('new_folder')} onClick={() => setMkdirOpen(true)} size="sm" variant="outline">
               <FolderPlus className="size-3.5" />
               <span className="hidden sm:inline">{t('new_folder')}</span>
             </Button>
           )}
-          <Button onClick={handleRefresh} size="icon-sm" title={t('refresh')} variant="ghost">
+          <Button aria-label={t('refresh')} onClick={handleRefresh} size="icon-sm" title={t('refresh')} variant="ghost">
             <RefreshCw className="size-3.5" />
           </Button>
         </div>
@@ -186,7 +192,7 @@ function FilesPage() {
         <div className="fixed inset-0 z-40 flex flex-col bg-background md:hidden">
           <div className="flex items-center gap-2 border-b px-4 py-2">
             <Button onClick={() => setSelectedFile(null)} size="sm" variant="ghost">
-              <ArrowLeft className="size-4" />
+              <ArrowLeft aria-hidden="true" className="size-4" />
               {t('back_to_server')}
             </Button>
             <span className="truncate text-sm">{selectedFile.name}</span>

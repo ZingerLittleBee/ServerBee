@@ -58,10 +58,32 @@ export function FileContextMenu({
     { label: t('delete'), icon: Trash2, action: () => onDelete(entry), show: isAdmin, destructive: true }
   ]
 
+  const handleMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const menuItems = menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')
+    if (!menuItems || menuItems.length === 0) {
+      return
+    }
+    const currentIndex = Array.from(menuItems).indexOf(document.activeElement as HTMLButtonElement)
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      const next = currentIndex < menuItems.length - 1 ? currentIndex + 1 : 0
+      menuItems[next].focus()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      const prev = currentIndex > 0 ? currentIndex - 1 : menuItems.length - 1
+      menuItems[prev].focus()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      onClose()
+    }
+  }
+
   return (
     <div
       className="fixed z-50 min-w-[160px] rounded-lg border bg-popover p-1 shadow-md"
+      onKeyDown={handleMenuKeyDown}
       ref={menuRef}
+      role="menu"
       style={{ left: position.x, top: position.y }}
     >
       {items
@@ -76,9 +98,10 @@ export function FileContextMenu({
               item.action()
               onClose()
             }}
+            role="menuitem"
             type="button"
           >
-            <item.icon className="size-3.5" />
+            <item.icon aria-hidden="true" className="size-3.5" />
             {item.label}
           </button>
         ))}

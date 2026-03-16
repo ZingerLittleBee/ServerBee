@@ -61,7 +61,7 @@ export function FileUploadDialog({ serverId, currentPath, open, onClose }: FileU
           onClose()
         },
         onError: (err) => {
-          toast.error(err instanceof Error ? err.message : 'Upload failed')
+          toast.error(err instanceof Error ? err.message : t('upload_failed'))
         }
       }
     )
@@ -91,7 +91,7 @@ export function FileUploadDialog({ serverId, currentPath, open, onClose }: FileU
           onDrop={handleDrop}
           type="button"
         >
-          <Upload className="mb-2 size-8 text-muted-foreground" />
+          <Upload aria-hidden="true" className="mb-2 size-8 text-muted-foreground" />
           <p className="text-center text-muted-foreground text-sm">{t('drop_files')}</p>
           {selectedFile && (
             <p className="mt-2 text-center text-sm">
@@ -100,7 +100,14 @@ export function FileUploadDialog({ serverId, currentPath, open, onClose }: FileU
           )}
         </button>
 
-        <input className="hidden" onChange={handleFileChange} ref={inputRef} type="file" />
+        <input
+          aria-label={t('drop_files')}
+          className="hidden"
+          name="file-upload"
+          onChange={handleFileChange}
+          ref={inputRef}
+          type="file"
+        />
 
         <p className="text-muted-foreground text-xs">
           {t('remote_path')}: {currentPath}
@@ -113,7 +120,7 @@ export function FileUploadDialog({ serverId, currentPath, open, onClose }: FileU
           <Button disabled={!selectedFile || uploadMutation.isPending} onClick={handleUpload}>
             {uploadMutation.isPending ? (
               <>
-                <Loader2 className="size-3.5 animate-spin" />
+                <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
                 {t('uploading')}
               </>
             ) : (

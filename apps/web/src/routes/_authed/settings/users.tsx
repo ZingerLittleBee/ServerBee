@@ -4,6 +4,17 @@ import { Plus, Trash2, UserCog } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -24,6 +35,7 @@ function UsersPage() {
   const [newUsername, setNewUsername] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [newRole, setNewRole] = useState('member')
+  const [deleteUserId, setDeleteUserId] = useState<string | null>(null)
 
   const { data: users, isLoading } = useQuery<UserResponse[]>({
     queryKey: ['users'],
@@ -106,14 +118,21 @@ function UsersPage() {
           {showForm && (
             <form className="mb-4 space-y-3 rounded-md border bg-muted/30 p-4" onSubmit={handleCreate}>
               <Input
+                aria-label={t('users.username')}
+                autoComplete="username"
+                name="username"
                 onChange={(e) => setNewUsername(e.target.value)}
                 placeholder={t('users.username')}
                 required
+                spellCheck={false}
                 type="text"
                 value={newUsername}
               />
               <Input
+                aria-label={t('users.password_hint')}
+                autoComplete="new-password"
                 minLength={6}
+                name="password"
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder={t('users.password_hint')}
                 required
@@ -156,7 +175,7 @@ function UsersPage() {
               {users.map((user) => (
                 <div className="flex items-center justify-between px-4 py-3" key={user.id}>
                   <div className="flex items-center gap-3">
-                    <UserCog className="size-4 text-muted-foreground" />
+                    <UserCog aria-hidden="true" className="size-4 text-muted-foreground" />
                     <div>
                       <p className="font-medium text-sm">
                         {user.username}
@@ -170,7 +189,7 @@ function UsersPage() {
                         {editingId === user.id ? (
                           <span className="inline-flex items-center gap-2">
                             <Select onValueChange={(val) => val !== null && setEditRole(val)} value={editRole}>
-                              <SelectTrigger className="h-6 text-xs" size="sm">
+                              <SelectTrigger aria-label={t('users.role_label')} className="h-6 text-xs" size="sm">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -179,14 +198,14 @@ function UsersPage() {
                               </SelectContent>
                             </Select>
                             <button
-                              className="text-primary hover:underline"
+                              className="rounded text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                               onClick={() => updateMutation.mutate({ id: user.id, role: editRole })}
                               type="button"
                             >
-                              Save
+                              {t('common:save')}
                             </button>
                             <button
-                              className="text-muted-foreground hover:underline"
+                              className="rounded text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                               onClick={() => setEditingId(null)}
                               type="button"
                             >
@@ -197,7 +216,7 @@ function UsersPage() {
                           <span>
                             {t('users.role_label')}{' '}
                             <button
-                              className="font-medium hover:underline"
+                              className="rounded font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                               onClick={() => {
                                 setEditingId(user.id)
                                 setEditRole(user.role)
@@ -213,20 +232,46 @@ function UsersPage() {
                       </p>
                     </div>
                   </div>
-                  <Button
-                    aria-label={`${t('users.delete')} ${user.username}`}
-                    disabled={deleteMutation.isPending}
-                    onClick={() => {
-                      // biome-ignore lint/suspicious/noAlert: temporary UX, will replace with dialog
-                      if (window.confirm(`Delete user "${user.username}"? This cannot be undone.`)) {
-                        deleteMutation.mutate(user.id)
+                  <AlertDialog
+                    onOpenChange={(open) => {
+                      if (!open) {
+                        setDeleteUserId(null)
                       }
                     }}
-                    size="sm"
-                    variant="destructive"
+                    open={deleteUserId === user.id}
                   >
-                    <Trash2 className="size-3.5" />
-                  </Button>
+                    <AlertDialogTrigger
+                      onClick={() => setDeleteUserId(user.id)}
+                      render={
+                        <Button
+                          aria-label={`${t('users.delete')} ${user.username}`}
+                          disabled={deleteMutation.isPending}
+                          size="sm"
+                          variant="destructive"
+                        />
+                      }
+                    >
+                      <Trash2 aria-hidden="true" className="size-3.5" />
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
+                        <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => {
+                            deleteMutation.mutate(user.id)
+                            setDeleteUserId(null)
+                          }}
+                          variant="destructive"
+                        >
+                          {t('common:delete')}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
               ))}
             </div>

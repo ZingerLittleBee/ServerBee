@@ -100,7 +100,7 @@ function TasksPage() {
               </label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
-                  <Terminal className="absolute top-2.5 left-3 size-4 text-muted-foreground" />
+                  <Terminal aria-hidden="true" className="absolute top-2.5 left-3 size-4 text-muted-foreground" />
                   <Input
                     className="pl-9 font-mono"
                     id="command-input"
@@ -112,8 +112,11 @@ function TasksPage() {
                   />
                 </div>
                 <Input
+                  aria-label={t('tasks.timeout')}
+                  autoComplete="off"
                   className="w-20"
                   min={1}
+                  name="timeout"
                   onChange={(e) => setTimeout(Number.parseInt(e.target.value, 10) || 30)}
                   title={t('tasks.timeout')}
                   type="number"
@@ -203,10 +206,13 @@ function TasksPage() {
             {expandedTask === createMutation.data.id && (
               <div className="border-t">
                 {!taskResults || taskResults.length === 0 ? (
-                  <div className="flex items-center gap-2 px-6 py-4 text-muted-foreground text-sm">
-                    <div className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  <output className="flex items-center gap-2 px-6 py-4 text-muted-foreground text-sm">
+                    <span
+                      aria-hidden="true"
+                      className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent"
+                    />
                     {t('tasks.waiting')}
-                  </div>
+                  </output>
                 ) : (
                   <div className="divide-y">
                     {taskResults.map((result) => {

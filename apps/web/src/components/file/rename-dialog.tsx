@@ -42,7 +42,7 @@ export function RenameDialog({ serverId, entry, open, onClose, onRenamed }: Rena
           onClose()
         },
         onError: (err) => {
-          toast.error(err instanceof Error ? err.message : 'Rename failed')
+          toast.error(err instanceof Error ? err.message : t('rename_failed'))
         }
       }
     )
@@ -62,7 +62,10 @@ export function RenameDialog({ serverId, entry, open, onClose, onRenamed }: Rena
         </DialogHeader>
         <form className="space-y-4" onSubmit={handleSubmit}>
           <Input
+            aria-label={t('new_name')}
+            autoComplete="off"
             autoFocus
+            name="new-name"
             onChange={(e) => setNewName(e.target.value)}
             placeholder={t('new_name')}
             required

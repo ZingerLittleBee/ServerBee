@@ -1,7 +1,7 @@
 {
   "servers": "servers",
   "online": "online",
-  "loading": "Loading status...",
+  "loading": "Loading status…",
   "load_failed": "Failed to load status data",
   "no_servers": "No servers available",
   "ungrouped": "Ungrouped",
