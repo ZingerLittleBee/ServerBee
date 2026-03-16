@@ -25,7 +25,9 @@
 | P4 | 端到端验证 + 上线前加固 | **已完成** | 1 (`51e8b40`) |
 | P5 | Agent Capability Toggles | **已完成** | 22 (`bfc7d14`..`56c6058`) |
 
-**P0~P5 全部完成并已提交。测试: 110 单元 + 11 集成 + 72 前端 + 31 E2E 浏览器 = 224 个测试。**
+| P6 | 文件管理 | **已完成** | 24 tasks |
+
+**P0~P6 全部完成并已提交。测试: 150 单元 + 20 集成 + 99 前端 + 31 E2E 浏览器 = 300 个测试。**
 
 ---
 
@@ -729,6 +731,37 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 | T23 | Common: protocol.rs 序列化测试 (5 个) | **done** |
 | T24 | Frontend: capabilities.test.ts (3 个 vitest 测试) | **done** |
 | T25 | 代码审查修复 (CapabilityDenied 写 task_result, audit log, selective ping re-sync, clippy) | **done** |
+
+### P6: 文件管理 (File Management)
+
+**分支**: `denver`
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | Common: FileEntry/FileType 类型定义 | **done** |
+| T2 | Common: CAP_FILE 能力位 + 文件常量 | **done** |
+| T3 | Common: 文件协议消息 (FileList/Stat/Read/Write/Delete/Mkdir/Move/Download/Upload) | **done** |
+| T4 | Agent: FileConfig (enabled/root_paths/max_file_size/deny_patterns) | **done** |
+| T5 | Agent: FileManager (路径安全校验 + 文件操作) | **done** |
+| T6 | Agent: reporter.rs 集成 FileManager | **done** |
+| T7 | Server: AgentManager 请求-响应中继 (pending_requests + oneshot) | **done** |
+| T8 | Server: AppError::RequestTimeout 变体 | **done** |
+| T9 | Server: FileTransferManager (并发控制 + 临时文件 + 过期清理) | **done** |
+| T10 | Server: AppState 添加 file_transfers | **done** |
+| T11 | Server: Agent WS handler 分发文件消息 | **done** |
+| T12 | Server: File API Router (读/写分离, 13 个端点) | **done** |
+| T13 | Server: 传输清理 + pending request 清理 | **done** |
+| T14 | Frontend: CAP_FILE 能力常量 | **done** |
+| T15 | Frontend: Server Detail 添加 Files 按钮 | **done** |
+| T16 | Frontend: File API hooks (useFileList/Read/Write/Delete/Mkdir/Move/Download/Upload) | **done** |
+| T17 | Frontend: Monaco Editor 组件封装 | **done** |
+| T18 | Frontend: 文件浏览器组件 (FileBrowser/FileList/Breadcrumbs/FileEditor/FileUpload) | **done** |
+| T19 | Frontend: 文件管理路由页面 (_authed/files.$serverId.tsx) | **done** |
+| T20 | Frontend: i18n 中英文翻译 | **done** |
+| T21 | 集成测试: 文件浏览 + 能力校验 + 传输端点 (3 tests) | **done** |
+| T22 | 前端测试: file-utils 工具函数 (13 vitest tests) | **done** |
+| T23 | 文档更新: TESTING.md + ENV.md + PROGRESS.md + Fumadocs | **done** |
+| T24 | 最终验证: cargo test + clippy + typecheck + vitest + build | **done** |
 
 ---
 

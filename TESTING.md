@@ -6,10 +6,10 @@
 # 全量测试
 cargo test --workspace && bun run test
 
-# Rust 测试（147 单元 + 17 集成 = 164）
+# Rust 测试（150 单元 + 20 集成 = 170）
 cargo test --workspace
 
-# 前端测试（86 vitest，9 个测试文件）
+# 前端测试（99 vitest，10 个测试文件）
 bun run test
 
 # 代码质量
@@ -24,7 +24,7 @@ bun run typecheck
 
 ```bash
 cargo test -p serverbee-common          # 协议 + 能力常量 (14 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 (130 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 (136 tests)
 cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber (20 tests)
 ```
 
@@ -66,6 +66,7 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `server/service/network_probe.rs` | 13 | 网络探测目标 CRUD、预设目标保护（update/delete 403）、default_target_ids 校验、server targets 分配+校验、探测记录查询 |
 | `agent/probe_utils.rs` | 2 | 批量探测结果解析、地址解析 |
 | `agent/network_prober.rs` | 2 | 网络探测任务调度、结果上报 |
+| `server/service/file_transfer.rs` | 3 | 传输创建/获取、并发限制、过期清理 |
 
 ### 集成测试覆盖
 
@@ -88,6 +89,9 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `test_network_probe_builtin_protection` | 删除预设目标 → 返回 403 |
 | `test_preset_target_source_field` | 验证预设 source/source_name 字段正确、自建目标 source 为 null |
 | `test_preset_target_cannot_be_updated` | PUT 预设目标 → 返回 403 |
+| `test_file_list_server_offline` | 启用 CAP_FILE → POST /files/list → 离线返回 404 |
+| `test_file_capability_enforcement` | CAP_DEFAULT (无 CAP_FILE) → POST /files/list → 403 |
+| `test_file_transfers_endpoint` | GET /files/transfers → 空列表 → DELETE 不存在 → 404 |
 
 ## 前端测试
 
@@ -112,6 +116,7 @@ cd apps/web && bunx vitest run src/lib/capabilities.test.ts
 | `use-realtime-metrics.test.tsx` | 13 | toRealtimeDataPoint 转换（百分比、零值除法、字段映射）、hook 集成（缓存 seed、去重、追加、裁剪、serverId 切换） |
 | `use-servers-ws.test.ts` | 8 | 数据合并、静态字段保护、在线状态切换 |
 | `use-terminal-ws.test.ts` | 20 | WS URL 构造、状态机、base64 编码、resize、onData 回调 |
+| `file-utils.test.ts` | 13 | 扩展名→语言映射、文本文件判定、图片文件判定 |
 
 ### 测试工具
 
@@ -278,6 +283,26 @@ docker compose up -d
 | N21 | 最大目标数限制 | 为某 VPS 配置超过 20 个目标 → API 返回错误 | — |
 | N22 | i18n 切换 | 网络质量相关页面 → 中英文切换 → 标题/标签/按钮/Tooltip 全部正确翻译 | — |
 
+### 验证清单 — 文件管理
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| F1 | 能力开关 | Server Detail → 启用 File Manager → 文件管理按钮出现 | — |
+| F2 | 文件浏览 | 点击 Files → 显示根目录文件列表（名称/大小/权限/修改时间） | — |
+| F3 | 目录导航 | 点击文件夹 → 进入子目录 → 面包屑导航更新 → 点击面包屑可返回 | — |
+| F4 | 文本文件查看 | 点击 .yaml/.json/.sh 等文本文件 → Monaco Editor 显示内容 + 语法高亮 | — |
+| F5 | 文件编辑保存 | 编辑文本内容 → 保存 → 重新打开 → 内容已更新 | — |
+| F6 | 文件上传 | 点击 Upload → 选择文件 → 上传成功 → 列表显示新文件 | — |
+| F7 | 文件下载 | 点击文件 → Download → 浏览器下载文件 | — |
+| F8 | 新建目录 | 点击 New Folder → 输入名称 → 创建 → 列表显示新目录 | — |
+| F9 | 文件删除 | 选中文件 → Delete → 确认 → 文件从列表消失 | — |
+| F10 | 文件移动/重命名 | 选中文件 → Rename → 输入新名称 → 文件名更新 | — |
+| F11 | 离线服务器 | 离线服务器打开文件管理 → 显示离线错误提示 | — |
+| F12 | 能力关闭 | 关闭 CAP_FILE → 文件管理请求返回 403 | — |
+| F13 | 安全路径 | 尝试访问 deny_patterns 中的敏感文件 → Agent 拒绝 | — |
+| F14 | 传输列表 | 上传/下载大文件时 → transfers 列表显示进度 | — |
+| F15 | i18n | 文件管理相关页面 → 中英文切换正常 | — |
+
 ### 验证清单 — 告警 & 通知全链路
 
 | # | 测试场景 | 操作步骤 | 状态 |
@@ -328,6 +353,7 @@ crates/agent/src/probe_utils.rs         # 批量探测解析测试
 crates/agent/src/network_prober.rs      # 网络探测模块测试
 crates/server/src/presets/mod.rs            # 预设目标加载测试
 crates/server/src/service/network_probe.rs # 网络探测服务单元测试
+crates/server/src/service/file_transfer.rs # 文件传输管理器测试
 apps/web/src/hooks/use-terminal-ws.test.ts # Terminal WS hook 测试
 apps/web/src/lib/capabilities.test.ts   # 能力位测试
 apps/web/src/lib/api-client.test.ts     # API Client 测试
@@ -337,6 +363,7 @@ apps/web/src/hooks/use-auth.test.tsx    # Auth hook 测试
 apps/web/src/hooks/use-api.test.tsx     # API hook 测试
 apps/web/src/hooks/use-realtime-metrics.test.tsx # 实时指标 hook 测试（纯函数 + renderHook 集成）
 apps/web/src/hooks/use-servers-ws.test.ts # WS 数据合并测试
+apps/web/src/lib/file-utils.test.ts     # 文件工具函数测试
 apps/web/vitest.config.ts               # Vitest 配置
 .github/workflows/ci.yml               # CI 流水线
 ```
