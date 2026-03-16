@@ -13,6 +13,7 @@ use tokio::sync::mpsc;
 use crate::config::FileConfig;
 
 /// Events produced by background file transfer tasks, sent to the reporter loop.
+#[allow(clippy::enum_variant_names)]
 pub enum FileEvent {
     DownloadChunk {
         transfer_id: String,
