@@ -1054,8 +1054,18 @@ async fn upload_file(
 )]
 async fn cancel_transfer(
     State(state): State<Arc<AppState>>,
+    Extension(current_user): Extension<CurrentUser>,
     Path(transfer_id): Path<String>,
 ) -> Result<Json<ApiResponse<SuccessResponse>>, AppError> {
+    // Verify ownership
+    let owner = state
+        .file_transfers
+        .get_user_id(&transfer_id)
+        .ok_or(AppError::NotFound("Transfer not found".into()))?;
+    if owner != current_user.user_id {
+        return Err(AppError::NotFound("Transfer not found".into()));
+    }
+
     let info = state
         .file_transfers
         .get(&transfer_id)

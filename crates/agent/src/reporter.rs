@@ -381,8 +381,8 @@ impl Reporter {
             ServerMessage::FileList { msg_id, path } => {
                 let caps = capabilities.load(Ordering::SeqCst);
                 if !has_capability(caps, CAP_FILE) || !file_manager.is_enabled() {
-                    let result = AgentMessage::FileOpResult { msg_id, success: false, error: Some("File capability disabled".into()) };
-                    let json = serde_json::to_string(&result)?;
+                    let msg = AgentMessage::FileListResult { msg_id, path, entries: vec![], error: Some("File capability disabled".into()) };
+                    let json = serde_json::to_string(&msg)?;
                     write.send(Message::Text(json.into())).await?;
                     return Ok(());
                 }
@@ -397,8 +397,8 @@ impl Reporter {
             ServerMessage::FileStat { msg_id, path } => {
                 let caps = capabilities.load(Ordering::SeqCst);
                 if !has_capability(caps, CAP_FILE) || !file_manager.is_enabled() {
-                    let result = AgentMessage::FileOpResult { msg_id, success: false, error: Some("File capability disabled".into()) };
-                    let json = serde_json::to_string(&result)?;
+                    let msg = AgentMessage::FileStatResult { msg_id, entry: None, error: Some("File capability disabled".into()) };
+                    let json = serde_json::to_string(&msg)?;
                     write.send(Message::Text(json.into())).await?;
                     return Ok(());
                 }
@@ -413,8 +413,8 @@ impl Reporter {
             ServerMessage::FileRead { msg_id, path, max_size } => {
                 let caps = capabilities.load(Ordering::SeqCst);
                 if !has_capability(caps, CAP_FILE) || !file_manager.is_enabled() {
-                    let result = AgentMessage::FileOpResult { msg_id, success: false, error: Some("File capability disabled".into()) };
-                    let json = serde_json::to_string(&result)?;
+                    let msg = AgentMessage::FileReadResult { msg_id, content: None, error: Some("File capability disabled".into()) };
+                    let json = serde_json::to_string(&msg)?;
                     write.send(Message::Text(json.into())).await?;
                     return Ok(());
                 }
