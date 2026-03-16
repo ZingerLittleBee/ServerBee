@@ -44,8 +44,8 @@ impl TransferStatus {
 #[derive(Debug)]
 pub struct TransferMeta {
     pub transfer_id: String,
-    pub server_id: i32,
-    pub user_id: i32,
+    pub server_id: String,
+    pub user_id: String,
     pub direction: TransferDirection,
     pub file_path: String,
     pub file_size: Option<u64>,
@@ -60,7 +60,7 @@ pub struct TransferMeta {
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct TransferInfo {
     pub transfer_id: String,
-    pub server_id: i32,
+    pub server_id: String,
     pub direction: String,
     pub file_path: String,
     pub file_size: Option<u64>,
@@ -90,13 +90,13 @@ impl FileTransferManager {
 
     pub fn create_transfer(
         &self,
-        server_id: i32,
-        user_id: i32,
+        server_id: String,
+        user_id: String,
         direction: TransferDirection,
         file_path: String,
     ) -> Result<String, String> {
-        // Check concurrent limit per server
-        let count = self.server_transfer_count(server_id);
+        // Check concurrent limit per server (only count active transfers)
+        let count = self.server_transfer_count(&server_id);
         if count >= MAX_FILE_CONCURRENT_TRANSFERS {
             return Err("Too many concurrent transfers".into());
         }
@@ -125,7 +125,7 @@ impl FileTransferManager {
     pub fn get(&self, transfer_id: &str) -> Option<TransferInfo> {
         self.transfers.get(transfer_id).map(|meta| TransferInfo {
             transfer_id: meta.transfer_id.clone(),
-            server_id: meta.server_id,
+            server_id: meta.server_id.clone(),
             direction: meta.direction.as_str().to_string(),
             file_path: meta.file_path.clone(),
             file_size: meta.file_size,
@@ -177,17 +177,47 @@ impl FileTransferManager {
         }
     }
 
-    pub fn server_transfer_count(&self, server_id: i32) -> usize {
+    pub fn server_transfer_count(&self, server_id: &str) -> usize {
         self.transfers
             .iter()
-            .filter(|entry| entry.value().server_id == server_id)
+            .filter(|entry| {
+                let meta = entry.value();
+                meta.server_id == server_id
+                    && matches!(meta.status, TransferStatus::Pending | TransferStatus::InProgress)
+            })
             .count()
+    }
+
+    pub fn get_user_id(&self, transfer_id: &str) -> Option<String> {
+        self.transfers
+            .get(transfer_id)
+            .map(|meta| meta.user_id.clone())
     }
 
     pub fn temp_file_path(&self, transfer_id: &str) -> Option<PathBuf> {
         self.transfers
             .get(transfer_id)
             .map(|meta| meta.temp_file.clone())
+    }
+
+    pub fn list_for_user(&self, user_id: &str) -> Vec<TransferInfo> {
+        self.transfers
+            .iter()
+            .filter(|entry| entry.value().user_id == user_id)
+            .map(|entry| {
+                let meta = entry.value();
+                TransferInfo {
+                    transfer_id: meta.transfer_id.clone(),
+                    server_id: meta.server_id.clone(),
+                    direction: meta.direction.as_str().to_string(),
+                    file_path: meta.file_path.clone(),
+                    file_size: meta.file_size,
+                    bytes_transferred: meta.bytes_transferred,
+                    status: meta.status.as_str().to_string(),
+                    created_at_secs_ago: meta.created_at.elapsed().as_secs(),
+                }
+            })
+            .collect()
     }
 
     pub fn list_active(&self) -> Vec<TransferInfo> {
@@ -197,7 +227,7 @@ impl FileTransferManager {
                 let meta = entry.value();
                 TransferInfo {
                     transfer_id: meta.transfer_id.clone(),
-                    server_id: meta.server_id,
+                    server_id: meta.server_id.clone(),
                     direction: meta.direction.as_str().to_string(),
                     file_path: meta.file_path.clone(),
                     file_size: meta.file_size,
@@ -236,10 +266,10 @@ mod tests {
     fn test_create_and_get() {
         let mgr = make_manager();
         let id = mgr
-            .create_transfer(1, 1, TransferDirection::Download, "/tmp/file.txt".into())
+            .create_transfer("srv1".into(), "usr1".into(), TransferDirection::Download, "/tmp/file.txt".into())
             .unwrap();
         let info = mgr.get(&id).unwrap();
-        assert_eq!(info.server_id, 1);
+        assert_eq!(info.server_id, "srv1");
         assert_eq!(info.direction, "download");
         assert_eq!(info.file_path, "/tmp/file.txt");
         assert_eq!(info.status, "pending");
@@ -256,8 +286,8 @@ mod tests {
         for i in 0..MAX_FILE_CONCURRENT_TRANSFERS {
             let id = mgr
                 .create_transfer(
-                    42,
-                    1,
+                    "srv42".into(),
+                    "usr1".into(),
                     TransferDirection::Download,
                     format!("/tmp/file{i}.txt"),
                 )
@@ -266,13 +296,13 @@ mod tests {
         }
 
         // 4th transfer for same server should fail
-        let result = mgr.create_transfer(42, 1, TransferDirection::Upload, "/tmp/extra.txt".into());
+        let result = mgr.create_transfer("srv42".into(), "usr1".into(), TransferDirection::Upload, "/tmp/extra.txt".into());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Too many concurrent transfers"));
 
         // Different server should still work
         let id = mgr
-            .create_transfer(99, 1, TransferDirection::Download, "/tmp/other.txt".into())
+            .create_transfer("srv99".into(), "usr1".into(), TransferDirection::Download, "/tmp/other.txt".into())
             .unwrap();
         ids.push(id);
 
@@ -287,7 +317,7 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let mgr = FileTransferManager::new(tmp.path().to_path_buf());
         let id = mgr
-            .create_transfer(1, 1, TransferDirection::Download, "/test".into())
+            .create_transfer("srv1".into(), "usr1".into(), TransferDirection::Download, "/test".into())
             .unwrap();
 
         // Pending -> InProgress
@@ -308,7 +338,7 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let mgr = FileTransferManager::new(tmp.path().to_path_buf());
         let id = mgr
-            .create_transfer(1, 1, TransferDirection::Upload, "/test".into())
+            .create_transfer("srv1".into(), "usr1".into(), TransferDirection::Upload, "/test".into())
             .unwrap();
 
         mgr.mark_failed(&id, "Disk full".into());
@@ -323,7 +353,7 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let mgr = FileTransferManager::new(tmp.path().to_path_buf());
         let id = mgr
-            .create_transfer(1, 1, TransferDirection::Download, "/test".into())
+            .create_transfer("srv1".into(), "usr1".into(), TransferDirection::Download, "/test".into())
             .unwrap();
 
         mgr.update_size(&id, 1000);
@@ -340,7 +370,7 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let mgr = FileTransferManager::new(tmp.path().to_path_buf());
         let id = mgr
-            .create_transfer(1, 1, TransferDirection::Download, "/test".into())
+            .create_transfer("srv1".into(), "usr1".into(), TransferDirection::Download, "/test".into())
             .unwrap();
 
         let path = mgr.temp_file_path(&id).unwrap();
@@ -355,7 +385,7 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let mgr = FileTransferManager::new(tmp.path().to_path_buf());
         let id = mgr
-            .create_transfer(1, 1, TransferDirection::Download, "/test".into())
+            .create_transfer("srv1".into(), "usr1".into(), TransferDirection::Download, "/test".into())
             .unwrap();
 
         // Create the temp file
@@ -373,10 +403,10 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let mgr = FileTransferManager::new(tmp.path().to_path_buf());
         let id1 = mgr
-            .create_transfer(1, 1, TransferDirection::Download, "/a".into())
+            .create_transfer("srv1".into(), "usr1".into(), TransferDirection::Download, "/a".into())
             .unwrap();
         let id2 = mgr
-            .create_transfer(1, 1, TransferDirection::Upload, "/b".into())
+            .create_transfer("srv1".into(), "usr1".into(), TransferDirection::Upload, "/b".into())
             .unwrap();
 
         mgr.mark_ready(&id1);
@@ -393,7 +423,7 @@ mod tests {
     fn test_cleanup_expired() {
         let mgr = make_manager();
         let id = mgr
-            .create_transfer(1, 1, TransferDirection::Download, "/tmp/old.txt".into())
+            .create_transfer("srv1".into(), "usr1".into(), TransferDirection::Download, "/tmp/old.txt".into())
             .unwrap();
 
         // With a very large max_age, nothing should be cleaned

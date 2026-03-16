@@ -71,6 +71,11 @@ function TextPreview({ serverId, entry }: { entry: FileEntry; serverId: string }
         {
           onSuccess: () => {
             toast.success(t('save_success'))
+            refetchStat().then(({ data: stat }) => {
+              if (stat) {
+                loadedModifiedRef.current = stat.modified
+              }
+            })
           },
           onError: (err) => {
             toast.error(err instanceof Error ? err.message : 'Save failed')
@@ -78,7 +83,7 @@ function TextPreview({ serverId, entry }: { entry: FileEntry; serverId: string }
         }
       )
     },
-    [writeMutation, entry.path, t]
+    [writeMutation, entry.path, t, refetchStat]
   )
 
   const handleSave = useCallback(

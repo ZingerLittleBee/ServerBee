@@ -90,6 +90,11 @@ impl FileManager {
         }
     }
 
+    /// Check if file management is enabled via both config and capability.
+    pub fn is_enabled(&self) -> bool {
+        self.config.enabled
+    }
+
     /// Validate that the given path is within an allowed root and does not match deny patterns.
     pub fn validate_path(&self, path: &str) -> anyhow::Result<PathBuf> {
         if self.config.root_paths.is_empty() {

@@ -338,8 +338,18 @@ async fn read_file(
 )]
 async fn download_file(
     State(state): State<Arc<AppState>>,
+    Extension(current_user): Extension<CurrentUser>,
     Path(transfer_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
+    // Verify ownership: only the user who started the transfer can download it
+    let owner = state
+        .file_transfers
+        .get_user_id(&transfer_id)
+        .ok_or(AppError::NotFound("Transfer not found".into()))?;
+    if owner != current_user.user_id {
+        return Err(AppError::NotFound("Transfer not found".into()));
+    }
+
     let info = state
         .file_transfers
         .get(&transfer_id)
@@ -401,8 +411,9 @@ async fn download_file(
 )]
 async fn list_transfers(
     State(state): State<Arc<AppState>>,
+    Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<ApiResponse<TransfersResponse>>, AppError> {
-    let transfers = state.file_transfers.list_active();
+    let transfers = state.file_transfers.list_for_user(&current_user.user_id);
     ok(TransfersResponse { transfers })
 }
 
@@ -727,20 +738,11 @@ async fn start_download(
 ) -> Result<Json<ApiResponse<DownloadResponse>>, AppError> {
     validate_file_access(&state, &server_id).await?;
 
-    // Parse server_id as i32 for the transfer manager
-    let server_id_int: i32 = server_id
-        .parse()
-        .unwrap_or(0);
-    let user_id_int: i32 = current_user
-        .user_id
-        .parse()
-        .unwrap_or(0);
-
     let transfer_id = state
         .file_transfers
         .create_transfer(
-            server_id_int,
-            user_id_int,
+            server_id.clone(),
+            current_user.user_id.clone(),
             TransferDirection::Download,
             body.path.clone(),
         )
@@ -862,14 +864,11 @@ async fn upload_file(
         return Err(AppError::BadRequest("Missing or empty 'file' field".into()));
     }
 
-    let server_id_int: i32 = server_id.parse().unwrap_or(0);
-    let user_id_int: i32 = current_user.user_id.parse().unwrap_or(0);
-
     let transfer_id = state
         .file_transfers
         .create_transfer(
-            server_id_int,
-            user_id_int,
+            server_id.clone(),
+            current_user.user_id.clone(),
             TransferDirection::Upload,
             remote_path.clone(),
         )
