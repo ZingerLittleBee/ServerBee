@@ -43,5 +43,7 @@
   "rename_title": "Rename",
   "new_name": "New name",
   "confirm_delete_title": "Confirm Delete",
-  "create_folder_title": "Create Folder"
+  "create_folder_title": "Create Folder",
+  "read_error": "Failed to read file",
+  "load_error": "Failed to load directory"
 }

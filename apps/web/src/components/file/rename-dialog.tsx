@@ -10,11 +10,12 @@ import { useFileMoveMutation } from '@/hooks/use-file-api'
 interface RenameDialogProps {
   entry: FileEntry | null
   onClose: () => void
+  onRenamed?: (oldPath: string, newPath: string) => void
   open: boolean
   serverId: string
 }
 
-export function RenameDialog({ serverId, entry, open, onClose }: RenameDialogProps) {
+export function RenameDialog({ serverId, entry, open, onClose, onRenamed }: RenameDialogProps) {
   const { t } = useTranslation('file')
   const [newName, setNewName] = useState('')
   const moveMutation = useFileMoveMutation(serverId)
@@ -37,6 +38,7 @@ export function RenameDialog({ serverId, entry, open, onClose }: RenameDialogPro
       {
         onSuccess: () => {
           toast.success(t('rename'))
+          onRenamed?.(entry.path, newPath)
           onClose()
         },
         onError: (err) => {

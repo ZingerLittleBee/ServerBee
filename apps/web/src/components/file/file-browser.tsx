@@ -8,6 +8,7 @@ import { formatBytes } from '@/lib/utils'
 
 interface FileBrowserProps {
   entries: FileEntry[] | undefined
+  error?: string
   isLoading?: boolean
   onContextMenu: (entry: FileEntry, event: React.MouseEvent) => void
   onFileSelect: (entry: FileEntry) => void
@@ -55,6 +56,7 @@ function formatModified(ts: number): string {
 
 export function FileBrowser({
   entries,
+  error,
   isLoading,
   parentPath,
   onNavigate,
@@ -69,6 +71,14 @@ export function FileBrowser({
         {Array.from({ length: 6 }, (_, i) => (
           <Skeleton className="h-8" key={`skel-${i.toString()}`} />
         ))}
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-32 items-center justify-center p-4">
+        <p className="text-destructive text-sm">{error}</p>
       </div>
     )
   }
