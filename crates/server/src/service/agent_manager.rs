@@ -400,6 +400,23 @@ mod tests {
     }
 
     #[test]
+    fn test_cleanup_expired_requests() {
+        let (mgr, _rx) = make_manager();
+        let _rx1 = mgr.register_pending_request("old".into());
+        // Cleanup with zero duration removes everything
+        mgr.cleanup_expired_requests(std::time::Duration::from_secs(0));
+        let dispatched = mgr.dispatch_pending_response(
+            "old",
+            AgentMessage::FileOpResult {
+                msg_id: "old".into(),
+                success: true,
+                error: None,
+            },
+        );
+        assert!(!dispatched); // should have been cleaned up
+    }
+
+    #[test]
     fn test_pending_request_lifecycle() {
         let (mgr, _rx) = make_manager();
         let mut rx = mgr.register_pending_request("req1".into());

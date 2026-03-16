@@ -283,6 +283,113 @@ mod tests {
     }
 
     #[test]
+    fn test_mark_status_transitions() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mgr = FileTransferManager::new(tmp.path().to_path_buf());
+        let id = mgr
+            .create_transfer(1, 1, TransferDirection::Download, "/test".into())
+            .unwrap();
+
+        // Pending -> InProgress
+        mgr.mark_in_progress(&id);
+        let info = mgr.get(&id).unwrap();
+        assert_eq!(info.status, "in_progress");
+
+        // InProgress -> Ready
+        mgr.mark_ready(&id);
+        let info = mgr.get(&id).unwrap();
+        assert_eq!(info.status, "ready");
+
+        mgr.remove(&id);
+    }
+
+    #[test]
+    fn test_mark_failed() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mgr = FileTransferManager::new(tmp.path().to_path_buf());
+        let id = mgr
+            .create_transfer(1, 1, TransferDirection::Upload, "/test".into())
+            .unwrap();
+
+        mgr.mark_failed(&id, "Disk full".into());
+        let info = mgr.get(&id).unwrap();
+        assert_eq!(info.status, "failed");
+
+        mgr.remove(&id);
+    }
+
+    #[test]
+    fn test_update_progress() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mgr = FileTransferManager::new(tmp.path().to_path_buf());
+        let id = mgr
+            .create_transfer(1, 1, TransferDirection::Download, "/test".into())
+            .unwrap();
+
+        mgr.update_size(&id, 1000);
+        mgr.update_progress(&id, 500);
+        let info = mgr.get(&id).unwrap();
+        assert_eq!(info.bytes_transferred, 500);
+        assert_eq!(info.file_size.unwrap(), 1000);
+
+        mgr.remove(&id);
+    }
+
+    #[test]
+    fn test_temp_file_path() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mgr = FileTransferManager::new(tmp.path().to_path_buf());
+        let id = mgr
+            .create_transfer(1, 1, TransferDirection::Download, "/test".into())
+            .unwrap();
+
+        let path = mgr.temp_file_path(&id).unwrap();
+        assert!(path.to_str().unwrap().contains(&id));
+        assert!(path.to_str().unwrap().ends_with(".part"));
+
+        mgr.remove(&id);
+    }
+
+    #[test]
+    fn test_remove_cleans_temp_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mgr = FileTransferManager::new(tmp.path().to_path_buf());
+        let id = mgr
+            .create_transfer(1, 1, TransferDirection::Download, "/test".into())
+            .unwrap();
+
+        // Create the temp file
+        let path = mgr.temp_file_path(&id).unwrap();
+        std::fs::write(&path, "data").unwrap();
+        assert!(path.exists());
+
+        mgr.remove(&id);
+        assert!(!path.exists());
+        assert!(mgr.get(&id).is_none());
+    }
+
+    #[test]
+    fn test_list_active_returns_all() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mgr = FileTransferManager::new(tmp.path().to_path_buf());
+        let id1 = mgr
+            .create_transfer(1, 1, TransferDirection::Download, "/a".into())
+            .unwrap();
+        let id2 = mgr
+            .create_transfer(1, 1, TransferDirection::Upload, "/b".into())
+            .unwrap();
+
+        mgr.mark_ready(&id1);
+
+        let active = mgr.list_active();
+        // Both should appear (list_active shows all, not just pending)
+        assert_eq!(active.len(), 2);
+
+        mgr.remove(&id1);
+        mgr.remove(&id2);
+    }
+
+    #[test]
     fn test_cleanup_expired() {
         let mgr = make_manager();
         let id = mgr
