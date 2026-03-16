@@ -24,6 +24,9 @@ import type { NetworkProbeRecord } from '@/lib/network-types'
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/network/$serverId')({
+  validateSearch: (search: Record<string, unknown>) => ({
+    range: (search.range as string) || 'realtime'
+  }),
   component: NetworkDetailPage
 })
 
@@ -64,7 +67,20 @@ function NetworkDetailPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
-  const [timeRange, setTimeRange] = useState<TimeRangeValue>('realtime')
+  const { range } = Route.useSearch()
+  const navigate = Route.useNavigate()
+
+  const timeRange = useMemo<TimeRangeValue>(() => {
+    if (range === 'realtime') {
+      return 'realtime'
+    }
+    const num = Number(range)
+    if ([1, 6, 24, 168, 720].includes(num)) {
+      return num as TimeRangeValue
+    }
+    return 'realtime'
+  }, [range])
+
   const [visibleTargets, setVisibleTargets] = useState<Set<string> | null>(null)
 
   // Manage Targets dialog state
@@ -189,9 +205,12 @@ function NetworkDetailPage() {
     return { avgLatency, availability, targetCount }
   }, [records])
 
-  const handleTimeRangeChange = useCallback((value: TimeRangeValue) => {
-    setTimeRange(value)
-  }, [])
+  const handleTimeRangeChange = useCallback(
+    (value: TimeRangeValue) => {
+      navigate({ search: { range: String(value) } })
+    },
+    [navigate]
+  )
 
   const exportCsv = useCallback(() => {
     if (records.length === 0) {
@@ -276,7 +295,7 @@ function NetworkDetailPage() {
           className="mb-3 inline-flex items-center gap-1 text-muted-foreground text-sm hover:text-foreground"
           to="/network"
         >
-          <ArrowLeft className="size-4" />
+          <ArrowLeft aria-hidden="true" className="size-4" />
           {t('back_to_overview')}
         </Link>
 
@@ -288,12 +307,12 @@ function NetworkDetailPage() {
           <div className="flex items-center gap-2">
             {isAdmin && (
               <Button onClick={openManageDialog} size="sm" variant="outline">
-                <Settings2 className="mr-1 size-4" />
+                <Settings2 aria-hidden="true" className="mr-1 size-4" />
                 {t('manage_targets')}
               </Button>
             )}
             <Button disabled={records.length === 0} onClick={exportCsv} size="sm" variant="outline">
-              <Download className="mr-1 size-4" />
+              <Download aria-hidden="true" className="mr-1 size-4" />
               {t('export_csv')}
             </Button>
           </div>
@@ -357,17 +376,17 @@ function NetworkDetailPage() {
       {/* Bottom stats */}
       <div className="mb-6 grid grid-cols-3 gap-4">
         <div className="rounded-lg border bg-card p-4 text-center">
-          <p className="font-mono font-semibold text-lg">
+          <p className="font-mono font-semibold text-lg tabular-nums">
             {stats.avgLatency != null ? `${stats.avgLatency.toFixed(1)} ms` : 'N/A'}
           </p>
           <p className="text-muted-foreground text-xs">{t('avg_latency')}</p>
         </div>
         <div className="rounded-lg border bg-card p-4 text-center">
-          <p className="font-mono font-semibold text-lg">{stats.availability.toFixed(1)}%</p>
+          <p className="font-mono font-semibold text-lg tabular-nums">{stats.availability.toFixed(1)}%</p>
           <p className="text-muted-foreground text-xs">{t('availability')}</p>
         </div>
         <div className="rounded-lg border bg-card p-4 text-center">
-          <p className="font-mono font-semibold text-lg">{stats.targetCount}</p>
+          <p className="font-mono font-semibold text-lg tabular-nums">{stats.targetCount}</p>
           <p className="text-muted-foreground text-xs">{t('targets')}</p>
         </div>
       </div>

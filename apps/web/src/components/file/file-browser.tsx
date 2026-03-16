@@ -33,12 +33,12 @@ function EntryIcon({ entry }: { entry: FileEntry }) {
   const Icon = ICON_MAP[iconName] ?? File
 
   if (entry.file_type === 'Directory') {
-    return <Icon className="size-4 text-blue-500" />
+    return <Icon aria-hidden="true" className="size-4 text-blue-500" />
   }
   if (entry.file_type === 'Symlink') {
-    return <Icon className="size-4 text-purple-500" />
+    return <Icon aria-hidden="true" className="size-4 text-purple-500" />
   }
-  return <Icon className="size-4 text-muted-foreground" />
+  return <Icon aria-hidden="true" className="size-4 text-muted-foreground" />
 }
 
 function formatModified(ts: number): string {
@@ -96,9 +96,19 @@ export function FileBrowser({
       </TableHeader>
       <TableBody>
         {parentPath !== null && (
-          <TableRow className="cursor-pointer" onClick={() => onNavigate(parentPath)}>
+          <TableRow
+            className="cursor-pointer"
+            onClick={() => onNavigate(parentPath)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onNavigate(parentPath)
+              }
+            }}
+            tabIndex={0}
+          >
             <TableCell className="flex items-center gap-2">
-              <ArrowUp className="size-4 text-muted-foreground" />
+              <ArrowUp aria-hidden="true" className="size-4 text-muted-foreground" />
               <span>..</span>
             </TableCell>
             <TableCell />
@@ -127,6 +137,17 @@ export function FileBrowser({
               e.preventDefault()
               onContextMenu(entry, e)
             }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                if (entry.file_type === 'Directory') {
+                  onNavigate(entry.path)
+                } else {
+                  onFileSelect(entry)
+                }
+              }
+            }}
+            tabIndex={0}
           >
             <TableCell>
               <div className="flex items-center gap-2">
@@ -134,10 +155,12 @@ export function FileBrowser({
                 <span className="truncate">{entry.name}</span>
               </div>
             </TableCell>
-            <TableCell className="text-muted-foreground text-xs">
+            <TableCell className="text-muted-foreground text-xs tabular-nums">
               {entry.file_type === 'Directory' ? '-' : formatBytes(entry.size)}
             </TableCell>
-            <TableCell className="text-muted-foreground text-xs">{formatModified(entry.modified)}</TableCell>
+            <TableCell className="text-muted-foreground text-xs tabular-nums">
+              {formatModified(entry.modified)}
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>

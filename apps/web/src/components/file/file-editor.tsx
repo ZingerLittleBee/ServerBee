@@ -2,6 +2,7 @@ import type { OnMount } from '@monaco-editor/react'
 import { Loader2 } from 'lucide-react'
 import type { MutableRefObject } from 'react'
 import { lazy, Suspense, useCallback, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useTheme } from '@/components/theme-provider'
 
 const MonacoEditor = lazy(() => import('@monaco-editor/react'))
@@ -37,6 +38,7 @@ export function FileEditor({
   readOnly = false,
   onSave
 }: FileEditorProps) {
+  const { t } = useTranslation('file')
   const { theme } = useTheme()
   const internalEditorRef = useRef<MonacoEditorInstance | null>(null)
 
@@ -61,9 +63,9 @@ export function FileEditor({
   return (
     <Suspense
       fallback={
-        <div className="flex h-full items-center justify-center">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        </div>
+        <output aria-label={t('loading')} className="flex h-full items-center justify-center">
+          <Loader2 aria-hidden="true" className="size-6 animate-spin text-muted-foreground" />
+        </output>
       }
     >
       <MonacoEditor

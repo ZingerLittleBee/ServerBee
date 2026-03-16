@@ -35,7 +35,7 @@ export function MkdirDialog({ serverId, currentPath, open, onClose }: MkdirDialo
           onClose()
         },
         onError: (err) => {
-          toast.error(err instanceof Error ? err.message : 'Failed to create folder')
+          toast.error(err instanceof Error ? err.message : t('create_folder_failed'))
         }
       }
     )
@@ -56,7 +56,10 @@ export function MkdirDialog({ serverId, currentPath, open, onClose }: MkdirDialo
         </DialogHeader>
         <form className="space-y-4" onSubmit={handleSubmit}>
           <Input
+            aria-label={t('folder_name')}
+            autoComplete="off"
             autoFocus
+            name="folder-name"
             onChange={(e) => setFolderName(e.target.value)}
             placeholder={t('folder_name')}
             required

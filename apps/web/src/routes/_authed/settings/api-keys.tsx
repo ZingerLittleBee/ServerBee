@@ -4,6 +4,17 @@ import { Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -19,6 +30,7 @@ function ApiKeysPage() {
   const queryClient = useQueryClient()
   const [newKeyName, setNewKeyName] = useState('')
   const [createdKey, setCreatedKey] = useState<string | null>(null)
+  const [deleteKeyId, setDeleteKeyId] = useState<string | null>(null)
 
   const { data: keys, isLoading } = useQuery<ApiKeyResponse[]>({
     queryKey: ['settings', 'api-keys'],
@@ -90,7 +102,10 @@ function ApiKeysPage() {
 
           <form className="flex gap-2" onSubmit={handleCreate}>
             <Input
+              aria-label={t('api_keys.key_name')}
+              autoComplete="off"
               className="flex-1"
+              name="key-name"
               onChange={(e) => setNewKeyName(e.target.value)}
               placeholder={t('api_keys.key_name')}
               required
@@ -128,22 +143,54 @@ function ApiKeysPage() {
                     <div className="flex gap-3 text-muted-foreground text-xs">
                       <span className="font-mono">
                         {t('api_keys.prefix')}
-                        {apiKey.key_prefix}...
+                        {apiKey.key_prefix}
+                        {'\u2026'}
                       </span>
                       <span>
                         {t('api_keys.created')} {new Date(apiKey.created_at).toLocaleDateString()}
                       </span>
                     </div>
                   </div>
-                  <Button
-                    aria-label={`Delete key ${apiKey.name}`}
-                    disabled={deleteMutation.isPending}
-                    onClick={() => handleDelete(apiKey.id)}
-                    size="sm"
-                    variant="destructive"
+                  <AlertDialog
+                    onOpenChange={(open) => {
+                      if (!open) {
+                        setDeleteKeyId(null)
+                      }
+                    }}
+                    open={deleteKeyId === apiKey.id}
                   >
-                    <Trash2 className="size-3.5" />
-                  </Button>
+                    <AlertDialogTrigger
+                      onClick={() => setDeleteKeyId(apiKey.id)}
+                      render={
+                        <Button
+                          aria-label={`${t('common:delete')} ${apiKey.name}`}
+                          disabled={deleteMutation.isPending}
+                          size="sm"
+                          variant="destructive"
+                        />
+                      }
+                    >
+                      <Trash2 aria-hidden="true" className="size-3.5" />
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
+                        <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => {
+                            handleDelete(apiKey.id)
+                            setDeleteKeyId(null)
+                          }}
+                          variant="destructive"
+                        >
+                          {t('common:delete')}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
               ))}
             </div>

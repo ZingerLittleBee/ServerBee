@@ -14,6 +14,9 @@ import { api } from '@/lib/api-client'
 import { CAP_DEFAULT, CAPABILITIES } from '@/lib/capabilities'
 
 export const Route = createFileRoute('/_authed/settings/capabilities')({
+  validateSearch: (search: Record<string, unknown>) => ({
+    q: (search.q as string) || ''
+  }),
   component: CapabilitiesPage
 })
 
@@ -27,7 +30,8 @@ interface ServerInfo {
 function CapabilitiesPage() {
   const { t } = useTranslation(['settings', 'servers'])
   const queryClient = useQueryClient()
-  const [search, setSearch] = useState('')
+  const { q: search } = Route.useSearch()
+  const navigate = Route.useNavigate()
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
 
   const capLabelMap = useMemo<Record<string, string>>(
@@ -99,7 +103,7 @@ function CapabilitiesPage() {
               <span className="font-medium">{row.original.name}</span>
               {hasOldAgent && (
                 <span title={t('cap_upgrade_warning', { ns: 'servers' })}>
-                  <ShieldAlert className="size-3.5 text-amber-500" />
+                  <ShieldAlert aria-hidden="true" className="size-3.5 text-amber-500" />
                 </span>
               )}
             </div>
@@ -126,6 +130,7 @@ function CapabilitiesPage() {
               return (
                 <div className="text-center">
                   <Switch
+                    aria-label={`${capLabelMap[key]} - ${row.original.name}`}
                     checked={isEnabled}
                     disabled={isPending}
                     onCheckedChange={() => toggleCap(row.original, bit)}
@@ -200,10 +205,15 @@ function CapabilitiesPage() {
 
       <div className="mb-4 flex items-center gap-3">
         <div className="relative max-w-sm flex-1">
-          <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search
+            aria-hidden="true"
+            className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+          />
           <Input
+            autoComplete="off"
             className="pl-9"
-            onChange={(e) => setSearch(e.target.value)}
+            name="search"
+            onChange={(e) => navigate({ search: { q: e.target.value } })}
             placeholder={t('capabilities.search')}
             type="text"
             value={search}

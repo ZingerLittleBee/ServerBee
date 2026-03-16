@@ -55,7 +55,7 @@ export function TransferBar() {
 
   return (
     <div className="border-t bg-muted/30 px-3 py-2">
-      <div className="space-y-1.5">
+      <div aria-live="polite" className="space-y-1.5">
         {transfers.map((transfer) => {
           const progress =
             transfer.file_size && transfer.file_size > 0
@@ -65,22 +65,28 @@ export function TransferBar() {
 
           return (
             <div className="flex items-center gap-2 text-xs" key={transfer.transfer_id}>
-              {transfer.status === 'in_progress' && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
+              {transfer.status === 'in_progress' && (
+                <Loader2 aria-hidden="true" className="size-3 animate-spin text-muted-foreground" />
+              )}
               <span className="min-w-0 flex-1 truncate" title={transfer.file_path}>
                 {fileName}
               </span>
-              <span className="text-muted-foreground">
+              <span className="text-muted-foreground tabular-nums">
                 {formatBytes(transfer.bytes_transferred)}
                 {transfer.file_size ? ` / ${formatBytes(transfer.file_size)}` : ''}
               </span>
               {transfer.file_size && transfer.file_size > 0 && (
                 <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
-                  <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+                  <div
+                    className="h-full rounded-full bg-primary transition-[width]"
+                    style={{ width: `${progress}%` }}
+                  />
                 </div>
               )}
               <span className="text-muted-foreground">{statusLabel(transfer.status, t)}</span>
               {(transfer.status === 'pending' || transfer.status === 'in_progress') && (
                 <Button
+                  aria-label={t('cancel_transfer')}
                   disabled={cancelMutation.isPending}
                   onClick={() => cancelMutation.mutate(transfer.transfer_id)}
                   size="icon-xs"

@@ -21,20 +21,21 @@ export function FileBreadcrumb({ path, onNavigate }: FileBreadcrumbProps) {
   }
 
   return (
-    <div className="flex items-center gap-0.5 overflow-x-auto text-sm">
+    <nav aria-label={t('title')} className="flex items-center gap-0.5 overflow-x-auto text-sm">
       <Button
+        aria-label={t('breadcrumb_root')}
         className="shrink-0 gap-1"
         onClick={() => onNavigate('/')}
         size="sm"
         title={t('breadcrumb_root')}
         variant="ghost"
       >
-        <Home className="size-3.5" />
+        <Home aria-hidden="true" className="size-3.5" />
         <span className="hidden sm:inline">/</span>
       </Button>
       {paths.map((seg, idx) => (
         <span className="flex shrink-0 items-center gap-0.5" key={seg.path}>
-          <ChevronRight className="size-3 text-muted-foreground" />
+          <ChevronRight aria-hidden="true" className="size-3 text-muted-foreground" />
           {idx === paths.length - 1 ? (
             <span className="px-1.5 py-0.5 font-medium">{seg.label}</span>
           ) : (
@@ -44,6 +45,6 @@ export function FileBreadcrumb({ path, onNavigate }: FileBreadcrumbProps) {
           )}
         </span>
       ))}
-    </div>
+    </nav>
   )
 }

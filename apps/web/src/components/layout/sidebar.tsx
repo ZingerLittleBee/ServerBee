@@ -43,12 +43,12 @@ export function Sidebar() {
   const isAdmin = user?.role === 'admin'
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r bg-sidebar">
+    <aside aria-label={t('common:main_navigation')} className="flex w-56 shrink-0 flex-col border-r bg-sidebar">
       <div className="flex h-14 items-center gap-2 border-b px-4">
-        <Radar className="size-5 text-primary-background" />
+        <Radar aria-hidden="true" className="size-5 text-primary-background" />
         <span className="font-semibold text-sm">ServerBee</span>
       </div>
-      <nav className="flex-1 space-y-1 p-2">
+      <nav aria-label={t('common:main_navigation')} className="flex-1 space-y-1 p-2">
         {navItems.map((item) => {
           if ('adminOnly' in item && item.adminOnly && !isAdmin) {
             return null
@@ -65,7 +65,7 @@ export function Sidebar() {
               key={item.to}
               to={item.to}
             >
-              <item.icon className="size-4" />
+              <item.icon aria-hidden="true" className="size-4" />
               {t(item.labelKey)}
             </Link>
           )
