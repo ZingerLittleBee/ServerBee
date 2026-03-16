@@ -46,6 +46,8 @@ pub enum AppError {
     Conflict(String),
     #[error("Validation error: {0}")]
     Validation(String),
+    #[error("Request timeout: {0}")]
+    RequestTimeout(String),
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -60,6 +62,7 @@ impl IntoResponse for AppError {
             AppError::NotFound(_) => (StatusCode::NOT_FOUND, "NOT_FOUND"),
             AppError::Conflict(_) => (StatusCode::CONFLICT, "CONFLICT"),
             AppError::Validation(_) => (StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR"),
+            AppError::RequestTimeout(_) => (StatusCode::REQUEST_TIMEOUT, "REQUEST_TIMEOUT"),
             AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR"),
         };
 
