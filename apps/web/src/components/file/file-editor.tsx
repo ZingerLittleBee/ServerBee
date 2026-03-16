@@ -1,12 +1,16 @@
 import type { OnMount } from '@monaco-editor/react'
 import { Loader2 } from 'lucide-react'
+import type { MutableRefObject } from 'react'
 import { lazy, Suspense, useCallback, useRef } from 'react'
 import { useTheme } from '@/components/theme-provider'
 
 const MonacoEditor = lazy(() => import('@monaco-editor/react'))
 
+export type MonacoEditorInstance = Parameters<OnMount>[0]
+
 interface FileEditorProps {
   content: string
+  editorRef?: MutableRefObject<MonacoEditorInstance | null>
   language: string
   onSave?: (content: string) => void
   readOnly?: boolean
@@ -26,13 +30,22 @@ function resolveTheme(theme: string): string {
   return 'light'
 }
 
-export function FileEditor({ content, language, readOnly = false, onSave }: FileEditorProps) {
+export function FileEditor({
+  content,
+  editorRef: externalEditorRef,
+  language,
+  readOnly = false,
+  onSave
+}: FileEditorProps) {
   const { theme } = useTheme()
-  const editorRef = useRef<Parameters<OnMount>[0] | null>(null)
+  const internalEditorRef = useRef<MonacoEditorInstance | null>(null)
 
   const handleMount: OnMount = useCallback(
     (editor, monaco) => {
-      editorRef.current = editor
+      internalEditorRef.current = editor
+      if (externalEditorRef) {
+        externalEditorRef.current = editor
+      }
 
       if (onSave) {
         // biome-ignore lint/suspicious/noBitwiseOperators: intentional Monaco KeyMod bitmask
@@ -42,7 +55,7 @@ export function FileEditor({ content, language, readOnly = false, onSave }: File
         })
       }
     },
-    [onSave]
+    [onSave, externalEditorRef]
   )
 
   return (

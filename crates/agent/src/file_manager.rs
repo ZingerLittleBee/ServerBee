@@ -15,6 +15,10 @@ use crate::config::FileConfig;
 /// Events produced by background file transfer tasks, sent to the reporter loop.
 #[allow(clippy::enum_variant_names)]
 pub enum FileEvent {
+    DownloadReady {
+        transfer_id: String,
+        size: u64,
+    },
     DownloadChunk {
         transfer_id: String,
         offset: u64,
@@ -32,6 +36,9 @@ pub enum FileEvent {
 impl From<FileEvent> for AgentMessage {
     fn from(event: FileEvent) -> Self {
         match event {
+            FileEvent::DownloadReady { transfer_id, size } => {
+                AgentMessage::FileDownloadReady { transfer_id, size }
+            }
             FileEvent::DownloadChunk {
                 transfer_id,
                 offset,
@@ -584,9 +591,16 @@ async fn download_file(
 
     let mut file = tokio::fs::File::open(&path).await?;
     let metadata = file.metadata().await?;
-    let _file_size = metadata.len();
+    let file_size = metadata.len();
 
-    // Send ready signal via DownloadChunk at offset 0 will be the first chunk
+    // Send ready signal with file size so the server can create the temp file
+    tx.send(FileEvent::DownloadReady {
+        transfer_id: transfer_id.clone(),
+        size: file_size,
+    })
+    .await
+    .map_err(|_| anyhow::anyhow!("Channel closed"))?;
+
     let mut offset: u64 = 0;
     let mut buf = vec![0u8; MAX_FILE_CHUNK_SIZE];
 
@@ -970,9 +984,14 @@ mod tests {
 
         // Collect events
         let mut chunks = Vec::new();
+        let mut got_ready = false;
         let mut got_end = false;
         while let Some(event) = rx.recv().await {
             match event {
+                FileEvent::DownloadReady { size, .. } => {
+                    assert_eq!(size, 12); // "Download me!" is 12 bytes
+                    got_ready = true;
+                }
                 FileEvent::DownloadChunk { data, .. } => {
                     chunks.push(data);
                 }
@@ -986,6 +1005,7 @@ mod tests {
             }
         }
 
+        assert!(got_ready);
         assert!(got_end);
         assert!(!chunks.is_empty());
         let decoded: Vec<u8> = chunks
