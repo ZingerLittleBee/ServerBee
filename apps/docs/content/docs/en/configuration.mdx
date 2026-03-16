@@ -66,6 +66,10 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | `SERVERBEE_COLLECTOR__INTERVAL` | `3` | Metric report interval in seconds |
 | `SERVERBEE_COLLECTOR__ENABLE_GPU` | `false` | Enable NVIDIA GPU monitoring (requires nvml) |
 | `SERVERBEE_COLLECTOR__ENABLE_TEMPERATURE` | `true` | Enable CPU temperature monitoring |
+| `SERVERBEE_FILE__ENABLED` | `false` | Enable file management on this agent |
+| `SERVERBEE_FILE__ROOT_PATHS` | `[]` | Allowed root paths (comma-separated, e.g. `/home,/var/log`). Empty means filesystem root |
+| `SERVERBEE_FILE__MAX_FILE_SIZE` | `1073741824` | Max file size in bytes for read/download (default 1GB) |
+| `SERVERBEE_FILE__DENY_PATTERNS` | `*.key,*.pem,...` | Glob patterns for files the agent refuses to access |
 | `SERVERBEE_LOG__LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `SERVERBEE_LOG__FILE` | `""` | Log file path. Empty means stdout only |
 
@@ -189,6 +193,15 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 | `enable_gpu` | bool | `false` | Enable NVIDIA GPU monitoring (requires `nvidia-smi`) |
 | `enable_temperature` | bool | `true` | Enable CPU temperature sensor monitoring |
 
+### `[file]` -- File Management
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | bool | `false` | Enable file management capability. The server must also enable `CAP_FILE` for the agent |
+| `root_paths` | string[] | `[]` | Restrict browsing to these directories. Empty array means full filesystem access |
+| `max_file_size` | u64 | `1073741824` | Maximum file size (bytes) for read and download operations (default 1 GB) |
+| `deny_patterns` | string[] | `["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]` | Glob patterns for files the agent will refuse to access |
+
 ### `[log]` -- Logging
 
 | Key | Type | Default | Description |
@@ -259,6 +272,12 @@ token = "previously-obtained-token"
 interval = 3
 enable_gpu = true
 enable_temperature = true
+
+[file]
+enabled = true
+root_paths = ["/home", "/var/log", "/etc"]
+max_file_size = 1073741824
+deny_patterns = ["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]
 
 [log]
 level = "info"
