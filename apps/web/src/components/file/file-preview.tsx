@@ -37,14 +37,9 @@ export function FilePreview({ serverId, entry, readOnly = false }: FilePreviewPr
   }
 
   const canPreviewText = isTextFile(entry.name) && entry.size < MAX_PREVIEW_SIZE
-  const isImage = isImageFile(entry.name)
 
   if (canPreviewText) {
     return <TextPreview entry={entry} key={entry.path} readOnly={readOnly} serverId={serverId} />
-  }
-
-  if (isImage || entry.size >= MAX_PREVIEW_SIZE) {
-    return <FileInfoPanel entry={entry} serverId={serverId} />
   }
 
   return <FileInfoPanel entry={entry} serverId={serverId} />

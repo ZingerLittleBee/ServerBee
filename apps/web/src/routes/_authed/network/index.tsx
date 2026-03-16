@@ -6,19 +6,12 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { useNetworkOverview } from '@/hooks/use-network-api'
-import type { NetworkServerSummary, NetworkTargetSummary } from '@/lib/network-types'
+import { formatLatency, type NetworkServerSummary, type NetworkTargetSummary } from '@/lib/network-types'
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/network/')({
   component: NetworkOverviewPage
 })
-
-function formatLatency(ms: number | null | undefined): string {
-  if (ms == null) {
-    return 'N/A'
-  }
-  return `${ms.toFixed(1)} ms`
-}
 
 function formatAvailability(targets: NetworkTargetSummary[]): string {
   if (targets.length === 0) {

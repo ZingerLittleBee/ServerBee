@@ -1,5 +1,5 @@
 import { Eye, EyeOff } from 'lucide-react'
-import type { NetworkTargetSummary } from '@/lib/network-types'
+import { formatLatency, formatPacketLoss, type NetworkTargetSummary } from '@/lib/network-types'
 import { cn } from '@/lib/utils'
 
 interface TargetCardProps {
@@ -7,17 +7,6 @@ interface TargetCardProps {
   onToggle: () => void
   target: NetworkTargetSummary
   visible: boolean
-}
-
-function formatLatency(ms: number | null): string {
-  if (ms == null) {
-    return 'N/A'
-  }
-  return `${ms.toFixed(1)} ms`
-}
-
-function formatPacketLoss(loss: number): string {
-  return `${(loss * 100).toFixed(1)}%`
 }
 
 export function TargetCard({ target, color, visible, onToggle }: TargetCardProps) {

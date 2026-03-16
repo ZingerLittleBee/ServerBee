@@ -1,8 +1,10 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use serde::Serialize;
+use tokio::sync::Mutex;
 use utoipa::ToSchema;
 
 use serverbee_common::constants::MAX_FILE_CONCURRENT_TRANSFERS;
@@ -71,6 +73,9 @@ pub struct TransferInfo {
 
 pub struct FileTransferManager {
     transfers: DashMap<String, TransferMeta>,
+    /// Persistent file handles for download transfers, keyed by transfer_id.
+    /// Avoids opening/closing the file on every chunk write.
+    open_files: DashMap<String, Arc<Mutex<tokio::fs::File>>>,
     temp_dir: PathBuf,
 }
 
@@ -80,6 +85,7 @@ impl FileTransferManager {
         std::fs::create_dir_all(&temp_dir).ok();
         Self {
             transfers: DashMap::new(),
+            open_files: DashMap::new(),
             temp_dir,
         }
     }
@@ -170,7 +176,25 @@ impl FileTransferManager {
         }
     }
 
+    /// Store an open file handle for a download transfer.
+    pub fn store_file_handle(&self, transfer_id: &str, file: tokio::fs::File) {
+        self.open_files
+            .insert(transfer_id.to_string(), Arc::new(Mutex::new(file)));
+    }
+
+    /// Get a cloned `Arc<Mutex<File>>` handle for the given transfer.
+    pub fn get_file_handle(&self, transfer_id: &str) -> Option<Arc<Mutex<tokio::fs::File>>> {
+        self.open_files.get(transfer_id).map(|entry| entry.value().clone())
+    }
+
+    /// Remove and drop the file handle for a transfer (closes the file).
+    pub fn remove_file_handle(&self, transfer_id: &str) {
+        self.open_files.remove(transfer_id);
+    }
+
     pub fn remove(&self, transfer_id: &str) {
+        // Remove file handle first (closes the file before we delete it)
+        self.open_files.remove(transfer_id);
         if let Some((_, meta)) = self.transfers.remove(transfer_id) {
             // Delete temp file if it exists
             let _ = std::fs::remove_file(&meta.temp_file);

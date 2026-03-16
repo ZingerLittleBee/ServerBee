@@ -50,68 +50,25 @@ const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
 }
 
 const TEXT_EXTENSIONS = new Set([
+  ...Object.keys(EXTENSION_LANGUAGE_MAP),
   'txt',
-  'md',
-  'mdx',
-  'json',
-  'yaml',
-  'yml',
-  'toml',
-  'ini',
-  'cfg',
-  'conf',
-  'xml',
-  'html',
-  'htm',
-  'css',
-  'scss',
-  'less',
-  'js',
-  'jsx',
-  'ts',
-  'tsx',
-  'py',
-  'rb',
-  'rs',
-  'go',
-  'java',
-  'kt',
-  'swift',
-  'c',
-  'cpp',
-  'h',
-  'hpp',
-  'cs',
-  'php',
-  'lua',
-  'r',
-  'pl',
-  'sh',
-  'bash',
-  'zsh',
-  'fish',
-  'sql',
-  'dockerfile',
+  'log',
+  'csv',
+  'tsv',
+  'svg',
   'makefile',
   'cmake',
   'gitignore',
   'gitattributes',
   'editorconfig',
-  'env',
-  'log',
-  'csv',
-  'tsv',
-  'svg',
-  'vue',
-  'svelte',
-  'graphql',
-  'gql',
-  'proto',
-  'tf',
-  'hcl'
+  'env'
 ])
 
-const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp', 'tiff', 'tif', 'avif'])
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'bmp', 'tiff', 'tif', 'avif'])
+
+const ARCHIVE_EXTENSIONS = new Set(['zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar'])
+const VIDEO_EXTENSIONS = new Set(['mp4', 'mkv', 'avi', 'mov', 'webm'])
+const AUDIO_EXTENSIONS = new Set(['mp3', 'wav', 'ogg', 'flac', 'aac'])
 
 function getExtension(filename: string): string {
   const lower = filename.toLowerCase()
@@ -188,13 +145,13 @@ export function fileIcon(fileType: string, name: string): string {
   if (ext === 'pdf') {
     return 'file-text'
   }
-  if (['zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar'].includes(ext)) {
+  if (ARCHIVE_EXTENSIONS.has(ext)) {
     return 'file-archive'
   }
-  if (['mp4', 'mkv', 'avi', 'mov', 'webm'].includes(ext)) {
+  if (VIDEO_EXTENSIONS.has(ext)) {
     return 'file-video'
   }
-  if (['mp3', 'wav', 'ogg', 'flac', 'aac'].includes(ext)) {
+  if (AUDIO_EXTENSIONS.has(ext)) {
     return 'file-audio'
   }
   if (isTextFile(name)) {
@@ -202,4 +159,12 @@ export function fileIcon(fileType: string, name: string): string {
   }
 
   return 'file'
+}
+
+export function joinPath(dir: string, name: string): string {
+  return dir.endsWith('/') ? `${dir}${name}` : `${dir}/${name}`
+}
+
+export function getFileName(path: string): string {
+  return path.split('/').pop() ?? path
 }

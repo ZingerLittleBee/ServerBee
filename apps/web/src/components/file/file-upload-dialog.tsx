@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useUploadFileMutation } from '@/hooks/use-file-api'
+import { joinPath } from '@/lib/file-utils'
 import { formatBytes } from '@/lib/utils'
 
 interface FileUploadDialogProps {
@@ -50,9 +51,7 @@ export function FileUploadDialog({ serverId, currentPath, open, onClose }: FileU
     if (!selectedFile) {
       return
     }
-    const dest = currentPath.endsWith('/')
-      ? `${currentPath}${selectedFile.name}`
-      : `${currentPath}/${selectedFile.name}`
+    const dest = joinPath(currentPath, selectedFile.name)
     uploadMutation.mutate(
       { path: dest, file: selectedFile },
       {
