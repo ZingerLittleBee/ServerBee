@@ -1,6 +1,7 @@
 pub mod agent_manager;
 pub mod alert;
 pub mod audit;
+pub mod file_transfer;
 pub mod auth;
 pub mod config;
 pub mod geoip;
