@@ -3,7 +3,10 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { ApiKeyResponse } from '@/lib/api-schema'
 
@@ -34,6 +37,10 @@ function ApiKeysPage() {
         .catch(() => {
           // Invalidation error is non-critical
         })
+      toast.success('API key created')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Operation failed')
     }
   })
 
@@ -47,6 +54,10 @@ function ApiKeysPage() {
         .catch(() => {
           // Invalidation error is non-critical
         })
+      toast.success('API key deleted')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Operation failed')
     }
   })
 
@@ -78,8 +89,8 @@ function ApiKeysPage() {
           )}
 
           <form className="flex gap-2" onSubmit={handleCreate}>
-            <input
-              className="flex h-9 flex-1 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            <Input
+              className="flex-1"
               onChange={(e) => setNewKeyName(e.target.value)}
               placeholder={t('api_keys.key_name')}
               required
@@ -101,7 +112,7 @@ function ApiKeysPage() {
           {isLoading && (
             <div className="space-y-3 p-6">
               {Array.from({ length: 3 }, (_, i) => (
-                <div className="h-12 animate-pulse rounded bg-muted" key={`skeleton-${i.toString()}`} />
+                <Skeleton className="h-12" key={`skeleton-${i.toString()}`} />
               ))}
             </div>
           )}

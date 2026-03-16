@@ -195,3 +195,61 @@ Agent                  Server                    Browser
 ```
 
 The agent reports every 3 seconds. The server caches the latest report in memory and immediately broadcasts it to connected browsers. Every 60 seconds, all cached reports are batch-written to SQLite. Every hour, raw records are aggregated into hourly summaries, and expired data is cleaned up based on retention settings.
+
+## Network Quality Monitoring
+
+ServerBee includes a built-in network quality monitoring system that probes network targets from each agent and visualizes latency, packet loss, and anomalies.
+
+### Preset Targets
+
+96 preset probe targets are embedded in the server binary (not stored in the database):
+
+- **China Telecom** -- 31 provincial nodes (TCP probe via Zstatic CDN)
+- **China Unicom** -- 31 provincial nodes (TCP probe via Zstatic CDN)
+- **China Mobile** -- 31 provincial nodes (TCP probe via Zstatic CDN)
+- **International** -- Cloudflare (1.1.1.1), Google DNS (8.8.8.8), AWS Tokyo (ICMP probe)
+
+China targets use domain names (`{province}-{isp}-v4.ip.zstaticcdn.com:80`) that auto-resolve to the latest CDN node IPs. No IP maintenance is needed.
+
+Preset targets are read-only and cannot be edited or deleted. You can also create custom targets via the settings page.
+
+### Configuration
+
+Navigate to **Settings > Network Probes** to configure:
+
+- **Target Management** -- View all 96 preset targets (with lock icon and ISP label) and manage custom targets (create/edit/delete)
+- **Global Settings** -- Probe interval (30-600 seconds, default 60), packets per round (5-20, default 10), and default targets auto-assigned to new servers
+- **Per-Server Targets** -- Assign up to 20 probe targets per server via the network detail page's "Manage Targets" dialog
+
+### Network Overview Page
+
+The `/network` page shows a card for each server with:
+
+- Target count and average latency
+- Availability percentage
+- Anomaly count with severity indicators
+
+### Network Detail Page
+
+Click a server card to see `/network/:serverId` with:
+
+- **Time range selector** -- Real-time, 1h, 6h, 24h, 7d, 30d
+- **Target cards** -- Per-target latency and packet loss, with toggle visibility
+- **Multi-line latency chart** -- One colored line per target, tooltips with timestamps
+- **Anomaly table** -- High latency, high packet loss, and unreachable events
+- **Statistics bar** -- Average latency, availability percentage, target count
+- **CSV export** -- Download probe data for the selected time range
+
+### Data Retention
+
+Network probe records follow the same two-tier storage as system metrics:
+
+- **Raw records** -- Retained for 7 days (configurable via `retention.network_probe_days`)
+- **Hourly aggregates** -- Retained for 90 days (configurable via `retention.network_probe_hourly_days`)
+
+### Alert Integration
+
+Two alert rule types are available for network quality:
+
+- `network_latency` -- Triggers when average latency exceeds a threshold
+- `network_packet_loss` -- Triggers when packet loss exceeds a threshold

@@ -376,9 +376,8 @@ const COMMANDS: CommandDefinition[] = [
     key: 'dev-full',
     name: 'dev:full',
     category: 'Workspace',
-    description: 'Start server + web dev server concurrently (admin/admin123)',
-    command:
-      'SERVERBEE_ADMIN__PASSWORD=admin123 SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server & cd apps/web && bun install && bun run dev',
+    description: 'Start server + web dev, print agent command with auto-discovery key',
+    command: 'bash scripts/dev-full.sh',
     featured: true
   },
   {

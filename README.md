@@ -11,6 +11,7 @@ A lightweight, self-hosted VPS monitoring system built with Rust and React.
 - **Detailed Metrics** -- Real-time streaming charts + historical views (1h/6h/24h/7d/30d) for CPU, memory, disk, network, load, temperature, GPU
 - **Alert System** -- 14+ metric types, threshold/offline/traffic/expiration rules, AND logic, 70% sampling
 - **Notifications** -- Webhook, Telegram, Bark, Email (SMTP) channels with notification groups
+- **Network Quality Monitoring** -- Multi-target network probing (96 preset China 3-ISP + international nodes), real-time/historical latency charts, anomaly detection, per-server target assignment
 - **Ping Monitoring** -- ICMP, TCP, HTTP probes with latency charts and success rate
 - **Web Terminal** -- Browser-based PTY terminal via WebSocket proxy
 - **GPU Monitoring** -- NVIDIA GPU usage/temperature/memory (via nvml-wrapper, feature-gated)
@@ -101,7 +102,7 @@ make server-dev                                           # Terminal 1: server o
 SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # Terminal 2: agent
 
 # Testing & code quality:
-make cargo-test        # Run all Rust tests (121)
+make cargo-test        # Run all Rust tests (164)
 make test              # Run frontend tests (86)
 make cargo-clippy      # Lint Rust code
 make                   # Interactive menu (requires fzf)
@@ -143,6 +144,8 @@ register_max = 3              # Max agent registrations per 15min window
 records_days = 7              # Raw metrics retention
 records_hourly_days = 90      # Hourly aggregates retention
 audit_logs_days = 180         # Audit log retention
+network_probe_days = 7        # Network probe raw records retention
+network_probe_hourly_days = 90 # Network probe hourly aggregates retention
 
 [geoip]
 enabled = false

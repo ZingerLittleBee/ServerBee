@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
+import type { NetworkProbeResultData } from '@/lib/network-types'
 import { WsClient } from '@/lib/ws-client'
 
 interface ServerMetrics {
@@ -41,6 +42,7 @@ type WsMessage =
   | { type: 'server_offline'; server_id: string }
   | { type: 'capabilities_changed'; server_id: string; capabilities: number }
   | { type: 'agent_info_updated'; server_id: string; protocol_version: number }
+  | { type: 'network_probe_update'; server_id: string; results: NetworkProbeResultData[] }
 
 export type { ServerMetrics }
 
@@ -137,6 +139,14 @@ export function useServersWs(): void {
             prev ? { ...prev, protocol_version } : prev
           )
           queryClient.invalidateQueries({ queryKey: ['servers-list'] })
+          break
+        }
+        case 'network_probe_update': {
+          window.dispatchEvent(
+            new CustomEvent('network-probe-update', {
+              detail: { server_id: msg.server_id, results: msg.results }
+            })
+          )
           break
         }
         default:

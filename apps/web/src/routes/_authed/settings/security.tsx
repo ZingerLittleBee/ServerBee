@@ -3,7 +3,10 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Check, Link2Off, Loader2, Shield, ShieldOff, Smartphone } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { OAuthAccount, TotpSetupResponse, TotpStatusResponse } from '@/lib/api-schema'
 
@@ -38,7 +41,13 @@ function TwoFactorSection() {
 
   const setupMutation = useMutation({
     mutationFn: () => api.post<TotpSetupResponse>('/api/auth/2fa/setup'),
-    onSuccess: (data) => setSetupData(data)
+    onSuccess: (data) => {
+      setSetupData(data)
+      toast.success('2FA setup initiated')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Operation failed')
+    }
   })
 
   const enableMutation = useMutation({
@@ -47,6 +56,10 @@ function TwoFactorSection() {
       setSetupData(null)
       setVerifyCode('')
       queryClient.invalidateQueries({ queryKey: ['auth', '2fa', 'status'] }).catch(() => undefined)
+      toast.success('2FA enabled')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Operation failed')
     }
   })
 
@@ -54,6 +67,10 @@ function TwoFactorSection() {
     mutationFn: (password: string) => api.post('/api/auth/2fa/disable', { password }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['auth', '2fa', 'status'] }).catch(() => undefined)
+      toast.success('2FA disabled')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Operation failed')
     }
   })
 
@@ -81,7 +98,7 @@ function TwoFactorSection() {
   if (isLoading) {
     return (
       <div className="rounded-lg border bg-card p-6">
-        <div className="h-20 animate-pulse rounded bg-muted" />
+        <Skeleton className="h-20" />
       </div>
     )
   }
@@ -103,9 +120,9 @@ function TwoFactorSection() {
           {showDisable ? (
             <form className="space-y-3" onSubmit={handleDisable}>
               <p className="text-muted-foreground text-sm">{t('security.enter_password_disable')}</p>
-              <input
+              <Input
                 autoComplete="current-password"
-                className="flex h-9 w-full max-w-xs rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="max-w-xs"
                 onChange={(e) => setDisablePassword(e.target.value)}
                 placeholder={t('security.current_password')}
                 required
@@ -165,9 +182,9 @@ function TwoFactorSection() {
             <label className="font-medium text-sm" htmlFor="totp-code">
               {t('security.enter_code')}
             </label>
-            <input
+            <Input
               autoComplete="one-time-code"
-              className="flex h-9 w-full max-w-xs rounded-md border border-input bg-transparent px-3 py-1 font-mono text-sm tracking-widest shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="max-w-xs font-mono tracking-widest"
               id="totp-code"
               inputMode="numeric"
               maxLength={6}
@@ -214,15 +231,16 @@ function ChangePasswordSection() {
   const { t } = useTranslation(['settings', 'common'])
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
-  const [success, setSuccess] = useState(false)
 
   const mutation = useMutation({
     mutationFn: (payload: { new_password: string; old_password: string }) => api.put('/api/auth/password', payload),
     onSuccess: () => {
       setOldPassword('')
       setNewPassword('')
-      setSuccess(true)
-      setTimeout(() => setSuccess(false), 3000)
+      toast.success('Password changed')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Operation failed')
     }
   })
 
@@ -240,9 +258,8 @@ function ChangePasswordSection() {
           <label className="font-medium text-sm" htmlFor="old-pw">
             {t('security.current_password')}
           </label>
-          <input
+          <Input
             autoComplete="current-password"
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             id="old-pw"
             onChange={(e) => setOldPassword(e.target.value)}
             required
@@ -254,9 +271,8 @@ function ChangePasswordSection() {
           <label className="font-medium text-sm" htmlFor="new-pw">
             {t('security.new_password')}
           </label>
-          <input
+          <Input
             autoComplete="new-password"
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             id="new-pw"
             minLength={8}
             onChange={(e) => setNewPassword(e.target.value)}
@@ -269,7 +285,6 @@ function ChangePasswordSection() {
         {mutation.error && (
           <p className="text-destructive text-sm">{mutation.error.message || t('security.change_failed')}</p>
         )}
-        {success && <p className="text-emerald-600 text-sm dark:text-emerald-400">{t('security.password_changed')}</p>}
 
         <Button disabled={mutation.isPending} type="submit">
           {mutation.isPending ? t('security.changing') : t('security.change_password')}
@@ -292,6 +307,10 @@ function OAuthAccountsSection() {
     mutationFn: (id: string) => api.delete(`/api/auth/oauth/accounts/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['auth', 'oauth', 'accounts'] }).catch(() => undefined)
+      toast.success('Account unlinked')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Operation failed')
     }
   })
 
@@ -301,8 +320,8 @@ function OAuthAccountsSection() {
 
       {isLoading && (
         <div className="space-y-2">
-          <div className="h-12 animate-pulse rounded bg-muted" />
-          <div className="h-12 animate-pulse rounded bg-muted" />
+          <Skeleton className="h-12" />
+          <Skeleton className="h-12" />
         </div>
       )}
       {!isLoading && (!accounts || accounts.length === 0) && (

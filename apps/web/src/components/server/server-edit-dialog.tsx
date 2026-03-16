@@ -1,8 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { X } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { api } from '@/lib/api-client'
 import type { ServerGroup, ServerResponse, UpdateServerInput } from '@/lib/api-schema'
 
@@ -59,7 +63,6 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
     onSuccess: (data) => {
       queryClient.setQueryData(['servers', server.id], data)
       queryClient.invalidateQueries({ queryKey: ['servers'] })
-      onClose()
     }
   })
 
@@ -79,34 +82,30 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
       traffic_limit: trafficLimit ? Math.round(Number.parseFloat(trafficLimit) * 1024 ** 3) : null,
       traffic_limit_type: trafficLimitType || null
     }
-    mutation.mutate(payload)
-  }
-
-  if (!open) {
-    return null
+    mutation.mutate(payload, {
+      onSuccess: () => {
+        toast.success(t('edit_success', { defaultValue: 'Server updated successfully' }))
+        onClose()
+      },
+      onError: (err) => {
+        toast.error(err instanceof Error ? err.message : t('edit_failed'))
+      }
+    })
   }
 
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: modal backdrop dismissal pattern
-    // biome-ignore lint/a11y/noStaticElementInteractions: modal backdrop dismissal pattern
-    // biome-ignore lint/a11y/noNoninteractiveElementInteractions: modal backdrop dismissal pattern
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: stop propagation for modal content */}
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: stop propagation for modal content */}
-      {/* biome-ignore lint/a11y/noNoninteractiveElementInteractions: stop propagation for modal content */}
-      <div
-        className="relative max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg border bg-background p-6 shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
-          onClick={onClose}
-          type="button"
-        >
-          <X className="size-4" />
-        </button>
-
-        <h2 className="mb-4 font-semibold text-lg">{t('edit_title')}</h2>
+    <Dialog
+      onOpenChange={(isOpen) => {
+        if (!isOpen) {
+          onClose()
+        }
+      }}
+      open={open}
+    >
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{t('edit_title')}</DialogTitle>
+        </DialogHeader>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           {/* Basic */}
@@ -115,48 +114,44 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
               {t('edit_basic')}
             </legend>
             <Field label={t('edit_name')}>
-              <input
-                className="input-field"
-                onChange={(e) => setName(e.target.value)}
-                required
-                type="text"
-                value={name}
-              />
+              <Input onChange={(e) => setName(e.target.value)} required type="text" value={name} />
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('edit_weight')}>
-                <input
-                  className="input-field"
+                <Input
                   onChange={(e) => setWeight(Number.parseInt(e.target.value, 10) || 0)}
                   type="number"
                   value={weight}
                 />
               </Field>
               <Field label={t('edit_hidden')}>
+                {/* biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element */}
                 <label className="flex cursor-pointer items-center gap-2 pt-1">
-                  <input
-                    checked={hidden}
-                    className="size-4 rounded border accent-primary"
-                    onChange={(e) => setHidden(e.target.checked)}
-                    type="checkbox"
-                  />
+                  <Checkbox checked={hidden} onCheckedChange={(checked) => setHidden(!!checked)} />
                   <span className="text-sm">{t('edit_hide_status')}</span>
                 </label>
               </Field>
             </div>
             <Field label={t('edit_group')}>
-              <select className="input-field" onChange={(e) => setGroupId(e.target.value)} value={groupId}>
-                <option value="">{t('edit_no_group')}</option>
-                {groups?.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-              </select>
+              <Select
+                onValueChange={(v) => setGroupId(v === '__none__' || v === null ? '' : v)}
+                value={groupId || '__none__'}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">{t('edit_no_group')}</SelectItem>
+                  {groups?.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>
+                      {g.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </Field>
             <Field label={t('edit_remark')}>
-              <input
-                className="input-field"
+              <Input
                 onChange={(e) => setRemark(e.target.value)}
                 placeholder={t('edit_remark_placeholder')}
                 type="text"
@@ -164,8 +159,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
               />
             </Field>
             <Field label={t('edit_public_remark')}>
-              <input
-                className="input-field"
+              <Input
                 onChange={(e) => setPublicRemark(e.target.value)}
                 placeholder={t('edit_public_remark_placeholder')}
                 type="text"
@@ -181,8 +175,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
             </legend>
             <div className="grid grid-cols-3 gap-3">
               <Field label={t('edit_price')}>
-                <input
-                  className="input-field"
+                <Input
                   min="0"
                   onChange={(e) => setPrice(e.target.value)}
                   placeholder="0.00"
@@ -192,35 +185,42 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                 />
               </Field>
               <Field label={t('edit_currency')}>
-                <select className="input-field" onChange={(e) => setCurrency(e.target.value)} value={currency}>
-                  <option value="USD">USD</option>
-                  <option value="EUR">EUR</option>
-                  <option value="CNY">CNY</option>
-                  <option value="JPY">JPY</option>
-                  <option value="GBP">GBP</option>
-                </select>
+                <Select onValueChange={(v) => v !== null && setCurrency(v)} value={currency}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="USD">USD</SelectItem>
+                    <SelectItem value="EUR">EUR</SelectItem>
+                    <SelectItem value="CNY">CNY</SelectItem>
+                    <SelectItem value="JPY">JPY</SelectItem>
+                    <SelectItem value="GBP">GBP</SelectItem>
+                  </SelectContent>
+                </Select>
               </Field>
               <Field label={t('edit_billing_cycle')}>
-                <select className="input-field" onChange={(e) => setBillingCycle(e.target.value)} value={billingCycle}>
-                  <option value="">{t('edit_none')}</option>
-                  <option value="monthly">{t('edit_monthly')}</option>
-                  <option value="quarterly">{t('edit_quarterly')}</option>
-                  <option value="yearly">{t('edit_yearly')}</option>
-                </select>
+                <Select
+                  onValueChange={(v) => setBillingCycle(v === '__none__' || v === null ? '' : v)}
+                  value={billingCycle || '__none__'}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">{t('edit_none')}</SelectItem>
+                    <SelectItem value="monthly">{t('edit_monthly')}</SelectItem>
+                    <SelectItem value="quarterly">{t('edit_quarterly')}</SelectItem>
+                    <SelectItem value="yearly">{t('edit_yearly')}</SelectItem>
+                  </SelectContent>
+                </Select>
               </Field>
             </div>
             <Field label={t('edit_expiration')}>
-              <input
-                className="input-field"
-                onChange={(e) => setExpiredAt(e.target.value)}
-                type="date"
-                value={expiredAt}
-              />
+              <Input onChange={(e) => setExpiredAt(e.target.value)} type="date" value={expiredAt} />
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('edit_traffic_limit')}>
-                <input
-                  className="input-field"
+                <Input
                   min="0"
                   onChange={(e) => setTrafficLimit(e.target.value)}
                   placeholder={t('edit_unlimited')}
@@ -230,15 +230,16 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                 />
               </Field>
               <Field label={t('edit_limit_type')}>
-                <select
-                  className="input-field"
-                  onChange={(e) => setTrafficLimitType(e.target.value)}
-                  value={trafficLimitType}
-                >
-                  <option value="sum">{t('edit_total_in_out')}</option>
-                  <option value="up">{t('edit_upload_only')}</option>
-                  <option value="down">{t('edit_download_only')}</option>
-                </select>
+                <Select onValueChange={(v) => v !== null && setTrafficLimitType(v)} value={trafficLimitType}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sum">{t('edit_total_in_out')}</SelectItem>
+                    <SelectItem value="up">{t('edit_upload_only')}</SelectItem>
+                    <SelectItem value="down">{t('edit_download_only')}</SelectItem>
+                  </SelectContent>
+                </Select>
               </Field>
             </div>
           </fieldset>
@@ -258,29 +259,8 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
             </Button>
           </div>
         </form>
-
-        <style>{`
-          .input-field {
-            display: flex;
-            height: 2.25rem;
-            width: 100%;
-            border-radius: 0.375rem;
-            border: 1px solid var(--color-border);
-            background: transparent;
-            padding: 0.25rem 0.75rem;
-            font-size: 0.875rem;
-            box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-            transition: box-shadow 0.15s, border-color 0.15s;
-          }
-          .input-field:focus-visible {
-            outline: none;
-            ring: 1px;
-            box-shadow: 0 0 0 1px var(--color-ring);
-            border-color: var(--color-ring);
-          }
-        `}</style>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

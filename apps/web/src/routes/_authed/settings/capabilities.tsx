@@ -1,9 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
+import { type ColumnDef, getCoreRowModel, type RowSelectionState, useReactTable } from '@tanstack/react-table'
 import { RotateCcw, Search, ShieldAlert } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { createSelectColumn, DataTable } from '@/components/ui/data-table'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api-client'
 import { CAP_DEFAULT, CAPABILITIES } from '@/lib/capabilities'
 
@@ -22,16 +28,19 @@ function CapabilitiesPage() {
   const { t } = useTranslation(['settings', 'servers'])
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
 
-  const capLabelMap: Record<string, string> = {
-    terminal: t('cap_terminal', { ns: 'servers' }),
-    exec: t('cap_exec', { ns: 'servers' }),
-    upgrade: t('cap_upgrade', { ns: 'servers' }),
-    ping_icmp: t('cap_ping_icmp', { ns: 'servers' }),
-    ping_tcp: t('cap_ping_tcp', { ns: 'servers' }),
-    ping_http: t('cap_ping_http', { ns: 'servers' })
-  }
+  const capLabelMap = useMemo<Record<string, string>>(
+    () => ({
+      terminal: t('cap_terminal', { ns: 'servers' }),
+      exec: t('cap_exec', { ns: 'servers' }),
+      upgrade: t('cap_upgrade', { ns: 'servers' }),
+      ping_icmp: t('cap_ping_icmp', { ns: 'servers' }),
+      ping_tcp: t('cap_ping_tcp', { ns: 'servers' }),
+      ping_http: t('cap_ping_http', { ns: 'servers' })
+    }),
+    [t]
+  )
 
   const { data: servers = [], isLoading } = useQuery<ServerInfo[]>({
     queryKey: ['servers-list'],
@@ -43,6 +52,10 @@ function CapabilitiesPage() {
       api.put(`/api/servers/${id}`, { capabilities }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['servers-list'] })
+      toast.success('Capability updated')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to update capability')
     }
   })
 
@@ -50,60 +63,133 @@ function CapabilitiesPage() {
     mutationFn: ({ ids, capabilities }: { capabilities: number; ids: string[] }) =>
       api.put('/api/servers/batch-capabilities', { ids, capabilities }),
     onSuccess: () => {
-      setSelected(new Set())
+      setRowSelection({})
       queryClient.invalidateQueries({ queryKey: ['servers-list'] })
+      toast.success('Batch capabilities updated')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to update batch capabilities')
     }
   })
 
   const filtered = servers.filter((s) => s.name.toLowerCase().includes(search.toLowerCase()))
-  const allSelected = filtered.length > 0 && selected.size === filtered.length
 
-  const toggleAll = () => {
-    if (allSelected) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(filtered.map((s) => s.id)))
-    }
-  }
+  const toggleCap = useCallback(
+    (server: ServerInfo, bit: number) => {
+      const caps = server.capabilities ?? CAP_DEFAULT
+      // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask toggle
+      const newCaps = caps & bit ? caps & ~bit : caps | bit
+      singleMutation.mutate({ id: server.id, capabilities: newCaps })
+    },
+    [singleMutation]
+  )
 
-  const toggleOne = (id: string) => {
-    const next = new Set(selected)
-    if (next.has(id)) {
-      next.delete(id)
-    } else {
-      next.add(id)
-    }
-    setSelected(next)
-  }
+  const isPending = singleMutation.isPending || batchMutation.isPending
 
-  const toggleCap = (server: ServerInfo, bit: number) => {
-    const caps = server.capabilities ?? CAP_DEFAULT
-    // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask toggle
-    const newCaps = caps & bit ? caps & ~bit : caps | bit
-    singleMutation.mutate({ id: server.id, capabilities: newCaps })
-  }
+  const columns = useMemo<ColumnDef<ServerInfo>[]>(
+    () => [
+      createSelectColumn<ServerInfo>(),
+      {
+        accessorKey: 'name',
+        header: () => t('capabilities.server'),
+        cell: ({ row }) => {
+          const hasOldAgent = row.original.protocol_version != null && row.original.protocol_version < 2
+          return (
+            <div className="flex items-center gap-2">
+              <span className="font-medium">{row.original.name}</span>
+              {hasOldAgent && (
+                <span title={t('cap_upgrade_warning', { ns: 'servers' })}>
+                  <ShieldAlert className="size-3.5 text-amber-500" />
+                </span>
+              )}
+            </div>
+          )
+        },
+        enableSorting: false
+      },
+      ...CAPABILITIES.map(
+        ({ bit, key, risk }) =>
+          ({
+            id: `cap_${key}`,
+            header: () => (
+              <div className="text-center">
+                <div>{capLabelMap[key]}</div>
+                <div className={`text-[10px] ${risk === 'high' ? 'text-red-500' : 'text-muted-foreground'}`}>
+                  {t(risk === 'high' ? 'cap_high_risk' : 'cap_low_risk', { ns: 'servers' })}
+                </div>
+              </div>
+            ),
+            cell: ({ row }) => {
+              const caps = row.original.capabilities ?? CAP_DEFAULT
+              // biome-ignore lint/suspicious/noBitwiseOperators: bitmask check
+              const isEnabled = (caps & bit) !== 0
+              return (
+                <div className="text-center">
+                  <Switch
+                    checked={isEnabled}
+                    disabled={isPending}
+                    onCheckedChange={() => toggleCap(row.original, bit)}
+                  />
+                </div>
+              )
+            },
+            enableSorting: false,
+            meta: { className: 'text-center' }
+          }) satisfies ColumnDef<ServerInfo>
+      )
+    ],
+    [capLabelMap, isPending, toggleCap, t]
+  )
+
+  const table = useReactTable({
+    data: filtered,
+    columns,
+    state: { rowSelection },
+    onRowSelectionChange: setRowSelection,
+    getCoreRowModel: getCoreRowModel(),
+    getRowId: (row) => row.id
+  })
+
+  const selectedIds = table.getSelectedRowModel().rows.map((r) => r.original.id)
 
   const batchEnable = (bit: number) => {
-    const ids = [...selected]
-    const firstServer = servers.find((s) => s.id === ids[0])
+    const firstServer = servers.find((s) => s.id === selectedIds[0])
     const baseCaps = firstServer?.capabilities ?? CAP_DEFAULT
     // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask enable
-    batchMutation.mutate({ ids, capabilities: baseCaps | bit })
+    batchMutation.mutate({ ids: selectedIds, capabilities: baseCaps | bit })
   }
 
   const batchDisable = (bit: number) => {
-    const ids = [...selected]
-    const firstServer = servers.find((s) => s.id === ids[0])
+    const firstServer = servers.find((s) => s.id === selectedIds[0])
     const baseCaps = firstServer?.capabilities ?? CAP_DEFAULT
     // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask disable
-    batchMutation.mutate({ ids, capabilities: baseCaps & ~bit })
+    batchMutation.mutate({ ids: selectedIds, capabilities: baseCaps & ~bit })
   }
 
   const batchReset = () => {
-    batchMutation.mutate({ ids: [...selected], capabilities: CAP_DEFAULT })
+    batchMutation.mutate({ ids: selectedIds, capabilities: CAP_DEFAULT })
   }
 
-  const isPending = singleMutation.isPending || batchMutation.isPending
+  const renderTableContent = () => {
+    if (isLoading) {
+      return (
+        <div className="space-y-3">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-12 w-full" />
+        </div>
+      )
+    }
+    if (servers.length === 0) {
+      return (
+        <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-dashed">
+          <p className="text-muted-foreground text-sm">{t('capabilities.no_servers')}</p>
+        </div>
+      )
+    }
+    return <DataTable noResults={t('capabilities.no_servers')} table={table} />
+  }
 
   return (
     <div>
@@ -115,18 +201,18 @@ function CapabilitiesPage() {
       <div className="mb-4 flex items-center gap-3">
         <div className="relative max-w-sm flex-1">
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            className="h-9 w-full rounded-md border bg-background pr-3 pl-9 text-sm outline-none focus:ring-2 focus:ring-ring"
+          <Input
+            className="pl-9"
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('capabilities.search')}
             type="text"
             value={search}
           />
         </div>
-        {selected.size > 0 && (
+        {selectedIds.length > 0 && (
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground text-sm">
-              {t('capabilities.selected', { count: selected.size })}
+              {t('capabilities.selected', { count: selectedIds.length })}
             </span>
             <Button disabled={isPending} onClick={batchReset} size="sm" variant="outline">
               <RotateCcw className="mr-1 size-3.5" />
@@ -136,7 +222,7 @@ function CapabilitiesPage() {
         )}
       </div>
 
-      {selected.size > 0 && (
+      {selectedIds.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2 rounded-lg border bg-muted/30 p-3">
           <span className="self-center text-muted-foreground text-sm">{t('capabilities.batch_toggle')}</span>
           {CAPABILITIES.map(({ bit, key }) => (
@@ -152,98 +238,12 @@ function CapabilitiesPage() {
         </div>
       )}
 
-      {isLoading && (
-        <div className="flex min-h-[200px] items-center justify-center">
-          <div className="size-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
-        </div>
-      )}
-
-      {!isLoading && servers.length === 0 && (
-        <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-dashed">
-          <p className="text-muted-foreground text-sm">{t('capabilities.no_servers')}</p>
-        </div>
-      )}
-
-      {!isLoading && servers.length > 0 && (
-        <div className="overflow-hidden rounded-lg border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-muted/50">
-                <th className="w-10 px-3 py-2.5">
-                  <input checked={allSelected} className="rounded" onChange={toggleAll} type="checkbox" />
-                </th>
-                <th className="px-3 py-2.5 text-left font-medium text-muted-foreground">{t('capabilities.server')}</th>
-                {CAPABILITIES.map(({ bit, key, risk }) => (
-                  <th className="px-3 py-2.5 text-center font-medium text-muted-foreground text-xs" key={bit}>
-                    <div>{capLabelMap[key]}</div>
-                    <div className={`text-[10px] ${risk === 'high' ? 'text-red-500' : 'text-muted-foreground'}`}>
-                      {t(risk === 'high' ? 'cap_high_risk' : 'cap_low_risk', { ns: 'servers' })}
-                    </div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((server) => {
-                const caps = server.capabilities ?? CAP_DEFAULT
-                const hasOldAgent = server.protocol_version != null && server.protocol_version < 2
-                return (
-                  <tr className="border-b transition-colors last:border-b-0 hover:bg-muted/30" key={server.id}>
-                    <td className="px-3 py-2">
-                      <input
-                        checked={selected.has(server.id)}
-                        className="rounded"
-                        onChange={() => toggleOne(server.id)}
-                        type="checkbox"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{server.name}</span>
-                        {hasOldAgent && (
-                          <span title={t('cap_upgrade_warning', { ns: 'servers' })}>
-                            <ShieldAlert className="size-3.5 text-amber-500" />
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    {CAPABILITIES.map(({ bit }) => {
-                      // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
-                      const isEnabled = (caps & bit) !== 0
-                      return (
-                        <td className="px-3 py-2 text-center" key={bit}>
-                          <button
-                            aria-checked={isEnabled}
-                            aria-label={`Toggle ${bit} for ${server.name}`}
-                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                              isEnabled ? 'bg-primary' : 'bg-muted'
-                            }`}
-                            disabled={isPending}
-                            onClick={() => toggleCap(server, bit)}
-                            role="switch"
-                            type="button"
-                          >
-                            <span
-                              className={`inline-block size-3 rounded-full bg-white transition-transform ${
-                                isEnabled ? 'translate-x-5' : 'translate-x-1'
-                              }`}
-                            />
-                          </button>
-                        </td>
-                      )
-                    })}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {renderTableContent()}
 
       {filtered.length > 0 && (
         <p className="mt-3 text-muted-foreground text-xs">
           Showing {filtered.length} of {servers.length} servers
-          {selected.size > 0 && ` · ${selected.size} selected`}
+          {selectedIds.length > 0 && ` · ${selectedIds.length} selected`}
         </p>
       )}
     </div>

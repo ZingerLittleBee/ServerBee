@@ -1,6 +1,8 @@
 mod collector;
 mod config;
+mod network_prober;
 mod pinger;
+mod probe_utils;
 mod register;
 mod reporter;
 mod terminal;

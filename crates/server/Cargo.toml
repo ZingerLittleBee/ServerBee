@@ -37,6 +37,7 @@ lettre = { version = "0.11", default-features = false, features = ["tokio1-rustl
 maxminddb = "0.24"
 totp-rs = { version = "5", features = ["qr", "gen_secret"] }
 oauth2 = "4"
+toml = "0.8"
 
 [dev-dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "cookies"] }
