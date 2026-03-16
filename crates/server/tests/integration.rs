@@ -653,6 +653,374 @@ async fn test_audit_log_recorded() {
     );
 }
 
+// ── Network probe integration tests ──────────────────────────────────────────
+
+#[tokio::test]
+async fn test_network_probe_target_crud() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+
+    login_admin(&client, &base_url).await;
+
+    // ── Step 1: GET /api/network-probes/targets — verify 96 preset targets ──
+    let list_resp = client
+        .get(format!("{}/api/network-probes/targets", base_url))
+        .send()
+        .await
+        .expect("GET /api/network-probes/targets failed");
+
+    assert_eq!(list_resp.status(), 200, "list targets should succeed");
+    let list_body: serde_json::Value = list_resp.json().await.unwrap();
+    let targets = list_body["data"].as_array().expect("data should be an array");
+    assert_eq!(targets.len(), 96, "should have 96 builtin targets");
+
+    // ── Step 2: POST /api/network-probes/targets — create a custom target ──
+    let create_resp = client
+        .post(format!("{}/api/network-probes/targets", base_url))
+        .json(&json!({
+            "name": "My Custom Target",
+            "provider": "Custom ISP",
+            "location": "Test Location",
+            "target": "192.168.1.1",
+            "probe_type": "icmp"
+        }))
+        .send()
+        .await
+        .expect("POST /api/network-probes/targets failed");
+
+    assert_eq!(create_resp.status(), 200, "create target should succeed");
+    let create_body: serde_json::Value = create_resp.json().await.unwrap();
+    let target_id = create_body["data"]["id"]
+        .as_str()
+        .expect("target id missing");
+    assert_eq!(create_body["data"]["name"], "My Custom Target");
+
+    // ── Step 3: GET /api/network-probes/targets — verify 97 targets ──
+    let list_resp2 = client
+        .get(format!("{}/api/network-probes/targets", base_url))
+        .send()
+        .await
+        .expect("GET /api/network-probes/targets failed");
+
+    assert_eq!(list_resp2.status(), 200);
+    let list_body2: serde_json::Value = list_resp2.json().await.unwrap();
+    let targets2 = list_body2["data"].as_array().unwrap();
+    assert_eq!(targets2.len(), 97, "should have 97 targets after creating custom one");
+    assert!(
+        targets2.iter().any(|t| t["id"].as_str() == Some(target_id)),
+        "Custom target should appear in list"
+    );
+
+    // ── Step 4: PUT /api/network-probes/targets/{id} — update the custom target ──
+    let update_resp = client
+        .put(format!("{}/api/network-probes/targets/{}", base_url, target_id))
+        .json(&json!({
+            "name": "Updated Custom Target",
+            "provider": null,
+            "location": null,
+            "target": null,
+            "probe_type": null
+        }))
+        .send()
+        .await
+        .expect("PUT /api/network-probes/targets/{id} failed");
+
+    assert_eq!(update_resp.status(), 200, "update target should succeed");
+    let update_body: serde_json::Value = update_resp.json().await.unwrap();
+    assert_eq!(update_body["data"]["name"], "Updated Custom Target");
+    assert_eq!(update_body["data"]["target"], "192.168.1.1", "target address should be unchanged");
+
+    // ── Step 5: DELETE /api/network-probes/targets/{id} — delete the custom target ──
+    let delete_resp = client
+        .delete(format!("{}/api/network-probes/targets/{}", base_url, target_id))
+        .send()
+        .await
+        .expect("DELETE /api/network-probes/targets/{id} failed");
+
+    assert_eq!(delete_resp.status(), 200, "delete target should succeed");
+
+    // ── Step 6: GET /api/network-probes/targets — verify back to 96 ──
+    let list_resp3 = client
+        .get(format!("{}/api/network-probes/targets", base_url))
+        .send()
+        .await
+        .expect("GET /api/network-probes/targets failed");
+
+    assert_eq!(list_resp3.status(), 200);
+    let list_body3: serde_json::Value = list_resp3.json().await.unwrap();
+    let targets3 = list_body3["data"].as_array().unwrap();
+    assert_eq!(targets3.len(), 96, "should be back to 96 builtin targets after delete");
+    assert!(
+        !targets3.iter().any(|t| t["id"].as_str() == Some(target_id)),
+        "Deleted target should not appear in list"
+    );
+}
+
+#[tokio::test]
+async fn test_network_probe_setting_crud() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+
+    login_admin(&client, &base_url).await;
+
+    // ── Step 1: GET /api/network-probes/setting — verify defaults ──
+    let get_resp = client
+        .get(format!("{}/api/network-probes/setting", base_url))
+        .send()
+        .await
+        .expect("GET /api/network-probes/setting failed");
+
+    assert_eq!(get_resp.status(), 200, "get setting should succeed");
+    let get_body: serde_json::Value = get_resp.json().await.unwrap();
+    assert_eq!(get_body["data"]["interval"], 60, "default interval should be 60");
+    assert_eq!(get_body["data"]["packet_count"], 10, "default packet_count should be 10");
+
+    // ── Step 2: PUT /api/network-probes/setting — update interval to 120 ──
+    let update_resp = client
+        .put(format!("{}/api/network-probes/setting", base_url))
+        .json(&json!({
+            "interval": 120,
+            "packet_count": 10,
+            "default_target_ids": []
+        }))
+        .send()
+        .await
+        .expect("PUT /api/network-probes/setting failed");
+
+    assert_eq!(update_resp.status(), 200, "update setting should succeed");
+    let update_body: serde_json::Value = update_resp.json().await.unwrap();
+    assert_eq!(update_body["data"]["interval"], 120, "interval should be updated to 120");
+
+    // ── Step 3: GET /api/network-probes/setting — verify interval=120 ──
+    let get_resp2 = client
+        .get(format!("{}/api/network-probes/setting", base_url))
+        .send()
+        .await
+        .expect("GET /api/network-probes/setting failed");
+
+    assert_eq!(get_resp2.status(), 200);
+    let get_body2: serde_json::Value = get_resp2.json().await.unwrap();
+    assert_eq!(get_body2["data"]["interval"], 120, "interval should persist as 120");
+    assert_eq!(get_body2["data"]["packet_count"], 10, "packet_count should remain 10");
+}
+
+#[tokio::test]
+async fn test_network_probe_server_targets() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+
+    login_admin(&client, &base_url).await;
+
+    // ── Step 1: Register an agent to get a server id ──
+    let register_resp = client
+        .post(format!("{}/api/agent/register", base_url))
+        .header("Authorization", "Bearer test-key")
+        .send()
+        .await
+        .expect("Agent register failed");
+
+    assert_eq!(register_resp.status(), 200);
+    let register_body: serde_json::Value = register_resp.json().await.unwrap();
+    let server_id = register_body["data"]["server_id"]
+        .as_str()
+        .expect("server_id missing");
+
+    // ── Step 2: Get two builtin target ids ──
+    let targets_resp = client
+        .get(format!("{}/api/network-probes/targets", base_url))
+        .send()
+        .await
+        .expect("GET /api/network-probes/targets failed");
+
+    assert_eq!(targets_resp.status(), 200);
+    let targets_body: serde_json::Value = targets_resp.json().await.unwrap();
+    let all_targets = targets_body["data"].as_array().unwrap();
+    let target_id_1 = all_targets[0]["id"].as_str().unwrap().to_string();
+    let target_id_2 = all_targets[1]["id"].as_str().unwrap().to_string();
+
+    // ── Step 3: PUT /api/servers/{id}/network-probes/targets — assign 2 targets ──
+    let assign_resp = client
+        .put(format!("{}/api/servers/{}/network-probes/targets", base_url, server_id))
+        .json(&json!({
+            "target_ids": [target_id_1, target_id_2]
+        }))
+        .send()
+        .await
+        .expect("PUT /api/servers/{id}/network-probes/targets failed");
+
+    assert_eq!(assign_resp.status(), 200, "assigning targets should succeed");
+
+    // ── Step 4: GET /api/servers/{id}/network-probes/targets — verify 2 targets ──
+    let server_targets_resp = client
+        .get(format!("{}/api/servers/{}/network-probes/targets", base_url, server_id))
+        .send()
+        .await
+        .expect("GET /api/servers/{id}/network-probes/targets failed");
+
+    assert_eq!(server_targets_resp.status(), 200, "get server targets should succeed");
+    let server_targets_body: serde_json::Value = server_targets_resp.json().await.unwrap();
+    let server_targets = server_targets_body["data"].as_array().unwrap();
+    assert_eq!(server_targets.len(), 2, "server should have 2 assigned targets");
+
+    // ── Step 5: PUT /api/servers/{id}/network-probes/targets — assign 0 targets ──
+    let clear_resp = client
+        .put(format!("{}/api/servers/{}/network-probes/targets", base_url, server_id))
+        .json(&json!({ "target_ids": [] }))
+        .send()
+        .await
+        .expect("PUT /api/servers/{id}/network-probes/targets (clear) failed");
+
+    assert_eq!(clear_resp.status(), 200, "clearing targets should succeed");
+
+    // ── Step 6: GET /api/servers/{id}/network-probes/targets — verify empty ──
+    let server_targets_resp2 = client
+        .get(format!("{}/api/servers/{}/network-probes/targets", base_url, server_id))
+        .send()
+        .await
+        .expect("GET /api/servers/{id}/network-probes/targets failed");
+
+    assert_eq!(server_targets_resp2.status(), 200);
+    let server_targets_body2: serde_json::Value = server_targets_resp2.json().await.unwrap();
+    let server_targets2 = server_targets_body2["data"].as_array().unwrap();
+    assert!(server_targets2.is_empty(), "server targets should be empty after clearing");
+}
+
+#[tokio::test]
+async fn test_builtin_target_cannot_be_deleted() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+
+    login_admin(&client, &base_url).await;
+
+    // ── Step 1: Try to DELETE a known preset target id ──
+    let preset_id = "cn-bj-ct";
+
+    let delete_resp = client
+        .delete(format!("{}/api/network-probes/targets/{}", base_url, preset_id))
+        .send()
+        .await
+        .expect("DELETE /api/network-probes/targets/{id} failed");
+
+    assert!(
+        delete_resp.status() == 400 || delete_resp.status() == 403,
+        "Deleting a builtin target should return 400 or 403, got {}",
+        delete_resp.status()
+    );
+
+    // ── Step 2: Verify preset target still exists ──
+    let list_resp2 = client
+        .get(format!("{}/api/network-probes/targets", base_url))
+        .send()
+        .await
+        .expect("GET /api/network-probes/targets failed");
+
+    assert_eq!(list_resp2.status(), 200);
+    let list_body2: serde_json::Value = list_resp2.json().await.unwrap();
+    let targets2 = list_body2["data"].as_array().unwrap();
+    assert_eq!(targets2.len(), 96, "preset targets should remain 96 after failed delete");
+    assert!(
+        targets2.iter().any(|t| t["id"].as_str() == Some(preset_id)),
+        "Preset target should still be present after failed delete"
+    );
+}
+
+#[tokio::test]
+async fn test_preset_target_source_field() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    // ── Step 1: Verify preset targets have source field ──
+    let list_resp = client
+        .get(format!("{}/api/network-probes/targets", base_url))
+        .send()
+        .await
+        .expect("GET targets failed");
+
+    let body: serde_json::Value = list_resp.json().await.unwrap();
+    let targets = body["data"].as_array().unwrap();
+
+    // Find a known preset target
+    let preset = targets.iter().find(|t| t["id"] == "cn-bj-ct").unwrap();
+    assert_eq!(preset["source"], "preset:china-telecom");
+    assert_eq!(preset["source_name"], "中国电信");
+    assert!(preset["created_at"].is_null());
+
+    let intl = targets.iter().find(|t| t["id"] == "intl-cloudflare").unwrap();
+    assert_eq!(intl["source"], "preset:international");
+    assert_eq!(intl["source_name"], "国际节点");
+
+    // ── Step 2: Create a custom target and verify no source ──
+    let create_resp = client
+        .post(format!("{}/api/network-probes/targets", base_url))
+        .json(&serde_json::json!({
+            "name": "Custom Test",
+            "provider": "Test",
+            "location": "Test",
+            "target": "10.0.0.1",
+            "probe_type": "tcp"
+        }))
+        .send()
+        .await
+        .expect("POST targets failed");
+
+    let create_body: serde_json::Value = create_resp.json().await.unwrap();
+
+    // Verify custom target via list (create returns Model, not TargetDto)
+    let list_resp2 = client
+        .get(format!("{}/api/network-probes/targets", base_url))
+        .send()
+        .await
+        .expect("GET targets failed");
+
+    let body2: serde_json::Value = list_resp2.json().await.unwrap();
+    let targets2 = body2["data"].as_array().unwrap();
+    let custom_id = create_body["data"]["id"].as_str().unwrap();
+    let custom = targets2
+        .iter()
+        .find(|t| t["id"].as_str() == Some(custom_id))
+        .unwrap();
+    assert!(custom["source"].is_null());
+    assert!(custom["source_name"].is_null());
+    assert!(!custom["created_at"].is_null());
+
+    // ── Step 3: Cleanup ──
+    client
+        .delete(format!(
+            "{}/api/network-probes/targets/{}",
+            base_url, custom_id
+        ))
+        .send()
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn test_preset_target_cannot_be_updated() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let update_resp = client
+        .put(format!("{}/api/network-probes/targets/cn-bj-ct", base_url))
+        .json(&serde_json::json!({
+            "name": "Hacked",
+            "provider": null,
+            "location": null,
+            "target": null,
+            "probe_type": null
+        }))
+        .send()
+        .await
+        .expect("PUT preset target failed");
+
+    assert_eq!(
+        update_resp.status(),
+        403,
+        "Updating a preset target should return 403"
+    );
+}
+
 // ── Task 11: CRUD integration tests ──────────────────────────────────────────
 
 #[tokio::test]

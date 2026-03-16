@@ -4,7 +4,12 @@ import { Activity, BarChart3, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { PingRecord, PingTask } from '@/lib/api-schema'
 
@@ -35,7 +40,7 @@ function PingResultsChart({ taskId }: { taskId: string }) {
   })
 
   if (isLoading) {
-    return <div className="h-48 animate-pulse rounded bg-muted" />
+    return <Skeleton className="h-48" />
   }
 
   if (!records || records.length === 0) {
@@ -178,14 +183,28 @@ function PingTasksPage() {
     if (name.trim().length === 0 || target.trim().length === 0) {
       return
     }
-    createMutation.mutate({
-      name: name.trim(),
-      probe_type: probeType,
-      target: target.trim(),
-      interval,
-      server_ids: selectedServerIds,
-      enabled: true
-    })
+    createMutation.mutate(
+      {
+        name: name.trim(),
+        probe_type: probeType,
+        target: target.trim(),
+        interval,
+        server_ids: selectedServerIds,
+        enabled: true
+      },
+      {
+        onSuccess: () => {
+          toast.success(t('ping.task_created', { defaultValue: 'Ping task created' }))
+        },
+        onError: (err) => {
+          toast.error(
+            err instanceof Error
+              ? err.message
+              : t('ping.task_create_failed', { defaultValue: 'Failed to create ping task' })
+          )
+        }
+      }
+    )
   }
 
   const targetPlaceholder: Record<ProbeType, string> = {
@@ -210,8 +229,7 @@ function PingTasksPage() {
 
           {showForm && (
             <form className="mb-4 space-y-3 rounded-md border bg-muted/30 p-4" onSubmit={handleCreate}>
-              <input
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              <Input
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t('ping.task_name')}
                 required
@@ -220,20 +238,21 @@ function PingTasksPage() {
               />
 
               <div className="flex gap-3">
-                <select
-                  className="flex h-9 flex-1 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                  onChange={(e) => setProbeType(e.target.value as ProbeType)}
-                  value={probeType}
-                >
-                  {Object.entries(probeTypeLabels).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
+                <Select onValueChange={(value) => setProbeType(value as ProbeType)} value={probeType}>
+                  <SelectTrigger className="w-full flex-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(probeTypeLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-                <input
-                  className="flex h-9 w-24 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                <Input
+                  className="w-24"
                   min={5}
                   onChange={(e) => setInterval(Number.parseInt(e.target.value, 10) || 60)}
                   placeholder={t('ping.interval')}
@@ -243,8 +262,7 @@ function PingTasksPage() {
                 <span className="flex items-center text-muted-foreground text-sm">sec</span>
               </div>
 
-              <input
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              <Input
                 onChange={(e) => setTarget(e.target.value)}
                 placeholder={targetPlaceholder[probeType]}
                 required
@@ -256,15 +274,15 @@ function PingTasksPage() {
                 <fieldset className="space-y-1">
                   <legend className="text-sm">{t('ping.run_from_servers')}</legend>
                   {servers.map((s) => (
+                    // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
                     <label className="flex items-center gap-2 text-sm" key={s.id}>
-                      <input
+                      <Checkbox
                         checked={selectedServerIds.includes(s.id)}
-                        onChange={(e) => {
+                        onCheckedChange={(checked) => {
                           setSelectedServerIds((prev) =>
-                            e.target.checked ? [...prev, s.id] : prev.filter((sid) => sid !== s.id)
+                            checked ? [...prev, s.id] : prev.filter((sid) => sid !== s.id)
                           )
                         }}
-                        type="checkbox"
                       />
                       {s.name}
                     </label>
@@ -286,7 +304,7 @@ function PingTasksPage() {
           {isLoading && (
             <div className="space-y-2">
               {Array.from({ length: 2 }, (_, i) => (
-                <div className="h-12 animate-pulse rounded bg-muted" key={`skel-${i.toString()}`} />
+                <Skeleton className="h-12" key={`skel-${i.toString()}`} />
               ))}
             </div>
           )}
@@ -333,7 +351,27 @@ function PingTasksPage() {
                           <BarChart3 className="size-3.5" />
                         </Button>
                         <Button
-                          onClick={() => toggleMutation.mutate({ id: task.id, enabled: !task.enabled })}
+                          onClick={() =>
+                            toggleMutation.mutate(
+                              { id: task.id, enabled: !task.enabled },
+                              {
+                                onSuccess: () => {
+                                  toast.success(
+                                    task.enabled
+                                      ? t('ping.task_disabled', { defaultValue: 'Ping task disabled' })
+                                      : t('ping.task_enabled', { defaultValue: 'Ping task enabled' })
+                                  )
+                                },
+                                onError: (err) => {
+                                  toast.error(
+                                    err instanceof Error
+                                      ? err.message
+                                      : t('ping.task_toggle_failed', { defaultValue: 'Failed to update ping task' })
+                                  )
+                                }
+                              }
+                            )
+                          }
                           size="sm"
                           variant="outline"
                         >
@@ -342,7 +380,20 @@ function PingTasksPage() {
                         <Button
                           aria-label={`Delete task ${task.name}`}
                           disabled={deleteMutation.isPending}
-                          onClick={() => deleteMutation.mutate(task.id)}
+                          onClick={() =>
+                            deleteMutation.mutate(task.id, {
+                              onSuccess: () => {
+                                toast.success(t('ping.task_deleted', { defaultValue: 'Ping task deleted' }))
+                              },
+                              onError: (err) => {
+                                toast.error(
+                                  err instanceof Error
+                                    ? err.message
+                                    : t('ping.task_delete_failed', { defaultValue: 'Failed to delete ping task' })
+                                )
+                              }
+                            })
+                          }
                           size="sm"
                           variant="destructive"
                         >

@@ -11,6 +11,7 @@
 - **详细指标** -- 实时流式图表 + 历史视图 (1h/6h/24h/7d/30d)，涵盖 CPU、内存、磁盘、网络、负载、温度、GPU
 - **告警系统** -- 14+ 指标类型，阈值/离线/流量/到期规则，AND 逻辑，70% 采样
 - **通知渠道** -- Webhook、Telegram、Bark、Email (SMTP)，支持通知组
+- **网络质量监控** -- 多目标网络探测 (96 个预设中国三网 + 国际节点)，实时/历史延迟图表，异常检测，每服务器独立目标配置
 - **Ping 探测** -- ICMP、TCP、HTTP 探测，延迟图表和成功率统计
 - **Web 终端** -- 基于 WebSocket 代理的浏览器 PTY 终端
 - **GPU 监控** -- NVIDIA GPU 使用率/温度/显存 (nvml-wrapper，可选功能)
@@ -101,7 +102,7 @@ make server-dev                                           # 终端 1: 服务端 
 SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # 终端 2: Agent
 
 # 测试与代码质量:
-make cargo-test        # 运行全部 Rust 测试 (121)
+make cargo-test        # 运行全部 Rust 测试 (164)
 make test              # 运行前端测试 (86)
 make cargo-clippy      # Rust 代码检查
 make                   # 交互式菜单 (需要 fzf)
@@ -143,6 +144,8 @@ register_max = 3              # 15 分钟内最大 Agent 注册次数
 records_days = 7              # 原始指标保留天数
 records_hourly_days = 90      # 小时聚合保留天数
 audit_logs_days = 180         # 审计日志保留天数
+network_probe_days = 7        # 网络探测原始记录保留天数
+network_probe_hourly_days = 90 # 网络探测小时聚合保留天数
 
 [geoip]
 enabled = false

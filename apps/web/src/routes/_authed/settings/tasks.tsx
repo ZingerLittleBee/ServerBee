@@ -3,7 +3,10 @@ import { createFileRoute } from '@tanstack/react-router'
 import { ChevronDown, ChevronRight, Play, Terminal } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
 import { api } from '@/lib/api-client'
 import type { TaskResponse, TaskResult } from '@/lib/api-schema'
 
@@ -49,11 +52,25 @@ function TasksPage() {
     if (command.trim().length === 0 || selectedServerIds.length === 0) {
       return
     }
-    createMutation.mutate({
-      command: command.trim(),
-      server_ids: selectedServerIds,
-      timeout
-    })
+    createMutation.mutate(
+      {
+        command: command.trim(),
+        server_ids: selectedServerIds,
+        timeout
+      },
+      {
+        onSuccess: () => {
+          toast.success(t('tasks.task_created', { defaultValue: 'Task dispatched' }))
+        },
+        onError: (err) => {
+          toast.error(
+            err instanceof Error
+              ? err.message
+              : t('tasks.task_create_failed', { defaultValue: 'Failed to dispatch task' })
+          )
+        }
+      }
+    )
   }
 
   const toggleServer = (id: string) => {
@@ -84,8 +101,8 @@ function TasksPage() {
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Terminal className="absolute top-2.5 left-3 size-4 text-muted-foreground" />
-                  <input
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent py-1 pr-3 pl-9 font-mono text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  <Input
+                    className="pl-9 font-mono"
                     id="command-input"
                     onChange={(e) => setCommand(e.target.value)}
                     placeholder={t('tasks.command_placeholder')}
@@ -94,8 +111,8 @@ function TasksPage() {
                     value={command}
                   />
                 </div>
-                <input
-                  className="flex h-9 w-20 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                <Input
+                  className="w-20"
                   min={1}
                   onChange={(e) => setTimeout(Number.parseInt(e.target.value, 10) || 30)}
                   title={t('tasks.timeout')}
@@ -122,6 +139,7 @@ function TasksPage() {
                     // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
                     const execEnabled = !srv.capabilities || (srv.capabilities & 2) !== 0
                     return (
+                      // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
                       <label
                         className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5 ${
                           execEnabled ? '' : 'cursor-not-allowed opacity-50'
@@ -129,11 +147,10 @@ function TasksPage() {
                         key={srv.id}
                         title={execEnabled ? undefined : t('tasks.exec_disabled')}
                       >
-                        <input
+                        <Checkbox
                           checked={selectedServerIds.includes(srv.id)}
                           disabled={!execEnabled}
-                          onChange={() => toggleServer(srv.id)}
-                          type="checkbox"
+                          onCheckedChange={() => toggleServer(srv.id)}
                         />
                         {srv.name}
                       </label>

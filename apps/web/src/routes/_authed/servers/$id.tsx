@@ -3,10 +3,13 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, CreditCard, Pencil, Terminal as TerminalIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { MetricsChart } from '@/components/server/metrics-chart'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import { useServer, useServerRecords } from '@/hooks/use-api'
 import { useAuth } from '@/hooks/use-auth'
 import { useRealtimeMetrics } from '@/hooks/use-realtime-metrics'
@@ -108,7 +111,14 @@ function CapabilitiesSection({ server }: { server: ServerWithCaps }) {
   const toggle = (bit: number) => {
     // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask toggle
     const newCaps = caps & bit ? caps & ~bit : caps | bit
-    mutation.mutate(newCaps)
+    mutation.mutate(newCaps, {
+      onSuccess: () => {
+        toast.success('Capabilities updated')
+      },
+      onError: (err) => {
+        toast.error(err instanceof Error ? err.message : 'Operation failed')
+      }
+    })
   }
 
   return (
@@ -136,27 +146,14 @@ function CapabilitiesSection({ server }: { server: ServerWithCaps }) {
                 {risk === 'high' ? t('cap_high_risk') : t('cap_low_risk')}
               </span>
             </div>
-            <button
-              aria-checked={
+            <Switch
+              checked={
                 // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
                 !!(caps & bit)
               }
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
-                caps & bit ? 'bg-primary' : 'bg-muted'
-              }`}
               disabled={mutation.isPending}
-              onClick={() => toggle(bit)}
-              role="switch"
-              type="button"
-            >
-              <span
-                className={`inline-block size-4 rounded-full bg-white transition-transform ${
-                  // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
-                  caps & bit ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
+              onCheckedChange={() => toggle(bit)}
+            />
           </div>
         ))}
       </div>
@@ -255,8 +252,13 @@ function ServerDetailPage() {
 
   if (serverLoading) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center">
-        <div className="mx-auto size-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-96" />
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Skeleton className="h-64" />
+          <Skeleton className="h-64" />
+        </div>
       </div>
     )
   }

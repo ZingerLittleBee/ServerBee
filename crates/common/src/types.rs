@@ -84,6 +84,28 @@ pub struct TaskResult {
     pub exit_code: i32,
 }
 
+/// Agent-facing wire type for network probe targets (minimal fields for probing)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkProbeTarget {
+    pub target_id: String,
+    pub name: String,
+    pub target: String,
+    pub probe_type: String,
+}
+
+/// Aggregated result from one probe round for one target
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkProbeResultData {
+    pub target_id: String,
+    pub avg_latency: Option<f64>,
+    pub min_latency: Option<f64>,
+    pub max_latency: Option<f64>,
+    pub packet_loss: f64,
+    pub packet_sent: u32,
+    pub packet_received: u32,
+    pub timestamp: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerStatus {
     pub id: String,

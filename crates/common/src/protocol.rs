@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::types::{PingResult, PingTaskConfig, SystemInfo, SystemReport, TaskResult};
+use crate::types::{
+    NetworkProbeResultData, NetworkProbeTarget, PingResult, PingTaskConfig, SystemInfo,
+    SystemReport, TaskResult,
+};
 
 /// Agent -> Server messages
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +36,9 @@ pub enum AgentMessage {
         msg_id: Option<String>,
         session_id: Option<String>,
         capability: String,
+    },
+    NetworkProbeResults {
+        results: Vec<NetworkProbeResultData>,
     },
     Pong,
 }
@@ -76,6 +82,11 @@ pub enum ServerMessage {
     TerminalClose {
         session_id: String,
     },
+    NetworkProbeSync {
+        targets: Vec<NetworkProbeTarget>,
+        interval: u32,
+        packet_count: u32,
+    },
     Ping,
     Upgrade {
         version: String,
@@ -109,6 +120,10 @@ pub enum BrowserMessage {
     AgentInfoUpdated {
         server_id: String,
         protocol_version: u32,
+    },
+    NetworkProbeUpdate {
+        server_id: String,
+        results: Vec<NetworkProbeResultData>,
     },
 }
 
@@ -186,5 +201,57 @@ mod tests {
             }
             _ => panic!("Expected SystemInfo"),
         }
+    }
+
+    #[test]
+    fn test_network_probe_sync_serializes() {
+        let msg = ServerMessage::NetworkProbeSync {
+            targets: vec![],
+            interval: 60,
+            packet_count: 10,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ServerMessage::NetworkProbeSync { interval, packet_count, .. } => {
+                assert_eq!(interval, 60);
+                assert_eq!(packet_count, 10);
+            }
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_network_probe_results_serializes() {
+        let msg = AgentMessage::NetworkProbeResults {
+            results: vec![],
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::NetworkProbeResults { results } => assert!(results.is_empty()),
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_network_probe_result_with_null_latency() {
+        use chrono::Utc;
+        use crate::types::NetworkProbeResultData;
+        let data = NetworkProbeResultData {
+            target_id: "t1".into(),
+            avg_latency: None,
+            min_latency: None,
+            max_latency: None,
+            packet_loss: 1.0,
+            packet_sent: 10,
+            packet_received: 0,
+            timestamp: Utc::now(),
+        };
+        let json = serde_json::to_string(&data).unwrap();
+        assert!(json.contains("null"));
+        let parsed: NetworkProbeResultData = serde_json::from_str(&json).unwrap();
+        assert!(parsed.avg_latency.is_none());
+        assert_eq!(parsed.packet_loss, 1.0);
     }
 }

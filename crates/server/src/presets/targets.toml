@@ -1,0 +1,805 @@
+# Preset target IDs are immutable contracts. Once published, never rename or reassign an ID.
+
+# ============================================================================
+# China Telecom - 31 provinces
+# ============================================================================
+
+[[presets]]
+id = "china-telecom"
+name = "中国电信"
+description = "31 provinces, China Telecom"
+
+[[presets.targets]]
+id = "cn-bj-ct"
+name = "Beijing Telecom"
+provider = "Telecom"
+location = "Beijing"
+target = "bj-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-tj-ct"
+name = "Tianjin Telecom"
+provider = "Telecom"
+location = "Tianjin"
+target = "tj-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-he-ct"
+name = "Hebei Telecom"
+provider = "Telecom"
+location = "Hebei"
+target = "he-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-sx-ct"
+name = "Shanxi Telecom"
+provider = "Telecom"
+location = "Shanxi"
+target = "sx-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-nm-ct"
+name = "InnerMongolia Telecom"
+provider = "Telecom"
+location = "InnerMongolia"
+target = "nm-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-ln-ct"
+name = "Liaoning Telecom"
+provider = "Telecom"
+location = "Liaoning"
+target = "ln-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-jl-ct"
+name = "Jilin Telecom"
+provider = "Telecom"
+location = "Jilin"
+target = "jl-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-hl-ct"
+name = "Heilongjiang Telecom"
+provider = "Telecom"
+location = "Heilongjiang"
+target = "hl-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-sh-ct"
+name = "Shanghai Telecom"
+provider = "Telecom"
+location = "Shanghai"
+target = "sh-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-js-ct"
+name = "Jiangsu Telecom"
+provider = "Telecom"
+location = "Jiangsu"
+target = "js-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-zj-ct"
+name = "Zhejiang Telecom"
+provider = "Telecom"
+location = "Zhejiang"
+target = "zj-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-ah-ct"
+name = "Anhui Telecom"
+provider = "Telecom"
+location = "Anhui"
+target = "ah-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-fj-ct"
+name = "Fujian Telecom"
+provider = "Telecom"
+location = "Fujian"
+target = "fj-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-jx-ct"
+name = "Jiangxi Telecom"
+provider = "Telecom"
+location = "Jiangxi"
+target = "jx-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-sd-ct"
+name = "Shandong Telecom"
+provider = "Telecom"
+location = "Shandong"
+target = "sd-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-ha-ct"
+name = "Henan Telecom"
+provider = "Telecom"
+location = "Henan"
+target = "ha-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-hb-ct"
+name = "Hubei Telecom"
+provider = "Telecom"
+location = "Hubei"
+target = "hb-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-hn-ct"
+name = "Hunan Telecom"
+provider = "Telecom"
+location = "Hunan"
+target = "hn-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-gd-ct"
+name = "Guangdong Telecom"
+provider = "Telecom"
+location = "Guangdong"
+target = "gd-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-gx-ct"
+name = "Guangxi Telecom"
+provider = "Telecom"
+location = "Guangxi"
+target = "gx-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-hi-ct"
+name = "Hainan Telecom"
+provider = "Telecom"
+location = "Hainan"
+target = "hi-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-cq-ct"
+name = "Chongqing Telecom"
+provider = "Telecom"
+location = "Chongqing"
+target = "cq-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-sc-ct"
+name = "Sichuan Telecom"
+provider = "Telecom"
+location = "Sichuan"
+target = "sc-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-gz-ct"
+name = "Guizhou Telecom"
+provider = "Telecom"
+location = "Guizhou"
+target = "gz-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-yn-ct"
+name = "Yunnan Telecom"
+provider = "Telecom"
+location = "Yunnan"
+target = "yn-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-xz-ct"
+name = "Tibet Telecom"
+provider = "Telecom"
+location = "Tibet"
+target = "xz-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-sn-ct"
+name = "Shaanxi Telecom"
+provider = "Telecom"
+location = "Shaanxi"
+target = "sn-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-gs-ct"
+name = "Gansu Telecom"
+provider = "Telecom"
+location = "Gansu"
+target = "gs-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-qh-ct"
+name = "Qinghai Telecom"
+provider = "Telecom"
+location = "Qinghai"
+target = "qh-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-nx-ct"
+name = "Ningxia Telecom"
+provider = "Telecom"
+location = "Ningxia"
+target = "nx-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-xj-ct"
+name = "Xinjiang Telecom"
+provider = "Telecom"
+location = "Xinjiang"
+target = "xj-ct-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+# ============================================================================
+# China Unicom - 31 provinces
+# ============================================================================
+
+[[presets]]
+id = "china-unicom"
+name = "中国联通"
+description = "31 provinces, China Unicom"
+
+[[presets.targets]]
+id = "cn-bj-cu"
+name = "Beijing Unicom"
+provider = "Unicom"
+location = "Beijing"
+target = "bj-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-tj-cu"
+name = "Tianjin Unicom"
+provider = "Unicom"
+location = "Tianjin"
+target = "tj-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-he-cu"
+name = "Hebei Unicom"
+provider = "Unicom"
+location = "Hebei"
+target = "he-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-sx-cu"
+name = "Shanxi Unicom"
+provider = "Unicom"
+location = "Shanxi"
+target = "sx-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-nm-cu"
+name = "InnerMongolia Unicom"
+provider = "Unicom"
+location = "InnerMongolia"
+target = "nm-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-ln-cu"
+name = "Liaoning Unicom"
+provider = "Unicom"
+location = "Liaoning"
+target = "ln-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-jl-cu"
+name = "Jilin Unicom"
+provider = "Unicom"
+location = "Jilin"
+target = "jl-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-hl-cu"
+name = "Heilongjiang Unicom"
+provider = "Unicom"
+location = "Heilongjiang"
+target = "hl-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-sh-cu"
+name = "Shanghai Unicom"
+provider = "Unicom"
+location = "Shanghai"
+target = "sh-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-js-cu"
+name = "Jiangsu Unicom"
+provider = "Unicom"
+location = "Jiangsu"
+target = "js-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-zj-cu"
+name = "Zhejiang Unicom"
+provider = "Unicom"
+location = "Zhejiang"
+target = "zj-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-ah-cu"
+name = "Anhui Unicom"
+provider = "Unicom"
+location = "Anhui"
+target = "ah-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-fj-cu"
+name = "Fujian Unicom"
+provider = "Unicom"
+location = "Fujian"
+target = "fj-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-jx-cu"
+name = "Jiangxi Unicom"
+provider = "Unicom"
+location = "Jiangxi"
+target = "jx-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-sd-cu"
+name = "Shandong Unicom"
+provider = "Unicom"
+location = "Shandong"
+target = "sd-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-ha-cu"
+name = "Henan Unicom"
+provider = "Unicom"
+location = "Henan"
+target = "ha-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-hb-cu"
+name = "Hubei Unicom"
+provider = "Unicom"
+location = "Hubei"
+target = "hb-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-hn-cu"
+name = "Hunan Unicom"
+provider = "Unicom"
+location = "Hunan"
+target = "hn-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-gd-cu"
+name = "Guangdong Unicom"
+provider = "Unicom"
+location = "Guangdong"
+target = "gd-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-gx-cu"
+name = "Guangxi Unicom"
+provider = "Unicom"
+location = "Guangxi"
+target = "gx-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-hi-cu"
+name = "Hainan Unicom"
+provider = "Unicom"
+location = "Hainan"
+target = "hi-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-cq-cu"
+name = "Chongqing Unicom"
+provider = "Unicom"
+location = "Chongqing"
+target = "cq-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-sc-cu"
+name = "Sichuan Unicom"
+provider = "Unicom"
+location = "Sichuan"
+target = "sc-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-gz-cu"
+name = "Guizhou Unicom"
+provider = "Unicom"
+location = "Guizhou"
+target = "gz-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-yn-cu"
+name = "Yunnan Unicom"
+provider = "Unicom"
+location = "Yunnan"
+target = "yn-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-xz-cu"
+name = "Tibet Unicom"
+provider = "Unicom"
+location = "Tibet"
+target = "xz-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-sn-cu"
+name = "Shaanxi Unicom"
+provider = "Unicom"
+location = "Shaanxi"
+target = "sn-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-gs-cu"
+name = "Gansu Unicom"
+provider = "Unicom"
+location = "Gansu"
+target = "gs-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-qh-cu"
+name = "Qinghai Unicom"
+provider = "Unicom"
+location = "Qinghai"
+target = "qh-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-nx-cu"
+name = "Ningxia Unicom"
+provider = "Unicom"
+location = "Ningxia"
+target = "nx-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-xj-cu"
+name = "Xinjiang Unicom"
+provider = "Unicom"
+location = "Xinjiang"
+target = "xj-cu-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+# ============================================================================
+# China Mobile - 31 provinces
+# ============================================================================
+
+[[presets]]
+id = "china-mobile"
+name = "中国移动"
+description = "31 provinces, China Mobile"
+
+[[presets.targets]]
+id = "cn-bj-cm"
+name = "Beijing Mobile"
+provider = "Mobile"
+location = "Beijing"
+target = "bj-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-tj-cm"
+name = "Tianjin Mobile"
+provider = "Mobile"
+location = "Tianjin"
+target = "tj-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-he-cm"
+name = "Hebei Mobile"
+provider = "Mobile"
+location = "Hebei"
+target = "he-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-sx-cm"
+name = "Shanxi Mobile"
+provider = "Mobile"
+location = "Shanxi"
+target = "sx-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-nm-cm"
+name = "InnerMongolia Mobile"
+provider = "Mobile"
+location = "InnerMongolia"
+target = "nm-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-ln-cm"
+name = "Liaoning Mobile"
+provider = "Mobile"
+location = "Liaoning"
+target = "ln-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-jl-cm"
+name = "Jilin Mobile"
+provider = "Mobile"
+location = "Jilin"
+target = "jl-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-hl-cm"
+name = "Heilongjiang Mobile"
+provider = "Mobile"
+location = "Heilongjiang"
+target = "hl-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-sh-cm"
+name = "Shanghai Mobile"
+provider = "Mobile"
+location = "Shanghai"
+target = "sh-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-js-cm"
+name = "Jiangsu Mobile"
+provider = "Mobile"
+location = "Jiangsu"
+target = "js-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-zj-cm"
+name = "Zhejiang Mobile"
+provider = "Mobile"
+location = "Zhejiang"
+target = "zj-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-ah-cm"
+name = "Anhui Mobile"
+provider = "Mobile"
+location = "Anhui"
+target = "ah-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-fj-cm"
+name = "Fujian Mobile"
+provider = "Mobile"
+location = "Fujian"
+target = "fj-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-jx-cm"
+name = "Jiangxi Mobile"
+provider = "Mobile"
+location = "Jiangxi"
+target = "jx-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-sd-cm"
+name = "Shandong Mobile"
+provider = "Mobile"
+location = "Shandong"
+target = "sd-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-ha-cm"
+name = "Henan Mobile"
+provider = "Mobile"
+location = "Henan"
+target = "ha-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-hb-cm"
+name = "Hubei Mobile"
+provider = "Mobile"
+location = "Hubei"
+target = "hb-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-hn-cm"
+name = "Hunan Mobile"
+provider = "Mobile"
+location = "Hunan"
+target = "hn-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-gd-cm"
+name = "Guangdong Mobile"
+provider = "Mobile"
+location = "Guangdong"
+target = "gd-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-gx-cm"
+name = "Guangxi Mobile"
+provider = "Mobile"
+location = "Guangxi"
+target = "gx-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-hi-cm"
+name = "Hainan Mobile"
+provider = "Mobile"
+location = "Hainan"
+target = "hi-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-cq-cm"
+name = "Chongqing Mobile"
+provider = "Mobile"
+location = "Chongqing"
+target = "cq-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-sc-cm"
+name = "Sichuan Mobile"
+provider = "Mobile"
+location = "Sichuan"
+target = "sc-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-gz-cm"
+name = "Guizhou Mobile"
+provider = "Mobile"
+location = "Guizhou"
+target = "gz-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-yn-cm"
+name = "Yunnan Mobile"
+provider = "Mobile"
+location = "Yunnan"
+target = "yn-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-xz-cm"
+name = "Tibet Mobile"
+provider = "Mobile"
+location = "Tibet"
+target = "xz-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-sn-cm"
+name = "Shaanxi Mobile"
+provider = "Mobile"
+location = "Shaanxi"
+target = "sn-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-gs-cm"
+name = "Gansu Mobile"
+provider = "Mobile"
+location = "Gansu"
+target = "gs-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-qh-cm"
+name = "Qinghai Mobile"
+provider = "Mobile"
+location = "Qinghai"
+target = "qh-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-nx-cm"
+name = "Ningxia Mobile"
+provider = "Mobile"
+location = "Ningxia"
+target = "nx-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+[[presets.targets]]
+id = "cn-xj-cm"
+name = "Xinjiang Mobile"
+provider = "Mobile"
+location = "Xinjiang"
+target = "xj-cm-v4.ip.zstaticcdn.com:80"
+probe_type = "tcp"
+
+# ============================================================================
+# International - well-known targets
+# ============================================================================
+
+[[presets]]
+id = "international"
+name = "国际节点"
+description = "Well-known international targets"
+
+[[presets.targets]]
+id = "intl-cloudflare"
+name = "Cloudflare"
+provider = "Cloudflare"
+location = "US"
+target = "1.1.1.1"
+probe_type = "icmp"
+
+[[presets.targets]]
+id = "intl-google"
+name = "Google DNS"
+provider = "Google"
+location = "US"
+target = "8.8.8.8"
+probe_type = "icmp"
+
+[[presets.targets]]
+id = "intl-aws-tokyo"
+name = "AWS Tokyo"
+provider = "AWS"
+location = "Tokyo"
+target = "13.112.63.251"
+probe_type = "icmp"

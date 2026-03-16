@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Bell,
   ClipboardList,
+  Globe,
   Key,
   LayoutDashboard,
   List,
@@ -11,7 +12,8 @@ import {
   Settings,
   Shield,
   Terminal,
-  Users
+  Users,
+  Wifi
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '@/hooks/use-auth'
@@ -20,10 +22,12 @@ import { cn } from '@/lib/utils'
 const navItems = [
   { to: '/', labelKey: 'nav_dashboard' as const, icon: LayoutDashboard },
   { to: '/servers', labelKey: 'nav_servers' as const, icon: List },
+  { to: '/network', labelKey: 'nav_network' as const, icon: Wifi },
   { to: '/settings/users', labelKey: 'nav_users' as const, icon: Users, adminOnly: true },
   { to: '/settings/notifications', labelKey: 'nav_notifications' as const, icon: Bell, adminOnly: true },
   { to: '/settings/alerts', labelKey: 'nav_alerts' as const, icon: AlertTriangle, adminOnly: true },
   { to: '/settings/ping-tasks', labelKey: 'nav_ping_tasks' as const, icon: Activity },
+  { to: '/settings/network-probes', labelKey: 'nav_network_probes' as const, icon: Globe, adminOnly: true },
   { to: '/settings/tasks', labelKey: 'nav_commands' as const, icon: Terminal, adminOnly: true },
   { to: '/settings/capabilities', labelKey: 'nav_capabilities' as const, icon: Shield, adminOnly: true },
   { to: '/settings/api-keys', labelKey: 'nav_api_keys' as const, icon: Key },

@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-16
+
+### Added
+
+- **Network Quality Monitoring** -- Full-stack network quality monitoring system: Agent sends ICMP/TCP/HTTP probes to configured targets, Server records results and aggregates hourly, Frontend displays multi-line latency charts with real-time and historical views
+- **96 preset probe targets** -- Built-in network probe targets loaded from embedded TOML config: 31 Chinese provinces × 3 ISPs (Telecom/Unicom/Mobile) using Zstatic CDN TCP nodes + 3 international ICMP targets (Cloudflare, Google DNS, AWS Tokyo)
+- **Network quality overview page** (`/network`) -- Server-level network quality cards with target count, average latency, availability, and anomaly indicators
+- **Network quality detail page** (`/network/:id`) -- Per-server multi-line latency chart (Recharts), target cards with toggle visibility, anomaly summary table, CSV export, real-time + historical time ranges (1h/6h/24h/7d/30d)
+- **Network probe settings page** (`/settings/network-probes`) -- Target management tab (96 presets + custom CRUD) and global settings tab (probe interval, packet count, default targets)
+- **Per-server target management** -- Assign up to 20 probe targets per server via manage dialog, with validation
+- **Network probe alert types** -- `network_latency` and `network_packet_loss` alert rule types integrated into the existing alert system
+- **Real-time network probe WebSocket** -- Live probe results streamed via existing browser WebSocket, with seed data from last hour for immediate chart display
+- **Preset target architecture** -- Presets defined in `crates/server/src/presets/targets.toml`, embedded via `include_str!`, parsed at startup with `LazyLock` cache. DB stores only user-created targets. API returns unified `TargetDto` with `source`/`source_name` fields
+- **shadcn/ui component migration** -- Replaced hand-rolled Dialog, Select, Switch, Tabs, Skeleton, Checkbox with shadcn/ui equivalents across 29+ files
+- **DataTable (TanStack React Table)** -- Generic `DataTable` component with `DataTableColumnHeader`, `DataTablePagination`, `createSelectColumn`. Refactored 5 tables: servers, capabilities, audit-logs, network-probes, anomaly-table
+- **Toast notifications (Sonner)** -- 40+ mutations across all CRUD operations now show success/error toasts
+
+### Changed
+
+- Probe targets no longer stored as `is_builtin` rows in database — preset targets live in code, user targets in DB, merged at API level
+- `network_probe_target` table: removed `is_builtin` column, removed FK constraints on `target_id` in config/record/record_hourly tables
+- Deleted migration `m20260315_000005_update_builtin_targets` (replaced by embedded TOML presets)
+- `list_targets` API returns `Vec<TargetDto>` with `source: "preset:china-telecom"` for presets and `source: null` for custom targets
+- `update_setting` now validates `default_target_ids` against both presets and DB targets
+- `set_server_targets` validates all target IDs before assignment
+- All native `<table>`, `<select>`, `<input type="checkbox">` elements replaced with shadcn/ui components (zero native remnants)
+
+### Fixed
+
+- **24h time range crash** -- `Invalid time value` error when clicking 24h on network detail page (hourly records had `hour` field instead of `timestamp`, now unified via `ProbeRecordDto`)
+- Sonner theme integration (uses project's `useTheme`, removed `richColors` for neutral style)
+- Removed undefined `cn-toast` CSS class from Sonner component
+
+### Testing
+
+- 164 Rust tests: 147 unit + 17 integration (was 132 unit + 15 integration)
+- 8 new preset module tests (load, uniqueness, find, group metadata, probe type validation)
+- 6 new service tests (preset protection, setting validation, server target assignment)
+- 2 new integration tests (source field verification, preset update protection)
+- 86 frontend Vitest tests across 9 test files
+- 22 new E2E verification scenarios for network quality monitoring (N1-N22)
+
 ## [0.2.1] - 2026-03-15
 
 ### Added

@@ -35,6 +35,8 @@ Every TOML configuration key maps directly to an environment variable. Replace d
 | `SERVERBEE_RETENTION__RECORDS_HOURLY_DAYS` | `90` | Hourly aggregated records retention in days |
 | `SERVERBEE_RETENTION__GPU_RECORDS_DAYS` | `7` | GPU metric records retention in days |
 | `SERVERBEE_RETENTION__PING_RECORDS_DAYS` | `7` | Ping probe records retention in days |
+| `SERVERBEE_RETENTION__NETWORK_PROBE_DAYS` | `7` | Raw network probe records retention in days |
+| `SERVERBEE_RETENTION__NETWORK_PROBE_HOURLY_DAYS` | `90` | Hourly network probe aggregates retention in days |
 | `SERVERBEE_RETENTION__AUDIT_LOGS_DAYS` | `180` | Audit log retention in days |
 | `SERVERBEE_RATE_LIMIT__LOGIN_MAX` | `5` | Max login attempts per IP within 15-minute window |
 | `SERVERBEE_RATE_LIMIT__REGISTER_MAX` | `3` | Max agent registrations per IP within 15-minute window |
@@ -106,6 +108,8 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | `records_hourly_days` | u32 | `90` | Days to keep hourly aggregated records |
 | `gpu_records_days` | u32 | `7` | Days to keep per-GPU metric records |
 | `ping_records_days` | u32 | `7` | Days to keep ping probe records |
+| `network_probe_days` | u32 | `7` | Days to keep raw network probe records |
+| `network_probe_hourly_days` | u32 | `90` | Days to keep hourly aggregated network probe records |
 | `audit_logs_days` | u32 | `180` | Days to keep audit log entries |
 
 <Callout type="info">

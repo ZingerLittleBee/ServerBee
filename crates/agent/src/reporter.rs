@@ -13,8 +13,10 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::collector::Collector;
 use crate::config::AgentConfig;
+use crate::network_prober::NetworkProber;
 use crate::pinger::PingManager;
 use crate::terminal::{TerminalEvent, TerminalManager};
+use serverbee_common::types::NetworkProbeResultData;
 
 const MAX_BACKOFF_SECS: u64 = 30;
 const JITTER_FACTOR: f64 = 0.2;
@@ -121,6 +123,10 @@ impl Reporter {
         let (term_tx, mut term_rx) = mpsc::channel(256);
         let mut terminal_manager = TerminalManager::new(term_tx, Arc::clone(&capabilities));
 
+        // Network probe manager
+        let (network_probe_tx, mut network_probe_rx) = mpsc::channel::<NetworkProbeResultData>(256);
+        let mut network_prober = NetworkProber::new(network_probe_tx, Arc::clone(&capabilities));
+
         // Channel for background command execution results
         let (cmd_result_tx, mut cmd_result_rx) = mpsc::channel::<AgentMessage>(32);
 
@@ -170,15 +176,28 @@ impl Reporter {
                     let json = serde_json::to_string(&msg)?;
                     write.send(Message::Text(json.into())).await?;
                 }
+                Some(first_result) = network_probe_rx.recv() => {
+                    let mut results = vec![first_result];
+                    // Drain any additional results that arrived at the same time
+                    while let Ok(additional) = network_probe_rx.try_recv() {
+                        results.push(additional);
+                    }
+                    let count = results.len();
+                    let msg = AgentMessage::NetworkProbeResults { results };
+                    let json = serde_json::to_string(&msg)?;
+                    write.send(Message::Text(json.into())).await?;
+                    tracing::debug!("Sent NetworkProbeResults ({count} results)");
+                }
                 server_msg = read.next() => {
                     match server_msg {
                         Some(Ok(Message::Text(text))) => {
-                            self.handle_server_message(&text, &mut write, &mut ping_manager, &mut terminal_manager, &cmd_result_tx, &capabilities).await?;
+                            self.handle_server_message(&text, &mut write, &mut ping_manager, &mut terminal_manager, &mut network_prober, &cmd_result_tx, &capabilities).await?;
                         }
                         Some(Ok(Message::Close(_))) => {
                             tracing::info!("Server closed connection");
                             ping_manager.stop_all();
                             terminal_manager.close_all();
+                            network_prober.stop_all();
                             return Ok(());
                         }
                         Some(Ok(Message::Ping(data))) => {
@@ -189,12 +208,14 @@ impl Reporter {
                             tracing::error!("WebSocket error: {e}");
                             ping_manager.stop_all();
                             terminal_manager.close_all();
+                            network_prober.stop_all();
                             return Err(e.into());
                         }
                         None => {
                             tracing::info!("WebSocket stream ended");
                             ping_manager.stop_all();
                             terminal_manager.close_all();
+                            network_prober.stop_all();
                             return Ok(());
                         }
                     }
@@ -203,12 +224,14 @@ impl Reporter {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn handle_server_message<S>(
         &self,
         text: &str,
         write: &mut S,
         ping_manager: &mut PingManager,
         terminal_manager: &mut TerminalManager,
+        network_prober: &mut NetworkProber,
         cmd_result_tx: &mpsc::Sender<AgentMessage>,
         capabilities: &Arc<AtomicU32>,
     ) -> anyhow::Result<()>
@@ -229,6 +252,7 @@ impl Reporter {
             ServerMessage::CapabilitiesSync { capabilities: caps } => {
                 tracing::info!("Capabilities updated: {caps}");
                 capabilities.store(caps, Ordering::SeqCst);
+                network_prober.resync_capabilities();
             }
             ServerMessage::Ping => {
                 let pong = serde_json::to_string(&AgentMessage::Pong)?;
@@ -324,6 +348,15 @@ impl Reporter {
                         tracing::error!("Upgrade to v{version} failed: {e}");
                     }
                 });
+            }
+            ServerMessage::NetworkProbeSync { targets, interval, packet_count } => {
+                tracing::info!(
+                    "Received NetworkProbeSync: {} targets, interval={}s, packet_count={}",
+                    targets.len(),
+                    interval,
+                    packet_count
+                );
+                network_prober.sync(targets, interval, packet_count);
             }
         }
 

@@ -11,12 +11,18 @@ use serde::{Deserialize, Serialize};
 use crate::entity::server;
 use crate::error::{ok, ApiResponse, AppError};
 use crate::middleware::auth::CurrentUser;
+use crate::router::api::network_probe::{
+    get_server_network_anomalies, get_server_network_records, get_server_network_summary,
+    get_server_network_targets,
+};
 use crate::service::audit::AuditService;
+use crate::service::network_probe::NetworkProbeService;
 use crate::service::ping::PingService;
 use crate::service::record::{QueryHistoryResult, RecordService};
 use crate::service::server::{ServerService, UpdateServerInput};
 use crate::state::AppState;
 use serverbee_common::protocol::{BrowserMessage, ServerMessage};
+use serverbee_common::types::NetworkProbeTarget;
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct BatchDeleteRequest {
@@ -127,6 +133,22 @@ pub fn read_router() -> Router<Arc<AppState>> {
         .route("/servers/{id}", get(get_server))
         .route("/servers/{id}/records", get(get_records))
         .route("/servers/{id}/gpu-records", get(get_gpu_records))
+        .route(
+            "/servers/{id}/network-probes/targets",
+            get(get_server_network_targets),
+        )
+        .route(
+            "/servers/{id}/network-probes/records",
+            get(get_server_network_records),
+        )
+        .route(
+            "/servers/{id}/network-probes/summary",
+            get(get_server_network_summary),
+        )
+        .route(
+            "/servers/{id}/network-probes/anomalies",
+            get(get_server_network_anomalies),
+        )
 }
 
 /// Write endpoints (PUT/DELETE/POST) restricted to admin users only.
@@ -137,6 +159,10 @@ pub fn write_router() -> Router<Arc<AppState>> {
         .route("/servers/batch-delete", post(batch_delete))
         .route("/servers/batch-capabilities", put(batch_update_capabilities))
         .route("/servers/{id}/upgrade", post(trigger_upgrade))
+        .route(
+            "/servers/{id}/network-probes/targets",
+            put(set_server_network_targets),
+        )
 }
 
 #[utoipa::path(
@@ -509,4 +535,57 @@ fn extract_client_ip(headers: &HeaderMap) -> String {
                 .map(|s| s.to_string())
         })
         .unwrap_or_else(|| "unknown".to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Per-server network probe write handler
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct SetServerNetworkTargetsRequest {
+    target_ids: Vec<String>,
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/servers/{id}/network-probes/targets",
+    operation_id = "set_server_network_targets",
+    tag = "network-probes",
+    params(("id" = String, Path, description = "Server ID")),
+    request_body = SetServerNetworkTargetsRequest,
+    responses(
+        (status = 200, description = "Network probe targets updated for server"),
+        (status = 422, description = "Validation error (max 20 targets)"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+async fn set_server_network_targets(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(body): Json<SetServerNetworkTargetsRequest>,
+) -> Result<Json<ApiResponse<&'static str>>, AppError> {
+    NetworkProbeService::set_server_targets(&state.db, &id, body.target_ids).await?;
+
+    // Push updated NetworkProbeSync to agent if online
+    if let Some(tx) = state.agent_manager.get_sender(&id) {
+        let targets = NetworkProbeService::get_server_targets(&state.db, &id).await?;
+        let setting = NetworkProbeService::get_setting(&state.db).await?;
+        let probe_targets: Vec<NetworkProbeTarget> = targets
+            .into_iter()
+            .map(|t| NetworkProbeTarget {
+                target_id: t.id,
+                name: t.name,
+                target: t.target,
+                probe_type: t.probe_type,
+            })
+            .collect();
+        let msg = ServerMessage::NetworkProbeSync {
+            targets: probe_targets,
+            interval: setting.interval,
+            packet_count: setting.packet_count,
+        };
+        let _ = tx.send(msg).await;
+    }
+
+    ok("ok")
 }

@@ -3,7 +3,12 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Bell, Plus, Send, Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { Notification, NotificationGroup } from '@/lib/api-schema'
 
@@ -48,16 +53,32 @@ function NotificationsPage() {
     onSuccess: () => {
       invalidate()
       resetForm()
+      toast.success('Notification channel created')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to create notification channel')
     }
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/api/notifications/${id}`),
-    onSuccess: () => invalidate()
+    onSuccess: () => {
+      invalidate()
+      toast.success('Notification channel deleted')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete notification channel')
+    }
   })
 
   const testMutation = useMutation({
-    mutationFn: (id: string) => api.post(`/api/notifications/${id}/test`)
+    mutationFn: (id: string) => api.post(`/api/notifications/${id}/test`),
+    onSuccess: () => {
+      toast.success('Test notification sent')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to send test notification')
+    }
   })
 
   // Groups
@@ -73,12 +94,22 @@ function NotificationsPage() {
       setGroupName('')
       setSelectedIds([])
       setShowGroupForm(false)
+      toast.success('Notification group created')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to create notification group')
     }
   })
 
   const deleteGroupMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/api/notification-groups/${id}`),
-    onSuccess: () => invalidate()
+    onSuccess: () => {
+      invalidate()
+      toast.success('Notification group deleted')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete notification group')
+    }
   })
 
   const invalidate = () => {
@@ -167,28 +198,27 @@ function NotificationsPage() {
 
           {showForm && (
             <form className="mb-4 space-y-3 rounded-md border bg-muted/30 p-4" onSubmit={handleCreate}>
-              <input
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              <Input
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t('notifications.channel_name')}
                 required
                 type="text"
                 value={name}
               />
-              <select
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                onChange={(e) => handleTypeChange(e.target.value as NotifyType)}
-                value={notifyType}
-              >
-                {Object.entries(typeLabels).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
+              <Select onValueChange={(val) => handleTypeChange(val as NotifyType)} value={notifyType}>
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(typeLabels).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {Object.entries(configFieldLabels[notifyType] ?? {}).map(([key, label]) => (
-                <input
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                <Input
                   key={key}
                   onChange={(e) => setConfigFields((prev) => ({ ...prev, [key]: e.target.value }))}
                   placeholder={label}
@@ -211,7 +241,7 @@ function NotificationsPage() {
           {isLoading && (
             <div className="space-y-2">
               {Array.from({ length: 2 }, (_, i) => (
-                <div className="h-12 animate-pulse rounded bg-muted" key={`skel-${i.toString()}`} />
+                <Skeleton className="h-12" key={`skel-${i.toString()}`} />
               ))}
             </div>
           )}
@@ -270,8 +300,7 @@ function NotificationsPage() {
 
           {showGroupForm && notifications && notifications.length > 0 && (
             <form className="mb-4 space-y-3 rounded-md border bg-muted/30 p-4" onSubmit={handleCreateGroup}>
-              <input
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              <Input
                 onChange={(e) => setGroupName(e.target.value)}
                 placeholder={t('notifications.group_name')}
                 required
@@ -281,15 +310,13 @@ function NotificationsPage() {
               <fieldset className="space-y-1">
                 <legend className="text-sm">{t('notifications.select_channels')}</legend>
                 {notifications.map((n) => (
+                  // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
                   <label className="flex items-center gap-2 text-sm" key={n.id}>
-                    <input
+                    <Checkbox
                       checked={selectedIds.includes(n.id)}
-                      onChange={(e) => {
-                        setSelectedIds((prev) =>
-                          e.target.checked ? [...prev, n.id] : prev.filter((id) => id !== n.id)
-                        )
+                      onCheckedChange={(checked) => {
+                        setSelectedIds((prev) => (checked ? [...prev, n.id] : prev.filter((id) => id !== n.id)))
                       }}
-                      type="checkbox"
                     />
                     {n.name} ({typeLabels[n.notify_type as NotifyType] ?? n.notify_type})
                   </label>
