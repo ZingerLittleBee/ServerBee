@@ -326,11 +326,91 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 tracing::error!("Failed to save network probe results for {server_id}: {e}");
             }
         }
+        // File management control responses — relay to pending HTTP requests
+        AgentMessage::FileListResult { ref msg_id, .. } => {
+            if !state.agent_manager.dispatch_pending_response(msg_id, msg.clone()) {
+                tracing::debug!("Orphaned FileListResult for msg_id={msg_id}");
+            }
+        }
+        AgentMessage::FileStatResult { ref msg_id, .. } => {
+            if !state.agent_manager.dispatch_pending_response(msg_id, msg.clone()) {
+                tracing::debug!("Orphaned FileStatResult for msg_id={msg_id}");
+            }
+        }
+        AgentMessage::FileReadResult { ref msg_id, .. } => {
+            if !state.agent_manager.dispatch_pending_response(msg_id, msg.clone()) {
+                tracing::debug!("Orphaned FileReadResult for msg_id={msg_id}");
+            }
+        }
+        AgentMessage::FileOpResult { ref msg_id, .. } => {
+            if !state.agent_manager.dispatch_pending_response(msg_id, msg.clone()) {
+                tracing::debug!("Orphaned FileOpResult for msg_id={msg_id}");
+            }
+        }
+
+        // File download transfer messages
+        AgentMessage::FileDownloadReady { ref transfer_id, size } => {
+            state.file_transfers.update_size(transfer_id, size);
+            state.file_transfers.mark_in_progress(transfer_id);
+            // Create the temp file
+            if let Some(path) = state.file_transfers.temp_file_path(transfer_id)
+                && let Err(e) = std::fs::File::create(&path)
+            {
+                tracing::error!("Failed to create temp file for transfer {transfer_id}: {e}");
+                state.file_transfers.mark_failed(transfer_id, format!("Failed to create temp file: {e}"));
+            }
+        }
+        AgentMessage::FileDownloadChunk { ref transfer_id, offset, ref data } => {
+            use base64::Engine;
+            use std::io::{Seek, SeekFrom, Write};
+            if let Some(path) = state.file_transfers.temp_file_path(transfer_id) {
+                match base64::engine::general_purpose::STANDARD.decode(data) {
+                    Ok(bytes) => {
+                        let result = std::fs::OpenOptions::new()
+                            .write(true)
+                            .open(&path)
+                            .and_then(|mut file| {
+                                file.seek(SeekFrom::Start(offset))?;
+                                file.write_all(&bytes)?;
+                                Ok(())
+                            });
+                        match result {
+                            Ok(()) => {
+                                state.file_transfers.update_progress(transfer_id, offset + bytes.len() as u64);
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to write chunk for transfer {transfer_id}: {e}");
+                                state.file_transfers.mark_failed(transfer_id, format!("Write error: {e}"));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to decode base64 chunk for transfer {transfer_id}: {e}");
+                        state.file_transfers.mark_failed(transfer_id, format!("Base64 decode error: {e}"));
+                    }
+                }
+            }
+        }
+        AgentMessage::FileDownloadEnd { ref transfer_id } => {
+            state.file_transfers.mark_ready(transfer_id);
+        }
+        AgentMessage::FileDownloadError { ref transfer_id, ref error } => {
+            state.file_transfers.mark_failed(transfer_id, error.clone());
+        }
+
+        // File upload transfer messages
+        AgentMessage::FileUploadAck { ref transfer_id, offset } => {
+            state.file_transfers.update_progress(transfer_id, offset);
+        }
+        AgentMessage::FileUploadComplete { ref transfer_id } => {
+            state.file_transfers.mark_ready(transfer_id);
+        }
+        AgentMessage::FileUploadError { ref transfer_id, ref error } => {
+            state.file_transfers.mark_failed(transfer_id, error.clone());
+        }
+
         AgentMessage::Pong => {
             // Agent responded to our protocol-level Ping; already handled by WS Pong frames
-        }
-        _ => {
-            tracing::debug!("Unhandled agent message variant");
         }
     }
 }
