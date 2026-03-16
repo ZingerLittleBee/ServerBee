@@ -231,7 +231,7 @@ function AlertsPage() {
               />
 
               <div className="flex gap-3">
-                <Select onValueChange={setTriggerMode} value={triggerMode}>
+                <Select onValueChange={(v) => v !== null && setTriggerMode(v)} value={triggerMode}>
                   <SelectTrigger className="h-9 w-full flex-1">
                     <SelectValue />
                   </SelectTrigger>
@@ -241,7 +241,7 @@ function AlertsPage() {
                   </SelectContent>
                 </Select>
 
-                <Select onValueChange={setGroupId} value={groupId}>
+                <Select onValueChange={(v) => setGroupId(v ?? '')} value={groupId}>
                   <SelectTrigger className="h-9 w-full flex-1">
                     <SelectValue placeholder={t('alerts.no_notification')} />
                   </SelectTrigger>
@@ -261,6 +261,9 @@ function AlertsPage() {
                 <div className="flex gap-3">
                   <Select
                     onValueChange={(val) => {
+                      if (val === null) {
+                        return
+                      }
                       const v = val as 'all' | 'exclude' | 'include'
                       setCoverType(v)
                       if (v === 'all') {
@@ -311,7 +314,10 @@ function AlertsPage() {
                 </div>
                 {ruleItems.map((item, index) => (
                   <div className="flex gap-2" key={`rule-${index.toString()}`}>
-                    <Select onValueChange={(val) => updateRuleItem(index, 'rule_type', val)} value={item.rule_type}>
+                    <Select
+                      onValueChange={(val) => val !== null && updateRuleItem(index, 'rule_type', val)}
+                      value={item.rule_type}
+                    >
                       <SelectTrigger className="h-9 w-full flex-1">
                         <SelectValue />
                       </SelectTrigger>
@@ -362,7 +368,7 @@ function AlertsPage() {
                     {CYCLE_TYPES.has(item.rule_type) && (
                       <>
                         <Select
-                          onValueChange={(val) => updateRuleItem(index, 'cycle_interval', val)}
+                          onValueChange={(val) => val !== null && updateRuleItem(index, 'cycle_interval', val)}
                           value={item.cycle_interval ?? 'month'}
                         >
                           <SelectTrigger className="h-9 w-28">
