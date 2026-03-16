@@ -69,6 +69,13 @@ pub async fn run(state: Arc<AppState>) {
             }
             Err(e) => tracing::error!("Failed to clean up network probe records: {e}"),
         }
+
+        // Clean up expired file transfers (idle for > 30 minutes)
+        state
+            .file_transfers
+            .cleanup_expired(Duration::from_secs(
+                serverbee_common::constants::FILE_TRANSFER_TIMEOUT_SECS,
+            ));
     }
 }
 

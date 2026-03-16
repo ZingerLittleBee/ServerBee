@@ -5,6 +5,7 @@ use crate::state::AppState;
 
 /// Periodically checks for agents that have stopped reporting and marks them offline.
 /// Runs every 10 seconds with a 30-second threshold.
+/// Also cleans up expired pending requests (older than 60s).
 pub async fn run(state: Arc<AppState>) {
     let mut interval = tokio::time::interval(Duration::from_secs(10));
 
@@ -15,5 +16,10 @@ pub async fn run(state: Arc<AppState>) {
         for id in &offline_ids {
             tracing::info!("Agent {id} marked offline (no report for 30s)");
         }
+
+        // Clean up expired pending requests (HTTP→WS relay) older than 60 seconds
+        state
+            .agent_manager
+            .cleanup_expired_requests(Duration::from_secs(60));
     }
 }
