@@ -144,7 +144,7 @@ fn extract_client_ip(headers: &HeaderMap) -> String {
 
 /// Map agent-side error messages to the appropriate HTTP error type.
 fn agent_error(msg: String) -> AppError {
-    if msg.contains("disabled") || msg.contains("capability") {
+    if msg == "File capability disabled" {
         AppError::Forbidden(msg)
     } else {
         AppError::BadRequest(msg)
