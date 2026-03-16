@@ -84,6 +84,7 @@ function LoginPage() {
               onChange={(e) => setUsername(e.target.value)}
               placeholder={t('username_placeholder')}
               required
+              spellCheck={false}
               type="text"
               value={username}
             />

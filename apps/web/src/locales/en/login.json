@@ -6,7 +6,7 @@
   "password": "Password",
   "two_factor_code": "Two-Factor Code",
   "two_factor_hint": "Enter the code from your authenticator app",
-  "signing_in": "Signing in...",
+  "signing_in": "Signing in…",
   "sign_in": "Sign in",
   "login_failed": "Login failed. Please try again.",
   "or_continue_with": "Or continue with"

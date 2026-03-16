@@ -326,6 +326,105 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 tracing::error!("Failed to save network probe results for {server_id}: {e}");
             }
         }
+        // File management control responses — relay to pending HTTP requests
+        AgentMessage::FileListResult { ref msg_id, .. } => {
+            if !state.agent_manager.dispatch_pending_response(msg_id, msg.clone()) {
+                tracing::debug!("Orphaned FileListResult for msg_id={msg_id}");
+            }
+        }
+        AgentMessage::FileStatResult { ref msg_id, .. } => {
+            if !state.agent_manager.dispatch_pending_response(msg_id, msg.clone()) {
+                tracing::debug!("Orphaned FileStatResult for msg_id={msg_id}");
+            }
+        }
+        AgentMessage::FileReadResult { ref msg_id, .. } => {
+            if !state.agent_manager.dispatch_pending_response(msg_id, msg.clone()) {
+                tracing::debug!("Orphaned FileReadResult for msg_id={msg_id}");
+            }
+        }
+        AgentMessage::FileOpResult { ref msg_id, .. } => {
+            if !state.agent_manager.dispatch_pending_response(msg_id, msg.clone()) {
+                tracing::debug!("Orphaned FileOpResult for msg_id={msg_id}");
+            }
+        }
+
+        // File download transfer messages
+        AgentMessage::FileDownloadReady { ref transfer_id, size } => {
+            state.file_transfers.update_size(transfer_id, size);
+            state.file_transfers.mark_in_progress(transfer_id);
+            // Create the temp file and keep it open for the duration of the transfer
+            if let Some(path) = state.file_transfers.temp_file_path(transfer_id) {
+                match tokio::fs::File::create(&path).await {
+                    Ok(file) => {
+                        state.file_transfers.store_file_handle(transfer_id, file);
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to create temp file for transfer {transfer_id}: {e}");
+                        state.file_transfers.mark_failed(transfer_id, format!("Failed to create temp file: {e}"));
+                    }
+                }
+            }
+        }
+        AgentMessage::FileDownloadChunk { ref transfer_id, offset, ref data } => {
+            use base64::Engine;
+            use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+            if let Some(file_handle) = state.file_transfers.get_file_handle(transfer_id) {
+                match base64::engine::general_purpose::STANDARD.decode(data) {
+                    Ok(bytes) => {
+                        let result = async {
+                            let mut file = file_handle.lock().await;
+                            file.seek(std::io::SeekFrom::Start(offset)).await?;
+                            file.write_all(&bytes).await?;
+                            Ok::<(), std::io::Error>(())
+                        }
+                        .await;
+                        match result {
+                            Ok(()) => {
+                                state.file_transfers.update_progress(transfer_id, offset + bytes.len() as u64);
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to write chunk for transfer {transfer_id}: {e}");
+                                state.file_transfers.mark_failed(transfer_id, format!("Write error: {e}"));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to decode base64 chunk for transfer {transfer_id}: {e}");
+                        state.file_transfers.mark_failed(transfer_id, format!("Base64 decode error: {e}"));
+                    }
+                }
+            }
+        }
+        AgentMessage::FileDownloadEnd { ref transfer_id } => {
+            state.file_transfers.remove_file_handle(transfer_id);
+            state.file_transfers.mark_ready(transfer_id);
+        }
+        AgentMessage::FileDownloadError { ref transfer_id, ref error } => {
+            state.file_transfers.remove_file_handle(transfer_id);
+            state.file_transfers.mark_failed(transfer_id, error.clone());
+        }
+
+        // File upload transfer messages
+        AgentMessage::FileUploadAck { ref transfer_id, offset } => {
+            state.file_transfers.update_progress(transfer_id, offset);
+            let ack_key = format!("upload-ack-{transfer_id}");
+            state.agent_manager.dispatch_pending_response(&ack_key, msg.clone());
+        }
+        AgentMessage::FileUploadComplete { ref transfer_id } => {
+            state.file_transfers.mark_ready(transfer_id);
+            let complete_key = format!("upload-complete-{transfer_id}");
+            state.agent_manager.dispatch_pending_response(&complete_key, msg.clone());
+        }
+        AgentMessage::FileUploadError { ref transfer_id, ref error } => {
+            state.file_transfers.mark_failed(transfer_id, error.clone());
+            // The HTTP handler may be waiting on either an ack or complete key — try both.
+            let ack_key = format!("upload-ack-{transfer_id}");
+            let complete_key = format!("upload-complete-{transfer_id}");
+            if !state.agent_manager.dispatch_pending_response(&complete_key, msg.clone()) {
+                state.agent_manager.dispatch_pending_response(&ack_key, msg.clone());
+            }
+        }
+
         AgentMessage::Pong => {
             // Agent responded to our protocol-level Ping; already handled by WS Pong frames
         }

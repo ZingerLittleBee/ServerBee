@@ -114,6 +114,20 @@ pub struct ProbeRecordDto {
     pub packet_received: i32,
 }
 
+/// Internal row type for the raw SQL window-function query that fetches the
+/// latest record per (server_id, target_id) pair.  Uses `FromQueryResult` so
+/// sea-orm can map the raw `QueryResult` rows automatically.
+#[derive(Debug, FromQueryResult)]
+struct LatestRecordRow {
+    pub server_id: String,
+    pub target_id: String,
+    pub avg_latency: Option<f64>,
+    pub min_latency: Option<f64>,
+    pub max_latency: Option<f64>,
+    pub packet_loss: f64,
+    pub timestamp: DateTime<Utc>,
+}
+
 /// Unified target DTO merging preset and custom targets.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct TargetDto {
@@ -590,19 +604,19 @@ impl NetworkProbeService {
         // Get all targets assigned to this server
         let targets = Self::get_server_targets(db, server_id).await?;
 
+        // Fetch the latest record per target in a single query using a window function,
+        // avoiding an N+1 query pattern (one query per target).
+        let latest_records = Self::fetch_latest_records_for_server(db, server_id).await?;
+
+        // Build a lookup from target_id -> target info
+        let target_info: HashMap<String, &TargetDto> =
+            targets.iter().map(|t| (t.id.clone(), t)).collect();
+
         let mut target_summaries = Vec::new();
         let mut last_probe_at: Option<DateTime<Utc>> = None;
 
-        for target in &targets {
-            // Get the latest record for this server + target
-            let latest = network_probe_record::Entity::find()
-                .filter(network_probe_record::Column::ServerId.eq(server_id))
-                .filter(network_probe_record::Column::TargetId.eq(&target.id))
-                .order_by_desc(network_probe_record::Column::Timestamp)
-                .one(db)
-                .await?;
-
-            if let Some(record) = latest {
+        for record in &latest_records {
+            if let Some(target) = target_info.get(&record.target_id) {
                 // Track the most recent probe timestamp
                 match last_probe_at {
                     Some(existing) if record.timestamp > existing => {
@@ -662,6 +676,28 @@ impl NetworkProbeService {
 
         let anomaly_from = Utc::now() - Duration::hours(24);
 
+        // Fetch ALL latest records across ALL servers in a single query using a window
+        // function, avoiding an N+1 query pattern (one query per server per target).
+        let all_latest = Self::fetch_latest_records_all_servers(db).await?;
+
+        // Group latest records by server_id for efficient lookup
+        let mut records_by_server: HashMap<String, Vec<LatestRecordRow>> = HashMap::new();
+        for record in all_latest {
+            records_by_server
+                .entry(record.server_id.clone())
+                .or_default()
+                .push(record);
+        }
+
+        // Build a set of valid target_ids per server from configs
+        let mut config_targets_by_server: HashMap<String, Vec<String>> = HashMap::new();
+        for c in &configs {
+            config_targets_by_server
+                .entry(c.server_id.clone())
+                .or_default()
+                .push(c.target_id.clone());
+        }
+
         let mut overviews = Vec::new();
 
         for server_id in &server_ids {
@@ -671,25 +707,22 @@ impl NetworkProbeService {
                 .unwrap_or_else(|| server_id.clone());
             let online = agent_manager.is_online(server_id);
 
-            // Get the latest record per target for this server
-            let target_configs: Vec<&network_probe_config::Model> =
-                configs.iter().filter(|c| &c.server_id == server_id).collect();
-
-            let target_ids: Vec<String> =
-                target_configs.iter().map(|c| c.target_id.clone()).collect();
+            let valid_target_ids: std::collections::HashSet<&String> =
+                config_targets_by_server
+                    .get(server_id)
+                    .map(|ids| ids.iter().collect())
+                    .unwrap_or_default();
 
             let mut target_summaries = Vec::new();
             let mut last_probe_at: Option<DateTime<Utc>> = None;
 
-            for target_id in &target_ids {
-                let latest = network_probe_record::Entity::find()
-                    .filter(network_probe_record::Column::ServerId.eq(server_id))
-                    .filter(network_probe_record::Column::TargetId.eq(target_id))
-                    .order_by_desc(network_probe_record::Column::Timestamp)
-                    .one(db)
-                    .await?;
+            if let Some(records) = records_by_server.get(server_id) {
+                for record in records {
+                    // Only include records for targets that are configured for this server
+                    if !valid_target_ids.contains(&record.target_id) {
+                        continue;
+                    }
 
-                if let Some(record) = latest {
                     match last_probe_at {
                         Some(existing) if record.timestamp > existing => {
                             last_probe_at = Some(record.timestamp);
@@ -701,12 +734,12 @@ impl NetworkProbeService {
                     }
 
                     let (target_name, provider) = target_map
-                        .get(target_id)
+                        .get(&record.target_id)
                         .cloned()
-                        .unwrap_or_else(|| (target_id.clone(), String::new()));
+                        .unwrap_or_else(|| (record.target_id.clone(), String::new()));
 
                     target_summaries.push(TargetSummary {
-                        target_id: target_id.clone(),
+                        target_id: record.target_id.clone(),
                         target_name,
                         provider,
                         avg_latency: record.avg_latency,
@@ -818,6 +851,44 @@ impl NetworkProbeService {
         }
 
         Ok(anomalies)
+    }
+
+    /// Fetch the latest probe record per target for a single server using a
+    /// window function.  Returns one row per target_id with the most recent
+    /// record, executing a single SQL query instead of N queries.
+    async fn fetch_latest_records_for_server(
+        db: &DatabaseConnection,
+        server_id: &str,
+    ) -> Result<Vec<LatestRecordRow>, AppError> {
+        let sql = "SELECT server_id, target_id, avg_latency, min_latency, max_latency, \
+                          packet_loss, timestamp \
+                   FROM ( \
+                       SELECT *, ROW_NUMBER() OVER (PARTITION BY target_id ORDER BY timestamp DESC) AS rn \
+                       FROM network_probe_record \
+                       WHERE server_id = ? \
+                   ) WHERE rn = 1";
+        let stmt = Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            sql,
+            vec![server_id.into()],
+        );
+        Ok(LatestRecordRow::find_by_statement(stmt).all(db).await?)
+    }
+
+    /// Fetch the latest probe record per (server_id, target_id) across ALL
+    /// servers using a window function.  Returns one row per server+target
+    /// combination, executing a single SQL query instead of S*T queries.
+    async fn fetch_latest_records_all_servers(
+        db: &DatabaseConnection,
+    ) -> Result<Vec<LatestRecordRow>, AppError> {
+        let sql = "SELECT server_id, target_id, avg_latency, min_latency, max_latency, \
+                          packet_loss, timestamp \
+                   FROM ( \
+                       SELECT *, ROW_NUMBER() OVER (PARTITION BY server_id, target_id ORDER BY timestamp DESC) AS rn \
+                       FROM network_probe_record \
+                   ) WHERE rn = 1";
+        let stmt = Statement::from_sql_and_values(DatabaseBackend::Sqlite, sql, vec![]);
+        Ok(LatestRecordRow::find_by_statement(stmt).all(db).await?)
     }
 
     /// Count anomalous records for a server since a given time.

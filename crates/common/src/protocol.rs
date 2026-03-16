@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::types::{
-    NetworkProbeResultData, NetworkProbeTarget, PingResult, PingTaskConfig, SystemInfo,
+    FileEntry, NetworkProbeResultData, NetworkProbeTarget, PingResult, PingTaskConfig, SystemInfo,
     SystemReport, TaskResult,
 };
 
@@ -39,6 +39,55 @@ pub enum AgentMessage {
     },
     NetworkProbeResults {
         results: Vec<NetworkProbeResultData>,
+    },
+    // File management responses
+    FileListResult {
+        msg_id: String,
+        path: String,
+        entries: Vec<FileEntry>,
+        error: Option<String>,
+    },
+    FileStatResult {
+        msg_id: String,
+        entry: Option<FileEntry>,
+        error: Option<String>,
+    },
+    FileReadResult {
+        msg_id: String,
+        content: Option<String>,
+        error: Option<String>,
+    },
+    FileOpResult {
+        msg_id: String,
+        success: bool,
+        error: Option<String>,
+    },
+    FileDownloadReady {
+        transfer_id: String,
+        size: u64,
+    },
+    FileDownloadChunk {
+        transfer_id: String,
+        offset: u64,
+        data: String,
+    },
+    FileDownloadEnd {
+        transfer_id: String,
+    },
+    FileDownloadError {
+        transfer_id: String,
+        error: String,
+    },
+    FileUploadAck {
+        transfer_id: String,
+        offset: u64,
+    },
+    FileUploadComplete {
+        transfer_id: String,
+    },
+    FileUploadError {
+        transfer_id: String,
+        error: String,
     },
     Pong,
 }
@@ -86,6 +135,59 @@ pub enum ServerMessage {
         targets: Vec<NetworkProbeTarget>,
         interval: u32,
         packet_count: u32,
+    },
+    // File management commands
+    FileList {
+        msg_id: String,
+        path: String,
+    },
+    FileDelete {
+        msg_id: String,
+        path: String,
+        recursive: bool,
+    },
+    FileMkdir {
+        msg_id: String,
+        path: String,
+    },
+    FileMove {
+        msg_id: String,
+        from: String,
+        to: String,
+    },
+    FileStat {
+        msg_id: String,
+        path: String,
+    },
+    FileRead {
+        msg_id: String,
+        path: String,
+        max_size: u64,
+    },
+    FileWrite {
+        msg_id: String,
+        path: String,
+        content: String,
+    },
+    FileDownloadStart {
+        transfer_id: String,
+        path: String,
+    },
+    FileDownloadCancel {
+        transfer_id: String,
+    },
+    FileUploadStart {
+        transfer_id: String,
+        path: String,
+        size: u64,
+    },
+    FileUploadChunk {
+        transfer_id: String,
+        offset: u64,
+        data: String,
+    },
+    FileUploadEnd {
+        transfer_id: String,
     },
     Ping,
     Upgrade {
@@ -232,6 +334,282 @@ mod tests {
             AgentMessage::NetworkProbeResults { results } => assert!(results.is_empty()),
             _ => panic!("Wrong variant"),
         }
+    }
+
+    #[test]
+    fn test_file_list_round_trip() {
+        let msg = ServerMessage::FileList {
+            msg_id: "m1".into(),
+            path: "/home".into(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("file_list"));
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ServerMessage::FileList { msg_id, path } => {
+                assert_eq!(msg_id, "m1");
+                assert_eq!(path, "/home");
+            }
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_file_list_result_round_trip() {
+        use crate::types::{FileEntry, FileType};
+        let entry = FileEntry {
+            name: "test.txt".into(),
+            path: "/home/test.txt".into(),
+            file_type: FileType::File,
+            size: 1024,
+            modified: 1710000000,
+            permissions: Some("rw-r--r--".into()),
+            owner: Some("root".into()),
+            group: Some("root".into()),
+        };
+        let msg = AgentMessage::FileListResult {
+            msg_id: "m1".into(),
+            path: "/home".into(),
+            entries: vec![entry],
+            error: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::FileListResult { entries, .. } => {
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0].name, "test.txt");
+            }
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_file_download_chunk_round_trip() {
+        let msg = AgentMessage::FileDownloadChunk {
+            transfer_id: "t1".into(),
+            offset: 0,
+            data: "aGVsbG8=".into(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::FileDownloadChunk { transfer_id, offset, data } => {
+                assert_eq!(transfer_id, "t1");
+                assert_eq!(offset, 0);
+                assert_eq!(data, "aGVsbG8=");
+            }
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_file_stat_result_round_trip() {
+        use crate::types::{FileEntry, FileType};
+        let msg = AgentMessage::FileStatResult {
+            msg_id: "m1".into(),
+            entry: Some(FileEntry {
+                name: "test.txt".into(),
+                path: "/home/test.txt".into(),
+                file_type: FileType::File,
+                size: 1024,
+                modified: 1710000000,
+                permissions: None,
+                owner: None,
+                group: None,
+            }),
+            error: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::FileStatResult { entry, error, .. } => {
+                assert!(entry.is_some());
+                assert!(error.is_none());
+            }
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_file_read_write_round_trip() {
+        // Test FileRead command
+        let cmd = ServerMessage::FileRead {
+            msg_id: "m1".into(),
+            path: "/etc/config.yaml".into(),
+            max_size: 384 * 1024,
+        };
+        let json = serde_json::to_string(&cmd).unwrap();
+        assert!(json.contains("file_read"));
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ServerMessage::FileRead { path, max_size, .. } => {
+                assert_eq!(path, "/etc/config.yaml");
+                assert_eq!(max_size, 384 * 1024);
+            }
+            _ => panic!("Wrong variant"),
+        }
+
+        // Test FileWrite command
+        let cmd = ServerMessage::FileWrite {
+            msg_id: "m2".into(),
+            path: "/home/config.yaml".into(),
+            content: "aGVsbG8=".into(),
+        };
+        let json = serde_json::to_string(&cmd).unwrap();
+        assert!(json.contains("file_write"));
+        let _: ServerMessage = serde_json::from_str(&json).unwrap();
+
+        // Test FileReadResult
+        let result = AgentMessage::FileReadResult {
+            msg_id: "m1".into(),
+            content: Some("base64data".into()),
+            error: None,
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::FileReadResult { content, error, .. } => {
+                assert_eq!(content, Some("base64data".into()));
+                assert!(error.is_none());
+            }
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_file_op_result_round_trip() {
+        let msg = AgentMessage::FileOpResult {
+            msg_id: "m1".into(),
+            success: true,
+            error: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::FileOpResult { success, error, .. } => {
+                assert!(success);
+                assert!(error.is_none());
+            }
+            _ => panic!("Wrong variant"),
+        }
+
+        // Test failure case
+        let msg = AgentMessage::FileOpResult {
+            msg_id: "m2".into(),
+            success: false,
+            error: Some("Permission denied".into()),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::FileOpResult { success, error, .. } => {
+                assert!(!success);
+                assert_eq!(error.unwrap(), "Permission denied");
+            }
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_file_download_ready_round_trip() {
+        let msg = AgentMessage::FileDownloadReady {
+            transfer_id: "t1".into(),
+            size: 1073741824, // 1GB
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::FileDownloadReady { transfer_id, size } => {
+                assert_eq!(transfer_id, "t1");
+                assert_eq!(size, 1073741824);
+            }
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_file_upload_messages_round_trip() {
+        // FileUploadStart
+        let cmd = ServerMessage::FileUploadStart {
+            transfer_id: "t1".into(),
+            path: "/home/backup.tar.gz".into(),
+            size: 500_000_000,
+        };
+        let json = serde_json::to_string(&cmd).unwrap();
+        assert!(json.contains("file_upload_start"));
+        let _: ServerMessage = serde_json::from_str(&json).unwrap();
+
+        // FileUploadChunk
+        let cmd = ServerMessage::FileUploadChunk {
+            transfer_id: "t1".into(),
+            offset: 384 * 1024,
+            data: "base64chunk".into(),
+        };
+        let json = serde_json::to_string(&cmd).unwrap();
+        let _: ServerMessage = serde_json::from_str(&json).unwrap();
+
+        // FileUploadAck
+        let ack = AgentMessage::FileUploadAck {
+            transfer_id: "t1".into(),
+            offset: 384 * 1024,
+        };
+        let json = serde_json::to_string(&ack).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::FileUploadAck { offset, .. } => assert_eq!(offset, 384 * 1024),
+            _ => panic!("Wrong variant"),
+        }
+
+        // FileUploadComplete
+        let complete = AgentMessage::FileUploadComplete {
+            transfer_id: "t1".into(),
+        };
+        let json = serde_json::to_string(&complete).unwrap();
+        assert!(json.contains("file_upload_complete"));
+        let _: AgentMessage = serde_json::from_str(&json).unwrap();
+
+        // FileUploadError
+        let err = AgentMessage::FileUploadError {
+            transfer_id: "t1".into(),
+            error: "Disk full".into(),
+        };
+        let json = serde_json::to_string(&err).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::FileUploadError { error, .. } => assert_eq!(error, "Disk full"),
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_file_delete_mkdir_move_round_trip() {
+        let cmd = ServerMessage::FileDelete {
+            msg_id: "m1".into(),
+            path: "/home/old".into(),
+            recursive: true,
+        };
+        let json = serde_json::to_string(&cmd).unwrap();
+        assert!(json.contains("file_delete"));
+        assert!(json.contains("\"recursive\":true"));
+        let _: ServerMessage = serde_json::from_str(&json).unwrap();
+
+        let cmd = ServerMessage::FileMkdir {
+            msg_id: "m2".into(),
+            path: "/home/new_dir".into(),
+        };
+        let json = serde_json::to_string(&cmd).unwrap();
+        assert!(json.contains("file_mkdir"));
+        let _: ServerMessage = serde_json::from_str(&json).unwrap();
+
+        let cmd = ServerMessage::FileMove {
+            msg_id: "m3".into(),
+            from: "/home/a.txt".into(),
+            to: "/home/b.txt".into(),
+        };
+        let json = serde_json::to_string(&cmd).unwrap();
+        assert!(json.contains("file_move"));
+        let _: ServerMessage = serde_json::from_str(&json).unwrap();
     }
 
     #[test]

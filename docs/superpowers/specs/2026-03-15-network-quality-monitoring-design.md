@@ -9,11 +9,11 @@ Add a network quality monitoring subsystem to ServerBee. Each VPS can probe mult
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Integration strategy | Independent subsystem + shared probe utils | Clean module boundaries, no impact on existing ping system, reuse ICMP/TCP/HTTP probe logic |
-| ISP target organization | Provider x City | Most common in VPS monitoring tools (Nezha-style), users care about specific ISP + region combinations |
+| ISP target organization | Provider x City | Most common in VPS monitoring tools, users care about specific ISP + region combinations |
 | Probing method | Agent-side batch probing | Agent sends N packets per round via `ping -c N`, computes aggregated stats locally, reports single result. Reduces WS traffic and server computation |
 | Configuration model | Two-level (global defaults + per-VPS override) | Global defaults for convenience, per-VPS override for flexibility |
 | Probe frequency | User-configurable (default 60s interval, 10 packets/round) | Different users have different real-time and accuracy needs |
-| UI layout | Card list overview + multi-line chart detail page | Overview for quick scanning, detail page inspired by Nezha-style network monitoring |
+| UI layout | Card list overview + multi-line chart detail page | Overview for quick scanning, detail page for per-target latency analysis |
 
 ## Data Model
 
@@ -365,7 +365,7 @@ Sidebar: add "Network" nav item below "Servers". Settings: add "Network Probes" 
 
 ### Detail Page (`/network/$serverId`)
 
-Inspired by the user's reference screenshot (Nezha-style):
+Layout:
 
 - **Header**: VPS name + online status badge + time range selector (realtime / 1h / 6h / 24h / 7d / 30d)
 - **VPS info bar**: IPv4, IPv6, region, country, virtualization type (from existing `servers` table)

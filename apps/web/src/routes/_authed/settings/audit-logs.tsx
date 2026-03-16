@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { type ColumnDef, getCoreRowModel, useReactTable } from '@tanstack/react-table'
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DataTable, DataTablePagination } from '@/components/ui/data-table'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -9,6 +9,9 @@ import { api } from '@/lib/api-client'
 import type { AuditListResponse, AuditLogEntry } from '@/lib/api-schema'
 
 export const Route = createFileRoute('/_authed/settings/audit-logs')({
+  validateSearch: (search: Record<string, unknown>) => ({
+    page: Number(search.page) || 0
+  }),
   component: AuditLogsPage
 })
 
@@ -16,7 +19,8 @@ const PAGE_SIZE = 25
 
 function AuditLogsPage() {
   const { t } = useTranslation('settings')
-  const [page, setPage] = useState(0)
+  const { page } = Route.useSearch()
+  const navigate = Route.useNavigate()
 
   const columns = useMemo<ColumnDef<AuditLogEntry>[]>(
     () => [
@@ -86,7 +90,7 @@ function AuditLogsPage() {
     },
     onPaginationChange: (updater) => {
       const newState = typeof updater === 'function' ? updater({ pageIndex: page, pageSize: PAGE_SIZE }) : updater
-      setPage(newState.pageIndex)
+      navigate({ search: { page: newState.pageIndex } })
     }
   })
 

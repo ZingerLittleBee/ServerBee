@@ -1,7 +1,7 @@
 {
-  "loading": "加载中...",
+  "loading": "加载中\u2026",
   "save": "保存",
-  "saving": "保存中...",
+  "saving": "保存中\u2026",
   "cancel": "取消",
   "create": "创建",
   "delete": "删除",
@@ -28,5 +28,10 @@
   "nav_api_keys": "API 密钥",
   "nav_security": "安全",
   "nav_audit_logs": "审计日志",
-  "nav_settings": "设置"
+  "nav_settings": "设置",
+  "search": "搜索",
+  "search_placeholder_ellipsis": "搜索\u2026",
+  "confirm_title": "确认",
+  "confirm_delete_message": "此操作无法撤销，确定要继续吗？",
+  "main_navigation": "主导航"
 }

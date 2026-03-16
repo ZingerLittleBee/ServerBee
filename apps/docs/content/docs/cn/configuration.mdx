@@ -72,6 +72,10 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 | `SERVERBEE_COLLECTOR__INTERVAL` | `3` | 指标采集和上报间隔（秒） |
 | `SERVERBEE_COLLECTOR__ENABLE_GPU` | `false` | 启用 NVIDIA GPU 监控（需要 nvml 驱动） |
 | `SERVERBEE_COLLECTOR__ENABLE_TEMPERATURE` | `true` | 启用 CPU 温度监控 |
+| `SERVERBEE_FILE__ENABLED` | `false` | 启用文件管理功能 |
+| `SERVERBEE_FILE__ROOT_PATHS` | `[]` | 允许浏览的根路径（逗号分隔，如 `/home,/var/log`），留空则拒绝所有文件操作 |
+| `SERVERBEE_FILE__MAX_FILE_SIZE` | `1073741824` | 文件读取/下载的最大字节数（默认 1GB） |
+| `SERVERBEE_FILE__DENY_PATTERNS` | `*.key,*.pem,...` | 拒绝访问的文件名 glob 模式 |
 | `SERVERBEE_LOG__LEVEL` | `info` | 日志级别：`trace`/`debug`/`info`/`warn`/`error` |
 | `SERVERBEE_LOG__FILE` | `""` | 日志文件路径，留空输出到 stdout |
 
@@ -236,6 +240,25 @@ enable_gpu = false
 # 默认: true
 enable_temperature = true
 
+# --- 文件管理 ---
+[file]
+# 是否启用文件管理功能
+# 需要同时在 Server 端为该 Agent 启用 CAP_FILE 能力
+# 默认: false
+enabled = false
+
+# 允许浏览的根路径列表，留空则拒绝所有文件操作
+# 默认: []
+root_paths = []
+
+# 文件读取/下载的最大字节数
+# 默认: 1073741824 (1GB)
+max_file_size = 1073741824
+
+# 拒绝访问的文件名 glob 模式
+# 默认: ["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]
+deny_patterns = ["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]
+
 # --- 日志配置 ---
 [log]
 # 日志级别: trace / debug / info / warn / error
@@ -280,6 +303,8 @@ file = "/var/log/serverbee-agent.log"
 | 采集间隔 | `3` 秒 | 可被 Server 动态调整 |
 | GPU 采集 | 关闭 | 需要 NVIDIA 驱动 |
 | 温度采集 | 开启 | 默认采集传感器温度 |
+| 文件管理 | 关闭 | 需在 Agent 和 Server 同时启用 |
+| 文件大小限制 | 1GB | 读取/下载的最大文件体积 |
 | 日志级别 | `info` | 推荐生产环境使用 |
 
 ### 内部默认值（不可配置）

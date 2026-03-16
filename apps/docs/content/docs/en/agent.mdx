@@ -13,6 +13,7 @@ The ServerBee agent is a lightweight Rust binary that runs on each server you wa
 - Executes ping probes (ICMP, TCP, HTTP) assigned by the server
 - Provides a PTY shell for web terminal access
 - Runs remote commands dispatched from the server
+- Manages remote file operations (browse, read, write, upload, download) with path sandbox security
 - Supports automatic self-upgrade when the server pushes new versions
 - Reconnects automatically with exponential backoff if the connection drops
 

@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-serverbee-common.workspace = true
+serverbee-common = { workspace = true, features = ["utoipa"] }
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
@@ -15,7 +15,7 @@ uuid.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
 
-axum = { version = "0.8", features = ["ws", "macros"] }
+axum = { version = "0.8", features = ["ws", "macros", "multipart"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
 sea-orm = { version = "1", features = ["sqlx-sqlite", "runtime-tokio-rustls", "macros"] }
@@ -38,6 +38,7 @@ maxminddb = "0.24"
 totp-rs = { version = "5", features = ["qr", "gen_secret"] }
 oauth2 = "4"
 toml = "0.8"
+tokio-util = { version = "0.7", features = ["io"] }
 
 [dev-dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "cookies"] }

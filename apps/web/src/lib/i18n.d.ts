@@ -1,5 +1,6 @@
 import type enCommon from '@/locales/en/common.json'
 import type enDashboard from '@/locales/en/dashboard.json'
+import type enFile from '@/locales/en/file.json'
 import type enLogin from '@/locales/en/login.json'
 import type enServers from '@/locales/en/servers.json'
 import type enSettings from '@/locales/en/settings.json'
@@ -12,6 +13,7 @@ declare module 'i18next' {
     resources: {
       common: typeof enCommon
       dashboard: typeof enDashboard
+      file: typeof enFile
       servers: typeof enServers
       terminal: typeof enTerminal
       settings: typeof enSettings

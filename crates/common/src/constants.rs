@@ -10,6 +10,9 @@ pub const OFFLINE_THRESHOLD_SECS: u64 = 30;
 pub const MAX_WS_MESSAGE_SIZE: usize = 1024 * 1024;
 pub const MAX_TASK_OUTPUT_SIZE: usize = 512 * 1024;
 pub const MAX_BINARY_FRAME_SIZE: usize = 64 * 1024;
+pub const MAX_FILE_CHUNK_SIZE: usize = 384 * 1024;
+pub const MAX_FILE_CONCURRENT_TRANSFERS: usize = 3;
+pub const FILE_TRANSFER_TIMEOUT_SECS: u64 = 1800;
 pub const MAX_COMMAND_SIZE: usize = 8 * 1024;
 pub const MAX_CONCURRENT_COMMANDS: usize = 5;
 pub const MAX_TERMINAL_SESSIONS: usize = 3;
@@ -37,9 +40,10 @@ pub const CAP_UPGRADE: u32 = 1 << 2; // 4
 pub const CAP_PING_ICMP: u32 = 1 << 3; // 8
 pub const CAP_PING_TCP: u32 = 1 << 4; // 16
 pub const CAP_PING_HTTP: u32 = 1 << 5; // 32
+pub const CAP_FILE: u32 = 1 << 6; // 64
 
 pub const CAP_DEFAULT: u32 = CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP; // 56
-pub const CAP_VALID_MASK: u32 = 0b0011_1111; // 63
+pub const CAP_VALID_MASK: u32 = 0b0111_1111; // 127
 
 #[derive(Debug)]
 pub struct CapabilityMeta {
@@ -57,6 +61,7 @@ pub const ALL_CAPABILITIES: &[CapabilityMeta] = &[
     CapabilityMeta { bit: CAP_PING_ICMP, key: "ping_icmp", display_name: "ICMP Ping", default_enabled: true, risk_level: "low" },
     CapabilityMeta { bit: CAP_PING_TCP, key: "ping_tcp", display_name: "TCP Probe", default_enabled: true, risk_level: "low" },
     CapabilityMeta { bit: CAP_PING_HTTP, key: "ping_http", display_name: "HTTP Probe", default_enabled: true, risk_level: "low" },
+    CapabilityMeta { bit: CAP_FILE, key: "file", display_name: "File Manager", default_enabled: false, risk_level: "high" },
 ];
 
 /// Check if a specific capability bit is set.
@@ -105,11 +110,19 @@ mod tests {
 
     #[test]
     fn test_valid_mask() {
-        assert_eq!(CAP_VALID_MASK, 63);
+        assert_eq!(CAP_VALID_MASK, 127);
         for meta in ALL_CAPABILITIES {
             assert!(meta.bit & CAP_VALID_MASK == meta.bit);
         }
-        assert!(64 & !CAP_VALID_MASK != 0);
+        assert!(128 & !CAP_VALID_MASK != 0);
+    }
+
+    #[test]
+    fn test_cap_file_bit() {
+        assert_eq!(CAP_FILE, 64);
+        assert!(has_capability(CAP_FILE, CAP_FILE));
+        assert!(!has_capability(CAP_DEFAULT, CAP_FILE));
+        assert!(CAP_FILE & CAP_VALID_MASK == CAP_FILE);
     }
 
     #[test]

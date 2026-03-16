@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeft, CreditCard, Pencil, Terminal as TerminalIcon } from 'lucide-react'
+import { ArrowLeft, CreditCard, FileText, Pencil, Terminal as TerminalIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -16,11 +16,14 @@ import { useRealtimeMetrics } from '@/hooks/use-realtime-metrics'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerResponse } from '@/lib/api-schema'
-import { CAPABILITIES } from '@/lib/capabilities'
+import { CAP_FILE, CAPABILITIES, hasCap } from '@/lib/capabilities'
 import { cn, countryCodeToFlag, formatBytes } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/servers/$id')({
-  component: ServerDetailPage
+  component: ServerDetailPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    range: (search.range as string) || 'realtime'
+  })
 })
 
 interface TimeRange {
@@ -164,10 +167,13 @@ function CapabilitiesSection({ server }: { server: ServerWithCaps }) {
 function ServerDetailPage() {
   const { t } = useTranslation('servers')
   const { id } = Route.useParams()
-  const [selectedRange, setSelectedRange] = useState(0)
+  const navigate = Route.useNavigate()
+  const { range: rangeParam } = Route.useSearch()
   const [editOpen, setEditOpen] = useState(false)
 
-  const range = TIME_RANGES[selectedRange]
+  const selectedRange = TIME_RANGES.findIndex((tr) => tr.interval === rangeParam)
+  const rangeIndex = selectedRange >= 0 ? selectedRange : 0
+  const range = TIME_RANGES[rangeIndex]
   const isRealtime = range.interval === 'realtime'
 
   const { data: server, isLoading: serverLoading } = useServer(id)
@@ -277,6 +283,7 @@ function ServerDetailPage() {
   const flag = countryCodeToFlag(server.country_code)
   // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
   const terminalEnabled = serverWithCaps.capabilities == null || (serverWithCaps.capabilities & 1) !== 0
+  const fileEnabled = hasCap(serverWithCaps.capabilities ?? 0, CAP_FILE)
 
   // Network cumulative traffic from live data
   const liveNetIn = liveData?.net_in_transfer ?? 0
@@ -289,7 +296,7 @@ function ServerDetailPage() {
           className="mb-3 inline-flex items-center gap-1 text-muted-foreground text-sm hover:text-foreground"
           to="/"
         >
-          <ArrowLeft className="size-4" />
+          <ArrowLeft aria-hidden="true" className="size-4" />
           {t('detail_back')}
         </Link>
 
@@ -304,14 +311,22 @@ function ServerDetailPage() {
           </div>
           <div className="flex gap-2">
             <Button onClick={() => setEditOpen(true)} size="sm" variant="outline">
-              <Pencil className="mr-1 size-4" />
+              <Pencil aria-hidden="true" className="mr-1 size-4" />
               {t('detail_edit')}
             </Button>
             {isOnline && terminalEnabled && (
               <Link params={{ serverId: id }} to="/terminal/$serverId">
                 <Button size="sm" variant="outline">
-                  <TerminalIcon className="mr-1 size-4" />
+                  <TerminalIcon aria-hidden="true" className="mr-1 size-4" />
                   {t('detail_terminal')}
+                </Button>
+              </Link>
+            )}
+            {isOnline && fileEnabled && (
+              <Link params={{ serverId: id }} search={{ path: '/' }} to="/files/$serverId">
+                <Button size="sm" variant="outline">
+                  <FileText aria-hidden="true" className="mr-1 size-4" />
+                  {t('detail_files')}
                 </Button>
               </Link>
             )}
@@ -339,11 +354,11 @@ function ServerDetailPage() {
       <div className="mb-4 flex gap-1">
         {TIME_RANGES.map((tr, i) => (
           <Button
-            className={cn(selectedRange === i && 'bg-primary text-primary-foreground')}
+            className={cn(rangeIndex === i && 'bg-primary text-primary-foreground')}
             key={tr.label}
-            onClick={() => setSelectedRange(i)}
+            onClick={() => navigate({ search: (prev) => ({ ...prev, range: tr.interval }) })}
             size="sm"
-            variant={selectedRange === i ? 'default' : 'outline'}
+            variant={rangeIndex === i ? 'default' : 'outline'}
           >
             {t(tr.label)}
           </Button>
@@ -465,7 +480,7 @@ function BillingInfoBar({
 
   return (
     <div className="mb-6 flex flex-wrap items-center gap-4 rounded-lg border bg-card p-3 text-sm">
-      <CreditCard className="size-4 text-muted-foreground" />
+      <CreditCard aria-hidden="true" className="size-4 text-muted-foreground" />
       {server.price != null && (
         <span>
           {formatCurrency(server.price, server.currency ?? 'USD')}

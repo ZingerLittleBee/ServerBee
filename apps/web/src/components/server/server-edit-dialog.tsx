@@ -102,7 +102,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
       }}
       open={open}
     >
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg" style={{ overscrollBehavior: 'contain' }}>
         <DialogHeader>
           <DialogTitle>{t('edit_title')}</DialogTitle>
         </DialogHeader>
@@ -114,11 +114,21 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
               {t('edit_basic')}
             </legend>
             <Field label={t('edit_name')}>
-              <Input onChange={(e) => setName(e.target.value)} required type="text" value={name} />
+              <Input
+                aria-label={t('edit_name')}
+                name="name"
+                onChange={(e) => setName(e.target.value)}
+                required
+                type="text"
+                value={name}
+              />
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('edit_weight')}>
                 <Input
+                  aria-label={t('edit_weight')}
+                  autoComplete="off"
+                  name="weight"
                   onChange={(e) => setWeight(Number.parseInt(e.target.value, 10) || 0)}
                   type="number"
                   value={weight}
@@ -152,6 +162,8 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
             </Field>
             <Field label={t('edit_remark')}>
               <Input
+                aria-label={t('edit_remark')}
+                name="remark"
                 onChange={(e) => setRemark(e.target.value)}
                 placeholder={t('edit_remark_placeholder')}
                 type="text"
@@ -160,6 +172,8 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
             </Field>
             <Field label={t('edit_public_remark')}>
               <Input
+                aria-label={t('edit_public_remark')}
+                name="public_remark"
                 onChange={(e) => setPublicRemark(e.target.value)}
                 placeholder={t('edit_public_remark_placeholder')}
                 type="text"
@@ -176,7 +190,10 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
             <div className="grid grid-cols-3 gap-3">
               <Field label={t('edit_price')}>
                 <Input
+                  aria-label={t('edit_price')}
+                  autoComplete="off"
                   min="0"
+                  name="price"
                   onChange={(e) => setPrice(e.target.value)}
                   placeholder="0.00"
                   step="0.01"
@@ -216,12 +233,21 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
               </Field>
             </div>
             <Field label={t('edit_expiration')}>
-              <Input onChange={(e) => setExpiredAt(e.target.value)} type="date" value={expiredAt} />
+              <Input
+                aria-label={t('edit_expiration')}
+                name="expiration"
+                onChange={(e) => setExpiredAt(e.target.value)}
+                type="date"
+                value={expiredAt}
+              />
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('edit_traffic_limit')}>
                 <Input
+                  aria-label={t('edit_traffic_limit')}
+                  autoComplete="off"
                   min="0"
+                  name="traffic_limit"
                   onChange={(e) => setTrafficLimit(e.target.value)}
                   placeholder={t('edit_unlimited')}
                   step="0.1"
