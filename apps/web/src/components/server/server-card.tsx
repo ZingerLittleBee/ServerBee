@@ -54,7 +54,7 @@ export function ServerCard({ server }: ServerCardProps) {
     <Link
       className="group block rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-accent/50"
       params={{ id: server.id }}
-      search={{}}
+      search={{ range: 'realtime' }}
       to="/servers/$id"
     >
       <div className="mb-3 flex items-center justify-between">

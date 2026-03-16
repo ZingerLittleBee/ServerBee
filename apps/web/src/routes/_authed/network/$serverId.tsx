@@ -293,7 +293,7 @@ function NetworkDetailPage() {
       <div className="mb-6">
         <Link
           className="mb-3 inline-flex items-center gap-1 text-muted-foreground text-sm hover:text-foreground"
-          search={{}}
+          search={{ q: '' }}
           to="/network"
         >
           <ArrowLeft aria-hidden="true" className="size-4" />

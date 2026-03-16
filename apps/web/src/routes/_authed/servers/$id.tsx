@@ -323,7 +323,7 @@ function ServerDetailPage() {
               </Link>
             )}
             {isOnline && fileEnabled && (
-              <Link params={{ serverId: id }} search={{}} to="/files/$serverId">
+              <Link params={{ serverId: id }} search={{ path: '/' }} to="/files/$serverId">
                 <Button size="sm" variant="outline">
                   <FileText aria-hidden="true" className="mr-1 size-4" />
                   {t('detail_files')}

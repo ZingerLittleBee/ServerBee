@@ -61,7 +61,7 @@ function ServerNetworkCard({ summary }: { summary: NetworkServerSummary }) {
   const availability = formatAvailability(summary.targets)
 
   return (
-    <Link params={{ serverId: summary.server_id }} search={{}} to="/network/$serverId">
+    <Link params={{ serverId: summary.server_id }} search={{ range: '1h' }} to="/network/$serverId">
       <Card
         className={cn(
           'h-full cursor-pointer transition-colors hover:border-primary/50',
