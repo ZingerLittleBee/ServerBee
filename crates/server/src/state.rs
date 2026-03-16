@@ -7,6 +7,7 @@ use tokio::sync::broadcast;
 
 use crate::config::AppConfig;
 use crate::service::agent_manager::AgentManager;
+use crate::service::file_transfer::FileTransferManager;
 use crate::service::geoip::GeoIpService;
 
 /// Pending TOTP setup data, keyed by user_id.
@@ -35,6 +36,8 @@ pub struct AppState {
     pub login_rate_limit: DashMap<String, RateLimitEntry>,
     /// Rate limiter for agent registration attempts, keyed by IP.
     pub register_rate_limit: DashMap<String, RateLimitEntry>,
+    /// Manages file download/upload transfers between browser and agent.
+    pub file_transfers: Arc<FileTransferManager>,
 }
 
 impl AppState {
@@ -92,6 +95,9 @@ impl AppState {
         } else {
             None
         };
+        let file_transfers = Arc::new(FileTransferManager::new(
+            std::env::temp_dir().join("serverbee-transfers"),
+        ));
         Arc::new(Self {
             db,
             agent_manager,
@@ -102,6 +108,7 @@ impl AppState {
             pending_totp: DashMap::new(),
             login_rate_limit: DashMap::new(),
             register_rate_limit: DashMap::new(),
+            file_transfers,
         })
     }
 }
