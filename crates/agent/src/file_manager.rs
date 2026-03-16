@@ -59,7 +59,6 @@ struct UploadState {
 }
 
 /// Tracks that a download is active (used for cancellation).
-#[allow(dead_code)]
 struct DownloadState {
     handle: tokio::task::JoinHandle<()>,
 }
@@ -67,7 +66,7 @@ struct DownloadState {
 /// Manages file operations on the agent, enforcing path validation and deny patterns.
 pub struct FileManager {
     config: FileConfig,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // stored for future per-method capability checks
     capabilities: Arc<AtomicU32>,
     active_downloads: DashMap<String, DownloadState>,
     active_uploads: DashMap<String, UploadState>,
@@ -350,7 +349,6 @@ impl FileManager {
     }
 
     /// Cancel a single download transfer.
-    #[allow(dead_code)]
     pub fn cancel_download(&self, transfer_id: &str) {
         if let Some((_, state)) = self.active_downloads.remove(transfer_id) {
             state.handle.abort();
@@ -359,7 +357,6 @@ impl FileManager {
     }
 
     /// Cancel all active transfers (downloads and uploads).
-    #[allow(dead_code)]
     pub fn cancel_all_transfers(&self) {
         for entry in self.active_downloads.iter() {
             entry.value().handle.abort();
