@@ -70,7 +70,7 @@ function TerminalPage() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b px-4 py-2">
-        <Link params={{ id: serverId }} to="/servers/$id">
+        <Link params={{ id: serverId }} search={{}} to="/servers/$id">
           <Button size="sm" variant="ghost">
             <ArrowLeft className="size-4" />
             {t('back')}
