@@ -142,6 +142,15 @@ fn extract_client_ip(headers: &HeaderMap) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
+/// Map agent-side error messages to the appropriate HTTP error type.
+fn agent_error(msg: String) -> AppError {
+    if msg.contains("disabled") || msg.contains("capability") {
+        AppError::Forbidden(msg)
+    } else {
+        AppError::BadRequest(msg)
+    }
+}
+
 /// Validate that the server exists, has CAP_FILE capability, and is online.
 /// Returns the server model on success.
 async fn validate_file_access(
@@ -206,7 +215,7 @@ async fn list_files(
             entries, error, ..
         })) => {
             if let Some(e) = error {
-                return Err(AppError::BadRequest(e));
+                return Err(agent_error(e));
             }
             ok(ListFilesResponse { entries })
         }
@@ -257,7 +266,7 @@ async fn stat_file(
     match tokio::time::timeout(Duration::from_secs(30), rx).await {
         Ok(Ok(AgentMessage::FileStatResult { entry, error, .. })) => {
             if let Some(e) = error {
-                return Err(AppError::BadRequest(e));
+                return Err(agent_error(e));
             }
             let entry = entry.ok_or(AppError::Internal("No entry returned".into()))?;
             ok(StatResponse { entry })
@@ -312,7 +321,7 @@ async fn read_file(
             content, error, ..
         })) => {
             if let Some(e) = error {
-                return Err(AppError::BadRequest(e));
+                return Err(agent_error(e));
             }
             let content = content.unwrap_or_default();
             ok(ReadResponse { content })
@@ -465,7 +474,7 @@ async fn write_file(
             success, error, ..
         })) => {
             if let Some(e) = error {
-                return Err(AppError::BadRequest(e));
+                return Err(agent_error(e));
             }
             ok(SuccessResponse { success })
         }
@@ -539,7 +548,7 @@ async fn delete_file(
             success, error, ..
         })) => {
             if let Some(e) = error {
-                return Err(AppError::BadRequest(e));
+                return Err(agent_error(e));
             }
             ok(SuccessResponse { success })
         }
@@ -612,7 +621,7 @@ async fn mkdir(
             success, error, ..
         })) => {
             if let Some(e) = error {
-                return Err(AppError::BadRequest(e));
+                return Err(agent_error(e));
             }
             ok(SuccessResponse { success })
         }
@@ -685,7 +694,7 @@ async fn move_file(
             success, error, ..
         })) => {
             if let Some(e) = error {
-                return Err(AppError::BadRequest(e));
+                return Err(agent_error(e));
             }
             ok(SuccessResponse { success })
         }
