@@ -138,6 +138,7 @@ pub struct ServerStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum FileType {
     File,
     Directory,
@@ -145,6 +146,7 @@ pub enum FileType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct FileEntry {
     pub name: String,
     pub path: String,
