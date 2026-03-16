@@ -8,7 +8,7 @@ ServerBee supports per-agent capability toggles that let administrators control 
 
 ## Capability List
 
-ServerBee defines 6 capability bits, divided into two risk levels:
+ServerBee defines 7 capability bits, divided into two risk levels:
 
 ### High Risk (Disabled by Default)
 
@@ -17,9 +17,14 @@ ServerBee defines 6 capability bits, divided into two risk levels:
 | **Web Terminal** | `CAP_TERMINAL` (1) | Allow opening a remote terminal via browser |
 | **Remote Exec** | `CAP_EXEC` (2) | Allow remote command execution |
 | **Auto Upgrade** | `CAP_UPGRADE` (4) | Allow remote binary upgrades |
+| **File Manager** | `CAP_FILE` (64) | Allow remote file browsing, editing, upload/download |
 
 <Callout type="warn">
-These capabilities involve executing arbitrary code or replacing binaries on the target server. They are disabled by default. Only enable them on trusted servers.
+These capabilities involve executing arbitrary code, replacing binaries, or accessing the filesystem on the target server. They are disabled by default. Only enable them on trusted servers.
+</Callout>
+
+<Callout type="info">
+File Manager requires additional agent-side configuration (`root_paths`, `deny_patterns`) for path sandbox security. See the [Agent Setup](/docs/en/agent) and [Configuration](/docs/en/configuration) pages for details.
 </Callout>
 
 ### Low Risk (Enabled by Default)
@@ -69,7 +74,8 @@ curl -X PUT https://your-server/api/servers/batch-capabilities \
 
 The capabilities value is a bitwise OR of individual capability bits. Examples:
 - `56` = ICMP + TCP + HTTP (default)
-- `63` = all capabilities enabled
+- `127` = all capabilities enabled
+- `120` = ICMP + TCP + HTTP + File Manager
 - `0` = all capabilities disabled
 
 ## Defense in Depth
@@ -106,6 +112,7 @@ When an administrator changes capabilities:
 - **Settings → Capabilities**: Batch management page with search and multi-select
 - **Tasks page**: Servers without `CAP_EXEC` are greyed out, results marked as "skipped"
 - **Terminal button**: Hidden for servers without `CAP_TERMINAL`
+- **Files button**: Hidden for servers without `CAP_FILE`; clicking opens the file manager at `/files/{serverId}`
 
 <Cards>
   <Card title="Web Terminal" href="/docs/en/terminal" />
