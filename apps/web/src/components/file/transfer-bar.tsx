@@ -1,4 +1,5 @@
 import { Loader2, X } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useCancelTransferMutation, useFileTransfers } from '@/hooks/use-file-api'
@@ -24,6 +25,29 @@ export function TransferBar() {
   const { t } = useTranslation('file')
   const { data: transfers } = useFileTransfers()
   const cancelMutation = useCancelTransferMutation()
+  const downloadedRef = useRef<Set<string>>(new Set())
+
+  // Auto-trigger browser download when a download transfer becomes ready
+  useEffect(() => {
+    if (!transfers) {
+      return
+    }
+    for (const transfer of transfers) {
+      if (
+        transfer.direction === 'download' &&
+        transfer.status === 'ready' &&
+        !downloadedRef.current.has(transfer.transfer_id)
+      ) {
+        downloadedRef.current.add(transfer.transfer_id)
+        const a = document.createElement('a')
+        a.href = `/api/files/download/${transfer.transfer_id}`
+        a.download = transfer.file_path.split('/').pop() ?? 'download'
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+      }
+    }
+  }, [transfers])
 
   if (!transfers || transfers.length === 0) {
     return null
