@@ -14,10 +14,11 @@ const MAX_PREVIEW_SIZE = 384 * 1024 // 384 KB — must stay within server's MAX_
 
 interface FilePreviewProps {
   entry: FileEntry | null
+  readOnly?: boolean
   serverId: string
 }
 
-export function FilePreview({ serverId, entry }: FilePreviewProps) {
+export function FilePreview({ serverId, entry, readOnly = false }: FilePreviewProps) {
   const { t } = useTranslation('file')
 
   if (!entry) {
@@ -39,7 +40,7 @@ export function FilePreview({ serverId, entry }: FilePreviewProps) {
   const isImage = isImageFile(entry.name)
 
   if (canPreviewText) {
-    return <TextPreview entry={entry} serverId={serverId} />
+    return <TextPreview entry={entry} key={entry.path} readOnly={readOnly} serverId={serverId} />
   }
 
   if (isImage || entry.size >= MAX_PREVIEW_SIZE) {
@@ -49,9 +50,17 @@ export function FilePreview({ serverId, entry }: FilePreviewProps) {
   return <FileInfoPanel entry={entry} serverId={serverId} />
 }
 
-function TextPreview({ serverId, entry }: { entry: FileEntry; serverId: string }) {
+function TextPreview({
+  serverId,
+  entry,
+  readOnly = false
+}: {
+  entry: FileEntry
+  readOnly?: boolean
+  serverId: string
+}) {
   const { t } = useTranslation('file')
-  const { data: content, isLoading } = useFileRead(serverId, entry.path, true)
+  const { data: content, isLoading, isError, error } = useFileRead(serverId, entry.path, true)
   const writeMutation = useFileWriteMutation(serverId)
   const editorRef = useRef<import('@/components/file/file-editor').MonacoEditorInstance | null>(null)
   const loadedModifiedRef = useRef<number>(entry.modified)
@@ -108,28 +117,47 @@ function TextPreview({ serverId, entry }: { entry: FileEntry; serverId: string }
     )
   }
 
+  if (isError) {
+    return (
+      <div className="flex h-full items-center justify-center text-muted-foreground">
+        <div className="text-center">
+          <FileText className="mx-auto mb-2 size-10 opacity-30" />
+          <p className="text-destructive text-sm">{error instanceof Error ? error.message : t('read_error')}</p>
+        </div>
+      </div>
+    )
+  }
+
   const language = extensionToLanguage(entry.name)
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b px-3 py-1.5">
         <span className="truncate text-sm">{entry.name}</span>
-        <Button
-          disabled={writeMutation.isPending}
-          onClick={() => {
-            if (editorRef.current) {
-              handleSave(editorRef.current.getValue())
-            }
-          }}
-          size="sm"
-          variant="outline"
-        >
-          <Save className="size-3.5" />
-          {writeMutation.isPending ? t('saving') : t('save')}
-        </Button>
+        {!readOnly && (
+          <Button
+            disabled={writeMutation.isPending}
+            onClick={() => {
+              if (editorRef.current) {
+                handleSave(editorRef.current.getValue())
+              }
+            }}
+            size="sm"
+            variant="outline"
+          >
+            <Save className="size-3.5" />
+            {writeMutation.isPending ? t('saving') : t('save')}
+          </Button>
+        )}
       </div>
       <div className="flex-1">
-        <FileEditor content={content ?? ''} editorRef={editorRef} language={language} onSave={handleSave} />
+        <FileEditor
+          content={content ?? ''}
+          editorRef={editorRef}
+          language={language}
+          onSave={readOnly ? undefined : handleSave}
+          readOnly={readOnly}
+        />
       </div>
       <Dialog
         onOpenChange={(open) => {

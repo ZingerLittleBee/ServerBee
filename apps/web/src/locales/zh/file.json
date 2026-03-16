@@ -43,5 +43,7 @@
   "rename_title": "重命名",
   "new_name": "新名称",
   "confirm_delete_title": "确认删除",
-  "create_folder_title": "新建文件夹"
+  "create_folder_title": "新建文件夹",
+  "read_error": "文件读取失败",
+  "load_error": "目录加载失败"
 }

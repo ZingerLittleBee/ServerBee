@@ -14,8 +14,13 @@ import { RenameDialog } from '@/components/file/rename-dialog'
 import { TransferBar } from '@/components/file/transfer-bar'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useAuth } from '@/hooks/use-auth'
 import type { FileEntry } from '@/hooks/use-file-api'
 import { useFileDeleteMutation, useFileList, useStartDownloadMutation } from '@/hooks/use-file-api'
+
+function getErrorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback
+}
 
 export const Route = createFileRoute('/_authed/files/$serverId')({
   component: FilesPage
@@ -30,6 +35,8 @@ function FilesPage() {
   const { t } = useTranslation('file')
   const { serverId } = Route.useParams()
   const queryClient = useQueryClient()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
 
   const [currentPath, setCurrentPath] = useState('/')
   const [selectedFile, setSelectedFile] = useState<FileEntry | null>(null)
@@ -39,7 +46,7 @@ function FilesPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<FileEntry | null>(null)
   const [renameEntry, setRenameEntry] = useState<FileEntry | null>(null)
 
-  const { data: entries, isLoading } = useFileList(serverId, currentPath)
+  const { data: entries, isLoading, isError, error: listError } = useFileList(serverId, currentPath)
   const deleteMutation = useFileDeleteMutation(serverId)
   const downloadMutation = useStartDownloadMutation(serverId)
 
@@ -135,14 +142,18 @@ function FilesPage() {
       <div className="flex items-center gap-2 border-b px-4 py-1.5">
         <FileBreadcrumb onNavigate={handleNavigate} path={currentPath} />
         <div className="ml-auto flex gap-1">
-          <Button onClick={() => setUploadOpen(true)} size="sm" variant="outline">
-            <Upload className="size-3.5" />
-            <span className="hidden sm:inline">{t('upload')}</span>
-          </Button>
-          <Button onClick={() => setMkdirOpen(true)} size="sm" variant="outline">
-            <FolderPlus className="size-3.5" />
-            <span className="hidden sm:inline">{t('new_folder')}</span>
-          </Button>
+          {isAdmin && (
+            <Button onClick={() => setUploadOpen(true)} size="sm" variant="outline">
+              <Upload className="size-3.5" />
+              <span className="hidden sm:inline">{t('upload')}</span>
+            </Button>
+          )}
+          {isAdmin && (
+            <Button onClick={() => setMkdirOpen(true)} size="sm" variant="outline">
+              <FolderPlus className="size-3.5" />
+              <span className="hidden sm:inline">{t('new_folder')}</span>
+            </Button>
+          )}
           <Button onClick={handleRefresh} size="icon-sm" title={t('refresh')} variant="ghost">
             <RefreshCw className="size-3.5" />
           </Button>
@@ -155,6 +166,7 @@ function FilesPage() {
         <div className="w-full min-w-0 overflow-y-auto border-r md:w-[45%]">
           <FileBrowser
             entries={entries}
+            error={isError ? getErrorMessage(listError, t('load_error')) : undefined}
             isLoading={isLoading}
             onContextMenu={handleContextMenu}
             onFileSelect={handleFileSelect}
@@ -165,7 +177,7 @@ function FilesPage() {
 
         {/* Preview/Editor panel - hidden on small screens */}
         <div className="hidden min-w-0 flex-1 md:block">
-          <FilePreview entry={selectedFile} serverId={serverId} />
+          <FilePreview entry={selectedFile} readOnly={!isAdmin} serverId={serverId} />
         </div>
       </div>
 
@@ -180,7 +192,7 @@ function FilesPage() {
             <span className="truncate text-sm">{selectedFile.name}</span>
           </div>
           <div className="flex-1">
-            <FilePreview entry={selectedFile} serverId={serverId} />
+            <FilePreview entry={selectedFile} readOnly={!isAdmin} serverId={serverId} />
           </div>
         </div>
       )}
@@ -192,6 +204,7 @@ function FilesPage() {
       {contextMenu && (
         <FileContextMenu
           entry={contextMenu.entry}
+          isAdmin={isAdmin}
           onClose={() => setContextMenu(null)}
           onCopyPath={handleCopyPath}
           onDelete={handleDelete}
@@ -212,6 +225,12 @@ function FilesPage() {
       <RenameDialog
         entry={renameEntry}
         onClose={() => setRenameEntry(null)}
+        onRenamed={(oldPath, newPath) => {
+          if (selectedFile?.path === oldPath) {
+            const newName = newPath.split('/').pop() ?? selectedFile.name
+            setSelectedFile({ ...selectedFile, path: newPath, name: newName })
+          }
+        }}
         open={renameEntry !== null}
         serverId={serverId}
       />

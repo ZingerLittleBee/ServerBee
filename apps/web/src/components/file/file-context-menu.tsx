@@ -5,6 +5,7 @@ import type { FileEntry } from '@/hooks/use-file-api'
 
 interface FileContextMenuProps {
   entry: FileEntry
+  isAdmin?: boolean
   onClose: () => void
   onCopyPath: (entry: FileEntry) => void
   onDelete: (entry: FileEntry) => void
@@ -15,6 +16,7 @@ interface FileContextMenuProps {
 
 export function FileContextMenu({
   entry,
+  isAdmin = true,
   position,
   onClose,
   onDownload,
@@ -51,9 +53,9 @@ export function FileContextMenu({
       action: () => onDownload(entry),
       show: entry.file_type !== 'Directory'
     },
-    { label: t('rename'), icon: Pencil, action: () => onRename(entry), show: true },
+    { label: t('rename'), icon: Pencil, action: () => onRename(entry), show: isAdmin },
     { label: t('copy_path'), icon: ClipboardCopy, action: () => onCopyPath(entry), show: true },
-    { label: t('delete'), icon: Trash2, action: () => onDelete(entry), show: true, destructive: true }
+    { label: t('delete'), icon: Trash2, action: () => onDelete(entry), show: isAdmin, destructive: true }
   ]
 
   return (
