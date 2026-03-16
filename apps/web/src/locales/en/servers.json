@@ -19,6 +19,7 @@
   "detail_back": "Back to Dashboard",
   "detail_edit": "Edit",
   "detail_terminal": "Terminal",
+  "detail_files": "Files",
   "detail_not_found": "Server not found",
   "detail_os": "OS:",
   "detail_cpu": "CPU:",
@@ -64,6 +65,7 @@
   "cap_ping_icmp": "ICMP Ping",
   "cap_ping_tcp": "TCP Probe",
   "cap_ping_http": "HTTP Probe",
+  "cap_file": "File Manager",
 
   "edit_title": "Edit Server",
   "edit_basic": "BASIC",
