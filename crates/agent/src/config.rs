@@ -15,6 +15,8 @@ pub struct AgentConfig {
     pub collector: CollectorConfig,
     #[serde(default)]
     pub log: LogConfig,
+    #[serde(default)]
+    pub file: FileConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -33,6 +35,44 @@ pub struct LogConfig {
     pub level: String,
     #[serde(default)]
     pub file: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct FileConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub root_paths: Vec<String>,
+    #[serde(default = "default_max_file_size")]
+    pub max_file_size: u64,
+    #[serde(default = "default_deny_patterns")]
+    pub deny_patterns: Vec<String>,
+}
+
+fn default_max_file_size() -> u64 {
+    1_073_741_824 // 1GB
+}
+
+fn default_deny_patterns() -> Vec<String> {
+    vec![
+        "*.key".into(),
+        "*.pem".into(),
+        "id_rsa*".into(),
+        ".env*".into(),
+        "shadow".into(),
+        "passwd".into(),
+    ]
+}
+
+impl Default for FileConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            root_paths: Vec::new(),
+            max_file_size: default_max_file_size(),
+            deny_patterns: default_deny_patterns(),
+        }
+    }
 }
 
 fn default_interval() -> u32 {
