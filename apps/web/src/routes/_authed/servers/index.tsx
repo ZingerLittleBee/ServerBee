@@ -94,7 +94,12 @@ function ServersListPage() {
           const s = row.original
           const flag = countryCodeToFlag(s.country_code)
           return (
-            <Link className="group/link flex items-center gap-1.5" params={{ id: s.id }} search={{}} to="/servers/$id">
+            <Link
+              className="group/link flex items-center gap-1.5"
+              params={{ id: s.id }}
+              search={{ range: 'realtime' }}
+              to="/servers/$id"
+            >
               {flag && <span className="text-xs">{flag}</span>}
               <span className="font-medium group-hover/link:underline">{s.name}</span>
             </Link>
