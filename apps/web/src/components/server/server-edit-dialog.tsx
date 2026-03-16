@@ -133,7 +133,10 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
               </Field>
             </div>
             <Field label={t('edit_group')}>
-              <Select onValueChange={(v) => setGroupId(v === '__none__' ? '' : v)} value={groupId || '__none__'}>
+              <Select
+                onValueChange={(v) => setGroupId(v === '__none__' || v === null ? '' : v)}
+                value={groupId || '__none__'}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -182,7 +185,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                 />
               </Field>
               <Field label={t('edit_currency')}>
-                <Select onValueChange={setCurrency} value={currency}>
+                <Select onValueChange={(v) => v !== null && setCurrency(v)} value={currency}>
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
@@ -197,7 +200,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
               </Field>
               <Field label={t('edit_billing_cycle')}>
                 <Select
-                  onValueChange={(v) => setBillingCycle(v === '__none__' ? '' : v)}
+                  onValueChange={(v) => setBillingCycle(v === '__none__' || v === null ? '' : v)}
                   value={billingCycle || '__none__'}
                 >
                   <SelectTrigger className="w-full">
@@ -227,7 +230,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                 />
               </Field>
               <Field label={t('edit_limit_type')}>
-                <Select onValueChange={setTrafficLimitType} value={trafficLimitType}>
+                <Select onValueChange={(v) => v !== null && setTrafficLimitType(v)} value={trafficLimitType}>
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
