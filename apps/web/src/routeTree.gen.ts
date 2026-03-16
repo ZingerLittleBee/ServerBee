@@ -29,6 +29,7 @@ import { Route as AuthedSettingsApiKeysRouteImport } from './routes/_authed/sett
 import { Route as AuthedSettingsAlertsRouteImport } from './routes/_authed/settings/alerts'
 import { Route as AuthedServersIdRouteImport } from './routes/_authed/servers/$id'
 import { Route as AuthedNetworkServerIdRouteImport } from './routes/_authed/network/$serverId'
+import { Route as AuthedFilesServerIdRouteImport } from './routes/_authed/files.$serverId'
 
 const StatusRoute = StatusRouteImport.update({
   id: '/status',
@@ -132,11 +133,17 @@ const AuthedNetworkServerIdRoute = AuthedNetworkServerIdRouteImport.update({
   path: '/network/$serverId',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedFilesServerIdRoute = AuthedFilesServerIdRouteImport.update({
+  id: '/files/$serverId',
+  path: '/files/$serverId',
+  getParentRoute: () => AuthedRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
   '/login': typeof LoginRoute
   '/status': typeof StatusRoute
+  '/files/$serverId': typeof AuthedFilesServerIdRoute
   '/network/$serverId': typeof AuthedNetworkServerIdRoute
   '/servers/$id': typeof AuthedServersIdRoute
   '/settings/alerts': typeof AuthedSettingsAlertsRoute
@@ -158,6 +165,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/status': typeof StatusRoute
   '/': typeof AuthedIndexRoute
+  '/files/$serverId': typeof AuthedFilesServerIdRoute
   '/network/$serverId': typeof AuthedNetworkServerIdRoute
   '/servers/$id': typeof AuthedServersIdRoute
   '/settings/alerts': typeof AuthedSettingsAlertsRoute
@@ -181,6 +189,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/status': typeof StatusRoute
   '/_authed/': typeof AuthedIndexRoute
+  '/_authed/files/$serverId': typeof AuthedFilesServerIdRoute
   '/_authed/network/$serverId': typeof AuthedNetworkServerIdRoute
   '/_authed/servers/$id': typeof AuthedServersIdRoute
   '/_authed/settings/alerts': typeof AuthedSettingsAlertsRoute
@@ -204,6 +213,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/status'
+    | '/files/$serverId'
     | '/network/$serverId'
     | '/servers/$id'
     | '/settings/alerts'
@@ -225,6 +235,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/status'
     | '/'
+    | '/files/$serverId'
     | '/network/$serverId'
     | '/servers/$id'
     | '/settings/alerts'
@@ -247,6 +258,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/status'
     | '/_authed/'
+    | '/_authed/files/$serverId'
     | '/_authed/network/$serverId'
     | '/_authed/servers/$id'
     | '/_authed/settings/alerts'
@@ -413,11 +425,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedNetworkServerIdRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/files/$serverId': {
+      id: '/_authed/files/$serverId'
+      path: '/files/$serverId'
+      fullPath: '/files/$serverId'
+      preLoaderRoute: typeof AuthedFilesServerIdRouteImport
+      parentRoute: typeof AuthedRoute
+    }
   }
 }
 
 interface AuthedRouteChildren {
   AuthedIndexRoute: typeof AuthedIndexRoute
+  AuthedFilesServerIdRoute: typeof AuthedFilesServerIdRoute
   AuthedNetworkServerIdRoute: typeof AuthedNetworkServerIdRoute
   AuthedServersIdRoute: typeof AuthedServersIdRoute
   AuthedSettingsAlertsRoute: typeof AuthedSettingsAlertsRoute
@@ -438,6 +458,7 @@ interface AuthedRouteChildren {
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedIndexRoute: AuthedIndexRoute,
+  AuthedFilesServerIdRoute: AuthedFilesServerIdRoute,
   AuthedNetworkServerIdRoute: AuthedNetworkServerIdRoute,
   AuthedServersIdRoute: AuthedServersIdRoute,
   AuthedSettingsAlertsRoute: AuthedSettingsAlertsRoute,
