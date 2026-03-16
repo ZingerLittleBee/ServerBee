@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { type ColumnDef, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { Lock, Pencil, Plus, Trash2 } from 'lucide-react'
-import { type FormEvent, useCallback, useMemo, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -58,21 +58,21 @@ function NetworkProbeSettingsPage() {
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
   // Settings form state
-  const [interval, setInterval] = useState(60)
+  const [probeInterval, setProbeInterval] = useState(60)
   const [packetCount, setPacketCount] = useState(10)
   const [defaultTargetIds, setDefaultTargetIds] = useState<string[]>([])
-  const [settingsLoaded, setSettingsLoaded] = useState(false)
 
   const { data: targets, isLoading: targetsLoading } = useNetworkTargets()
   const { data: setting } = useNetworkSetting()
 
   // Sync settings into local state once loaded
-  if (setting && !settingsLoaded) {
-    setInterval(setting.interval)
-    setPacketCount(setting.packet_count)
-    setDefaultTargetIds(setting.default_target_ids)
-    setSettingsLoaded(true)
-  }
+  useEffect(() => {
+    if (setting) {
+      setProbeInterval(setting.interval)
+      setPacketCount(setting.packet_count)
+      setDefaultTargetIds(setting.default_target_ids)
+    }
+  }, [setting])
 
   const createTarget = useCreateTarget()
   const updateTarget = useUpdateTarget()
@@ -161,7 +161,7 @@ function NetworkProbeSettingsPage() {
   const handleSaveSettings = (e: FormEvent) => {
     e.preventDefault()
     updateSetting.mutate(
-      { interval, packet_count: packetCount, default_target_ids: defaultTargetIds },
+      { interval: probeInterval, packet_count: packetCount, default_target_ids: defaultTargetIds },
       {
         onSuccess: () => {
           toast.success(t('settings_saved', { defaultValue: 'Settings saved' }))
@@ -320,9 +320,9 @@ function NetworkProbeSettingsPage() {
                   id="probe-interval"
                   max={600}
                   min={30}
-                  onChange={(e) => setInterval(Number.parseInt(e.target.value, 10) || 60)}
+                  onChange={(e) => setProbeInterval(Number.parseInt(e.target.value, 10) || 60)}
                   type="number"
-                  value={interval}
+                  value={probeInterval}
                 />
                 <p className="text-muted-foreground text-xs">{t('probe_interval_desc')}</p>
               </div>

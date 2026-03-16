@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { useFileMkdirMutation } from '@/hooks/use-file-api'
+import { joinPath } from '@/lib/file-utils'
 
 interface MkdirDialogProps {
   currentPath: string
@@ -24,7 +25,7 @@ export function MkdirDialog({ serverId, currentPath, open, onClose }: MkdirDialo
     if (name.length === 0) {
       return
     }
-    const fullPath = currentPath.endsWith('/') ? `${currentPath}${name}` : `${currentPath}/${name}`
+    const fullPath = joinPath(currentPath, name)
     mkdirMutation.mutate(
       { path: fullPath },
       {

@@ -352,25 +352,27 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         AgentMessage::FileDownloadReady { ref transfer_id, size } => {
             state.file_transfers.update_size(transfer_id, size);
             state.file_transfers.mark_in_progress(transfer_id);
-            // Create the temp file (async)
-            if let Some(path) = state.file_transfers.temp_file_path(transfer_id)
-                && let Err(e) = tokio::fs::File::create(&path).await
-            {
-                tracing::error!("Failed to create temp file for transfer {transfer_id}: {e}");
-                state.file_transfers.mark_failed(transfer_id, format!("Failed to create temp file: {e}"));
+            // Create the temp file and keep it open for the duration of the transfer
+            if let Some(path) = state.file_transfers.temp_file_path(transfer_id) {
+                match tokio::fs::File::create(&path).await {
+                    Ok(file) => {
+                        state.file_transfers.store_file_handle(transfer_id, file);
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to create temp file for transfer {transfer_id}: {e}");
+                        state.file_transfers.mark_failed(transfer_id, format!("Failed to create temp file: {e}"));
+                    }
+                }
             }
         }
         AgentMessage::FileDownloadChunk { ref transfer_id, offset, ref data } => {
             use base64::Engine;
             use tokio::io::{AsyncSeekExt, AsyncWriteExt};
-            if let Some(path) = state.file_transfers.temp_file_path(transfer_id) {
+            if let Some(file_handle) = state.file_transfers.get_file_handle(transfer_id) {
                 match base64::engine::general_purpose::STANDARD.decode(data) {
                     Ok(bytes) => {
                         let result = async {
-                            let mut file = tokio::fs::OpenOptions::new()
-                                .write(true)
-                                .open(&path)
-                                .await?;
+                            let mut file = file_handle.lock().await;
                             file.seek(std::io::SeekFrom::Start(offset)).await?;
                             file.write_all(&bytes).await?;
                             Ok::<(), std::io::Error>(())
@@ -394,9 +396,11 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             }
         }
         AgentMessage::FileDownloadEnd { ref transfer_id } => {
+            state.file_transfers.remove_file_handle(transfer_id);
             state.file_transfers.mark_ready(transfer_id);
         }
         AgentMessage::FileDownloadError { ref transfer_id, ref error } => {
+            state.file_transfers.remove_file_handle(transfer_id);
             state.file_transfers.mark_failed(transfer_id, error.clone());
         }
 

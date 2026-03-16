@@ -74,6 +74,8 @@ struct DownloadState {
 /// Manages file operations on the agent, enforcing path validation and deny patterns.
 pub struct FileManager {
     config: FileConfig,
+    /// Pre-canonicalized root paths, computed once at construction time.
+    canonical_roots: Vec<PathBuf>,
     #[allow(dead_code)] // stored for future per-method capability checks
     capabilities: Arc<AtomicU32>,
     active_downloads: DashMap<String, DownloadState>,
@@ -82,8 +84,14 @@ pub struct FileManager {
 
 impl FileManager {
     pub fn new(config: FileConfig, capabilities: Arc<AtomicU32>) -> Self {
+        let canonical_roots: Vec<PathBuf> = config
+            .root_paths
+            .iter()
+            .filter_map(|root| std::fs::canonicalize(root).ok())
+            .collect();
         Self {
             config,
+            canonical_roots,
             capabilities,
             active_downloads: DashMap::new(),
             active_uploads: DashMap::new(),
@@ -104,13 +112,10 @@ impl FileManager {
         let canonical = std::fs::canonicalize(path)
             .map_err(|e| anyhow::anyhow!("Cannot resolve path '{}': {}", path, e))?;
 
-        let within_root = self.config.root_paths.iter().any(|root| {
-            if let Ok(root_canonical) = std::fs::canonicalize(root) {
-                canonical.starts_with(&root_canonical)
-            } else {
-                false
-            }
-        });
+        let within_root = self
+            .canonical_roots
+            .iter()
+            .any(|root_canonical| canonical.starts_with(root_canonical));
 
         if !within_root {
             anyhow::bail!("Path '{}' is outside allowed root paths", path);
@@ -156,12 +161,10 @@ impl FileManager {
                 };
 
                 let mut entries = Vec::new();
-                for root in &self.config.root_paths {
-                    if let Ok(root_canonical) = std::fs::canonicalize(root)
-                        && root_canonical.starts_with(&request_path)
-                    {
+                for root_canonical in &self.canonical_roots {
+                    if root_canonical.starts_with(&request_path) {
                         let name = root_canonical.to_string_lossy().to_string();
-                        let metadata = tokio::fs::metadata(&root_canonical).await.ok();
+                        let metadata = tokio::fs::metadata(root_canonical).await.ok();
                         let modified = metadata
                             .as_ref()
                             .and_then(|m| m.modified().ok())
@@ -171,7 +174,7 @@ impl FileManager {
                         let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
                         let (permissions, owner, group) = metadata
                             .as_ref()
-                            .map(|m| get_platform_metadata(m, &root_canonical))
+                            .map(|m| get_platform_metadata(m, root_canonical))
                             .unwrap_or_default();
                         entries.push(FileEntry {
                             name,

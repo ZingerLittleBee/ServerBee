@@ -29,7 +29,7 @@ describe('isImageFile', () => {
   it('identifies images', () => {
     expect(isImageFile('photo.jpg')).toBe(true)
     expect(isImageFile('icon.png')).toBe(true)
-    expect(isImageFile('logo.svg')).toBe(true)
+    expect(isImageFile('logo.svg')).toBe(false) // SVG is text (XML), treated as code
   })
   it('rejects non-images', () => {
     expect(isImageFile('doc.pdf')).toBe(false)
