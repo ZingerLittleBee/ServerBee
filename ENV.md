@@ -97,7 +97,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | `SERVERBEE_COLLECTOR__ENABLE_GPU` | `collector.enable_gpu` | bool | `false` | Enable NVIDIA GPU monitoring (requires nvml) |
 | `SERVERBEE_COLLECTOR__ENABLE_TEMPERATURE` | `collector.enable_temperature` | bool | `true` | Enable CPU temperature monitoring |
 | `SERVERBEE_FILE__ENABLED` | `file.enabled` | bool | `false` | Enable file management capability on this agent |
-| `SERVERBEE_FILE__ROOT_PATHS` | `file.root_paths` | string[] | `[]` | Allowed root paths for file browsing (e.g. `/home,/var/log`). Empty means filesystem root |
+| `SERVERBEE_FILE__ROOT_PATHS` | `file.root_paths` | string[] | `[]` | Allowed root paths for file browsing (e.g. `/home,/var/log`). Empty rejects all file operations |
 | `SERVERBEE_FILE__MAX_FILE_SIZE` | `file.max_file_size` | u64 | `1073741824` | Maximum file size in bytes for read/download (default 1GB) |
 | `SERVERBEE_FILE__DENY_PATTERNS` | `file.deny_patterns` | string[] | `*.key,*.pem,id_rsa*,.env*,shadow,passwd` | Glob patterns for files the agent will refuse to access |
 | `SERVERBEE_LOG__LEVEL` | `log.level` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |

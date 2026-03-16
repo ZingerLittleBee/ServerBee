@@ -73,7 +73,7 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 | `SERVERBEE_COLLECTOR__ENABLE_GPU` | `false` | 启用 NVIDIA GPU 监控（需要 nvml 驱动） |
 | `SERVERBEE_COLLECTOR__ENABLE_TEMPERATURE` | `true` | 启用 CPU 温度监控 |
 | `SERVERBEE_FILE__ENABLED` | `false` | 启用文件管理功能 |
-| `SERVERBEE_FILE__ROOT_PATHS` | `[]` | 允许浏览的根路径（逗号分隔，如 `/home,/var/log`），留空表示整个文件系统 |
+| `SERVERBEE_FILE__ROOT_PATHS` | `[]` | 允许浏览的根路径（逗号分隔，如 `/home,/var/log`），留空则拒绝所有文件操作 |
 | `SERVERBEE_FILE__MAX_FILE_SIZE` | `1073741824` | 文件读取/下载的最大字节数（默认 1GB） |
 | `SERVERBEE_FILE__DENY_PATTERNS` | `*.key,*.pem,...` | 拒绝访问的文件名 glob 模式 |
 | `SERVERBEE_LOG__LEVEL` | `info` | 日志级别：`trace`/`debug`/`info`/`warn`/`error` |
@@ -247,7 +247,7 @@ enable_temperature = true
 # 默认: false
 enabled = false
 
-# 允许浏览的根路径列表，留空表示整个文件系统
+# 允许浏览的根路径列表，留空则拒绝所有文件操作
 # 默认: []
 root_paths = []
 
