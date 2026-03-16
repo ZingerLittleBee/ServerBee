@@ -84,6 +84,10 @@ impl FileTransferManager {
         }
     }
 
+    pub fn temp_dir(&self) -> &std::path::Path {
+        &self.temp_dir
+    }
+
     pub fn create_transfer(
         &self,
         server_id: i32,

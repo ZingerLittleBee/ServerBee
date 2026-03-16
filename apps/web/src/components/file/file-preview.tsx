@@ -10,7 +10,7 @@ import { useFileRead, useFileStat, useFileWriteMutation, useStartDownloadMutatio
 import { extensionToLanguage, isImageFile, isTextFile } from '@/lib/file-utils'
 import { formatBytes } from '@/lib/utils'
 
-const MAX_PREVIEW_SIZE = 5 * 1024 * 1024 // 5 MB
+const MAX_PREVIEW_SIZE = 384 * 1024 // 384 KB — must stay within server's MAX_FILE_CHUNK_SIZE to avoid WS frame overflow
 
 interface FilePreviewProps {
   entry: FileEntry | null
@@ -53,6 +53,7 @@ function TextPreview({ serverId, entry }: { entry: FileEntry; serverId: string }
   const { t } = useTranslation('file')
   const { data: content, isLoading } = useFileRead(serverId, entry.path, true)
   const writeMutation = useFileWriteMutation(serverId)
+  const editorRef = useRef<import('@/components/file/file-editor').MonacoEditorInstance | null>(null)
   const loadedModifiedRef = useRef<number>(entry.modified)
   const [conflictOpen, setConflictOpen] = useState(false)
   const pendingContentRef = useRef<string>('')
@@ -111,9 +112,9 @@ function TextPreview({ serverId, entry }: { entry: FileEntry; serverId: string }
         <Button
           disabled={writeMutation.isPending}
           onClick={() => {
-            // Get current content from editor by triggering save with current content
-            // The editor Ctrl+S triggers onSave, but we also need the Save button
-            // We'll rely on onSave from the editor
+            if (editorRef.current) {
+              handleSave(editorRef.current.getValue())
+            }
           }}
           size="sm"
           variant="outline"
@@ -123,7 +124,7 @@ function TextPreview({ serverId, entry }: { entry: FileEntry; serverId: string }
         </Button>
       </div>
       <div className="flex-1">
-        <FileEditor content={content ?? ''} language={language} onSave={handleSave} />
+        <FileEditor content={content ?? ''} editorRef={editorRef} language={language} onSave={handleSave} />
       </div>
       <Dialog
         onOpenChange={(open) => {

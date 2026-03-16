@@ -352,9 +352,9 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         AgentMessage::FileDownloadReady { ref transfer_id, size } => {
             state.file_transfers.update_size(transfer_id, size);
             state.file_transfers.mark_in_progress(transfer_id);
-            // Create the temp file
+            // Create the temp file (async)
             if let Some(path) = state.file_transfers.temp_file_path(transfer_id)
-                && let Err(e) = std::fs::File::create(&path)
+                && let Err(e) = tokio::fs::File::create(&path).await
             {
                 tracing::error!("Failed to create temp file for transfer {transfer_id}: {e}");
                 state.file_transfers.mark_failed(transfer_id, format!("Failed to create temp file: {e}"));
@@ -362,18 +362,20 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         }
         AgentMessage::FileDownloadChunk { ref transfer_id, offset, ref data } => {
             use base64::Engine;
-            use std::io::{Seek, SeekFrom, Write};
+            use tokio::io::{AsyncSeekExt, AsyncWriteExt};
             if let Some(path) = state.file_transfers.temp_file_path(transfer_id) {
                 match base64::engine::general_purpose::STANDARD.decode(data) {
                     Ok(bytes) => {
-                        let result = std::fs::OpenOptions::new()
-                            .write(true)
-                            .open(&path)
-                            .and_then(|mut file| {
-                                file.seek(SeekFrom::Start(offset))?;
-                                file.write_all(&bytes)?;
-                                Ok(())
-                            });
+                        let result = async {
+                            let mut file = tokio::fs::OpenOptions::new()
+                                .write(true)
+                                .open(&path)
+                                .await?;
+                            file.seek(std::io::SeekFrom::Start(offset)).await?;
+                            file.write_all(&bytes).await?;
+                            Ok::<(), std::io::Error>(())
+                        }
+                        .await;
                         match result {
                             Ok(()) => {
                                 state.file_transfers.update_progress(transfer_id, offset + bytes.len() as u64);
@@ -401,12 +403,22 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         // File upload transfer messages
         AgentMessage::FileUploadAck { ref transfer_id, offset } => {
             state.file_transfers.update_progress(transfer_id, offset);
+            let ack_key = format!("upload-ack-{transfer_id}");
+            state.agent_manager.dispatch_pending_response(&ack_key, msg.clone());
         }
         AgentMessage::FileUploadComplete { ref transfer_id } => {
             state.file_transfers.mark_ready(transfer_id);
+            let complete_key = format!("upload-complete-{transfer_id}");
+            state.agent_manager.dispatch_pending_response(&complete_key, msg.clone());
         }
         AgentMessage::FileUploadError { ref transfer_id, ref error } => {
             state.file_transfers.mark_failed(transfer_id, error.clone());
+            // The HTTP handler may be waiting on either an ack or complete key — try both.
+            let ack_key = format!("upload-ack-{transfer_id}");
+            let complete_key = format!("upload-complete-{transfer_id}");
+            if !state.agent_manager.dispatch_pending_response(&complete_key, msg.clone()) {
+                state.agent_manager.dispatch_pending_response(&ack_key, msg.clone());
+            }
         }
 
         AgentMessage::Pong => {

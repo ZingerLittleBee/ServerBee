@@ -11,7 +11,7 @@ function statusLabel(status: string, t: (key: string) => string): string {
   if (status === 'in_progress') {
     return t('transfer_in_progress')
   }
-  if (status === 'complete') {
+  if (status === 'ready') {
     return t('transfer_complete')
   }
   if (status === 'failed') {

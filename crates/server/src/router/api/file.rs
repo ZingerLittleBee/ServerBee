@@ -302,7 +302,7 @@ async fn read_file(
         .send(ServerMessage::FileRead {
             msg_id: msg_id.clone(),
             path: body.path,
-            max_size: 1024 * 1024, // 1MB max for text read
+            max_size: MAX_FILE_CHUNK_SIZE as u64, // 384KB — stays under WS limit after base64
         })
         .await
         .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
@@ -809,9 +809,13 @@ async fn upload_file(
     validate_file_access(&state, &server_id).await?;
 
     let mut remote_path: Option<String> = None;
-    let mut file_data: Vec<u8> = Vec::new();
+    let temp_upload = state
+        .file_transfers
+        .temp_dir()
+        .join(format!("{}.upload", uuid::Uuid::new_v4()));
+    let mut file_size: u64 = 0;
 
-    // Extract fields from multipart
+    // Extract fields from multipart — stream file data to a temp file to avoid OOM
     while let Some(field) = multipart
         .next_field()
         .await
@@ -828,11 +832,24 @@ async fn upload_file(
                 );
             }
             "file" => {
-                file_data = field
-                    .bytes()
+                use tokio::io::AsyncWriteExt;
+                let mut temp_file = tokio::fs::File::create(&temp_upload)
                     .await
-                    .map_err(|e| AppError::BadRequest(format!("Failed to read file: {e}")))?
-                    .to_vec();
+                    .map_err(|e| AppError::Internal(format!("Failed to create temp file: {e}")))?;
+                let mut field = field;
+                while let Some(chunk) = field
+                    .chunk()
+                    .await
+                    .map_err(|e| AppError::BadRequest(format!("Failed to read file chunk: {e}")))?
+                {
+                    file_size += chunk.len() as u64;
+                    temp_file.write_all(&chunk).await.map_err(|e| {
+                        AppError::Internal(format!("Failed to write temp file: {e}"))
+                    })?;
+                }
+                temp_file.flush().await.map_err(|e| {
+                    AppError::Internal(format!("Failed to flush temp file: {e}"))
+                })?;
             }
             _ => {}
         }
@@ -840,7 +857,8 @@ async fn upload_file(
 
     let remote_path =
         remote_path.ok_or_else(|| AppError::BadRequest("Missing 'path' field".into()))?;
-    if file_data.is_empty() {
+    if file_size == 0 {
+        let _ = tokio::fs::remove_file(&temp_upload).await;
         return Err(AppError::BadRequest("Missing or empty 'file' field".into()));
     }
 
@@ -857,14 +875,13 @@ async fn upload_file(
         )
         .map_err(AppError::TooManyRequests)?;
 
-    let file_size = file_data.len() as u64;
-
     // Send FileUploadStart to agent
     let sender = state
         .agent_manager
         .get_sender(&server_id)
         .ok_or_else(|| {
             state.file_transfers.remove(&transfer_id);
+            let _ = std::fs::remove_file(&temp_upload);
             AppError::NotFound("Server offline".into())
         })?;
 
@@ -877,20 +894,40 @@ async fn upload_file(
         .await
         .map_err(|_| {
             state.file_transfers.remove(&transfer_id);
+            let _ = std::fs::remove_file(&temp_upload);
             AppError::Internal("Failed to send to agent".into())
         })?;
 
     state.file_transfers.mark_in_progress(&transfer_id);
     state.file_transfers.update_size(&transfer_id, file_size);
 
-    // Send data in chunks
-    let mut offset: u64 = 0;
-    for chunk in file_data.chunks(MAX_FILE_CHUNK_SIZE) {
-        use base64::Engine;
-        let encoded = base64::engine::general_purpose::STANDARD.encode(chunk);
+    // Read from temp file in chunks and send to agent
+    use tokio::io::AsyncReadExt;
+    let mut temp_reader = tokio::fs::File::open(&temp_upload).await.map_err(|e| {
+        state
+            .file_transfers
+            .mark_failed(&transfer_id, format!("Failed to open temp file: {e}"));
+        AppError::Internal(format!("Failed to open temp file: {e}"))
+    })?;
 
-        // Register pending request for the ack
-        let ack_msg_id = format!("upload-ack-{transfer_id}-{offset}");
+    let mut offset: u64 = 0;
+    let mut buf = vec![0u8; MAX_FILE_CHUNK_SIZE];
+    loop {
+        let n = temp_reader.read(&mut buf).await.map_err(|e| {
+            state
+                .file_transfers
+                .mark_failed(&transfer_id, format!("Failed to read temp file: {e}"));
+            AppError::Internal(format!("Failed to read temp file: {e}"))
+        })?;
+        if n == 0 {
+            break;
+        }
+
+        use base64::Engine;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
+
+        // Register pending request for the ack (one at a time since upload is sequential)
+        let ack_msg_id = format!("upload-ack-{transfer_id}");
         let ack_rx = state
             .agent_manager
             .register_pending_request(ack_msg_id.clone());
@@ -918,6 +955,7 @@ async fn upload_file(
             }
             Ok(Ok(AgentMessage::FileUploadError { error, .. })) => {
                 state.file_transfers.mark_failed(&transfer_id, error.clone());
+                let _ = tokio::fs::remove_file(&temp_upload).await;
                 return Err(AppError::BadRequest(format!("Upload failed: {error}")));
             }
             Ok(Ok(_)) => {
@@ -927,20 +965,25 @@ async fn upload_file(
                 state
                     .file_transfers
                     .mark_failed(&transfer_id, "Agent disconnected".into());
+                let _ = tokio::fs::remove_file(&temp_upload).await;
                 return Err(AppError::Internal("Agent disconnected during upload".into()));
             }
             Err(_) => {
                 state
                     .file_transfers
                     .mark_failed(&transfer_id, "Upload timeout".into());
+                let _ = tokio::fs::remove_file(&temp_upload).await;
                 return Err(AppError::RequestTimeout(
                     "Upload chunk ack timeout".into(),
                 ));
             }
         }
 
-        offset += chunk.len() as u64;
+        offset += n as u64;
     }
+
+    // Clean up the upload temp file
+    let _ = tokio::fs::remove_file(&temp_upload).await;
 
     // Send upload end
     sender
