@@ -128,8 +128,70 @@ impl FileManager {
     }
 
     /// List directory entries, sorted with directories first, then alphabetically.
+    /// When path is outside root_paths but is an ancestor of one or more root_paths,
+    /// returns those root_paths as virtual directory entries for navigation.
     pub async fn list_dir(&self, path: &str) -> anyhow::Result<Vec<FileEntry>> {
-        let canonical = self.validate_path(path)?;
+        if self.config.root_paths.is_empty() {
+            anyhow::bail!("No root paths configured");
+        }
+
+        // Try normal validation first
+        match self.validate_path(path) {
+            Ok(canonical) => {
+                // Path is within root_paths, list normally
+                return self.list_dir_entries(&canonical).await;
+            }
+            Err(_) => {
+                // Path is outside root_paths. Check if it's an ancestor of any root_path.
+                // If so, return those root_paths as virtual directory entries.
+                let request_path = if path == "/" {
+                    std::path::PathBuf::from("/")
+                } else {
+                    std::fs::canonicalize(path).unwrap_or_else(|_| std::path::PathBuf::from(path))
+                };
+
+                let mut entries = Vec::new();
+                for root in &self.config.root_paths {
+                    if let Ok(root_canonical) = std::fs::canonicalize(root) {
+                        if root_canonical.starts_with(&request_path) {
+                            let name = root_canonical.to_string_lossy().to_string();
+                            let metadata = tokio::fs::metadata(&root_canonical).await.ok();
+                            let modified = metadata
+                                .as_ref()
+                                .and_then(|m| m.modified().ok())
+                                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                                .map(|d| d.as_secs() as i64)
+                                .unwrap_or(0);
+                            let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
+                            let (permissions, owner, group) = metadata
+                                .as_ref()
+                                .map(|m| get_platform_metadata(m, &root_canonical))
+                                .unwrap_or_default();
+                            entries.push(FileEntry {
+                                name,
+                                path: root_canonical.to_string_lossy().to_string(),
+                                file_type: FileType::Directory,
+                                size,
+                                modified,
+                                permissions,
+                                owner,
+                                group,
+                            });
+                        }
+                    }
+                }
+
+                if entries.is_empty() {
+                    anyhow::bail!("Path '{}' is outside allowed root paths", path);
+                }
+                entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+                return Ok(entries);
+            }
+        }
+    }
+
+    /// Internal: list actual directory entries from the filesystem.
+    async fn list_dir_entries(&self, canonical: &std::path::Path) -> anyhow::Result<Vec<FileEntry>> {
 
         let mut entries = Vec::new();
         let mut read_dir = tokio::fs::read_dir(&canonical).await?;
