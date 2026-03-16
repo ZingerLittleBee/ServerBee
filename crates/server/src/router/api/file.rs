@@ -883,7 +883,7 @@ async fn upload_file(
         )
         .map_err(AppError::TooManyRequests)?;
 
-    // Send FileUploadStart to agent
+    // Send FileUploadStart to agent and wait for ack before sending chunks
     let sender = state
         .agent_manager
         .get_sender(&server_id)
@@ -892,6 +892,12 @@ async fn upload_file(
             let _ = std::fs::remove_file(&temp_upload);
             AppError::NotFound("Server offline".into())
         })?;
+
+    // Register pending request for the initial ack
+    let init_ack_key = format!("upload-ack-{transfer_id}");
+    let init_ack_rx = state
+        .agent_manager
+        .register_pending_request(init_ack_key.clone());
 
     sender
         .send(ServerMessage::FileUploadStart {
@@ -905,6 +911,36 @@ async fn upload_file(
             let _ = std::fs::remove_file(&temp_upload);
             AppError::Internal("Failed to send to agent".into())
         })?;
+
+    // Wait for agent to accept or reject the upload
+    match tokio::time::timeout(Duration::from_secs(30), init_ack_rx).await {
+        Ok(Ok(AgentMessage::FileUploadAck { .. })) => {
+            // Agent accepted, proceed
+        }
+        Ok(Ok(AgentMessage::FileUploadError { error, .. })) => {
+            state
+                .file_transfers
+                .mark_failed(&transfer_id, error.clone());
+            let _ = tokio::fs::remove_file(&temp_upload).await;
+            return Err(agent_error(error));
+        }
+        Ok(Ok(_)) | Ok(Err(_)) => {
+            state
+                .file_transfers
+                .mark_failed(&transfer_id, "Agent rejected upload".into());
+            let _ = tokio::fs::remove_file(&temp_upload).await;
+            return Err(AppError::Internal("Agent rejected upload".into()));
+        }
+        Err(_) => {
+            state
+                .file_transfers
+                .mark_failed(&transfer_id, "Upload start timeout".into());
+            let _ = tokio::fs::remove_file(&temp_upload).await;
+            return Err(AppError::RequestTimeout(
+                "Agent did not respond to upload start".into(),
+            ));
+        }
+    }
 
     state.file_transfers.mark_in_progress(&transfer_id);
     state.file_transfers.update_size(&transfer_id, file_size);
