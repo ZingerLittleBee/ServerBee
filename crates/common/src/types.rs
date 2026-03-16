@@ -136,3 +136,22 @@ pub struct ServerStatus {
     pub country_code: Option<String>,
     pub group_id: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum FileType {
+    File,
+    Directory,
+    Symlink,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub file_type: FileType,
+    pub size: u64,
+    pub modified: i64,
+    pub permissions: Option<String>,
+    pub owner: Option<String>,
+    pub group: Option<String>,
+}
