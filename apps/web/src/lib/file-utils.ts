@@ -124,7 +124,7 @@ function getExtension(filename: string): string {
 
 function getBaseName(filename: string): string {
   const parts = filename.split('/')
-  const name = parts[parts.length - 1] ?? filename
+  const name = parts.at(-1) ?? filename
   return name.toLowerCase()
 }
 
