@@ -2,9 +2,9 @@ use std::net::SocketAddr;
 use std::time::Instant;
 
 use dashmap::DashMap;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 
-use serverbee_common::protocol::{BrowserMessage, ServerMessage};
+use serverbee_common::protocol::{AgentMessage, BrowserMessage, ServerMessage};
 use serverbee_common::types::{ServerStatus, SystemReport};
 
 /// Sender for forwarding terminal output from agent to browser WS.
@@ -23,6 +23,8 @@ pub struct AgentManager {
     browser_tx: broadcast::Sender<BrowserMessage>,
     /// Maps session_id -> terminal output channel (for routing agent output to browser WS)
     terminal_sessions: DashMap<String, TerminalOutputTx>,
+    /// Maps msg_id -> (oneshot sender, creation time) for HTTP→WS relay
+    pending_requests: DashMap<String, (oneshot::Sender<AgentMessage>, std::time::Instant)>,
 }
 
 #[allow(dead_code)]
@@ -49,6 +51,7 @@ impl AgentManager {
             latest_reports: DashMap::new(),
             browser_tx,
             terminal_sessions: DashMap::new(),
+            pending_requests: DashMap::new(),
         }
     }
 
@@ -244,11 +247,39 @@ impl AgentManager {
     pub fn broadcast_browser(&self, msg: BrowserMessage) {
         let _ = self.browser_tx.send(msg);
     }
+
+    /// Register a pending request for HTTP→WS relay.
+    /// Returns a oneshot receiver that will receive the agent's response.
+    pub fn register_pending_request(&self, msg_id: String) -> oneshot::Receiver<AgentMessage> {
+        let (tx, rx) = oneshot::channel();
+        self.pending_requests.insert(msg_id, (tx, std::time::Instant::now()));
+        rx
+    }
+
+    /// Dispatch a response from the agent to a pending HTTP request.
+    /// Returns true if the response was delivered, false if no pending request was found.
+    pub fn dispatch_pending_response(&self, msg_id: &str, message: AgentMessage) -> bool {
+        if let Some((_, (tx, _))) = self.pending_requests.remove(msg_id) {
+            let _ = tx.send(message);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Remove pending requests older than `max_age`.
+    pub fn cleanup_expired_requests(&self, max_age: std::time::Duration) {
+        let now = std::time::Instant::now();
+        self.pending_requests.retain(|_, (_, created_at)| {
+            now.duration_since(*created_at) < max_age
+        });
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serverbee_common::protocol::AgentMessage;
     use std::net::{IpAddr, Ipv4Addr};
 
     fn test_addr() -> SocketAddr {
@@ -366,5 +397,24 @@ mod tests {
     fn test_get_report_nonexistent() {
         let (mgr, _rx) = make_manager();
         assert!(mgr.get_latest_report("nope").is_none());
+    }
+
+    #[test]
+    fn test_pending_request_lifecycle() {
+        let (mgr, _rx) = make_manager();
+        let mut rx = mgr.register_pending_request("req1".into());
+        assert!(rx.try_recv().is_err());
+
+        let dispatched = mgr.dispatch_pending_response(
+            "req1",
+            AgentMessage::FileOpResult { msg_id: "req1".into(), success: true, error: None },
+        );
+        assert!(dispatched);
+
+        let dispatched2 = mgr.dispatch_pending_response(
+            "req1",
+            AgentMessage::FileOpResult { msg_id: "req1".into(), success: true, error: None },
+        );
+        assert!(!dispatched2);
     }
 }
