@@ -1,6 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
 
+function base64Decode(base64: string): string {
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+  return new TextDecoder().decode(bytes)
+}
+
+function base64Encode(text: string): string {
+  const bytes = new TextEncoder().encode(text)
+  return btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''))
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -83,7 +93,7 @@ export function useFileRead(serverId: string, path: string, enabled?: boolean) {
     queryKey: ['files', serverId, 'read', path],
     queryFn: async () => {
       const res = await api.post<ReadResponse>(`/api/files/${serverId}/read`, { path })
-      return res.content
+      return base64Decode(res.content)
     },
     enabled: serverId.length > 0 && (enabled ?? true)
   })
@@ -108,7 +118,10 @@ export function useFileWriteMutation(serverId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: { path: string; content: string }) =>
-      api.post<SuccessResponse>(`/api/files/${serverId}/write`, input),
+      api.post<SuccessResponse>(`/api/files/${serverId}/write`, {
+        path: input.path,
+        content: base64Encode(input.content)
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['files', serverId] })
     }
