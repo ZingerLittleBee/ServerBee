@@ -1,5 +1,6 @@
 import type { ColumnDef } from '@tanstack/react-table'
 import { getCoreRowModel, useReactTable } from '@tanstack/react-table'
+import { useTranslation } from 'react-i18next'
 import { DataTable } from '@/components/ui/data-table'
 import type { NetworkProbeAnomaly } from '@/lib/network-types'
 import { cn } from '@/lib/utils'
@@ -39,7 +40,7 @@ const columns: ColumnDef<NetworkProbeAnomaly>[] = [
     accessorKey: 'timestamp',
     header: 'Time',
     enableSorting: false,
-    cell: ({ row }) => <span className="font-mono text-xs">{formatTimestamp(row.original.timestamp)}</span>
+    cell: ({ row }) => <span className="font-mono text-xs tabular-nums">{formatTimestamp(row.original.timestamp)}</span>
   },
   {
     accessorKey: 'target_name',
@@ -79,6 +80,7 @@ const columns: ColumnDef<NetworkProbeAnomaly>[] = [
 ]
 
 export function AnomalyTable({ anomalies }: AnomalyTableProps) {
+  const { t } = useTranslation('network')
   const table = useReactTable({
     data: anomalies,
     columns,
@@ -86,7 +88,7 @@ export function AnomalyTable({ anomalies }: AnomalyTableProps) {
   })
 
   if (anomalies.length === 0) {
-    return null
+    return <p className="py-4 text-muted-foreground text-sm">{t('no_anomalies')}</p>
   }
 
   return (

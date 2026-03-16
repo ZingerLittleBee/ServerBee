@@ -237,6 +237,7 @@ dependencies = [
  "matchit",
  "memchr",
  "mime",
+ "multer",
  "percent-encoding",
  "pin-project-lite",
  "serde_core",
@@ -1921,6 +1922,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "multer"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83e87776546dc87511aa5ee218730c92b666d7264ab6ed41f9d215af9cd5224b"
+dependencies = [
+ "bytes",
+ "encoding_rs",
+ "futures-util",
+ "http 1.4.0",
+ "httparse",
+ "memchr",
+ "mime",
+ "spin",
+ "version_check",
+]
+
+[[package]]
 name = "nix"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3303,8 +3321,10 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "chrono",
+ "dashmap",
  "figment",
  "futures-util",
+ "libc",
  "nvml-wrapper",
  "portable-pty",
  "rand 0.8.5",
@@ -3314,6 +3334,7 @@ dependencies = [
  "serverbee-common",
  "sha2",
  "sysinfo",
+ "tempfile",
  "tokio",
  "tokio-tungstenite 0.26.2",
  "tracing",
@@ -3329,6 +3350,7 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "utoipa",
  "uuid",
 ]
 
@@ -3362,6 +3384,7 @@ dependencies = [
  "tokio",
  "tokio-cron-scheduler",
  "tokio-tungstenite 0.26.2",
+ "tokio-util",
  "toml",
  "totp-rs",
  "tower",

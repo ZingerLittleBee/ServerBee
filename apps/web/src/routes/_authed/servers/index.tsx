@@ -14,6 +14,17 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { createSelectColumn, DataTable, DataTableColumnHeader } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
@@ -25,12 +36,18 @@ import type { ServerGroup } from '@/lib/api-schema'
 import { cn, countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/servers/')({
-  component: ServersListPage
+  component: ServersListPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    q: (search.q as string) || '',
+    sort: (search.sort as string) || 'name'
+  })
 })
 
 function ServersListPage() {
-  const { t } = useTranslation('servers')
+  const { t } = useTranslation(['servers', 'common'])
   const queryClient = useQueryClient()
+  const navigate = Route.useNavigate()
+  const { q: search, sort } = Route.useSearch()
   const { data: servers = [] } = useQuery<ServerMetrics[]>({
     queryKey: ['servers'],
     queryFn: () => [],
@@ -45,8 +62,8 @@ function ServersListPage() {
     staleTime: 60_000
   })
 
-  const [search, setSearch] = useState('')
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'name', desc: false }])
+  const setSearch = (value: string) => navigate({ search: (prev) => ({ ...prev, q: value }) })
+  const [sorting, setSorting] = useState<SortingState>([{ id: sort, desc: false }])
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [editingId, setEditingId] = useState<string | null>(null)
 
@@ -77,7 +94,12 @@ function ServersListPage() {
           const s = row.original
           const flag = countryCodeToFlag(s.country_code)
           return (
-            <Link className="group/link flex items-center gap-1.5" params={{ id: s.id }} to="/servers/$id">
+            <Link
+              className="group/link flex items-center gap-1.5"
+              params={{ id: s.id }}
+              search={{ range: 'realtime' }}
+              to="/servers/$id"
+            >
               {flag && <span className="text-xs">{flag}</span>}
               <span className="font-medium group-hover/link:underline">{s.name}</span>
             </Link>
@@ -157,12 +179,12 @@ function ServersListPage() {
         enableSorting: false,
         cell: ({ row }) => (
           <button
+            aria-label={t('servers:detail_edit')}
             className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             onClick={() => setEditingId(row.original.id)}
-            title="Edit server"
             type="button"
           >
-            <ExternalLink className="size-3.5" />
+            <ExternalLink aria-hidden="true" className="size-3.5" />
           </button>
         ),
         meta: { className: 'w-10' }
@@ -223,18 +245,39 @@ function ServersListPage() {
         <div className="relative flex-1">
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            aria-label={t('servers:search_placeholder')}
+            autoComplete="off"
             className="pl-9"
+            name="search"
             onChange={(e) => setSearch(e.target.value)}
-            placeholder={t('search_placeholder')}
+            placeholder={t('servers:search_placeholder')}
             type="text"
             value={search}
           />
         </div>
         {selectedCount > 0 && (
-          <Button disabled={batchDeleteMutation.isPending} onClick={handleBatchDelete} size="sm" variant="destructive">
-            <Trash2 className="size-3.5" />
-            {t('delete_selected', { count: selectedCount })}
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger
+              render={
+                <Button disabled={batchDeleteMutation.isPending} size="sm" variant="destructive">
+                  <Trash2 aria-hidden="true" className="size-3.5" />
+                  {t('servers:delete_selected', { count: selectedCount })}
+                </Button>
+              }
+            />
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
+                <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                <AlertDialogAction onClick={handleBatchDelete} variant="destructive">
+                  {t('common:delete')}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
       </div>
 
@@ -280,7 +323,7 @@ function MiniBar({ pct, sub }: { pct: number; sub?: string }) {
         <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
           <div className={cn('h-full rounded-full', color)} style={{ width: `${p}%` }} />
         </div>
-        <span className="w-10 text-right font-mono text-xs">{p.toFixed(0)}%</span>
+        <span className="w-10 text-right font-mono text-xs tabular-nums">{p.toFixed(0)}%</span>
       </div>
       {sub && <p className="mt-0.5 text-[10px] text-muted-foreground">{sub}</p>}
     </div>

@@ -8,7 +8,7 @@ ServerBee 支持为每台 Agent 独立控制可用功能。通过功能开关（
 
 ## 功能列表
 
-ServerBee 定义了 6 个功能位，分为两个风险等级：
+ServerBee 定义了 7 个功能位，分为两个风险等级：
 
 ### 高风险功能（默认关闭）
 
@@ -17,9 +17,14 @@ ServerBee 定义了 6 个功能位，分为两个风险等级：
 | **Web Terminal** | `CAP_TERMINAL` (1) | 允许通过浏览器打开远程终端 |
 | **Remote Exec** | `CAP_EXEC` (2) | 允许远程执行命令 |
 | **Auto Upgrade** | `CAP_UPGRADE` (4) | 允许远程推送二进制升级 |
+| **File Manager** | `CAP_FILE` (64) | 允许远程文件浏览、编辑、上传/下载 |
 
 <Callout type="warn">
-这三个功能涉及在目标服务器上执行任意代码或替换二进制文件，因此默认关闭。请仅在信任的服务器上启用。
+这些功能涉及在目标服务器上执行任意代码、替换二进制文件或访问文件系统，因此默认关闭。请仅在信任的服务器上启用。
+</Callout>
+
+<Callout type="info">
+文件管理功能需要在 Agent 端额外配置 `root_paths` 和 `deny_patterns` 以实现路径沙箱安全。详见 [Agent 配置](/docs/cn/agent) 和 [配置参考](/docs/cn/configuration) 页面。
 </Callout>
 
 ### 低风险功能（默认启用）
@@ -69,7 +74,8 @@ curl -X PUT https://your-server/api/servers/batch-capabilities \
 
 capabilities 值是各功能位的按位或（OR）结果。例如：
 - `56` = ICMP + TCP + HTTP（默认值）
-- `63` = 全部功能启用
+- `127` = 全部功能启用
+- `120` = ICMP + TCP + HTTP + 文件管理
 - `0` = 全部功能禁用
 
 ## 双重验证机制
@@ -106,6 +112,7 @@ ServerBee 采用纵深防御（defense in depth）策略，在 Server 端和 Age
 - **Settings → Capabilities**：批量管理页面，支持搜索和多选
 - **Tasks 页面**：无 `CAP_EXEC` 权限的服务器显示为灰色，任务结果标记为 "skipped"
 - **Terminal 按钮**：无 `CAP_TERMINAL` 权限的服务器不显示 Terminal 按钮
+- **Files 按钮**：无 `CAP_FILE` 权限的服务器不显示 Files 按钮；点击后打开文件管理页面 `/files/{serverId}`
 
 <Cards>
   <Card title="Web 终端" href="/docs/cn/terminal" />

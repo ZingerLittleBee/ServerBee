@@ -6,6 +6,7 @@ mod probe_utils;
 mod register;
 mod reporter;
 mod terminal;
+mod file_manager;
 
 use tracing_subscriber::EnvFilter;
 

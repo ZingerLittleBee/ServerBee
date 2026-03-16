@@ -4,6 +4,17 @@ import { AlertTriangle, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -75,6 +86,7 @@ function AlertsPage() {
   const [coverType, setCoverType] = useState<'all' | 'exclude' | 'include'>('all')
   const [serverIds, setServerIds] = useState<string[]>([])
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null)
+  const [deleteRuleId, setDeleteRuleId] = useState<string | null>(null)
 
   const ruleTypes = [
     { label: t('alerts.metric_cpu'), value: 'cpu' },
@@ -223,6 +235,7 @@ function AlertsPage() {
           {showForm && (
             <form className="mb-4 space-y-3 rounded-md border bg-muted/30 p-4" onSubmit={handleCreate}>
               <Input
+                aria-label={t('alerts.rule_name')}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t('alerts.rule_name')}
                 required
@@ -232,7 +245,7 @@ function AlertsPage() {
 
               <div className="flex gap-3">
                 <Select onValueChange={(v) => v !== null && setTriggerMode(v)} value={triggerMode}>
-                  <SelectTrigger className="h-9 w-full flex-1">
+                  <SelectTrigger aria-label={t('alerts.trigger_always')} className="h-9 w-full flex-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -242,7 +255,7 @@ function AlertsPage() {
                 </Select>
 
                 <Select onValueChange={(v) => setGroupId(v ?? '')} value={groupId}>
-                  <SelectTrigger className="h-9 w-full flex-1">
+                  <SelectTrigger aria-label={t('alerts.no_notification')} className="h-9 w-full flex-1">
                     <SelectValue placeholder={t('alerts.no_notification')} />
                   </SelectTrigger>
                   <SelectContent>
@@ -272,7 +285,7 @@ function AlertsPage() {
                     }}
                     value={coverType}
                   >
-                    <SelectTrigger className="h-9 w-full flex-1">
+                    <SelectTrigger aria-label={t('alerts.coverage')} className="h-9 w-full flex-1">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -318,7 +331,7 @@ function AlertsPage() {
                       onValueChange={(val) => val !== null && updateRuleItem(index, 'rule_type', val)}
                       value={item.rule_type}
                     >
-                      <SelectTrigger className="h-9 w-full flex-1">
+                      <SelectTrigger aria-label={t('alerts.conditions')} className="h-9 w-full flex-1">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -332,6 +345,7 @@ function AlertsPage() {
                     {THRESHOLD_TYPES.has(item.rule_type) && (
                       <>
                         <Input
+                          aria-label={t('alerts.threshold_gte')}
                           className="w-28"
                           onChange={(e) => updateRuleItem(index, 'min', Number.parseFloat(e.target.value) || 0)}
                           placeholder={t('alerts.threshold_gte')}
@@ -339,6 +353,7 @@ function AlertsPage() {
                           value={item.min ?? ''}
                         />
                         <Input
+                          aria-label={t('alerts.threshold_lte')}
                           className="w-28"
                           onChange={(e) => updateRuleItem(index, 'max', Number.parseFloat(e.target.value) || 0)}
                           placeholder={t('alerts.threshold_lte')}
@@ -349,6 +364,7 @@ function AlertsPage() {
                     )}
                     {item.rule_type === 'offline' && (
                       <Input
+                        aria-label={t('alerts.duration')}
                         className="w-28"
                         onChange={(e) => updateRuleItem(index, 'duration', Number.parseInt(e.target.value, 10) || 60)}
                         placeholder={t('alerts.duration')}
@@ -358,6 +374,7 @@ function AlertsPage() {
                     )}
                     {item.rule_type === 'expiration' && (
                       <Input
+                        aria-label={t('alerts.days_before')}
                         className="w-28"
                         onChange={(e) => updateRuleItem(index, 'duration', Number.parseInt(e.target.value, 10) || 7)}
                         placeholder={t('alerts.days_before')}
@@ -371,7 +388,7 @@ function AlertsPage() {
                           onValueChange={(val) => val !== null && updateRuleItem(index, 'cycle_interval', val)}
                           value={item.cycle_interval ?? 'month'}
                         >
-                          <SelectTrigger className="h-9 w-28">
+                          <SelectTrigger aria-label={t('alerts.period_month')} className="h-9 w-28">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -383,6 +400,7 @@ function AlertsPage() {
                           </SelectContent>
                         </Select>
                         <Input
+                          aria-label={t('alerts.limit_bytes')}
                           className="w-28"
                           onChange={(e) =>
                             updateRuleItem(index, 'cycle_limit', Number.parseInt(e.target.value, 10) || 0)
@@ -394,8 +412,14 @@ function AlertsPage() {
                       </>
                     )}
                     {ruleItems.length > 1 && (
-                      <Button onClick={() => removeRuleItem(index)} size="sm" type="button" variant="ghost">
-                        <Trash2 className="size-3" />
+                      <Button
+                        aria-label={t('common:delete')}
+                        onClick={() => removeRuleItem(index)}
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <Trash2 aria-hidden="true" className="size-3" />
                       </Button>
                     )}
                   </div>
@@ -464,15 +488,46 @@ function AlertsPage() {
                         >
                           {rule.enabled ? t('common:disable') : t('common:enable')}
                         </Button>
-                        <Button
-                          aria-label={`Delete rule ${rule.name}`}
-                          disabled={deleteMutation.isPending}
-                          onClick={() => deleteMutation.mutate(rule.id)}
-                          size="sm"
-                          variant="destructive"
+                        <AlertDialog
+                          onOpenChange={(open) => {
+                            if (!open) {
+                              setDeleteRuleId(null)
+                            }
+                          }}
+                          open={deleteRuleId === rule.id}
                         >
-                          <Trash2 className="size-3.5" />
-                        </Button>
+                          <AlertDialogTrigger
+                            onClick={() => setDeleteRuleId(rule.id)}
+                            render={
+                              <Button
+                                aria-label={`${t('common:delete')} ${rule.name}`}
+                                disabled={deleteMutation.isPending}
+                                size="sm"
+                                variant="destructive"
+                              />
+                            }
+                          >
+                            <Trash2 aria-hidden="true" className="size-3.5" />
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
+                              <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => {
+                                  deleteMutation.mutate(rule.id)
+                                  setDeleteRuleId(null)
+                                }}
+                                variant="destructive"
+                              >
+                                {t('common:delete')}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                     </div>
                     {expandedRuleId === rule.id && (

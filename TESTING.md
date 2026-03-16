@@ -6,10 +6,10 @@
 # 全量测试
 cargo test --workspace && bun run test
 
-# Rust 测试（147 单元 + 17 集成 = 164）
+# Rust 测试（192 单元 + 23 集成 = 215）
 cargo test --workspace
 
-# 前端测试（86 vitest，9 个测试文件）
+# 前端测试（116 vitest，10 个测试文件）
 bun run test
 
 # 代码质量
@@ -23,9 +23,9 @@ bun run typecheck
 ### 按 crate 运行
 
 ```bash
-cargo test -p serverbee-common          # 协议 + 能力常量 (14 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 (130 tests)
-cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber (20 tests)
+cargo test -p serverbee-common          # 协议 + 能力常量 (24 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 (147 tests)
+cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager (44 tests)
 ```
 
 ### 仅集成测试
@@ -47,13 +47,13 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 
 | 模块 | 测试数 | 覆盖内容 |
 |------|--------|----------|
-| `common/constants.rs` | 6 | 能力位运算、默认值、掩码 |
-| `common/protocol.rs` | 8 | 消息序列化/反序列化（含 NetworkProbeSync/Results/Update） |
+| `common/constants.rs` | 7 | 能力位运算、默认值、掩码、CAP_FILE |
+| `common/protocol.rs` | 17 | 消息序列化/反序列化（NetworkProbe + 文件管理全协议覆盖） |
 | `server/service/alert.rs` | 15 | 阈值判定、指标提取、采样窗口 |
 | `server/service/auth.rs` | 19 | 密码哈希、session、API key、TOTP、登录、改密 |
 | `server/service/notification.rs` | 16 | 模板变量替换、渠道配置解析 |
 | `server/service/record.rs` | 6 | 历史查询、聚合、清理策略、保存上报、过期清理 |
-| `server/service/agent_manager.rs` | 10 | 连接管理、广播、缓存、终端会话、离线检测 |
+| `server/service/agent_manager.rs` | 12 | 连接管理、广播、缓存、终端会话、离线检测、请求-响应中继 |
 | `server/service/server.rs` | 5 | 服务器 CRUD、批量删除 |
 | `server/service/user.rs` | 4 | 用户 CRUD、级联删除、最后 admin 保护 |
 | `server/service/ping.rs` | 3 | Ping 任务 CRUD |
@@ -66,6 +66,8 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `server/service/network_probe.rs` | 13 | 网络探测目标 CRUD、预设目标保护（update/delete 403）、default_target_ids 校验、server targets 分配+校验、探测记录查询 |
 | `agent/probe_utils.rs` | 2 | 批量探测结果解析、地址解析 |
 | `agent/network_prober.rs` | 2 | 网络探测任务调度、结果上报 |
+| `server/service/file_transfer.rs` | 9 | 传输创建/获取、并发限制、过期清理、状态转换、进度更新、临时文件清理 |
+| `agent/file_manager.rs` | 24 | 路径校验(root_paths/遍历/deny_patterns/多根/空根)、目录列表(排序/空目录/元数据)、文件读写(base64编解码/大小限制)、删除/创建目录/重命名、上传流程、下载分片 |
 
 ### 集成测试覆盖
 
@@ -88,6 +90,12 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `test_network_probe_builtin_protection` | 删除预设目标 → 返回 403 |
 | `test_preset_target_source_field` | 验证预设 source/source_name 字段正确、自建目标 source 为 null |
 | `test_preset_target_cannot_be_updated` | PUT 预设目标 → 返回 403 |
+| `test_file_list_server_offline` | 启用 CAP_FILE → POST /files/list → 离线返回 404 |
+| `test_file_capability_enforcement` | CAP_DEFAULT (无 CAP_FILE) → POST /files/list → 403 |
+| `test_file_transfers_endpoint` | GET /files/transfers → 空列表 → DELETE 不存在 → 404 |
+| `test_file_write_requires_admin` | member 用户 POST /files/write → 403 |
+| `test_file_delete_requires_admin` | member 用户 POST /files/delete → 403 |
+| `test_file_mkdir_requires_admin` | member 用户 POST /files/mkdir → 403 |
 
 ## 前端测试
 
@@ -112,6 +120,7 @@ cd apps/web && bunx vitest run src/lib/capabilities.test.ts
 | `use-realtime-metrics.test.tsx` | 13 | toRealtimeDataPoint 转换（百分比、零值除法、字段映射）、hook 集成（缓存 seed、去重、追加、裁剪、serverId 切换） |
 | `use-servers-ws.test.ts` | 8 | 数据合并、静态字段保护、在线状态切换 |
 | `use-terminal-ws.test.ts` | 20 | WS URL 构造、状态机、base64 编码、resize、onData 回调 |
+| `file-utils.test.ts` | 30 | 扩展名→语言映射(yaml/json/ts/sh/rs/py/toml/go/sql/css/html/dockerfile/路径含点/大写)、文本文件判定(toml/sql/conf/exe/tar.gz)、图片文件判定(webp/ico/gif/bmp) |
 
 ### 测试工具
 
@@ -278,6 +287,74 @@ docker compose up -d
 | N21 | 最大目标数限制 | 为某 VPS 配置超过 20 个目标 → API 返回错误 | — |
 | N22 | i18n 切换 | 网络质量相关页面 → 中英文切换 → 标题/标签/按钮/Tooltip 全部正确翻译 | — |
 
+### 验证清单 — 文件管理
+
+#### 基础功能
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| F1 | 能力开关（启用） | Server Detail → 启用 File Manager capability → Files 按钮出现 | — |
+| F2 | 能力开关（禁用） | 关闭 CAP_FILE → Files 按钮消失 → 直接调 API 返回 403 | — |
+| F3 | 文件浏览 | 点击 Files → 显示 root_paths 下文件列表（名称/大小/权限/修改时间） | — |
+| F4 | 目录导航（进入） | 点击文件夹 → 进入子目录 → 面包屑导航更新 | — |
+| F5 | 目录导航（返回） | 点击面包屑段落 → 跳转到对应层级 → 点击 `..` → 返回上级 | — |
+| F6 | 空目录显示 | 进入空目录 → 显示 "Empty directory" 占位文字 | — |
+| F7 | 目录排序 | 文件列表中目录排在前面，同类按名称字母排序 | — |
+
+#### 文件查看 & 编辑
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| F8 | 文本文件查看 | 点击 .yaml/.json/.sh 文件 → Monaco Editor 显示内容 + 语法高亮正确 | — |
+| F9 | 语法高亮映射 | 分别打开 .yaml/.json/.ts/.py/.rs/.toml/.sh/.go → 语言标识正确 | — |
+| F10 | 文件编辑保存（Ctrl+S） | 编辑文本 → Ctrl+S → toast 提示 "File saved" → 重新打开验证 | — |
+| F11 | 文件编辑保存（按钮） | 编辑文本 → 点击 Save 按钮 → 保存成功 | — |
+| F12 | 保存冲突检测 | 编辑文件 → 另一端修改同文件 → 保存 → 弹出 "File modified externally, overwrite?" | — |
+| F13 | 大文件不预览 | 点击 >384KB 的文件 → 显示文件信息 + Download 按钮（不加载编辑器） | — |
+| F14 | Monaco 主题同步 | 切换深色/浅色主题 → Monaco Editor 主题跟随变化 | — |
+
+#### 文件操作
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| F15 | 新建目录 | 点击 New Folder → 输入名称 → 创建 → 列表显示新目录 | — |
+| F16 | 文件删除 | 右键 → Delete → 确认对话框 → 确认 → 文件从列表消失 | — |
+| F17 | 目录删除（递归） | 右键非空目录 → Delete → 确认 → 目录及其内容全部删除 | — |
+| F18 | 文件重命名 | 右键 → Rename → 输入新名称 → 文件名更新 | — |
+| F19 | 复制路径 | 右键 → Copy Path → 剪贴板包含完整路径 | — |
+
+#### 上传 & 下载
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| F20 | 文件上传（选择） | 点击 Upload → 选择文件 → 上传成功 → 列表显示新文件 | — |
+| F21 | 文件上传（拖拽） | 拖拽文件到上传区域 → 上传成功 | — |
+| F22 | 文件下载 | 右键 → Download → 浏览器开始下载 → transfer bar 显示进度 | — |
+| F23 | 大文件传输进度 | 上传/下载 >10MB 文件 → transfer bar 显示进度百分比和字节数 | — |
+| F24 | 取消传输 | 传输进行中 → 点击取消按钮 → 传输停止 | — |
+| F25 | 传输列表 | GET /api/files/transfers → 返回当前所有传输状态 | — |
+
+#### 安全 & 权限
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| F26 | 路径沙箱 | Agent 配置 root_paths=["/home"] → 尝试访问 /etc → 被拒绝 "path outside allowed roots" | — |
+| F27 | 路径穿越防护 | 尝试访问 `/home/../../etc/passwd` → canonicalize 后被拒绝 | — |
+| F28 | deny_patterns 拦截 | 尝试读取 .env / *.key / *.pem / id_rsa / shadow → Agent 拒绝 "file type blocked" | — |
+| F29 | 空 root_paths 全拒绝 | Agent 配置 root_paths=[] → 所有文件操作被拒绝 | — |
+| F30 | Member 用户只读 | member 角色 → 可浏览/读取 → 写入/删除/创建返回 403 | — |
+| F31 | 审计日志记录 | 执行 write/delete/upload/download → 审计日志出现对应 file_* 记录 | — |
+| F32 | 离线服务器 | Agent 离线 → 文件操作返回 404 "Server offline" | — |
+| F33 | 并发传输限制 | 同时发起 4 个下载 → 第 4 个返回 429 "Too many concurrent transfers" | — |
+
+#### i18n & UI
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| F34 | 中文模式 | 切换中文 → 文件管理页面标题/按钮/对话框/toast 全部显示中文 | — |
+| F35 | 英文模式 | 切换英文 → 所有 UI 元素显示英文 | — |
+| F36 | 传输状态标签 | 传输状态 pending/in_progress/ready/failed 显示正确的本地化文本 | — |
+
 ### 验证清单 — 告警 & 通知全链路
 
 | # | 测试场景 | 操作步骤 | 状态 |
@@ -321,13 +398,15 @@ crates/server/src/service/user.rs       # 用户服务测试
 crates/server/src/service/ping.rs       # Ping 服务测试
 crates/server/src/middleware/auth.rs    # 中间件 Cookie/Key 提取测试
 crates/server/src/test_utils.rs         # 测试辅助 (setup_test_db)
-crates/server/tests/integration.rs      # 集成测试 (17 tests)
+crates/server/tests/integration.rs      # 集成测试 (23 tests)
 crates/agent/src/collector/tests.rs     # Agent 采集器测试
 crates/agent/src/pinger.rs              # Agent Pinger 测试
 crates/agent/src/probe_utils.rs         # 批量探测解析测试
 crates/agent/src/network_prober.rs      # 网络探测模块测试
 crates/server/src/presets/mod.rs            # 预设目标加载测试
 crates/server/src/service/network_probe.rs # 网络探测服务单元测试
+crates/server/src/service/file_transfer.rs # 文件传输管理器测试 (9 tests)
+crates/agent/src/file_manager.rs           # Agent 文件管理器测试 (24 tests)
 apps/web/src/hooks/use-terminal-ws.test.ts # Terminal WS hook 测试
 apps/web/src/lib/capabilities.test.ts   # 能力位测试
 apps/web/src/lib/api-client.test.ts     # API Client 测试
@@ -337,6 +416,7 @@ apps/web/src/hooks/use-auth.test.tsx    # Auth hook 测试
 apps/web/src/hooks/use-api.test.tsx     # API hook 测试
 apps/web/src/hooks/use-realtime-metrics.test.tsx # 实时指标 hook 测试（纯函数 + renderHook 集成）
 apps/web/src/hooks/use-servers-ws.test.ts # WS 数据合并测试
+apps/web/src/lib/file-utils.test.ts     # 文件工具函数测试
 apps/web/vitest.config.ts               # Vitest 配置
 .github/workflows/ci.yml               # CI 流水线
 ```

@@ -18,7 +18,8 @@ A lightweight, self-hosted VPS monitoring system built with Rust and React.
 - **GeoIP** -- Automatic region/country detection from agent IP (MaxMind MMDB)
 - **OAuth & 2FA** -- GitHub/Google/OIDC login, TOTP two-factor authentication
 - **Multi-user** -- Admin/Member roles, audit logging, rate limiting
-- **Capability Toggles** -- Per-server feature controls (terminal, exec, upgrade, ping) with defense-in-depth enforcement
+- **File Management** -- Remote file browser with Monaco Editor, upload/download with progress, path sandbox security (`root_paths` + `deny_patterns`)
+- **Capability Toggles** -- Per-server feature controls (terminal, exec, upgrade, ping, file manager) with defense-in-depth enforcement
 - **Public Status Page** -- Unauthenticated status page with server groups and live metrics
 - **Billing Tracking** -- Price, billing cycle, expiration alerts, traffic limits per server
 - **Backup & Restore** -- SQLite database backup/restore via admin API
@@ -102,8 +103,8 @@ make server-dev                                           # Terminal 1: server o
 SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # Terminal 2: agent
 
 # Testing & code quality:
-make cargo-test        # Run all Rust tests (164)
-make test              # Run frontend tests (86)
+make cargo-test        # Run all Rust tests (215)
+make test              # Run frontend tests (116)
 make cargo-clippy      # Lint Rust code
 make                   # Interactive menu (requires fzf)
 ```

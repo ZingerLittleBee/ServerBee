@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Network probe alert types** -- `network_latency` and `network_packet_loss` alert rule types integrated into the existing alert system
 - **Real-time network probe WebSocket** -- Live probe results streamed via existing browser WebSocket, with seed data from last hour for immediate chart display
 - **Preset target architecture** -- Presets defined in `crates/server/src/presets/targets.toml`, embedded via `include_str!`, parsed at startup with `LazyLock` cache. DB stores only user-created targets. API returns unified `TargetDto` with `source`/`source_name` fields
+- **File Management** -- Full-stack remote file manager: browse directories, view/edit text files with Monaco Editor (syntax highlighting for 15+ languages), create/rename/delete files and folders, upload/download with progress tracking. Path sandbox via `root_paths` and `deny_patterns` for security
+- **CAP_FILE capability** -- New `CAP_FILE` (64) capability toggle for file management, following the same defense-in-depth pattern as other capabilities. High risk, disabled by default
+- **File management API** -- 13 new endpoints under `/api/files/{server_id}/` for list, stat, read, write, delete, mkdir, move, download, upload, plus transfer management endpoints
+- **Agent FileManager** -- Path validation with `root_paths` sandbox (prevents directory traversal), `deny_patterns` glob matching (blocks `.env`, `*.key`, `*.pem`, etc.), base64 content encoding, chunked download/upload support
+- **FileTransferManager** -- Server-side transfer orchestration with concurrent transfer limiting (max 3), automatic expiry cleanup, temporary file management for downloads
+- **Request-Response Relay** -- New `pending_requests` mechanism in AgentManager enabling synchronous request-response patterns over WebSocket (used by file operations)
+- **Monaco Editor integration** -- Embedded Monaco editor with dark/light theme sync, Ctrl+S save shortcut, conflict detection (warns when file modified externally), language detection from file extension
+- **File management i18n** -- Full Chinese and English translations for all file manager UI elements
 - **shadcn/ui component migration** -- Replaced hand-rolled Dialog, Select, Switch, Tabs, Skeleton, Checkbox with shadcn/ui equivalents across 29+ files
 - **DataTable (TanStack React Table)** -- Generic `DataTable` component with `DataTableColumnHeader`, `DataTablePagination`, `createSelectColumn`. Refactored 5 tables: servers, capabilities, audit-logs, network-probes, anomaly-table
 - **Toast notifications (Sonner)** -- 40+ mutations across all CRUD operations now show success/error toasts
@@ -31,21 +39,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `update_setting` now validates `default_target_ids` against both presets and DB targets
 - `set_server_targets` validates all target IDs before assignment
 - All native `<table>`, `<select>`, `<input type="checkbox">` elements replaced with shadcn/ui components (zero native remnants)
+- Default capabilities value updated from `56` to `56` (CAP_FILE=64 excluded by default, requires explicit opt-in)
 
 ### Fixed
 
 - **24h time range crash** -- `Invalid time value` error when clicking 24h on network detail page (hourly records had `hour` field instead of `timestamp`, now unified via `ProbeRecordDto`)
+- **File content base64 display** -- Frontend displayed raw base64 in Monaco editor instead of decoded text; added UTF-8 safe base64 encode/decode for file read/write
+- **Root paths navigation** -- File manager showed empty directory on initial load when `root_paths` didn't include `/`; agent now returns root_paths as virtual entries when browsing ancestor directories
 - Sonner theme integration (uses project's `useTheme`, removed `richColors` for neutral style)
 - Removed undefined `cn-toast` CSS class from Sonner component
 
 ### Testing
 
-- 164 Rust tests: 147 unit + 17 integration (was 132 unit + 15 integration)
+- 215 Rust tests: 192 unit + 23 integration (was 132 unit + 15 integration)
 - 8 new preset module tests (load, uniqueness, find, group metadata, probe type validation)
 - 6 new service tests (preset protection, setting validation, server target assignment)
 - 2 new integration tests (source field verification, preset update protection)
-- 86 frontend Vitest tests across 9 test files
+- 9 new file transfer service tests (concurrent limits, expiry cleanup, status transitions, progress updates)
+- 24 new agent file manager tests (path validation, directory listing, file read/write, delete/mkdir/rename, upload/download)
+- 6 new file management integration tests (offline handling, capability enforcement, transfer endpoints, admin-only write/delete/mkdir)
+- 116 frontend Vitest tests across 10 test files (was 86 across 9)
+- 30 new file-utils tests (extension-to-language mapping, text/image file detection)
 - 22 new E2E verification scenarios for network quality monitoring (N1-N22)
+- 36 new E2E verification scenarios for file management (F1-F36)
 
 ## [0.2.1] - 2026-03-15
 

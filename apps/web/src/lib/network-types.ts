@@ -58,6 +58,17 @@ export interface NetworkProbeAnomaly {
   value: number
 }
 
+export function formatLatency(ms: number | null | undefined): string {
+  if (ms == null) {
+    return 'N/A'
+  }
+  return `${ms.toFixed(1)} ms`
+}
+
+export function formatPacketLoss(loss: number): string {
+  return `${(loss * 100).toFixed(1)}%`
+}
+
 export interface NetworkProbeResultData {
   avg_latency: number | null
   max_latency: number | null

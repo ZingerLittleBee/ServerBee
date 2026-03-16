@@ -3,6 +3,6 @@
   "back": "返回",
   "reconnect": "重新连接",
   "status_connected": "已连接",
-  "status_connecting": "连接中...",
+  "status_connecting": "连接中…",
   "status_closed": "已断开"
 }

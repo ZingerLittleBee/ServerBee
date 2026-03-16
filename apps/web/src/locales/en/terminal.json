@@ -3,6 +3,6 @@
   "back": "Back",
   "reconnect": "Reconnect",
   "status_connected": "connected",
-  "status_connecting": "connecting...",
+  "status_connecting": "connecting…",
   "status_closed": "closed"
 }

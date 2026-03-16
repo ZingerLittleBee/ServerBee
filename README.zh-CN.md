@@ -18,7 +18,8 @@
 - **GeoIP** -- 根据 Agent IP 自动检测地区/国家 (MaxMind MMDB)
 - **OAuth & 2FA** -- GitHub/Google/OIDC 登录，TOTP 两步验证
 - **多用户** -- Admin/Member 角色，审计日志，速率限制
-- **能力开关** -- 每台服务器独立的功能控制 (终端、执行、升级、探测)，服务端+Agent 双重校验
+- **文件管理** -- 远程文件浏览器，Monaco 编辑器，上传/下载带进度显示，路径沙箱安全机制 (`root_paths` + `deny_patterns`)
+- **能力开关** -- 每台服务器独立的功能控制 (终端、执行、升级、探测、文件管理)，服务端+Agent 双重校验
 - **公共状态页** -- 无需登录的服务器状态展示
 - **计费追踪** -- 价格、计费周期、到期提醒、流量限制
 - **备份恢复** -- SQLite 数据库备份/恢复 API
@@ -102,8 +103,8 @@ make server-dev                                           # 终端 1: 服务端 
 SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # 终端 2: Agent
 
 # 测试与代码质量:
-make cargo-test        # 运行全部 Rust 测试 (164)
-make test              # 运行前端测试 (86)
+make cargo-test        # 运行全部 Rust 测试 (215)
+make test              # 运行前端测试 (116)
 make cargo-clippy      # Rust 代码检查
 make                   # 交互式菜单 (需要 fzf)
 ```
