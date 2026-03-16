@@ -358,6 +358,9 @@ impl Reporter {
                 );
                 network_prober.sync(targets, interval, packet_count);
             }
+            _ => {
+                tracing::debug!("Unhandled server message variant");
+            }
         }
 
         Ok(())

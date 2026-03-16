@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::types::{
-    NetworkProbeResultData, NetworkProbeTarget, PingResult, PingTaskConfig, SystemInfo,
+    FileEntry, NetworkProbeResultData, NetworkProbeTarget, PingResult, PingTaskConfig, SystemInfo,
     SystemReport, TaskResult,
 };
 
@@ -39,6 +39,55 @@ pub enum AgentMessage {
     },
     NetworkProbeResults {
         results: Vec<NetworkProbeResultData>,
+    },
+    // File management responses
+    FileListResult {
+        msg_id: String,
+        path: String,
+        entries: Vec<FileEntry>,
+        error: Option<String>,
+    },
+    FileStatResult {
+        msg_id: String,
+        entry: Option<FileEntry>,
+        error: Option<String>,
+    },
+    FileReadResult {
+        msg_id: String,
+        content: Option<String>,
+        error: Option<String>,
+    },
+    FileOpResult {
+        msg_id: String,
+        success: bool,
+        error: Option<String>,
+    },
+    FileDownloadReady {
+        transfer_id: String,
+        size: u64,
+    },
+    FileDownloadChunk {
+        transfer_id: String,
+        offset: u64,
+        data: String,
+    },
+    FileDownloadEnd {
+        transfer_id: String,
+    },
+    FileDownloadError {
+        transfer_id: String,
+        error: String,
+    },
+    FileUploadAck {
+        transfer_id: String,
+        offset: u64,
+    },
+    FileUploadComplete {
+        transfer_id: String,
+    },
+    FileUploadError {
+        transfer_id: String,
+        error: String,
     },
     Pong,
 }
@@ -86,6 +135,59 @@ pub enum ServerMessage {
         targets: Vec<NetworkProbeTarget>,
         interval: u32,
         packet_count: u32,
+    },
+    // File management commands
+    FileList {
+        msg_id: String,
+        path: String,
+    },
+    FileDelete {
+        msg_id: String,
+        path: String,
+        recursive: bool,
+    },
+    FileMkdir {
+        msg_id: String,
+        path: String,
+    },
+    FileMove {
+        msg_id: String,
+        from: String,
+        to: String,
+    },
+    FileStat {
+        msg_id: String,
+        path: String,
+    },
+    FileRead {
+        msg_id: String,
+        path: String,
+        max_size: u64,
+    },
+    FileWrite {
+        msg_id: String,
+        path: String,
+        content: String,
+    },
+    FileDownloadStart {
+        transfer_id: String,
+        path: String,
+    },
+    FileDownloadCancel {
+        transfer_id: String,
+    },
+    FileUploadStart {
+        transfer_id: String,
+        path: String,
+        size: u64,
+    },
+    FileUploadChunk {
+        transfer_id: String,
+        offset: u64,
+        data: String,
+    },
+    FileUploadEnd {
+        transfer_id: String,
     },
     Ping,
     Upgrade {
@@ -230,6 +332,73 @@ mod tests {
         let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
         match parsed {
             AgentMessage::NetworkProbeResults { results } => assert!(results.is_empty()),
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_file_list_round_trip() {
+        let msg = ServerMessage::FileList {
+            msg_id: "m1".into(),
+            path: "/home".into(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("file_list"));
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ServerMessage::FileList { msg_id, path } => {
+                assert_eq!(msg_id, "m1");
+                assert_eq!(path, "/home");
+            }
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_file_list_result_round_trip() {
+        use crate::types::{FileEntry, FileType};
+        let entry = FileEntry {
+            name: "test.txt".into(),
+            path: "/home/test.txt".into(),
+            file_type: FileType::File,
+            size: 1024,
+            modified: 1710000000,
+            permissions: Some("rw-r--r--".into()),
+            owner: Some("root".into()),
+            group: Some("root".into()),
+        };
+        let msg = AgentMessage::FileListResult {
+            msg_id: "m1".into(),
+            path: "/home".into(),
+            entries: vec![entry],
+            error: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::FileListResult { entries, .. } => {
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0].name, "test.txt");
+            }
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_file_download_chunk_round_trip() {
+        let msg = AgentMessage::FileDownloadChunk {
+            transfer_id: "t1".into(),
+            offset: 0,
+            data: "aGVsbG8=".into(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::FileDownloadChunk { transfer_id, offset, data } => {
+                assert_eq!(transfer_id, "t1");
+                assert_eq!(offset, 0);
+                assert_eq!(data, "aGVsbG8=");
+            }
             _ => panic!("Wrong variant"),
         }
     }

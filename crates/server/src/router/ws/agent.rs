@@ -329,6 +329,9 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         AgentMessage::Pong => {
             // Agent responded to our protocol-level Ping; already handled by WS Pong frames
         }
+        _ => {
+            tracing::debug!("Unhandled agent message variant");
+        }
     }
 }
 
