@@ -969,6 +969,150 @@ mod tests {
         assert_eq!(content, "Hello upload!");
     }
 
+    #[test]
+    fn test_deny_pattern_env_variants() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().to_str().unwrap();
+        let config = make_config(root);
+        let mgr = make_manager(config);
+
+        for name in &[".env", ".env.local", ".env.production"] {
+            let path = tmp.path().join(name);
+            std::fs::write(&path, "SECRET=x").unwrap();
+            assert!(
+                mgr.validate_path(path.to_str().unwrap()).is_err(),
+                "Should deny {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_deny_pattern_id_rsa_variants() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().to_str().unwrap();
+        let config = make_config(root);
+        let mgr = make_manager(config);
+
+        for name in &["id_rsa", "id_rsa.pub", "id_rsa_backup"] {
+            let path = tmp.path().join(name);
+            std::fs::write(&path, "key").unwrap();
+            assert!(
+                mgr.validate_path(path.to_str().unwrap()).is_err(),
+                "Should deny {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_path_allows_normal_files() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().to_str().unwrap();
+        let config = make_config(root);
+        let mgr = make_manager(config);
+
+        for name in &["config.yaml", "app.log", "start.sh", "README.md"] {
+            let path = tmp.path().join(name);
+            std::fs::write(&path, "content").unwrap();
+            assert!(
+                mgr.validate_path(path.to_str().unwrap()).is_ok(),
+                "Should allow {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_path_multiple_roots() {
+        let tmp1 = TempDir::new().unwrap();
+        let tmp2 = TempDir::new().unwrap();
+        let config = FileConfig {
+            enabled: true,
+            root_paths: vec![
+                tmp1.path().to_str().unwrap().to_string(),
+                tmp2.path().to_str().unwrap().to_string(),
+            ],
+            max_file_size: 1_073_741_824,
+            deny_patterns: vec![
+                "*.key".into(),
+                "*.pem".into(),
+                "id_rsa*".into(),
+                ".env*".into(),
+                "shadow".into(),
+                "passwd".into(),
+            ],
+        };
+        let caps = Arc::new(AtomicU32::new(u32::MAX));
+        let mgr = FileManager::new(config, caps);
+
+        let f1 = tmp1.path().join("a.txt");
+        let f2 = tmp2.path().join("b.txt");
+        std::fs::write(&f1, "a").unwrap();
+        std::fs::write(&f2, "b").unwrap();
+
+        assert!(mgr.validate_path(f1.to_str().unwrap()).is_ok());
+        assert!(mgr.validate_path(f2.to_str().unwrap()).is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_read_file_base64_encoding() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().to_str().unwrap();
+        let config = make_config(root);
+        let mgr = make_manager(config);
+        let path = tmp.path().join("test.txt");
+        std::fs::write(&path, "hello world").unwrap();
+
+        let content = mgr.read_file(path.to_str().unwrap(), 1024).await.unwrap();
+        let decoded = BASE64.decode(&content).unwrap();
+        assert_eq!(std::str::from_utf8(&decoded).unwrap(), "hello world");
+    }
+
+    #[tokio::test]
+    async fn test_write_file_base64_decoding() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().to_str().unwrap();
+        let config = make_config(root);
+        let mgr = make_manager(config);
+        let path = tmp.path().join("output.txt");
+        // Create the file first so validate_path can canonicalize it
+        std::fs::write(&path, "").unwrap();
+
+        let encoded = BASE64.encode("written content");
+        mgr.write_file(path.to_str().unwrap(), &encoded)
+            .await
+            .unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "written content");
+    }
+
+    #[tokio::test]
+    async fn test_list_dir_empty_directory() {
+        let tmp = TempDir::new().unwrap();
+        let subdir = tmp.path().join("empty");
+        std::fs::create_dir(&subdir).unwrap();
+        let root = tmp.path().to_str().unwrap();
+        let config = make_config(root);
+        let mgr = make_manager(config);
+
+        let entries = mgr.list_dir(subdir.to_str().unwrap()).await.unwrap();
+        assert!(entries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_list_dir_file_metadata() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().to_str().unwrap();
+        let config = make_config(root);
+        let mgr = make_manager(config);
+        std::fs::write(tmp.path().join("hello.txt"), "12345").unwrap();
+
+        let entries = mgr.list_dir(tmp.path().to_str().unwrap()).await.unwrap();
+        let file_entry = entries.iter().find(|e| e.name == "hello.txt").unwrap();
+        assert_eq!(file_entry.size, 5);
+        assert!(matches!(file_entry.file_type, FileType::File));
+        assert!(file_entry.modified > 0);
+    }
+
     #[tokio::test]
     async fn test_download_sends_chunks() {
         let tmp = TempDir::new().unwrap();

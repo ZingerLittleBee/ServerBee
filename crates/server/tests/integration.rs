@@ -1424,3 +1424,157 @@ async fn test_file_transfers_endpoint() {
         "Cancelling nonexistent transfer should return 404"
     );
 }
+
+#[tokio::test]
+async fn test_file_write_requires_admin() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin_client = http_client();
+
+    // Login as admin and create a member user
+    login_admin(&admin_client, &base_url).await;
+
+    let create_resp = admin_client
+        .post(format!("{}/api/users", base_url))
+        .json(&json!({
+            "username": "filemember",
+            "password": "memberpass123",
+            "role": "member"
+        }))
+        .send()
+        .await
+        .expect("POST /api/users failed");
+
+    assert_eq!(create_resp.status(), 200, "Admin should be able to create member");
+
+    // Login as the member user in a separate client
+    let member_client = http_client();
+    let member_login = member_client
+        .post(format!("{}/api/auth/login", base_url))
+        .json(&json!({
+            "username": "filemember",
+            "password": "memberpass123"
+        }))
+        .send()
+        .await
+        .expect("Member login request failed");
+
+    assert_eq!(member_login.status(), 200, "Member login should succeed");
+
+    // POST /api/files/1/write as member -> 403 (require_admin)
+    let write_resp = member_client
+        .post(format!("{}/api/files/1/write", base_url))
+        .json(&json!({
+            "path": "/tmp/test.txt",
+            "content": "dGVzdA=="
+        }))
+        .send()
+        .await
+        .expect("POST /api/files/1/write as member failed");
+
+    assert_eq!(
+        write_resp.status(),
+        403,
+        "Member should receive 403 when attempting file write"
+    );
+}
+
+#[tokio::test]
+async fn test_file_delete_requires_admin() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin_client = http_client();
+
+    login_admin(&admin_client, &base_url).await;
+
+    let create_resp = admin_client
+        .post(format!("{}/api/users", base_url))
+        .json(&json!({
+            "username": "filedelmember",
+            "password": "memberpass123",
+            "role": "member"
+        }))
+        .send()
+        .await
+        .expect("POST /api/users failed");
+
+    assert_eq!(create_resp.status(), 200);
+
+    let member_client = http_client();
+    let member_login = member_client
+        .post(format!("{}/api/auth/login", base_url))
+        .json(&json!({
+            "username": "filedelmember",
+            "password": "memberpass123"
+        }))
+        .send()
+        .await
+        .expect("Member login request failed");
+
+    assert_eq!(member_login.status(), 200);
+
+    // POST /api/files/1/delete as member -> 403
+    let delete_resp = member_client
+        .post(format!("{}/api/files/1/delete", base_url))
+        .json(&json!({
+            "path": "/tmp/test.txt",
+            "recursive": false
+        }))
+        .send()
+        .await
+        .expect("POST /api/files/1/delete as member failed");
+
+    assert_eq!(
+        delete_resp.status(),
+        403,
+        "Member should receive 403 when attempting file delete"
+    );
+}
+
+#[tokio::test]
+async fn test_file_mkdir_requires_admin() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin_client = http_client();
+
+    login_admin(&admin_client, &base_url).await;
+
+    let create_resp = admin_client
+        .post(format!("{}/api/users", base_url))
+        .json(&json!({
+            "username": "filemkdirmember",
+            "password": "memberpass123",
+            "role": "member"
+        }))
+        .send()
+        .await
+        .expect("POST /api/users failed");
+
+    assert_eq!(create_resp.status(), 200);
+
+    let member_client = http_client();
+    let member_login = member_client
+        .post(format!("{}/api/auth/login", base_url))
+        .json(&json!({
+            "username": "filemkdirmember",
+            "password": "memberpass123"
+        }))
+        .send()
+        .await
+        .expect("Member login request failed");
+
+    assert_eq!(member_login.status(), 200);
+
+    // POST /api/files/1/mkdir as member -> 403
+    let mkdir_resp = member_client
+        .post(format!("{}/api/files/1/mkdir", base_url))
+        .json(&json!({
+            "path": "/tmp/newdir"
+        }))
+        .send()
+        .await
+        .expect("POST /api/files/1/mkdir as member failed");
+
+    assert_eq!(
+        mkdir_resp.status(),
+        403,
+        "Member should receive 403 when attempting file mkdir"
+    );
+}
