@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeft, CreditCard, Pencil, Terminal as TerminalIcon } from 'lucide-react'
+import { ArrowLeft, CreditCard, FileText, Pencil, Terminal as TerminalIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -16,7 +16,7 @@ import { useRealtimeMetrics } from '@/hooks/use-realtime-metrics'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerResponse } from '@/lib/api-schema'
-import { CAPABILITIES } from '@/lib/capabilities'
+import { CAP_FILE, CAPABILITIES, hasCap } from '@/lib/capabilities'
 import { cn, countryCodeToFlag, formatBytes } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/servers/$id')({
@@ -277,6 +277,7 @@ function ServerDetailPage() {
   const flag = countryCodeToFlag(server.country_code)
   // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
   const terminalEnabled = serverWithCaps.capabilities == null || (serverWithCaps.capabilities & 1) !== 0
+  const fileEnabled = hasCap(serverWithCaps.capabilities ?? 0, CAP_FILE)
 
   // Network cumulative traffic from live data
   const liveNetIn = liveData?.net_in_transfer ?? 0
@@ -312,6 +313,14 @@ function ServerDetailPage() {
                 <Button size="sm" variant="outline">
                   <TerminalIcon className="mr-1 size-4" />
                   {t('detail_terminal')}
+                </Button>
+              </Link>
+            )}
+            {isOnline && fileEnabled && (
+              <Link params={{ serverId: id }} to="/files/$serverId">
+                <Button size="sm" variant="outline">
+                  <FileText className="mr-1 size-4" />
+                  {t('detail_files')}
                 </Button>
               </Link>
             )}
