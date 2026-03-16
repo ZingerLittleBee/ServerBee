@@ -1290,3 +1290,137 @@ async fn test_alert_states_endpoint() {
         .await
         .unwrap();
 }
+
+// ── File management integration tests ─────────────────────────────────────────
+
+#[tokio::test]
+async fn test_file_list_server_offline() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    // Register an agent to get a server_id
+    let register_resp = client
+        .post(format!("{}/api/agent/register", base_url))
+        .header("Authorization", "Bearer test-key")
+        .send()
+        .await
+        .expect("Register request failed");
+
+    assert_eq!(register_resp.status(), 200);
+    let register_body: serde_json::Value = register_resp.json().await.unwrap();
+    let server_id = register_body["data"]["server_id"]
+        .as_str()
+        .expect("server_id missing");
+
+    // Enable CAP_FILE (64) on the server via batch-capabilities (set bitmask)
+    let update_resp = client
+        .put(format!("{}/api/servers/batch-capabilities", base_url))
+        .json(&json!({
+            "server_ids": [server_id],
+            "set": 64,
+            "unset": 0
+        }))
+        .send()
+        .await
+        .expect("batch-capabilities update failed");
+    assert_eq!(update_resp.status(), 200);
+
+    // POST /api/files/{server_id}/list — server is offline (no WS agent connected)
+    let list_resp = client
+        .post(format!("{}/api/files/{}/list", base_url, server_id))
+        .json(&json!({ "path": "/" }))
+        .send()
+        .await
+        .expect("POST /api/files/{id}/list failed");
+
+    assert_eq!(
+        list_resp.status(),
+        404,
+        "File list should return 404 when server is offline"
+    );
+}
+
+#[tokio::test]
+async fn test_file_capability_enforcement() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    // Register an agent — default capabilities = CAP_DEFAULT (56), no CAP_FILE
+    let register_resp = client
+        .post(format!("{}/api/agent/register", base_url))
+        .header("Authorization", "Bearer test-key")
+        .send()
+        .await
+        .expect("Register request failed");
+
+    assert_eq!(register_resp.status(), 200);
+    let register_body: serde_json::Value = register_resp.json().await.unwrap();
+    let server_id = register_body["data"]["server_id"]
+        .as_str()
+        .expect("server_id missing");
+
+    // POST /api/files/{server_id}/list — should get 403 (CAP_FILE not set)
+    let list_resp = client
+        .post(format!("{}/api/files/{}/list", base_url, server_id))
+        .json(&json!({ "path": "/" }))
+        .send()
+        .await
+        .expect("POST /api/files/{id}/list failed");
+
+    assert_eq!(
+        list_resp.status(),
+        403,
+        "File list should return 403 when CAP_FILE is not enabled"
+    );
+
+    let body: serde_json::Value = list_resp.json().await.unwrap();
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("File capability disabled"),
+        "Error message should mention file capability"
+    );
+}
+
+#[tokio::test]
+async fn test_file_transfers_endpoint() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    // GET /api/files/transfers — should return empty list
+    let transfers_resp = client
+        .get(format!("{}/api/files/transfers", base_url))
+        .send()
+        .await
+        .expect("GET /api/files/transfers failed");
+
+    assert_eq!(transfers_resp.status(), 200);
+    let transfers_body: serde_json::Value = transfers_resp.json().await.unwrap();
+    let transfers = transfers_body["data"]["transfers"]
+        .as_array()
+        .expect("transfers should be an array");
+    assert!(
+        transfers.is_empty(),
+        "Transfers list should be empty initially"
+    );
+
+    // DELETE /api/files/transfers/nonexistent — should return 404
+    let cancel_resp = client
+        .delete(format!(
+            "{}/api/files/transfers/nonexistent-id",
+            base_url
+        ))
+        .send()
+        .await
+        .expect("DELETE /api/files/transfers/nonexistent failed");
+
+    assert_eq!(
+        cancel_resp.status(),
+        404,
+        "Cancelling nonexistent transfer should return 404"
+    );
+}
