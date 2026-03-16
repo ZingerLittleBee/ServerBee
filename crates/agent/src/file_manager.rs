@@ -152,32 +152,32 @@ impl FileManager {
 
                 let mut entries = Vec::new();
                 for root in &self.config.root_paths {
-                    if let Ok(root_canonical) = std::fs::canonicalize(root) {
-                        if root_canonical.starts_with(&request_path) {
-                            let name = root_canonical.to_string_lossy().to_string();
-                            let metadata = tokio::fs::metadata(&root_canonical).await.ok();
-                            let modified = metadata
-                                .as_ref()
-                                .and_then(|m| m.modified().ok())
-                                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                                .map(|d| d.as_secs() as i64)
-                                .unwrap_or(0);
-                            let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
-                            let (permissions, owner, group) = metadata
-                                .as_ref()
-                                .map(|m| get_platform_metadata(m, &root_canonical))
-                                .unwrap_or_default();
-                            entries.push(FileEntry {
-                                name,
-                                path: root_canonical.to_string_lossy().to_string(),
-                                file_type: FileType::Directory,
-                                size,
-                                modified,
-                                permissions,
-                                owner,
-                                group,
-                            });
-                        }
+                    if let Ok(root_canonical) = std::fs::canonicalize(root)
+                        && root_canonical.starts_with(&request_path)
+                    {
+                        let name = root_canonical.to_string_lossy().to_string();
+                        let metadata = tokio::fs::metadata(&root_canonical).await.ok();
+                        let modified = metadata
+                            .as_ref()
+                            .and_then(|m| m.modified().ok())
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                            .map(|d| d.as_secs() as i64)
+                            .unwrap_or(0);
+                        let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
+                        let (permissions, owner, group) = metadata
+                            .as_ref()
+                            .map(|m| get_platform_metadata(m, &root_canonical))
+                            .unwrap_or_default();
+                        entries.push(FileEntry {
+                            name,
+                            path: root_canonical.to_string_lossy().to_string(),
+                            file_type: FileType::Directory,
+                            size,
+                            modified,
+                            permissions,
+                            owner,
+                            group,
+                        });
                     }
                 }
 
@@ -185,7 +185,7 @@ impl FileManager {
                     anyhow::bail!("Path '{}' is outside allowed root paths", path);
                 }
                 entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-                return Ok(entries);
+                Ok(entries)
             }
         }
     }
