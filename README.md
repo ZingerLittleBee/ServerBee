@@ -21,6 +21,7 @@ A lightweight, self-hosted VPS monitoring system built with Rust and React.
 - **File Management** -- Remote file browser with Monaco Editor, upload/download with progress, path sandbox security (`root_paths` + `deny_patterns`)
 - **Capability Toggles** -- Per-server feature controls (terminal, exec, upgrade, ping, file manager) with defense-in-depth enforcement
 - **Public Status Page** -- Unauthenticated status page with server groups and live metrics
+- **Monthly Traffic Statistics** -- Billing cycle-aware traffic tracking with daily/hourly breakdowns, usage progress bars, and end-of-cycle prediction
 - **Billing Tracking** -- Price, billing cycle, expiration alerts, traffic limits per server
 - **Backup & Restore** -- SQLite database backup/restore via admin API
 - **Agent Auto-update** -- Remote binary upgrade with SHA-256 verification
@@ -103,8 +104,8 @@ make server-dev                                           # Terminal 1: server o
 SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # Terminal 2: agent
 
 # Testing & code quality:
-make cargo-test        # Run all Rust tests (215)
-make test              # Run frontend tests (116)
+make cargo-test        # Run all Rust tests (236)
+make test              # Run frontend tests (121)
 make cargo-clippy      # Lint Rust code
 make                   # Interactive menu (requires fzf)
 ```
@@ -147,6 +148,11 @@ records_hourly_days = 90      # Hourly aggregates retention
 audit_logs_days = 180         # Audit log retention
 network_probe_days = 7        # Network probe raw records retention
 network_probe_hourly_days = 90 # Network probe hourly aggregates retention
+traffic_hourly_days = 7        # Traffic hourly records retention
+traffic_daily_days = 400       # Traffic daily records retention
+
+[scheduler]
+timezone = "UTC"               # Timezone for daily traffic aggregation (e.g. Asia/Shanghai)
 
 [geoip]
 enabled = false

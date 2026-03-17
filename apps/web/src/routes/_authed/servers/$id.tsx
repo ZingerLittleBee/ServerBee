@@ -1,9 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, CreditCard, FileText, Pencil, Terminal as TerminalIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
+import { CapabilitiesDialog } from '@/components/server/capabilities-dialog'
 import { MetricsChart } from '@/components/server/metrics-chart'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
@@ -11,14 +11,12 @@ import { TrafficCard } from '@/components/server/traffic-card'
 import { TrafficProgress } from '@/components/server/traffic-progress'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Switch } from '@/components/ui/switch'
 import { useServer, useServerRecords } from '@/hooks/use-api'
-import { useAuth } from '@/hooks/use-auth'
 import { useRealtimeMetrics } from '@/hooks/use-realtime-metrics'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerResponse } from '@/lib/api-schema'
-import { CAP_FILE, CAPABILITIES, hasCap } from '@/lib/capabilities'
+import { CAP_FILE, hasCap } from '@/lib/capabilities'
 import { cn, countryCodeToFlag, formatBytes } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/servers/$id')({
@@ -91,77 +89,6 @@ function ServerInfoMeta({ server }: { server: ServerResponse }) {
       {server.kernel_version && <span>Kernel: {server.kernel_version}</span>}
       {server.region && <span>Region: {server.region}</span>}
       {server.agent_version && <span>Agent: v{server.agent_version}</span>}
-    </div>
-  )
-}
-
-function CapabilitiesSection({ server }: { server: ServerWithCaps }) {
-  const { t } = useTranslation('servers')
-  const { user } = useAuth()
-  const queryClient = useQueryClient()
-
-  const mutation = useMutation({
-    mutationFn: (newCaps: number) => api.put(`/api/servers/${server.id}`, { capabilities: newCaps }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['servers', server.id] })
-    }
-  })
-
-  if (user?.role !== 'admin') {
-    return null
-  }
-
-  const caps = server.capabilities ?? 56
-
-  const toggle = (bit: number) => {
-    // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask toggle
-    const newCaps = caps & bit ? caps & ~bit : caps | bit
-    mutation.mutate(newCaps, {
-      onSuccess: () => {
-        toast.success('Capabilities updated')
-      },
-      onError: (err) => {
-        toast.error(err instanceof Error ? err.message : 'Operation failed')
-      }
-    })
-  }
-
-  return (
-    <div className="mt-6 rounded-lg border bg-card p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="font-semibold">{t('cap_toggles')}</h3>
-        {server.protocol_version != null && server.protocol_version < 2 && (
-          <span className="rounded bg-amber-100 px-2 py-1 text-amber-600 text-xs dark:bg-amber-900/30 dark:text-amber-400">
-            {t('cap_upgrade_warning')}
-          </span>
-        )}
-      </div>
-      <div className="space-y-3">
-        {CAPABILITIES.map(({ bit, labelKey, risk }) => (
-          <div className="flex items-center justify-between" key={bit}>
-            <div className="flex items-center gap-2">
-              <span>{t(labelKey)}</span>
-              <span
-                className={`rounded px-1.5 py-0.5 text-xs ${
-                  risk === 'high'
-                    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                    : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                }`}
-              >
-                {risk === 'high' ? t('cap_high_risk') : t('cap_low_risk')}
-              </span>
-            </div>
-            <Switch
-              checked={
-                // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
-                !!(caps & bit)
-              }
-              disabled={mutation.isPending}
-              onCheckedChange={() => toggle(bit)}
-            />
-          </div>
-        ))}
-      </div>
     </div>
   )
 }
@@ -316,6 +243,7 @@ function ServerDetailPage() {
               <Pencil aria-hidden="true" className="mr-1 size-4" />
               {t('detail_edit')}
             </Button>
+            <CapabilitiesDialog server={serverWithCaps} />
             {isOnline && terminalEnabled && (
               <Link params={{ serverId: id }} to="/terminal/$serverId">
                 <Button size="sm" variant="outline">
@@ -396,6 +324,7 @@ function ServerDetailPage() {
           color="var(--color-chart-4)"
           data={chartData}
           dataKey="net_in_speed"
+          formatTick={(v) => formatBytes(v)}
           formatTime={realtimeFormatTime}
           formatValue={(v) => formatBytes(v)}
           title={t('chart_net_in')}
@@ -404,6 +333,7 @@ function ServerDetailPage() {
           color="var(--color-chart-5)"
           data={chartData}
           dataKey="net_out_speed"
+          formatTick={(v) => formatBytes(v)}
           formatTime={realtimeFormatTime}
           formatValue={(v) => formatBytes(v)}
           title={t('chart_net_out')}
@@ -450,8 +380,6 @@ function ServerDetailPage() {
       </div>
 
       <TrafficCard serverId={id} />
-
-      <CapabilitiesSection server={serverWithCaps} />
 
       <ServerEditDialog onClose={() => setEditOpen(false)} open={editOpen} server={server} />
     </div>

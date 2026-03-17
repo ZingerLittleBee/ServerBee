@@ -3,9 +3,10 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Activity, BarChart3, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -57,6 +58,10 @@ function PingResultsChart({ taskId }: { taskId: string }) {
     records.filter((r) => r.success).reduce((sum, r) => sum + r.latency, 0) /
     Math.max(1, records.filter((r) => r.success).length)
 
+  const pingChartConfig = {
+    latency: { label: 'Latency', color: 'var(--chart-4)' }
+  } satisfies ChartConfig
+
   return (
     <div className="space-y-2">
       <div className="flex gap-4 text-muted-foreground text-xs">
@@ -64,50 +69,35 @@ function PingResultsChart({ taskId }: { taskId: string }) {
         <span>{t('ping.avg_latency', { value: avgLatency.toFixed(1) })}</span>
         <span>{t('ping.record_count', { count: records.length })}</span>
       </div>
-      <ResponsiveContainer height={180} width="100%">
-        <AreaChart data={chartData}>
-          <defs>
-            <linearGradient id="gradient-latency" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="5%" stopColor="var(--color-chart-4)" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="var(--color-chart-4)" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
+      <ChartContainer className="h-[180px] w-full" config={pingChartConfig}>
+        <AreaChart accessibilityLayer data={chartData}>
+          <CartesianGrid vertical={false} />
           <XAxis
             axisLine={false}
             dataKey="timestamp"
-            stroke="var(--color-muted-foreground)"
-            tick={{ fontSize: 10 }}
             tickFormatter={(v: string) => new Date(v).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             tickLine={false}
           />
-          <YAxis
-            axisLine={false}
-            stroke="var(--color-muted-foreground)"
-            tick={{ fontSize: 10 }}
-            tickLine={false}
-            width={40}
-          />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: 'var(--color-card)',
-              border: '1px solid var(--color-border)',
-              borderRadius: '8px',
-              fontSize: '12px'
-            }}
-            formatter={(value) => [`${Number(value).toFixed(1)}ms`, 'Latency']}
-            labelFormatter={(label) => new Date(String(label)).toLocaleString()}
+          <YAxis axisLine={false} tickLine={false} width={40} />
+          <ChartTooltip
+            content={
+              <ChartTooltipContent
+                labelFormatter={(label) => new Date(String(label)).toLocaleString()}
+                valueFormatter={(v) => `${v.toFixed(1)}ms`}
+              />
+            }
           />
           <Area
             connectNulls={false}
             dataKey="latency"
-            fill="url(#gradient-latency)"
-            stroke="var(--color-chart-4)"
+            fill="var(--color-latency)"
+            fillOpacity={0.1}
+            stroke="var(--color-latency)"
             strokeWidth={2}
             type="monotone"
           />
         </AreaChart>
-      </ResponsiveContainer>
+      </ChartContainer>
     </div>
   )
 }

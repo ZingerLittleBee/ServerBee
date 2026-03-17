@@ -293,6 +293,29 @@ docker compose up -d
 | N21 | 最大目标数限制 | 为某 VPS 配置超过 20 个目标 → API 返回错误 | — |
 | N22 | i18n 切换 | 网络质量相关页面 → 中英文切换 → 标题/标签/按钮/Tooltip 全部正确翻译 | — |
 
+### 验证清单 — shadcn Chart 图表重构
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| C1 | MetricsChart 渲染 | `/servers/:id` → 实时模式 → CPU/Memory/Disk/Network/Load 图表正常渲染 | ✅ |
+| C2 | MetricsChart Tooltip 格式化 | hover CPU 图表 → 显示 `xx.x%`；hover Network In → 显示 `xx.x MB/s` 格式 | ✅ |
+| C3 | MetricsChart 历史切换 | 点击 1h/6h/24h → 图表切换为历史数据，X 轴时间格式正确 | — |
+| C4 | LatencyChart 多线渲染 | `/network/:serverId` → 多个目标 → 图表显示多条彩色延迟线 | — |
+| C5 | LatencyChart 目标隐藏/显示 | 点击 TargetCard 切换可见性 → 图表中对应线条正确隐藏/显示 | — |
+| C6 | LatencyChart Tooltip 格式化 | hover 图表 → 显示 `xx.x ms` + 目标名称（非 target_id） | — |
+| C7 | LatencyChart 颜色一致性 | TargetCard 颜色圆点与图表线条颜色一一对应 | — |
+| C8 | TrafficCard 展开态 | 服务器详情页 → 点击展开 → 日 BarChart + 小时 LineChart 正常渲染 | ✅ |
+| C9 | TrafficCard BarChart Legend | 日 BarChart 底部显示 ↓ In / ↑ Out 图例 | — |
+| C10 | TrafficCard Tooltip 格式化 | hover 柱状图 → 显示格式化后的字节数（如 `12.5 MB`） | — |
+| C11 | TrafficCard 颜色修复 | BarChart 柱状和 LineChart 线条颜色正确显示（修复前 hsl(oklch) 无效） | — |
+| C12 | PingResultsChart 渲染 | `/settings/ping-tasks` → 展开任务 → 延迟图表正常渲染 | — |
+| C13 | PingResultsChart 断线 | Ping 失败时间点显示为断线而非连续 | — |
+| C14 | PingResultsChart Tooltip | hover 图表 → 显示 `xx.xms` + 完整日期时间 | — |
+| C15 | 浅色主题 | 所有图表在浅色模式下颜色、背景、文字对比度正常 | ✅ |
+| C16 | 深色主题 | 所有图表在深色模式下颜色、背景、文字对比度正常 | ✅ |
+| C17 | recharts outline | 图表元素无多余 outline/focus ring（CSS hack 已删除） | — |
+| C18 | Tooltip 多系列指示器 | LatencyChart/TrafficCard tooltip 行显示颜色指示器 + 系列标签（非纯文本） | — |
+
 ### 验证清单 — 文件管理
 
 #### 基础功能

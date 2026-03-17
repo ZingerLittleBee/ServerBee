@@ -59,6 +59,13 @@
   "cap_upgrade_warning": "Agent 不支持能力强制执行 — 建议升级",
   "cap_high_risk": "高风险",
   "cap_low_risk": "低风险",
+  "cap_enabled": "已启用",
+  "cap_disabled": "已关闭",
+  "cap_dialog_description": "控制该服务器允许 Agent 使用的能力开关。",
+  "cap_group_high_risk": "高风险操作",
+  "cap_group_high_risk_desc": "可能改变系统状态，或开放终端、文件等敏感访问能力。",
+  "cap_group_low_risk": "探测与维护",
+  "cap_group_low_risk_desc": "以探测和可观测性为主，通常可以安全开启。",
   "cap_terminal": "Web 终端",
   "cap_exec": "远程执行",
   "cap_upgrade": "自动升级",
@@ -66,6 +73,7 @@
   "cap_ping_tcp": "TCP 探测",
   "cap_ping_http": "HTTP 探测",
   "cap_file": "文件管理",
+  "detail_capabilities": "能力",
 
   "edit_title": "编辑服务器",
   "edit_basic": "基本信息",
@@ -101,5 +109,7 @@
   "traffic_title": "流量统计",
   "traffic_daily": "每日流量",
   "traffic_hourly": "今日小时流量",
+  "traffic_tab_today": "今日",
+  "traffic_tab_cycle": "月度",
   "traffic_exceed_warning": "预计将超出限额 (~{{percent}}%)"
 }
