@@ -20,6 +20,7 @@ import {
   useSetServerTargets
 } from '@/hooks/use-network-api'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
+import { CHART_COLORS } from '@/lib/chart-colors'
 import type { NetworkProbeRecord } from '@/lib/network-types'
 import { cn } from '@/lib/utils'
 
@@ -29,21 +30,6 @@ export const Route = createFileRoute('/_authed/network/$serverId')({
   }),
   component: NetworkDetailPage
 })
-
-const COLOR_PALETTE = [
-  '#3b82f6',
-  '#ef4444',
-  '#22c55e',
-  '#f59e0b',
-  '#8b5cf6',
-  '#ec4899',
-  '#14b8a6',
-  '#f97316',
-  '#6366f1',
-  '#06b6d4',
-  '#84cc16',
-  '#e11d48'
-]
 
 type TimeRangeValue = 'realtime' | 1 | 6 | 24 | 168 | 720
 
@@ -131,7 +117,7 @@ function NetworkDetailPage() {
   const targetColorMap = useMemo(() => {
     const map: Record<string, string> = {}
     for (let i = 0; i < targets.length; i++) {
-      map[targets[i].target_id] = COLOR_PALETTE[i % COLOR_PALETTE.length]
+      map[targets[i].target_id] = CHART_COLORS[i % CHART_COLORS.length]
     }
     return map
   }, [targets])
@@ -141,7 +127,7 @@ function NetworkDetailPage() {
       targets.map((t) => ({
         id: t.target_id,
         name: t.target_name,
-        color: targetColorMap[t.target_id] ?? COLOR_PALETTE[0],
+        color: targetColorMap[t.target_id] ?? CHART_COLORS[0],
         visible: effectiveVisible.has(t.target_id)
       })),
     [targets, targetColorMap, effectiveVisible]
@@ -359,7 +345,7 @@ function NetworkDetailPage() {
         <div className="mb-4 flex flex-wrap gap-2">
           {targets.map((target) => (
             <TargetCard
-              color={targetColorMap[target.target_id] ?? COLOR_PALETTE[0]}
+              color={targetColorMap[target.target_id] ?? CHART_COLORS[0]}
               key={target.target_id}
               onToggle={() => toggleTarget(target.target_id)}
               target={target}
