@@ -82,8 +82,8 @@ function PingResultsChart({ taskId }: { taskId: string }) {
           <ChartTooltip
             content={
               <ChartTooltipContent
-                formatter={(value) => `${Number(value).toFixed(1)}ms`}
                 labelFormatter={(label) => new Date(String(label)).toLocaleString()}
+                valueFormatter={(v) => `${v.toFixed(1)}ms`}
               />
             }
           />

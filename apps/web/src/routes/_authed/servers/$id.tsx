@@ -396,6 +396,7 @@ function ServerDetailPage() {
           color="var(--color-chart-4)"
           data={chartData}
           dataKey="net_in_speed"
+          formatTick={(v) => formatBytes(v)}
           formatTime={realtimeFormatTime}
           formatValue={(v) => formatBytes(v)}
           title={t('chart_net_in')}
@@ -404,6 +405,7 @@ function ServerDetailPage() {
           color="var(--color-chart-5)"
           data={chartData}
           dataKey="net_out_speed"
+          formatTick={(v) => formatBytes(v)}
           formatTime={realtimeFormatTime}
           formatValue={(v) => formatBytes(v)}
           title={t('chart_net_out')}

@@ -111,7 +111,6 @@ export function LatencyChart({ records, targets, isRealtime = false }: LatencyCh
           <ChartTooltip
             content={
               <ChartTooltipContent
-                formatter={(value) => `${Number(value).toFixed(1)} ms`}
                 labelFormatter={(label) =>
                   new Date(label).toLocaleString([], {
                     month: 'short',
@@ -121,6 +120,7 @@ export function LatencyChart({ records, targets, isRealtime = false }: LatencyCh
                     second: '2-digit'
                   })
                 }
+                valueFormatter={(v) => `${v.toFixed(1)} ms`}
               />
             }
           />

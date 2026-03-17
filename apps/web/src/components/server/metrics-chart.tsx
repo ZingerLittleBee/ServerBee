@@ -5,6 +5,7 @@ interface MetricsChartProps {
   color?: string
   data: Record<string, unknown>[]
   dataKey: string
+  formatTick?: (value: number) => string
   formatTime?: (time: string) => string
   formatValue?: (value: number) => string
   title: string
@@ -27,6 +28,7 @@ export function MetricsChart({
   color = 'var(--color-chart-1)',
   unit = '',
   formatValue = defaultFormatValue,
+  formatTick,
   formatTime = defaultFormatTime
 }: MetricsChartProps) {
   const chartConfig = {
@@ -40,12 +42,12 @@ export function MetricsChart({
         <AreaChart accessibilityLayer data={data}>
           <CartesianGrid vertical={false} />
           <XAxis axisLine={false} dataKey="timestamp" tickFormatter={formatTime} tickLine={false} />
-          <YAxis axisLine={false} tickLine={false} width={45} />
+          <YAxis axisLine={false} tickFormatter={formatTick} tickLine={false} width={formatTick ? 60 : 45} />
           <ChartTooltip
             content={
               <ChartTooltipContent
-                formatter={(value) => `${formatValue(Number(value))}${unit}`}
                 labelFormatter={(label) => formatTime(String(label))}
+                valueFormatter={(v) => `${formatValue(v)}${unit}`}
               />
             }
           />
