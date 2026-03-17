@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use crate::service::network_probe::NetworkProbeService;
 use crate::service::record::RecordService;
+use crate::service::traffic::TrafficService;
 use crate::state::AppState;
 
 /// Periodically aggregates raw records into hourly summaries (every 3600 seconds).
@@ -31,6 +32,17 @@ pub async fn run(state: Arc<AppState>) {
             }
             Err(e) => {
                 tracing::error!("Failed to aggregate hourly network probe records: {e}");
+            }
+        }
+
+        match TrafficService::aggregate_daily(&state.db, &state.config.scheduler.timezone).await {
+            Ok(count) => {
+                if count > 0 {
+                    tracing::info!("Aggregated daily traffic for {count} server-date pairs");
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to aggregate daily traffic: {e}");
             }
         }
     }

@@ -9,6 +9,15 @@ pub struct Model {
     pub command: String,
     pub server_ids_json: String,
     pub created_by: String,
+    pub task_type: String,
+    pub name: Option<String>,
+    pub cron_expression: Option<String>,
+    pub enabled: bool,
+    pub timeout: Option<i32>,
+    pub retry_count: i32,
+    pub retry_interval: i32,
+    pub last_run_at: Option<DateTimeUtc>,
+    pub next_run_at: Option<DateTimeUtc>,
     pub created_at: DateTimeUtc,
 }
 

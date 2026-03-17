@@ -993,6 +993,12 @@ export interface components {
       /** Format: int64 */
       traffic_limit?: number | null
       traffic_limit_type?: string | null
+      /** Format: int32 */
+      billing_start_day?: number | null
+      /** Format: int32 */
+      capabilities: number
+      /** Format: int32 */
+      protocol_version: number
       /** Format: date-time */
       updated_at: string
       virtualization?: string | null
@@ -1131,6 +1137,10 @@ export interface components {
       /** Format: int64 */
       traffic_limit?: number | null
       traffic_limit_type?: string | null
+      /** Format: int32 */
+      billing_start_day?: number | null
+      /** Format: int32 */
+      capabilities?: number | null
       /** Format: int32 */
       weight?: number | null
     }

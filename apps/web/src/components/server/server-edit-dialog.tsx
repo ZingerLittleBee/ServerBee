@@ -33,6 +33,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
     server.traffic_limit ? (server.traffic_limit / 1024 ** 3).toString() : ''
   )
   const [trafficLimitType, setTrafficLimitType] = useState(server.traffic_limit_type ?? 'sum')
+  const [billingStartDay, setBillingStartDay] = useState(server.billing_start_day?.toString() ?? '')
 
   const { data: groups } = useQuery<ServerGroup[]>({
     queryKey: ['server-groups'],
@@ -55,6 +56,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
       setExpiredAt(server.expired_at?.slice(0, 10) ?? '')
       setTrafficLimit(server.traffic_limit ? (server.traffic_limit / 1024 ** 3).toString() : '')
       setTrafficLimitType(server.traffic_limit_type ?? 'sum')
+      setBillingStartDay(server.billing_start_day?.toString() ?? '')
     }
   }, [open, server])
 
@@ -80,7 +82,8 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
       currency: currency || null,
       expired_at: expiredAt ? `${expiredAt}T00:00:00Z` : null,
       traffic_limit: trafficLimit ? Math.round(Number.parseFloat(trafficLimit) * 1024 ** 3) : null,
-      traffic_limit_type: trafficLimitType || null
+      traffic_limit_type: trafficLimitType || null,
+      billing_start_day: billingStartDay ? Number.parseInt(billingStartDay, 10) : null
     }
     mutation.mutate(payload, {
       onSuccess: () => {
@@ -268,6 +271,21 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                 </Select>
               </Field>
             </div>
+            <Field label={t('edit_billing_start_day', { defaultValue: 'Billing Start Day' })}>
+              <Input
+                aria-label={t('edit_billing_start_day', { defaultValue: 'Billing Start Day' })}
+                autoComplete="off"
+                max="28"
+                min="1"
+                name="billing_start_day"
+                onChange={(e) => setBillingStartDay(e.target.value)}
+                placeholder={t('edit_billing_start_day_placeholder', {
+                  defaultValue: 'Leave empty for natural month (1st)'
+                })}
+                type="number"
+                value={billingStartDay}
+              />
+            </Field>
           </fieldset>
 
           {mutation.error && (

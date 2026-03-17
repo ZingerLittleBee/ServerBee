@@ -6,10 +6,10 @@
 # 全量测试
 cargo test --workspace && bun run test
 
-# Rust 测试（192 单元 + 23 集成 = 215）
+# Rust 测试（210 单元 + 26 集成 = 236）
 cargo test --workspace
 
-# 前端测试（116 vitest，10 个测试文件）
+# 前端测试（119 vitest，11 个测试文件）
 bun run test
 
 # 代码质量
@@ -24,7 +24,7 @@ bun run typecheck
 
 ```bash
 cargo test -p serverbee-common          # 协议 + 能力常量 (24 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 (147 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 (142 + 26 = 168 tests)
 cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager (44 tests)
 ```
 
@@ -68,6 +68,8 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `agent/network_prober.rs` | 2 | 网络探测任务调度、结果上报 |
 | `server/service/file_transfer.rs` | 9 | 传输创建/获取、并发限制、过期清理、状态转换、进度更新、临时文件清理 |
 | `agent/file_manager.rs` | 24 | 路径校验(root_paths/遍历/deny_patterns/多根/空根)、目录列表(排序/空目录/元数据)、文件读写(base64编解码/大小限制)、删除/创建目录/重命名、上传流程、下载分片 |
+| `server/service/traffic.rs` | 17 | 增量计算(正常/重启/单方向重启/零值)、计费周期范围(月/季/年/自定义起始日)、预测算法(正常/早期/无限额)、DB 操作(upsert 累加/状态缓存/日聚合时区) |
+| `server/config.rs` | 1 | 时区解析（chrono-tz 验证） |
 
 ### 集成测试覆盖
 
@@ -96,6 +98,9 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `test_file_write_requires_admin` | member 用户 POST /files/write → 403 |
 | `test_file_delete_requires_admin` | member 用户 POST /files/delete → 403 |
 | `test_file_mkdir_requires_admin` | member 用户 POST /files/mkdir → 403 |
+| `test_oneshot_task_backward_compat` | 新 migration 后一次性任务仍可正常创建 |
+| `test_traffic_api_returns_data` | 注册 Agent → 查询流量 API → 验证响应结构 |
+| `test_server_billing_start_day` | 更新 billing_start_day → 验证持久化和流量 API 反映 |
 
 ## 前端测试
 
@@ -121,6 +126,7 @@ cd apps/web && bunx vitest run src/lib/capabilities.test.ts
 | `use-servers-ws.test.ts` | 8 | 数据合并、静态字段保护、在线状态切换 |
 | `use-terminal-ws.test.ts` | 20 | WS URL 构造、状态机、base64 编码、resize、onData 回调 |
 | `file-utils.test.ts` | 30 | 扩展名→语言映射(yaml/json/ts/sh/rs/py/toml/go/sql/css/html/dockerfile/路径含点/大写)、文本文件判定(toml/sql/conf/exe/tar.gz)、图片文件判定(webp/ico/gif/bmp) |
+| `use-traffic.test.tsx` | 3 | 流量数据获取、查询 key 验证、空 serverId 禁用 |
 
 ### 测试工具
 
@@ -355,6 +361,69 @@ docker compose up -d
 | F35 | 英文模式 | 切换英文 → 所有 UI 元素显示英文 | — |
 | F36 | 传输状态标签 | 传输状态 pending/in_progress/ready/failed 显示正确的本地化文本 | — |
 
+### 验证清单 — 月度流量统计
+
+#### 单元测试覆盖（自动化）
+
+以下单元测试位于 `crates/server/src/service/traffic.rs`，通过 `cargo test -p serverbee-server service::traffic` 运行：
+
+| 测试组 | 测试名 | 验证内容 |
+|--------|--------|----------|
+| **增量计算** | `test_compute_delta_normal` | 正常增量：curr - prev |
+| | `test_compute_delta_both_restart` | 双方向同时重启（curr < prev）→ 使用 curr 原始值 |
+| | `test_compute_delta_single_direction_restart_in` | 仅入站重启，出站正常 |
+| | `test_compute_delta_single_direction_restart_out` | 仅出站重启，入站正常 |
+| | `test_compute_delta_zero` | 无变化 → delta 为 0 |
+| **计费周期** | `test_cycle_range_natural_month` | 自然月（anchor=1）→ 3/1~3/31 |
+| | `test_cycle_range_billing_day_15` | 自定义起始日 15 → 3/15~4/14 |
+| | `test_cycle_range_billing_day_before_anchor` | 当前日 < anchor → 回退到上一周期 |
+| | `test_cycle_range_quarterly` | 季付周期 → 4/1~6/30 |
+| | `test_cycle_range_yearly` | 年付周期 → 1/1~12/31 |
+| | `test_cycle_range_unknown_falls_back_to_monthly` | 未知周期类型 → 回退到月付 |
+| **预测算法** | `test_prediction_normal` | 正常预测：7 天数据 → 预计超限 |
+| | `test_prediction_too_early` | 不足 3 天 → 返回 None |
+| | `test_prediction_no_limit` | 无流量限额 → 返回 None |
+| **DB 操作** | `test_upsert_traffic_hourly_accumulates` | 同一小时两次 upsert → bytes 累加 |
+| | `test_load_transfer_cache_from_traffic_state` | traffic_state 表 → HashMap 缓存加载 |
+| | `test_aggregate_daily_timezone_bucketing` | Asia/Shanghai 时区 → UTC 小时正确聚合到本地日期 |
+
+#### 集成测试覆盖（自动化）
+
+以下集成测试位于 `crates/server/tests/integration.rs`，启动真实 Server + SQLite 临时数据库：
+
+| 测试名 | 流程 |
+|--------|------|
+| `test_oneshot_task_backward_compat` | migration 新增 NOT NULL 列（带默认值）后 → 一次性任务仍可正常创建 |
+| `test_traffic_api_returns_data` | 注册 Agent → `GET /api/servers/{id}/traffic` → 验证响应包含 cycle_start/cycle_end/bytes_*/daily/hourly |
+| `test_server_billing_start_day` | 更新 billing_start_day=15 → GET server 验证持久化 → 流量 API 反映 traffic_limit |
+
+#### E2E 手动验证
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| T1 | 流量数据写入 | Agent 连接并上报 → 等待 60s → `traffic_hourly` 表有记录 | — |
+| T2 | 增量正确性 | Agent 上报 net_in_transfer=1000 → 60s 后上报 1500 → hourly delta=500 | — |
+| T3 | Agent 重启恢复 | 停止 Agent → 重启 → 上报的 cumulative 从 0 开始 → delta 使用原始值（不产生负数） | — |
+| T4 | 日聚合 | 等待 aggregator 运行（每小时）→ `traffic_daily` 表有记录 → bytes 与 hourly SUM 一致 | — |
+| T5 | 时区聚合 | 配置 `SERVERBEE_SCHEDULER__TIMEZONE=Asia/Shanghai` → UTC 20:00 的 hourly 记录归入次日（本地 04:00） | — |
+| T6 | 流量 API 响应 | `GET /api/servers/{id}/traffic` → 返回 cycle_start/end、bytes_in/out/total、daily[]、hourly[] | — |
+| T7 | BillingInfoBar 进度条 | 设置 traffic_limit → 服务器详情页显示进度条（used/limit + 百分比） | — |
+| T8 | 进度条颜色阈值 | 0-70% 绿色 → 70-90% 黄色 → 90%+ 红色 | — |
+| T9 | 预测标记 | 已过 3 天 + 设有 traffic_limit → 进度条显示虚线预测标记 | — |
+| T10 | 超限警告 | 预测超限 → 进度条下方显示红色警告文字 | — |
+| T11 | TrafficCard 折叠展开 | 点击流量统计卡片 → 展开显示日柱状图 + 小时折线图 → 再次点击折叠 | — |
+| T12 | 日柱状图 | 展开 TrafficCard → 柱状图显示每日 in/out 堆叠 → hover 显示 tooltip | — |
+| T13 | 小时折线图 | 展开 TrafficCard → 折线图显示今日小时 in/out → X 轴 HH:00 格式 | — |
+| T14 | 无流量时隐藏 | 新注册服务器（无流量数据）→ TrafficCard 不显示 | — |
+| T15 | 编辑 billing_start_day | 编辑对话框 → 设置计费起始日为 15 → 保存 → 流量 API 周期变为 15~14 | — |
+| T16 | billing_start_day 范围 | 输入 0 或 29 → 保存失败（trigger 拦截） | — |
+| T17 | 自然月回退 | 清空 billing_start_day → 保存 → 周期回到 1~月末 | — |
+| T18 | 流量限额类型 | 设置 traffic_limit_type=up → 进度条仅显示上传用量 | — |
+| T19 | 数据保留清理 | 配置 `traffic_hourly_days=1` → 等待 cleanup 运行 → 超过 1 天的 hourly 记录被删除 | — |
+| T20 | 告警集成 | 创建 transfer_all_cycle 告警规则 → cycle_interval=billing → 流量超限时触发告警 | — |
+| T21 | i18n 中文 | 切换中文 → "流量统计"、"每日流量"、"今日小时流量"、"预计将超出限额" 正确显示 | — |
+| T22 | i18n 英文 | 切换英文 → "Traffic Statistics"、"Daily Traffic"、"Today's Hourly Traffic" 正确显示 | — |
+
 ### 验证清单 — 告警 & 通知全链路
 
 | # | 测试场景 | 操作步骤 | 状态 |
@@ -398,7 +467,7 @@ crates/server/src/service/user.rs       # 用户服务测试
 crates/server/src/service/ping.rs       # Ping 服务测试
 crates/server/src/middleware/auth.rs    # 中间件 Cookie/Key 提取测试
 crates/server/src/test_utils.rs         # 测试辅助 (setup_test_db)
-crates/server/tests/integration.rs      # 集成测试 (23 tests)
+crates/server/tests/integration.rs      # 集成测试 (26 tests)
 crates/agent/src/collector/tests.rs     # Agent 采集器测试
 crates/agent/src/pinger.rs              # Agent Pinger 测试
 crates/agent/src/probe_utils.rs         # 批量探测解析测试
@@ -406,6 +475,8 @@ crates/agent/src/network_prober.rs      # 网络探测模块测试
 crates/server/src/presets/mod.rs            # 预设目标加载测试
 crates/server/src/service/network_probe.rs # 网络探测服务单元测试
 crates/server/src/service/file_transfer.rs # 文件传输管理器测试 (9 tests)
+crates/server/src/service/traffic.rs       # 流量统计服务测试 (17 tests)
+crates/server/src/config.rs                # 配置测试 (1 test)
 crates/agent/src/file_manager.rs           # Agent 文件管理器测试 (24 tests)
 apps/web/src/hooks/use-terminal-ws.test.ts # Terminal WS hook 测试
 apps/web/src/lib/capabilities.test.ts   # 能力位测试
@@ -417,6 +488,7 @@ apps/web/src/hooks/use-api.test.tsx     # API hook 测试
 apps/web/src/hooks/use-realtime-metrics.test.tsx # 实时指标 hook 测试（纯函数 + renderHook 集成）
 apps/web/src/hooks/use-servers-ws.test.ts # WS 数据合并测试
 apps/web/src/lib/file-utils.test.ts     # 文件工具函数测试
+apps/web/src/hooks/use-traffic.test.tsx # 流量 hook 测试 (3 tests)
 apps/web/vitest.config.ts               # Vitest 配置
 .github/workflows/ci.yml               # CI 流水线
 ```

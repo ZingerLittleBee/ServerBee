@@ -303,6 +303,9 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     server_id: Set(server_id.to_string()),
                     output: Set("Capability denied by agent".to_string()),
                     exit_code: Set(-1),
+                    run_id: NotSet,
+                    attempt: Set(1),
+                    started_at: NotSet,
                     finished_at: Set(chrono::Utc::now()),
                 };
                 if let Err(e) = result.insert(&state.db).await {
@@ -454,6 +457,9 @@ async fn save_task_result(
         server_id: Set(server_id.to_string()),
         output: Set(result.output.clone()),
         exit_code: Set(result.exit_code),
+        run_id: NotSet,
+        attempt: Set(1),
+        started_at: NotSet,
         finished_at: Set(chrono::Utc::now()),
     };
     new_result.insert(db).await?;
