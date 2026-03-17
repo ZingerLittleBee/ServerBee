@@ -12,24 +12,22 @@ You need one of the following on your server machine:
 
 - **Docker and Docker Compose** (recommended for quick setup)
 - **Rust toolchain** (1.75+) and **Bun** (for building from source)
-- A pre-built binary from the [releases page](https://github.com/ZingerBee/ServerBee/releases)
+- A pre-built binary from the [releases page](https://github.com/ZingerLittleBee/ServerBee/releases)
 
 ## Option 1: Docker Compose (Recommended)
 
 This is the fastest way to get started. Create a `docker-compose.yml` file:
 
 ```yaml
-version: "3.8"
-
 services:
-  serverbee:
-    image: ghcr.io/zingerbee/serverbee:latest
-    container_name: serverbee
+  serverbee-server:
+    image: ghcr.io/zingerlittlebee/serverbee-server:latest
+    container_name: serverbee-server
     restart: unless-stopped
     ports:
       - "9527:9527"
     volumes:
-      - serverbee-data:/app/data
+      - serverbee-data:/data
     environment:
       - SERVERBEE_ADMIN__USERNAME=admin
       - SERVERBEE_ADMIN__PASSWORD=changeme
@@ -51,7 +49,7 @@ The dashboard is now available at `http://your-server-ip:9527`.
 Download and run the install script for a quick binary installation:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerBee/ServerBee/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s server
 ```
 
 This will download the appropriate binary for your platform, create a systemd service, and start ServerBee automatically.
@@ -62,7 +60,7 @@ Clone the repository and build both the server and frontend:
 
 ```bash
 # Clone the repo
-git clone https://github.com/ZingerBee/ServerBee.git
+git clone https://github.com/ZingerLittleBee/ServerBee.git
 cd ServerBee
 
 # Build the frontend
@@ -135,8 +133,8 @@ You should see the new server appear in your dashboard within a few seconds.
 ## What Next?
 
 <Cards>
-  <Card title="Server Configuration" href="/docs/en/server" />
-  <Card title="Agent Configuration" href="/docs/en/agent" />
-  <Card title="Set Up Alerts" href="/docs/en/alerts" />
-  <Card title="Web Terminal" href="/docs/en/terminal" />
+  <Card title="Server Configuration" href="/en/docs/server" />
+  <Card title="Agent Configuration" href="/en/docs/agent" />
+  <Card title="Set Up Alerts" href="/en/docs/alerts" />
+  <Card title="Web Terminal" href="/en/docs/terminal" />
 </Cards>

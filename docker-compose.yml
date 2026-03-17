@@ -1,7 +1,7 @@
 services:
-  serverbee:
-    build: .
-    image: ghcr.io/zingerbee/serverbee:latest
+  serverbee-server:
+    image: ghcr.io/zingerlittlebee/serverbee-server:latest
+    container_name: serverbee-server
     ports:
       - "9527:9527"
     volumes:
@@ -10,6 +10,12 @@ services:
       - SERVERBEE_ADMIN__USERNAME=admin
       - SERVERBEE_ADMIN__PASSWORD=changeme
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9527/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   serverbee-data:
