@@ -99,6 +99,38 @@ ${colorConfig
 
 const ChartTooltip = Tooltip
 
+function TooltipIndicator({
+  icon: Icon,
+  indicator,
+  color: indicatorColor,
+  hideIndicator,
+  nestLabel
+}: {
+  icon?: ComponentType
+  indicator: 'line' | 'dot' | 'dashed'
+  color: string
+  hideIndicator: boolean
+  nestLabel: boolean
+}) {
+  if (Icon) {
+    return <Icon />
+  }
+  if (hideIndicator) {
+    return null
+  }
+  return (
+    <div
+      className={cn('shrink-0 rounded-[2px] border-(--color-border) bg-(--color-bg)', {
+        'h-2.5 w-2.5': indicator === 'dot',
+        'w-1': indicator === 'line',
+        'w-0 border-[1.5px] border-dashed bg-transparent': indicator === 'dashed',
+        'my-0.5': nestLabel && indicator === 'dashed'
+      })}
+      style={{ '--color-bg': indicatorColor, '--color-border': indicatorColor } as CSSProperties}
+    />
+  )
+}
+
 function ChartTooltipContent({
   active,
   payload,
@@ -110,6 +142,7 @@ function ChartTooltipContent({
   labelFormatter,
   labelClassName,
   formatter,
+  valueFormatter,
   color,
   nameKey,
   labelKey
@@ -120,6 +153,7 @@ function ChartTooltipContent({
     indicator?: 'line' | 'dot' | 'dashed'
     nameKey?: string
     labelKey?: string
+    valueFormatter?: (value: number) => string
   }) {
   const { config } = useChart()
 
@@ -154,7 +188,7 @@ function ChartTooltipContent({
   return (
     <div
       className={cn(
-        'grid min-w-32 items-start gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl',
+        'grid min-w-36 items-start gap-1.5 rounded-lg border border-border/50 bg-background/95 px-3 py-2 text-xs shadow-xl backdrop-blur-sm',
         className
       )}
     >
@@ -175,30 +209,17 @@ function ChartTooltipContent({
                 )}
                 key={item.dataKey}
               >
-                {formatter && item?.value !== undefined && item.name ? (
+                {formatter && !valueFormatter && item?.value !== undefined && item.name ? (
                   formatter(item.value, item.name, item, index, item.payload)
                 ) : (
                   <>
-                    {itemConfig?.icon ? (
-                      <itemConfig.icon />
-                    ) : (
-                      !hideIndicator && (
-                        <div
-                          className={cn('shrink-0 rounded-[2px] border-(--color-border) bg-(--color-bg)', {
-                            'h-2.5 w-2.5': indicator === 'dot',
-                            'w-1': indicator === 'line',
-                            'w-0 border-[1.5px] border-dashed bg-transparent': indicator === 'dashed',
-                            'my-0.5': nestLabel && indicator === 'dashed'
-                          })}
-                          style={
-                            {
-                              '--color-bg': indicatorColor,
-                              '--color-border': indicatorColor
-                            } as CSSProperties
-                          }
-                        />
-                      )
-                    )}
+                    <TooltipIndicator
+                      color={indicatorColor}
+                      hideIndicator={hideIndicator}
+                      icon={itemConfig?.icon}
+                      indicator={indicator}
+                      nestLabel={nestLabel}
+                    />
                     <div
                       className={cn(
                         'flex flex-1 justify-between leading-none',
@@ -209,9 +230,9 @@ function ChartTooltipContent({
                         {nestLabel ? tooltipLabel : null}
                         <span className="text-muted-foreground">{itemConfig?.label || item.name}</span>
                       </div>
-                      {item.value && (
-                        <span className="font-medium font-mono text-foreground tabular-nums">
-                          {item.value.toLocaleString()}
+                      {item.value != null && (
+                        <span className="ml-2 font-medium font-mono text-foreground tabular-nums">
+                          {valueFormatter ? valueFormatter(Number(item.value)) : item.value.toLocaleString()}
                         </span>
                       )}
                     </div>

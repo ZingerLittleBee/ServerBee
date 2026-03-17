@@ -72,8 +72,8 @@ export function TrafficCard({ serverId }: { serverId: string }) {
                   <ChartTooltip
                     content={
                       <ChartTooltipContent
-                        formatter={(value) => formatBytes(Number(value))}
                         labelFormatter={(label) => String(label)}
+                        valueFormatter={(v) => formatBytes(v)}
                       />
                     }
                   />
@@ -104,7 +104,7 @@ export function TrafficCard({ serverId }: { serverId: string }) {
                     tickLine={false}
                   />
                   <YAxis axisLine={false} fontSize={10} tickFormatter={formatBytes} tickLine={false} width={60} />
-                  <ChartTooltip content={<ChartTooltipContent formatter={(value) => formatBytes(Number(value))} />} />
+                  <ChartTooltip content={<ChartTooltipContent valueFormatter={(v) => formatBytes(v)} />} />
                   <Line
                     dataKey="bytes_in"
                     dot={false}
