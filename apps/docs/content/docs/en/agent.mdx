@@ -21,7 +21,7 @@ The ServerBee agent is a lightweight Rust binary that runs on each server you wa
 
 ### Pre-built Binary
 
-Download the agent binary for your platform from the [releases page](https://github.com/ZingerBee/ServerBee/releases):
+Download the agent binary for your platform from the [releases page](https://github.com/ZingerLittleBee/ServerBee/releases):
 
 ```bash
 chmod +x serverbee-agent
@@ -32,7 +32,7 @@ chmod +x serverbee-agent
 Use the install script to download the binary and configure a systemd service automatically:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerBee/ServerBee/main/install-agent.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s agent
 ```
 
 ### Build from Source
@@ -42,6 +42,37 @@ cargo build --release -p serverbee-agent
 ```
 
 The binary is located at `target/release/serverbee-agent`.
+
+### Docker (Not Recommended)
+
+<Callout type="info">
+ServerBee Agent is portable software — it's a single binary file that creates no folders or residual files on your system. Uninstall by simply deleting the binary and config file. We recommend binary installation for the best experience.
+</Callout>
+
+If you still prefer Docker, the agent needs privileged access to collect host system metrics:
+
+```bash
+docker run -d \
+  --name serverbee-agent \
+  --privileged \
+  --net=host \
+  --pid=host \
+  -v /proc:/host/proc:ro \
+  -v /sys:/host/sys:ro \
+  -v /etc/serverbee:/etc/serverbee \
+  --restart unless-stopped \
+  ghcr.io/zingerlittlebee/serverbee-agent:latest
+```
+
+<Callout type="warn">
+The `/etc/serverbee` volume mount is mandatory. Agent writes its registration token to `agent.toml` after first connection. Without this volume, container recreation causes duplicate server entries.
+</Callout>
+
+**Limitations of Docker deployment:**
+
+- Requires `--privileged` for full metrics collection
+- Temperature and GPU monitoring may not work inside containers
+- Web terminal accesses the container environment, not the host
 
 ## Registration Flow
 
