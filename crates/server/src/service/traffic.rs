@@ -405,11 +405,11 @@ fn get_quarterly_range(anchor: i32, today: NaiveDate) -> (NaiveDate, NaiveDate) 
     let mut cycle_start = None;
     for &qm in quarter_start_months.iter().rev() {
         let candidate = NaiveDate::from_ymd_opt(y, qm, anchor as u32);
-        if let Some(c) = candidate {
-            if c <= today {
-                cycle_start = Some(c);
-                break;
-            }
+        if let Some(c) = candidate
+            && c <= today
+        {
+            cycle_start = Some(c);
+            break;
         }
     }
     let cycle_start = cycle_start
