@@ -126,10 +126,6 @@
   html {
     @apply font-sans;
   }
-  .recharts-wrapper,
-  .recharts-wrapper * {
-    outline: none !important;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
