@@ -25,6 +25,8 @@ pub struct AppConfig {
     pub geoip: GeoIpConfig,
     #[serde(default)]
     pub log: LogConfig,
+    #[serde(default)]
+    pub scheduler: SchedulerConfig,
 }
 
 impl Default for AppConfig {
@@ -39,6 +41,7 @@ impl Default for AppConfig {
             oauth: OAuthConfig::default(),
             geoip: GeoIpConfig::default(),
             log: LogConfig::default(),
+            scheduler: SchedulerConfig::default(),
         }
     }
 }
@@ -123,6 +126,12 @@ pub struct RetentionConfig {
     pub network_probe_days: u32,
     #[serde(default = "default_90")]
     pub network_probe_hourly_days: u32,
+    #[serde(default = "default_7")]
+    pub traffic_hourly_days: u32,
+    #[serde(default = "default_400")]
+    pub traffic_daily_days: u32,
+    #[serde(default = "default_7")]
+    pub task_results_days: u32,
 }
 
 impl Default for RetentionConfig {
@@ -135,6 +144,9 @@ impl Default for RetentionConfig {
             audit_logs_days: 180,
             network_probe_days: 7,
             network_probe_hourly_days: 90,
+            traffic_hourly_days: 7,
+            traffic_daily_days: 400,
+            task_results_days: 7,
         }
     }
 }
@@ -221,6 +233,24 @@ impl Default for LogConfig {
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct SchedulerConfig {
+    #[serde(default = "default_utc")]
+    pub timezone: String,
+}
+
+impl Default for SchedulerConfig {
+    fn default() -> Self {
+        Self {
+            timezone: default_utc(),
+        }
+    }
+}
+
+fn default_utc() -> String {
+    "UTC".to_string()
+}
+
 // Default functions
 fn default_server() -> ServerConfig {
     ServerConfig {
@@ -279,6 +309,21 @@ fn default_5() -> u32 {
 
 fn default_3() -> u32 {
     3
+}
+
+fn default_400() -> u32 {
+    400
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_timezone_parsing() {
+        use chrono_tz::Tz;
+        assert!("UTC".parse::<Tz>().is_ok());
+        assert!("Asia/Shanghai".parse::<Tz>().is_ok());
+        assert!("Invalid/Zone".parse::<Tz>().is_err());
+    }
 }
 
 impl AppConfig {
