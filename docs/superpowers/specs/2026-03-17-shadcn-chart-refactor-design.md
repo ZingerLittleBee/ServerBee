@@ -30,18 +30,26 @@
 
 ### 2. 颜色体系
 
-| 系列 | 颜色来源 | 值 |
-|------|----------|-----|
-| 1-5 | shadcn CSS 变量 | `var(--chart-1)` ~ `var(--chart-5)` |
-| 6 | Tailwind blue-500 | `#3b82f6` |
-| 7 | Tailwind emerald-500 | `#10b981` |
-| 8 | Tailwind amber-500 | `#f59e0b` |
-| 9 | Tailwind rose-500 | `#f43f5e` |
-| 10 | Tailwind cyan-500 | `#06b6d4` |
-| 11 | Tailwind lime-500 | `#84cc16` |
-| 12 | Tailwind pink-500 | `#ec4899` |
+**单系列图表**（MetricsChart、PingResultsChart、TrafficCard）：直接使用 shadcn CSS 变量 `var(--chart-1)` ~ `var(--chart-5)`，最多 5 个系列，颜色区分足够。
 
-只有 LatencyChart 的多目标场景会用到 6-12，其余图表最多 5 个系列。
+**多系列图表**（LatencyChart，最多 12 个目标）：使用独立的高区分度多色盘 `COLORS`，**不使用** `--chart-1..5`（因为这些变量是同一组蓝紫色，色相不够分散）。保留当前 `COLOR_PALETTE` 的色相分散特性：
+
+| 序号 | 颜色 | 值 |
+|------|------|-----|
+| 1 | blue-500 | `#3b82f6` |
+| 2 | red-500 | `#ef4444` |
+| 3 | green-500 | `#22c55e` |
+| 4 | amber-500 | `#f59e0b` |
+| 5 | violet-500 | `#8b5cf6` |
+| 6 | pink-500 | `#ec4899` |
+| 7 | teal-500 | `#14b8a6` |
+| 8 | orange-500 | `#f97316` |
+| 9 | indigo-500 | `#6366f1` |
+| 10 | cyan-500 | `#06b6d4` |
+| 11 | lime-500 | `#84cc16` |
+| 12 | rose-600 | `#e11d48` |
+
+这与当前 `$serverId.tsx:33` 的 `COLOR_PALETTE` 完全一致，确保迁移后视觉效果不退化。
 
 ### 3. MetricsChart 重构
 
@@ -51,8 +59,9 @@
 
 - `ResponsiveContainer` + 手动高度 → `ChartContainer` + `className="h-[200px]"`
 - 删除 `<defs><linearGradient>` — 用 `fillOpacity={0.1}` 替代渐变
-- 删除所有手动 `stroke`/`tick`/`contentStyle` — ChartContainer 自动注入主题色
-- 组件 props 不变（`data`, `dataKey`, `label`, `color`, `formatter` 等），调用方无需改动
+- 删除手动 `stroke`/`tick`/`contentStyle` — ChartContainer 自动注入主题色
+- **保留 `formatValue` 和 `formatTime` props** — 当前调用方传入自定义 formatter（如 `formatSpeed` 格式化网速、温度单位 `°C` 等），通过 `ChartTooltipContent` 的 `formatter` 和 `labelFormatter` prop 传递：`formatter={(value) => \`${formatValue(Number(value))}${unit}\`}`、`labelFormatter={(label) => formatTime(String(label))}`
+- 组件 props 不变（`data`, `dataKey`, `title`, `color`, `unit`, `formatValue`, `formatTime`），调用方无需改动
 
 **注意**：`dataKey` 值（`cpu`, `memory_pct`, `disk_pct` 等）都是合法的 CSS 自定义属性名片段，可安全用作 ChartConfig key。
 
@@ -68,7 +77,10 @@ const chartConfig = {
     <CartesianGrid vertical={false} />
     <XAxis dataKey="timestamp" tickFormatter={formatTime} tickLine={false} axisLine={false} />
     <YAxis tickLine={false} axisLine={false} />
-    <ChartTooltip content={<ChartTooltipContent />} />
+    <ChartTooltip content={<ChartTooltipContent
+      formatter={(value) => `${formatValue(Number(value))}${unit}`}
+      labelFormatter={(label) => formatTime(String(label))}
+    />} />
     <Area type="monotone" dataKey={dataKey} stroke={`var(--color-${dataKey})`}
       fill={`var(--color-${dataKey})`} fillOpacity={0.1} />
   </AreaChart>
@@ -83,9 +95,10 @@ const chartConfig = {
 
 **核心变化**：
 
-- 硬编码 12 色数组 → `COLORS` 常量：前 5 个 `"var(--chart-N)"`，后 7 个 Tailwind 色值
-- 手动 Tooltip 样式 → `ChartTooltipContent`（自动显示标签 + 颜色指示器）
-- 新增 `ChartLegend` 展示
+- 硬编码 12 色数组 → 共享 `COLORS` 常量（与当前 `COLOR_PALETTE` 值完全一致，见上方颜色体系）
+- 手动 Tooltip 样式 → `ChartTooltipContent`，但需保留自定义 formatter（`value.toFixed(1) ms`）和 labelFormatter（日期时间格式化），通过 `ChartTooltipContent` 的 `formatter` 和 `labelFormatter` prop 传入
+- **不加 `ChartLegend`** — 网络页已有可点击的 TargetCard 充当图例（支持隐藏/显示目标），再加 ChartLegend 会功能重复且无法联动
+- **保留 `visibleTargets` 过滤**：当前 LatencyChart 接收 `targets: TargetInfo[]`（含 `visible` 字段），内部用 `targets.filter(t => t.visible)` 只渲染可见目标的 Area 系列。重构后必须保留此逻辑，chartConfig 包含所有目标（用于颜色注入），但 Area 系列只渲染 visibleTargets
 - 时间桶逻辑、动态 tick 计算 — 完全不动
 - **颜色分配统一**：`COLORS` 数组同时用于 LatencyChart 的 ChartConfig 和父组件 `$serverId.tsx` 的 TargetCard 颜色，需将 `COLORS` 导出为共享常量，替换父组件中原有的 `COLOR_PALETTE`，确保图表线条与目标卡片颜色一致
 
@@ -95,6 +108,7 @@ const chartConfig = {
 
 ```tsx
 // COLORS 从共享常量导入，父组件 TargetCard 也使用同一数组
+// chartConfig 包含所有目标（ChartContainer 需注入所有颜色变量）
 const chartConfig = useMemo(() => {
   const config: ChartConfig = {}
   targets.forEach((target, i) => {
@@ -106,18 +120,30 @@ const chartConfig = useMemo(() => {
   return config
 }, [targets])
 
+// 只渲染可见目标的 Area 系列
+const visibleTargets = useMemo(() => targets.filter((t) => t.visible), [targets])
+// 需要 index 映射：visibleTarget → 在 targets 中的原始 index（用于 dataKey）
+const visibleWithIndex = useMemo(
+  () => visibleTargets.map((t) => ({ ...t, originalIndex: targets.indexOf(t) })),
+  [targets, visibleTargets]
+)
+
 <ChartContainer config={chartConfig} className="h-[300px] w-full">
   <AreaChart accessibilityLayer data={bucketedData}>
     <CartesianGrid vertical={false} />
     <XAxis dataKey="timestamp" tickFormatter={formatTime} ... />
     <YAxis unit=" ms" ... />
-    <ChartTooltip content={<ChartTooltipContent />} />
-    <ChartLegend content={<ChartLegendContent />} />
-    {targets.map((target, i) => (
-      <Area key={target.id} dataKey={`target_${i}`}
-        stroke={`var(--color-target_${i})`}
-        fill={`var(--color-target_${i})`}
-        fillOpacity={0.05} />
+    <ChartTooltip content={<ChartTooltipContent
+      formatter={(value) => `${Number(value).toFixed(1)} ms`}
+      labelFormatter={(label) => new Date(label).toLocaleString([], {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'
+      })}
+    />} />
+    {visibleWithIndex.map(({ id, originalIndex }) => (
+      <Area key={id} dataKey={`target_${originalIndex}`}
+        stroke={`var(--color-target_${originalIndex})`}
+        fill={`var(--color-target_${originalIndex})`}
+        fillOpacity={0.05} connectNulls={false} type="monotone" strokeWidth={2} />
     ))}
   </AreaChart>
 </ChartContainer>
@@ -176,6 +202,7 @@ const trafficConfig = {
 
 - `ResponsiveContainer` → `ChartContainer`
 - 删除手动渐变定义
+- **保留 tooltip formatter**：当前 formatter 显示 `${value.toFixed(1)}ms`，labelFormatter 显示完整日期时间。需通过 `ChartTooltipContent` 的 prop 传入
 - `connectNulls={false}` 保留（ping 失败时断线是有意义的视觉反馈）
 
 **重构后结构**：
@@ -190,7 +217,10 @@ const pingChartConfig = {
     <CartesianGrid vertical={false} />
     <XAxis dataKey="timestamp" tickFormatter={formatTime} tickLine={false} axisLine={false} />
     <YAxis unit=" ms" tickLine={false} axisLine={false} />
-    <ChartTooltip content={<ChartTooltipContent />} />
+    <ChartTooltip content={<ChartTooltipContent
+      formatter={(value) => `${Number(value).toFixed(1)}ms`}
+      labelFormatter={(label) => new Date(String(label)).toLocaleString()}
+    />} />
     <Area type="monotone" dataKey="latency" stroke="var(--color-latency)"
       fill="var(--color-latency)" fillOpacity={0.1} connectNulls={false} />
   </AreaChart>
@@ -221,6 +251,22 @@ const pingChartConfig = {
 - 不改调用方（页面组件中使用图表的代码尽量不改，props 兼容；例外：`$serverId.tsx` 的 COLOR_PALETTE 需同步更新为共享 COLORS 常量）
 - 不动 CSS 变量值（`--chart-1` 到 `--chart-5` 的 oklch 值保持不变）
 - 不升降 Recharts 版本
+
+## 验证清单
+
+实现完成后须逐项人工验证：
+
+- [ ] **目标隐藏/显示**：网络详情页点击 TargetCard 切换可见性，图表中对应线条正确隐藏/显示
+- [ ] **Tooltip 格式化**：MetricsChart 的网速显示为 `xx.x MB/s` 而非原始数字，温度显示 `°C` 后缀
+- [ ] **Tooltip 格式化**：PingResultsChart 显示 `xx.xms` 而非原始数字，label 显示完整日期时间
+- [ ] **Tooltip 格式化**：TrafficCard 显示 `xx.x MB` 等格式化后的字节数
+- [ ] **Tooltip 格式化**：LatencyChart 显示 `xx.x ms` 和目标名称（非 target_id）
+- [ ] **浅色主题**：所有图表在浅色模式下颜色、背景、文字对比度正常
+- [ ] **深色主题**：所有图表在深色模式下颜色、背景、文字对比度正常
+- [ ] **TrafficCard 展开态**：服务器详情页点击展开 TrafficCard，日流量 BarChart 和小时流量 LineChart 正常渲染
+- [ ] **Ping 失败断线**：PingResultsChart 中 ping 失败的时间点显示为断线而非连续
+- [ ] **颜色一致性**：网络详情页 TargetCard 颜色圆点与图表线条颜色一一对应
+- [ ] **recharts outline**：删除 CSS hack 后图表元素无多余 outline/focus ring
 
 ## 风险
 
