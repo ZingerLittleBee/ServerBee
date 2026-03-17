@@ -489,6 +489,7 @@ pub fn compute_prediction(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entity::traffic_hourly;
     use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 
     async fn insert_test_server(db: &DatabaseConnection, id: &str) {
