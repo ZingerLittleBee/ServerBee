@@ -6,10 +6,10 @@
 # 全量测试
 cargo test --workspace && bun run test
 
-# Rust 测试（192 单元 + 23 集成 = 215）
+# Rust 测试（209 单元 + 26 集成 = 235）
 cargo test --workspace
 
-# 前端测试（116 vitest，10 个测试文件）
+# 前端测试（119 vitest，11 个测试文件）
 bun run test
 
 # 代码质量
@@ -24,7 +24,7 @@ bun run typecheck
 
 ```bash
 cargo test -p serverbee-common          # 协议 + 能力常量 (24 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 (147 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 (168 tests)
 cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager (44 tests)
 ```
 
@@ -68,6 +68,8 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `agent/network_prober.rs` | 2 | 网络探测任务调度、结果上报 |
 | `server/service/file_transfer.rs` | 9 | 传输创建/获取、并发限制、过期清理、状态转换、进度更新、临时文件清理 |
 | `agent/file_manager.rs` | 24 | 路径校验(root_paths/遍历/deny_patterns/多根/空根)、目录列表(排序/空目录/元数据)、文件读写(base64编解码/大小限制)、删除/创建目录/重命名、上传流程、下载分片 |
+| `server/service/traffic.rs` | 17 | 增量计算(正常/重启/单方向重启/零值)、计费周期范围(月/季/年/自定义起始日)、预测算法(正常/早期/无限额)、DB 操作(upsert 累加/状态缓存/日聚合时区) |
+| `server/config.rs` | 1 | 时区解析（chrono-tz 验证） |
 
 ### 集成测试覆盖
 
@@ -96,6 +98,9 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `test_file_write_requires_admin` | member 用户 POST /files/write → 403 |
 | `test_file_delete_requires_admin` | member 用户 POST /files/delete → 403 |
 | `test_file_mkdir_requires_admin` | member 用户 POST /files/mkdir → 403 |
+| `test_oneshot_task_backward_compat` | 新 migration 后一次性任务仍可正常创建 |
+| `test_traffic_api_returns_data` | 注册 Agent → 查询流量 API → 验证响应结构 |
+| `test_server_billing_start_day` | 更新 billing_start_day → 验证持久化和流量 API 反映 |
 
 ## 前端测试
 
@@ -121,6 +126,7 @@ cd apps/web && bunx vitest run src/lib/capabilities.test.ts
 | `use-servers-ws.test.ts` | 8 | 数据合并、静态字段保护、在线状态切换 |
 | `use-terminal-ws.test.ts` | 20 | WS URL 构造、状态机、base64 编码、resize、onData 回调 |
 | `file-utils.test.ts` | 30 | 扩展名→语言映射(yaml/json/ts/sh/rs/py/toml/go/sql/css/html/dockerfile/路径含点/大写)、文本文件判定(toml/sql/conf/exe/tar.gz)、图片文件判定(webp/ico/gif/bmp) |
+| `use-traffic.test.tsx` | 3 | 流量数据获取、查询 key 验证、空 serverId 禁用 |
 
 ### 测试工具
 

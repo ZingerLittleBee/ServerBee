@@ -38,6 +38,10 @@ Every TOML configuration key maps directly to an environment variable. Replace d
 | `SERVERBEE_RETENTION__NETWORK_PROBE_DAYS` | `7` | Raw network probe records retention in days |
 | `SERVERBEE_RETENTION__NETWORK_PROBE_HOURLY_DAYS` | `90` | Hourly network probe aggregates retention in days |
 | `SERVERBEE_RETENTION__AUDIT_LOGS_DAYS` | `180` | Audit log retention in days |
+| `SERVERBEE_RETENTION__TRAFFIC_HOURLY_DAYS` | `7` | Traffic hourly records retention in days |
+| `SERVERBEE_RETENTION__TRAFFIC_DAILY_DAYS` | `400` | Traffic daily records retention in days |
+| `SERVERBEE_RETENTION__TASK_RESULTS_DAYS` | `7` | Task results retention in days |
+| `SERVERBEE_SCHEDULER__TIMEZONE` | `UTC` | Timezone for daily traffic aggregation (e.g. `Asia/Shanghai`) |
 | `SERVERBEE_RATE_LIMIT__LOGIN_MAX` | `5` | Max login attempts per IP within 15-minute window |
 | `SERVERBEE_RATE_LIMIT__REGISTER_MAX` | `3` | Max agent registrations per IP within 15-minute window |
 | `SERVERBEE_LOG__LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
@@ -115,10 +119,19 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | `network_probe_days` | u32 | `7` | Days to keep raw network probe records |
 | `network_probe_hourly_days` | u32 | `90` | Days to keep hourly aggregated network probe records |
 | `audit_logs_days` | u32 | `180` | Days to keep audit log entries |
+| `traffic_hourly_days` | u32 | `7` | Days to keep hourly traffic records |
+| `traffic_daily_days` | u32 | `400` | Days to keep daily traffic records |
+| `task_results_days` | u32 | `7` | Days to keep task execution results |
 
 <Callout type="info">
 Raw metric records are collected every 60 seconds and retained for 7 days by default. The hourly aggregator computes averages so you can keep long-term trends for 90 days without excessive storage. Adjust these values based on your disk space and monitoring needs.
 </Callout>
+
+### `[scheduler]` -- Scheduler
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `timezone` | string | `"UTC"` | Timezone for daily traffic aggregation and billing cycle computation. Use IANA timezone names (e.g. `Asia/Shanghai`, `US/Eastern`) |
 
 ### `[rate_limit]` -- Rate Limiting
 
