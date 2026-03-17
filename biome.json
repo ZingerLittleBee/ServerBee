@@ -115,6 +115,16 @@
           }
         }
       }
+    },
+    {
+      "includes": ["apps/web/src/components/ui/chart.tsx"],
+      "linter": {
+        "rules": {
+          "security": {
+            "noDangerouslySetInnerHtml": "off"
+          }
+        }
+      }
     }
   ],
   "extends": ["ultracite/biome/core", "ultracite/biome/react"]
