@@ -78,13 +78,12 @@ pub async fn run(state: Arc<AppState>) {
             transfer_cache.insert(server_id.clone(), (curr_in, curr_out));
 
             // Only write if there's actual traffic
-            if delta_in > 0 || delta_out > 0 {
-                if let Err(e) =
+            if (delta_in > 0 || delta_out > 0)
+                && let Err(e) =
                     TrafficService::upsert_hourly(&state.db, server_id, hour, delta_in, delta_out)
                         .await
-                {
-                    tracing::error!("Failed to upsert traffic hourly for {server_id}: {e}");
-                }
+            {
+                tracing::error!("Failed to upsert traffic hourly for {server_id}: {e}");
             }
 
             // Always update state
