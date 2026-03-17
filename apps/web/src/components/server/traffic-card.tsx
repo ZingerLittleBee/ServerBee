@@ -62,8 +62,8 @@ export function TrafficCard({ serverId }: { serverId: string }) {
                       borderRadius: '6px',
                       fontSize: '12px'
                     }}
-                    formatter={(v: number) => formatBytes(v)}
-                    labelFormatter={(v: string) => v}
+                    formatter={(value) => formatBytes(Number(value))}
+                    labelFormatter={(label) => String(label)}
                   />
                   <Bar dataKey="bytes_in" fill="hsl(var(--chart-1))" name="↓ In" stackId="traffic" />
                   <Bar dataKey="bytes_out" fill="hsl(var(--chart-2))" name="↑ Out" stackId="traffic" />
@@ -97,7 +97,7 @@ export function TrafficCard({ serverId }: { serverId: string }) {
                       borderRadius: '6px',
                       fontSize: '12px'
                     }}
-                    formatter={(v: number) => formatBytes(v)}
+                    formatter={(value) => formatBytes(Number(value))}
                   />
                   <Line dataKey="bytes_in" dot={false} name="↓ In" stroke="hsl(var(--chart-1))" strokeWidth={1.5} />
                   <Line dataKey="bytes_out" dot={false} name="↑ Out" stroke="hsl(var(--chart-2))" strokeWidth={1.5} />
