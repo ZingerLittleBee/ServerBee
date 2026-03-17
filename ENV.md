@@ -48,6 +48,15 @@ Example: TOML `admin.password` → env var `SERVERBEE_ADMIN__PASSWORD`
 | `SERVERBEE_RETENTION__NETWORK_PROBE_DAYS` | `retention.network_probe_days` | u32 | `7` | Raw network probe records retention in days |
 | `SERVERBEE_RETENTION__NETWORK_PROBE_HOURLY_DAYS` | `retention.network_probe_hourly_days` | u32 | `90` | Hourly network probe aggregates retention in days |
 | `SERVERBEE_RETENTION__AUDIT_LOGS_DAYS` | `retention.audit_logs_days` | u32 | `180` | Audit log retention in days |
+| `SERVERBEE_RETENTION__TRAFFIC_HOURLY_DAYS` | `retention.traffic_hourly_days` | u32 | `7` | Traffic hourly records retention in days |
+| `SERVERBEE_RETENTION__TRAFFIC_DAILY_DAYS` | `retention.traffic_daily_days` | u32 | `400` | Traffic daily records retention in days |
+| `SERVERBEE_RETENTION__TASK_RESULTS_DAYS` | `retention.task_results_days` | u32 | `7` | Task results retention in days |
+
+### Scheduler (`scheduler.*`)
+
+| Environment Variable | TOML Key | Type | Default | Description |
+|---------------------|----------|------|---------|-------------|
+| `SERVERBEE_SCHEDULER__TIMEZONE` | `scheduler.timezone` | string | `UTC` | Timezone for daily traffic aggregation and cron scheduling (e.g. `Asia/Shanghai`) |
 
 ### Rate Limiting (`rate_limit.*`)
 
