@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-18
+
+### Added
+
+- **Monthly Traffic Statistics** -- Full-stack traffic monitoring system: hourly and daily traffic aggregation from Agent network reports, billing cycle-aware queries with configurable `billing_start_day`, timezone-aware daily rollup via `scheduler.timezone`, and traffic prediction algorithm for cycle-end estimates
+- **Traffic API** -- New `GET /api/servers/{id}/traffic` endpoint returning cycle totals, daily/hourly breakdowns, usage percentage against traffic limit, and end-of-cycle prediction
+- **Traffic database tables** -- 3 new tables (`traffic_hourly`, `traffic_daily`, `traffic_state`) with delta-based calculation from cumulative counters, automatic hourly→daily aggregation, and configurable retention
+- **Traffic frontend** -- Collapsible traffic detail card on server detail page with daily/hourly bar charts (shadcn Chart + Recharts), traffic progress bar showing usage against limit, `useTraffic` hook for traffic API integration
+- **Billing start day** -- New `billing_start_day` field on server entity, configurable via server edit dialog, determines when monthly billing cycles begin
+- **Scheduler timezone config** -- New `[scheduler]` config section with `timezone` setting for daily traffic aggregation (supports IANA timezone names like `Asia/Shanghai`)
+- **shadcn Chart components** -- Added `apps/web/src/components/ui/chart.tsx` with `ChartContainer`, `ChartTooltip`, `ChartLegend` wrappers for Recharts integration following shadcn patterns
+- **Shared chart color palette** -- `CHART_COLORS` constant in `apps/web/src/lib/chart-colors.ts` for consistent multi-series chart colors across all pages
+- **Capabilities dialog** -- Server capabilities moved from inline section to a dedicated dialog with grouped high-risk/low-risk layout and per-toggle descriptions
+- **Traffic retention config** -- New retention settings: `traffic_hourly_days` (default 7), `traffic_daily_days` (default 400), `task_results_days` (default 7)
+
+### Changed
+
+- All frontend charts migrated from raw Recharts to shadcn Chart components: MetricsChart, LatencyChart, PingResultsChart, and TrafficCard now use `ChartContainer`/`ChartTooltip`/`ChartLegend` wrappers
+- Transfer cycle alerts (`transfer_in_cycle`, `transfer_out_cycle`, `transfer_all_cycle`) refactored to query `traffic_hourly` and `traffic_daily` tables instead of raw metric records, improving accuracy for billing cycle calculations
+- Chart height increased from 200px to 260px for better readability
+- Traffic card layout refined with tabs (daily/hourly), collapsible detail section, and persistent realtime buffer across route changes
+- Chart tooltip improved with `valueFormatter` and Y-axis formatting for network speed display
+- Diversified chart colors across multi-series charts for better visual distinction
+- Install script (`deploy/install.sh`) significantly rewritten with improved error handling
+- Docker Compose configuration updated with refined service definitions
+
+### Fixed
+
+- Recharts Tooltip type errors resolved with proper TypeScript types
+- `Option<Option<T>>` deserialization: custom deserializer to distinguish `null` from absent fields (fixes `billing_start_day` updates)
+- Clippy `collapsible-if` warnings resolved across the codebase
+- Removed Recharts outline CSS hack (no longer needed with shadcn Chart)
+
+### Testing
+
+- 236 Rust tests: 210 unit + 26 integration (was 192 unit + 23 integration)
+- 21 new traffic service unit tests (delta calculation, cycle range computation, prediction algorithm, aggregation, cleanup)
+- 3 new traffic integration tests (API response, billing cycle query, one-shot regression)
+- 1 new config unit test (timezone parsing validation)
+- 121 frontend Vitest tests across 13 test files (was 116 across 10)
+- 3 new traffic card tests (render, loading state, empty state)
+- 2 new use-traffic hook tests (data fetching, error handling)
+- shadcn chart verification checklist added to TESTING.md
+
 ## [0.3.0] - 2026-03-16
 
 ### Added

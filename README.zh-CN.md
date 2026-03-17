@@ -21,6 +21,7 @@
 - **文件管理** -- 远程文件浏览器，Monaco 编辑器，上传/下载带进度显示，路径沙箱安全机制 (`root_paths` + `deny_patterns`)
 - **能力开关** -- 每台服务器独立的功能控制 (终端、执行、升级、探测、文件管理)，服务端+Agent 双重校验
 - **公共状态页** -- 无需登录的服务器状态展示
+- **月度流量统计** -- 按计费周期统计流量，日/小时维度图表，用量进度条，周期末预测
 - **计费追踪** -- 价格、计费周期、到期提醒、流量限制
 - **备份恢复** -- SQLite 数据库备份/恢复 API
 - **Agent 自动更新** -- 远程二进制升级，SHA-256 校验
@@ -103,8 +104,8 @@ make server-dev                                           # 终端 1: 服务端 
 SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # 终端 2: Agent
 
 # 测试与代码质量:
-make cargo-test        # 运行全部 Rust 测试 (215)
-make test              # 运行前端测试 (116)
+make cargo-test        # 运行全部 Rust 测试 (236)
+make test              # 运行前端测试 (121)
 make cargo-clippy      # Rust 代码检查
 make                   # 交互式菜单 (需要 fzf)
 ```
@@ -147,6 +148,11 @@ records_hourly_days = 90      # 小时聚合保留天数
 audit_logs_days = 180         # 审计日志保留天数
 network_probe_days = 7        # 网络探测原始记录保留天数
 network_probe_hourly_days = 90 # 网络探测小时聚合保留天数
+traffic_hourly_days = 7        # 流量小时记录保留天数
+traffic_daily_days = 400       # 流量日记录保留天数
+
+[scheduler]
+timezone = "UTC"               # 流量日聚合时区（如 Asia/Shanghai）
 
 [geoip]
 enabled = false

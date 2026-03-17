@@ -175,6 +175,25 @@ network_probe_hourly_days = 90
 # 默认: 180
 audit_logs_days = 180
 
+# 流量小时记录保留天数
+# 默认: 7
+traffic_hourly_days = 7
+
+# 流量日记录保留天数
+# 默认: 400
+traffic_daily_days = 400
+
+# 任务执行结果保留天数
+# 默认: 7
+task_results_days = 7
+
+# --- 调度器 ---
+[scheduler]
+# 流量日聚合和计费周期计算使用的时区
+# 使用 IANA 时区名称，如 Asia/Shanghai、US/Eastern
+# 默认: "UTC"
+timezone = "UTC"
+
 # --- GeoIP 地理位置 ---
 [geoip]
 # 是否启用 IP 地理位置查询
@@ -296,7 +315,11 @@ file = "/var/log/serverbee-agent.log"
 | Ping 记录保留 | `7` 天 | 与分钟级指标一致 |
 | 网络探测记录保留 | `7` 天 | 原始网络质量探测数据 |
 | 网络探测小时聚合保留 | `90` 天 | 长期网络质量趋势分析 |
+| 流量小时记录保留 | `7` 天 | 小时级流量数据 |
+| 流量日记录保留 | `400` 天 | 长期流量趋势分析 |
+| 任务结果保留 | `7` 天 | 远程命令执行结果 |
 | 审计日志保留 | `180` 天 | 半年审计记录 |
+| 调度时区 | `UTC` | 流量日聚合时区 |
 | GeoIP | 关闭 | 需手动配置 MMDB 文件 |
 | 日志级别 | `info` | 推荐生产环境使用 |
 

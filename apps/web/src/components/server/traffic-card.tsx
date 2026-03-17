@@ -1,112 +1,186 @@
-import { ChevronDown, ChevronUp } from 'lucide-react'
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
+import { Card, CardAction, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  type ChartConfig,
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent
+} from '@/components/ui/chart'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTraffic } from '@/hooks/use-traffic'
 import { formatBytes } from '@/lib/utils'
+
+const trafficConfig = {
+  bytes_in: { label: '↓ In', color: 'var(--chart-1)' },
+  bytes_out: { label: '↑ Out', color: 'var(--chart-2)' }
+} satisfies ChartConfig
 
 export function TrafficCard({ serverId }: { serverId: string }) {
   const { t } = useTranslation('servers')
   const { data, isLoading } = useTraffic(serverId)
-  const [expanded, setExpanded] = useState(false)
+  const hasDaily = (data?.daily.length ?? 0) > 0
+  const hasHourly = (data?.hourly.length ?? 0) > 0
+  const defaultTab = hasHourly ? 'hourly' : 'daily'
+  const showTabs = hasDaily && hasHourly
 
   if (isLoading || !data) {
     return null
   }
-  if (data.bytes_total === 0 && data.daily.length === 0) {
+  if (data.bytes_total === 0 && !hasDaily && !hasHourly) {
     return null
   }
 
   return (
-    <div className="rounded-lg border bg-card">
-      <button
-        className="flex w-full items-center justify-between p-3 text-sm"
-        onClick={() => setExpanded(!expanded)}
-        type="button"
-      >
-        <span className="font-medium">
-          {t('traffic_title', { defaultValue: 'Traffic Statistics' })}
-          <span className="ml-2 text-muted-foreground">
-            {data.cycle_start} ~ {data.cycle_end}
-          </span>
-        </span>
-        <div className="flex items-center gap-3">
-          <span className="text-muted-foreground">
-            ↑ {formatBytes(data.bytes_out)} ↓ {formatBytes(data.bytes_in)}
-          </span>
-          {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-        </div>
-      </button>
-
-      {expanded && (
-        <div className="space-y-4 border-t p-4">
-          {data.daily.length > 0 && (
-            <div>
-              <h4 className="mb-2 font-medium text-muted-foreground text-xs">
-                {t('traffic_daily', { defaultValue: 'Daily Traffic' })}
-              </h4>
-              <ResponsiveContainer height={200} width="100%">
-                <BarChart data={data.daily}>
-                  <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="date"
-                    fontSize={10}
-                    stroke="hsl(var(--muted-foreground))"
-                    tickFormatter={(v: string) => v.slice(5)}
-                  />
-                  <YAxis fontSize={10} stroke="hsl(var(--muted-foreground))" tickFormatter={formatBytes} width={60} />
-                  <Tooltip
-                    contentStyle={{
-                      background: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '6px',
-                      fontSize: '12px'
-                    }}
-                    formatter={(value) => formatBytes(Number(value))}
-                    labelFormatter={(label) => String(label)}
-                  />
-                  <Bar dataKey="bytes_in" fill="hsl(var(--chart-1))" name="↓ In" stackId="traffic" />
-                  <Bar dataKey="bytes_out" fill="hsl(var(--chart-2))" name="↑ Out" stackId="traffic" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+    <Card className="mt-4">
+      <Tabs className="gap-0" defaultValue={defaultTab}>
+        <CardHeader>
+          <CardTitle>{t('traffic_title', { defaultValue: 'Traffic Statistics' })}</CardTitle>
+          {showTabs && (
+            <CardAction>
+              <TabsList>
+                <TabsTrigger value="hourly">{t('traffic_tab_today', { defaultValue: 'Today' })}</TabsTrigger>
+                <TabsTrigger value="daily">{t('traffic_tab_cycle', { defaultValue: 'Monthly' })}</TabsTrigger>
+              </TabsList>
+            </CardAction>
           )}
+        </CardHeader>
 
-          {data.hourly.length > 0 && (
-            <div>
-              <h4 className="mb-2 font-medium text-muted-foreground text-xs">
-                {t('traffic_hourly', { defaultValue: "Today's Hourly Traffic" })}
-              </h4>
-              <ResponsiveContainer height={160} width="100%">
-                <LineChart data={data.hourly}>
-                  <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="hour"
-                    fontSize={10}
-                    stroke="hsl(var(--muted-foreground))"
-                    tickFormatter={(v: string) => {
-                      const d = new Date(v)
-                      return `${d.getHours().toString().padStart(2, '0')}:00`
-                    }}
-                  />
-                  <YAxis fontSize={10} stroke="hsl(var(--muted-foreground))" tickFormatter={formatBytes} width={60} />
-                  <Tooltip
-                    contentStyle={{
-                      background: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '6px',
-                      fontSize: '12px'
-                    }}
-                    formatter={(value) => formatBytes(Number(value))}
-                  />
-                  <Line dataKey="bytes_in" dot={false} name="↓ In" stroke="hsl(var(--chart-1))" strokeWidth={1.5} />
-                  <Line dataKey="bytes_out" dot={false} name="↑ Out" stroke="hsl(var(--chart-2))" strokeWidth={1.5} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+        <CardContent>
+          {showTabs ? (
+            <>
+              <TabsContent value="hourly">
+                <ChartContainer className="h-[260px] w-full" config={trafficConfig}>
+                  <BarChart accessibilityLayer data={data.hourly} maxBarSize={40}>
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      axisLine={false}
+                      dataKey="hour"
+                      tickFormatter={(v: string) => {
+                        const d = new Date(v)
+                        return `${d.getHours().toString().padStart(2, '0')}:00`
+                      }}
+                      tickLine={false}
+                      tickMargin={10}
+                    />
+                    <YAxis axisLine={false} tickFormatter={formatBytes} tickLine={false} width={60} />
+                    <ChartTooltip
+                      content={
+                        <ChartTooltipContent
+                          labelFormatter={(label) => {
+                            const d = new Date(String(label))
+                            return `${d.getHours().toString().padStart(2, '0')}:00`
+                          }}
+                          valueFormatter={(v) => formatBytes(v)}
+                        />
+                      }
+                      cursor={false}
+                    />
+                    <ChartLegend content={<ChartLegendContent />} />
+                    <Bar dataKey="bytes_in" fill="var(--color-bytes_in)" radius={[0, 0, 4, 4]} stackId="traffic" />
+                    <Bar dataKey="bytes_out" fill="var(--color-bytes_out)" radius={[4, 4, 0, 0]} stackId="traffic" />
+                  </BarChart>
+                </ChartContainer>
+              </TabsContent>
+
+              <TabsContent value="daily">
+                <ChartContainer className="h-[260px] w-full" config={trafficConfig}>
+                  <BarChart accessibilityLayer data={data.daily} maxBarSize={40}>
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      axisLine={false}
+                      dataKey="date"
+                      tickFormatter={(v: string) => v.slice(5)}
+                      tickLine={false}
+                      tickMargin={10}
+                    />
+                    <YAxis axisLine={false} tickFormatter={formatBytes} tickLine={false} width={60} />
+                    <ChartTooltip
+                      content={<ChartTooltipContent hideLabel valueFormatter={(v) => formatBytes(v)} />}
+                      cursor={false}
+                    />
+                    <ChartLegend content={<ChartLegendContent />} />
+                    <Bar dataKey="bytes_in" fill="var(--color-bytes_in)" radius={[0, 0, 4, 4]} stackId="traffic" />
+                    <Bar dataKey="bytes_out" fill="var(--color-bytes_out)" radius={[4, 4, 0, 0]} stackId="traffic" />
+                  </BarChart>
+                </ChartContainer>
+              </TabsContent>
+            </>
+          ) : (
+            <>
+              {hasHourly && (
+                <ChartContainer className="h-[260px] w-full" config={trafficConfig}>
+                  <BarChart accessibilityLayer data={data.hourly} maxBarSize={40}>
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      axisLine={false}
+                      dataKey="hour"
+                      tickFormatter={(v: string) => {
+                        const d = new Date(v)
+                        return `${d.getHours().toString().padStart(2, '0')}:00`
+                      }}
+                      tickLine={false}
+                      tickMargin={10}
+                    />
+                    <YAxis axisLine={false} tickFormatter={formatBytes} tickLine={false} width={60} />
+                    <ChartTooltip
+                      content={
+                        <ChartTooltipContent
+                          labelFormatter={(label) => {
+                            const d = new Date(String(label))
+                            return `${d.getHours().toString().padStart(2, '0')}:00`
+                          }}
+                          valueFormatter={(v) => formatBytes(v)}
+                        />
+                      }
+                      cursor={false}
+                    />
+                    <ChartLegend content={<ChartLegendContent />} />
+                    <Bar dataKey="bytes_in" fill="var(--color-bytes_in)" radius={[0, 0, 4, 4]} stackId="traffic" />
+                    <Bar dataKey="bytes_out" fill="var(--color-bytes_out)" radius={[4, 4, 0, 0]} stackId="traffic" />
+                  </BarChart>
+                </ChartContainer>
+              )}
+
+              {!hasHourly && hasDaily && (
+                <ChartContainer className="h-[260px] w-full" config={trafficConfig}>
+                  <BarChart accessibilityLayer data={data.daily} maxBarSize={40}>
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      axisLine={false}
+                      dataKey="date"
+                      tickFormatter={(v: string) => v.slice(5)}
+                      tickLine={false}
+                      tickMargin={10}
+                    />
+                    <YAxis axisLine={false} tickFormatter={formatBytes} tickLine={false} width={60} />
+                    <ChartTooltip
+                      content={<ChartTooltipContent hideLabel valueFormatter={(v) => formatBytes(v)} />}
+                      cursor={false}
+                    />
+                    <ChartLegend content={<ChartLegendContent />} />
+                    <Bar dataKey="bytes_in" fill="var(--color-bytes_in)" radius={[0, 0, 4, 4]} stackId="traffic" />
+                    <Bar dataKey="bytes_out" fill="var(--color-bytes_out)" radius={[4, 4, 0, 0]} stackId="traffic" />
+                  </BarChart>
+                </ChartContainer>
+              )}
+            </>
           )}
+        </CardContent>
+      </Tabs>
+
+      <CardFooter className="w-full flex-col items-start gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-muted-foreground">
+          {data.cycle_start} ~ {data.cycle_end}
         </div>
-      )}
-    </div>
+        <div className="flex flex-wrap gap-4 text-muted-foreground leading-none sm:justify-end">
+          <span>↓ In {formatBytes(data.bytes_in)}</span>
+          <span>↑ Out {formatBytes(data.bytes_out)}</span>
+          <span>Total {formatBytes(data.bytes_total)}</span>
+        </div>
+      </CardFooter>
+    </Card>
   )
 }

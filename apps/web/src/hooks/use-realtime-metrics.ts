@@ -5,6 +5,9 @@ import type { ServerMetrics } from './use-servers-ws'
 const MAX_BUFFER_SIZE = 200
 const TRIM_THRESHOLD = 250
 
+// Persist buffers across unmounts so route switches don't lose data
+const bufferCache = new Map<string, { buffer: RealtimeDataPoint[]; lastActive: number }>()
+
 export interface RealtimeDataPoint {
   cpu: number
   disk_pct: number
@@ -42,15 +45,23 @@ export function useRealtimeMetrics(serverId: string): RealtimeDataPoint[] {
   const [, setTick] = useState(0)
 
   useEffect(() => {
-    // Seed on mount from existing cache
-    const servers = queryClient.getQueryData<ServerMetrics[]>(['servers'])
-    if (servers) {
-      const server = servers.find((s) => s.id === serverId)
-      if (server?.online && server.last_active > 0) {
-        const point = toRealtimeDataPoint(server)
-        bufferRef.current = [point]
-        lastActiveRef.current = server.last_active
-        setTick((t) => t + 1)
+    // Restore persisted buffer if available
+    const cached = bufferCache.get(serverId)
+    if (cached && cached.buffer.length > 0) {
+      bufferRef.current = cached.buffer
+      lastActiveRef.current = cached.lastActive
+      setTick((t) => t + 1)
+    } else {
+      // Seed on mount from existing cache
+      const servers = queryClient.getQueryData<ServerMetrics[]>(['servers'])
+      if (servers) {
+        const server = servers.find((s) => s.id === serverId)
+        if (server?.online && server.last_active > 0) {
+          const point = toRealtimeDataPoint(server)
+          bufferRef.current = [point]
+          lastActiveRef.current = server.last_active
+          setTick((t) => t + 1)
+        }
       }
     }
 
@@ -87,8 +98,13 @@ export function useRealtimeMetrics(serverId: string): RealtimeDataPoint[] {
 
     return () => {
       unsubscribe()
-      bufferRef.current = []
-      lastActiveRef.current = 0
+      // Persist buffer so route switches don't lose data
+      if (bufferRef.current.length > 0) {
+        bufferCache.set(serverId, {
+          buffer: bufferRef.current,
+          lastActive: lastActiveRef.current
+        })
+      }
     }
   }, [queryClient, serverId])
 

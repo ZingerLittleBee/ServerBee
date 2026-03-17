@@ -196,6 +196,58 @@ Agent                  Server                    Browser
 
 The agent reports every 3 seconds. The server caches the latest report in memory and immediately broadcasts it to connected browsers. Every 60 seconds, all cached reports are batch-written to SQLite. Every hour, raw records are aggregated into hourly summaries, and expired data is cleaned up based on retention settings.
 
+## Traffic Statistics
+
+ServerBee tracks network traffic at hourly and daily granularity, enabling billing cycle-aware usage monitoring with prediction capabilities.
+
+### How It Works
+
+Traffic tracking is integrated into the existing metric recording pipeline:
+
+1. Each agent reports cumulative network byte counters (`net_in_transfer`, `net_out_transfer`) every 3 seconds
+2. The RecordWriter calculates the delta between consecutive reports and accumulates hourly traffic
+3. The Aggregator rolls up hourly data into daily totals (timezone-aware via `scheduler.timezone`)
+4. The Cleanup task removes expired traffic records based on retention settings
+
+### Traffic API
+
+Query traffic statistics for any server via `GET /api/servers/{id}/traffic`. The response includes:
+
+- **Cycle totals** -- Total bytes in/out for the current billing cycle
+- **Usage percentage** -- Traffic used vs. the server's traffic limit (if configured)
+- **Prediction** -- Estimated end-of-cycle usage based on current consumption rate
+- **Daily breakdown** -- Per-day traffic totals within the billing cycle
+- **Hourly breakdown** -- Per-hour traffic totals for today
+
+### Billing Cycles
+
+Traffic is queried within billing cycles determined by:
+
+- **`billing_cycle`** -- The cycle type: `monthly` (default), `quarterly`, or `yearly`
+- **`billing_start_day`** -- The day of month when the billing cycle starts (1-28, default 1)
+
+For example, if `billing_start_day = 15` and `billing_cycle = monthly`, the cycle runs from the 15th of each month to the 14th of the next month.
+
+### Frontend Display
+
+The server detail page shows a collapsible traffic card with:
+
+- **Progress bar** -- Visual usage against the traffic limit
+- **Daily chart** -- Bar chart showing daily in/out traffic within the cycle
+- **Hourly chart** -- Bar chart showing today's hourly traffic breakdown
+- **Prediction** -- Estimated total usage by end of cycle
+
+### Data Retention
+
+| Data Type | Default Retention | Config Key |
+|-----------|------------------|------------|
+| Traffic hourly | 7 days | `retention.traffic_hourly_days` |
+| Traffic daily | 400 days | `retention.traffic_daily_days` |
+
+### Scheduler Timezone
+
+Daily traffic aggregation respects the `scheduler.timezone` setting. Set this to your billing timezone (e.g., `Asia/Shanghai`) to ensure daily totals align with your billing provider's day boundaries.
+
 ## Network Quality Monitoring
 
 ServerBee includes a built-in network quality monitoring system that probes network targets from each agent and visualizes latency, packet loss, and anomalies.
