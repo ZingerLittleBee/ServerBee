@@ -7,6 +7,7 @@ use sea_orm::*;
 use crate::entity::{audit_log, ping_record};
 use crate::service::network_probe::NetworkProbeService;
 use crate::service::record::RecordService;
+use crate::service::traffic::TrafficService;
 use crate::state::AppState;
 
 /// Periodically cleans up expired records based on retention config.
@@ -68,6 +69,27 @@ pub async fn run(state: Arc<AppState>) {
                 }
             }
             Err(e) => tracing::error!("Failed to clean up network probe records: {e}"),
+        }
+
+        // Clean up traffic hourly
+        match TrafficService::cleanup_hourly(&state.db, retention.traffic_hourly_days).await {
+            Ok(n) if n > 0 => tracing::info!("Cleaned up {n} expired traffic hourly records"),
+            Err(e) => tracing::error!("Failed to clean up traffic hourly records: {e}"),
+            _ => {}
+        }
+
+        // Clean up traffic daily
+        match TrafficService::cleanup_daily(&state.db, retention.traffic_daily_days).await {
+            Ok(n) if n > 0 => tracing::info!("Cleaned up {n} expired traffic daily records"),
+            Err(e) => tracing::error!("Failed to clean up traffic daily records: {e}"),
+            _ => {}
+        }
+
+        // Clean up task results
+        match TrafficService::cleanup_task_results(&state.db, retention.task_results_days).await {
+            Ok(n) if n > 0 => tracing::info!("Cleaned up {n} expired task results"),
+            Err(e) => tracing::error!("Failed to clean up task results: {e}"),
+            _ => {}
         }
 
         // Clean up expired file transfers (idle for > 30 minutes)

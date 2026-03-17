@@ -100,6 +100,27 @@ export type RegisterResponse = S['RegisterResponse']
 export type UpgradeRequest = S['UpgradeRequest']
 export type AutoDiscoveryKeyResponse = S['AutoDiscoveryKeyResponse']
 
+// Traffic (manually typed until OpenAPI types are regenerated)
+export interface TrafficResponse {
+  bytes_in: number
+  bytes_out: number
+  bytes_total: number
+  cycle_end: string
+  cycle_start: string
+  daily: Array<{ bytes_in: number; bytes_out: number; date: string }>
+  hourly: Array<{ bytes_in: number; bytes_out: number; hour: string }>
+  prediction: TrafficPrediction | null
+  traffic_limit: number | null
+  traffic_limit_type: string | null
+  usage_percent: number | null
+}
+
+export interface TrafficPrediction {
+  estimated_percent: number
+  estimated_total: number
+  will_exceed: boolean
+}
+
 // Errors
 export type ErrorBody = S['ErrorBody']
 export type ErrorDetail = S['ErrorDetail']

@@ -11,6 +11,10 @@ pub struct Model {
     pub server_id: String,
     pub output: String,
     pub exit_code: i32,
+    pub run_id: Option<String>,
+    pub attempt: i32,
+    #[schema(value_type = Option<String>, format = DateTime)]
+    pub started_at: Option<DateTimeUtc>,
     #[schema(value_type = String, format = DateTime)]
     pub finished_at: DateTimeUtc,
 }

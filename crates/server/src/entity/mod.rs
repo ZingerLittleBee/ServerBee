@@ -21,4 +21,7 @@ pub mod server_tag;
 pub mod session;
 pub mod task;
 pub mod task_result;
+pub mod traffic_daily;
+pub mod traffic_hourly;
+pub mod traffic_state;
 pub mod user;

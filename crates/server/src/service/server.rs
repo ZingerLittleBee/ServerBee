@@ -1,26 +1,47 @@
 use chrono::Utc;
 use sea_orm::*;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::entity::server;
 use crate::error::AppError;
 use serverbee_common::types::SystemInfo;
 
+/// Deserialize a field that distinguishes between absent (None), explicit null (Some(None)),
+/// and a present value (Some(Some(v))).
+fn deserialize_optional_nullable<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    // If the field is present in JSON (even as null), this function is called.
+    // JSON null → Ok(Some(None)), JSON value → Ok(Some(Some(v)))
+    Ok(Some(Option::deserialize(deserializer)?))
+}
+
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateServerInput {
     pub name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub group_id: Option<Option<String>>,
     pub weight: Option<i32>,
     pub hidden: Option<bool>,
     pub remark: Option<String>,
     pub public_remark: Option<String>,
     // Billing fields
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub price: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub billing_cycle: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub currency: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub expired_at: Option<Option<chrono::DateTime<chrono::Utc>>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub traffic_limit: Option<Option<i64>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub traffic_limit_type: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub billing_start_day: Option<Option<i32>>,
     pub capabilities: Option<i32>,
 }
 
@@ -94,6 +115,9 @@ impl ServerService {
         }
         if let Some(traffic_limit_type) = input.traffic_limit_type {
             active.traffic_limit_type = Set(traffic_limit_type);
+        }
+        if let Some(billing_start_day) = input.billing_start_day {
+            active.billing_start_day = Set(billing_start_day);
         }
         if let Some(caps) = input.capabilities {
             let caps_u32 = caps as u32;

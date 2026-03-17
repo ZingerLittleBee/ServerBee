@@ -70,6 +70,15 @@ async fn create_task(
         command: Set(input.command.clone()),
         server_ids_json: Set(server_ids_json),
         created_by: Set("admin".to_string()),
+        task_type: Set("oneshot".to_string()),
+        name: NotSet,
+        cron_expression: NotSet,
+        enabled: Set(true),
+        timeout: NotSet,
+        retry_count: Set(0),
+        retry_interval: Set(60),
+        last_run_at: NotSet,
+        next_run_at: NotSet,
         created_at: Set(now),
     };
     new_task.insert(&state.db).await?;
@@ -96,6 +105,9 @@ async fn create_task(
             server_id: Set(sid.to_string()),
             output: Set("Capability 'exec' is disabled for this server".to_string()),
             exit_code: Set(-2),
+            run_id: NotSet,
+            attempt: Set(1),
+            started_at: NotSet,
             finished_at: Set(now),
         };
         result.insert(&state.db).await?;

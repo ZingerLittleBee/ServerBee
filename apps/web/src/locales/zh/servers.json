@@ -94,5 +94,12 @@
   "edit_limit_total": "总计 (入+出)",
   "edit_limit_upload": "仅上传",
   "edit_limit_download": "仅下载",
-  "edit_failed": "更新服务器失败"
+  "edit_failed": "更新服务器失败",
+  "edit_billing_start_day": "计费起始日",
+  "edit_billing_start_day_placeholder": "留空则使用自然月（1日）",
+
+  "traffic_title": "流量统计",
+  "traffic_daily": "每日流量",
+  "traffic_hourly": "今日小时流量",
+  "traffic_exceed_warning": "预计将超出限额 (~{{percent}}%)"
 }

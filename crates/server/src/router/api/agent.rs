@@ -133,6 +133,7 @@ async fn register(
         expired_at: Set(None),
         traffic_limit: Set(None),
         traffic_limit_type: Set(None),
+        billing_start_day: Set(None),
         capabilities: Set(56),
         protocol_version: Set(1),
         created_at: Set(now),
