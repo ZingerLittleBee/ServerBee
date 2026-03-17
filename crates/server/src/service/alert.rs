@@ -588,11 +588,15 @@ async fn check_threshold(
 }
 
 /// Check transfer cycle alert: compare cumulative traffic within a time cycle against a limit.
+/// Uses traffic_hourly table for time-windowed queries and traffic_daily+hourly for billing cycles.
 async fn check_transfer_cycle(
     db: &DatabaseConnection,
     server_id: &str,
     item: &AlertRuleItem,
 ) -> bool {
+    use crate::service::traffic::{TrafficService, get_cycle_range};
+    use sea_orm::{ConnectionTrait, Statement};
+
     let cycle_limit = match item.cycle_limit {
         Some(limit) => limit,
         None => return false,
@@ -601,46 +605,60 @@ async fn check_transfer_cycle(
     let cycle_interval = item.cycle_interval.as_deref().unwrap_or("month");
     let now = Utc::now();
 
-    // Calculate the start of the current cycle
-    let cycle_start = match cycle_interval {
-        "hour" => now - Duration::hours(1),
-        "day" => now - Duration::days(1),
-        "week" => now - Duration::weeks(1),
-        "month" => now - Duration::days(30),
-        "year" => now - Duration::days(365),
-        _ => now - Duration::days(30),
-    };
-
-    // Get the earliest record in this cycle and the latest
-    let earliest = record::Entity::find()
-        .filter(record::Column::ServerId.eq(server_id))
-        .filter(record::Column::Time.gte(cycle_start))
-        .order_by_asc(record::Column::Time)
-        .one(db)
-        .await
-        .ok()
-        .flatten();
-
-    let latest = record::Entity::find()
-        .filter(record::Column::ServerId.eq(server_id))
-        .filter(record::Column::Time.gte(cycle_start))
-        .order_by_desc(record::Column::Time)
-        .one(db)
-        .await
-        .ok()
-        .flatten();
-
-    let (Some(first), Some(last)) = (earliest, latest) else {
-        return false;
+    let (bytes_in, bytes_out) = match cycle_interval {
+        "billing" => {
+            // Use server's billing config for cycle range
+            let srv = server::Entity::find_by_id(server_id)
+                .one(db)
+                .await
+                .ok()
+                .flatten();
+            let Some(srv) = srv else { return false };
+            let billing_cycle = srv.billing_cycle.as_deref().unwrap_or("monthly");
+            let today = now.date_naive();
+            let (start, end) = get_cycle_range(billing_cycle, srv.billing_start_day, today);
+            match TrafficService::query_cycle_traffic(db, server_id, start, end).await {
+                Ok(totals) => totals,
+                Err(_) => return false,
+            }
+        }
+        _ => {
+            // Time-windowed query using traffic_hourly
+            let cycle_start = match cycle_interval {
+                "hour" => now - Duration::hours(1),
+                "day" => now - Duration::days(1),
+                "week" => now - Duration::weeks(1),
+                "month" => now - Duration::days(30),
+                "year" => now - Duration::days(365),
+                _ => now - Duration::days(30),
+            };
+            let start_str = cycle_start.format("%Y-%m-%d %H:%M:%S").to_string();
+            let result = db
+                .query_one(Statement::from_sql_and_values(
+                    db.get_database_backend(),
+                    "SELECT COALESCE(SUM(bytes_in), 0), COALESCE(SUM(bytes_out), 0) \
+                     FROM traffic_hourly \
+                     WHERE server_id = $1 AND hour >= $2",
+                    [server_id.into(), start_str.into()],
+                ))
+                .await
+                .ok()
+                .flatten();
+            match result {
+                Some(row) => {
+                    let b_in: i64 = row.try_get_by_index(0).unwrap_or(0);
+                    let b_out: i64 = row.try_get_by_index(1).unwrap_or(0);
+                    (b_in, b_out)
+                }
+                None => return false,
+            }
+        }
     };
 
     let transfer = match item.rule_type.as_str() {
-        "transfer_in_cycle" => last.net_in_transfer - first.net_in_transfer,
-        "transfer_out_cycle" => last.net_out_transfer - first.net_out_transfer,
-        "transfer_all_cycle" => {
-            (last.net_in_transfer - first.net_in_transfer)
-                + (last.net_out_transfer - first.net_out_transfer)
-        }
+        "transfer_in_cycle" => bytes_in,
+        "transfer_out_cycle" => bytes_out,
+        "transfer_all_cycle" => bytes_in + bytes_out,
         _ => 0,
     };
 

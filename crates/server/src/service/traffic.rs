@@ -4,7 +4,7 @@ use chrono::{Datelike, Duration, NaiveDate, Utc};
 use sea_orm::{ConnectionTrait, DatabaseConnection, EntityTrait, Statement};
 use serde::Serialize;
 
-use crate::entity::{traffic_hourly, traffic_state};
+use crate::entity::traffic_state;
 use crate::error::AppError;
 
 pub struct TrafficService;
