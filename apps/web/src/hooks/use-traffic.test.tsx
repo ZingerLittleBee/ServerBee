@@ -67,7 +67,7 @@ describe('useTraffic', () => {
       json: async () => ({ data: mockTrafficData })
     } as Response)
 
-    const { result } = renderHook(() => useTraffic('srv-1'), { wrapper: createWrapper() })
+    renderHook(() => useTraffic('srv-1'), { wrapper: createWrapper() })
 
     // Verify the hook was called (fetch should be invoked with the correct URL)
     expect(fetch).toHaveBeenCalledWith('/api/servers/srv-1/traffic', expect.any(Object))
