@@ -35,6 +35,7 @@ pub struct Model {
     pub expired_at: Option<DateTimeUtc>,
     pub traffic_limit: Option<i64>,
     pub traffic_limit_type: Option<String>,
+    pub billing_start_day: Option<i32>,
     pub capabilities: i32,
     pub protocol_version: i32,
     pub created_at: DateTimeUtc,
