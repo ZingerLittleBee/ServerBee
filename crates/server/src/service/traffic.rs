@@ -1,5 +1,342 @@
-use chrono::{Datelike, Duration, NaiveDate};
+use std::collections::HashMap;
+
+use chrono::{Datelike, Duration, NaiveDate, Utc};
+use sea_orm::{ConnectionTrait, DatabaseConnection, EntityTrait, Statement};
 use serde::Serialize;
+
+use crate::entity::{traffic_hourly, traffic_state};
+use crate::error::AppError;
+
+pub struct TrafficService;
+
+impl TrafficService {
+    /// Upsert a traffic_hourly row, accumulating bytes_in/bytes_out on conflict.
+    pub async fn upsert_hourly(
+        db: &DatabaseConnection,
+        server_id: &str,
+        hour: chrono::DateTime<Utc>,
+        delta_in: i64,
+        delta_out: i64,
+    ) -> Result<(), AppError> {
+        let hour_str = hour.format("%Y-%m-%d %H:%M:%S").to_string();
+        db.execute(Statement::from_sql_and_values(
+            db.get_database_backend(),
+            "INSERT INTO traffic_hourly (server_id, hour, bytes_in, bytes_out) \
+             VALUES ($1, $2, $3, $4) \
+             ON CONFLICT(server_id, hour) DO UPDATE SET \
+             bytes_in = traffic_hourly.bytes_in + excluded.bytes_in, \
+             bytes_out = traffic_hourly.bytes_out + excluded.bytes_out",
+            [
+                server_id.into(),
+                hour_str.into(),
+                delta_in.into(),
+                delta_out.into(),
+            ],
+        ))
+        .await?;
+        Ok(())
+    }
+
+    /// Upsert a traffic_state row.
+    pub async fn upsert_state(
+        db: &DatabaseConnection,
+        server_id: &str,
+        last_in: i64,
+        last_out: i64,
+    ) -> Result<(), AppError> {
+        let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        db.execute(Statement::from_sql_and_values(
+            db.get_database_backend(),
+            "INSERT INTO traffic_state (server_id, last_in, last_out, updated_at) \
+             VALUES ($1, $2, $3, $4) \
+             ON CONFLICT(server_id) DO UPDATE SET \
+             last_in = excluded.last_in, \
+             last_out = excluded.last_out, \
+             updated_at = excluded.updated_at",
+            [
+                server_id.into(),
+                last_in.into(),
+                last_out.into(),
+                now.into(),
+            ],
+        ))
+        .await?;
+        Ok(())
+    }
+
+    /// Load all traffic_state rows into a HashMap for the transfer cache.
+    pub async fn load_transfer_cache(
+        db: &DatabaseConnection,
+    ) -> Result<HashMap<String, (i64, i64)>, AppError> {
+        let rows = traffic_state::Entity::find().all(db).await?;
+        let mut cache = HashMap::new();
+        for row in rows {
+            cache.insert(row.server_id, (row.last_in, row.last_out));
+        }
+        Ok(cache)
+    }
+
+    /// Aggregate hourly traffic into daily buckets using the given timezone.
+    pub async fn aggregate_daily(
+        db: &DatabaseConnection,
+        timezone: &str,
+    ) -> Result<u64, AppError> {
+        use chrono_tz::Tz;
+        let tz: Tz = timezone
+            .parse()
+            .map_err(|_| AppError::Internal(format!("Invalid timezone: {timezone}")))?;
+
+        // Get all hourly rows that haven't been aggregated into daily yet
+        // We aggregate yesterday and today in local timezone
+        let now = Utc::now().with_timezone(&tz);
+        let today_local = now.date_naive();
+        let yesterday_local = today_local - Duration::days(1);
+
+        // Process yesterday and today
+        let mut total_affected = 0u64;
+        for date in [yesterday_local, today_local] {
+            total_affected += Self::aggregate_daily_for_date(db, date, &tz).await?;
+        }
+
+        Ok(total_affected)
+    }
+
+    async fn aggregate_daily_for_date(
+        db: &DatabaseConnection,
+        date: NaiveDate,
+        tz: &chrono_tz::Tz,
+    ) -> Result<u64, AppError> {
+        use chrono::TimeZone;
+        // Convert local date boundaries to UTC
+        let start_local = date.and_hms_opt(0, 0, 0).unwrap();
+        let end_local = date.and_hms_opt(23, 59, 59).unwrap();
+
+        let start_utc = tz
+            .from_local_datetime(&start_local)
+            .earliest()
+            .unwrap_or_else(|| tz.from_local_datetime(&start_local).latest().unwrap())
+            .with_timezone(&Utc);
+        let end_utc = tz
+            .from_local_datetime(&end_local)
+            .latest()
+            .unwrap_or_else(|| tz.from_local_datetime(&end_local).earliest().unwrap())
+            .with_timezone(&Utc);
+
+        let start_str = start_utc.format("%Y-%m-%d %H:%M:%S").to_string();
+        let end_str = end_utc.format("%Y-%m-%d %H:%M:%S").to_string();
+        let date_str = date.format("%Y-%m-%d").to_string();
+
+        // Aggregate and upsert into traffic_daily
+        let result = db
+            .execute(Statement::from_sql_and_values(
+                db.get_database_backend(),
+                "INSERT INTO traffic_daily (server_id, date, bytes_in, bytes_out) \
+                 SELECT server_id, $1, SUM(bytes_in), SUM(bytes_out) \
+                 FROM traffic_hourly \
+                 WHERE hour >= $2 AND hour <= $3 \
+                 GROUP BY server_id \
+                 ON CONFLICT(server_id, date) DO UPDATE SET \
+                 bytes_in = excluded.bytes_in, \
+                 bytes_out = excluded.bytes_out",
+                [date_str.into(), start_str.into(), end_str.into()],
+            ))
+            .await?;
+
+        Ok(result.rows_affected())
+    }
+
+    /// Clean up traffic_hourly rows older than the given number of days.
+    pub async fn cleanup_hourly(db: &DatabaseConnection, days: u32) -> Result<u64, AppError> {
+        let cutoff = (Utc::now() - Duration::days(days as i64))
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+        let result = db
+            .execute(Statement::from_sql_and_values(
+                db.get_database_backend(),
+                "DELETE FROM traffic_hourly WHERE hour < $1",
+                [cutoff.into()],
+            ))
+            .await?;
+        Ok(result.rows_affected())
+    }
+
+    /// Clean up traffic_daily rows older than the given number of days.
+    pub async fn cleanup_daily(db: &DatabaseConnection, days: u32) -> Result<u64, AppError> {
+        let cutoff = (Utc::now() - Duration::days(days as i64))
+            .naive_utc()
+            .date()
+            .format("%Y-%m-%d")
+            .to_string();
+        let result = db
+            .execute(Statement::from_sql_and_values(
+                db.get_database_backend(),
+                "DELETE FROM traffic_daily WHERE date < $1",
+                [cutoff.into()],
+            ))
+            .await?;
+        Ok(result.rows_affected())
+    }
+
+    /// Clean up task_results older than the given number of days.
+    pub async fn cleanup_task_results(
+        db: &DatabaseConnection,
+        days: u32,
+    ) -> Result<u64, AppError> {
+        let cutoff = (Utc::now() - Duration::days(days as i64))
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+        let result = db
+            .execute(Statement::from_sql_and_values(
+                db.get_database_backend(),
+                "DELETE FROM task_results WHERE finished_at < $1",
+                [cutoff.into()],
+            ))
+            .await?;
+        Ok(result.rows_affected())
+    }
+
+    /// Query total traffic for a server within a date range, combining daily + hourly for today.
+    pub async fn query_cycle_traffic(
+        db: &DatabaseConnection,
+        server_id: &str,
+        start_date: NaiveDate,
+        end_date: NaiveDate,
+    ) -> Result<(i64, i64), AppError> {
+        let start_str = start_date.format("%Y-%m-%d").to_string();
+        let end_str = end_date.format("%Y-%m-%d").to_string();
+
+        // Query daily totals
+        let result = db
+            .query_one(Statement::from_sql_and_values(
+                db.get_database_backend(),
+                "SELECT COALESCE(SUM(bytes_in), 0) as total_in, COALESCE(SUM(bytes_out), 0) as total_out \
+                 FROM traffic_daily \
+                 WHERE server_id = $1 AND date >= $2 AND date <= $3",
+                [server_id.into(), start_str.into(), end_str.into()],
+            ))
+            .await?;
+
+        let (daily_in, daily_out) = match result {
+            Some(row) => {
+                let bytes_in: i64 = row.try_get_by_index(0).unwrap_or(0);
+                let bytes_out: i64 = row.try_get_by_index(1).unwrap_or(0);
+                (bytes_in, bytes_out)
+            }
+            None => (0, 0),
+        };
+
+        // Also get today's hourly data that may not yet be aggregated
+        let today = Utc::now().naive_utc().date();
+        let today_str = today.format("%Y-%m-%d").to_string();
+
+        // Check if today is within the cycle and get any hourly data not yet in daily
+        let hourly_result = db
+            .query_one(Statement::from_sql_and_values(
+                db.get_database_backend(),
+                "SELECT COALESCE(SUM(h.bytes_in), 0), COALESCE(SUM(h.bytes_out), 0) \
+                 FROM traffic_hourly h \
+                 WHERE h.server_id = $1 \
+                 AND date(h.hour) = $2 \
+                 AND NOT EXISTS (SELECT 1 FROM traffic_daily d WHERE d.server_id = h.server_id AND d.date = $2)",
+                [server_id.into(), today_str.into()],
+            ))
+            .await?;
+
+        let (hourly_in, hourly_out) = match hourly_result {
+            Some(row) => {
+                let bytes_in: i64 = row.try_get_by_index(0).unwrap_or(0);
+                let bytes_out: i64 = row.try_get_by_index(1).unwrap_or(0);
+                (bytes_in, bytes_out)
+            }
+            None => (0, 0),
+        };
+
+        Ok((daily_in + hourly_in, daily_out + hourly_out))
+    }
+
+    /// Query daily traffic breakdown for charts.
+    pub async fn query_daily_breakdown(
+        db: &DatabaseConnection,
+        server_id: &str,
+        start_date: NaiveDate,
+        end_date: NaiveDate,
+    ) -> Result<Vec<DailyTraffic>, AppError> {
+        let start_str = start_date.format("%Y-%m-%d").to_string();
+        let end_str = end_date.format("%Y-%m-%d").to_string();
+
+        let rows = db
+            .query_all(Statement::from_sql_and_values(
+                db.get_database_backend(),
+                "SELECT date, bytes_in, bytes_out FROM traffic_daily \
+                 WHERE server_id = $1 AND date >= $2 AND date <= $3 \
+                 ORDER BY date",
+                [server_id.into(), start_str.into(), end_str.into()],
+            ))
+            .await?;
+
+        let mut result = Vec::new();
+        for row in rows {
+            let date: String = row.try_get_by_index(0).unwrap_or_default();
+            let bytes_in: i64 = row.try_get_by_index(1).unwrap_or(0);
+            let bytes_out: i64 = row.try_get_by_index(2).unwrap_or(0);
+            result.push(DailyTraffic {
+                date,
+                bytes_in,
+                bytes_out,
+            });
+        }
+        Ok(result)
+    }
+
+    /// Query hourly traffic for a specific date.
+    pub async fn query_hourly_breakdown(
+        db: &DatabaseConnection,
+        server_id: &str,
+        date: NaiveDate,
+    ) -> Result<Vec<HourlyTraffic>, AppError> {
+        let start = date.and_hms_opt(0, 0, 0).unwrap();
+        let end = date.and_hms_opt(23, 59, 59).unwrap();
+        let start_str = start.format("%Y-%m-%d %H:%M:%S").to_string();
+        let end_str = end.format("%Y-%m-%d %H:%M:%S").to_string();
+
+        let rows = db
+            .query_all(Statement::from_sql_and_values(
+                db.get_database_backend(),
+                "SELECT hour, bytes_in, bytes_out FROM traffic_hourly \
+                 WHERE server_id = $1 AND hour >= $2 AND hour <= $3 \
+                 ORDER BY hour",
+                [server_id.into(), start_str.into(), end_str.into()],
+            ))
+            .await?;
+
+        let mut result = Vec::new();
+        for row in rows {
+            let hour: String = row.try_get_by_index(0).unwrap_or_default();
+            let bytes_in: i64 = row.try_get_by_index(1).unwrap_or(0);
+            let bytes_out: i64 = row.try_get_by_index(2).unwrap_or(0);
+            result.push(HourlyTraffic {
+                hour,
+                bytes_in,
+                bytes_out,
+            });
+        }
+        Ok(result)
+    }
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct DailyTraffic {
+    pub date: String,
+    pub bytes_in: i64,
+    pub bytes_out: i64,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct HourlyTraffic {
+    pub hour: String,
+    pub bytes_in: i64,
+    pub bytes_out: i64,
+}
 
 /// Compute per-direction independent delta.
 /// If a direction's current value < previous, treat as restart (use raw value).
@@ -152,6 +489,31 @@ pub fn compute_prediction(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+
+    async fn insert_test_server(db: &DatabaseConnection, id: &str) {
+        use crate::entity::server;
+        use serverbee_common::constants::CAP_DEFAULT;
+        let token_hash =
+            crate::service::auth::AuthService::hash_password("test").expect("hash should work");
+        let now = Utc::now();
+        server::ActiveModel {
+            id: Set(id.to_string()),
+            token_hash: Set(token_hash),
+            token_prefix: Set("serverbee_test".to_string()),
+            name: Set("Test Server".to_string()),
+            weight: Set(0),
+            hidden: Set(false),
+            capabilities: Set(CAP_DEFAULT as i32),
+            protocol_version: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert test server");
+    }
 
     #[test]
     fn test_compute_delta_normal() {
@@ -255,5 +617,82 @@ mod tests {
     fn test_prediction_no_limit() {
         let p = compute_prediction(60_000_000_000, 7, 10, None, "sum");
         assert!(p.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_upsert_traffic_hourly_accumulates() {
+        let (db, _tmp) = crate::test_utils::setup_test_db().await;
+        insert_test_server(&db, "srv-1").await;
+        let hour = Utc::now()
+            .date_naive()
+            .and_hms_opt(10, 0, 0)
+            .unwrap()
+            .and_utc();
+        TrafficService::upsert_hourly(&db, "srv-1", hour, 100, 200)
+            .await
+            .unwrap();
+        TrafficService::upsert_hourly(&db, "srv-1", hour, 50, 30)
+            .await
+            .unwrap();
+        let row = traffic_hourly::Entity::find()
+            .filter(traffic_hourly::Column::ServerId.eq("srv-1"))
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.bytes_in, 150);
+        assert_eq!(row.bytes_out, 230);
+    }
+
+    #[tokio::test]
+    async fn test_load_transfer_cache_from_traffic_state() {
+        let (db, _tmp) = crate::test_utils::setup_test_db().await;
+        insert_test_server(&db, "srv-1").await;
+        TrafficService::upsert_state(&db, "srv-1", 1000, 2000)
+            .await
+            .unwrap();
+        let cache = TrafficService::load_transfer_cache(&db).await.unwrap();
+        assert_eq!(cache.get("srv-1"), Some(&(1000i64, 2000i64)));
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_daily_timezone_bucketing() {
+        use crate::entity::traffic_daily;
+        let (db, _tmp) = crate::test_utils::setup_test_db().await;
+        insert_test_server(&db, "srv-1").await;
+        // For Asia/Shanghai (UTC+8): Mar 17 local = Mar 16 16:00 UTC to Mar 17 15:59 UTC
+        let h1 = NaiveDate::from_ymd_opt(2026, 3, 16)
+            .unwrap()
+            .and_hms_opt(20, 0, 0)
+            .unwrap()
+            .and_utc(); // Mar 17 04:00 CST
+        let h2 = NaiveDate::from_ymd_opt(2026, 3, 17)
+            .unwrap()
+            .and_hms_opt(2, 0, 0)
+            .unwrap()
+            .and_utc(); // Mar 17 10:00 CST
+        TrafficService::upsert_hourly(&db, "srv-1", h1, 100, 200)
+            .await
+            .unwrap();
+        TrafficService::upsert_hourly(&db, "srv-1", h2, 300, 400)
+            .await
+            .unwrap();
+
+        TrafficService::aggregate_daily_for_date(
+            &db,
+            NaiveDate::from_ymd_opt(2026, 3, 17).unwrap(),
+            &chrono_tz::Asia::Shanghai,
+        )
+        .await
+        .unwrap();
+
+        let daily = traffic_daily::Entity::find()
+            .filter(traffic_daily::Column::ServerId.eq("srv-1"))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(daily.len(), 1);
+        assert_eq!(daily[0].bytes_in, 400);
+        assert_eq!(daily[0].bytes_out, 600);
     }
 }
