@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { MetricsChart } from '@/components/server/metrics-chart'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
+import { TrafficCard } from '@/components/server/traffic-card'
 import { TrafficProgress } from '@/components/server/traffic-progress'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -447,6 +448,8 @@ function ServerDetailPage() {
           </>
         )}
       </div>
+
+      <TrafficCard serverId={id} />
 
       <CapabilitiesSection server={serverWithCaps} />
 
