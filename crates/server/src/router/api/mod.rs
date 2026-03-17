@@ -12,6 +12,7 @@ pub mod server_group;
 pub mod setting;
 pub mod status;
 pub mod task;
+pub mod traffic;
 pub mod user;
 
 use std::sync::Arc;
@@ -36,6 +37,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 .merge(ping::read_router())
                 .merge(network_probe::read_router())
                 .merge(file::read_router())
+                .merge(traffic::read_router())
                 // Admin-only routes (write operations + management)
                 .merge(
                     Router::new()
