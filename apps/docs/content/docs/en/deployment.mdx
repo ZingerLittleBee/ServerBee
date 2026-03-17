@@ -11,23 +11,21 @@ This guide covers production deployment best practices for ServerBee, including 
 Docker Compose is the simplest way to deploy ServerBee in production. Create a `docker-compose.yml`:
 
 ```yaml
-version: "3.8"
-
 services:
-  serverbee:
-    image: ghcr.io/zingerbee/serverbee:latest
-    container_name: serverbee
+  serverbee-server:
+    image: ghcr.io/zingerlittlebee/serverbee-server:latest
+    container_name: serverbee-server
     restart: unless-stopped
     ports:
       - "127.0.0.1:9527:9527"
     volumes:
-      - serverbee-data:/app/data
+      - serverbee-data:/data
       - ./server.toml:/app/server.toml:ro
     environment:
       - SERVERBEE_ADMIN__PASSWORD=change-this-password
       - SERVERBEE_AUTH__SECURE_COOKIE=true
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9527/api/status/health"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9527/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -50,7 +48,7 @@ docker compose up -d
 View logs:
 
 ```bash
-docker compose logs -f serverbee
+docker compose logs -f serverbee-server
 ```
 
 ## Systemd Services
@@ -134,7 +132,7 @@ sudo systemctl status serverbee-server
 
 ### Agent Service
 
-See the [Agent Setup](/docs/en/agent) guide for a complete systemd service unit file.
+See the [Agent Setup](/en/docs/agent) guide for a complete systemd service unit file.
 
 ## Reverse Proxy
 
@@ -203,6 +201,36 @@ monitor.example.com {
 
 That is the entire Caddy configuration needed. Caddy handles HTTPS certificates, HTTP/2, WebSocket upgrades, and security headers by default.
 
+### Traefik
+
+Traefik integrates with Docker via labels — no separate config file needed. Traefik automatically detects WebSocket connections, so no extra configuration is required.
+
+```yaml
+services:
+  serverbee-server:
+    image: ghcr.io/zingerlittlebee/serverbee-server:latest
+    volumes:
+      - serverbee-data:/data
+    environment:
+      - SERVERBEE_ADMIN__PASSWORD=your_secure_password
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.serverbee.rule=Host(`monitor.example.com`)"
+      - "traefik.http.routers.serverbee.entrypoints=websecure"
+      - "traefik.http.routers.serverbee.tls.certresolver=letsencrypt"
+      - "traefik.http.services.serverbee.loadbalancer.server.port=9527"
+    restart: unless-stopped
+    networks:
+      - traefik
+
+networks:
+  traefik:
+    external: true
+
+volumes:
+  serverbee-data:
+```
+
 ## TLS / HTTPS
 
 For production deployments, always use HTTPS. The recommended approaches:
@@ -232,7 +260,7 @@ When your server is behind HTTPS, update the agent's `server_url` accordingly:
 server_url = "https://monitor.example.com"
 ```
 
-The agent automatically converts `https://` to `wss://` for WebSocket connections.
+The agent automatically handles WebSocket connections using the provided URL.
 
 <Callout type="warn">
 When using HTTPS, ensure `auth.secure_cookie = true` in your server configuration (this is the default). If you set it to `false`, session cookies will not be sent over HTTPS connections, breaking browser authentication.
@@ -313,7 +341,7 @@ This runs at 2:00 AM daily and deletes backups older than 30 days.
 ServerBee exposes a health check endpoint:
 
 ```
-GET /api/status/health
+GET /healthz
 ```
 
 Use this to verify the server is running and responsive. Configure it in your monitoring system, Docker health check, or load balancer.
@@ -327,7 +355,7 @@ The Docker Compose example above includes a health check configuration. Docker w
 If you are using an external uptime monitoring service, point it at:
 
 ```
-https://monitor.example.com/api/status/health
+https://monitor.example.com/healthz
 ```
 
 This creates a "monitor the monitor" setup, so you know if ServerBee itself goes down.
