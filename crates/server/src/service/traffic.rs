@@ -1,4 +1,5 @@
 use chrono::{Datelike, Duration, NaiveDate};
+use serde::Serialize;
 
 /// Compute per-direction independent delta.
 /// If a direction's current value < previous, treat as restart (use raw value).
@@ -113,6 +114,41 @@ fn days_in_month(year: i32, month: u32) -> u32 {
     .day()
 }
 
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct TrafficPrediction {
+    pub estimated_total: i64,
+    pub estimated_percent: f64,
+    pub will_exceed: bool,
+}
+
+/// Returns None if days_elapsed < 3 or no traffic_limit set.
+pub fn compute_prediction(
+    recent_sum: i64,
+    days_elapsed: i64,
+    days_remaining: i64,
+    traffic_limit: Option<i64>,
+    _traffic_limit_type: &str,
+) -> Option<TrafficPrediction> {
+    if days_elapsed < 3 {
+        return None;
+    }
+    let traffic_limit = traffic_limit?;
+    if traffic_limit <= 0 {
+        return None;
+    }
+
+    let daily_avg = recent_sum as f64 / days_elapsed as f64;
+    let estimated_total = recent_sum + (daily_avg * days_remaining as f64) as i64;
+    let estimated_percent = estimated_total as f64 / traffic_limit as f64 * 100.0;
+    let will_exceed = estimated_total > traffic_limit;
+
+    Some(TrafficPrediction {
+        estimated_total,
+        estimated_percent,
+        will_exceed,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,5 +234,26 @@ mod tests {
         let (start, end) = get_cycle_range("unknown", None, today);
         assert_eq!(start, NaiveDate::from_ymd_opt(2026, 3, 1).unwrap());
         assert_eq!(end, NaiveDate::from_ymd_opt(2026, 3, 31).unwrap());
+    }
+
+    #[test]
+    fn test_prediction_normal() {
+        let p = compute_prediction(60_000_000_000, 7, 10, Some(100_000_000_000), "sum");
+        assert!(p.is_some());
+        let p = p.unwrap();
+        assert!(p.estimated_total > 60_000_000_000);
+        assert!(p.will_exceed);
+    }
+
+    #[test]
+    fn test_prediction_too_early() {
+        let p = compute_prediction(5_000_000_000, 2, 28, Some(100_000_000_000), "sum");
+        assert!(p.is_none());
+    }
+
+    #[test]
+    fn test_prediction_no_limit() {
+        let p = compute_prediction(60_000_000_000, 7, 10, None, "sum");
+        assert!(p.is_none());
     }
 }
