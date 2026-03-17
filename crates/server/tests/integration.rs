@@ -1578,3 +1578,116 @@ async fn test_file_mkdir_requires_admin() {
         "Member should receive 403 when attempting file mkdir"
     );
 }
+
+// ─── Traffic Stats Integration Tests ──────────────────────────────────
+
+#[tokio::test]
+async fn test_oneshot_task_backward_compat() {
+    // Verify that creating a one-shot task still works after migration adds new NOT NULL columns
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    // Register agent to get a server_id
+    let register_resp = client
+        .post(format!("{}/api/agent/register", base_url))
+        .header("Authorization", "Bearer test-key")
+        .send()
+        .await
+        .expect("Register failed");
+    assert_eq!(register_resp.status(), 200);
+    let body: serde_json::Value = register_resp.json().await.unwrap();
+    let server_id = body["data"]["server_id"].as_str().unwrap();
+
+    // Create a one-shot task (should work with new schema defaults)
+    let task_resp = client
+        .post(format!("{}/api/tasks", base_url))
+        .json(&json!({
+            "command": "echo hello",
+            "server_ids": [server_id]
+        }))
+        .send()
+        .await
+        .expect("Create task failed");
+
+    assert_eq!(task_resp.status(), 200, "One-shot task creation should still work after migration");
+}
+
+#[tokio::test]
+async fn test_traffic_api_returns_data() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    // Register agent
+    let register_resp = client
+        .post(format!("{}/api/agent/register", base_url))
+        .header("Authorization", "Bearer test-key")
+        .send()
+        .await
+        .expect("Register failed");
+    assert_eq!(register_resp.status(), 200);
+    let body: serde_json::Value = register_resp.json().await.unwrap();
+    let server_id = body["data"]["server_id"].as_str().unwrap();
+
+    // Query traffic (should return empty but valid structure)
+    let traffic_resp = client
+        .get(format!("{}/api/servers/{}/traffic", base_url, server_id))
+        .send()
+        .await
+        .expect("Traffic query failed");
+
+    assert_eq!(traffic_resp.status(), 200, "Traffic API should return 200");
+    let traffic: serde_json::Value = traffic_resp.json().await.unwrap();
+    let data = &traffic["data"];
+    assert!(data["cycle_start"].is_string());
+    assert!(data["cycle_end"].is_string());
+    assert_eq!(data["bytes_in"].as_i64(), Some(0));
+    assert_eq!(data["bytes_out"].as_i64(), Some(0));
+    assert_eq!(data["bytes_total"].as_i64(), Some(0));
+    assert!(data["daily"].is_array());
+    assert!(data["hourly"].is_array());
+}
+
+#[tokio::test]
+async fn test_server_billing_start_day() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    // Register agent
+    let register_resp = client
+        .post(format!("{}/api/agent/register", base_url))
+        .header("Authorization", "Bearer test-key")
+        .send()
+        .await
+        .expect("Register failed");
+    let body: serde_json::Value = register_resp.json().await.unwrap();
+    let server_id = body["data"]["server_id"].as_str().unwrap();
+
+    // Update server with billing_start_day
+    let update_resp = client
+        .put(format!("{}/api/servers/{}", base_url, server_id))
+        .json(&json!({
+            "billing_start_day": 15,
+            "billing_cycle": "monthly",
+            "traffic_limit": 1099511627776_i64
+        }))
+        .send()
+        .await
+        .expect("Update server failed");
+
+    assert_eq!(update_resp.status(), 200);
+    let updated: serde_json::Value = update_resp.json().await.unwrap();
+    assert_eq!(updated["data"]["billing_start_day"].as_i64(), Some(15));
+
+    // Verify traffic API reflects the billing cycle
+    let traffic_resp = client
+        .get(format!("{}/api/servers/{}/traffic", base_url, server_id))
+        .send()
+        .await
+        .expect("Traffic query failed");
+    assert_eq!(traffic_resp.status(), 200);
+    let traffic: serde_json::Value = traffic_resp.json().await.unwrap();
+    assert!(traffic["data"]["traffic_limit"].as_i64().is_some());
+}
