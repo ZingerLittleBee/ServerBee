@@ -37,6 +37,16 @@ export function TrafficProgress({ serverId }: { serverId: string }) {
   const predictionPercent =
     data.prediction && limit > 0 ? Math.min((data.prediction.estimated_total / limit) * 100, 100) : null
 
+  const percentColor = (p: number) => {
+    if (p >= 90) {
+      return 'text-red-500'
+    }
+    if (p >= 70) {
+      return 'text-yellow-500'
+    }
+    return ''
+  }
+
   return (
     <div className="flex w-full min-w-48 flex-col gap-1">
       <div className="flex items-center justify-between text-muted-foreground text-xs">
@@ -46,9 +56,7 @@ export function TrafficProgress({ serverId }: { serverId: string }) {
             <span className="ml-1">({data.traffic_limit_type})</span>
           )}
         </span>
-        <span className={cn(percent >= 90 ? 'text-red-500' : percent >= 70 ? 'text-yellow-500' : '')}>
-          {percent.toFixed(1)}%
-        </span>
+        <span className={cn(percentColor(percent))}>{percent.toFixed(1)}%</span>
       </div>
       <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
         <div className={cn('h-full rounded-full transition-all', barColor)} style={{ width: `${percent}%` }} />
