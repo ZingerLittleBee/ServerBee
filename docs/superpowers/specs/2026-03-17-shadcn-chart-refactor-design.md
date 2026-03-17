@@ -69,7 +69,7 @@
 
 ```tsx
 const chartConfig = {
-  [dataKey]: { label, color }
+  [dataKey]: { label: title, color }
 } satisfies ChartConfig
 
 <ChartContainer config={chartConfig} className="h-[200px] w-full">
@@ -164,8 +164,8 @@ const visibleWithIndex = useMemo(
 
 ```tsx
 const trafficConfig = {
-  bytes_in: { label: t('traffic.in', '↓ In'), color: 'var(--chart-1)' },
-  bytes_out: { label: t('traffic.out', '↑ Out'), color: 'var(--chart-2)' },
+  bytes_in: { label: '↓ In', color: 'var(--chart-1)' },
+  bytes_out: { label: '↑ Out', color: 'var(--chart-2)' },
 } satisfies ChartConfig
 
 // 日流量 BarChart
