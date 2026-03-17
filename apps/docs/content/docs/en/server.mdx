@@ -10,7 +10,7 @@ The ServerBee server is the central component that hosts the web dashboard, mana
 
 ### Pre-built Binary
 
-Download the latest release for your platform from the [releases page](https://github.com/ZingerBee/ServerBee/releases), then run it:
+Download the latest release for your platform from the [releases page](https://github.com/ZingerLittleBee/ServerBee/releases), then run it:
 
 ```bash
 chmod +x serverbee-server
@@ -23,8 +23,8 @@ chmod +x serverbee-server
 docker run -d \
   --name serverbee \
   -p 9527:9527 \
-  -v serverbee-data:/app/data \
-  ghcr.io/zingerbee/serverbee:latest
+  -v serverbee-data:/data \
+  ghcr.io/zingerlittlebee/serverbee-server:latest
 ```
 
 ### Build from Source
@@ -260,6 +260,8 @@ server {
 <Callout type="info">
 The long `proxy_read_timeout` and `proxy_send_timeout` values are important for WebSocket connections. Without them, nginx may close idle connections prematurely, causing agents and terminal sessions to disconnect.
 </Callout>
+
+For more reverse proxy configurations including Traefik, see the [Deployment Guide](/en/docs/deployment).
 
 ## Background Tasks
 
