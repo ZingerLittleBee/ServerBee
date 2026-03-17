@@ -38,7 +38,7 @@ export function MetricsChart({
   return (
     <div className="rounded-lg border bg-card p-4">
       <h3 className="mb-3 font-semibold text-sm">{title}</h3>
-      <ChartContainer className="h-[200px] w-full" config={chartConfig}>
+      <ChartContainer className="h-[260px] w-full" config={chartConfig}>
         <AreaChart accessibilityLayer data={data}>
           <CartesianGrid vertical={false} />
           <XAxis axisLine={false} dataKey="timestamp" tickFormatter={formatTime} tickLine={false} />

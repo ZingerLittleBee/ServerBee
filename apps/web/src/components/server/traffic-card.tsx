@@ -38,7 +38,7 @@ export function TrafficCard({ serverId }: { serverId: string }) {
       </CardHeader>
       <CardContent className="space-y-6">
         {data.daily.length > 0 && (
-          <ChartContainer className="h-[200px] w-full" config={trafficConfig}>
+          <ChartContainer className="h-[260px] w-full" config={trafficConfig}>
             <BarChart accessibilityLayer data={data.daily} maxBarSize={40}>
               <CartesianGrid vertical={false} />
               <XAxis
