@@ -92,6 +92,8 @@ use utoipa::OpenApi;
         crate::router::api::ping::update_task,
         crate::router::api::ping::delete_task,
         crate::router::api::ping::get_records,
+        // traffic
+        crate::router::api::traffic::get_traffic,
         // files
         crate::router::api::file::list_files,
         crate::router::api::file::stat_file,
@@ -179,6 +181,11 @@ use utoipa::OpenApi;
             crate::entity::ping_record::Model,
             crate::entity::gpu_record::Model,
             crate::entity::task_result::Model,
+            // traffic
+            crate::router::api::traffic::TrafficResponse,
+            crate::service::traffic::TrafficPrediction,
+            crate::service::traffic::DailyTraffic,
+            crate::service::traffic::HourlyTraffic,
             // files
             serverbee_common::types::FileEntry,
             serverbee_common::types::FileType,

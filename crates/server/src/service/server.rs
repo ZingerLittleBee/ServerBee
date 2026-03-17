@@ -21,6 +21,7 @@ pub struct UpdateServerInput {
     pub expired_at: Option<Option<chrono::DateTime<chrono::Utc>>>,
     pub traffic_limit: Option<Option<i64>>,
     pub traffic_limit_type: Option<Option<String>>,
+    pub billing_start_day: Option<Option<i32>>,
     pub capabilities: Option<i32>,
 }
 
@@ -94,6 +95,9 @@ impl ServerService {
         }
         if let Some(traffic_limit_type) = input.traffic_limit_type {
             active.traffic_limit_type = Set(traffic_limit_type);
+        }
+        if let Some(billing_start_day) = input.billing_start_day {
+            active.billing_start_day = Set(billing_start_day);
         }
         if let Some(caps) = input.capabilities {
             let caps_u32 = caps as u32;
