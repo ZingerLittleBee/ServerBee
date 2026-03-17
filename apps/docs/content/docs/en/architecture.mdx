@@ -83,7 +83,7 @@ A React 19 single-page application:
 - **Data fetching** -- TanStack Query for REST, native WebSocket for real-time updates
 - **UI components** -- shadcn/ui with the base-nova theme
 - **Styling** -- Tailwind CSS v4
-- **Charts** -- Recharts
+- **Charts** -- Recharts via shadcn Chart wrappers
 - **Build** -- Vite 7
 
 The built frontend is embedded into the server binary at compile time, so there is nothing to deploy separately.
@@ -131,7 +131,7 @@ All communication uses WebSocket with JSON-encoded messages. Terminal data uses 
 
 ## Database Design
 
-ServerBee uses SQLite with 19 tables across 4 categories:
+ServerBee uses SQLite with 24 tables across 5 categories:
 
 ### Authentication (4 tables)
 
@@ -151,7 +151,7 @@ ServerBee uses SQLite with 19 tables across 4 categories:
 | `server_tags` | Tag labels attached to servers |
 | `configs` | Key-value configuration store (auto-discovery key, etc.) |
 
-### Monitoring Data (5 tables)
+### Monitoring Data (8 tables)
 
 | Table | Purpose |
 |-------|---------|
@@ -160,6 +160,9 @@ ServerBee uses SQLite with 19 tables across 4 categories:
 | `gpu_records` | Per-GPU device metrics (device index, name, memory, utilization, temp) |
 | `ping_records` | Ping probe results (latency, success, error) |
 | `ping_tasks` | Ping task definitions (probe type, target, interval, assigned servers) |
+| `traffic_hourly` | Hourly traffic byte counters (in/out) per server |
+| `traffic_daily` | Daily traffic byte counters (in/out) per server |
+| `traffic_state` | Last-known cumulative traffic counters for delta calculation |
 
 ### Alerting & Operations (6 tables)
 
