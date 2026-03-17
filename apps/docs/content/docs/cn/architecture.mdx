@@ -82,7 +82,7 @@ Agent 是部署在被监控服务器上的轻量级程序：
 
 - **TanStack Router**：文件式路由
 - **TanStack Query**：服务器状态管理，与 WebSocket 共享 cache
-- **Recharts**：指标折线图和图表
+- **Recharts**：通过 shadcn Chart 封装的指标折线图和图表
 - **shadcn/ui (base-nova)**：UI 组件库
 - **xterm.js**：Web 终端模拟器
 
@@ -173,7 +173,7 @@ Binary 帧格式：`[1 byte session_id 长度][session_id bytes][payload bytes]`
 
 ## 数据库设计
 
-ServerBee 使用 SQLite 数据库，通过 sea-orm ORM 管理。共有 21 个实体（表）：
+ServerBee 使用 SQLite 数据库，通过 sea-orm ORM 管理。共有 24 个实体（表）：
 
 ### 用户与认证
 
@@ -198,6 +198,9 @@ ServerBee 使用 SQLite 数据库，通过 sea-orm ORM 管理。共有 21 个实
 | `records` | 分钟级指标记录（复合索引 server_id + time） |
 | `records_hourly` | 小时级聚合记录（结构同 records，值为平均值） |
 | `gpu_records` | GPU 每卡详细指标 |
+| `traffic_hourly` | 每小时流量字节数（入站/出站） |
+| `traffic_daily` | 每日流量字节数（入站/出站） |
+| `traffic_state` | 最新累计流量计数器（用于增量计算） |
 
 ### 告警与通知
 

@@ -152,6 +152,9 @@ ServerBee 自动清理过期数据，由后台任务每小时执行一次：
 | 小时级指标 (records_hourly) | 90 天 | `retention.records_hourly_days` |
 | GPU 指标 (gpu_records) | 7 天 | `retention.gpu_records_days` |
 | Ping 探测记录 | 7 天 | `retention.ping_records_days` |
+| 流量小时记录 (traffic_hourly) | 7 天 | `retention.traffic_hourly_days` |
+| 流量日记录 (traffic_daily) | 400 天 | `retention.traffic_daily_days` |
+| 任务执行结果 (task_results) | 7 天 | `retention.task_results_days` |
 | 审计日志 | 180 天 | `retention.audit_logs_days` |
 
 <Callout type="info">
@@ -204,6 +207,58 @@ records_hourly_days = 365  # 小时级数据保留 1 年
 | 隐藏服务器 | 在仪表盘中隐藏指定服务器 |
 | 删除服务器 | 移除服务器及其所有历史数据 |
 | 批量操作 | 支持批量删除多台服务器 |
+
+## 流量统计
+
+ServerBee 以小时和天为粒度跟踪网络流量，支持按计费周期查询用量并提供预测能力。
+
+### 工作原理
+
+流量统计集成在现有的指标记录管道中：
+
+1. Agent 每 3 秒上报累计网络字节数（`net_in_transfer`、`net_out_transfer`）
+2. RecordWriter 计算连续上报之间的增量，累积到小时级流量记录
+3. Aggregator 将小时数据汇总为日级别（通过 `scheduler.timezone` 配置感知时区）
+4. Cleanup 任务根据保留策略清理过期的流量记录
+
+### 流量 API
+
+通过 `GET /api/servers/{id}/traffic` 查询任意服务器的流量统计，返回内容包括：
+
+- **周期总量** -- 当前计费周期的入站/出站总字节数
+- **使用百分比** -- 已用流量占服务器流量限额的百分比（如已配置）
+- **预测** -- 基于当前消耗速率估算的周期末总用量
+- **日明细** -- 计费周期内每日流量总量
+- **小时明细** -- 今日每小时流量明细
+
+### 计费周期
+
+流量按计费周期查询，周期由以下参数决定：
+
+- **`billing_cycle`** -- 周期类型：`monthly`（默认）、`quarterly` 或 `yearly`
+- **`billing_start_day`** -- 计费周期起始日（1-28，默认 1）
+
+例如，`billing_start_day = 15` 且 `billing_cycle = monthly` 时，周期从每月 15 日开始到下月 14 日。
+
+### 前端展示
+
+服务器详情页显示可折叠的流量卡片，包含：
+
+- **进度条** -- 可视化显示已用流量占限额的比例
+- **日图表** -- 柱状图展示周期内每日入站/出站流量
+- **小时图表** -- 柱状图展示今日每小时流量
+- **预测** -- 预计周期末总用量
+
+### 数据保留
+
+| 数据类型 | 默认保留时间 | 配置项 |
+|----------|-------------|--------|
+| 流量小时记录 | 7 天 | `retention.traffic_hourly_days` |
+| 流量日记录 | 400 天 | `retention.traffic_daily_days` |
+
+### 调度时区
+
+日级流量聚合遵循 `scheduler.timezone` 设置。将其设为你的计费时区（如 `Asia/Shanghai`），确保日统计与你的服务商日边界一致。
 
 ## 网络质量监控
 
