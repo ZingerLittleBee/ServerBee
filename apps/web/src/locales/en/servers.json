@@ -101,5 +101,7 @@
   "traffic_title": "Traffic Statistics",
   "traffic_daily": "Daily Traffic",
   "traffic_hourly": "Today's Hourly Traffic",
+  "traffic_tab_today": "Today",
+  "traffic_tab_cycle": "Monthly",
   "traffic_exceed_warning": "Predicted to exceed limit (~{{percent}}%)"
 }
