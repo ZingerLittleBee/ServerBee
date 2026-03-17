@@ -94,5 +94,12 @@
   "edit_limit_total": "Total (In+Out)",
   "edit_limit_upload": "Upload Only",
   "edit_limit_download": "Download Only",
-  "edit_failed": "Failed to update server"
+  "edit_failed": "Failed to update server",
+  "edit_billing_start_day": "Billing Start Day",
+  "edit_billing_start_day_placeholder": "Leave empty for natural month (1st)",
+
+  "traffic_title": "Traffic Statistics",
+  "traffic_daily": "Daily Traffic",
+  "traffic_hourly": "Today's Hourly Traffic",
+  "traffic_exceed_warning": "Predicted to exceed limit (~{{percent}}%)"
 }
