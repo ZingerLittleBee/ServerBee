@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { MetricsChart } from '@/components/server/metrics-chart'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
+import { TrafficProgress } from '@/components/server/traffic-progress'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
@@ -334,7 +335,7 @@ function ServerDetailPage() {
         </div>
       </div>
 
-      {hasBilling && <BillingInfoBar server={server} />}
+      {hasBilling && <BillingInfoBar server={server} serverId={id} />}
 
       {isOnline && (liveNetIn > 0 || liveNetOut > 0) && (
         <div className="mb-6 flex flex-wrap gap-6 rounded-lg border bg-card p-3 text-sm">
@@ -455,12 +456,14 @@ function ServerDetailPage() {
 }
 
 function BillingInfoBar({
-  server
+  server,
+  serverId
 }: {
   server: Pick<
     ServerResponse,
     'billing_cycle' | 'currency' | 'expired_at' | 'price' | 'traffic_limit' | 'traffic_limit_type'
   >
+  serverId: string
 }) {
   const { t } = useTranslation('servers')
   const isExpired = server.expired_at ? new Date(server.expired_at) < new Date() : false
@@ -495,12 +498,7 @@ function BillingInfoBar({
           {daysUntilExpiry != null && !isExpired && ` (${t('detail_expires_days', { count: daysUntilExpiry })})`}
         </span>
       )}
-      {server.traffic_limit != null && (
-        <span className="text-muted-foreground">
-          {t('detail_traffic')} {formatBytes(server.traffic_limit)}
-          {server.traffic_limit_type && server.traffic_limit_type !== 'sum' && ` (${server.traffic_limit_type})`}
-        </span>
-      )}
+      {server.traffic_limit != null && <TrafficProgress serverId={serverId} />}
     </div>
   )
 }
