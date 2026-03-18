@@ -172,16 +172,36 @@ pub async fn create_task(
             .map_err(|e| AppError::Validation(format!("Invalid cron expression: {e}")))?;
     }
 
+    // Validate numeric bounds
+    if matches!(input.timeout, Some(0)) {
+        return Err(AppError::Validation("timeout must be > 0".into()));
+    }
+    if let Some(rc) = input.retry_count
+        && !(0..=10).contains(&rc)
+    {
+        return Err(AppError::Validation(
+            "retry_count must be between 0 and 10".into(),
+        ));
+    }
+    if matches!(input.retry_interval, Some(ri) if ri < 1) {
+        return Err(AppError::Validation("retry_interval must be >= 1".into()));
+    }
+
     let task_id = Uuid::new_v4().to_string();
     let now = Utc::now();
     let server_ids_json = serde_json::to_string(&input.server_ids)
         .map_err(|e| AppError::Internal(format!("Serialization error: {e}")))?;
 
-    // Compute next_run_at for scheduled tasks
+    // Compute next_run_at using the configured scheduler timezone
+    let tz: chrono_tz::Tz = state
+        .task_scheduler
+        .timezone()
+        .parse()
+        .unwrap_or(chrono_tz::UTC);
     let next_run = input.cron_expression.as_deref().and_then(|c| {
         cron::Schedule::from_str(c)
             .ok()
-            .and_then(|s| s.upcoming(Utc).next())
+            .and_then(|s| s.upcoming(tz).next().map(|dt| dt.with_timezone(&Utc)))
     });
 
     let new_task = task::ActiveModel {
@@ -278,10 +298,15 @@ pub async fn update_task(
     if let Some(cron) = &input.cron_expression {
         cron::Schedule::from_str(cron)
             .map_err(|e| AppError::Validation(format!("Invalid cron expression: {e}")))?;
-        // Recompute next_run_at
+        // Recompute next_run_at using configured timezone
+        let tz: chrono_tz::Tz = state
+            .task_scheduler
+            .timezone()
+            .parse()
+            .unwrap_or(chrono_tz::UTC);
         let next = cron::Schedule::from_str(cron)
             .ok()
-            .and_then(|s| s.upcoming(Utc).next());
+            .and_then(|s| s.upcoming(tz).next().map(|dt| dt.with_timezone(&Utc)));
         model.cron_expression = Set(Some(cron.clone()));
         model.next_run_at = Set(next);
     }
@@ -289,12 +314,23 @@ pub async fn update_task(
         model.enabled = Set(enabled);
     }
     if let Some(timeout) = input.timeout {
+        if timeout < 1 {
+            return Err(AppError::Validation("timeout must be >= 1".into()));
+        }
         model.timeout = Set(Some(timeout));
     }
     if let Some(retry_count) = input.retry_count {
+        if !(0..=10).contains(&retry_count) {
+            return Err(AppError::Validation(
+                "retry_count must be between 0 and 10".into(),
+            ));
+        }
         model.retry_count = Set(retry_count);
     }
     if let Some(retry_interval) = input.retry_interval {
+        if retry_interval < 1 {
+            return Err(AppError::Validation("retry_interval must be >= 1".into()));
+        }
         model.retry_interval = Set(retry_interval);
     }
 

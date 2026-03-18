@@ -64,19 +64,16 @@ pub async fn execute_scheduled_task(
 
     let server_ids: Vec<String> =
         serde_json::from_str(&task_model.server_ids_json).unwrap_or_default();
-    let timeout_secs = task_model.timeout.unwrap_or(300) as u64;
+    let timeout_secs = task_model.timeout.unwrap_or(300).max(1) as u64;
     let retry_count = if skip_retry {
         0
     } else {
-        task_model.retry_count
+        task_model.retry_count.max(0)
     };
-    let retry_interval = task_model.retry_interval as u64;
+    let retry_interval = task_model.retry_interval.max(1) as u64;
 
     // Step 3: Update last_run_at and compute next_run_at (using configured timezone)
-    let tz: chrono_tz::Tz = scheduler
-        .timezone()
-        .parse()
-        .unwrap_or(chrono_tz::UTC);
+    let tz: chrono_tz::Tz = scheduler.timezone().parse().unwrap_or(chrono_tz::UTC);
     let next_run = task_model.cron_expression.as_deref().and_then(|cron_expr| {
         cron::Schedule::from_str(cron_expr)
             .ok()
@@ -145,13 +142,13 @@ pub async fn execute_scheduled_task(
         });
     }
 
-    // Step 5: Wait for all to complete, then clear active_runs
+    // Step 5: Wait for all to complete, then clear active_runs.
+    // Use Arc::clone so the guard operates on the *shared* DashMap, not a clone.
     let task_id_owned = task_id.to_string();
-    let active_runs = scheduler.active_runs.clone();
+    let active_runs = Arc::clone(&scheduler.active_runs);
     tokio::spawn(async move {
-        // Drop guard: remove from active_runs when this scope exits
         struct ActiveRunGuard {
-            active_runs: DashMap<String, (String, CancellationToken)>,
+            active_runs: Arc<DashMap<String, (String, CancellationToken)>>,
             task_id: String,
         }
         impl Drop for ActiveRunGuard {
@@ -185,13 +182,15 @@ async fn execute_for_server(
     let timeout_duration = std::time::Duration::from_secs(timeout_secs + 10);
 
     for attempt in 1..=max_attempts {
+        if token.is_cancelled() {
+            break;
+        }
+
         if attempt > 1 {
-            if token.is_cancelled() {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_secs(retry_interval)).await;
-            if token.is_cancelled() {
-                break;
+            // Wait for retry interval, but abort early if cancelled
+            tokio::select! {
+                _ = tokio::time::sleep(std::time::Duration::from_secs(retry_interval)) => {}
+                _ = token.cancelled() => { break; }
             }
         }
 
@@ -222,12 +221,10 @@ async fn execute_for_server(
         };
 
         // Register pending request with TTL
-        let rx = state
-            .agent_manager
-            .register_pending_request_with_ttl(
-                correlation_id.clone(),
-                std::time::Duration::from_secs(timeout_secs + 10),
-            );
+        let rx = state.agent_manager.register_pending_request_with_ttl(
+            correlation_id.clone(),
+            std::time::Duration::from_secs(timeout_secs + 10),
+        );
 
         // Send Exec
         let send_result = sender
@@ -257,8 +254,14 @@ async fn execute_for_server(
             }
         }
 
-        // Wait for response
-        let result = tokio::time::timeout(timeout_duration, rx).await;
+        // Wait for response, but abort if the task is cancelled (deleted/disabled)
+        let result = tokio::select! {
+            r = tokio::time::timeout(timeout_duration, rx) => r,
+            _ = token.cancelled() => {
+                // Task was cancelled while waiting for agent response — do not write result
+                break;
+            }
+        };
 
         match result {
             Ok(Ok(AgentMessage::TaskResult { result, .. })) => {

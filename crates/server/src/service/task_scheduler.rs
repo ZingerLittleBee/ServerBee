@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use dashmap::DashMap;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tokio_util::sync::CancellationToken;
@@ -7,8 +9,8 @@ use crate::error::AppError;
 pub struct TaskScheduler {
     scheduler: JobScheduler,
     job_map: DashMap<String, uuid::Uuid>,
-    /// task_id -> (run_id, cancellation token)
-    pub(crate) active_runs: DashMap<String, (String, CancellationToken)>,
+    /// task_id -> (run_id, cancellation token). Arc so the cleanup guard shares the real map.
+    pub(crate) active_runs: Arc<DashMap<String, (String, CancellationToken)>>,
     timezone: String,
 }
 
@@ -20,7 +22,7 @@ impl TaskScheduler {
         Ok(Self {
             scheduler,
             job_map: DashMap::new(),
-            active_runs: DashMap::new(),
+            active_runs: Arc::new(DashMap::new()),
             timezone: timezone.to_string(),
         })
     }
