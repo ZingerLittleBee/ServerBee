@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, Container } from 'lucide-react'
+import { ContainerList } from './components/container-list'
 import { DockerEvents } from './components/docker-events'
 import { DockerOverview } from './components/docker-overview'
 import { useDockerSubscription } from './hooks/use-docker-subscription'
@@ -64,42 +65,7 @@ function DockerPage() {
         <div className="space-y-6">
           <DockerOverview containers={containers} stats={stats ?? []} />
 
-          {/* TODO: ContainerList component will be created in Task 21 */}
-          <div className="space-y-2">
-            <h3 className="font-semibold text-lg">Containers</h3>
-            <div className="overflow-x-auto rounded-lg border">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="px-4 py-2 text-left font-medium">Name</th>
-                    <th className="px-4 py-2 text-left font-medium">Image</th>
-                    <th className="px-4 py-2 text-left font-medium">State</th>
-                    <th className="px-4 py-2 text-left font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {containers.map((container) => (
-                    <tr className="border-b last:border-b-0" key={container.id}>
-                      <td className="px-4 py-2 font-medium">{container.name}</td>
-                      <td className="px-4 py-2 text-muted-foreground">{container.image}</td>
-                      <td className="px-4 py-2">
-                        <span
-                          className={
-                            container.state === 'running'
-                              ? 'text-emerald-600 dark:text-emerald-400'
-                              : 'text-muted-foreground'
-                          }
-                        >
-                          {container.state}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2 text-muted-foreground">{container.status}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <ContainerList containers={containers} stats={stats ?? []} />
 
           <DockerEvents events={events ?? []} />
         </div>
