@@ -4,6 +4,8 @@ use std::time::Instant;
 use dashmap::DashMap;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
+use serverbee_common::constants::{has_capability, CAP_DOCKER};
+use serverbee_common::docker_types::*;
 use serverbee_common::protocol::{AgentMessage, BrowserMessage, ServerMessage};
 use serverbee_common::types::{ServerStatus, SystemReport};
 
@@ -25,6 +27,14 @@ pub struct AgentManager {
     terminal_sessions: DashMap<String, TerminalOutputTx>,
     /// Maps msg_id -> (oneshot sender, creation time) for HTTP→WS relay
     pending_requests: DashMap<String, (oneshot::Sender<AgentMessage>, std::time::Instant)>,
+    // Docker caches
+    docker_containers: DashMap<String, Vec<DockerContainer>>,
+    docker_stats: DashMap<String, Vec<DockerContainerStats>>,
+    docker_info: DashMap<String, DockerSystemInfo>,
+    features: DashMap<String, Vec<String>>,
+    capabilities: DashMap<String, u32>,
+    /// Maps server_id -> (session_id -> log entry sender)
+    docker_log_sessions: DashMap<String, DashMap<String, mpsc::Sender<Vec<DockerLogEntry>>>>,
 }
 
 #[allow(dead_code)]
@@ -52,6 +62,12 @@ impl AgentManager {
             browser_tx,
             terminal_sessions: DashMap::new(),
             pending_requests: DashMap::new(),
+            docker_containers: DashMap::new(),
+            docker_stats: DashMap::new(),
+            docker_info: DashMap::new(),
+            features: DashMap::new(),
+            capabilities: DashMap::new(),
+            docker_log_sessions: DashMap::new(),
         }
     }
 
@@ -265,6 +281,127 @@ impl AgentManager {
             true
         } else {
             false
+        }
+    }
+
+    // --- Docker cache methods ---
+
+    pub fn update_docker_containers(&self, server_id: &str, containers: Vec<DockerContainer>) {
+        self.docker_containers
+            .insert(server_id.to_string(), containers);
+    }
+
+    pub fn get_docker_containers(&self, server_id: &str) -> Option<Vec<DockerContainer>> {
+        self.docker_containers.get(server_id).map(|v| v.clone())
+    }
+
+    pub fn update_docker_stats(&self, server_id: &str, stats: Vec<DockerContainerStats>) {
+        self.docker_stats.insert(server_id.to_string(), stats);
+    }
+
+    pub fn get_docker_stats(&self, server_id: &str) -> Option<Vec<DockerContainerStats>> {
+        self.docker_stats.get(server_id).map(|v| v.clone())
+    }
+
+    pub fn update_docker_info(&self, server_id: &str, info: DockerSystemInfo) {
+        self.docker_info.insert(server_id.to_string(), info);
+    }
+
+    pub fn get_docker_info(&self, server_id: &str) -> Option<DockerSystemInfo> {
+        self.docker_info.get(server_id).map(|v| v.clone())
+    }
+
+    pub fn clear_docker_caches(&self, server_id: &str) {
+        self.docker_containers.remove(server_id);
+        self.docker_stats.remove(server_id);
+        self.docker_info.remove(server_id);
+    }
+
+    // --- Features cache ---
+
+    pub fn update_features(&self, server_id: &str, features: Vec<String>) {
+        self.features.insert(server_id.to_string(), features);
+    }
+
+    pub fn has_feature(&self, server_id: &str, feature: &str) -> bool {
+        self.features
+            .get(server_id)
+            .is_some_and(|f| f.contains(&feature.to_string()))
+    }
+
+    // --- Capabilities cache ---
+
+    pub fn update_capabilities(&self, server_id: &str, caps: u32) {
+        self.capabilities.insert(server_id.to_string(), caps);
+    }
+
+    pub fn has_docker_capability(&self, server_id: &str) -> bool {
+        self.capabilities
+            .get(server_id)
+            .is_some_and(|cap| has_capability(*cap, CAP_DOCKER))
+    }
+
+    pub async fn preload_capabilities(
+        &self,
+        db: &sea_orm::DatabaseConnection,
+    ) -> Result<(), sea_orm::DbErr> {
+        use crate::entity::server;
+        use sea_orm::{EntityTrait, QuerySelect};
+
+        let servers = server::Entity::find()
+            .select_only()
+            .column(server::Column::Id)
+            .column(server::Column::Capabilities)
+            .column(server::Column::Features)
+            .into_tuple::<(String, i32, String)>()
+            .all(db)
+            .await?;
+        for (id, caps, features_json) in servers {
+            self.capabilities.insert(id.clone(), caps as u32);
+            let features: Vec<String> =
+                serde_json::from_str(&features_json).unwrap_or_default();
+            self.features.insert(id, features);
+        }
+        Ok(())
+    }
+
+    // --- Docker log session routing ---
+
+    pub fn add_docker_log_session(
+        &self,
+        server_id: &str,
+        session_id: String,
+        tx: mpsc::Sender<Vec<DockerLogEntry>>,
+    ) {
+        self.docker_log_sessions
+            .entry(server_id.to_string())
+            .or_default()
+            .insert(session_id, tx);
+    }
+
+    pub fn get_docker_log_session(
+        &self,
+        server_id: &str,
+        session_id: &str,
+    ) -> Option<mpsc::Sender<Vec<DockerLogEntry>>> {
+        self.docker_log_sessions
+            .get(server_id)?
+            .get(session_id)
+            .map(|tx| tx.clone())
+    }
+
+    pub fn remove_docker_log_session(&self, server_id: &str, session_id: &str) -> bool {
+        if let Some(inner) = self.docker_log_sessions.get(server_id) {
+            return inner.remove(session_id).is_some();
+        }
+        false
+    }
+
+    pub fn remove_docker_log_sessions_for_server(&self, server_id: &str) -> Vec<String> {
+        if let Some((_, inner)) = self.docker_log_sessions.remove(server_id) {
+            inner.into_iter().map(|(id, _)| id).collect()
+        } else {
+            vec![]
         }
     }
 

@@ -78,7 +78,7 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
         .expect("Failed to set auto_discovery_key");
 
     // Build state and router
-    let state = AppState::new(db, config);
+    let state = AppState::new(db, config).await.expect("Failed to create AppState");
     let app = create_router(state);
 
     // Bind to a random port
