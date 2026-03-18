@@ -21,6 +21,8 @@ pub struct SystemInfo {
     pub agent_version: String,
     #[serde(default = "default_protocol_version")]
     pub protocol_version: u32,
+    #[serde(default)]
+    pub features: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -135,6 +137,8 @@ pub struct ServerStatus {
     pub region: Option<String>,
     pub country_code: Option<String>,
     pub group_id: Option<String>,
+    #[serde(default)]
+    pub features: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -156,4 +160,23 @@ pub struct FileEntry {
     pub permissions: Option<String>,
     pub owner: Option<String>,
     pub group: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_system_info_features_default() {
+        let json = r#"{"cpu_name":"x86","cpu_cores":4,"cpu_arch":"x86_64","os":"linux","kernel_version":"6.1","mem_total":8000,"swap_total":4000,"disk_total":50000,"agent_version":"0.4.0","protocol_version":2}"#;
+        let info: SystemInfo = serde_json::from_str(json).unwrap();
+        assert!(info.features.is_empty());
+    }
+
+    #[test]
+    fn test_system_info_features_present() {
+        let json = r#"{"cpu_name":"x86","cpu_cores":4,"cpu_arch":"x86_64","os":"linux","kernel_version":"6.1","mem_total":8000,"swap_total":4000,"disk_total":50000,"agent_version":"0.4.0","protocol_version":3,"features":["docker"]}"#;
+        let info: SystemInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.features, vec!["docker"]);
+    }
 }

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::docker_types::*;
 use crate::types::{
     FileEntry, NetworkProbeResultData, NetworkProbeTarget, PingResult, PingTaskConfig, SystemInfo,
     SystemReport, TaskResult,
@@ -88,6 +89,42 @@ pub enum AgentMessage {
     FileUploadError {
         transfer_id: String,
         error: String,
+    },
+    // Docker responses
+    DockerInfo {
+        msg_id: Option<String>,
+        info: DockerSystemInfo,
+    },
+    DockerContainers {
+        msg_id: Option<String>,
+        containers: Vec<DockerContainer>,
+    },
+    DockerStats {
+        stats: Vec<DockerContainerStats>,
+    },
+    DockerLog {
+        session_id: String,
+        entries: Vec<DockerLogEntry>,
+    },
+    DockerEvent {
+        event: DockerEventInfo,
+    },
+    FeaturesUpdate {
+        features: Vec<String>,
+    },
+    DockerUnavailable,
+    DockerNetworks {
+        msg_id: String,
+        networks: Vec<DockerNetwork>,
+    },
+    DockerVolumes {
+        msg_id: String,
+        volumes: Vec<DockerVolume>,
+    },
+    DockerActionResult {
+        msg_id: String,
+        success: bool,
+        error: Option<String>,
     },
     Pong,
 }
@@ -189,6 +226,27 @@ pub enum ServerMessage {
     FileUploadEnd {
         transfer_id: String,
     },
+    // Docker commands
+    DockerListContainers { msg_id: String },
+    DockerStartStats { interval_secs: u32 },
+    DockerStopStats,
+    DockerContainerAction {
+        msg_id: String,
+        container_id: String,
+        action: DockerAction,
+    },
+    DockerLogsStart {
+        session_id: String,
+        container_id: String,
+        tail: Option<u64>,
+        follow: bool,
+    },
+    DockerLogsStop { session_id: String },
+    DockerEventsStart,
+    DockerEventsStop,
+    DockerGetInfo { msg_id: String },
+    DockerListNetworks { msg_id: String },
+    DockerListVolumes { msg_id: String },
     Ping,
     Upgrade {
         version: String,
@@ -227,6 +285,28 @@ pub enum BrowserMessage {
         server_id: String,
         results: Vec<NetworkProbeResultData>,
     },
+    // Docker broadcasts
+    DockerUpdate {
+        server_id: String,
+        containers: Vec<DockerContainer>,
+        stats: Option<Vec<DockerContainerStats>>,
+    },
+    DockerEvent {
+        server_id: String,
+        event: DockerEventInfo,
+    },
+    DockerAvailabilityChanged {
+        server_id: String,
+        available: bool,
+    },
+}
+
+/// Browser -> Server messages (upstream via browser WS)
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum BrowserClientMessage {
+    DockerSubscribe { server_id: String },
+    DockerUnsubscribe { server_id: String },
 }
 
 #[cfg(test)]
@@ -610,6 +690,59 @@ mod tests {
         let json = serde_json::to_string(&cmd).unwrap();
         assert!(json.contains("file_move"));
         let _: ServerMessage = serde_json::from_str(&json).unwrap();
+    }
+
+    #[test]
+    fn test_docker_agent_message_serde() {
+        let msg = AgentMessage::DockerInfo {
+            msg_id: None,
+            info: DockerSystemInfo {
+                docker_version: "27.1.1".into(),
+                api_version: "1.46".into(),
+                os: "linux".into(),
+                arch: "x86_64".into(),
+                containers_running: 5,
+                containers_paused: 0,
+                containers_stopped: 2,
+                images: 10,
+                memory_total: 8_000_000_000,
+            },
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"docker_info\""));
+        let _: AgentMessage = serde_json::from_str(&json).unwrap();
+    }
+
+    #[test]
+    fn test_docker_server_message_serde() {
+        let msg = ServerMessage::DockerStartStats { interval_secs: 3 };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"docker_start_stats\""));
+    }
+
+    #[test]
+    fn test_browser_client_message_serde() {
+        let json = r#"{"type":"docker_subscribe","server_id":"abc123"}"#;
+        let msg: BrowserClientMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            BrowserClientMessage::DockerSubscribe { server_id } => assert_eq!(server_id, "abc123"),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_features_update_serde() {
+        let msg = AgentMessage::FeaturesUpdate { features: vec!["docker".into()] };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"features_update\""));
+        let _: AgentMessage = serde_json::from_str(&json).unwrap();
+    }
+
+    #[test]
+    fn test_docker_unavailable_serde() {
+        let msg = AgentMessage::DockerUnavailable;
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"docker_unavailable\""));
     }
 
     #[test]
