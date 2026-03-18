@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::Router;
 use axum::extract::State;
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::Router;
 use futures_util::{SinkExt, StreamExt};
 
 use crate::service::auth::AuthService;
@@ -58,9 +58,7 @@ fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
         .split(';')
         .find_map(|cookie| {
             let cookie = cookie.trim();
-            cookie
-                .strip_prefix("session_token=")
-                .map(|v| v.to_string())
+            cookie.strip_prefix("session_token=").map(|v| v.to_string())
         })
 }
 
@@ -165,12 +163,12 @@ async fn handle_browser_client_message(
     match msg {
         BrowserClientMessage::DockerSubscribe { server_id } => {
             // Check that Docker is available for this server
-            if !state.agent_manager.has_feature(&server_id, "docker") {
+            if !state.agent_manager.has_docker_capability(&server_id)
+                || !state.agent_manager.has_feature(&server_id, "docker")
+            {
                 return;
             }
-            let is_first = state
-                .docker_viewers
-                .add_viewer(&server_id, connection_id);
+            let is_first = state.docker_viewers.add_viewer(&server_id, connection_id);
             if is_first {
                 // First viewer — tell agent to start streaming docker data
                 if let Some(tx) = state.agent_manager.get_sender(&server_id) {

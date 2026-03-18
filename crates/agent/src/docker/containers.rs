@@ -1,14 +1,25 @@
 use std::collections::HashMap;
 
-use bollard::container::{ListContainersOptions, MemoryStatsStats, Stats, StatsOptions};
 use bollard::Docker;
+use bollard::container::{ListContainersOptions, MemoryStatsStats, Stats, StatsOptions};
 use futures_util::StreamExt;
 use serverbee_common::docker_types::{DockerContainer, DockerContainerStats, DockerPort};
 
 /// List all containers (running and stopped).
 pub async fn list_containers(docker: &Docker) -> anyhow::Result<Vec<DockerContainer>> {
     let mut filters = HashMap::new();
-    filters.insert("status", vec!["created", "restarting", "running", "removing", "paused", "exited", "dead"]);
+    filters.insert(
+        "status",
+        vec![
+            "created",
+            "restarting",
+            "running",
+            "removing",
+            "paused",
+            "exited",
+            "dead",
+        ],
+    );
 
     let options = ListContainersOptions {
         all: true,
@@ -35,7 +46,10 @@ pub async fn list_containers(docker: &Docker) -> anyhow::Result<Vec<DockerContai
                 .map(|p| DockerPort {
                     private_port: p.private_port,
                     public_port: p.public_port,
-                    port_type: p.typ.map(|t| format!("{t:?}").to_lowercase()).unwrap_or_else(|| "tcp".into()),
+                    port_type: p
+                        .typ
+                        .map(|t| format!("{t:?}").to_lowercase())
+                        .unwrap_or_else(|| "tcp".into()),
                     ip: p.ip,
                 })
                 .collect();
@@ -102,10 +116,7 @@ fn build_container_stats(container_id: &str, stats: &Stats) -> DockerContainerSt
     let (network_rx, network_tx) = get_network_stats(stats);
     let (block_read, block_write) = get_block_io_stats(stats);
 
-    let name = stats
-        .name
-        .trim_start_matches('/')
-        .to_string();
+    let name = stats.name.trim_start_matches('/').to_string();
 
     DockerContainerStats {
         id: container_id.to_string(),
@@ -125,8 +136,8 @@ fn calculate_cpu_percent(stats: &Stats) -> f64 {
     let cpu_stats = &stats.cpu_stats;
     let precpu_stats = &stats.precpu_stats;
 
-    let cpu_delta = cpu_stats.cpu_usage.total_usage as f64
-        - precpu_stats.cpu_usage.total_usage as f64;
+    let cpu_delta =
+        cpu_stats.cpu_usage.total_usage as f64 - precpu_stats.cpu_usage.total_usage as f64;
 
     let system_delta = cpu_stats.system_cpu_usage.unwrap_or(0) as f64
         - precpu_stats.system_cpu_usage.unwrap_or(0) as f64;

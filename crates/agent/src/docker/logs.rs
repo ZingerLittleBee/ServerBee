@@ -1,5 +1,5 @@
-use bollard::container::LogsOptions;
 use bollard::Docker;
+use bollard::container::LogsOptions;
 use futures_util::StreamExt;
 use serverbee_common::docker_types::DockerLogEntry;
 use serverbee_common::protocol::AgentMessage;
@@ -119,18 +119,21 @@ async fn flush_batch(
 
 fn parse_log_output(output: &bollard::container::LogOutput) -> (String, String) {
     match output {
-        bollard::container::LogOutput::StdOut { message } => {
-            ("stdout".into(), String::from_utf8_lossy(message).to_string())
-        }
-        bollard::container::LogOutput::StdErr { message } => {
-            ("stderr".into(), String::from_utf8_lossy(message).to_string())
-        }
+        bollard::container::LogOutput::StdOut { message } => (
+            "stdout".into(),
+            String::from_utf8_lossy(message).to_string(),
+        ),
+        bollard::container::LogOutput::StdErr { message } => (
+            "stderr".into(),
+            String::from_utf8_lossy(message).to_string(),
+        ),
         bollard::container::LogOutput::StdIn { message } => {
             ("stdin".into(), String::from_utf8_lossy(message).to_string())
         }
-        bollard::container::LogOutput::Console { message } => {
-            ("console".into(), String::from_utf8_lossy(message).to_string())
-        }
+        bollard::container::LogOutput::Console { message } => (
+            "console".into(),
+            String::from_utf8_lossy(message).to_string(),
+        ),
     }
 }
 

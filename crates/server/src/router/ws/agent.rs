@@ -99,6 +99,9 @@ async fn handle_agent_ws(
     state
         .agent_manager
         .add_connection(server_id.clone(), server_name, tx, remote_addr);
+    state
+        .agent_manager
+        .update_capabilities(&server_id, server_capabilities as u32);
 
     // Send current ping tasks to the newly connected agent
     PingService::sync_tasks_to_agent(&state.db, &state.agent_manager, &server_id).await;
@@ -599,14 +602,14 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     event,
                 });
         }
-        AgentMessage::DockerUnavailable => {
-            state.agent_manager.clear_docker_caches(server_id);
-            state
-                .agent_manager
-                .broadcast_browser(BrowserMessage::DockerAvailabilityChanged {
-                    server_id: server_id.to_string(),
-                    available: false,
-                });
+        AgentMessage::DockerUnavailable { ref msg_id } => {
+            handle_docker_unavailable(state, server_id).await;
+
+            if let Some(msg_id) = msg_id {
+                state
+                    .agent_manager
+                    .dispatch_pending_response(msg_id, msg.clone());
+            }
         }
         AgentMessage::FeaturesUpdate { ref features } => {
             let _ = crate::service::server::ServerService::update_features(
@@ -632,6 +635,28 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 .dispatch_pending_response(msg_id, msg.clone());
         }
     }
+}
+
+async fn handle_docker_unavailable(state: &Arc<AppState>, server_id: &str) {
+    state.agent_manager.clear_docker_caches(server_id);
+    state.docker_viewers.remove_all_for_server(server_id);
+    state
+        .agent_manager
+        .remove_docker_log_sessions_for_server(server_id);
+
+    let mut features = state.agent_manager.get_features(server_id);
+    features.retain(|feature| feature != "docker");
+
+    let _ = crate::service::server::ServerService::update_features(&state.db, server_id, &features)
+        .await;
+    state.agent_manager.update_features(server_id, features);
+
+    state
+        .agent_manager
+        .broadcast_browser(BrowserMessage::DockerAvailabilityChanged {
+            server_id: server_id.to_string(),
+            available: false,
+        });
 }
 
 async fn send_server_message(

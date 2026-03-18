@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
+import { CAP_DOCKER, hasCap } from '@/lib/capabilities'
 import { ContainerDetailDialog } from './components/container-detail-dialog'
 import { ContainerList } from './components/container-list'
 import { DockerEvents } from './components/docker-events'
@@ -24,8 +25,6 @@ function DockerPage() {
   const [networksOpen, setNetworksOpen] = useState(false)
   const [volumesOpen, setVolumesOpen] = useState(false)
 
-  useDockerSubscription(serverId)
-
   const { data: liveServers } = useQuery<ServerMetrics[]>({
     queryKey: ['servers'],
     queryFn: () => [],
@@ -36,15 +35,19 @@ function DockerPage() {
   const liveServer = liveServers?.find((s) => s.id === serverId)
   const wsDockerAvailable = liveServer?.features?.includes('docker') ?? false
 
-  // Also check REST API for features (fallback when WS hasn't synced yet)
+  // Server detail is the source of truth for capability gating and a fallback for features.
   const { data: serverDetail } = useQuery({
     queryKey: ['servers', serverId],
-    queryFn: () => api.get<{ features?: string[] }>(`/api/servers/${serverId}`),
-    enabled: !wsDockerAvailable && serverId.length > 0,
+    queryFn: () => api.get<{ capabilities?: number; features?: string[] }>(`/api/servers/${serverId}`),
+    enabled: serverId.length > 0,
     staleTime: 30_000
   })
+
+  const dockerCapabilityEnabled = hasCap(serverDetail?.capabilities ?? 0, CAP_DOCKER)
   const apiDockerAvailable = serverDetail?.features?.includes('docker') ?? false
-  const dockerAvailable = wsDockerAvailable || apiDockerAvailable
+  const dockerAvailable = dockerCapabilityEnabled && (wsDockerAvailable || apiDockerAvailable)
+
+  useDockerSubscription(serverId, dockerAvailable)
 
   const { data: dockerInfo } = useQuery<DockerSystemInfo>({
     queryKey: ['docker', 'info', serverId],

@@ -27,7 +27,12 @@ describe('useDockerSubscription', () => {
       send
     })
 
-    const { rerender, unmount } = renderHook(() => useDockerSubscription('srv-1'))
+    const { rerender, unmount } = renderHook(
+      ({ enabled } = { enabled: true }) => useDockerSubscription('srv-1', enabled),
+      {
+        initialProps: { enabled: true }
+      }
+    )
 
     expect(send).not.toHaveBeenCalled()
 
@@ -58,7 +63,9 @@ describe('useDockerSubscription', () => {
       send
     })
 
-    const { rerender } = renderHook(() => useDockerSubscription('srv-1'))
+    const { rerender } = renderHook(({ enabled } = { enabled: true }) => useDockerSubscription('srv-1', enabled), {
+      initialProps: { enabled: true }
+    })
 
     expect(send).toHaveBeenCalledTimes(1)
     expect(send).toHaveBeenLastCalledWith({
@@ -85,6 +92,38 @@ describe('useDockerSubscription', () => {
     })
     expect(send).toHaveBeenLastCalledWith({
       type: 'docker_subscribe',
+      server_id: 'srv-1'
+    })
+  })
+
+  it('does not subscribe while docker is disabled for the page', () => {
+    mockUseServersWsSend.mockReturnValue({
+      connectionState: 'connected',
+      send
+    })
+
+    const { rerender, unmount } = renderHook(
+      ({ enabled } = { enabled: false }) => useDockerSubscription('srv-1', enabled),
+      {
+        initialProps: { enabled: false }
+      }
+    )
+
+    expect(send).not.toHaveBeenCalled()
+
+    rerender({ enabled: true })
+
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send).toHaveBeenNthCalledWith(1, {
+      type: 'docker_subscribe',
+      server_id: 'srv-1'
+    })
+
+    unmount()
+
+    expect(send).toHaveBeenCalledTimes(2)
+    expect(send).toHaveBeenNthCalledWith(2, {
+      type: 'docker_unsubscribe',
       server_id: 'srv-1'
     })
   })

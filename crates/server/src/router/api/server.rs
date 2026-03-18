@@ -5,11 +5,11 @@ use axum::http::HeaderMap;
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, QueryFilter, ColumnTrait};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 
 use crate::entity::server;
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
 use crate::router::api::network_probe::{
     get_server_network_anomalies, get_server_network_records, get_server_network_summary,
@@ -161,7 +161,10 @@ pub fn write_router() -> Router<Arc<AppState>> {
         .route("/servers/{id}", put(update_server))
         .route("/servers/{id}", delete(delete_server))
         .route("/servers/batch-delete", post(batch_delete))
-        .route("/servers/batch-capabilities", put(batch_update_capabilities))
+        .route(
+            "/servers/batch-capabilities",
+            put(batch_update_capabilities),
+        )
         .route("/servers/{id}/upgrade", post(trigger_upgrade))
         .route(
             "/servers/{id}/network-probes/targets",
@@ -224,7 +227,7 @@ async fn update_server(
     Json(input): Json<UpdateServerInput>,
 ) -> Result<Json<ApiResponse<ServerResponse>>, AppError> {
     use serverbee_common::constants::{
-        has_capability, CAP_DOCKER, CAP_PING_HTTP, CAP_PING_ICMP, CAP_PING_TCP,
+        CAP_DOCKER, CAP_PING_HTTP, CAP_PING_ICMP, CAP_PING_TCP, has_capability,
     };
     let user_id = &current_user.user_id;
     let ip = extract_client_ip(&headers);
@@ -245,6 +248,7 @@ async fn update_server(
     // If capabilities changed, broadcast + re-sync
     if let Some(old) = old_caps {
         let new_caps = server.capabilities as u32;
+        state.agent_manager.update_capabilities(&id, new_caps);
 
         // Send CapabilitiesSync to Agent (if online and protocol_version >= 2)
         if let Some(pv) = state.agent_manager.get_protocol_version(&id)
@@ -310,9 +314,14 @@ async fn update_server(
             "new": new_caps,
         })
         .to_string();
-        let _ =
-            AuditService::log(&state.db, user_id, "capabilities_changed", Some(&detail), &ip)
-                .await;
+        let _ = AuditService::log(
+            &state.db,
+            user_id,
+            "capabilities_changed",
+            Some(&detail),
+            &ip,
+        )
+        .await;
     }
 
     ok(ServerResponse::from(server))
@@ -406,8 +415,7 @@ async fn get_gpu_records(
     Path(id): Path<String>,
     Query(params): Query<GpuRecordQueryParams>,
 ) -> Result<Json<ApiResponse<Vec<crate::entity::gpu_record::Model>>>, AppError> {
-    let records =
-        RecordService::query_gpu_history(&state.db, &id, params.from, params.to).await?;
+    let records = RecordService::query_gpu_history(&state.db, &id, params.from, params.to).await?;
     ok(records)
 }
 
@@ -441,7 +449,9 @@ async fn trigger_upgrade(
         server.capabilities as u32,
         serverbee_common::constants::CAP_UPGRADE,
     ) {
-        return Err(AppError::Forbidden("Upgrade is disabled for this server".into()));
+        return Err(AppError::Forbidden(
+            "Upgrade is disabled for this server".into(),
+        ));
     }
 
     let sender = state
@@ -502,7 +512,9 @@ async fn batch_update_capabilities(
     }
     // No overlap
     if input.set & input.unset != 0 {
-        return Err(AppError::Validation("set and unset must not overlap".into()));
+        return Err(AppError::Validation(
+            "set and unset must not overlap".into(),
+        ));
     }
     if input.server_ids.is_empty() {
         return ok(BatchCapabilitiesResponse { updated: 0 });
@@ -526,20 +538,27 @@ async fn batch_update_capabilities(
         active.updated_at = Set(chrono::Utc::now());
         active.update(&state.db).await?;
         count += 1;
+        state.agent_manager.update_capabilities(&s.id, new_caps);
 
         // Sync to agent if online and protocol v2+
         if let Some(pv) = state.agent_manager.get_protocol_version(&s.id)
             && pv >= 2
             && let Some(tx) = state.agent_manager.get_sender(&s.id)
         {
-            let _ = tx.send(ServerMessage::CapabilitiesSync { capabilities: new_caps }).await;
+            let _ = tx
+                .send(ServerMessage::CapabilitiesSync {
+                    capabilities: new_caps,
+                })
+                .await;
         }
 
         // Broadcast to browsers
-        state.agent_manager.broadcast_browser(BrowserMessage::CapabilitiesChanged {
-            server_id: s.id.clone(),
-            capabilities: new_caps,
-        });
+        state
+            .agent_manager
+            .broadcast_browser(BrowserMessage::CapabilitiesChanged {
+                server_id: s.id.clone(),
+                capabilities: new_caps,
+            });
 
         // Re-sync ping tasks if ping bits changed
         let ping_mask = CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP;
@@ -580,7 +599,14 @@ async fn batch_update_capabilities(
             "new": new_caps,
         })
         .to_string();
-        let _ = AuditService::log(&state.db, user_id, "capabilities_changed", Some(&detail), &ip).await;
+        let _ = AuditService::log(
+            &state.db,
+            user_id,
+            "capabilities_changed",
+            Some(&detail),
+            &ip,
+        )
+        .await;
     }
 
     ok(BatchCapabilitiesResponse { updated: count })
