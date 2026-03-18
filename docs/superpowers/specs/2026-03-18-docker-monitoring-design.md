@@ -122,6 +122,9 @@ Bump `PROTOCOL_VERSION` from 2 to 3. Add a `features` field to `SystemInfo`:
 pub struct SystemInfo {
     // ... existing fields ...
     pub protocol_version: u32,        // now 3
+
+    // Defaults to empty vec when absent (old v2 agents won't send this field).
+    #[serde(default)]
     pub features: Vec<String>,        // e.g. ["docker"]
 }
 ```
@@ -495,6 +498,10 @@ async fn handle_browser_ws(socket: WebSocket, state: Arc<AppState>) {
                     }
                 }
             }
+            // Explicit disconnect handling: Close frame, stream end, or error
+            Some(Ok(Message::Close(_))) = ws_stream.next() => { break; }
+            Some(Err(_)) = ws_stream.next() => { break; }
+            None = ws_stream.next() => { break; }
         }
     }
 
