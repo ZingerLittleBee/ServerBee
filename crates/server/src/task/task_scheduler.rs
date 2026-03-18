@@ -258,10 +258,15 @@ async fn execute_for_server(
         let result = tokio::select! {
             r = tokio::time::timeout(timeout_duration, rx) => r,
             _ = token.cancelled() => {
-                // Task was cancelled while waiting for agent response — do not write result
                 break;
             }
         };
+
+        // Double-check cancellation before writing — select! may resolve both
+        // futures simultaneously and pick the result branch.
+        if token.is_cancelled() {
+            break;
+        }
 
         match result {
             Ok(Ok(AgentMessage::TaskResult { result, .. })) => {
@@ -354,9 +359,26 @@ pub async fn run(state: Arc<AppState>) {
 
     match tasks {
         Ok(tasks) => {
+            let tz: chrono_tz::Tz = state
+                .task_scheduler
+                .timezone()
+                .parse()
+                .unwrap_or(chrono_tz::UTC);
             for t in &tasks {
                 if let Err(e) = state.task_scheduler.add_job(t, state.clone()).await {
                     tracing::error!("Failed to register scheduled task {}: {e}", t.id);
+                    continue;
+                }
+                // Refresh next_run_at on startup so it reflects the current time
+                if let Some(cron_expr) = &t.cron_expression {
+                    let next = cron::Schedule::from_str(cron_expr)
+                        .ok()
+                        .and_then(|s| s.upcoming(tz).next().map(|dt| dt.with_timezone(&Utc)));
+                    let _ = task::Entity::update_many()
+                        .filter(task::Column::Id.eq(&t.id))
+                        .col_expr(task::Column::NextRunAt, Expr::value(next))
+                        .exec(&state.db)
+                        .await;
                 }
             }
             tracing::info!("Loaded {} scheduled tasks", tasks.len());

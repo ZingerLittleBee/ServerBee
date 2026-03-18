@@ -223,11 +223,17 @@ pub async fn create_task(
     let task_model = new_task.insert(&state.db).await?;
 
     if is_scheduled {
-        // Register cron job in scheduler
-        state
+        // Register cron job in scheduler; rollback DB row on failure
+        if let Err(e) = state
             .task_scheduler
             .add_job(&task_model, state.clone())
-            .await?;
+            .await
+        {
+            let _ = task::Entity::delete_by_id(&task_id)
+                .exec(&state.db)
+                .await;
+            return Err(e);
+        }
         tracing::info!("Scheduled task {} registered", task_id);
     } else {
         // One-shot: dispatch immediately
@@ -282,6 +288,7 @@ pub async fn update_task(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Task {id} not found")))?;
 
+    let existing_backup = existing.clone();
     let mut model: task::ActiveModel = existing.into();
 
     if let Some(name) = input.name {
@@ -312,6 +319,24 @@ pub async fn update_task(
     }
     if let Some(enabled) = input.enabled {
         model.enabled = Set(enabled);
+        // When resuming a paused task, recompute next_run_at so the UI shows a fresh time
+        if enabled {
+            let cron_expr = input
+                .cron_expression
+                .as_deref()
+                .or(existing_backup.cron_expression.as_deref());
+            if let Some(cron) = cron_expr {
+                let tz: chrono_tz::Tz = state
+                    .task_scheduler
+                    .timezone()
+                    .parse()
+                    .unwrap_or(chrono_tz::UTC);
+                let next = cron::Schedule::from_str(cron)
+                    .ok()
+                    .and_then(|s| s.upcoming(tz).next().map(|dt| dt.with_timezone(&Utc)));
+                model.next_run_at = Set(next);
+            }
+        }
     }
     if let Some(timeout) = input.timeout {
         if timeout < 1 {
@@ -336,12 +361,16 @@ pub async fn update_task(
 
     let updated = model.update(&state.db).await?;
 
-    // Sync scheduler
-    if updated.task_type == "scheduled" {
-        state
+    // Sync scheduler; on failure, restore the original row
+    if updated.task_type == "scheduled"
+        && let Err(e) = state
             .task_scheduler
             .update_job(&updated, state.clone())
-            .await?;
+            .await
+    {
+        let rollback: task::ActiveModel = existing_backup.into();
+        let _ = rollback.update(&state.db).await;
+        return Err(e);
     }
 
     ok(updated.into())
@@ -361,9 +390,10 @@ pub async fn delete_task(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
-    // Cancel active run and remove scheduler job
+    // Cancel active run and remove from scheduler first (idempotent, safe to call even if not registered)
     state.task_scheduler.remove_job(&id).await?;
-    // Delete results first (foreign key-like cleanup)
+    // Delete DB rows — if this fails, the scheduler job is already gone (acceptable:
+    // next server restart will simply not re-register the task since it was removed from scheduler)
     task_result::Entity::delete_many()
         .filter(task_result::Column::TaskId.eq(&id))
         .exec(&state.db)
