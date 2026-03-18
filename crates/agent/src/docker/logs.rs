@@ -138,10 +138,13 @@ fn parse_log_output(output: &bollard::container::LogOutput) -> (String, String) 
 /// Docker log timestamps look like: "2026-03-18T10:00:00.000000000Z rest of message"
 fn split_timestamp(line: &str) -> (Option<String>, String) {
     // Timestamps are typically 30+ chars like "2026-03-18T10:00:00.000000000Z "
+    // The timestamp is always ASCII, so we can safely index by bytes for the checks,
+    // but must use find(' ') on the full string to avoid splitting inside multi-byte chars.
     if line.len() > 31
         && line.as_bytes().get(4) == Some(&b'-')
         && line.as_bytes().get(10) == Some(&b'T')
-        && let Some(space_pos) = line[..35.min(line.len())].find(' ')
+        && let Some(space_pos) = line.find(' ')
+        && space_pos <= 35
     {
         let ts = line[..space_pos].to_string();
         let msg = line[space_pos + 1..].to_string();
