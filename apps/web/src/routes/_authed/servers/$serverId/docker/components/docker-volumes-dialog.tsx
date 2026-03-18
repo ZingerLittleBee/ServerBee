@@ -22,7 +22,10 @@ function formatCreatedDate(dateStr: string | null): string {
 export function DockerVolumesDialog({ serverId, open, onOpenChange }: DockerVolumesDialogProps) {
   const { data: volumes, isLoading } = useQuery<DockerVolume[]>({
     queryKey: ['docker', 'volumes', serverId],
-    queryFn: () => api.get<DockerVolume[]>(`/api/servers/${serverId}/docker/volumes`),
+    queryFn: async () => {
+      const resp = await api.get<{ volumes: DockerVolume[] }>(`/api/servers/${serverId}/docker/volumes`)
+      return resp.volumes
+    },
     enabled: open
   })
 
