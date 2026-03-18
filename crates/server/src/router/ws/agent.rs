@@ -291,9 +291,19 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             state.agent_manager.update_report(server_id, report);
         }
         AgentMessage::TaskResult { msg_id, result } => {
-            // Store task result in DB
-            if let Err(e) = save_task_result(&state.db, server_id, &result).await {
-                tracing::error!("Failed to save task result for {server_id}: {e}");
+            // Try pending dispatch first (scheduler or other waiters)
+            let dispatched = state.agent_manager.dispatch_pending_response(
+                &result.task_id,
+                AgentMessage::TaskResult {
+                    msg_id: msg_id.clone(),
+                    result: result.clone(),
+                },
+            );
+            if !dispatched {
+                // No waiter — one-shot task, save directly
+                if let Err(e) = save_task_result(&state.db, server_id, &result).await {
+                    tracing::error!("Failed to save task result for {server_id}: {e}");
+                }
             }
             // Send Ack
             if let Some(tx) = state.agent_manager.get_sender(server_id) {
@@ -338,23 +348,37 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             tracing::warn!(
                 "Agent {server_id} denied capability '{capability}' (msg_id={msg_id:?}, session_id={session_id:?})"
             );
-            // For exec: write synthetic task_result so frontend polling resolves
+            // For exec: try pending dispatch first, then save directly
             if let Some(task_id) = &msg_id {
-                use crate::entity::task_result;
-                use sea_orm::{ActiveModelTrait, NotSet, Set};
-                let result = task_result::ActiveModel {
-                    id: NotSet,
-                    task_id: Set(task_id.clone()),
-                    server_id: Set(server_id.to_string()),
-                    output: Set("Capability denied by agent".to_string()),
-                    exit_code: Set(-1),
-                    run_id: NotSet,
-                    attempt: Set(1),
-                    started_at: NotSet,
-                    finished_at: Set(chrono::Utc::now()),
+                let synthetic = serverbee_common::types::TaskResult {
+                    task_id: task_id.clone(),
+                    output: format!("Capability denied: {capability}"),
+                    exit_code: -2,
                 };
-                if let Err(e) = result.insert(&state.db).await {
-                    tracing::error!("Failed to write CapabilityDenied task result: {e}");
+                let dispatched = state.agent_manager.dispatch_pending_response(
+                    task_id,
+                    AgentMessage::TaskResult {
+                        msg_id: task_id.clone(),
+                        result: synthetic,
+                    },
+                );
+                if !dispatched {
+                    use crate::entity::task_result;
+                    use sea_orm::{ActiveModelTrait, NotSet, Set};
+                    let result = task_result::ActiveModel {
+                        id: NotSet,
+                        task_id: Set(task_id.clone()),
+                        server_id: Set(server_id.to_string()),
+                        output: Set(format!("Capability denied: {capability}")),
+                        exit_code: Set(-2),
+                        run_id: Set(None),
+                        attempt: Set(1),
+                        started_at: Set(None),
+                        finished_at: Set(chrono::Utc::now()),
+                    };
+                    if let Err(e) = result.insert(&state.db).await {
+                        tracing::error!("Failed to write CapabilityDenied task result: {e}");
+                    }
                 }
             }
             // For terminal: unregister session so browser gets notified

@@ -13,5 +13,6 @@ pub mod oauth;
 pub mod ping;
 pub mod record;
 pub mod server;
+pub mod task_scheduler;
 pub mod traffic;
 pub mod user;

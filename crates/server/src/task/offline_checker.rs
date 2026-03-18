@@ -17,9 +17,7 @@ pub async fn run(state: Arc<AppState>) {
             tracing::info!("Agent {id} marked offline (no report for 30s)");
         }
 
-        // Clean up expired pending requests (HTTP→WS relay) older than 60 seconds
-        state
-            .agent_manager
-            .cleanup_expired_requests(Duration::from_secs(60));
+        // Clean up expired pending requests (HTTP→WS relay) based on per-entry TTL
+        state.agent_manager.cleanup_expired_requests();
     }
 }

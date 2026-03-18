@@ -6,10 +6,12 @@ use serverbee_common::protocol::BrowserMessage;
 use tokio::sync::broadcast;
 
 use crate::config::AppConfig;
+use crate::error::AppError;
 use crate::service::agent_manager::AgentManager;
 use crate::service::docker_viewer::DockerViewerTracker;
 use crate::service::file_transfer::FileTransferManager;
 use crate::service::geoip::GeoIpService;
+use crate::service::task_scheduler::TaskScheduler;
 
 /// Pending TOTP setup data, keyed by user_id.
 pub struct PendingTotp {
@@ -41,6 +43,8 @@ pub struct AppState {
     pub file_transfers: Arc<FileTransferManager>,
     /// Tracks browser connections subscribed to Docker updates per server.
     pub docker_viewers: DockerViewerTracker,
+    /// Cron-based scheduled task scheduler.
+    pub task_scheduler: Arc<TaskScheduler>,
 }
 
 impl AppState {
@@ -90,7 +94,7 @@ impl AppState {
         )
     }
 
-    pub async fn new(db: DatabaseConnection, config: AppConfig) -> Result<Arc<Self>, anyhow::Error> {
+    pub async fn new(db: DatabaseConnection, config: AppConfig) -> Result<Arc<Self>, AppError> {
         let (browser_tx, _) = broadcast::channel(256);
         let agent_manager = AgentManager::new(browser_tx.clone());
         let geoip = if config.geoip.enabled {
@@ -101,6 +105,7 @@ impl AppState {
         let file_transfers = Arc::new(FileTransferManager::new(
             std::env::temp_dir().join("serverbee-transfers"),
         ));
+        let task_scheduler = Arc::new(TaskScheduler::new(&config.scheduler.timezone).await?);
         // Preload capabilities and features from DB
         if let Err(e) = agent_manager.preload_capabilities(&db).await {
             tracing::warn!("Failed to preload capabilities: {e}");
@@ -117,6 +122,7 @@ impl AppState {
             register_rate_limit: DashMap::new(),
             file_transfers,
             docker_viewers: DockerViewerTracker::new(),
+            task_scheduler,
         }))
     }
 }

@@ -25,8 +25,8 @@ pub struct AgentManager {
     browser_tx: broadcast::Sender<BrowserMessage>,
     /// Maps session_id -> terminal output channel (for routing agent output to browser WS)
     terminal_sessions: DashMap<String, TerminalOutputTx>,
-    /// Maps msg_id -> (oneshot sender, creation time) for HTTP→WS relay
-    pending_requests: DashMap<String, (oneshot::Sender<AgentMessage>, std::time::Instant)>,
+    /// Maps msg_id -> (oneshot sender, creation time, TTL) for HTTP→WS relay
+    pending_requests: DashMap<String, (oneshot::Sender<AgentMessage>, std::time::Instant, std::time::Duration)>,
     // Docker caches
     docker_containers: DashMap<String, Vec<DockerContainer>>,
     docker_stats: DashMap<String, Vec<DockerContainerStats>>,
@@ -266,19 +266,33 @@ impl AgentManager {
         let _ = self.browser_tx.send(msg);
     }
 
-    /// Register a pending request for HTTP→WS relay.
+    /// Register a pending request for HTTP→WS relay with a custom TTL.
+    /// Returns a oneshot receiver that will receive the agent's response.
+    pub fn register_pending_request_with_ttl(
+        &self,
+        msg_id: String,
+        ttl: std::time::Duration,
+    ) -> oneshot::Receiver<AgentMessage> {
+        let (tx, rx) = oneshot::channel();
+        self.pending_requests.insert(msg_id, (tx, std::time::Instant::now(), ttl));
+        rx
+    }
+
+    /// Check if a pending request exists for the given msg_id.
+    pub fn has_pending_request(&self, msg_id: &str) -> bool {
+        self.pending_requests.contains_key(msg_id)
+    }
+
+    /// Register a pending request for HTTP→WS relay with a default 60s TTL.
     /// Returns a oneshot receiver that will receive the agent's response.
     pub fn register_pending_request(&self, msg_id: String) -> oneshot::Receiver<AgentMessage> {
-        let (tx, rx) = oneshot::channel();
-        self.pending_requests
-            .insert(msg_id, (tx, std::time::Instant::now()));
-        rx
+        self.register_pending_request_with_ttl(msg_id, std::time::Duration::from_secs(60))
     }
 
     /// Dispatch a response from the agent to a pending HTTP request.
     /// Returns true if the response was delivered, false if no pending request was found.
     pub fn dispatch_pending_response(&self, msg_id: &str, message: AgentMessage) -> bool {
-        if let Some((_, (tx, _))) = self.pending_requests.remove(msg_id) {
+        if let Some((_, (tx, _, _))) = self.pending_requests.remove(msg_id) {
             let _ = tx.send(message);
             true
         } else {
@@ -413,11 +427,12 @@ impl AgentManager {
         }
     }
 
-    /// Remove pending requests older than `max_age`.
-    pub fn cleanup_expired_requests(&self, max_age: std::time::Duration) {
+    /// Remove pending requests that have exceeded their per-entry TTL.
+    pub fn cleanup_expired_requests(&self) {
         let now = std::time::Instant::now();
-        self.pending_requests
-            .retain(|_, (_, created_at)| now.duration_since(*created_at) < max_age);
+        self.pending_requests.retain(|_, (_, created_at, ttl)| {
+            now.duration_since(*created_at) < *ttl
+        });
     }
 }
 
@@ -563,9 +578,9 @@ mod tests {
     #[test]
     fn test_cleanup_expired_requests() {
         let (mgr, _rx) = make_manager();
-        let _rx1 = mgr.register_pending_request("old".into());
-        // Cleanup with zero duration removes everything
-        mgr.cleanup_expired_requests(std::time::Duration::from_secs(0));
+        let _rx1 = mgr.register_pending_request_with_ttl("old".into(), std::time::Duration::from_millis(1));
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        mgr.cleanup_expired_requests();
         let dispatched = mgr.dispatch_pending_response(
             "old",
             AgentMessage::FileOpResult {
@@ -602,5 +617,16 @@ mod tests {
             },
         );
         assert!(!dispatched2);
+    }
+
+    #[test]
+    fn test_cleanup_expired_requests_per_entry_ttl() {
+        let (mgr, _rx) = make_manager();
+        let _rx1 = mgr.register_pending_request_with_ttl("short".into(), std::time::Duration::from_millis(10));
+        let _rx2 = mgr.register_pending_request_with_ttl("long".into(), std::time::Duration::from_secs(300));
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        mgr.cleanup_expired_requests();
+        assert!(!mgr.has_pending_request("short"));
+        assert!(mgr.has_pending_request("long"));
     }
 }

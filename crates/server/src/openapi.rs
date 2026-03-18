@@ -74,8 +74,12 @@ use utoipa::OpenApi;
         crate::router::api::alert::delete_rule,
         crate::router::api::alert::list_states,
         // tasks
+        crate::router::api::task::list_tasks,
         crate::router::api::task::create_task,
         crate::router::api::task::get_task,
+        crate::router::api::task::update_task,
+        crate::router::api::task::delete_task,
+        crate::router::api::task::run_task,
         crate::router::api::task::get_task_results,
         // audit
         crate::router::api::audit::list_audit_logs,
@@ -156,6 +160,7 @@ use utoipa::OpenApi;
             crate::service::alert::AlertStateResponse,
             // tasks
             crate::router::api::task::CreateTaskRequest,
+            crate::router::api::task::UpdateTaskRequest,
             crate::router::api::task::TaskResponse,
             // ping-tasks
             crate::service::ping::CreatePingTask,
