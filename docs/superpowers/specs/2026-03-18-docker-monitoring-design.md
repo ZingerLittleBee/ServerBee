@@ -115,8 +115,11 @@ Server/frontend conditionally shows Docker Tab based on whether `DockerInfo` has
 ### AgentMessage (Agent → Server)
 
 ```rust
-// Container list snapshot
+// Container list snapshot (sent in two cases):
+// 1. In response to ServerMessage::DockerListContainers (includes msg_id for request-response)
+// 2. Periodically alongside stats when stats streaming is active (msg_id is None)
 AgentMessage::DockerContainers {
+    msg_id: Option<String>,
     containers: Vec<DockerContainer>,
 }
 
@@ -166,7 +169,13 @@ AgentMessage::DockerActionResult {
 ### ServerMessage (Server → Agent)
 
 ```rust
-ServerMessage::DockerListContainers
+// Request container list (request-response)
+ServerMessage::DockerListContainers { msg_id: String }
+
+// Stats streaming control (fire-and-forget)
+// Agent sends DockerContainers + DockerStats on start; absence of data
+// after DockerStartStats implies Docker is unavailable — browser infers
+// this from lack of updates and shows a "Docker unavailable" indicator.
 ServerMessage::DockerStartStats { interval_secs: u32 }
 ServerMessage::DockerStopStats
 
@@ -186,6 +195,7 @@ ServerMessage::DockerLogsStop {
     session_id: String,
 }
 
+// Event streaming control (fire-and-forget, same inference model as stats)
 ServerMessage::DockerEventsStart
 ServerMessage::DockerEventsStop
 
@@ -306,7 +316,7 @@ pub enum DockerAction {
 
 In `handle_agent_message()`:
 
-- `DockerContainers` → cache in AgentManager + broadcast `BrowserMessage::DockerUpdate`
+- `DockerContainers` → cache in AgentManager + broadcast `BrowserMessage::DockerUpdate`. If `msg_id` is present, also dispatch via `pending_requests` for the initial REST request.
 - `DockerStats` → cache in AgentManager + broadcast `BrowserMessage::DockerUpdate`
 - `DockerLog` → forward directly via `BrowserMessage::DockerLog` (no storage)
 - `DockerEvent` → save to `docker_event` table + broadcast `BrowserMessage::DockerEvent`
@@ -326,14 +336,18 @@ docker_info: DashMap<String, DockerSystemInfo>,
 ### REST API
 
 ```
-GET  /api/servers/{id}/docker/containers              — container list (from cache)
-GET  /api/servers/{id}/docker/stats                    — container stats (from cache)
-GET  /api/servers/{id}/docker/info                     — Docker system info (from cache)
-GET  /api/servers/{id}/docker/networks                 — network list (request-response via Agent)
-GET  /api/servers/{id}/docker/volumes                  — volume list (request-response via Agent)
-GET  /api/servers/{id}/docker/events                   — historical events (from database)
-POST /api/servers/{id}/docker/containers/{cid}/action  — container action (start/stop/restart/remove)
+GET    /api/servers/{id}/docker/containers              — container list (from cache)
+GET    /api/servers/{id}/docker/stats                    — container stats (from cache)
+GET    /api/servers/{id}/docker/info                     — Docker system info (from cache)
+GET    /api/servers/{id}/docker/networks                 — network list (request-response via Agent)
+GET    /api/servers/{id}/docker/volumes                  — volume list (request-response via Agent)
+GET    /api/servers/{id}/docker/events                   — historical events (from database)
+POST   /api/servers/{id}/docker/containers/{cid}/action  — container action (start/stop/restart/remove)
+POST   /api/servers/{id}/docker/containers/{cid}/logs/start — start log stream (returns session_id)
+DELETE /api/servers/{id}/docker/containers/{cid}/logs/{session_id} — stop log stream
 ```
+
+Log streaming flow: browser calls `POST .../logs/start` with `{ tail, follow }` body, Server generates a `session_id`, sends `DockerLogsStart` to Agent, and returns `{ session_id }` to browser. Browser then receives log entries via the existing BrowserMessage WebSocket (`BrowserMessage::DockerLog` filtered by `session_id`). On close, browser calls `DELETE .../logs/{session_id}`, Server sends `DockerLogsStop` to Agent.
 
 ### Database
 
@@ -377,11 +391,13 @@ Server receives → cache + broadcast
 Browser updates UI in real-time
 
 User views logs:
-    React → POST start logs
-    Server → ServerMessage::DockerLogsStart { session_id, container_id, tail: 100 }
-    Agent → docker.logs() stream → AgentMessage::DockerLog
-    Server → BrowserMessage::DockerLog → browser terminal display
-    User leaves → ServerMessage::DockerLogsStop
+    React → POST /api/servers/{id}/docker/containers/{cid}/logs/start { tail: 100, follow: true }
+    Server generates session_id, returns { session_id } to browser
+    Server → ServerMessage::DockerLogsStart { session_id, container_id, tail: 100, follow: true }
+    Agent → docker.logs() stream → AgentMessage::DockerLog { session_id, entries }
+    Server → BrowserMessage::DockerLog { session_id, entries } → browser terminal display
+    User closes dialog → DELETE /api/servers/{id}/docker/containers/{cid}/logs/{session_id}
+    Server → ServerMessage::DockerLogsStop { session_id }
 ```
 
 ## Frontend
