@@ -431,6 +431,20 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         AgentMessage::Pong => {
             // Agent responded to our protocol-level Ping; already handled by WS Pong frames
         }
+
+        // Docker variants — handled in Task 10
+        AgentMessage::DockerInfo { .. }
+        | AgentMessage::DockerContainers { .. }
+        | AgentMessage::DockerStats { .. }
+        | AgentMessage::DockerLog { .. }
+        | AgentMessage::DockerEvent { .. }
+        | AgentMessage::FeaturesUpdate { .. }
+        | AgentMessage::DockerUnavailable
+        | AgentMessage::DockerNetworks { .. }
+        | AgentMessage::DockerVolumes { .. }
+        | AgentMessage::DockerActionResult { .. } => {
+            tracing::debug!("Received Docker message from {server_id}, handler not yet wired");
+        }
     }
 }
 

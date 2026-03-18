@@ -136,6 +136,7 @@ async fn register(
         billing_start_day: Set(None),
         capabilities: Set(56),
         protocol_version: Set(1),
+        features: Set("[]".to_string()),
         created_at: Set(now),
         updated_at: Set(now),
     };
