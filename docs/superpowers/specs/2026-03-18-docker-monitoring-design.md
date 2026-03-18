@@ -181,12 +181,12 @@ When an admin disables `CAP_DOCKER` for a server (via `PUT /api/servers/{id}/cap
    - Update capability bitmap (existing behavior)
    - If `CAP_DOCKER` was just removed: DockerManager aborts all active log sessions, stops stats polling, stops event stream. Same cleanup as runtime Docker disconnect.
 
-3. **Frontend**: receives `capabilities_changed` (existing handler already updates the capabilities cache). Docker Tab visibility is derived from `features.includes("docker") && hasCap(CAP_DOCKER)` — when capabilities change, `hasCap(CAP_DOCKER)` becomes false and Docker Tab hides automatically. Any open log WS connections receive a close frame from server-side cleanup.
+3. **Frontend**: receives `capabilities_changed` (existing handler already updates the capabilities cache). Docker Tab visibility is derived from `hasCap(CAP_DOCKER)` only — when capabilities change, `hasCap(CAP_DOCKER)` becomes false and Docker Tab hides automatically (component unmounts, `useDockerSubscription` cleanup fires). Any open log WS connections receive a close frame from server-side cleanup.
 
 **Important separation of concerns:**
-- `DockerAvailabilityChanged` is used **only** for Docker daemon availability changes (features-level, from Agent). It updates `server.features`.
-- `CapabilitiesChanged` is used **only** for admin permission changes (authz-level). It updates `server.capabilities`.
-- The two signals are independent: disabling CAP_DOCKER does NOT change features. Docker Tab uses both conditions: `features.includes("docker") && hasCap(CAP_DOCKER)`.
+- `DockerAvailabilityChanged` is used **only** for Docker daemon availability changes (features-level, from Agent). It updates `server.features`. When Docker becomes unavailable, the Docker Tab stays **mounted** (showing "unavailable" placeholder) so viewer subscriptions are preserved for auto-recovery.
+- `CapabilitiesChanged` is used **only** for admin permission changes (authz-level). It updates `server.capabilities`. When CAP_DOCKER is disabled, the Docker Tab **unmounts** — this is intentional because admin explicitly revoked access and server-side already cleaned up all streams.
+- The two unmount behaviors are different by design: daemon unavailability = keep mounted (temporary, auto-recoverable), capability revocation = unmount (deliberate admin action, server handles cleanup).
 
 This ensures "capability off = immediate effect" with no stale streams, and no semantic pollution of the features cache.
 
@@ -199,7 +199,10 @@ The existing `AgentManager` already stores per-server connection state. Add an i
 capabilities: DashMap<String, u32>,  // server_id → capability bitmask
 ```
 
-**Populated from:** The capabilities update REST handler (`PUT /api/servers/{id}/capabilities`) writes to both DB and this cache. On Agent connect, loaded from DB alongside other server state.
+**Populated from:**
+1. **Server startup**: All server capabilities are loaded from DB into cache during `AgentManager::new()` initialization. This eliminates the cold-start gap — capabilities are available immediately, before any Agent reconnects.
+2. **Agent connect**: Refreshed from DB alongside other server state (in case DB was modified externally).
+3. **Capability REST update**: `PUT /api/servers/{id}/capabilities` writes to both DB and this cache.
 
 **`has_docker_capability()` implementation:**
 ```rust
@@ -551,7 +554,8 @@ async fn handle_browser_ws(socket: WebSocket, state: Arc<AppState>) {
                             match client_msg {
                                 BrowserClientMessage::DockerSubscribe { server_id } => {
                                     // Enforce CAP_DOCKER: reject subscription if capability is disabled.
-                                    // Uses in-memory capability from AgentManager (no DB query needed).
+                                    // Uses in-memory capability cache (pre-loaded on server startup from DB,
+                                    // so always available — no cold-start gap).
                                     if !state.agent_manager.has_docker_capability(&server_id) {
                                         continue;
                                     }
@@ -766,7 +770,9 @@ case 'docker_availability_changed': {
     // This message reflects Docker DAEMON availability (features-level),
     // NOT admin capability changes. Only updates server.features.
     // CAP_DOCKER changes arrive via the existing 'capabilities_changed' handler.
-    // Docker Tab visibility = server.features.includes('docker') && hasCap(CAP_DOCKER)
+    // Docker Tab visibility = hasCap(CAP_DOCKER) only.
+    // Docker Tab content = features.includes('docker') ? real data : "unavailable" placeholder.
+    // Tab stays MOUNTED when Docker is unavailable — viewer subscriptions are preserved.
     const updateFeatures = (server: Server) => ({
         ...server,
         features: msg.available
@@ -1038,7 +1044,8 @@ Agent connects to Server:
 Browser loads page:
     React → GET /api/servers (response includes features for each server)
     React → connect /ws/servers, receive FullSync (includes features per server)
-    Docker Tab visibility: server.features.includes("docker") && hasCap(CAP_DOCKER)
+    Docker Tab visibility: hasCap(CAP_DOCKER) only (admin permission)
+    Docker Tab content: features.includes("docker") ? real data : "unavailable" placeholder
 
 Browser opens Docker tab:
     React → sends BrowserClientMessage::DockerSubscribe { server_id } over /ws/servers
@@ -1076,7 +1083,9 @@ Admin disables CAP_DOCKER:
         5. Broadcast CapabilitiesChanged { server_id, capabilities } (existing message type)
     Agent → CapabilitiesSync handler: abort DockerManager sessions
     Browser → receives capabilities_changed (existing handler), hasCap(CAP_DOCKER) → false
-        Docker Tab hides, open log WS connections receive close frame
+        Docker Tab unmounts (intentional — admin revoked access), useDockerSubscription
+        cleanup fires docker_unsubscribe (server already cleaned up, this is harmless)
+        Open log WS connections receive close frame from server-side cleanup
     Note: server.features is NOT modified — Docker daemon is still available
 
 Admin re-enables CAP_DOCKER:
@@ -1095,7 +1104,9 @@ Docker runtime recovery (Docker daemon restarts while viewers are active):
     Server → updates features in DB, broadcasts DockerAvailabilityChanged { available: true }
     Server → checks docker_viewers.has_viewers(&server_id)
     Server → if has viewers: re-sends DockerStartStats + DockerEventsStart to Agent
-    Browser → receives DockerAvailabilityChanged, UI shows Docker available again
+    Browser → receives DockerAvailabilityChanged, Docker Tab content switches from
+        "unavailable" placeholder back to real data (tab was never unmounted, so
+        useDockerSubscription was still active and viewer was retained)
     Browser → begins receiving DockerUpdate + DockerEvent again (no re-subscribe needed)
 
 Browser WS reconnects (network blip while Docker tab is open):
@@ -1119,9 +1130,15 @@ User views container logs (opens detail Dialog):
 
 ### Entry point
 
-Docker Tab inside the Server detail page, alongside Overview / Terminal / Files / Ping tabs. Only shown when:
-1. `server.features` includes `"docker"` (Agent reports Docker is available)
-2. `CAP_DOCKER` is enabled for the server (admin has granted permission)
+Docker Tab inside the Server detail page, alongside Overview / Terminal / Files / Ping tabs.
+
+**Tab visibility**: Only `hasCap(CAP_DOCKER)` — admin has granted Docker permission. The tab is shown regardless of current Docker daemon availability.
+
+**Tab content**: Inside the tab, check `server.features.includes("docker")`:
+- **true**: Show real-time Docker data (containers, stats, events)
+- **false**: Show a "Docker unavailable" placeholder (e.g., "Docker daemon is not reachable on this server. Waiting for connection..."). The tab stays mounted, `useDockerSubscription` remains active, and viewer subscriptions are preserved so that when Docker recovers, streams auto-resume without re-subscription.
+
+This separation is critical for the Docker runtime recovery flow: if Docker daemon restarts, the tab must NOT unmount (which would fire `docker_unsubscribe` and clear viewer tracking), otherwise server-side auto-recovery via `has_viewers()` would fail.
 
 ### Docker Tab layout (single-page overview)
 
