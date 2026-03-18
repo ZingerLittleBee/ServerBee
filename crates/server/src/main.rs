@@ -60,7 +60,9 @@ async fn main() -> anyhow::Result<()> {
     let auto_discovery_key = init_auto_discovery_key(&db, &config).await?;
 
     // Build AppState
-    let state = AppState::new(db, config.clone()).await?;
+    let state = AppState::new(db, config.clone())
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     // Spawn background tasks
     let s = state.clone();
@@ -75,6 +77,8 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move { task::session_cleaner::run(s).await });
     let s = state.clone();
     tokio::spawn(async move { task::alert_evaluator::run(s).await });
+    let s = state.clone();
+    tokio::spawn(async move { task::task_scheduler::run(s).await });
 
     // Build router
     let app = create_router(state);

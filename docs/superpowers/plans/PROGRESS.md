@@ -1,6 +1,6 @@
 # ServerBee 实现进度
 
-> 最后更新: 2026-03-18
+> 最后更新: 2026-03-19
 
 ## 总览
 
@@ -27,8 +27,9 @@
 
 | P6 | 文件管理 | **已完成** | 24 tasks |
 | P7 | Docker 容器监控 | **已完成** | 25 tasks, 17 commits |
+| P8 | 定时任务 (Scheduled Tasks) | **已完成** | 1 (`9a27711`) |
 
-**P0~P7 全部完成并已提交。测试: 226 单元 + 26 集成 + 121 前端 + 23/24 E2E 浏览器 = 396 个测试。**
+**P0~P8 全部完成并已提交。测试: 232 单元 + 26 集成 + 4 Docker 集成 + 124 前端 = 386 个测试。**
 
 ---
 
@@ -803,6 +804,48 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 2. Agent `poll_stats()` 只发 `DockerStats` 不发 `DockerContainers` — 导致 server 缓存空跳过广播
 3. WS features 数据不能及时到达 React 组件 — 添加 REST API fallback
 4. Docker 日志 WebSocket 协议不匹配 — 前端发送 `docker_logs_start` 但后端期望 `subscribe`，前端期望 `docker_log` 但后端发送 `logs`
+
+### P8: 定时任务 (Scheduled Tasks)
+
+**分支**: `feature/scheduled-tasks`
+**实现计划**: `docs/superpowers/plans/2026-03-17-scheduled-tasks.md`
+**设计文档**: `docs/superpowers/specs/2026-03-17-traffic-stats-scheduled-tasks-design.md` sections 2.1-2.6
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T0 | 依赖: cron 0.13 crate | **done** |
+| T1 | Server: pending_requests per-entry TTL (AgentManager + offline_checker) | **done** |
+| T2 | Server: agent.rs TaskResult/CapabilityDenied pending dispatch | **done** |
+| T3 | Server: TaskScheduler struct (overlap detection, cancellation, job管理) | **done** |
+| T4 | Server: TaskScheduler job registration (add/remove/update/disable) | **done** |
+| T5 | Server: 执行流程 (parallel per-server dispatch, retry, ActiveRunGuard) | **done** |
+| T6 | Server: AppState 集成 + main.rs spawn scheduler | **done** |
+| T7 | Server: Task API 扩展 (GET list, PUT update, DELETE, POST run) | **done** |
+| T8 | Server: create_task 支持 scheduled 类型 + cron 验证 | **done** |
+| T9 | Server: OpenAPI 注册新端点 + schema | **done** |
+| T10 | Frontend: use-scheduled-tasks hooks (6 hooks, i18n toast) | **done** |
+| T11 | Frontend: Tasks 页面 Tab 布局 (one-shot + scheduled) | **done** |
+| T12 | Frontend: ScheduledTaskList 组件 (任务列表 + 执行历史) | **done** |
+| T13 | Frontend: ScheduledTaskDialog 组件 (create/edit 表单) | **done** |
+| T14 | Frontend: i18n 中英文翻译 (22 个 key) | **done** |
+| T15 | 代码审查修复: 竞态条件 (DashMap entry API), run_task 验证, 时区感知 next_run_at | **done** |
+
+**新增 API 端点:**
+```
+GET    /api/tasks                    列出任务 (?type=scheduled)
+PUT    /api/tasks/:id               更新任务 (cron/enabled/command/servers/retry)
+DELETE /api/tasks/:id               删除任务 (级联删除结果)
+POST   /api/tasks/:id/run           手动触发定时任务 (409 if running)
+```
+
+**技术亮点:**
+- DashMap `entry()` API 原子化重叠检测，消除竞态条件
+- `ActiveRunGuard` drop guard 确保 `active_runs` 清理（即使 panic）
+- per-entry TTL 支持定时任务 310s 超时（默认 60s 不变）
+- Agent WS handler dispatch-before-save，scheduler 通过 oneshot channel 接收结果
+- 时区感知的 `next_run_at` 计算 (chrono-tz)
+
+**测试:** 5 个新单元测试 (TaskScheduler 3 + correlation_id 2), 所有 262 Rust + 124 前端测试通过
 
 ---
 
