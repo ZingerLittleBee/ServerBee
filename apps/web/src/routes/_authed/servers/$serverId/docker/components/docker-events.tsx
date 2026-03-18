@@ -54,10 +54,10 @@ export function DockerEvents({ events }: DockerEventsProps) {
     <div className="space-y-2">
       <h3 className="font-semibold text-lg">Events</h3>
       <div className="max-h-[400px] space-y-1 overflow-y-auto rounded-lg border p-3">
-        {sortedEvents.map((event) => (
+        {sortedEvents.map((event, idx) => (
           <div
             className="flex items-start gap-3 rounded-md px-3 py-2 text-sm odd:bg-muted/30"
-            key={`${event.timestamp}-${event.event_type}-${event.action}-${event.actor_id}`}
+            key={`${String(idx)}-${event.timestamp}-${event.event_type}-${event.action}`}
           >
             <span className="w-16 shrink-0 text-right text-muted-foreground text-xs tabular-nums">
               {formatRelativeTime(event.timestamp)}

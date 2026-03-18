@@ -75,10 +75,10 @@ export function ContainerLogs({ serverId, containerId }: ContainerLogsProps) {
           <p className="text-muted-foreground">No log entries yet...</p>
         ) : (
           <pre className="whitespace-pre-wrap break-all">
-            {logs.map((entry) => (
+            {logs.map((entry, idx) => (
               <code
                 className={cn('block leading-relaxed', entry.stream === 'stderr' && 'text-red-500 dark:text-red-400')}
-                key={`${entry.timestamp ?? ''}-${entry.stream}-${entry.message.slice(0, 40)}`}
+                key={`${String(idx)}-${entry.stream}-${entry.timestamp ?? ''}`}
               >
                 {entry.timestamp && <span className="mr-2 text-muted-foreground">{entry.timestamp}</span>}
                 {entry.message}
