@@ -301,30 +301,30 @@ docker compose up -d
 
 | # | 测试场景 | 操作步骤 | 状态 |
 |---|---------|---------|------|
-| D1 | 能力开关（启用） | Server Detail → 启用 Docker Management capability → Docker 按钮出现 | — |
-| D2 | 能力开关（禁用） | 关闭 CAP_DOCKER → Docker 按钮消失 → API 返回 403 | — |
-| D3 | Docker 不可用 | Agent 无 Docker 环境 → Docker 页面显示 "Docker is not available" 占位 | — |
-| D4 | Docker 可用无容器 | Agent 有 Docker 但无容器 → 显示概览卡片 + "No containers found" | — |
-| D5 | 概览卡片 | 显示 5 张卡片：Running / Stopped / Total CPU / Total Memory / Docker Version | — |
-| D6 | 容器列表渲染 | 表格显示容器 Name / Image / Status / CPU% / Memory / Network I/O | — |
-| D7 | 容器搜索 | 输入容器名或镜像名 → 表格过滤匹配项 | — |
-| D8 | 容器过滤 | 点击 Running / Stopped / All 按钮 → 切换过滤状态 | — |
-| D9 | 容器详情弹窗 | 点击容器行 → 弹出 Dialog 显示元信息 + Stats + Logs | — |
-| D10 | 容器 Stats | 详情弹窗中 4 张迷你卡片：CPU / Memory（含进度条） / Net I/O / Block I/O | — |
-| D11 | 容器日志流 | 详情弹窗中日志区域自动连接 → 显示实时日志流 | — |
+| D1 | 能力开关（启用） | Server Detail → 启用 Docker Management capability → Docker 按钮出现 | ✅ |
+| D2 | 能力开关（禁用） | 关闭 CAP_DOCKER → Docker 按钮消失 → API 返回 403 | ✅ |
+| D3 | Docker 不可用 | Agent 无 Docker 环境 → Docker 页面显示 "Docker is not available" 占位 | ✅ |
+| D4 | Docker 可用无容器 | Agent 有 Docker 但无容器 → 显示概览卡片 + "No containers found" | ✅ |
+| D5 | 概览卡片 | 显示 5 张卡片：Running / Stopped / Total CPU / Total Memory / Docker Version | ✅ |
+| D6 | 容器列表渲染 | 表格显示容器 Name / Image / Status / CPU% / Memory / Network I/O | ✅ |
+| D7 | 容器搜索 | 输入容器名或镜像名 → 表格过滤匹配项 | ✅ |
+| D8 | 容器过滤 | 点击 Running / Stopped / All 按钮 → 切换过滤状态 | ✅ |
+| D9 | 容器详情弹窗 | 点击容器行 → 弹出 Dialog 显示元信息 + Stats + Logs | ✅ |
+| D10 | 容器 Stats | 详情弹窗中 4 张迷你卡片：CPU / Memory（含进度条） / Net I/O / Block I/O | ✅ |
+| D11 | 容器日志流 | 详情弹窗中日志区域自动连接 → 显示实时日志流 | ✅ |
 | D12 | 日志 Follow | 开启 Follow → 新日志自动滚动到底部 → 关闭 Follow → 停止滚动 | — |
 | D13 | 日志 stderr 颜色 | stderr 日志行显示红色文本 | — |
 | D14 | 日志清除 | 点击 Clear → 日志区域清空 | — |
-| D15 | 日志连接状态 | 连接时绿色圆点 + "Connected" → 断开时灰色 + "Disconnected" | — |
-| D16 | 实时数据更新 | WS 推送 docker_update → 容器列表和 Stats 实时刷新 | — |
-| D17 | 事件时间线 | Docker 事件（start/stop/die 等）按时间倒序显示 → 相对时间戳 | — |
-| D18 | 事件 Badge | 事件类型 Badge：container/image/network/volume 各有不同样式 | — |
-| D19 | 网络列表弹窗 | 点击 Networks 按钮 → Dialog 显示网络 Name / Driver / Scope / 容器数 | — |
-| D20 | 卷列表弹窗 | 点击 Volumes 按钮 → Dialog 显示卷 Name / Driver / Mountpoint / 创建时间 | — |
-| D21 | 订阅/退订 | 进入 Docker 页 → WS 发送 docker_subscribe → 离开页面 → 发送 docker_unsubscribe | — |
+| D15 | 日志连接状态 | 连接时绿色圆点 + "Connected" → 断开时灰色 + "Disconnected" | ✅ |
+| D16 | 实时数据更新 | WS 推送 docker_update → 容器列表和 Stats 实时刷新 | ✅ |
+| D17 | 事件时间线 | Docker 事件（start/stop/die 等）按时间倒序显示 → 相对时间戳 | ✅ |
+| D18 | 事件 Badge | 事件类型 Badge：container/image/network/volume 各有不同样式 | ✅ |
+| D19 | 网络列表弹窗 | 点击 Networks 按钮 → Dialog 显示网络 Name / Driver / Scope / 容器数 | ✅ |
+| D20 | 卷列表弹窗 | 点击 Volumes 按钮 → Dialog 显示卷 Name / Driver / Mountpoint / 创建时间 | ✅ |
+| D21 | 订阅/退订 | 进入 Docker 页 → WS 发送 docker_subscribe → 离开页面 → 发送 docker_unsubscribe | ✅ |
 | D22 | docker_availability_changed | Agent Docker daemon 停止 → 页面切换为不可用占位 → daemon 恢复 → 页面自动恢复 | — |
-| D23 | i18n 中文 | 切换中文 → 服务器详情页 Docker 按钮显示 "Docker"，能力名显示 "Docker 管理" | — |
-| D24 | i18n 英文 | 切换英文 → Docker 按钮显示 "Docker"，能力名显示 "Docker Management" | — |
+| D23 | i18n 中文 | 切换中文 → 服务器详情页 Docker 按钮显示 "Docker"，能力名显示 "Docker 管理" | ✅ |
+| D24 | i18n 英文 | 切换英文 → Docker 按钮显示 "Docker"，能力名显示 "Docker Management" | ✅ |
 
 ### 验证清单 — shadcn Chart 图表重构
 
