@@ -1,6 +1,6 @@
 # ServerBee 实现进度
 
-> 最后更新: 2026-03-14
+> 最后更新: 2026-03-18
 
 ## 总览
 
@@ -26,8 +26,9 @@
 | P5 | Agent Capability Toggles | **已完成** | 22 (`bfc7d14`..`56c6058`) |
 
 | P6 | 文件管理 | **已完成** | 24 tasks |
+| P7 | Docker 容器监控 | **已完成** | 25 tasks, 17 commits |
 
-**P0~P6 全部完成并已提交。测试: 171 单元 + 20 集成 + 99 前端 + 31 E2E 浏览器 = 321 个测试。**
+**P0~P7 全部完成并已提交。测试: 226 单元 + 26 集成 + 121 前端 + 20/24 E2E 浏览器 = 393 个测试。**
 
 ---
 
@@ -762,6 +763,45 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 | T22 | 前端测试: file-utils 工具函数 (13 vitest tests) | **done** |
 | T23 | 文档更新: TESTING.md + ENV.md + PROGRESS.md + Fumadocs | **done** |
 | T24 | 最终验证: cargo test + clippy + typecheck + vitest + build | **done** |
+
+### P7: Docker 容器监控 (Docker Monitoring)
+
+**分支**: `feature/docker-monitoring`
+**设计文档**: `docs/superpowers/specs/2026-03-18-docker-monitoring-design.md`
+**实现计划**: `docs/superpowers/plans/2026-03-18-docker-monitoring.md`
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | Common: Docker 数据结构 (DockerContainer/Stats/Log/Event/SystemInfo/Network/Volume/Action) | **done** |
+| T2 | Common: CAP_DOCKER=128 能力位 + SystemInfo features 字段 | **done** |
+| T3 | Common: Docker 协议消息 (AgentMessage 10 变体 + ServerMessage 11 变体 + BrowserMessage 3 变体 + BrowserClientMessage) | **done** |
+| T4 | Server: 数据库 migration (docker_event 表 + features 列) | **done** |
+| T5 | Server: DockerEvent entity + DockerService (save/query/cleanup) | **done** |
+| T6 | Server: DockerViewerTracker (viewer refcount, 5 单元测试) | **done** |
+| T7 | Server: AgentManager 扩展 (Docker 缓存 + features + log session 路由) | **done** |
+| T8 | Server: AppState async new() + docker_viewers 字段 | **done** |
+| T9 | Server: Docker REST API (containers/stats/info/events/networks/volumes/action, 7 端点) | **done** |
+| T10 | Server: Agent WS Docker 消息处理 (DockerInfo/Containers/Stats/Log/Event/Unavailable/Features) | **done** |
+| T11 | Server: Browser WS DockerSubscribe/Unsubscribe + viewer 管理 | **done** |
+| T12 | Server: Docker Log WebSocket 端点 (/ws/docker/logs/:server_id) | **done** |
+| T13 | Server: CAP_DOCKER 撤销清理 + docker_event 定期清理 | **done** |
+| T14 | Agent: DockerManager 核心 (bollard client + containers + stats polling) | **done** |
+| T15 | Agent: Docker logs (批量发送) + events (自动重连) + networks + volumes | **done** |
+| T16 | Agent: Reporter 集成 (DockerManager 初始化 + tokio::select! + features 上报) | **done** |
+| T17 | Frontend: Docker 类型定义 + WsClient send/connectionState | **done** |
+| T18 | Frontend: ServersWsContext + Docker WS 消息处理 (docker_update/event/availability) | **done** |
+| T19 | Frontend: useDockerSubscription + useDockerLogs hooks | **done** |
+| T20 | Frontend: Docker Tab 主页 + DockerOverview (5 卡片) + DockerEvents 时间线 | **done** |
+| T21 | Frontend: ContainerList (表格 + 搜索 + 过滤) | **done** |
+| T22 | Frontend: ContainerDetailDialog + ContainerStats (4 卡片) + ContainerLogs (实时流) | **done** |
+| T23 | Frontend: DockerNetworksDialog + DockerVolumesDialog | **done** |
+| T24 | Frontend: CAP_DOCKER 能力常量 + 服务器详情页 Docker 链接 + i18n | **done** |
+| T25 | 集成测试 + E2E 验证 (20/24 浏览器测试通过) | **done** |
+
+**E2E 中发现并修复的 Bug (3 个):**
+1. `ServerResponse` DTO 缺少 `features` 字段 — API 无法返回 Docker 特性信息
+2. Agent `poll_stats()` 只发 `DockerStats` 不发 `DockerContainers` — 导致 server 缓存空跳过广播
+3. WS features 数据不能及时到达 React 组件 — 添加 REST API fallback
 
 ---
 
