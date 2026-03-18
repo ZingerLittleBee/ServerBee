@@ -451,3 +451,163 @@ async fn test_docker_streams_restart_for_existing_browser_viewers_after_agent_re
     let _ = browser_sink.close().await;
     let _ = agent_sink2.close().await;
 }
+
+#[tokio::test]
+async fn test_docker_subscribe_requires_capability_and_feature() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+    let api_key = create_api_key(&client, &base_url).await;
+
+    let (_server_id, token) = register_agent(&client, &base_url).await;
+    let (mut agent_sink, mut agent_reader) = connect_agent(&base_url, &token).await;
+
+    let welcome = recv_text(&mut agent_reader).await;
+    assert_eq!(welcome["type"], "welcome");
+
+    send_docker_system_info(&mut agent_sink, &mut agent_reader).await;
+
+    let mut request = format!("{}/api/ws/servers", base_url.replace("http://", "ws://"))
+        .into_client_request()
+        .expect("Failed to build browser websocket request");
+    request
+        .headers_mut()
+        .insert("x-api-key", HeaderValue::from_str(&api_key).unwrap());
+
+    let (browser_ws, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("Browser WebSocket connection failed");
+    let (mut browser_sink, mut browser_reader) = browser_ws.split();
+
+    let full_sync = recv_text(&mut browser_reader).await;
+    assert_eq!(full_sync["type"], "full_sync");
+
+    let server_id = full_sync["servers"][0]["id"]
+        .as_str()
+        .expect("server id missing from full sync");
+
+    browser_sink
+        .send(tungstenite::Message::Text(
+            json!({
+                "type": "docker_subscribe",
+                "server_id": server_id
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("Failed to send docker_subscribe");
+
+    let seen = recv_until_types(
+        &mut agent_reader,
+        &["docker_start_stats", "docker_events_start"],
+    )
+    .await;
+    assert!(
+        seen.is_empty(),
+        "Docker subscribe should be ignored when CAP_DOCKER is disabled, saw {:?}",
+        seen
+    );
+
+    let _ = browser_sink.close().await;
+    let _ = agent_sink.close().await;
+}
+
+#[tokio::test]
+async fn test_docker_unavailable_fails_pending_request_and_clears_feature_state() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, token) = register_agent(&client, &base_url).await;
+    let (mut agent_sink, mut agent_reader) = connect_agent(&base_url, &token).await;
+
+    let welcome = recv_text(&mut agent_reader).await;
+    assert_eq!(welcome["type"], "welcome");
+
+    send_docker_system_info(&mut agent_sink, &mut agent_reader).await;
+    enable_docker_capability(&client, &base_url, &server_id).await;
+
+    let agent_task = tokio::spawn(async move {
+        loop {
+            let msg = recv_text(&mut agent_reader).await;
+            match msg["type"].as_str() {
+                Some("docker_get_info") => {
+                    let response = json!({
+                        "type": "docker_unavailable",
+                        "msg_id": msg["msg_id"].as_str().expect("docker_get_info msg_id missing")
+                    });
+                    agent_sink
+                        .send(tungstenite::Message::Text(response.to_string().into()))
+                        .await
+                        .expect("Failed to send DockerUnavailable response");
+                    return;
+                }
+                Some("capabilities_sync")
+                | Some("ping_tasks_sync")
+                | Some("network_probe_sync") => {}
+                Some(other) => panic!("Unexpected agent command: {other}"),
+                None => {}
+            }
+        }
+    });
+
+    let resp = tokio::time::timeout(
+        Duration::from_secs(2),
+        client
+            .get(format!(
+                "{}/api/servers/{}/docker/info",
+                base_url, server_id
+            ))
+            .send(),
+    )
+    .await
+    .expect("GET /api/servers/{id}/docker/info should not wait for the request timeout")
+    .expect("GET /api/servers/{id}/docker/info failed");
+
+    assert_eq!(
+        resp.status(),
+        403,
+        "Docker unavailable should return 403 immediately"
+    );
+
+    let server_resp = client
+        .get(format!("{}/api/servers/{}", base_url, server_id))
+        .send()
+        .await
+        .expect("GET /api/servers/{id} failed");
+    assert_eq!(server_resp.status(), 200);
+    let server_body: serde_json::Value = server_resp
+        .json()
+        .await
+        .expect("Failed to parse server response");
+    let features = server_body["data"]["features"]
+        .as_array()
+        .expect("features should be an array");
+    assert!(
+        !features
+            .iter()
+            .any(|value| value.as_str() == Some("docker")),
+        "Docker feature should be removed from persisted server state after DockerUnavailable"
+    );
+
+    let second_resp = tokio::time::timeout(
+        Duration::from_secs(2),
+        client
+            .get(format!(
+                "{}/api/servers/{}/docker/info",
+                base_url, server_id
+            ))
+            .send(),
+    )
+    .await
+    .expect("Subsequent GET /api/servers/{id}/docker/info should fail immediately")
+    .expect("Second GET /api/servers/{id}/docker/info failed");
+    assert_eq!(
+        second_resp.status(),
+        403,
+        "Docker should remain unavailable in the in-memory feature state"
+    );
+
+    agent_task.await.expect("Agent task failed");
+}

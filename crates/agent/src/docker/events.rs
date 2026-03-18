@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use bollard::system::EventsOptions;
 use bollard::Docker;
+use bollard::system::EventsOptions;
 use futures_util::StreamExt;
 use serverbee_common::docker_types::DockerEventInfo;
 use serverbee_common::protocol::AgentMessage;
@@ -12,10 +12,7 @@ use tokio::time::Duration;
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
 /// Spawn a background task that streams Docker events with auto-reconnect.
-pub fn spawn_event_stream(
-    docker: Docker,
-    agent_tx: mpsc::Sender<AgentMessage>,
-) -> JoinHandle<()> {
+pub fn spawn_event_stream(docker: Docker, agent_tx: mpsc::Sender<AgentMessage>) -> JoinHandle<()> {
     tokio::spawn(async move {
         loop {
             tracing::debug!("Starting Docker event stream...");
@@ -25,7 +22,9 @@ pub fn spawn_event_stream(
                     break;
                 }
                 Err(e) => {
-                    tracing::warn!("Docker event stream error: {e}, reconnecting in {RECONNECT_DELAY:?}...");
+                    tracing::warn!(
+                        "Docker event stream error: {e}, reconnecting in {RECONNECT_DELAY:?}..."
+                    );
                     tokio::time::sleep(RECONNECT_DELAY).await;
                 }
             }

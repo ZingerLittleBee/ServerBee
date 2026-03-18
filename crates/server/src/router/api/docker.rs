@@ -48,6 +48,10 @@ fn default_events_limit() -> u64 {
     100
 }
 
+fn docker_unavailable_error() -> AppError {
+    AppError::Forbidden("Docker is not available on this server".into())
+}
+
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct NetworksResponse {
     networks: Vec<DockerNetwork>,
@@ -207,6 +211,9 @@ async fn get_info(
 
         match tokio::time::timeout(Duration::from_secs(30), rx).await {
             Ok(Ok(AgentMessage::DockerInfo { info, .. })) => info,
+            Ok(Ok(AgentMessage::DockerUnavailable { .. })) => {
+                return Err(docker_unavailable_error());
+            }
             Ok(Ok(_)) => {
                 return Err(AppError::Internal("Unexpected response from agent".into()));
             }
@@ -292,6 +299,7 @@ async fn get_networks(
 
     match tokio::time::timeout(Duration::from_secs(30), rx).await {
         Ok(Ok(AgentMessage::DockerNetworks { networks, .. })) => ok(NetworksResponse { networks }),
+        Ok(Ok(AgentMessage::DockerUnavailable { .. })) => Err(docker_unavailable_error()),
         Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
         Ok(Err(_)) => Err(AppError::Internal("Agent disconnected".into())),
         Err(_) => Err(AppError::RequestTimeout(
@@ -335,6 +343,7 @@ async fn get_volumes(
 
     match tokio::time::timeout(Duration::from_secs(30), rx).await {
         Ok(Ok(AgentMessage::DockerVolumes { volumes, .. })) => ok(VolumesResponse { volumes }),
+        Ok(Ok(AgentMessage::DockerUnavailable { .. })) => Err(docker_unavailable_error()),
         Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
         Ok(Err(_)) => Err(AppError::Internal("Agent disconnected".into())),
         Err(_) => Err(AppError::RequestTimeout(
@@ -391,6 +400,7 @@ async fn container_action(
         Ok(Ok(AgentMessage::DockerActionResult { success, error, .. })) => {
             ok(ActionResultResponse { success, error })
         }
+        Ok(Ok(AgentMessage::DockerUnavailable { .. })) => Err(docker_unavailable_error()),
         Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
         Ok(Err(_)) => Err(AppError::Internal("Agent disconnected".into())),
         Err(_) => Err(AppError::RequestTimeout(

@@ -112,7 +112,10 @@ pub enum AgentMessage {
     FeaturesUpdate {
         features: Vec<String>,
     },
-    DockerUnavailable,
+    DockerUnavailable {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        msg_id: Option<String>,
+    },
     DockerNetworks {
         msg_id: String,
         networks: Vec<DockerNetwork>,
@@ -227,8 +230,12 @@ pub enum ServerMessage {
         transfer_id: String,
     },
     // Docker commands
-    DockerListContainers { msg_id: String },
-    DockerStartStats { interval_secs: u32 },
+    DockerListContainers {
+        msg_id: String,
+    },
+    DockerStartStats {
+        interval_secs: u32,
+    },
     DockerStopStats,
     DockerContainerAction {
         msg_id: String,
@@ -241,12 +248,20 @@ pub enum ServerMessage {
         tail: Option<u64>,
         follow: bool,
     },
-    DockerLogsStop { session_id: String },
+    DockerLogsStop {
+        session_id: String,
+    },
     DockerEventsStart,
     DockerEventsStop,
-    DockerGetInfo { msg_id: String },
-    DockerListNetworks { msg_id: String },
-    DockerListVolumes { msg_id: String },
+    DockerGetInfo {
+        msg_id: String,
+    },
+    DockerListNetworks {
+        msg_id: String,
+    },
+    DockerListVolumes {
+        msg_id: String,
+    },
     Ping,
     Upgrade {
         version: String,
@@ -315,7 +330,8 @@ mod tests {
 
     #[test]
     fn test_welcome_without_capabilities_deserializes() {
-        let json = r#"{"type":"welcome","server_id":"s1","protocol_version":1,"report_interval":3}"#;
+        let json =
+            r#"{"type":"welcome","server_id":"s1","protocol_version":1,"report_interval":3}"#;
         let msg: ServerMessage = serde_json::from_str(json).unwrap();
         match msg {
             ServerMessage::Welcome { capabilities, .. } => {
@@ -395,7 +411,11 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
         match parsed {
-            ServerMessage::NetworkProbeSync { interval, packet_count, .. } => {
+            ServerMessage::NetworkProbeSync {
+                interval,
+                packet_count,
+                ..
+            } => {
                 assert_eq!(interval, 60);
                 assert_eq!(packet_count, 10);
             }
@@ -405,9 +425,7 @@ mod tests {
 
     #[test]
     fn test_network_probe_results_serializes() {
-        let msg = AgentMessage::NetworkProbeResults {
-            results: vec![],
-        };
+        let msg = AgentMessage::NetworkProbeResults { results: vec![] };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
         match parsed {
@@ -474,7 +492,11 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
         match parsed {
-            AgentMessage::FileDownloadChunk { transfer_id, offset, data } => {
+            AgentMessage::FileDownloadChunk {
+                transfer_id,
+                offset,
+                data,
+            } => {
                 assert_eq!(transfer_id, "t1");
                 assert_eq!(offset, 0);
                 assert_eq!(data, "aGVsbG8=");
@@ -732,7 +754,9 @@ mod tests {
 
     #[test]
     fn test_features_update_serde() {
-        let msg = AgentMessage::FeaturesUpdate { features: vec!["docker".into()] };
+        let msg = AgentMessage::FeaturesUpdate {
+            features: vec!["docker".into()],
+        };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("\"type\":\"features_update\""));
         let _: AgentMessage = serde_json::from_str(&json).unwrap();
@@ -740,15 +764,19 @@ mod tests {
 
     #[test]
     fn test_docker_unavailable_serde() {
-        let msg = AgentMessage::DockerUnavailable;
+        let msg = AgentMessage::DockerUnavailable {
+            msg_id: Some("abc123".into()),
+        };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("\"type\":\"docker_unavailable\""));
+        assert!(json.contains("\"msg_id\":\"abc123\""));
+        let _: AgentMessage = serde_json::from_str(&json).unwrap();
     }
 
     #[test]
     fn test_network_probe_result_with_null_latency() {
-        use chrono::Utc;
         use crate::types::NetworkProbeResultData;
+        use chrono::Utc;
         let data = NetworkProbeResultData {
             target_id: "t1".into(),
             avg_latency: None,

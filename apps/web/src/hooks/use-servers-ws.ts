@@ -115,6 +115,29 @@ export function setServerDockerAvailability(
   })
 }
 
+function setServerDetailDockerAvailability(
+  prev: Record<string, unknown> | undefined,
+  available: boolean
+): Record<string, unknown> | undefined {
+  if (!prev) {
+    return prev
+  }
+
+  const features = Array.isArray(prev.features)
+    ? prev.features.filter((feature): feature is string => typeof feature === 'string')
+    : []
+
+  if (available && !features.includes('docker')) {
+    return { ...prev, features: [...features, 'docker'] }
+  }
+
+  if (!available && features.includes('docker')) {
+    return { ...prev, features: features.filter((feature) => feature !== 'docker') }
+  }
+
+  return prev
+}
+
 export function useServersWs(): React.RefObject<WsClient | null> {
   const queryClient = useQueryClient()
   const wsRef = useRef<WsClient | null>(null)
@@ -206,6 +229,9 @@ export function useServersWs(): React.RefObject<WsClient | null> {
           const { server_id, available } = msg
           queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
             prev ? setServerDockerAvailability(prev, server_id, available) : prev
+          )
+          queryClient.setQueryData(['servers', server_id], (prev: Record<string, unknown> | undefined) =>
+            setServerDetailDockerAvailability(prev, available)
           )
           break
         }

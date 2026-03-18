@@ -325,6 +325,13 @@ impl AgentManager {
         self.features.insert(server_id.to_string(), features);
     }
 
+    pub fn get_features(&self, server_id: &str) -> Vec<String> {
+        self.features
+            .get(server_id)
+            .map(|features| features.clone())
+            .unwrap_or_default()
+    }
+
     pub fn has_feature(&self, server_id: &str, feature: &str) -> bool {
         self.features
             .get(server_id)

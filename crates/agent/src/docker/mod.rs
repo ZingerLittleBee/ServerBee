@@ -5,12 +5,12 @@ pub mod networks;
 pub mod volumes;
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use bollard::Docker;
-use serverbee_common::constants::{has_capability, CAP_DOCKER};
+use serverbee_common::constants::{CAP_DOCKER, has_capability};
 use serverbee_common::docker_types::DockerAction;
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
 use tokio::sync::mpsc;
@@ -66,7 +66,9 @@ impl DockerManager {
     }
 
     /// Get Docker system information.
-    pub async fn get_system_info(&self) -> anyhow::Result<serverbee_common::docker_types::DockerSystemInfo> {
+    pub async fn get_system_info(
+        &self,
+    ) -> anyhow::Result<serverbee_common::docker_types::DockerSystemInfo> {
         let version = self.docker.version().await?;
         let info = self.docker.info().await?;
 
@@ -90,15 +92,15 @@ impl DockerManager {
     }
 
     /// Dispatch a Docker-related server message.
-    pub async fn handle_server_message(&mut self, msg: ServerMessage) {
+    pub async fn handle_server_message(&mut self, msg: ServerMessage) -> anyhow::Result<()> {
         if !self.is_capable() {
             tracing::warn!("Docker capability disabled, ignoring message");
-            return;
+            return Ok(());
         }
 
         match msg {
             ServerMessage::DockerListContainers { msg_id } => {
-                self.handle_list_containers(Some(msg_id)).await;
+                self.handle_list_containers(Some(msg_id)).await?;
             }
             ServerMessage::DockerStartStats { interval_secs } => {
                 self.handle_start_stats(interval_secs);
@@ -132,32 +134,35 @@ impl DockerManager {
                     .await;
             }
             ServerMessage::DockerGetInfo { msg_id } => {
-                self.handle_get_info(msg_id).await;
+                self.handle_get_info(msg_id).await?;
             }
             ServerMessage::DockerListNetworks { msg_id } => {
-                self.handle_list_networks(msg_id).await;
+                self.handle_list_networks(msg_id).await?;
             }
             ServerMessage::DockerListVolumes { msg_id } => {
-                self.handle_list_volumes(msg_id).await;
+                self.handle_list_volumes(msg_id).await?;
             }
             _ => {
                 tracing::debug!("DockerManager received non-docker message, ignoring");
             }
         }
+
+        Ok(())
     }
 
     /// Called periodically when stats polling is active.
-    pub async fn poll_stats(&mut self) {
+    pub async fn poll_stats(&mut self) -> anyhow::Result<()> {
         if !self.is_capable() {
-            return;
+            return Ok(());
         }
 
         // Refresh the container list and send it to the server
         let container_list = match containers::list_containers(&self.docker).await {
             Ok(list) => list,
             Err(e) => {
+                self.notify_unavailable(None).await;
                 tracing::warn!("Failed to list containers for stats: {e}");
-                return;
+                return Err(e.into());
             }
         };
 
@@ -177,7 +182,7 @@ impl DockerManager {
         if self.running_container_ids.is_empty() {
             let msg = AgentMessage::DockerStats { stats: vec![] };
             let _ = self.agent_tx.send(msg).await;
-            return;
+            return Ok(());
         }
 
         let stats =
@@ -186,11 +191,12 @@ impl DockerManager {
         if self.agent_tx.send(msg).await.is_err() {
             tracing::debug!("Agent channel closed while sending stats");
         }
+        Ok(())
     }
 
     // --- Private handlers ---
 
-    async fn handle_list_containers(&self, msg_id: Option<String>) {
+    async fn handle_list_containers(&self, msg_id: Option<String>) -> anyhow::Result<()> {
         match containers::list_containers(&self.docker).await {
             Ok(container_list) => {
                 let msg = AgentMessage::DockerContainers {
@@ -198,9 +204,12 @@ impl DockerManager {
                     containers: container_list,
                 };
                 let _ = self.agent_tx.send(msg).await;
+                Ok(())
             }
             Err(e) => {
+                self.notify_unavailable(msg_id).await;
                 tracing::error!("Failed to list containers: {e}");
+                Err(e.into())
             }
         }
     }
@@ -262,8 +271,7 @@ impl DockerManager {
         }
 
         tracing::info!("Starting Docker event stream");
-        let handle =
-            events::spawn_event_stream(self.docker.clone(), self.agent_tx.clone());
+        let handle = events::spawn_event_stream(self.docker.clone(), self.agent_tx.clone());
         self.event_stream_handle = Some(handle);
     }
 
@@ -280,9 +288,7 @@ impl DockerManager {
         container_id: String,
         action: DockerAction,
     ) {
-        let result = self
-            .execute_container_action(&container_id, &action)
-            .await;
+        let result = self.execute_container_action(&container_id, &action).await;
 
         let msg = match result {
             Ok(()) => AgentMessage::DockerActionResult {
@@ -344,7 +350,7 @@ impl DockerManager {
         Ok(())
     }
 
-    async fn handle_get_info(&self, msg_id: String) {
+    async fn handle_get_info(&self, msg_id: String) -> anyhow::Result<()> {
         match self.get_system_info().await {
             Ok(info) => {
                 let msg = AgentMessage::DockerInfo {
@@ -352,14 +358,17 @@ impl DockerManager {
                     info,
                 };
                 let _ = self.agent_tx.send(msg).await;
+                Ok(())
             }
             Err(e) => {
+                self.notify_unavailable(Some(msg_id)).await;
                 tracing::error!("Failed to get Docker info: {e}");
+                Err(e.into())
             }
         }
     }
 
-    async fn handle_list_networks(&self, msg_id: String) {
+    async fn handle_list_networks(&self, msg_id: String) -> anyhow::Result<()> {
         match networks::list_networks(&self.docker).await {
             Ok(network_list) => {
                 let msg = AgentMessage::DockerNetworks {
@@ -367,14 +376,17 @@ impl DockerManager {
                     networks: network_list,
                 };
                 let _ = self.agent_tx.send(msg).await;
+                Ok(())
             }
             Err(e) => {
+                self.notify_unavailable(Some(msg_id)).await;
                 tracing::error!("Failed to list networks: {e}");
+                Err(e.into())
             }
         }
     }
 
-    async fn handle_list_volumes(&self, msg_id: String) {
+    async fn handle_list_volumes(&self, msg_id: String) -> anyhow::Result<()> {
         match volumes::list_volumes(&self.docker).await {
             Ok(volume_list) => {
                 let msg = AgentMessage::DockerVolumes {
@@ -382,10 +394,20 @@ impl DockerManager {
                     volumes: volume_list,
                 };
                 let _ = self.agent_tx.send(msg).await;
+                Ok(())
             }
             Err(e) => {
+                self.notify_unavailable(Some(msg_id)).await;
                 tracing::error!("Failed to list volumes: {e}");
+                Err(e.into())
             }
         }
+    }
+
+    async fn notify_unavailable(&self, msg_id: Option<String>) {
+        let _ = self
+            .agent_tx
+            .send(AgentMessage::DockerUnavailable { msg_id })
+            .await;
     }
 }
