@@ -15,20 +15,12 @@ export function ContainerLogs({ serverId, containerId }: ContainerLogsProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const followRef = useRef(true)
 
-  const { logs, isConnected, start, stop, clearLogs } = useDockerLogs({
+  const { logs, isConnected, clearLogs } = useDockerLogs({
     serverId,
     containerId,
     follow: true,
     tail: 100
   })
-
-  // Auto-start on mount
-  useEffect(() => {
-    start()
-    return () => {
-      stop()
-    }
-  }, [start, stop])
 
   // Auto-scroll when following and new logs arrive
   const logCount = logs.length

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { WsClient } from '@/lib/ws-client'
 import type { DockerLogEntry } from '@/routes/_authed/servers/$serverId/docker/types'
 
@@ -25,8 +25,6 @@ interface UseDockerLogsResult {
   clearLogs: () => void
   isConnected: boolean
   logs: DockerLogEntry[]
-  start: () => void
-  stop: () => void
 }
 
 export function useDockerLogs({
@@ -37,27 +35,10 @@ export function useDockerLogs({
 }: UseDockerLogsOptions): UseDockerLogsResult {
   const [logs, setLogs] = useState<DockerLogEntry[]>([])
   const [isConnected, setIsConnected] = useState(false)
-  const wsRef = useRef<WsClient | null>(null)
-  const sessionIdRef = useRef<string | null>(null)
 
-  const stop = useCallback(() => {
-    if (wsRef.current) {
-      if (sessionIdRef.current) {
-        wsRef.current.send({ type: 'unsubscribe' })
-      }
-      wsRef.current.close()
-      wsRef.current = null
-    }
-    sessionIdRef.current = null
-    setIsConnected(false)
-  }, [])
-
-  const start = useCallback(() => {
-    // Clean up any existing connection
-    stop()
-
+  // Auto-connect on mount, cleanup on unmount
+  useEffect(() => {
     const ws = new WsClient(`/api/ws/docker/logs/${serverId}`)
-    wsRef.current = ws
 
     ws.onConnectionStateChange((state) => {
       setIsConnected(state === 'connected')
@@ -66,8 +47,6 @@ export function useDockerLogs({
     ws.onMessage((raw) => {
       const msg = raw as DockerLogSessionMessage | DockerLogEntriesMessage
       if (msg.type === 'session') {
-        sessionIdRef.current = (msg as DockerLogSessionMessage).session_id
-        // Now subscribe to the container logs
         ws.send({
           type: 'subscribe',
           container_id: containerId,
@@ -82,21 +61,15 @@ export function useDockerLogs({
         })
       }
     })
-  }, [serverId, containerId, tail, follow, stop])
+
+    return () => {
+      ws.close()
+    }
+  }, [serverId, containerId, tail, follow])
 
   const clearLogs = useCallback(() => {
     setLogs([])
   }, [])
 
-  // Clean up on unmount
-  useEffect(() => {
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.close()
-        wsRef.current = null
-      }
-    }
-  }, [])
-
-  return { logs, isConnected, start, stop, clearLogs }
+  return { logs, isConnected, clearLogs }
 }
