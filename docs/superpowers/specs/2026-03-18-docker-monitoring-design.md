@@ -200,7 +200,19 @@ capabilities: DashMap<String, u32>,  // server_id → capability bitmask
 ```
 
 **Populated from:**
-1. **Server startup**: All server capabilities are loaded from DB into cache during `AgentManager::new()` initialization. This eliminates the cold-start gap — capabilities are available immediately, before any Agent reconnects.
+1. **Server startup**: The current `AgentManager::new(browser_tx)` is synchronous and has no DB access. To support capability preloading, change the initialization to a two-phase approach:
+   - `AgentManager::new(browser_tx)` remains synchronous (creates empty caches as today)
+   - Add `AgentManager::preload_capabilities(&self, db: &DatabaseConnection)` — an async method that queries all servers' capabilities from DB and populates the cache
+   - Called from `AppState::new()` which must change from `fn new(...)` to `async fn new(...)` (at `crates/server/src/state.rs:90`). The caller is already in an async context (`main`), so this is a straightforward change:
+     ```rust
+     pub async fn new(db: DatabaseConnection, config: AppConfig) -> Arc<Self> {
+         // ... existing code ...
+         let agent_manager = AgentManager::new(browser_tx.clone());
+         agent_manager.preload_capabilities(&db).await;  // <-- new line
+         // ... rest unchanged ...
+     }
+     ```
+   This eliminates the cold-start gap — capabilities are available immediately, before any Agent reconnects or browser connects.
 2. **Agent connect**: Refreshed from DB alongside other server state (in case DB was modified externally).
 3. **Capability REST update**: `PUT /api/servers/{id}/capabilities` writes to both DB and this cache.
 
@@ -939,8 +951,9 @@ docker_info: DashMap<String, DockerSystemInfo>,
 // Used by send_docker_command() guard — no DB access needed at command dispatch time.
 features: DashMap<String, Vec<String>>,
 
-// Capabilities cache: server_id → u32 bitmask. Updated on Agent connect (from DB) and
-// on capability update (PUT /api/servers/{id}/capabilities). Used by has_docker_capability().
+// Capabilities cache: server_id → u32 bitmask. Pre-loaded from DB on server startup
+// via preload_capabilities(). Refreshed on Agent connect, updated on capability REST change.
+// Used by has_docker_capability().
 capabilities: DashMap<String, u32>,
 
 // Log session routing. Keyed as "server_id:session_id" composite key to support
@@ -1191,7 +1204,7 @@ apps/web/src/routes/_authed/servers/$serverId/docker/
 - DockerService: event save/query
 - Capability check for `CAP_DOCKER`
 - DockerViewerTracker: add/remove viewer, first/last detection, remove_all_for_connection, has_viewers
-- Log session routing: session_id based dispatch
+- Log session routing: composite key (server_id:session_id) based dispatch and per-server cleanup
 - SystemInfo.features persistence: overwrite on reconnect, stale value cleared
 - BrowserClientMessage parsing in browser WS handler
 - send_docker_command guard: rejects commands to agents without "docker" feature
