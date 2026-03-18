@@ -6,7 +6,7 @@
 # 全量测试
 cargo test --workspace && bun run test
 
-# Rust 测试（210 单元 + 26 集成 = 236）
+# Rust 测试（226 单元 + 26 集成 = 252）
 cargo test --workspace
 
 # 前端测试（119 vitest，11 个测试文件）
@@ -23,8 +23,8 @@ bun run typecheck
 ### 按 crate 运行
 
 ```bash
-cargo test -p serverbee-common          # 协议 + 能力常量 (24 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 (142 + 26 = 168 tests)
+cargo test -p serverbee-common          # 协议 + 能力常量 + Docker 类型 (35 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 (147 + 26 = 173 tests)
 cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager (44 tests)
 ```
 
@@ -47,13 +47,16 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 
 | 模块 | 测试数 | 覆盖内容 |
 |------|--------|----------|
-| `common/constants.rs` | 7 | 能力位运算、默认值、掩码、CAP_FILE |
-| `common/protocol.rs` | 17 | 消息序列化/反序列化（NetworkProbe + 文件管理全协议覆盖） |
+| `common/constants.rs` | 8 | 能力位运算、默认值、掩码、CAP_FILE、CAP_DOCKER |
+| `common/protocol.rs` | 21 | 消息序列化/反序列化（NetworkProbe + 文件管理 + Docker 全协议覆盖） |
+| `common/docker_types.rs` | 3 | Docker 容器/动作/日志条目序列化/反序列化 |
+| `common/types.rs` | 2 | SystemInfo features 字段默认值和序列化 |
 | `server/service/alert.rs` | 15 | 阈值判定、指标提取、采样窗口 |
 | `server/service/auth.rs` | 19 | 密码哈希、session、API key、TOTP、登录、改密 |
 | `server/service/notification.rs` | 16 | 模板变量替换、渠道配置解析 |
 | `server/service/record.rs` | 6 | 历史查询、聚合、清理策略、保存上报、过期清理 |
 | `server/service/agent_manager.rs` | 12 | 连接管理、广播、缓存、终端会话、离线检测、请求-响应中继 |
+| `server/service/docker_viewer.rs` | 5 | 首位/末位观察者检测、has_viewers、批量连接移除、批量服务器移除 |
 | `server/service/server.rs` | 5 | 服务器 CRUD、批量删除 |
 | `server/service/user.rs` | 4 | 用户 CRUD、级联删除、最后 admin 保护 |
 | `server/service/ping.rs` | 3 | Ping 任务 CRUD |
@@ -233,6 +236,7 @@ docker compose up -d
 | 网络质量总览 | `/network` | 显示 VPS 网络质量卡片列表，统计栏显示总数/在线/异常 | — |
 | 网络质量详情 | `/network/:id` | 目标卡片 + 多线延迟图表 + 异常摘要 + 底部统计 + CSV 导出 | — |
 | 网络探测设置 | `/settings/network-probes` | 目标管理（96 预设 + 自定义 CRUD）+ 全局设置（间隔/包数/默认目标） | — |
+| Docker 监控 | `/servers/:serverId/docker` | 概览卡片 + 容器表格 + 事件时间线 + 详情弹窗 + 网络/卷弹窗 | — |
 | 公共状态页 | `/status` | 无需登录，显示服务器在线状态和实时指标 | ✅ |
 | Swagger UI | `/swagger-ui/` | OpenAPI 文档加载正常 | — |
 | 终端 | `/terminal/:serverId` | 需启用 Web Terminal capability 后测试 | — |
@@ -292,6 +296,35 @@ docker compose up -d
 | N20 | 服务器信息栏 | 详情页显示 VPS 基本信息：IPv4、IPv6、地区、OS | — |
 | N21 | 最大目标数限制 | 为某 VPS 配置超过 20 个目标 → API 返回错误 | — |
 | N22 | i18n 切换 | 网络质量相关页面 → 中英文切换 → 标题/标签/按钮/Tooltip 全部正确翻译 | — |
+
+### 验证清单 — Docker 容器监控
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| D1 | 能力开关（启用） | Server Detail → 启用 Docker Management capability → Docker 按钮出现 | — |
+| D2 | 能力开关（禁用） | 关闭 CAP_DOCKER → Docker 按钮消失 → API 返回 403 | — |
+| D3 | Docker 不可用 | Agent 无 Docker 环境 → Docker 页面显示 "Docker is not available" 占位 | — |
+| D4 | Docker 可用无容器 | Agent 有 Docker 但无容器 → 显示概览卡片 + "No containers found" | — |
+| D5 | 概览卡片 | 显示 5 张卡片：Running / Stopped / Total CPU / Total Memory / Docker Version | — |
+| D6 | 容器列表渲染 | 表格显示容器 Name / Image / Status / CPU% / Memory / Network I/O | — |
+| D7 | 容器搜索 | 输入容器名或镜像名 → 表格过滤匹配项 | — |
+| D8 | 容器过滤 | 点击 Running / Stopped / All 按钮 → 切换过滤状态 | — |
+| D9 | 容器详情弹窗 | 点击容器行 → 弹出 Dialog 显示元信息 + Stats + Logs | — |
+| D10 | 容器 Stats | 详情弹窗中 4 张迷你卡片：CPU / Memory（含进度条） / Net I/O / Block I/O | — |
+| D11 | 容器日志流 | 详情弹窗中日志区域自动连接 → 显示实时日志流 | — |
+| D12 | 日志 Follow | 开启 Follow → 新日志自动滚动到底部 → 关闭 Follow → 停止滚动 | — |
+| D13 | 日志 stderr 颜色 | stderr 日志行显示红色文本 | — |
+| D14 | 日志清除 | 点击 Clear → 日志区域清空 | — |
+| D15 | 日志连接状态 | 连接时绿色圆点 + "Connected" → 断开时灰色 + "Disconnected" | — |
+| D16 | 实时数据更新 | WS 推送 docker_update → 容器列表和 Stats 实时刷新 | — |
+| D17 | 事件时间线 | Docker 事件（start/stop/die 等）按时间倒序显示 → 相对时间戳 | — |
+| D18 | 事件 Badge | 事件类型 Badge：container/image/network/volume 各有不同样式 | — |
+| D19 | 网络列表弹窗 | 点击 Networks 按钮 → Dialog 显示网络 Name / Driver / Scope / 容器数 | — |
+| D20 | 卷列表弹窗 | 点击 Volumes 按钮 → Dialog 显示卷 Name / Driver / Mountpoint / 创建时间 | — |
+| D21 | 订阅/退订 | 进入 Docker 页 → WS 发送 docker_subscribe → 离开页面 → 发送 docker_unsubscribe | — |
+| D22 | docker_availability_changed | Agent Docker daemon 停止 → 页面切换为不可用占位 → daemon 恢复 → 页面自动恢复 | — |
+| D23 | i18n 中文 | 切换中文 → 服务器详情页 Docker 按钮显示 "Docker"，能力名显示 "Docker 管理" | — |
+| D24 | i18n 英文 | 切换英文 → Docker 按钮显示 "Docker"，能力名显示 "Docker Management" | — |
 
 ### 验证清单 — shadcn Chart 图表重构
 
@@ -478,13 +511,16 @@ docker compose up -d
 ## 测试文件位置
 
 ```
-crates/common/src/constants.rs          # 能力常量测试
-crates/common/src/protocol.rs           # 协议序列化测试
+crates/common/src/constants.rs          # 能力常量测试（含 CAP_DOCKER）
+crates/common/src/protocol.rs           # 协议序列化测试（含 Docker 消息变体）
+crates/common/src/docker_types.rs      # Docker 数据结构序列化测试
+crates/common/src/types.rs             # SystemInfo features 字段测试
 crates/server/src/service/alert.rs      # 告警服务测试
 crates/server/src/service/auth.rs       # 认证服务测试 (含 DB 集成)
 crates/server/src/service/notification.rs # 通知服务测试
 crates/server/src/service/record.rs     # 记录服务测试
 crates/server/src/service/agent_manager.rs # AgentManager 单元测试
+crates/server/src/service/docker_viewer.rs # DockerViewerTracker 单元测试
 crates/server/src/service/server.rs     # 服务器 CRUD 测试
 crates/server/src/service/user.rs       # 用户服务测试
 crates/server/src/service/ping.rs       # Ping 服务测试
