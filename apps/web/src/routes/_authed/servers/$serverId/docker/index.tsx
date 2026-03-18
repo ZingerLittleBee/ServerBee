@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, Container } from 'lucide-react'
+import { useState } from 'react'
+import { ContainerDetailDialog } from './components/container-detail-dialog'
 import { ContainerList } from './components/container-list'
 import { DockerEvents } from './components/docker-events'
 import { DockerOverview } from './components/docker-overview'
@@ -13,6 +15,7 @@ export const Route = createFileRoute('/_authed/servers/$serverId/docker/')({
 
 function DockerPage() {
   const { serverId } = Route.useParams()
+  const [selectedContainer, setSelectedContainer] = useState<DockerContainer | null>(null)
 
   useDockerSubscription(serverId)
 
@@ -65,7 +68,7 @@ function DockerPage() {
         <div className="space-y-6">
           <DockerOverview containers={containers} stats={stats ?? []} />
 
-          <ContainerList containers={containers} stats={stats ?? []} />
+          <ContainerList containers={containers} onSelect={setSelectedContainer} stats={stats ?? []} />
 
           <DockerEvents events={events ?? []} />
         </div>
@@ -78,6 +81,18 @@ function DockerPage() {
           </div>
         </div>
       )}
+
+      <ContainerDetailDialog
+        container={selectedContainer}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedContainer(null)
+          }
+        }}
+        open={selectedContainer !== null}
+        serverId={serverId}
+        stats={stats ?? []}
+      />
     </div>
   )
 }
