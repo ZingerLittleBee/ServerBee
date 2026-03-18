@@ -173,17 +173,22 @@ When an admin disables `CAP_DOCKER` for a server (via `PUT /api/servers/{id}/cap
 1. **Server-side** (in the existing capabilities update handler):
    - Remove all Docker viewer subscriptions for the server: `docker_viewers.remove_all_for_server(&server_id)`
    - Send `DockerStopStats` and `DockerEventsStop` to the Agent
-   - Close all active Docker log sessions for the server: iterate `docker_log_sessions`, drop channels for matching server_id, send `DockerLogsStop` for each
+   - Close all active Docker log sessions for the server: `remove_docker_log_sessions_for_server(&server_id)` drops channels (causing relay loops to break) and returns session_ids, then send `DockerLogsStop` for each
    - Clear Docker memory caches for the server (containers, stats, info)
-   - Broadcast `BrowserMessage::DockerAvailabilityChanged { server_id, available: false }` so frontend hides the Docker Tab immediately
+   - Broadcast `BrowserMessage::CapabilitiesChanged { server_id, capabilities }` (the existing message type) so frontend updates the capabilities cache
 
 2. **Agent-side** (existing `CapabilitiesSync` handler, enhanced):
    - Update capability bitmap (existing behavior)
    - If `CAP_DOCKER` was just removed: DockerManager aborts all active log sessions, stops stats polling, stops event stream. Same cleanup as runtime Docker disconnect.
 
-3. **Frontend**: receives `DockerAvailabilityChanged { available: false }`, hides Docker Tab. Any open log WS connections receive a close frame from server-side cleanup.
+3. **Frontend**: receives `capabilities_changed` (existing handler already updates the capabilities cache). Docker Tab visibility is derived from `features.includes("docker") && hasCap(CAP_DOCKER)` — when capabilities change, `hasCap(CAP_DOCKER)` becomes false and Docker Tab hides automatically. Any open log WS connections receive a close frame from server-side cleanup.
 
-This ensures "capability off = immediate effect" with no stale streams.
+**Important separation of concerns:**
+- `DockerAvailabilityChanged` is used **only** for Docker daemon availability changes (features-level, from Agent). It updates `server.features`.
+- `CapabilitiesChanged` is used **only** for admin permission changes (authz-level). It updates `server.capabilities`.
+- The two signals are independent: disabling CAP_DOCKER does NOT change features. Docker Tab uses both conditions: `features.includes("docker") && hasCap(CAP_DOCKER)`.
+
+This ensures "capability off = immediate effect" with no stale streams, and no semantic pollution of the features cache.
 
 ### AgentManager capabilities cache
 
@@ -417,8 +422,8 @@ async fn handle_docker_logs_ws(
     let session_id = generate_session_id();
     let (output_tx, mut output_rx) = mpsc::channel::<Vec<DockerLogEntry>>(256);
 
-    // Register session in AgentManager
-    state.agent_manager.add_docker_log_session(session_id.clone(), output_tx);
+    // Register session in AgentManager (composite key: "server_id:session_id")
+    state.agent_manager.add_docker_log_session(&server_id, session_id.clone(), output_tx);
 
     // Tell Agent to start streaming
     state.agent_manager.send_to_agent(&server_id, ServerMessage::DockerLogsStart {
@@ -449,8 +454,8 @@ async fn handle_docker_logs_ws(
         }
     }
 
-    // Cleanup
-    state.agent_manager.remove_docker_log_session(&session_id);
+    // Cleanup (composite key: "server_id:session_id")
+    state.agent_manager.remove_docker_log_session(&server_id, &session_id);
     state.agent_manager.send_to_agent(&server_id, ServerMessage::DockerLogsStop {
         session_id,
     });
@@ -469,7 +474,8 @@ Server's `handle_agent_message()` routes `DockerLog` to the registered session c
 ```rust
 AgentMessage::DockerLog { session_id, entries } => {
     // Route to specific log session, NOT broadcast
-    if let Some(tx) = state.agent_manager.get_docker_log_session(&session_id) {
+    // server_id is known from the agent connection context (available in handle_agent_message)
+    if let Some(tx) = state.agent_manager.get_docker_log_session(&server_id, &session_id) {
         let _ = tx.send(entries).await;
     }
 }
@@ -757,8 +763,10 @@ case 'docker_event': {
 }
 case 'docker_availability_changed': {
     // msg: { type, server_id, available }
-    // Update features in both list and detail caches (same pattern as
-    // capabilities_changed / agent_info_updated in existing code)
+    // This message reflects Docker DAEMON availability (features-level),
+    // NOT admin capability changes. Only updates server.features.
+    // CAP_DOCKER changes arrive via the existing 'capabilities_changed' handler.
+    // Docker Tab visibility = server.features.includes('docker') && hasCap(CAP_DOCKER)
     const updateFeatures = (server: Server) => ({
         ...server,
         features: msg.available
@@ -929,8 +937,13 @@ features: DashMap<String, Vec<String>>,
 // on capability update (PUT /api/servers/{id}/capabilities). Used by has_docker_capability().
 capabilities: DashMap<String, u32>,
 
-// Log session routing (session_id → channel, NOT container_id)
-// Keyed as "server_id:session_id" to support per-server cleanup on capability revocation.
+// Log session routing. Keyed as "server_id:session_id" composite key to support
+// per-server cleanup on capability revocation (iterate and match by server_id prefix).
+// All access methods use the composite key internally:
+//   add_docker_log_session(server_id, session_id, tx)  → inserts "server_id:session_id"
+//   get_docker_log_session(server_id, session_id)       → looks up "server_id:session_id"
+//   remove_docker_log_session(server_id, session_id)    → removes "server_id:session_id"
+//   remove_docker_log_sessions_for_server(server_id)    → removes all with matching prefix
 docker_log_sessions: DashMap<String, mpsc::Sender<Vec<DockerLogEntry>>>,
 ```
 
@@ -1053,6 +1066,27 @@ Browser crashes / network drops:
     /ws/servers disconnects
     Server → remove_all_for_connection(connection_id)
     Server → if any server lost last viewer: send DockerStopStats + DockerEventsStop
+
+Admin disables CAP_DOCKER:
+    Server → capabilities update handler:
+        1. docker_viewers.remove_all_for_server(&server_id)
+        2. Send DockerStopStats + DockerEventsStop to Agent
+        3. Close all docker_log_sessions for server_id (drop channels + DockerLogsStop)
+        4. Clear Docker caches (containers, stats, info)
+        5. Broadcast CapabilitiesChanged { server_id, capabilities } (existing message type)
+    Agent → CapabilitiesSync handler: abort DockerManager sessions
+    Browser → receives capabilities_changed (existing handler), hasCap(CAP_DOCKER) → false
+        Docker Tab hides, open log WS connections receive close frame
+    Note: server.features is NOT modified — Docker daemon is still available
+
+Admin re-enables CAP_DOCKER:
+    Server → capabilities update handler:
+        1. Update capabilities cache and DB
+        2. Broadcast CapabilitiesChanged { server_id, capabilities }
+    Browser → receives capabilities_changed, hasCap(CAP_DOCKER) → true
+        Docker Tab becomes visible again (features still includes "docker")
+        User navigates to Docker Tab → useDockerSubscription sends DockerSubscribe
+        Normal subscription flow resumes — no special recovery needed
 
 Docker runtime recovery (Docker daemon restarts while viewers are active):
     Agent → DockerManager retry succeeds
