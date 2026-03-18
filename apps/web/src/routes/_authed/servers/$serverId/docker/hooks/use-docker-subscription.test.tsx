@@ -28,7 +28,7 @@ describe('useDockerSubscription', () => {
     })
 
     const { rerender, unmount } = renderHook(
-      ({ enabled } = { enabled: true }) => useDockerSubscription('srv-1', enabled),
+      ({ enabled }: { enabled: boolean }) => useDockerSubscription('srv-1', enabled),
       {
         initialProps: { enabled: true }
       }
@@ -40,7 +40,7 @@ describe('useDockerSubscription', () => {
       connectionState: 'connected',
       send
     })
-    rerender()
+    rerender({ enabled: true })
 
     expect(send).toHaveBeenCalledTimes(1)
     expect(send).toHaveBeenNthCalledWith(1, {
@@ -63,7 +63,7 @@ describe('useDockerSubscription', () => {
       send
     })
 
-    const { rerender } = renderHook(({ enabled } = { enabled: true }) => useDockerSubscription('srv-1', enabled), {
+    const { rerender } = renderHook(({ enabled }: { enabled: boolean }) => useDockerSubscription('srv-1', enabled), {
       initialProps: { enabled: true }
     })
 
@@ -77,13 +77,13 @@ describe('useDockerSubscription', () => {
       connectionState: 'disconnected',
       send
     })
-    rerender()
+    rerender({ enabled: true })
 
     mockUseServersWsSend.mockReturnValue({
       connectionState: 'connected',
       send
     })
-    rerender()
+    rerender({ enabled: true })
 
     expect(send).toHaveBeenCalledTimes(3)
     expect(send).toHaveBeenNthCalledWith(2, {
@@ -103,7 +103,7 @@ describe('useDockerSubscription', () => {
     })
 
     const { rerender, unmount } = renderHook(
-      ({ enabled } = { enabled: false }) => useDockerSubscription('srv-1', enabled),
+      ({ enabled }: { enabled: boolean }) => useDockerSubscription('srv-1', enabled),
       {
         initialProps: { enabled: false }
       }
