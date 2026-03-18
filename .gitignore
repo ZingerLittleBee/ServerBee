@@ -56,3 +56,6 @@ agent.toml
 *.db-wal
 *.db-shm
 .make-history
+
+# Git worktrees
+.worktrees
