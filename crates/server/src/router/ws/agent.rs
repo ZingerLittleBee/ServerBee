@@ -2,11 +2,11 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, Query, State};
 use axum::response::Response;
 use axum::routing::get;
-use axum::Router;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc;
@@ -58,7 +58,16 @@ async fn agent_ws_handler(
     let server_capabilities = server.capabilities;
     tracing::info!("Agent WS upgrading for server {server_id} ({server_name}) from {addr}");
 
-    ws.on_upgrade(move |socket| handle_agent_ws(socket, state, server_id, server_name, server_capabilities, addr))
+    ws.on_upgrade(move |socket| {
+        handle_agent_ws(
+            socket,
+            state,
+            server_id,
+            server_name,
+            server_capabilities,
+            addr,
+        )
+    })
 }
 
 async fn handle_agent_ws(
@@ -96,33 +105,31 @@ async fn handle_agent_ws(
 
     // Send network probe sync to the newly connected agent
     match NetworkProbeService::get_server_targets(&state.db, &server_id).await {
-        Ok(targets) => {
-            match NetworkProbeService::get_setting(&state.db).await {
-                Ok(setting) => {
-                    let target_dtos: Vec<NetworkProbeTargetDto> = targets
-                        .into_iter()
-                        .map(|t| NetworkProbeTargetDto {
-                            target_id: t.id,
-                            name: t.name,
-                            target: t.target,
-                            probe_type: t.probe_type,
+        Ok(targets) => match NetworkProbeService::get_setting(&state.db).await {
+            Ok(setting) => {
+                let target_dtos: Vec<NetworkProbeTargetDto> = targets
+                    .into_iter()
+                    .map(|t| NetworkProbeTargetDto {
+                        target_id: t.id,
+                        name: t.name,
+                        target: t.target,
+                        probe_type: t.probe_type,
+                    })
+                    .collect();
+                if let Some(tx) = state.agent_manager.get_sender(&server_id) {
+                    let _ = tx
+                        .send(ServerMessage::NetworkProbeSync {
+                            targets: target_dtos,
+                            interval: setting.interval,
+                            packet_count: setting.packet_count,
                         })
-                        .collect();
-                    if let Some(tx) = state.agent_manager.get_sender(&server_id) {
-                        let _ = tx
-                            .send(ServerMessage::NetworkProbeSync {
-                                targets: target_dtos,
-                                interval: setting.interval,
-                                packet_count: setting.packet_count,
-                            })
-                            .await;
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("Failed to get network probe setting for {server_id}: {e}");
+                        .await;
                 }
             }
-        }
+            Err(e) => {
+                tracing::error!("Failed to get network probe setting for {server_id}: {e}");
+            }
+        },
         Err(e) => {
             tracing::error!("Failed to get network probe targets for {server_id}: {e}");
         }
@@ -171,28 +178,22 @@ async fn handle_agent_ws(
     let state_read = state.clone();
     while let Some(result) = ws_stream.next().await {
         match result {
-            Ok(Message::Text(text)) => {
-                match serde_json::from_str::<AgentMessage>(&text) {
-                    Ok(agent_msg) => {
-                        handle_agent_message(&state_read, &sid_read, agent_msg).await;
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            "Invalid message from agent {sid_read}: {e}, text: {text}"
-                        );
-                    }
+            Ok(Message::Text(text)) => match serde_json::from_str::<AgentMessage>(&text) {
+                Ok(agent_msg) => {
+                    handle_agent_message(&state_read, &sid_read, agent_msg).await;
                 }
-            }
-            Ok(Message::Binary(data)) => {
-                match serde_json::from_slice::<AgentMessage>(&data) {
-                    Ok(agent_msg) => {
-                        handle_agent_message(&state_read, &sid_read, agent_msg).await;
-                    }
-                    Err(e) => {
-                        tracing::warn!("Invalid binary message from agent {sid_read}: {e}");
-                    }
+                Err(e) => {
+                    tracing::warn!("Invalid message from agent {sid_read}: {e}, text: {text}");
                 }
-            }
+            },
+            Ok(Message::Binary(data)) => match serde_json::from_slice::<AgentMessage>(&data) {
+                Ok(agent_msg) => {
+                    handle_agent_message(&state_read, &sid_read, agent_msg).await;
+                }
+                Err(e) => {
+                    tracing::warn!("Invalid binary message from agent {sid_read}: {e}");
+                }
+            },
             Ok(Message::Pong(_)) => {
                 // Agent responded to our Ping, update heartbeat timestamp
                 state_read.agent_manager.touch_connection(&sid_read);
@@ -231,7 +232,10 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 None => (None, None),
             };
 
-            if let Err(e) = ServerService::update_system_info(&state.db, server_id, &info, region, country_code).await {
+            if let Err(e) =
+                ServerService::update_system_info(&state.db, server_id, &info, region, country_code)
+                    .await
+            {
                 tracing::error!("Failed to update system info for {server_id}: {e}");
             }
 
@@ -248,17 +252,30 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
 
             // Update in-memory protocol_version
             let agent_pv = info.protocol_version;
-            state.agent_manager.set_protocol_version(server_id, agent_pv);
+            state
+                .agent_manager
+                .set_protocol_version(server_id, agent_pv);
 
             // Broadcast to browsers
-            state.agent_manager.broadcast_browser(BrowserMessage::AgentInfoUpdated {
-                server_id: server_id.to_string(),
-                protocol_version: agent_pv,
-            });
+            state
+                .agent_manager
+                .broadcast_browser(BrowserMessage::AgentInfoUpdated {
+                    server_id: server_id.to_string(),
+                    protocol_version: agent_pv,
+                });
 
             // Send Ack
             if let Some(tx) = state.agent_manager.get_sender(server_id) {
                 let _ = tx.send(ServerMessage::Ack { msg_id }).await;
+
+                if state.docker_viewers.has_viewers(server_id)
+                    && info.features.iter().any(|feature| feature == "docker")
+                {
+                    let _ = tx
+                        .send(ServerMessage::DockerStartStats { interval_secs: 3 })
+                        .await;
+                    let _ = tx.send(ServerMessage::DockerEventsStart).await;
+                }
             }
         }
         AgentMessage::Report(report) => {
@@ -287,20 +304,34 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         }
         AgentMessage::TerminalOutput { session_id, data } => {
             if let Some(tx) = state.agent_manager.get_terminal_session(&session_id) {
-                let _ = tx.send(crate::service::agent_manager::TerminalSessionEvent::Output(data)).await;
+                let _ = tx
+                    .send(crate::service::agent_manager::TerminalSessionEvent::Output(
+                        data,
+                    ))
+                    .await;
             }
         }
         AgentMessage::TerminalStarted { session_id } => {
             if let Some(tx) = state.agent_manager.get_terminal_session(&session_id) {
-                let _ = tx.send(crate::service::agent_manager::TerminalSessionEvent::Started).await;
+                let _ = tx
+                    .send(crate::service::agent_manager::TerminalSessionEvent::Started)
+                    .await;
             }
         }
         AgentMessage::TerminalError { session_id, error } => {
             if let Some(tx) = state.agent_manager.get_terminal_session(&session_id) {
-                let _ = tx.send(crate::service::agent_manager::TerminalSessionEvent::Error(error)).await;
+                let _ = tx
+                    .send(crate::service::agent_manager::TerminalSessionEvent::Error(
+                        error,
+                    ))
+                    .await;
             }
         }
-        AgentMessage::CapabilityDenied { msg_id, session_id, capability } => {
+        AgentMessage::CapabilityDenied {
+            msg_id,
+            session_id,
+            capability,
+        } => {
             tracing::warn!(
                 "Agent {server_id} denied capability '{capability}' (msg_id={msg_id:?}, session_id={session_id:?})"
             );
@@ -334,36 +365,49 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 server_id: server_id.to_string(),
                 results: results.clone(),
             });
-            if let Err(e) =
-                NetworkProbeService::save_results(&state.db, server_id, results).await
-            {
+            if let Err(e) = NetworkProbeService::save_results(&state.db, server_id, results).await {
                 tracing::error!("Failed to save network probe results for {server_id}: {e}");
             }
         }
         // File management control responses — relay to pending HTTP requests
         AgentMessage::FileListResult { ref msg_id, .. } => {
-            if !state.agent_manager.dispatch_pending_response(msg_id, msg.clone()) {
+            if !state
+                .agent_manager
+                .dispatch_pending_response(msg_id, msg.clone())
+            {
                 tracing::debug!("Orphaned FileListResult for msg_id={msg_id}");
             }
         }
         AgentMessage::FileStatResult { ref msg_id, .. } => {
-            if !state.agent_manager.dispatch_pending_response(msg_id, msg.clone()) {
+            if !state
+                .agent_manager
+                .dispatch_pending_response(msg_id, msg.clone())
+            {
                 tracing::debug!("Orphaned FileStatResult for msg_id={msg_id}");
             }
         }
         AgentMessage::FileReadResult { ref msg_id, .. } => {
-            if !state.agent_manager.dispatch_pending_response(msg_id, msg.clone()) {
+            if !state
+                .agent_manager
+                .dispatch_pending_response(msg_id, msg.clone())
+            {
                 tracing::debug!("Orphaned FileReadResult for msg_id={msg_id}");
             }
         }
         AgentMessage::FileOpResult { ref msg_id, .. } => {
-            if !state.agent_manager.dispatch_pending_response(msg_id, msg.clone()) {
+            if !state
+                .agent_manager
+                .dispatch_pending_response(msg_id, msg.clone())
+            {
                 tracing::debug!("Orphaned FileOpResult for msg_id={msg_id}");
             }
         }
 
         // File download transfer messages
-        AgentMessage::FileDownloadReady { ref transfer_id, size } => {
+        AgentMessage::FileDownloadReady {
+            ref transfer_id,
+            size,
+        } => {
             state.file_transfers.update_size(transfer_id, size);
             state.file_transfers.mark_in_progress(transfer_id);
             // Create the temp file and keep it open for the duration of the transfer
@@ -373,13 +417,21 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                         state.file_transfers.store_file_handle(transfer_id, file);
                     }
                     Err(e) => {
-                        tracing::error!("Failed to create temp file for transfer {transfer_id}: {e}");
-                        state.file_transfers.mark_failed(transfer_id, format!("Failed to create temp file: {e}"));
+                        tracing::error!(
+                            "Failed to create temp file for transfer {transfer_id}: {e}"
+                        );
+                        state
+                            .file_transfers
+                            .mark_failed(transfer_id, format!("Failed to create temp file: {e}"));
                     }
                 }
             }
         }
-        AgentMessage::FileDownloadChunk { ref transfer_id, offset, ref data } => {
+        AgentMessage::FileDownloadChunk {
+            ref transfer_id,
+            offset,
+            ref data,
+        } => {
             use base64::Engine;
             use tokio::io::{AsyncSeekExt, AsyncWriteExt};
             if let Some(file_handle) = state.file_transfers.get_file_handle(transfer_id) {
@@ -394,17 +446,27 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                         .await;
                         match result {
                             Ok(()) => {
-                                state.file_transfers.update_progress(transfer_id, offset + bytes.len() as u64);
+                                state
+                                    .file_transfers
+                                    .update_progress(transfer_id, offset + bytes.len() as u64);
                             }
                             Err(e) => {
-                                tracing::error!("Failed to write chunk for transfer {transfer_id}: {e}");
-                                state.file_transfers.mark_failed(transfer_id, format!("Write error: {e}"));
+                                tracing::error!(
+                                    "Failed to write chunk for transfer {transfer_id}: {e}"
+                                );
+                                state
+                                    .file_transfers
+                                    .mark_failed(transfer_id, format!("Write error: {e}"));
                             }
                         }
                     }
                     Err(e) => {
-                        tracing::error!("Failed to decode base64 chunk for transfer {transfer_id}: {e}");
-                        state.file_transfers.mark_failed(transfer_id, format!("Base64 decode error: {e}"));
+                        tracing::error!(
+                            "Failed to decode base64 chunk for transfer {transfer_id}: {e}"
+                        );
+                        state
+                            .file_transfers
+                            .mark_failed(transfer_id, format!("Base64 decode error: {e}"));
                     }
                 }
             }
@@ -413,29 +475,47 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             state.file_transfers.remove_file_handle(transfer_id);
             state.file_transfers.mark_ready(transfer_id);
         }
-        AgentMessage::FileDownloadError { ref transfer_id, ref error } => {
+        AgentMessage::FileDownloadError {
+            ref transfer_id,
+            ref error,
+        } => {
             state.file_transfers.remove_file_handle(transfer_id);
             state.file_transfers.mark_failed(transfer_id, error.clone());
         }
 
         // File upload transfer messages
-        AgentMessage::FileUploadAck { ref transfer_id, offset } => {
+        AgentMessage::FileUploadAck {
+            ref transfer_id,
+            offset,
+        } => {
             state.file_transfers.update_progress(transfer_id, offset);
             let ack_key = format!("upload-ack-{transfer_id}");
-            state.agent_manager.dispatch_pending_response(&ack_key, msg.clone());
+            state
+                .agent_manager
+                .dispatch_pending_response(&ack_key, msg.clone());
         }
         AgentMessage::FileUploadComplete { ref transfer_id } => {
             state.file_transfers.mark_ready(transfer_id);
             let complete_key = format!("upload-complete-{transfer_id}");
-            state.agent_manager.dispatch_pending_response(&complete_key, msg.clone());
+            state
+                .agent_manager
+                .dispatch_pending_response(&complete_key, msg.clone());
         }
-        AgentMessage::FileUploadError { ref transfer_id, ref error } => {
+        AgentMessage::FileUploadError {
+            ref transfer_id,
+            ref error,
+        } => {
             state.file_transfers.mark_failed(transfer_id, error.clone());
             // The HTTP handler may be waiting on either an ack or complete key — try both.
             let ack_key = format!("upload-ack-{transfer_id}");
             let complete_key = format!("upload-complete-{transfer_id}");
-            if !state.agent_manager.dispatch_pending_response(&complete_key, msg.clone()) {
-                state.agent_manager.dispatch_pending_response(&ack_key, msg.clone());
+            if !state
+                .agent_manager
+                .dispatch_pending_response(&complete_key, msg.clone())
+            {
+                state
+                    .agent_manager
+                    .dispatch_pending_response(&ack_key, msg.clone());
             }
         }
 
@@ -510,9 +590,8 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             }
         }
         AgentMessage::DockerEvent { event } => {
-            let _ =
-                crate::service::docker::DockerService::save_event(&state.db, server_id, &event)
-                    .await;
+            let _ = crate::service::docker::DockerService::save_event(&state.db, server_id, &event)
+                .await;
             state
                 .agent_manager
                 .broadcast_browser(BrowserMessage::DockerEvent {
@@ -531,9 +610,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         }
         AgentMessage::FeaturesUpdate { ref features } => {
             let _ = crate::service::server::ServerService::update_features(
-                &state.db,
-                server_id,
-                features,
+                &state.db, server_id, features,
             )
             .await;
             state

@@ -48,7 +48,10 @@ function DockerPage() {
 
   const { data: dockerInfo } = useQuery<DockerSystemInfo>({
     queryKey: ['docker', 'info', serverId],
-    queryFn: () => api.get<DockerSystemInfo>(`/api/servers/${serverId}/docker/info`),
+    queryFn: async () => {
+      const resp = await api.get<{ info: DockerSystemInfo }>(`/api/servers/${serverId}/docker/info`)
+      return resp.info
+    },
     enabled: dockerAvailable,
     staleTime: 60_000
   })
@@ -71,10 +74,12 @@ function DockerPage() {
 
   const { data: events } = useQuery<DockerEventInfo[]>({
     queryKey: ['docker', 'events', serverId],
-    queryFn: () => [],
-    staleTime: Number.POSITIVE_INFINITY,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false
+    queryFn: async () => {
+      const resp = await api.get<{ events: DockerEventInfo[] }>(`/api/servers/${serverId}/docker/events`)
+      return resp.events
+    },
+    enabled: dockerAvailable,
+    staleTime: 30_000
   })
 
   const hasContainers = containers && containers.length > 0

@@ -1,3 +1,4 @@
+import type { QueryClient } from '@tanstack/react-query'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import type { ServerMetrics } from './use-servers-ws'
@@ -6,7 +7,18 @@ const MAX_BUFFER_SIZE = 200
 const TRIM_THRESHOLD = 250
 
 // Persist buffers across unmounts so route switches don't lose data
-const bufferCache = new Map<string, { buffer: RealtimeDataPoint[]; lastActive: number }>()
+const bufferCache = new WeakMap<QueryClient, Map<string, { buffer: RealtimeDataPoint[]; lastActive: number }>>()
+
+function getQueryClientBufferCache(
+  queryClient: QueryClient
+): Map<string, { buffer: RealtimeDataPoint[]; lastActive: number }> {
+  let cache = bufferCache.get(queryClient)
+  if (!cache) {
+    cache = new Map()
+    bufferCache.set(queryClient, cache)
+  }
+  return cache
+}
 
 export interface RealtimeDataPoint {
   cpu: number
@@ -45,24 +57,26 @@ export function useRealtimeMetrics(serverId: string): RealtimeDataPoint[] {
   const [, setTick] = useState(0)
 
   useEffect(() => {
-    // Restore persisted buffer if available
-    const cached = bufferCache.get(serverId)
-    if (cached && cached.buffer.length > 0) {
-      bufferRef.current = cached.buffer
-      lastActiveRef.current = cached.lastActive
+    const cache = getQueryClientBufferCache(queryClient)
+    bufferRef.current = []
+    lastActiveRef.current = 0
+
+    const servers = queryClient.getQueryData<ServerMetrics[]>(['servers'])
+    const server = servers?.find((s) => s.id === serverId)
+
+    if (server?.online && server.last_active > 0) {
+      const cached = cache.get(serverId)
+      if (cached && cached.buffer.length > 0) {
+        bufferRef.current = cached.buffer
+        lastActiveRef.current = cached.lastActive
+      } else {
+        const point = toRealtimeDataPoint(server)
+        bufferRef.current = [point]
+        lastActiveRef.current = server.last_active
+      }
       setTick((t) => t + 1)
     } else {
-      // Seed on mount from existing cache
-      const servers = queryClient.getQueryData<ServerMetrics[]>(['servers'])
-      if (servers) {
-        const server = servers.find((s) => s.id === serverId)
-        if (server?.online && server.last_active > 0) {
-          const point = toRealtimeDataPoint(server)
-          bufferRef.current = [point]
-          lastActiveRef.current = server.last_active
-          setTick((t) => t + 1)
-        }
-      }
+      cache.delete(serverId)
     }
 
     // Subscribe to cache updates
@@ -100,10 +114,12 @@ export function useRealtimeMetrics(serverId: string): RealtimeDataPoint[] {
       unsubscribe()
       // Persist buffer so route switches don't lose data
       if (bufferRef.current.length > 0) {
-        bufferCache.set(serverId, {
+        cache.set(serverId, {
           buffer: bufferRef.current,
           lastActive: lastActiveRef.current
         })
+      } else {
+        cache.delete(serverId)
       }
     }
   }, [queryClient, serverId])
