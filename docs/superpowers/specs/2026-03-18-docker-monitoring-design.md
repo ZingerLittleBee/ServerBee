@@ -166,6 +166,58 @@ Default off. Agent checks `has_capability(CAP_DOCKER)` before processing any `Se
 1. Agent reports `"docker"` in `features` (binary supports it + daemon reachable)
 2. Admin enables `CAP_DOCKER` for the server
 
+### CAP_DOCKER runtime revocation
+
+When an admin disables `CAP_DOCKER` for a server (via `PUT /api/servers/{id}/capabilities`), the Server must immediately tear down all active Docker streams for that server:
+
+1. **Server-side** (in the existing capabilities update handler):
+   - Remove all Docker viewer subscriptions for the server: `docker_viewers.remove_all_for_server(&server_id)`
+   - Send `DockerStopStats` and `DockerEventsStop` to the Agent
+   - Close all active Docker log sessions for the server: iterate `docker_log_sessions`, drop channels for matching server_id, send `DockerLogsStop` for each
+   - Clear Docker memory caches for the server (containers, stats, info)
+   - Broadcast `BrowserMessage::DockerAvailabilityChanged { server_id, available: false }` so frontend hides the Docker Tab immediately
+
+2. **Agent-side** (existing `CapabilitiesSync` handler, enhanced):
+   - Update capability bitmap (existing behavior)
+   - If `CAP_DOCKER` was just removed: DockerManager aborts all active log sessions, stops stats polling, stops event stream. Same cleanup as runtime Docker disconnect.
+
+3. **Frontend**: receives `DockerAvailabilityChanged { available: false }`, hides Docker Tab. Any open log WS connections receive a close frame from server-side cleanup.
+
+This ensures "capability off = immediate effect" with no stale streams.
+
+### AgentManager capabilities cache
+
+The existing `AgentManager` already stores per-server connection state. Add an in-memory capabilities cache:
+
+```rust
+// New field in AgentManager
+capabilities: DashMap<String, u32>,  // server_id → capability bitmask
+```
+
+**Populated from:** The capabilities update REST handler (`PUT /api/servers/{id}/capabilities`) writes to both DB and this cache. On Agent connect, loaded from DB alongside other server state.
+
+**`has_docker_capability()` implementation:**
+```rust
+impl AgentManager {
+    pub fn has_docker_capability(&self, server_id: &str) -> bool {
+        self.capabilities.get(server_id)
+            .map_or(false, |cap| has_capability(*cap, CAP_DOCKER))
+    }
+}
+```
+
+### DockerViewerTracker additions
+
+```rust
+impl DockerViewerTracker {
+    /// Remove all viewers for a specific server (used on capability revocation).
+    /// Returns true if there were any viewers (streams need to be stopped).
+    pub fn remove_all_for_server(&self, server_id: &str) -> bool {
+        self.viewers.remove(server_id).map_or(false, |(_, set)| !set.is_empty())
+    }
+}
+```
+
 ### Graceful degradation
 
 - **Docker available** → `DockerManager::try_new()` succeeds, `SystemInfo.features` includes `"docker"`, sends `DockerInfo` proactively on connect
@@ -873,7 +925,12 @@ docker_info: DashMap<String, DockerSystemInfo>,
 // Used by send_docker_command() guard — no DB access needed at command dispatch time.
 features: DashMap<String, Vec<String>>,
 
+// Capabilities cache: server_id → u32 bitmask. Updated on Agent connect (from DB) and
+// on capability update (PUT /api/servers/{id}/capabilities). Used by has_docker_capability().
+capabilities: DashMap<String, u32>,
+
 // Log session routing (session_id → channel, NOT container_id)
+// Keyed as "server_id:session_id" to support per-server cleanup on capability revocation.
 docker_log_sessions: DashMap<String, mpsc::Sender<Vec<DockerLogEntry>>>,
 ```
 
@@ -1081,7 +1138,10 @@ apps/web/src/routes/_authed/servers/$serverId/docker/
 - SystemInfo.features persistence: overwrite on reconnect, stale value cleared
 - BrowserClientMessage parsing in browser WS handler
 - send_docker_command guard: rejects commands to agents without "docker" feature
+- has_docker_capability guard: rejects when CAP_DOCKER is disabled
 - FeaturesUpdate with active viewers: auto-resumes stats/events streaming
+- CAP_DOCKER runtime revocation: tears down viewers, stops streams, clears caches, closes log sessions
+- DockerViewerTracker.remove_all_for_server: clears all viewers for a server
 
 ### Frontend tests (vitest)
 
@@ -1108,6 +1168,8 @@ apps/web/src/routes/_authed/servers/$serverId/docker/
 - Docker runtime recovery with active viewers: Server auto-resumes stats/events streaming
 - SystemInfo.features overwrite: stale ["docker"] cleared on reconnect without Docker
 - Log WS to non-Docker agent: connection closed with 4001 code
+- CAP_DOCKER runtime revocation: active stats/events/log streams terminated immediately
+- CAP_DOCKER revocation with open log WS: log session closed, DockerLogsStop sent to Agent
 
 ## Reference
 
