@@ -1,4 +1,5 @@
 use chrono::Utc;
+use sea_orm::prelude::Expr;
 use sea_orm::*;
 use serde::{Deserialize, Deserializer};
 
@@ -157,6 +158,21 @@ impl ServerService {
             .exec(db)
             .await?;
         Ok(result.rows_affected)
+    }
+
+    /// Update the features list for a server.
+    pub async fn update_features(
+        db: &DatabaseConnection,
+        server_id: &str,
+        features: &[String],
+    ) -> Result<(), DbErr> {
+        let features_json = serde_json::to_string(features).unwrap_or_else(|_| "[]".into());
+        server::Entity::update_many()
+            .filter(server::Column::Id.eq(server_id))
+            .col_expr(server::Column::Features, Expr::value(features_json))
+            .exec(db)
+            .await?;
+        Ok(())
     }
 
     /// Update system info for a server from an agent report.

@@ -19,6 +19,7 @@ A lightweight, self-hosted VPS monitoring system built with Rust and React.
 - **OAuth & 2FA** -- GitHub/Google/OIDC login, TOTP two-factor authentication
 - **Multi-user** -- Admin/Member roles, audit logging, rate limiting
 - **File Management** -- Remote file browser with Monaco Editor, upload/download with progress, path sandbox security (`root_paths` + `deny_patterns`)
+- **Docker Monitoring** -- Real-time Docker container monitoring with stats (CPU/memory/network/block I/O), container log streaming (stdout/stderr color-coded), events timeline, networks and volumes overview
 - **Capability Toggles** -- Per-server feature controls (terminal, exec, upgrade, ping, file manager) with defense-in-depth enforcement
 - **Public Status Page** -- Unauthenticated status page with server groups and live metrics
 - **Monthly Traffic Statistics** -- Billing cycle-aware traffic tracking with daily/hourly breakdowns, usage progress bars, and end-of-cycle prediction
@@ -104,7 +105,7 @@ make server-dev                                           # Terminal 1: server o
 SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # Terminal 2: agent
 
 # Testing & code quality:
-make cargo-test        # Run all Rust tests (236)
+make cargo-test        # Run all Rust tests (252)
 make test              # Run frontend tests (121)
 make cargo-clippy      # Lint Rust code
 make                   # Interactive menu (requires fzf)

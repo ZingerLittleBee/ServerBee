@@ -1,11 +1,13 @@
 import { createFileRoute, Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { TriangleAlert } from 'lucide-react'
-import { useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Header } from '@/components/layout/header'
 import { Sidebar } from '@/components/layout/sidebar'
+import { ServersWsContext } from '@/contexts/servers-ws-context'
 import { useAuth } from '@/hooks/use-auth'
 import { useServersWs } from '@/hooks/use-servers-ws'
+import type { ConnectionState } from '@/lib/ws-client'
 
 const ADMIN_ONLY_ROUTES = [
   '/settings/notifications',
@@ -33,7 +35,27 @@ function AuthedLayout() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  useServersWs()
+  const wsRef = useServersWs()
+  const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected')
+
+  useEffect(() => {
+    const ws = wsRef.current
+    if (!ws) {
+      return
+    }
+    // Sync initial state
+    setConnectionState(ws.connectionState)
+    return ws.onConnectionStateChange(setConnectionState)
+  }, [wsRef])
+
+  const send = useCallback(
+    (data: unknown) => {
+      wsRef.current?.send(data)
+    },
+    [wsRef]
+  )
+
+  const wsContextValue = useMemo(() => ({ send, connectionState }), [send, connectionState])
 
   useEffect(() => {
     if (!(isLoading || isAuthenticated)) {
@@ -71,16 +93,18 @@ function AuthedLayout() {
   }
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <div className="flex flex-1 flex-col">
-        <Header />
-        {user?.must_change_password && <DefaultPasswordBanner />}
-        <main className="flex-1 overflow-auto p-6">
-          <Outlet />
-        </main>
+    <ServersWsContext.Provider value={wsContextValue}>
+      <div className="flex min-h-screen">
+        <Sidebar />
+        <div className="flex flex-1 flex-col">
+          <Header />
+          {user?.must_change_password && <DefaultPasswordBanner />}
+          <main className="flex-1 overflow-auto p-6">
+            <Outlet />
+          </main>
+        </div>
       </div>
-    </div>
+    </ServersWsContext.Provider>
   )
 }
 

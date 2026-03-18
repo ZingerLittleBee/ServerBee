@@ -78,7 +78,7 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
         .expect("Failed to set auto_discovery_key");
 
     // Build state and router
-    let state = AppState::new(db, config);
+    let state = AppState::new(db, config).await.expect("Failed to create AppState");
     let app = create_router(state);
 
     // Bind to a random port
@@ -188,7 +188,7 @@ async fn test_agent_register_connect_report() {
         serde_json::from_str(&welcome_text).expect("Failed to parse Welcome");
     assert_eq!(welcome["type"], "welcome");
     assert_eq!(welcome["server_id"], server_id);
-    assert_eq!(welcome["protocol_version"], 2);
+    assert_eq!(welcome["protocol_version"], serverbee_common::constants::PROTOCOL_VERSION);
 
     // ── Step 3: Send SystemInfo ──
     let system_info = json!({

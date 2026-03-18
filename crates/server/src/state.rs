@@ -7,6 +7,7 @@ use tokio::sync::broadcast;
 
 use crate::config::AppConfig;
 use crate::service::agent_manager::AgentManager;
+use crate::service::docker_viewer::DockerViewerTracker;
 use crate::service::file_transfer::FileTransferManager;
 use crate::service::geoip::GeoIpService;
 
@@ -38,6 +39,8 @@ pub struct AppState {
     pub register_rate_limit: DashMap<String, RateLimitEntry>,
     /// Manages file download/upload transfers between browser and agent.
     pub file_transfers: Arc<FileTransferManager>,
+    /// Tracks browser connections subscribed to Docker updates per server.
+    pub docker_viewers: DockerViewerTracker,
 }
 
 impl AppState {
@@ -87,7 +90,7 @@ impl AppState {
         )
     }
 
-    pub fn new(db: DatabaseConnection, config: AppConfig) -> Arc<Self> {
+    pub async fn new(db: DatabaseConnection, config: AppConfig) -> Result<Arc<Self>, anyhow::Error> {
         let (browser_tx, _) = broadcast::channel(256);
         let agent_manager = AgentManager::new(browser_tx.clone());
         let geoip = if config.geoip.enabled {
@@ -98,7 +101,11 @@ impl AppState {
         let file_transfers = Arc::new(FileTransferManager::new(
             std::env::temp_dir().join("serverbee-transfers"),
         ));
-        Arc::new(Self {
+        // Preload capabilities and features from DB
+        if let Err(e) = agent_manager.preload_capabilities(&db).await {
+            tracing::warn!("Failed to preload capabilities: {e}");
+        }
+        Ok(Arc::new(Self {
             db,
             agent_manager,
             browser_tx,
@@ -109,6 +116,7 @@ impl AppState {
             login_rate_limit: DashMap::new(),
             register_rate_limit: DashMap::new(),
             file_transfers,
-        })
+            docker_viewers: DockerViewerTracker::new(),
+        }))
     }
 }

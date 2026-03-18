@@ -28,6 +28,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .nest("/api", ws::browser::router())
         // Terminal WS: /api/ws/terminal/:server_id (auth checked inside handler)
         .nest("/api", ws::terminal::router())
+        // Docker logs WS: /api/ws/docker/logs/:server_id (auth checked inside handler)
+        .nest("/api", ws::docker_logs::router())
         // Swagger UI
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         // Embedded frontend: serve static files, SPA fallback to index.html

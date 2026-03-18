@@ -2,6 +2,13 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import type { NetworkProbeResultData } from '@/lib/network-types'
 import { WsClient } from '@/lib/ws-client'
+import type {
+  DockerContainer,
+  DockerContainerStats,
+  DockerEventInfo
+} from '@/routes/_authed/servers/$serverId/docker/types'
+
+const MAX_DOCKER_EVENTS = 100
 
 interface ServerMetrics {
   capabilities?: number
@@ -10,6 +17,7 @@ interface ServerMetrics {
   cpu_name: string | null
   disk_total: number
   disk_used: number
+  features?: string[]
   group_id: string | null
   id: string
   last_active: number
@@ -43,6 +51,14 @@ type WsMessage =
   | { type: 'capabilities_changed'; server_id: string; capabilities: number }
   | { type: 'agent_info_updated'; server_id: string; protocol_version: number }
   | { type: 'network_probe_update'; server_id: string; results: NetworkProbeResultData[] }
+  | {
+      type: 'docker_update'
+      server_id: string
+      containers: DockerContainer[]
+      stats: DockerContainerStats[] | null
+    }
+  | { type: 'docker_event'; server_id: string; event: DockerEventInfo }
+  | { type: 'docker_availability_changed'; server_id: string; available: boolean }
 
 export type { ServerMetrics }
 
@@ -79,7 +95,50 @@ export function setServerOnlineStatus(prev: ServerMetrics[], serverId: string, o
   return prev.map((s) => (s.id === serverId ? { ...s, online } : s))
 }
 
-export function useServersWs(): void {
+export function setServerDockerAvailability(
+  prev: ServerMetrics[],
+  serverId: string,
+  available: boolean
+): ServerMetrics[] {
+  return prev.map((s) => {
+    if (s.id !== serverId) {
+      return s
+    }
+    const features = s.features ?? []
+    if (available && !features.includes('docker')) {
+      return { ...s, features: [...features, 'docker'] }
+    }
+    if (!available && features.includes('docker')) {
+      return { ...s, features: features.filter((f) => f !== 'docker') }
+    }
+    return s
+  })
+}
+
+function setServerDetailDockerAvailability(
+  prev: Record<string, unknown> | undefined,
+  available: boolean
+): Record<string, unknown> | undefined {
+  if (!prev) {
+    return prev
+  }
+
+  const features = Array.isArray(prev.features)
+    ? prev.features.filter((feature): feature is string => typeof feature === 'string')
+    : []
+
+  if (available && !features.includes('docker')) {
+    return { ...prev, features: [...features, 'docker'] }
+  }
+
+  if (!available && features.includes('docker')) {
+    return { ...prev, features: features.filter((feature) => feature !== 'docker') }
+  }
+
+  return prev
+}
+
+export function useServersWs(): React.RefObject<WsClient | null> {
   const queryClient = useQueryClient()
   const wsRef = useRef<WsClient | null>(null)
 
@@ -149,6 +208,33 @@ export function useServersWs(): void {
           )
           break
         }
+        case 'docker_update': {
+          const { server_id, containers, stats } = msg
+          queryClient.setQueryData<DockerContainer[]>(['docker', 'containers', server_id], containers)
+          if (stats) {
+            queryClient.setQueryData<DockerContainerStats[]>(['docker', 'stats', server_id], stats)
+          }
+          break
+        }
+        case 'docker_event': {
+          const { server_id, event } = msg
+          queryClient.setQueryData<DockerEventInfo[]>(['docker', 'events', server_id], (prev) => {
+            const events = prev ?? []
+            const updated = [event, ...events]
+            return updated.length > MAX_DOCKER_EVENTS ? updated.slice(0, MAX_DOCKER_EVENTS) : updated
+          })
+          break
+        }
+        case 'docker_availability_changed': {
+          const { server_id, available } = msg
+          queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
+            prev ? setServerDockerAvailability(prev, server_id, available) : prev
+          )
+          queryClient.setQueryData(['servers', server_id], (prev: Record<string, unknown> | undefined) =>
+            setServerDetailDockerAvailability(prev, available)
+          )
+          break
+        }
         default:
           break
       }
@@ -159,4 +245,6 @@ export function useServersWs(): void {
       wsRef.current = null
     }
   }, [queryClient])
+
+  return wsRef
 }

@@ -92,6 +92,18 @@ pub async fn run(state: Arc<AppState>) {
             _ => {}
         }
 
+        // Clean up docker events
+        match crate::service::docker::DockerService::cleanup_expired(
+            &state.db,
+            retention.docker_events_days,
+        )
+        .await
+        {
+            Ok(n) if n > 0 => tracing::info!("Cleaned up {n} expired docker events"),
+            Err(e) => tracing::error!("Failed to clean up docker events: {e}"),
+            _ => {}
+        }
+
         // Clean up expired file transfers (idle for > 30 minutes)
         state
             .file_transfers

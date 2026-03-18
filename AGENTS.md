@@ -18,8 +18,8 @@ cargo run -p serverbee-server                   # Server on port 9527
 cargo run -p serverbee-agent                    # Agent (needs server_url configured)
 
 # Test
-cargo test --workspace                          # Rust: 110 unit + 11 integration tests
-bun run test                                    # Frontend: 72 vitest tests
+cargo test --workspace                          # Rust: 226 unit + 26 integration tests
+bun run test                                    # Frontend: 121 vitest tests
 cargo test -p serverbee-server --test integration  # Integration tests only
 cargo test -p serverbee-server test_name        # Single Rust test
 
@@ -90,8 +90,8 @@ RBAC: Admin (full access) vs Member (read-only). `require_admin` middleware on w
 - **API responses**: All endpoints return `Json<ApiResponse<T>>` wrapping data in `{ data: T }`
 - **OpenAPI**: Every endpoint annotated with `#[utoipa::path]`, every DTO with `#[derive(ToSchema)]`. Swagger UI at `/swagger-ui/`
 - **Config**: Figment loads TOML then env vars. Prefix `SERVERBEE_`, nested separator `__` (double underscore). Example: `SERVERBEE_ADMIN__PASSWORD` → `admin.password`. **When adding/changing env vars, update `ENV.md` and `apps/docs/content/docs/{en,cn}/configuration.mdx` simultaneously.**
-- **Capabilities**: u32 bitmask per server — `CAP_TERMINAL=1, CAP_EXEC=2, CAP_UPGRADE=4, CAP_PING_ICMP=8, CAP_PING_TCP=16, CAP_PING_HTTP=32`. Default `CAP_DEFAULT=56` (ping only). Defense-in-depth: validated on both server and agent side.
-- **Migrations**: sea-orm migrations in `crates/server/src/migration/`. Run automatically on startup.
+- **Capabilities**: u32 bitmask per server — `CAP_TERMINAL=1, CAP_EXEC=2, CAP_UPGRADE=4, CAP_PING_ICMP=8, CAP_PING_TCP=16, CAP_PING_HTTP=32, CAP_FILE=64, CAP_DOCKER=128`. Default `CAP_DEFAULT=56` (ping only). Defense-in-depth: validated on both server and agent side.
+- **Migrations**: sea-orm migrations in `crates/server/src/migration/`. Run automatically on startup. **Only implement `up()` — leave `down()` as a no-op (`Ok(())`).** Migrations are not reversible to avoid accidental data loss.
 
 ### Frontend
 
