@@ -152,20 +152,27 @@ impl DockerManager {
             return;
         }
 
-        // First, refresh the container list to get current running container IDs
-        match containers::list_containers(&self.docker).await {
-            Ok(container_list) => {
-                self.running_container_ids = container_list
-                    .iter()
-                    .filter(|c| c.state == "running")
-                    .map(|c| c.id.clone())
-                    .collect();
-            }
+        // Refresh the container list and send it to the server
+        let container_list = match containers::list_containers(&self.docker).await {
+            Ok(list) => list,
             Err(e) => {
                 tracing::warn!("Failed to list containers for stats: {e}");
                 return;
             }
-        }
+        };
+
+        self.running_container_ids = container_list
+            .iter()
+            .filter(|c| c.state == "running")
+            .map(|c| c.id.clone())
+            .collect();
+
+        // Send container list so the server always has fresh data
+        let containers_msg = AgentMessage::DockerContainers {
+            msg_id: None,
+            containers: container_list,
+        };
+        let _ = self.agent_tx.send(containers_msg).await;
 
         if self.running_container_ids.is_empty() {
             let msg = AgentMessage::DockerStats { stats: vec![] };
