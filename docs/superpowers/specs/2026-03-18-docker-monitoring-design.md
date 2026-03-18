@@ -30,7 +30,7 @@ Docker functionality follows a two-tier permission model:
 
 ### Read operations (all authenticated users — Member + Admin)
 
-- View Docker Tab (if `features` includes `"docker"` and `CAP_DOCKER` is enabled)
+- View Docker Tab (if `CAP_DOCKER` is enabled; tab content shows placeholder when Docker daemon is unavailable)
 - View container list, stats, events, networks, volumes
 - Subscribe to real-time Docker updates (stats + events stream)
 - View container logs via dedicated WebSocket
@@ -137,9 +137,9 @@ pub struct SystemInfo {
 
 Server uses `features` to determine Agent capabilities beyond the bitmask:
 - `features` contains `"docker"` → Agent has Docker support compiled in and Docker daemon is reachable.
-- Frontend reads `features` from server data to conditionally show Docker Tab.
+- Frontend reads `features` from server data to determine Docker daemon availability (controls tab content: real data vs "unavailable" placeholder). Docker Tab visibility is controlled solely by `CAP_DOCKER`.
 
-This decouples "Agent binary supports Docker" (feature negotiation) from "admin allows Docker operations" (CAP_DOCKER capability). Both must be true for Docker to function.
+This decouples "Agent binary supports Docker + daemon reachable" (feature negotiation) from "admin allows Docker operations" (CAP_DOCKER capability). CAP_DOCKER controls tab visibility; features controls tab content. Both must be true for Docker data to be displayed and interactive.
 
 Old agents (protocol_version < 3) will not send `features` (field absent or empty) and will not understand `ServerMessage::Docker*` — Server simply never sends Docker commands to them. The capabilities dialog shows a notice: "Agent upgrade required for Docker support".
 
@@ -791,7 +791,7 @@ case 'docker_availability_changed': {
 }
 ```
 
-Docker page components consume these caches via `useQuery(['docker', 'containers', serverId])` etc. Initial REST fetch populates the cache; WS messages update it in real-time.
+Docker page components consume these caches via `useQuery(['docker', 'containers', serverId], { enabled: dockerAvailable })` etc. The `enabled` flag is derived from `server.features.includes('docker')` — when Docker daemon is unavailable (placeholder state), all Docker REST queries are disabled (no fetch, no retry). Only `useDockerSubscription` remains active in placeholder state. When `docker_availability_changed { available: true }` arrives, features update triggers `enabled` to flip to `true`, queries fire automatically. This avoids spurious 409 errors from `require_docker` middleware during Docker downtime.
 
 **Docker subscription hook with auto-resubscribe on reconnect:**
 
@@ -1049,11 +1049,17 @@ Browser loads page:
 
 Browser opens Docker tab:
     React → sends BrowserClientMessage::DockerSubscribe { server_id } over /ws/servers
-    Server → if first viewer for this server:
+        (always sent on tab mount, regardless of Docker daemon availability)
+    Server → if first viewer for this server AND agent has Docker feature:
         Server → ServerMessage::DockerStartStats { interval_secs: 3 }
         Server → ServerMessage::DockerEventsStart
-    React → GET /api/servers/{id}/docker/containers (initial load from cache)
-    React → listens for BrowserMessage::DockerUpdate + DockerEvent on /ws/servers
+    If features.includes("docker") (Docker daemon available):
+        React → GET /api/servers/{id}/docker/containers (initial load from cache)
+        React → listens for BrowserMessage::DockerUpdate + DockerEvent on /ws/servers
+    If NOT features.includes("docker") (Docker daemon unavailable):
+        React → shows "Docker unavailable" placeholder
+        React → all Docker REST queries disabled (enabled: false), no requests sent
+        React → useDockerSubscription remains active (viewer preserved for auto-recovery)
     ↓
 Agent DockerManager:
     - polls container list + stats → AgentMessage::DockerContainers / DockerStats
@@ -1196,7 +1202,7 @@ apps/web/src/routes/_authed/servers/$serverId/docker/
 
 ### Frontend tests (vitest)
 
-- Docker Tab conditional rendering based on `features` + `CAP_DOCKER`
+- Docker Tab visibility based on `CAP_DOCKER` only; content switches between real data and "unavailable" placeholder based on `features`
 - Container list rendering, filtering, search
 - Container action buttons visible only for admin users
 - Container detail Dialog sections
