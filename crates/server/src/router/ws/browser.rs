@@ -227,6 +227,7 @@ async fn build_full_sync(state: &Arc<AppState>) -> BrowserMessage {
                 region: server.region,
                 country_code: server.country_code,
                 group_id: server.group_id,
+                features: serde_json::from_str(&server.features).unwrap_or_default(),
             }
         })
         .collect();
