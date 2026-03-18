@@ -299,7 +299,11 @@ BrowserMessage::DockerAvailabilityChanged {
 New message type for browser-to-server communication over the existing `/ws/servers` WebSocket. Currently the browser WS is read-only (server pushes to browser). This adds a lightweight upstream channel for Docker subscription control:
 
 ```rust
-// Browser sends these JSON messages over the /ws/servers WebSocket
+// Browser sends these JSON messages over the /ws/servers WebSocket.
+// Uses #[serde(tag = "type", rename_all = "snake_case")] to match
+// the existing protocol convention in crates/common/src/protocol.rs.
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 enum BrowserClientMessage {
     // Subscribe to Docker stats + events for a server.
     // Server tracks subscriptions per WS connection (connection_id).
@@ -310,6 +314,9 @@ enum BrowserClientMessage {
     // Last subscriber for a server_id triggers DockerStopStats + DockerEventsStop.
     DockerUnsubscribe { server_id: String },
 }
+// Wire format examples:
+//   {"type": "docker_subscribe", "server_id": "abc123"}
+//   {"type": "docker_unsubscribe", "server_id": "abc123"}
 ```
 
 **Note:** `DockerLog` is NOT a BrowserMessage. Logs are delivered via a dedicated WebSocket (see below).
@@ -574,23 +581,56 @@ class WsClient {
 }
 ```
 
-The `useServersWs` hook (`apps/web/src/hooks/use-servers-ws.ts`) must also be updated to expose the `WsClient` instance (or a `send` function) so that child components can send messages upstream. Currently it returns `void` — it should return `{ send }` or store the client in a React context accessible by child hooks.
+**Required refactor: WsClient singleton via React Context.** The existing `useServersWs` hook creates the WS connection internally and is called once in `_authed.tsx`. To allow child components to send upstream messages without creating additional connections, the `WsClient` instance must be lifted into a React Context:
+
+```typescript
+// apps/web/src/contexts/servers-ws-context.tsx
+const ServersWsContext = createContext<{
+    send: (data: unknown) => void
+    connectionState: 'connected' | 'disconnected'
+} | null>(null)
+
+// Provider wraps _authed layout (replaces current useServersWs() call in _authed.tsx)
+export const ServersWsProvider = ({ children }) => {
+    const wsClient = useRef(new WsClient('/api/ws/servers'))
+    const [connectionState, setConnectionState] = useState<'connected' | 'disconnected'>('disconnected')
+
+    useEffect(() => {
+        wsClient.current.onOpen(() => setConnectionState('connected'))
+        wsClient.current.onClose(() => setConnectionState('disconnected'))
+        wsClient.current.connect()
+        return () => wsClient.current.disconnect()
+    }, [])
+
+    const send = useCallback((data: unknown) => wsClient.current.send(data), [])
+    return <ServersWsContext.Provider value={{ send, connectionState }}>{children}</ServersWsContext.Provider>
+}
+
+// Hook for child components — returns the singleton connection, never creates a new one
+export const useServersWsClient = () => {
+    const ctx = useContext(ServersWsContext)
+    if (!ctx) throw new Error('useServersWsClient must be used within ServersWsProvider')
+    return ctx
+}
+```
+
+This is a strict singleton: one WS connection per authenticated session, shared by all components via context. `useDockerSubscription` consumes the context, never creates its own connection.
 
 **Docker subscription hook with auto-resubscribe on reconnect:**
 
 ```typescript
 // apps/web/src/hooks/use-docker-subscription.ts
 const useDockerSubscription = (serverId: string) => {
-    const { send, connectionState } = useServersWs()
+    const { send, connectionState } = useServersWsClient()  // consumes singleton context
 
     useEffect(() => {
         // Subscribe on mount AND on every reconnect
         if (connectionState === 'connected') {
-            send({ type: 'DockerSubscribe', server_id: serverId })
+            send({ type: 'docker_subscribe', server_id: serverId })
         }
         return () => {
             // Unsubscribe on unmount (best-effort; server cleans up on disconnect anyway)
-            send({ type: 'DockerUnsubscribe', server_id: serverId })
+            send({ type: 'docker_unsubscribe', server_id: serverId })
         }
     }, [serverId, send, connectionState])
     // connectionState changes from 'disconnected' → 'connected' on reconnect,
@@ -699,14 +739,14 @@ pub enum DockerAction {
 
 In `handle_agent_message()`:
 
-- `SystemInfo` → (existing handler, enhanced) persist `features` to `servers.features` column on **every connect**, replacing previous value. This clears stale `["docker"]` when Docker is no longer available.
+- `SystemInfo` → (existing handler, enhanced) persist `features` to `servers.features` column on **every connect**, replacing previous value. Also update `agent_manager.features` in-memory cache. This clears stale `["docker"]` when Docker is no longer available.
 - `DockerInfo` → cache in AgentManager. If `msg_id` is present, dispatch via `pending_requests`. Broadcast `BrowserMessage::DockerAvailabilityChanged { available: true }`.
 - `DockerContainers` → cache in AgentManager + broadcast `BrowserMessage::DockerUpdate`. If `msg_id` is present, also dispatch via `pending_requests`.
 - `DockerStats` → cache in AgentManager + broadcast `BrowserMessage::DockerUpdate`
 - `DockerLog` → route to specific log session channel via `agent_manager.get_docker_log_session()` (**not** broadcast)
 - `DockerEvent` → save to `docker_event` table + broadcast `BrowserMessage::DockerEvent`
 - `DockerUnavailable` → clear Docker caches for this server, broadcast `BrowserMessage::DockerAvailabilityChanged { available: false }`. Note: viewer subscriptions are NOT removed — they remain so that streams auto-resume when Docker recovers.
-- `FeaturesUpdate` → update `servers.features` in database, broadcast `DockerAvailabilityChanged` accordingly. **If Docker becomes available** (features now includes `"docker"`) **and there are active viewers** for this server, Server automatically re-sends `DockerStartStats` + `DockerEventsStart` to the Agent to resume streaming. This handles runtime recovery without requiring browser-side re-subscription.
+- `FeaturesUpdate` → update `servers.features` in database AND `agent_manager.features` in-memory cache. Broadcast `DockerAvailabilityChanged` accordingly. **If Docker becomes available** (features now includes `"docker"`) **and there are active viewers** for this server, Server automatically re-sends `DockerStartStats` + `DockerEventsStart` to the Agent to resume streaming. This handles runtime recovery without requiring browser-side re-subscription.
 - `DockerNetworks` / `DockerVolumes` → dispatch via `pending_requests` (request-response pattern)
 - `DockerActionResult` → dispatch via `pending_requests`
 
@@ -717,6 +757,10 @@ In `handle_agent_message()`:
 docker_containers: DashMap<String, Vec<DockerContainer>>,
 docker_stats: DashMap<String, Vec<DockerContainerStats>>,
 docker_info: DashMap<String, DockerSystemInfo>,
+
+// Feature cache: server_id → Vec<String>. Updated on every SystemInfo and FeaturesUpdate.
+// Used by send_docker_command() guard — no DB access needed at command dispatch time.
+features: DashMap<String, Vec<String>>,
 
 // Log session routing (session_id → channel, NOT container_id)
 docker_log_sessions: DashMap<String, mpsc::Sender<Vec<DockerLogEntry>>>,
