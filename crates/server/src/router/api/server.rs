@@ -221,7 +221,9 @@ async fn update_server(
     Path(id): Path<String>,
     Json(input): Json<UpdateServerInput>,
 ) -> Result<Json<ApiResponse<ServerResponse>>, AppError> {
-    use serverbee_common::constants::{CAP_PING_HTTP, CAP_PING_ICMP, CAP_PING_TCP};
+    use serverbee_common::constants::{
+        has_capability, CAP_DOCKER, CAP_PING_HTTP, CAP_PING_ICMP, CAP_PING_TCP,
+    };
     let user_id = &current_user.user_id;
     let ip = extract_client_ip(&headers);
 
@@ -266,6 +268,37 @@ async fn update_server(
         let ping_mask = CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP;
         if old & ping_mask != new_caps & ping_mask {
             PingService::sync_tasks_to_agent(&state.db, &state.agent_manager, &id).await;
+        }
+
+        // Docker capability revoked — teardown
+        if has_capability(old, CAP_DOCKER) && !has_capability(new_caps, CAP_DOCKER) {
+            // Clear in-memory Docker caches
+            state.agent_manager.clear_docker_caches(&id);
+            // Remove all docker viewer subscriptions for this server
+            state.docker_viewers.remove_all_for_server(&id);
+            // Remove all docker log sessions for this server
+            let log_session_ids = state
+                .agent_manager
+                .remove_docker_log_sessions_for_server(&id);
+            // Tell agent to stop docker streams
+            if let Some(tx) = state.agent_manager.get_sender(&id) {
+                let _ = tx.send(ServerMessage::DockerStopStats).await;
+                let _ = tx.send(ServerMessage::DockerEventsStop).await;
+                for sid in &log_session_ids {
+                    let _ = tx
+                        .send(ServerMessage::DockerLogsStop {
+                            session_id: sid.clone(),
+                        })
+                        .await;
+                }
+            }
+            // Broadcast unavailability
+            state
+                .agent_manager
+                .broadcast_browser(BrowserMessage::DockerAvailabilityChanged {
+                    server_id: id.clone(),
+                    available: false,
+                });
         }
 
         // Audit log
@@ -510,6 +543,32 @@ async fn batch_update_capabilities(
         let ping_mask = CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP;
         if old_caps & ping_mask != new_caps & ping_mask {
             PingService::sync_tasks_to_agent(&state.db, &state.agent_manager, &s.id).await;
+        }
+
+        // Docker capability revoked — teardown
+        if has_capability(old_caps, CAP_DOCKER) && !has_capability(new_caps, CAP_DOCKER) {
+            state.agent_manager.clear_docker_caches(&s.id);
+            state.docker_viewers.remove_all_for_server(&s.id);
+            let log_session_ids = state
+                .agent_manager
+                .remove_docker_log_sessions_for_server(&s.id);
+            if let Some(tx) = state.agent_manager.get_sender(&s.id) {
+                let _ = tx.send(ServerMessage::DockerStopStats).await;
+                let _ = tx.send(ServerMessage::DockerEventsStop).await;
+                for sid in &log_session_ids {
+                    let _ = tx
+                        .send(ServerMessage::DockerLogsStop {
+                            session_id: sid.clone(),
+                        })
+                        .await;
+                }
+            }
+            state
+                .agent_manager
+                .broadcast_browser(BrowserMessage::DockerAvailabilityChanged {
+                    server_id: s.id.clone(),
+                    available: false,
+                });
         }
 
         // Audit log

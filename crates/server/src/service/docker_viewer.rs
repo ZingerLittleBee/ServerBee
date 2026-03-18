@@ -5,6 +5,12 @@ pub struct DockerViewerTracker {
     viewers: DashMap<String, HashSet<String>>,
 }
 
+impl Default for DockerViewerTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DockerViewerTracker {
     pub fn new() -> Self {
         Self {
