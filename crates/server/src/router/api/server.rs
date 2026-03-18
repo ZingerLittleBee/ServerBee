@@ -85,6 +85,7 @@ pub struct ServerResponse {
     billing_start_day: Option<i32>,
     pub capabilities: i32,
     pub protocol_version: i32,
+    features: Vec<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
@@ -122,6 +123,7 @@ impl From<server::Model> for ServerResponse {
             billing_start_day: s.billing_start_day,
             capabilities: s.capabilities,
             protocol_version: s.protocol_version,
+            features: serde_json::from_str(&s.features).unwrap_or_default(),
             created_at: s.created_at,
             updated_at: s.updated_at,
         }
