@@ -1,6 +1,6 @@
 # Docker Monitoring Implementation Plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add Docker container monitoring and management to ServerBee — Agent connects to local Docker daemon via bollard, reports containers/stats/logs/events through the existing WebSocket channel, Server caches and broadcasts to the React frontend.
 
@@ -88,7 +88,7 @@ apps/web/src/routes/_authed.tsx            — wrap with ServersWsContext provid
 - Create: `crates/common/src/docker_types.rs`
 - Modify: `crates/common/src/lib.rs`
 
-- [ ] **Step 1: Write tests for Docker type serialization**
+- [x] **Step 1: Write tests for Docker type serialization**
 
 Create `crates/common/src/docker_types.rs` with the data structures and inline tests:
 
@@ -234,19 +234,19 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Export module from lib.rs**
+- [x] **Step 2: Export module from lib.rs**
 
 In `crates/common/src/lib.rs`, add:
 ```rust
 pub mod docker_types;
 ```
 
-- [ ] **Step 3: Run tests to verify**
+- [x] **Step 3: Run tests to verify**
 
 Run: `cargo test -p serverbee-common docker`
 Expected: 3 tests PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add crates/common/src/docker_types.rs crates/common/src/lib.rs
@@ -261,7 +261,7 @@ git commit -m "feat(common): add Docker data structures"
 - Modify: `crates/common/src/constants.rs`
 - Modify: `crates/common/src/types.rs`
 
-- [ ] **Step 1: Add CAP_DOCKER constant**
+- [x] **Step 1: Add CAP_DOCKER constant**
 
 In `crates/common/src/constants.rs`, add after `CAP_FILE`:
 ```rust
@@ -284,7 +284,7 @@ CapabilityMeta {
 },
 ```
 
-- [ ] **Step 2: Add features field to SystemInfo**
+- [x] **Step 2: Add features field to SystemInfo**
 
 In `crates/common/src/types.rs`, add to `SystemInfo`:
 ```rust
@@ -292,14 +292,14 @@ In `crates/common/src/types.rs`, add to `SystemInfo`:
 pub features: Vec<String>,
 ```
 
-- [ ] **Step 3: Bump PROTOCOL_VERSION**
+- [x] **Step 3: Bump PROTOCOL_VERSION**
 
 In `crates/common/src/constants.rs` (or wherever `PROTOCOL_VERSION` is defined), bump:
 ```rust
 pub const PROTOCOL_VERSION: u32 = 3;
 ```
 
-- [ ] **Step 4: Write test for CAP_DOCKER**
+- [x] **Step 4: Write test for CAP_DOCKER**
 
 Add test in `crates/common/src/constants.rs`:
 ```rust
@@ -312,7 +312,7 @@ fn test_cap_docker() {
 }
 ```
 
-- [ ] **Step 5: Write test for SystemInfo features serde**
+- [x] **Step 5: Write test for SystemInfo features serde**
 
 Add test in `crates/common/src/types.rs`:
 ```rust
@@ -332,12 +332,12 @@ fn test_system_info_features_present() {
 }
 ```
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run: `cargo test -p serverbee-common`
 Expected: All tests PASS
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add crates/common/src/constants.rs crates/common/src/types.rs
@@ -351,7 +351,7 @@ git commit -m "feat(common): add CAP_DOCKER capability and SystemInfo features f
 **Files:**
 - Modify: `crates/common/src/protocol.rs`
 
-- [ ] **Step 1: Add Docker variants to AgentMessage**
+- [x] **Step 1: Add Docker variants to AgentMessage**
 
 Add to the `AgentMessage` enum in `crates/common/src/protocol.rs`:
 ```rust
@@ -397,7 +397,7 @@ Add the necessary `use` import at the top:
 use crate::docker_types::*;
 ```
 
-- [ ] **Step 2: Add Docker variants to ServerMessage**
+- [x] **Step 2: Add Docker variants to ServerMessage**
 
 Add to the `ServerMessage` enum:
 ```rust
@@ -423,7 +423,7 @@ DockerListNetworks { msg_id: String },
 DockerListVolumes { msg_id: String },
 ```
 
-- [ ] **Step 3: Add Docker variants to BrowserMessage**
+- [x] **Step 3: Add Docker variants to BrowserMessage**
 
 Add to the `BrowserMessage` enum:
 ```rust
@@ -442,7 +442,7 @@ DockerAvailabilityChanged {
 },
 ```
 
-- [ ] **Step 4: Add BrowserClientMessage enum**
+- [x] **Step 4: Add BrowserClientMessage enum**
 
 Add a new enum for browser→server messages (same file):
 ```rust
@@ -454,7 +454,7 @@ pub enum BrowserClientMessage {
 }
 ```
 
-- [ ] **Step 5: Write serialization tests**
+- [x] **Step 5: Write serialization tests**
 
 Add tests in `protocol.rs`:
 ```rust
@@ -513,12 +513,12 @@ fn test_docker_unavailable_serde() {
 }
 ```
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run: `cargo test -p serverbee-common`
 Expected: All tests PASS
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add crates/common/src/protocol.rs
@@ -533,7 +533,7 @@ git commit -m "feat(common): add Docker protocol message variants"
 - Create: `crates/server/src/migration/m20260318_000006_docker_support.rs`
 - Modify: `crates/server/src/migration/mod.rs`
 
-- [ ] **Step 1: Create migration file**
+- [x] **Step 1: Create migration file**
 
 Create `crates/server/src/migration/m20260318_000006_docker_support.rs`:
 
@@ -612,7 +612,7 @@ enum DockerEvent {
 }
 ```
 
-- [ ] **Step 2: Register migration in mod.rs**
+- [x] **Step 2: Register migration in mod.rs**
 
 In `crates/server/src/migration/mod.rs`, add:
 ```rust
@@ -624,7 +624,7 @@ And add to the `Migrator::migrations()` vec:
 Box::new(m20260318_000006_docker_support::Migration),
 ```
 
-- [ ] **Step 3: Add `features` field to server entity**
+- [x] **Step 3: Add `features` field to server entity**
 
 In `crates/server/src/entity/server.rs`, add the `features` column to the `Model` struct:
 ```rust
@@ -633,12 +633,12 @@ pub features: String,  // JSON array string, default "[]"
 
 This matches the `features` column added by the migration (Step 1). The field stores a JSON-encoded `Vec<String>` (e.g., `["docker"]`).
 
-- [ ] **Step 4: Verify compilation**
+- [x] **Step 4: Verify compilation**
 
 Run: `cargo build -p serverbee-server`
 Expected: compiles without errors
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/server/src/migration/ crates/server/src/entity/server.rs
@@ -655,7 +655,7 @@ git commit -m "feat(server): add Docker database migration and features entity f
 - Create: `crates/server/src/service/docker.rs`
 - Modify: `crates/server/src/service/mod.rs`
 
-- [ ] **Step 1: Create sea-orm entity**
+- [x] **Step 1: Create sea-orm entity**
 
 Create `crates/server/src/entity/docker_event.rs`:
 ```rust
@@ -682,14 +682,14 @@ pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {}
 ```
 
-- [ ] **Step 2: Export entity**
+- [x] **Step 2: Export entity**
 
 In `crates/server/src/entity/mod.rs`, add:
 ```rust
 pub mod docker_event;
 ```
 
-- [ ] **Step 3: Create DockerService**
+- [x] **Step 3: Create DockerService**
 
 Create `crates/server/src/service/docker.rs`:
 ```rust
@@ -757,19 +757,19 @@ impl DockerService {
 }
 ```
 
-- [ ] **Step 4: Export service**
+- [x] **Step 4: Export service**
 
 In `crates/server/src/service/mod.rs`, add:
 ```rust
 pub mod docker;
 ```
 
-- [ ] **Step 5: Verify compilation**
+- [x] **Step 5: Verify compilation**
 
 Run: `cargo build -p serverbee-server`
 Expected: compiles
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/server/src/entity/docker_event.rs crates/server/src/entity/mod.rs \
@@ -785,7 +785,7 @@ git commit -m "feat(server): add Docker event entity and service"
 - Create: `crates/server/src/service/docker_viewer.rs`
 - Modify: `crates/server/src/service/mod.rs`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Create `crates/server/src/service/docker_viewer.rs` with tests first:
 
@@ -898,19 +898,19 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Export module**
+- [x] **Step 2: Export module**
 
 In `crates/server/src/service/mod.rs`, add:
 ```rust
 pub mod docker_viewer;
 ```
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run: `cargo test -p serverbee-server docker_viewer`
 Expected: 5 tests PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add crates/server/src/service/docker_viewer.rs crates/server/src/service/mod.rs
@@ -924,7 +924,7 @@ git commit -m "feat(server): add DockerViewerTracker with viewer refcount"
 **Files:**
 - Modify: `crates/server/src/service/agent_manager.rs`
 
-- [ ] **Step 1: Add Docker fields to AgentManager**
+- [x] **Step 1: Add Docker fields to AgentManager**
 
 Add new fields to the `AgentManager` struct:
 ```rust
@@ -938,7 +938,7 @@ docker_log_sessions: DashMap<String, DashMap<String, mpsc::Sender<Vec<DockerLogE
 
 Add the necessary imports and initialize in `new()`.
 
-- [ ] **Step 2: Add Docker cache methods**
+- [x] **Step 2: Add Docker cache methods**
 
 ```rust
 // Docker container/stats/info cache
@@ -973,7 +973,7 @@ pub fn clear_docker_caches(&self, server_id: &str) {
 }
 ```
 
-- [ ] **Step 3: Add features cache methods**
+- [x] **Step 3: Add features cache methods**
 
 ```rust
 pub fn update_features(&self, server_id: &str, features: Vec<String>) {
@@ -986,7 +986,7 @@ pub fn has_feature(&self, server_id: &str, feature: &str) -> bool {
 }
 ```
 
-- [ ] **Step 4: Add capabilities cache methods**
+- [x] **Step 4: Add capabilities cache methods**
 
 ```rust
 pub fn update_capabilities(&self, server_id: &str, caps: u32) {
@@ -1013,7 +1013,7 @@ pub async fn preload_capabilities(&self, db: &DatabaseConnection) -> Result<(), 
 }
 ```
 
-- [ ] **Step 5: Add log session routing methods**
+- [x] **Step 5: Add log session routing methods**
 
 ```rust
 pub fn add_docker_log_session(
@@ -1055,7 +1055,7 @@ pub fn remove_docker_log_sessions_for_server(&self, server_id: &str) -> Vec<Stri
 }
 ```
 
-- [ ] **Step 6: Add send_docker_command helper**
+- [x] **Step 6: Add send_docker_command helper**
 
 This can be a free function or a method. Add near the AgentManager impl:
 ```rust
@@ -1078,12 +1078,12 @@ pub async fn send_docker_command(
 
 Note: The existing `AppError` enum already has `Conflict` (409) — use it instead of adding a new variant.
 
-- [ ] **Step 7: Run compilation check**
+- [x] **Step 7: Run compilation check**
 
 Run: `cargo build -p serverbee-server`
 Expected: compiles
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add crates/server/src/service/agent_manager.rs
@@ -1097,7 +1097,7 @@ git commit -m "feat(server): extend AgentManager with Docker caches and log sess
 **Files:**
 - Modify: `crates/server/src/state.rs`
 
-- [ ] **Step 1: Add docker_viewers to AppState**
+- [x] **Step 1: Add docker_viewers to AppState**
 
 Add field:
 ```rust
@@ -1109,7 +1109,7 @@ Initialize in `new()`:
 docker_viewers: DockerViewerTracker::new(),
 ```
 
-- [ ] **Step 2: Make AppState::new async with capability preload**
+- [x] **Step 2: Make AppState::new async with capability preload**
 
 Change signature from `pub fn new(...)` to `pub async fn new(...) -> Result<Arc<Self>, anyhow::Error>`.
 
@@ -1120,16 +1120,16 @@ agent_manager.preload_capabilities(&db).await?;
 
 Update return to `Ok(Arc::new(Self { ... }))`.
 
-- [ ] **Step 3: Update caller in main.rs**
+- [x] **Step 3: Update caller in main.rs**
 
 In `crates/server/src/main.rs`, change `AppState::new(db, config)` to `AppState::new(db, config).await?`.
 
-- [ ] **Step 4: Verify compilation**
+- [x] **Step 4: Verify compilation**
 
 Run: `cargo build -p serverbee-server`
 Expected: compiles
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/server/src/state.rs crates/server/src/main.rs
@@ -1144,7 +1144,7 @@ git commit -m "feat(server): add DockerViewerTracker to AppState, async startup 
 - Create: `crates/server/src/router/api/docker.rs`
 - Modify: `crates/server/src/router/api/mod.rs`
 
-- [ ] **Step 1: Create Docker API routes**
+- [x] **Step 1: Create Docker API routes**
 
 Create `crates/server/src/router/api/docker.rs`:
 
@@ -1297,7 +1297,7 @@ pub fn write_router() -> Router<Arc<AppState>> {
 }
 ```
 
-- [ ] **Step 2: Register routes in api/mod.rs**
+- [x] **Step 2: Register routes in api/mod.rs**
 
 In `crates/server/src/router/api/mod.rs`, add:
 ```rust
@@ -1306,12 +1306,12 @@ mod docker;
 
 In the router builder, add `docker::read_router()` to authenticated routes and `docker::write_router()` to admin routes.
 
-- [ ] **Step 3: Verify compilation**
+- [x] **Step 3: Verify compilation**
 
 Run: `cargo build -p serverbee-server`
 Expected: compiles
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add crates/server/src/router/api/docker.rs crates/server/src/router/api/mod.rs
@@ -1325,7 +1325,7 @@ git commit -m "feat(server): add Docker REST API endpoints"
 **Files:**
 - Modify: `crates/server/src/router/ws/agent.rs`
 
-- [ ] **Step 1: Handle DockerInfo message**
+- [x] **Step 1: Handle DockerInfo message**
 
 In `handle_agent_message()`, add match arms. Note: the function signature is `fn handle_agent_message(state, server_id, msg: AgentMessage)`. Follow the existing codebase pattern: use `ref msg_id` to borrow and `msg.clone()` when passing to `dispatch_pending_response`.
 
@@ -1342,7 +1342,7 @@ AgentMessage::DockerInfo { ref msg_id, info } => {
 }
 ```
 
-- [ ] **Step 2: Handle DockerContainers and DockerStats**
+- [x] **Step 2: Handle DockerContainers and DockerStats**
 
 ```rust
 AgentMessage::DockerContainers { ref msg_id, containers } => {
@@ -1370,7 +1370,7 @@ AgentMessage::DockerStats { stats } => {
 }
 ```
 
-- [ ] **Step 3: Handle DockerLog, DockerEvent, DockerUnavailable**
+- [x] **Step 3: Handle DockerLog, DockerEvent, DockerUnavailable**
 
 ```rust
 AgentMessage::DockerLog { session_id, entries } => {
@@ -1397,7 +1397,7 @@ AgentMessage::DockerUnavailable => {
 }
 ```
 
-- [ ] **Step 4: Handle FeaturesUpdate**
+- [x] **Step 4: Handle FeaturesUpdate**
 
 ```rust
 AgentMessage::FeaturesUpdate { features } => {
@@ -1422,7 +1422,7 @@ AgentMessage::FeaturesUpdate { features } => {
 }
 ```
 
-- [ ] **Step 5: Handle DockerNetworks, DockerVolumes, DockerActionResult**
+- [x] **Step 5: Handle DockerNetworks, DockerVolumes, DockerActionResult**
 
 ```rust
 AgentMessage::DockerNetworks { ref msg_id, .. } => {
@@ -1436,7 +1436,7 @@ AgentMessage::DockerActionResult { ref msg_id, .. } => {
 }
 ```
 
-- [ ] **Step 6: Add `update_features` to ServerService**
+- [x] **Step 6: Add `update_features` to ServerService**
 
 In `crates/server/src/service/server.rs`, add a new method to persist features:
 ```rust
@@ -1458,7 +1458,7 @@ pub async fn update_features(
 
 Note: This requires a `features` column in the `server` table — add it in the Docker migration (Task 4).
 
-- [ ] **Step 7: Enhance SystemInfo handler to persist features**
+- [x] **Step 7: Enhance SystemInfo handler to persist features**
 
 In the existing `SystemInfo` handler, add:
 ```rust
@@ -1467,12 +1467,12 @@ let _ = ServerService::update_features(&state.db, &server_id, &info.features).aw
 state.agent_manager.update_features(&server_id, info.features.clone());
 ```
 
-- [ ] **Step 8: Verify compilation**
+- [x] **Step 8: Verify compilation**
 
 Run: `cargo build -p serverbee-server`
 Expected: compiles
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add crates/server/src/router/ws/agent.rs crates/server/src/service/server.rs
@@ -1486,7 +1486,7 @@ git commit -m "feat(server): handle Docker agent messages in WS handler"
 **Files:**
 - Modify: `crates/server/src/router/ws/browser.rs`
 
-- [ ] **Step 1: Add BrowserClientMessage handling to browser WS**
+- [x] **Step 1: Add BrowserClientMessage handling to browser WS**
 
 In the browser WS handler's `tokio::select!` loop, in the `ws_stream.next()` arm where incoming messages are currently ignored or only Close is handled, add parsing:
 
@@ -1520,7 +1520,7 @@ Some(Ok(Message::Text(text))) => {
 }
 ```
 
-- [ ] **Step 2: Add connection_id and disconnect cleanup**
+- [x] **Step 2: Add connection_id and disconnect cleanup**
 
 At the start of the handler, generate a connection_id:
 ```rust
@@ -1540,12 +1540,12 @@ for (server_id, is_last) in affected {
 }
 ```
 
-- [ ] **Step 3: Verify compilation**
+- [x] **Step 3: Verify compilation**
 
 Run: `cargo build -p serverbee-server`
 Expected: compiles
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add crates/server/src/router/ws/browser.rs
@@ -1560,7 +1560,7 @@ git commit -m "feat(server): add Docker subscription handling in browser WS"
 - Create: `crates/server/src/router/ws/docker_logs.rs`
 - Modify: `crates/server/src/router/ws/mod.rs`
 
-- [ ] **Step 1: Create log WS handler**
+- [x] **Step 1: Create log WS handler**
 
 Create `crates/server/src/router/ws/docker_logs.rs` following the terminal WS pattern:
 
@@ -1661,16 +1661,16 @@ async fn handle_docker_logs_ws(
 }
 ```
 
-- [ ] **Step 2: Register route**
+- [x] **Step 2: Register route**
 
 In `crates/server/src/router/ws/mod.rs`, add the route registration for `/api/ws/docker/logs` with auth middleware.
 
-- [ ] **Step 3: Verify compilation**
+- [x] **Step 3: Verify compilation**
 
 Run: `cargo build -p serverbee-server`
 Expected: compiles
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add crates/server/src/router/ws/docker_logs.rs crates/server/src/router/ws/mod.rs
@@ -1685,7 +1685,7 @@ git commit -m "feat(server): add dedicated Docker log WebSocket endpoint"
 - Modify: `crates/server/src/router/api/server.rs` (or wherever capability update handler lives)
 - Modify: `crates/server/src/task/cleanup.rs`
 
-- [ ] **Step 1: Add CAP_DOCKER teardown to capability update handler**
+- [x] **Step 1: Add CAP_DOCKER teardown to capability update handler**
 
 In the `PUT /api/servers/{id}/capabilities` handler, after updating DB and cache, add:
 
@@ -1720,7 +1720,7 @@ if old_had_docker && !new_has_docker {
 state.agent_manager.update_capabilities(&server_id, new_caps);
 ```
 
-- [ ] **Step 2: Add docker_event cleanup to cleanup task**
+- [x] **Step 2: Add docker_event cleanup to cleanup task**
 
 In `crates/server/src/task/cleanup.rs`, add alongside existing cleanup branches:
 
@@ -1732,12 +1732,12 @@ match DockerService::cleanup_expired(&state.db, retention.records_days).await {
 }
 ```
 
-- [ ] **Step 3: Verify compilation**
+- [x] **Step 3: Verify compilation**
 
 Run: `cargo build -p serverbee-server`
 Expected: compiles
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add crates/server/src/router/api/server.rs crates/server/src/task/cleanup.rs
@@ -1753,14 +1753,14 @@ git commit -m "feat(server): add CAP_DOCKER revocation teardown and event cleanu
 - Create: `crates/agent/src/docker/containers.rs`
 - Modify: `crates/agent/Cargo.toml`
 
-- [ ] **Step 1: Add bollard dependency**
+- [x] **Step 1: Add bollard dependency**
 
 In `crates/agent/Cargo.toml`, add:
 ```toml
 bollard = "0.18"
 ```
 
-- [ ] **Step 2: Create DockerManager lifecycle**
+- [x] **Step 2: Create DockerManager lifecycle**
 
 Create `crates/agent/src/docker/mod.rs`:
 
@@ -1824,7 +1824,7 @@ impl DockerManager {
 }
 ```
 
-- [ ] **Step 3: Create container list and stats**
+- [x] **Step 3: Create container list and stats**
 
 Create `crates/agent/src/docker/containers.rs`:
 
@@ -1945,19 +1945,19 @@ fn get_block_io_stats(stats: &bollard::container::Stats) -> (u64, u64) {
 }
 ```
 
-- [ ] **Step 4: Export docker module**
+- [x] **Step 4: Export docker module**
 
 In `crates/agent/src/main.rs` (or `lib.rs`), add:
 ```rust
 mod docker;
 ```
 
-- [ ] **Step 5: Verify compilation**
+- [x] **Step 5: Verify compilation**
 
 Run: `cargo build -p serverbee-agent`
 Expected: compiles (may need to resolve bollard API differences)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/agent/Cargo.toml crates/agent/src/docker/
@@ -1974,7 +1974,7 @@ git commit -m "feat(agent): add DockerManager core with container list and stats
 - Create: `crates/agent/src/docker/networks.rs`
 - Create: `crates/agent/src/docker/volumes.rs`
 
-- [ ] **Step 1: Create log streaming with batching**
+- [x] **Step 1: Create log streaming with batching**
 
 Create `crates/agent/src/docker/logs.rs`:
 
@@ -2061,7 +2061,7 @@ pub fn spawn_log_session(
 }
 ```
 
-- [ ] **Step 2: Create event stream**
+- [x] **Step 2: Create event stream**
 
 Create `crates/agent/src/docker/events.rs`:
 
@@ -2119,7 +2119,7 @@ pub fn spawn_event_stream(
 }
 ```
 
-- [ ] **Step 3: Create network/volume queries**
+- [x] **Step 3: Create network/volume queries**
 
 Create `crates/agent/src/docker/networks.rs`:
 ```rust
@@ -2164,7 +2164,7 @@ pub async fn list_volumes(docker: &Docker) -> Vec<DockerVolume> {
 }
 ```
 
-- [ ] **Step 4: Add ServerMessage handling to DockerManager**
+- [x] **Step 4: Add ServerMessage handling to DockerManager**
 
 In `docker/mod.rs`, add method to handle incoming ServerMessages:
 ```rust
@@ -2186,12 +2186,12 @@ pub async fn handle_server_message(&mut self, msg: ServerMessage) {
 }
 ```
 
-- [ ] **Step 5: Verify compilation**
+- [x] **Step 5: Verify compilation**
 
 Run: `cargo build -p serverbee-agent`
 Expected: compiles
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/agent/src/docker/
@@ -2205,7 +2205,7 @@ git commit -m "feat(agent): add Docker logs, events, networks, volumes support"
 **Files:**
 - Modify: `crates/agent/src/reporter.rs`
 
-- [ ] **Step 1: Add DockerManager initialization**
+- [x] **Step 1: Add DockerManager initialization**
 
 In `connect_and_report()`, after existing manager creation:
 ```rust
@@ -2231,14 +2231,14 @@ let mut docker_manager: Option<DockerManager> = match DockerManager::try_new(
 let mut docker_retry_interval = tokio::time::interval(Duration::from_secs(30));
 ```
 
-- [ ] **Step 2: Include features in SystemInfo**
+- [x] **Step 2: Include features in SystemInfo**
 
 When building the `SystemInfo` message to send on connect, add:
 ```rust
 features: if docker_manager.is_some() { vec!["docker".into()] } else { vec![] },
 ```
 
-- [ ] **Step 3: Add DockerManager arms to tokio::select!**
+- [x] **Step 3: Add DockerManager arms to tokio::select!**
 
 ```rust
 // Docker messages from DockerManager
@@ -2263,7 +2263,7 @@ _ = docker_retry_interval.tick(), if docker_manager.is_none() => {
 }
 ```
 
-- [ ] **Step 4: Route Docker ServerMessages to DockerManager**
+- [x] **Step 4: Route Docker ServerMessages to DockerManager**
 
 In the `server_msg` handling arm, add Docker message dispatch:
 ```rust
@@ -2295,7 +2295,7 @@ ServerMessage::DockerStartStats { .. }
 }
 ```
 
-- [ ] **Step 5: Add cleanup on disconnect**
+- [x] **Step 5: Add cleanup on disconnect**
 
 In the WebSocket disconnect cleanup section:
 ```rust
@@ -2304,7 +2304,7 @@ if let Some(mut mgr) = docker_manager.take() {
 }
 ```
 
-- [ ] **Step 6: Handle CapabilitiesSync for Docker**
+- [x] **Step 6: Handle CapabilitiesSync for Docker**
 
 In the existing `CapabilitiesSync` handler, add Docker cleanup:
 ```rust
@@ -2318,12 +2318,12 @@ if old_had_docker && !new_has_docker {
 }
 ```
 
-- [ ] **Step 7: Verify compilation**
+- [x] **Step 7: Verify compilation**
 
 Run: `cargo build -p serverbee-agent`
 Expected: compiles
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add crates/agent/src/reporter.rs
@@ -2338,7 +2338,7 @@ git commit -m "feat(agent): integrate DockerManager into Reporter main loop"
 - Create: `apps/web/src/routes/_authed/servers/$serverId/docker/types.ts`
 - Modify: `apps/web/src/lib/ws-client.ts`
 
-- [ ] **Step 1: Create frontend Docker types**
+- [x] **Step 1: Create frontend Docker types**
 
 Create `apps/web/src/routes/_authed/servers/$serverId/docker/types.ts`:
 
@@ -2418,7 +2418,7 @@ export interface DockerVolume {
 }
 ```
 
-- [ ] **Step 2: Add send() and connectionState to WsClient**
+- [x] **Step 2: Add send() and connectionState to WsClient**
 
 In `apps/web/src/lib/ws-client.ts`, add to the `WsClient` class:
 
@@ -2450,12 +2450,12 @@ send(data: unknown): void {
 In the existing `connect()` method's `onopen` handler, add `this.setConnectionState('connected')`.
 In the `onclose` handler, add `this.setConnectionState('disconnected')`.
 
-- [ ] **Step 3: Verify frontend compiles**
+- [x] **Step 3: Verify frontend compiles**
 
 Run: `cd apps/web && bun run typecheck`
 Expected: no type errors
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/web/src/routes/_authed/servers/\$serverId/docker/types.ts \
@@ -2472,7 +2472,7 @@ git commit -m "feat(web): add Docker types and WsClient send/connectionState"
 - Modify: `apps/web/src/hooks/use-servers-ws.ts`
 - Modify: `apps/web/src/routes/_authed.tsx`
 
-- [ ] **Step 1: Create ServersWsContext**
+- [x] **Step 1: Create ServersWsContext**
 
 Create `apps/web/src/contexts/servers-ws-context.tsx`:
 
@@ -2493,7 +2493,7 @@ export const useServersWsSend = () => {
 }
 ```
 
-- [ ] **Step 2: Add Docker message handlers to useServersWs**
+- [x] **Step 2: Add Docker message handlers to useServersWs**
 
 In `apps/web/src/hooks/use-servers-ws.ts`, add new cases to the message switch:
 
@@ -2531,16 +2531,16 @@ case 'docker_availability_changed': {
 
 Also modify `useServersWs` to return the WsClient ref so the provider can access it.
 
-- [ ] **Step 3: Wrap _authed.tsx with ServersWsContext provider**
+- [x] **Step 3: Wrap _authed.tsx with ServersWsContext provider**
 
 In `apps/web/src/routes/_authed.tsx`, wrap the layout with the context provider that exposes `send` and `connectionState` from the WsClient.
 
-- [ ] **Step 4: Verify frontend compiles**
+- [x] **Step 4: Verify frontend compiles**
 
 Run: `cd apps/web && bun run typecheck`
 Expected: no type errors
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/src/contexts/servers-ws-context.tsx \
@@ -2557,7 +2557,7 @@ git commit -m "feat(web): add ServersWsContext and Docker WS message handlers"
 - Create: `apps/web/src/routes/_authed/servers/$serverId/docker/hooks/use-docker-subscription.ts`
 - Create: `apps/web/src/routes/_authed/servers/$serverId/docker/hooks/use-docker-logs.ts`
 
-- [ ] **Step 1: Create useDockerSubscription hook**
+- [x] **Step 1: Create useDockerSubscription hook**
 
 ```typescript
 import { useEffect } from 'react'
@@ -2577,7 +2577,7 @@ export const useDockerSubscription = (serverId: string) => {
 }
 ```
 
-- [ ] **Step 2: Create useDockerLogs hook**
+- [x] **Step 2: Create useDockerLogs hook**
 
 ```typescript
 import { useEffect, useRef, useState } from 'react'
@@ -2625,12 +2625,12 @@ export const useDockerLogs = (
 }
 ```
 
-- [ ] **Step 3: Verify frontend compiles**
+- [x] **Step 3: Verify frontend compiles**
 
 Run: `cd apps/web && bun run typecheck`
 Expected: no type errors
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/web/src/routes/_authed/servers/\$serverId/docker/hooks/
@@ -2646,24 +2646,24 @@ git commit -m "feat(web): add Docker subscription and log streaming hooks"
 - Create: `apps/web/src/routes/_authed/servers/$serverId/docker/components/docker-overview.tsx`
 - Create: `apps/web/src/routes/_authed/servers/$serverId/docker/components/docker-events.tsx`
 
-- [ ] **Step 1: Create Docker Tab main page**
+- [x] **Step 1: Create Docker Tab main page**
 
 Create `index.tsx` — the Docker Tab entry point. Uses `useDockerSubscription` for real-time data. Shows "unavailable" placeholder when `!features.includes('docker')`. When available, shows: DockerOverview → ContainerList → DockerEvents.
 
-- [ ] **Step 2: Create DockerOverview component**
+- [x] **Step 2: Create DockerOverview component**
 
 Create `docker-overview.tsx` — 5 cards: Running, Stopped, Total CPU, Total Memory, Docker Version. Uses data from `useQuery(['docker', 'containers', serverId])` and `useQuery(['docker', 'stats', serverId])`.
 
-- [ ] **Step 3: Create DockerEvents component**
+- [x] **Step 3: Create DockerEvents component**
 
 Create `docker-events.tsx` — chronological timeline of recent events. Uses `useQuery(['docker', 'events', serverId])` cache (populated by WS).
 
-- [ ] **Step 4: Verify frontend compiles and renders**
+- [x] **Step 4: Verify frontend compiles and renders**
 
 Run: `cd apps/web && bun run typecheck`
 Expected: no type errors
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/src/routes/_authed/servers/\$serverId/docker/
@@ -2677,7 +2677,7 @@ git commit -m "feat(web): add Docker Tab page with overview and events"
 **Files:**
 - Create: `apps/web/src/routes/_authed/servers/$serverId/docker/components/container-list.tsx`
 
-- [ ] **Step 1: Create ContainerList component**
+- [x] **Step 1: Create ContainerList component**
 
 Table with columns: Name, Image, Status, CPU, Memory, Net I/O, Actions. Features:
 - Search by name/image
@@ -2687,12 +2687,12 @@ Table with columns: Name, Image, Status, CPU, Memory, Net I/O, Actions. Features
 - Data from `useQuery(['docker', 'containers', serverId], { enabled: dockerAvailable })`
 - Stats merged from `useQuery(['docker', 'stats', serverId])`
 
-- [ ] **Step 2: Verify frontend compiles**
+- [x] **Step 2: Verify frontend compiles**
 
 Run: `cd apps/web && bun run typecheck`
 Expected: no type errors
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/web/src/routes/_authed/servers/\$serverId/docker/components/container-list.tsx
@@ -2708,11 +2708,11 @@ git commit -m "feat(web): add Docker container list with search and filter"
 - Create: `apps/web/src/routes/_authed/servers/$serverId/docker/components/container-stats.tsx`
 - Create: `apps/web/src/routes/_authed/servers/$serverId/docker/components/container-logs.tsx`
 
-- [ ] **Step 1: Create ContainerStats component**
+- [x] **Step 1: Create ContainerStats component**
 
 4 mini cards: CPU (with sparkline), Memory (usage bar + percentage), Net I/O (rx/tx), Block I/O (read/write).
 
-- [ ] **Step 2: Create ContainerLogs component**
+- [x] **Step 2: Create ContainerLogs component**
 
 Monospace log output area using `useDockerLogs` hook. Features:
 - Follow toggle button
@@ -2720,19 +2720,19 @@ Monospace log output area using `useDockerLogs` hook. Features:
 - stdout/stderr checkboxes
 - Auto-scroll when following
 
-- [ ] **Step 3: Create ContainerDetailDialog**
+- [x] **Step 3: Create ContainerDetailDialog**
 
 Dialog component with vertically stacked sections:
 1. Top: container meta info (image, status, ports) + action buttons (admin only)
 2. Middle: ContainerStats
 3. Bottom: ContainerLogs
 
-- [ ] **Step 4: Verify frontend compiles**
+- [x] **Step 4: Verify frontend compiles**
 
 Run: `cd apps/web && bun run typecheck`
 Expected: no type errors
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/src/routes/_authed/servers/\$serverId/docker/components/
@@ -2747,24 +2747,24 @@ git commit -m "feat(web): add container detail dialog with stats and logs"
 - Create: `apps/web/src/routes/_authed/servers/$serverId/docker/components/docker-networks-dialog.tsx`
 - Create: `apps/web/src/routes/_authed/servers/$serverId/docker/components/docker-volumes-dialog.tsx`
 
-- [ ] **Step 1: Create DockerNetworksDialog**
+- [x] **Step 1: Create DockerNetworksDialog**
 
 Dialog listing networks fetched via `api.get<DockerNetwork[]>(/api/servers/${serverId}/docker/networks)`. Shows: name, driver, scope, connected containers.
 
-- [ ] **Step 2: Create DockerVolumesDialog**
+- [x] **Step 2: Create DockerVolumesDialog**
 
 Dialog listing volumes fetched via `api.get<DockerVolume[]>(/api/servers/${serverId}/docker/volumes)`. Shows: name, driver, mountpoint, created date.
 
-- [ ] **Step 3: Wire into Docker Tab**
+- [x] **Step 3: Wire into Docker Tab**
 
 Add buttons/links in `index.tsx` to open these dialogs.
 
-- [ ] **Step 4: Verify frontend compiles**
+- [x] **Step 4: Verify frontend compiles**
 
 Run: `cd apps/web && bun run typecheck`
 Expected: no type errors
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/src/routes/_authed/servers/\$serverId/docker/components/docker-networks-dialog.tsx \
@@ -2784,7 +2784,7 @@ git commit -m "feat(web): add Docker networks and volumes dialogs"
 - Modify: `apps/web/src/routes/_authed/servers/$id.tsx` — add Docker route link
 - Modify: Frontend Server type definition
 
-- [ ] **Step 1: Add `CAP_DOCKER` to frontend capabilities**
+- [x] **Step 1: Add `CAP_DOCKER` to frontend capabilities**
 
 In `apps/web/src/lib/capabilities.ts`, add:
 ```typescript
@@ -2794,7 +2794,7 @@ export const CAP_DOCKER = 128
 { bit: CAP_DOCKER, key: 'docker', labelKey: 'cap_docker' as const, risk: 'medium' as const },
 ```
 
-- [ ] **Step 2: Add features field to server DTOs**
+- [x] **Step 2: Add features field to server DTOs**
 
 In `crates/common/src/types.rs`, add to `ServerStatus`:
 ```rust
@@ -2807,14 +2807,14 @@ In `crates/server/src/router/ws/browser.rs`, in `build_full_sync` and the update
 features: serde_json::from_str(&server.features).unwrap_or_default(),
 ```
 
-- [ ] **Step 3: Add features to frontend Server type**
+- [x] **Step 3: Add features to frontend Server type**
 
 In the frontend Server/ServerMetrics type definition, add:
 ```typescript
 features: string[]
 ```
 
-- [ ] **Step 4: Add Docker route link to server detail page**
+- [x] **Step 4: Add Docker route link to server detail page**
 
 In `apps/web/src/routes/_authed/servers/$id.tsx`, following the existing pattern for `terminalEnabled`/`fileEnabled`, add:
 ```typescript
@@ -2830,12 +2830,12 @@ const dockerEnabled = hasCap(serverWithCaps.capabilities ?? 0, CAP_DOCKER)
 )}
 ```
 
-- [ ] **Step 5: Run full typecheck**
+- [x] **Step 5: Run full typecheck**
 
 Run: `cd apps/web && bun run typecheck`
 Expected: no type errors
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A
@@ -2849,28 +2849,28 @@ git commit -m "feat: wire Docker Tab visibility via CAP_DOCKER and features DTO 
 **Files:**
 - Various test files
 
-- [ ] **Step 1: Run all Rust tests**
+- [x] **Step 1: Run all Rust tests**
 
 Run: `cargo test --workspace`
 Expected: All existing tests still pass + new Docker tests pass
 
-- [ ] **Step 2: Run frontend tests**
+- [x] **Step 2: Run frontend tests**
 
 Run: `cd apps/web && bun run test`
 Expected: All existing tests pass
 
-- [ ] **Step 3: Run lint checks**
+- [x] **Step 3: Run lint checks**
 
 Run: `cargo clippy --workspace -- -D warnings`
 Run: `cd apps/web && bun x ultracite check`
 Expected: 0 warnings/errors
 
-- [ ] **Step 4: Run frontend typecheck**
+- [x] **Step 4: Run frontend typecheck**
 
 Run: `cd apps/web && bun run typecheck`
 Expected: no type errors
 
-- [ ] **Step 5: Manual verification**
+- [x] **Step 5: Manual verification**
 
 Start the server and agent locally:
 ```bash
@@ -2886,7 +2886,7 @@ cargo run -p serverbee-agent &
 6. Verify Docker events appear in timeline
 7. Verify tab shows "unavailable" placeholder when Docker daemon is down
 
-- [ ] **Step 6: Final commit**
+- [x] **Step 6: Final commit**
 
 ```bash
 git add -A
