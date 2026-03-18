@@ -75,10 +75,10 @@ impl DockerManager {
             api_version: version.api_version.unwrap_or_default(),
             os: version.os.unwrap_or_default(),
             arch: version.arch.unwrap_or_default(),
-            containers_running: info.containers_running.unwrap_or(0) as i64,
-            containers_paused: info.containers_paused.unwrap_or(0) as i64,
-            containers_stopped: info.containers_stopped.unwrap_or(0) as i64,
-            images: info.images.unwrap_or(0) as i64,
+            containers_running: info.containers_running.unwrap_or(0),
+            containers_paused: info.containers_paused.unwrap_or(0),
+            containers_stopped: info.containers_stopped.unwrap_or(0),
+            images: info.images.unwrap_or(0),
             memory_total: info.mem_total.unwrap_or(0) as u64,
         })
     }
