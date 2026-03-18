@@ -38,6 +38,8 @@ pub struct Model {
     pub billing_start_day: Option<i32>,
     pub capabilities: i32,
     pub protocol_version: i32,
+    #[sea_orm(default_value = "[]")]
+    pub features: String,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }

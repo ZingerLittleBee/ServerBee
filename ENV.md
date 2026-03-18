@@ -51,6 +51,7 @@ Example: TOML `admin.password` → env var `SERVERBEE_ADMIN__PASSWORD`
 | `SERVERBEE_RETENTION__TRAFFIC_HOURLY_DAYS` | `retention.traffic_hourly_days` | u32 | `7` | Traffic hourly records retention in days |
 | `SERVERBEE_RETENTION__TRAFFIC_DAILY_DAYS` | `retention.traffic_daily_days` | u32 | `400` | Traffic daily records retention in days |
 | `SERVERBEE_RETENTION__TASK_RESULTS_DAYS` | `retention.task_results_days` | u32 | `7` | Task results retention in days |
+| `SERVERBEE_RETENTION__DOCKER_EVENTS_DAYS` | `retention.docker_events_days` | u32 | `7` | Docker event records retention in days |
 
 ### Scheduler (`scheduler.*`)
 

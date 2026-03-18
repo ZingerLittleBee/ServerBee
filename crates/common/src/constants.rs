@@ -1,7 +1,7 @@
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const DEFAULT_SERVER_PORT: u16 = 9527;
 pub const DEFAULT_REPORT_INTERVAL: u32 = 3;
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 pub const SESSION_TTL_SECS: i64 = 86400;
 pub const HEARTBEAT_INTERVAL_SECS: u64 = 30;
@@ -41,9 +41,10 @@ pub const CAP_PING_ICMP: u32 = 1 << 3; // 8
 pub const CAP_PING_TCP: u32 = 1 << 4; // 16
 pub const CAP_PING_HTTP: u32 = 1 << 5; // 32
 pub const CAP_FILE: u32 = 1 << 6; // 64
+pub const CAP_DOCKER: u32 = 1 << 7; // 128
 
 pub const CAP_DEFAULT: u32 = CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP; // 56
-pub const CAP_VALID_MASK: u32 = 0b0111_1111; // 127
+pub const CAP_VALID_MASK: u32 = 0b1111_1111; // 255
 
 #[derive(Debug)]
 pub struct CapabilityMeta {
@@ -62,6 +63,7 @@ pub const ALL_CAPABILITIES: &[CapabilityMeta] = &[
     CapabilityMeta { bit: CAP_PING_TCP, key: "ping_tcp", display_name: "TCP Probe", default_enabled: true, risk_level: "low" },
     CapabilityMeta { bit: CAP_PING_HTTP, key: "ping_http", display_name: "HTTP Probe", default_enabled: true, risk_level: "low" },
     CapabilityMeta { bit: CAP_FILE, key: "file", display_name: "File Manager", default_enabled: false, risk_level: "high" },
+    CapabilityMeta { bit: CAP_DOCKER, key: "docker", display_name: "Docker Management", default_enabled: false, risk_level: "high" },
 ];
 
 /// Check if a specific capability bit is set.
@@ -110,11 +112,11 @@ mod tests {
 
     #[test]
     fn test_valid_mask() {
-        assert_eq!(CAP_VALID_MASK, 127);
+        assert_eq!(CAP_VALID_MASK, 255);
         for meta in ALL_CAPABILITIES {
             assert!(meta.bit & CAP_VALID_MASK == meta.bit);
         }
-        assert!(128 & !CAP_VALID_MASK != 0);
+        assert!(256 & !CAP_VALID_MASK != 0);
     }
 
     #[test]
@@ -131,6 +133,14 @@ mod tests {
         assert_eq!(probe_type_to_cap("tcp"), Some(CAP_PING_TCP));
         assert_eq!(probe_type_to_cap("http"), Some(CAP_PING_HTTP));
         assert_eq!(probe_type_to_cap("unknown"), None);
+    }
+
+    #[test]
+    fn test_cap_docker() {
+        assert_eq!(CAP_DOCKER, 128);
+        assert!(has_capability(CAP_DOCKER, CAP_DOCKER));
+        assert!(!has_capability(CAP_DEFAULT, CAP_DOCKER));
+        assert!(CAP_DOCKER & CAP_VALID_MASK != 0);
     }
 
     #[test]

@@ -132,6 +132,8 @@ pub struct RetentionConfig {
     pub traffic_daily_days: u32,
     #[serde(default = "default_7")]
     pub task_results_days: u32,
+    #[serde(default = "default_7")]
+    pub docker_events_days: u32,
 }
 
 impl Default for RetentionConfig {
@@ -147,6 +149,7 @@ impl Default for RetentionConfig {
             traffic_hourly_days: 7,
             traffic_daily_days: 400,
             task_results_days: 7,
+            docker_events_days: 7,
         }
     }
 }

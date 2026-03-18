@@ -60,7 +60,7 @@ async fn main() -> anyhow::Result<()> {
     let auto_discovery_key = init_auto_discovery_key(&db, &config).await?;
 
     // Build AppState
-    let state = AppState::new(db, config.clone());
+    let state = AppState::new(db, config.clone()).await?;
 
     // Spawn background tasks
     let s = state.clone();

@@ -41,6 +41,7 @@ Every TOML configuration key maps directly to an environment variable. Replace d
 | `SERVERBEE_RETENTION__TRAFFIC_HOURLY_DAYS` | `7` | Traffic hourly records retention in days |
 | `SERVERBEE_RETENTION__TRAFFIC_DAILY_DAYS` | `400` | Traffic daily records retention in days |
 | `SERVERBEE_RETENTION__TASK_RESULTS_DAYS` | `7` | Task results retention in days |
+| `SERVERBEE_RETENTION__DOCKER_EVENTS_DAYS` | `7` | Docker event records retention in days |
 | `SERVERBEE_SCHEDULER__TIMEZONE` | `UTC` | Timezone for daily traffic aggregation (e.g. `Asia/Shanghai`) |
 | `SERVERBEE_RATE_LIMIT__LOGIN_MAX` | `5` | Max login attempts per IP within 15-minute window |
 | `SERVERBEE_RATE_LIMIT__REGISTER_MAX` | `3` | Max agent registrations per IP within 15-minute window |
@@ -122,6 +123,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | `traffic_hourly_days` | u32 | `7` | Days to keep hourly traffic records |
 | `traffic_daily_days` | u32 | `400` | Days to keep daily traffic records |
 | `task_results_days` | u32 | `7` | Days to keep task execution results |
+| `docker_events_days` | u32 | `7` | Days to keep Docker event records |
 
 <Callout type="info">
 Raw metric records are collected every 60 seconds and retained for 7 days by default. The hourly aggregator computes averages so you can keep long-term trends for 90 days without excessive storage. Adjust these values based on your disk space and monitoring needs.

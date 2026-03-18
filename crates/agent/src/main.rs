@@ -1,5 +1,6 @@
 mod collector;
 mod config;
+mod docker;
 mod network_prober;
 mod pinger;
 mod probe_utils;

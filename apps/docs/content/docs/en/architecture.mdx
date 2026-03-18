@@ -104,6 +104,11 @@ All communication uses WebSocket with JSON-encoded messages. Terminal data uses 
 | `TerminalStarted` | Confirmation that a PTY session was created |
 | `TerminalError` | Error from a terminal session |
 | `Pong` | Protocol-level heartbeat response |
+| `DockerInfo` | Docker system info and feature report |
+| `DockerContainers` | Current container list with status |
+| `DockerStats` | Container resource usage statistics |
+| `DockerLog` | Container log entries (batched) |
+| `DockerEvent` | Container lifecycle event |
 
 ### Server to Agent (`ServerMessage`)
 
@@ -119,6 +124,9 @@ All communication uses WebSocket with JSON-encoded messages. Terminal data uses 
 | `TerminalClose` | Close a PTY session |
 | `Ping` | Protocol-level heartbeat |
 | `Upgrade` | Instruct the agent to self-upgrade |
+| `DockerLogsStart` | Start streaming logs for a container |
+| `DockerLogsStop` | Stop streaming logs |
+| `DockerAction` | Execute container action (start/stop/restart/remove) |
 
 ### Server to Browser (`BrowserMessage`)
 
@@ -128,10 +136,13 @@ All communication uses WebSocket with JSON-encoded messages. Terminal data uses 
 | `Update` | Incremental update with latest metrics for changed servers |
 | `ServerOnline` | Notification that a server came online |
 | `ServerOffline` | Notification that a server went offline |
+| `DockerUpdate` | Docker container and stats update |
+| `DockerEvent` | Docker container lifecycle event |
+| `DockerAvailabilityChanged` | Docker daemon availability changed |
 
 ## Database Design
 
-ServerBee uses SQLite with 24 tables across 5 categories:
+ServerBee uses SQLite with 25 tables across 5 categories:
 
 ### Authentication (4 tables)
 
@@ -151,7 +162,7 @@ ServerBee uses SQLite with 24 tables across 5 categories:
 | `server_tags` | Tag labels attached to servers |
 | `configs` | Key-value configuration store (auto-discovery key, etc.) |
 
-### Monitoring Data (8 tables)
+### Monitoring Data (9 tables)
 
 | Table | Purpose |
 |-------|---------|
@@ -163,6 +174,7 @@ ServerBee uses SQLite with 24 tables across 5 categories:
 | `traffic_hourly` | Hourly traffic byte counters (in/out) per server |
 | `traffic_daily` | Daily traffic byte counters (in/out) per server |
 | `traffic_state` | Last-known cumulative traffic counters for delta calculation |
+| `docker_events` | Docker container lifecycle events (start/stop/die/create) |
 
 ### Alerting & Operations (6 tables)
 

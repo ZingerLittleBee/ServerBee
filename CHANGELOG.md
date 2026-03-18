@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-18
+
+### Added
+
+- **Docker Container Monitoring** -- Full-stack Docker monitoring: real-time container list with CPU/memory/network/block I/O stats, container log streaming via WebSocket (stdout white + stderr red), Docker events timeline, networks and volumes dialogs, overview cards (running/stopped/total CPU/memory/Docker version)
+- **CAP_DOCKER capability** -- New `CAP_DOCKER` (128) capability toggle for Docker monitoring, following the same defense-in-depth pattern as other capabilities. Low risk, disabled by default
+- **Docker monitoring API** -- 7 new endpoints under `/api/docker/{server_id}/` for containers, stats, info, events, networks, volumes, and container actions (start/stop/restart/remove)
+- **Docker log WebSocket** -- New `/api/ws/docker/logs/{server_id}` endpoint for real-time container log streaming with subscribe/unsubscribe protocol, tail parameter, and follow mode
+- **Agent DockerManager** -- Docker monitoring via bollard client: container listing, stats polling, log streaming with batched delivery, event monitoring with auto-reconnect, networks and volumes enumeration
+- **Docker events persistence** -- New `docker_event` database table for storing container lifecycle events (start/stop/die/create/destroy) with configurable retention (`docker_events_days`, default 7)
+- **Docker viewer tracking** -- DockerViewerTracker service for ref-counted viewer management, ensuring Docker data is only polled when browsers are actively viewing the Docker page
+- **Docker feature detection** -- Agent reports `features: ["docker"]` when Docker daemon is available; server stores features per server for frontend capability checks with REST API fallback
+
+### Fixed
+
+- **Docker log WebSocket protocol mismatch** -- Frontend sent `docker_logs_start` but server expected `subscribe`; frontend expected `docker_log` message type but server sent `logs`
+- **ServerResponse missing features field** -- API could not return Docker feature information to the frontend
+- **Agent poll_stats missing DockerContainers** -- Agent sent only DockerStats without DockerContainers, causing server cache to skip broadcasting
+- **Docker availability timing** -- WS features data not reaching React components in time; added REST API fallback for Docker availability check
+
+### Testing
+
+- 226 Rust tests: 226 unit + 26 integration (was 210 unit + 26 integration)
+- 3 new Docker types unit tests (container/action/log entry serialization)
+- 21 new protocol serialization tests (Docker message variants)
+- 5 new DockerViewerTracker unit tests
+- 121 frontend Vitest tests across 13 test files (unchanged count)
+- 23/24 Docker E2E browser verification scenarios passed
+
 ## [0.4.0] - 2026-03-18
 
 ### Added

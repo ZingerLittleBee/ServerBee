@@ -20,6 +20,7 @@
   "detail_edit": "编辑",
   "detail_terminal": "终端",
   "detail_files": "文件",
+  "detail_docker": "Docker",
   "detail_not_found": "服务器未找到",
   "detail_os": "系统：",
   "detail_cpu": "CPU：",
@@ -73,6 +74,7 @@
   "cap_ping_tcp": "TCP 探测",
   "cap_ping_http": "HTTP 探测",
   "cap_file": "文件管理",
+  "cap_docker": "Docker 管理",
   "detail_capabilities": "能力",
 
   "edit_title": "编辑服务器",

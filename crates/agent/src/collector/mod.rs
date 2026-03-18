@@ -99,6 +99,7 @@ impl Collector {
             ipv6: None,
             virtualization: virtualization::detect(),
             agent_version: serverbee_common::constants::VERSION.to_string(),
+            features: Vec::new(),
         }
     }
 }

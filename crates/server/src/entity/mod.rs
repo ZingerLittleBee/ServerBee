@@ -1,4 +1,5 @@
 pub mod alert_rule;
+pub mod docker_event;
 pub mod oauth_account;
 pub mod alert_state;
 pub mod api_key;
