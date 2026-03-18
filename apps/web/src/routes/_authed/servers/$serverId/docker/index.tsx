@@ -3,6 +3,8 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, Container, HardDrive, Network } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import { api } from '@/lib/api-client'
 import { ContainerDetailDialog } from './components/container-detail-dialog'
 import { ContainerList } from './components/container-list'
 import { DockerEvents } from './components/docker-events'
@@ -10,7 +12,7 @@ import { DockerNetworksDialog } from './components/docker-networks-dialog'
 import { DockerOverview } from './components/docker-overview'
 import { DockerVolumesDialog } from './components/docker-volumes-dialog'
 import { useDockerSubscription } from './hooks/use-docker-subscription'
-import type { DockerContainer, DockerContainerStats, DockerEventInfo } from './types'
+import type { DockerContainer, DockerContainerStats, DockerEventInfo, DockerSystemInfo } from './types'
 
 export const Route = createFileRoute('/_authed/servers/$serverId/docker/')({
   component: DockerPage
@@ -23,6 +25,23 @@ function DockerPage() {
   const [volumesOpen, setVolumesOpen] = useState(false)
 
   useDockerSubscription(serverId)
+
+  const { data: liveServers } = useQuery<ServerMetrics[]>({
+    queryKey: ['servers'],
+    queryFn: () => [],
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false
+  })
+  const liveServer = liveServers?.find((s) => s.id === serverId)
+  const dockerAvailable = liveServer?.features?.includes('docker') ?? false
+
+  const { data: dockerInfo } = useQuery<DockerSystemInfo>({
+    queryKey: ['docker', 'info', serverId],
+    queryFn: () => api.get<DockerSystemInfo>(`/api/servers/${serverId}/docker/info`),
+    enabled: dockerAvailable,
+    staleTime: 60_000
+  })
 
   const { data: containers } = useQuery<DockerContainer[]>({
     queryKey: ['docker', 'containers', serverId],
@@ -48,7 +67,7 @@ function DockerPage() {
     refetchOnWindowFocus: false
   })
 
-  const hasData = containers && containers.length > 0
+  const hasContainers = containers && containers.length > 0
 
   return (
     <div>
@@ -79,21 +98,39 @@ function DockerPage() {
         </div>
       </div>
 
-      {hasData ? (
-        <div className="space-y-6">
-          <DockerOverview containers={containers} stats={stats ?? []} />
-
-          <ContainerList containers={containers} onSelect={setSelectedContainer} stats={stats ?? []} />
-
-          <DockerEvents events={events ?? []} />
-        </div>
-      ) : (
+      {!dockerAvailable && (
         <div className="flex min-h-[400px] items-center justify-center rounded-lg border border-dashed">
           <div className="text-center">
             <Container aria-hidden="true" className="mx-auto mb-3 size-10 text-muted-foreground" />
             <p className="text-muted-foreground text-sm">Docker is not available</p>
             <p className="mt-1 text-muted-foreground text-xs">Waiting for Docker data from the agent...</p>
           </div>
+        </div>
+      )}
+
+      {dockerAvailable && !hasContainers && (
+        <div className="space-y-6">
+          <DockerOverview containers={[]} dockerVersion={dockerInfo?.docker_version} stats={[]} />
+
+          <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-dashed">
+            <div className="text-center">
+              <Container aria-hidden="true" className="mx-auto mb-3 size-8 text-muted-foreground" />
+              <p className="text-muted-foreground text-sm">No containers found</p>
+              <p className="mt-1 text-muted-foreground text-xs">Docker is running but no containers are present</p>
+            </div>
+          </div>
+
+          <DockerEvents events={events ?? []} />
+        </div>
+      )}
+
+      {dockerAvailable && hasContainers && (
+        <div className="space-y-6">
+          <DockerOverview containers={containers} dockerVersion={dockerInfo?.docker_version} stats={stats ?? []} />
+
+          <ContainerList containers={containers} onSelect={setSelectedContainer} stats={stats ?? []} />
+
+          <DockerEvents events={events ?? []} />
         </div>
       )}
 
