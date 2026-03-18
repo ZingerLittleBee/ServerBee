@@ -15,7 +15,10 @@ interface DockerNetworksDialogProps {
 export function DockerNetworksDialog({ serverId, open, onOpenChange }: DockerNetworksDialogProps) {
   const { data: networks, isLoading } = useQuery<DockerNetwork[]>({
     queryKey: ['docker', 'networks', serverId],
-    queryFn: () => api.get<DockerNetwork[]>(`/api/servers/${serverId}/docker/networks`),
+    queryFn: async () => {
+      const resp = await api.get<{ networks: DockerNetwork[] }>(`/api/servers/${serverId}/docker/networks`)
+      return resp.networks
+    },
     enabled: open
   })
 
