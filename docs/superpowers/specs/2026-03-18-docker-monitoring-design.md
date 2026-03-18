@@ -466,9 +466,17 @@ async fn handle_browser_ws(socket: WebSocket, state: Arc<AppState>) {
 
     loop {
         tokio::select! {
-            // Existing: broadcast → browser
+            // Existing: broadcast → browser (preserve Lagged recovery)
             msg = browser_rx.recv() => {
-                ws_sink.send(serialize(msg)).await?;
+                match msg {
+                    Ok(msg) => { ws_sink.send(serialize(msg)).await?; }
+                    Err(broadcast::error::RecvError::Lagged(_)) => {
+                        // Slow client missed messages — send full sync to recover
+                        let full_sync = build_full_sync(&state).await;
+                        ws_sink.send(serialize(full_sync)).await?;
+                    }
+                    Err(broadcast::error::RecvError::Closed) => { break; }
+                }
             }
             // Browser → server: single next() call, match internally
             // (same pattern as existing browser.rs to avoid multiple mutable borrows)
@@ -600,9 +608,27 @@ The refactor adds two things without changing existing behavior:
 ```typescript
 // Minimal changes to existing code:
 
-// 1. WsClient: add send() method
+// 1. WsClient: add send() and connection state tracking
 class WsClient {
     // ... existing connect/onMessage/reconnect logic unchanged ...
+    private connectionStateListeners: Set<(state: 'connected' | 'disconnected') => void> = new Set()
+    private _connectionState: 'connected' | 'disconnected' = 'disconnected'
+
+    // In existing onopen handler, add: this.setConnectionState('connected')
+    // In existing onclose handler, add: this.setConnectionState('disconnected')
+
+    private setConnectionState(state: 'connected' | 'disconnected') {
+        this._connectionState = state
+        for (const listener of this.connectionStateListeners) listener(state)
+    }
+
+    get connectionState() { return this._connectionState }
+
+    onConnectionStateChange(listener: (state: 'connected' | 'disconnected') => void): () => void {
+        this.connectionStateListeners.add(listener)
+        return () => this.connectionStateListeners.delete(listener)
+    }
+
     send(data: unknown): void {
         if (this.ws?.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify(data))
@@ -623,11 +649,17 @@ export const useServersWsSend = () => {
     return ctx
 }
 
-// 3. _authed.tsx: wrap existing useServersWs with context provider
+// 3. _authed.tsx: wrap existing useServersWs with context provider.
 // The existing useServersWs() call stays in place — it still handles
 // all incoming messages (full_sync, update, etc.) and updates React Query.
-// The provider just exposes the WsClient's send() and connection state
-// so child components (like useDockerSubscription) can send upstream messages.
+// The provider wraps the WsClient and exposes send + connectionState:
+//
+// Inside the provider, connectionState is derived from WsClient:
+//   const [connectionState, setConnectionState] = useState(wsClient.connectionState)
+//   useEffect(() => wsClient.onConnectionStateChange(setConnectionState), [wsClient])
+//
+// This ensures useDockerSubscription's effect re-fires on reconnect
+// because connectionState changes: 'disconnected' → 'connected'.
 ```
 
 This is strictly additive: existing message handling in `useServersWs` is untouched. The context only exposes `send` and `connectionState` for Docker subscription control. One WS connection per session, no duplicates.
