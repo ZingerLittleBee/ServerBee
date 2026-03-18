@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeft, CreditCard, FileText, Pencil, Terminal as TerminalIcon } from 'lucide-react'
+import { ArrowLeft, Container, CreditCard, FileText, Pencil, Terminal as TerminalIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CapabilitiesDialog } from '@/components/server/capabilities-dialog'
@@ -16,7 +16,7 @@ import { useRealtimeMetrics } from '@/hooks/use-realtime-metrics'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerResponse } from '@/lib/api-schema'
-import { CAP_FILE, hasCap } from '@/lib/capabilities'
+import { CAP_DOCKER, CAP_FILE, hasCap } from '@/lib/capabilities'
 import { cn, countryCodeToFlag, formatBytes } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/servers/$id')({
@@ -89,6 +89,59 @@ function ServerInfoMeta({ server }: { server: ServerResponse }) {
       {server.kernel_version && <span>Kernel: {server.kernel_version}</span>}
       {server.region && <span>Region: {server.region}</span>}
       {server.agent_version && <span>Agent: v{server.agent_version}</span>}
+    </div>
+  )
+}
+
+function ServerActionButtons({
+  dockerEnabled,
+  fileEnabled,
+  id,
+  isOnline,
+  onEditOpen,
+  serverWithCaps,
+  terminalEnabled
+}: {
+  dockerEnabled: boolean
+  fileEnabled: boolean
+  id: string
+  isOnline: boolean
+  onEditOpen: () => void
+  serverWithCaps: ServerResponse & ServerWithCaps
+  terminalEnabled: boolean
+}) {
+  const { t } = useTranslation('servers')
+  return (
+    <div className="flex gap-2">
+      <Button onClick={onEditOpen} size="sm" variant="outline">
+        <Pencil aria-hidden="true" className="mr-1 size-4" />
+        {t('detail_edit')}
+      </Button>
+      <CapabilitiesDialog server={serverWithCaps} />
+      {isOnline && terminalEnabled && (
+        <Link params={{ serverId: id }} to="/terminal/$serverId">
+          <Button size="sm" variant="outline">
+            <TerminalIcon aria-hidden="true" className="mr-1 size-4" />
+            {t('detail_terminal')}
+          </Button>
+        </Link>
+      )}
+      {isOnline && fileEnabled && (
+        <Link params={{ serverId: id }} search={{ path: '/' }} to="/files/$serverId">
+          <Button size="sm" variant="outline">
+            <FileText aria-hidden="true" className="mr-1 size-4" />
+            {t('detail_files')}
+          </Button>
+        </Link>
+      )}
+      {isOnline && dockerEnabled && (
+        <Link params={{ serverId: id }} to="/servers/$serverId/docker">
+          <Button size="sm" variant="outline">
+            <Container aria-hidden="true" className="mr-1 size-4" />
+            {t('detail_docker')}
+          </Button>
+        </Link>
+      )}
     </div>
   )
 }
@@ -213,6 +266,7 @@ function ServerDetailPage() {
   // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
   const terminalEnabled = serverWithCaps.capabilities == null || (serverWithCaps.capabilities & 1) !== 0
   const fileEnabled = hasCap(serverWithCaps.capabilities ?? 0, CAP_FILE)
+  const dockerEnabled = hasCap(serverWithCaps.capabilities ?? 0, CAP_DOCKER)
 
   // Network cumulative traffic from live data
   const liveNetIn = liveData?.net_in_transfer ?? 0
@@ -238,29 +292,15 @@ function ServerDetailPage() {
             </div>
             <ServerInfoMeta server={server} />
           </div>
-          <div className="flex gap-2">
-            <Button onClick={() => setEditOpen(true)} size="sm" variant="outline">
-              <Pencil aria-hidden="true" className="mr-1 size-4" />
-              {t('detail_edit')}
-            </Button>
-            <CapabilitiesDialog server={serverWithCaps} />
-            {isOnline && terminalEnabled && (
-              <Link params={{ serverId: id }} to="/terminal/$serverId">
-                <Button size="sm" variant="outline">
-                  <TerminalIcon aria-hidden="true" className="mr-1 size-4" />
-                  {t('detail_terminal')}
-                </Button>
-              </Link>
-            )}
-            {isOnline && fileEnabled && (
-              <Link params={{ serverId: id }} search={{ path: '/' }} to="/files/$serverId">
-                <Button size="sm" variant="outline">
-                  <FileText aria-hidden="true" className="mr-1 size-4" />
-                  {t('detail_files')}
-                </Button>
-              </Link>
-            )}
-          </div>
+          <ServerActionButtons
+            dockerEnabled={dockerEnabled}
+            fileEnabled={fileEnabled}
+            id={id}
+            isOnline={isOnline}
+            onEditOpen={() => setEditOpen(true)}
+            serverWithCaps={serverWithCaps}
+            terminalEnabled={terminalEnabled}
+          />
         </div>
       </div>
 
