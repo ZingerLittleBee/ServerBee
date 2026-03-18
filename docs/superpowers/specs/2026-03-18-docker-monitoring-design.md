@@ -380,12 +380,18 @@ async fn handle_docker_logs_ws(
     let (mut ws_sink, mut ws_stream) = socket.split();
     loop {
         tokio::select! {
-            Some(entries) = output_rx.recv() => {
-                ws_sink.send(Message::Text(serde_json::to_string(&entries)?)).await?;
+            entries = output_rx.recv() => {
+                match entries {
+                    Some(entries) => {
+                        ws_sink.send(Message::Text(serde_json::to_string(&entries)?)).await?;
+                    }
+                    None => { break; } // Agent-side session closed (channel dropped)
+                }
             }
-            Some(msg) = ws_stream.next() => {
-                if msg.is_err() || matches!(msg, Ok(Message::Close(_))) {
-                    break;
+            msg = ws_stream.next() => {
+                match msg {
+                    Some(Ok(Message::Close(_))) | Some(Err(_)) | None => { break; }
+                    _ => {} // Ping/Pong/Text control messages — ignore
                 }
             }
         }
@@ -663,6 +669,52 @@ export const useServersWsSend = () => {
 ```
 
 This is strictly additive: existing message handling in `useServersWs` is untouched. The context only exposes `send` and `connectionState` for Docker subscription control. One WS connection per session, no duplicates.
+
+**New WS message branches in `useServersWs`**: The existing `onMessage` switch in `use-servers-ws.ts` must be extended with three new cases to consume Docker downstream messages:
+
+```typescript
+// Added to the existing switch(msg.type) in useServersWs onMessage handler:
+case 'docker_update': {
+    // msg: { type, server_id, containers, stats? }
+    // Update Docker-specific React Query cache
+    queryClient.setQueryData(
+        ['docker', 'containers', msg.server_id],
+        msg.containers
+    )
+    if (msg.stats) {
+        queryClient.setQueryData(
+            ['docker', 'stats', msg.server_id],
+            msg.stats
+        )
+    }
+    break
+}
+case 'docker_event': {
+    // msg: { type, server_id, event }
+    // Append to Docker events query cache (ring buffer, keep last 100)
+    queryClient.setQueryData(
+        ['docker', 'events', msg.server_id],
+        (prev: DockerEventInfo[] = []) => [...prev, msg.event].slice(-100)
+    )
+    break
+}
+case 'docker_availability_changed': {
+    // msg: { type, server_id, available }
+    // Update the server's features in the servers query cache
+    queryClient.setQueryData(['servers'], (prev: Server[]) =>
+        prev?.map(s => s.id === msg.server_id
+            ? { ...s, features: msg.available
+                ? [...new Set([...s.features, 'docker'])]
+                : s.features.filter(f => f !== 'docker')
+              }
+            : s
+        )
+    )
+    break
+}
+```
+
+Docker page components consume these caches via `useQuery(['docker', 'containers', serverId])` etc. Initial REST fetch populates the cache; WS messages update it in real-time.
 
 **Docker subscription hook with auto-resubscribe on reconnect:**
 
