@@ -458,7 +458,7 @@ async fn handle_docker_logs_ws(
                     Some(entries) => {
                         ws_sink.send(Message::Text(serde_json::to_string(&entries)?)).await?;
                     }
-                    None => { break; } // Agent-side session closed (channel dropped)
+                    None => { break; } // Channel dropped (agent closed or capability revoked)
                 }
             }
             msg = ws_stream.next() => {
@@ -469,6 +469,9 @@ async fn handle_docker_logs_ws(
             }
         }
     }
+
+    // Send close frame to browser (covers both normal close and capability-revocation paths)
+    let _ = ws_sink.send(Message::Close(None)).await;
 
     // Cleanup (composite key: "server_id:session_id")
     state.agent_manager.remove_docker_log_session(&server_id, &session_id);
@@ -933,7 +936,7 @@ In `handle_agent_message()`:
 - `DockerInfo` → cache in AgentManager. If `msg_id` is present, dispatch via `pending_requests`. Broadcast `BrowserMessage::DockerAvailabilityChanged { available: true }`.
 - `DockerContainers` → cache in AgentManager + broadcast `BrowserMessage::DockerUpdate`. If `msg_id` is present, also dispatch via `pending_requests`.
 - `DockerStats` → cache in AgentManager + broadcast `BrowserMessage::DockerUpdate`
-- `DockerLog` → route to specific log session channel via `agent_manager.get_docker_log_session()` (**not** broadcast)
+- `DockerLog` → route to specific log session channel via `agent_manager.get_docker_log_session(&server_id, &session_id)` (**not** broadcast)
 - `DockerEvent` → save to `docker_event` table + broadcast `BrowserMessage::DockerEvent`
 - `DockerUnavailable` → clear Docker caches for this server, broadcast `BrowserMessage::DockerAvailabilityChanged { available: false }`. Note: viewer subscriptions are NOT removed — they remain so that streams auto-resume when Docker recovers.
 - `FeaturesUpdate` → update `servers.features` in database AND `agent_manager.features` in-memory cache. Broadcast `DockerAvailabilityChanged` accordingly. **If Docker becomes available** (features now includes `"docker"`) **and there are active viewers** for this server, Server automatically re-sends `DockerStartStats` + `DockerEventsStart` to the Agent to resume streaming. This handles runtime recovery without requiring browser-side re-subscription.
