@@ -235,6 +235,17 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 tracing::error!("Failed to update system info for {server_id}: {e}");
             }
 
+            // Persist and cache features from SystemInfo
+            let _ = crate::service::server::ServerService::update_features(
+                &state.db,
+                server_id,
+                &info.features,
+            )
+            .await;
+            state
+                .agent_manager
+                .update_features(server_id, info.features.clone());
+
             // Update in-memory protocol_version
             let agent_pv = info.protocol_version;
             state.agent_manager.set_protocol_version(server_id, agent_pv);
@@ -432,18 +443,116 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             // Agent responded to our protocol-level Ping; already handled by WS Pong frames
         }
 
-        // Docker variants — handled in Task 10
-        AgentMessage::DockerInfo { .. }
-        | AgentMessage::DockerContainers { .. }
-        | AgentMessage::DockerStats { .. }
-        | AgentMessage::DockerLog { .. }
-        | AgentMessage::DockerEvent { .. }
-        | AgentMessage::FeaturesUpdate { .. }
-        | AgentMessage::DockerUnavailable
-        | AgentMessage::DockerNetworks { .. }
-        | AgentMessage::DockerVolumes { .. }
-        | AgentMessage::DockerActionResult { .. } => {
-            tracing::debug!("Received Docker message from {server_id}, handler not yet wired");
+        // Docker variants
+        AgentMessage::DockerInfo {
+            ref msg_id,
+            ref info,
+        } => {
+            state
+                .agent_manager
+                .update_docker_info(server_id, info.clone());
+            if let Some(msg_id) = msg_id {
+                state
+                    .agent_manager
+                    .dispatch_pending_response(msg_id, msg.clone());
+            }
+            state
+                .agent_manager
+                .broadcast_browser(BrowserMessage::DockerAvailabilityChanged {
+                    server_id: server_id.to_string(),
+                    available: true,
+                });
+        }
+        AgentMessage::DockerContainers {
+            ref msg_id,
+            ref containers,
+        } => {
+            state
+                .agent_manager
+                .update_docker_containers(server_id, containers.clone());
+            if let Some(msg_id) = msg_id {
+                state
+                    .agent_manager
+                    .dispatch_pending_response(msg_id, msg.clone());
+            }
+            let stats = state.agent_manager.get_docker_stats(server_id);
+            state
+                .agent_manager
+                .broadcast_browser(BrowserMessage::DockerUpdate {
+                    server_id: server_id.to_string(),
+                    containers: containers.clone(),
+                    stats,
+                });
+        }
+        AgentMessage::DockerStats { ref stats } => {
+            state
+                .agent_manager
+                .update_docker_stats(server_id, stats.clone());
+            if let Some(containers) = state.agent_manager.get_docker_containers(server_id) {
+                state
+                    .agent_manager
+                    .broadcast_browser(BrowserMessage::DockerUpdate {
+                        server_id: server_id.to_string(),
+                        containers,
+                        stats: Some(stats.clone()),
+                    });
+            }
+        }
+        AgentMessage::DockerLog {
+            ref session_id,
+            entries,
+        } => {
+            if let Some(tx) = state
+                .agent_manager
+                .get_docker_log_session(server_id, session_id)
+            {
+                let _ = tx.send(entries).await;
+            }
+        }
+        AgentMessage::DockerEvent { event } => {
+            let _ =
+                crate::service::docker::DockerService::save_event(&state.db, server_id, &event)
+                    .await;
+            state
+                .agent_manager
+                .broadcast_browser(BrowserMessage::DockerEvent {
+                    server_id: server_id.to_string(),
+                    event,
+                });
+        }
+        AgentMessage::DockerUnavailable => {
+            state.agent_manager.clear_docker_caches(server_id);
+            state
+                .agent_manager
+                .broadcast_browser(BrowserMessage::DockerAvailabilityChanged {
+                    server_id: server_id.to_string(),
+                    available: false,
+                });
+        }
+        AgentMessage::FeaturesUpdate { ref features } => {
+            let _ = crate::service::server::ServerService::update_features(
+                &state.db,
+                server_id,
+                features,
+            )
+            .await;
+            state
+                .agent_manager
+                .update_features(server_id, features.clone());
+            let docker_available = features.contains(&"docker".to_string());
+            state
+                .agent_manager
+                .broadcast_browser(BrowserMessage::DockerAvailabilityChanged {
+                    server_id: server_id.to_string(),
+                    available: docker_available,
+                });
+        }
+        AgentMessage::DockerNetworks { ref msg_id, .. }
+        | AgentMessage::DockerVolumes { ref msg_id, .. }
+        | AgentMessage::DockerActionResult { ref msg_id, .. } => {
+            state
+                .agent_manager
+                .dispatch_pending_response(msg_id, msg.clone());
         }
     }
 }

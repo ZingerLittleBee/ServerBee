@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct DockerContainer {
     pub id: String,
     pub name: String,
@@ -14,6 +15,7 @@ pub struct DockerContainer {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct DockerPort {
     pub private_port: u16,
     pub public_port: Option<u16>,
@@ -22,6 +24,7 @@ pub struct DockerPort {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct DockerContainerStats {
     pub id: String,
     pub name: String,
@@ -36,6 +39,7 @@ pub struct DockerContainerStats {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct DockerLogEntry {
     pub timestamp: Option<String>,
     pub stream: String,
@@ -43,6 +47,7 @@ pub struct DockerLogEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct DockerEventInfo {
     pub timestamp: i64,
     pub event_type: String,
@@ -53,6 +58,7 @@ pub struct DockerEventInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct DockerSystemInfo {
     pub docker_version: String,
     pub api_version: String,
@@ -66,6 +72,7 @@ pub struct DockerSystemInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct DockerNetwork {
     pub id: String,
     pub name: String,
@@ -75,6 +82,7 @@ pub struct DockerNetwork {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct DockerVolume {
     pub name: String,
     pub driver: String,
@@ -84,6 +92,7 @@ pub struct DockerVolume {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum DockerAction {
     Start,
     Stop { timeout: Option<i64> },

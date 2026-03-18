@@ -188,7 +188,7 @@ async fn test_agent_register_connect_report() {
         serde_json::from_str(&welcome_text).expect("Failed to parse Welcome");
     assert_eq!(welcome["type"], "welcome");
     assert_eq!(welcome["server_id"], server_id);
-    assert_eq!(welcome["protocol_version"], 2);
+    assert_eq!(welcome["protocol_version"], serverbee_common::constants::PROTOCOL_VERSION);
 
     // ── Step 3: Send SystemInfo ──
     let system_info = json!({

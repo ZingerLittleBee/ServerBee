@@ -13,6 +13,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::collector::Collector;
 use crate::config::AgentConfig;
+use crate::docker::DockerManager;
 use crate::file_manager::{FileEvent, FileManager};
 use crate::network_prober::NetworkProber;
 use crate::pinger::PingManager;
@@ -21,6 +22,7 @@ use serverbee_common::types::NetworkProbeResultData;
 
 const MAX_BACKOFF_SECS: u64 = 30;
 const JITTER_FACTOR: f64 = 0.2;
+const DOCKER_RETRY_SECS: u64 = 30;
 
 pub struct Reporter {
     config: AgentConfig,
@@ -99,6 +101,44 @@ impl Reporter {
             None => anyhow::bail!("Connection closed before Welcome"),
         };
 
+        // Docker manager setup
+        let (docker_tx, mut docker_rx) = mpsc::channel::<AgentMessage>(256);
+        let mut docker_manager: Option<DockerManager> = None;
+        let mut docker_available = false;
+
+        // Try to initialize Docker connection
+        match DockerManager::try_new(docker_tx.clone(), Arc::clone(&capabilities)) {
+            Ok(dm) => {
+                match dm.verify_connection().await {
+                    Ok(()) => {
+                        tracing::info!("Docker daemon connected");
+                        docker_available = true;
+                        docker_manager = Some(dm);
+                    }
+                    Err(e) => {
+                        tracing::info!("Docker daemon not available: {e}");
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::info!("Docker not available: {e}");
+            }
+        }
+
+        // Docker retry interval (only used when docker_manager is None)
+        let mut docker_retry_interval = interval(Duration::from_secs(DOCKER_RETRY_SECS));
+        docker_retry_interval.tick().await; // consume immediate tick
+
+        // Separate stats interval (managed by start/stop stats commands)
+        // Uses a long default that gets replaced when stats are requested.
+        let mut docker_stats_interval: Option<tokio::time::Interval> = None;
+
+        // Build features list
+        let mut features = Vec::new();
+        if docker_available {
+            features.push("docker".to_string());
+        }
+
         // Send SystemInfo
         let mut collector = Collector::new(
             self.config.collector.enable_temperature,
@@ -109,6 +149,7 @@ impl Reporter {
             msg_id: uuid::Uuid::new_v4().to_string(),
             info: serverbee_common::types::SystemInfo {
                 protocol_version: PROTOCOL_VERSION,
+                features,
                 ..info
             },
         };
@@ -202,10 +243,54 @@ impl Reporter {
                     write.send(Message::Text(json.into())).await?;
                     tracing::debug!("Sent file event");
                 }
+                // Docker messages from DockerManager background tasks
+                Some(docker_msg) = docker_rx.recv() => {
+                    let json = serde_json::to_string(&docker_msg)?;
+                    write.send(Message::Text(json.into())).await?;
+                    tracing::debug!("Sent Docker message");
+                }
+                // Docker stats polling (uses separate interval to avoid borrow conflicts)
+                Some(_) = async {
+                    match docker_stats_interval.as_mut() {
+                        Some(iv) => Some(iv.tick().await),
+                        None => None,
+                    }
+                } => {
+                    if let Some(dm) = docker_manager.as_mut() {
+                        dm.poll_stats().await;
+                    }
+                }
+                // Docker retry (reconnect when docker is unavailable)
+                _ = docker_retry_interval.tick(), if docker_manager.is_none() => {
+                    tracing::debug!("Retrying Docker connection...");
+                    match DockerManager::try_new(docker_tx.clone(), Arc::clone(&capabilities)) {
+                        Ok(dm) => {
+                            match dm.verify_connection().await {
+                                Ok(()) => {
+                                    tracing::info!("Docker daemon now available");
+                                    docker_manager = Some(dm);
+                                    docker_available = true;
+                                    // Notify server about features change
+                                    let msg = AgentMessage::FeaturesUpdate {
+                                        features: vec!["docker".to_string()],
+                                    };
+                                    let json = serde_json::to_string(&msg)?;
+                                    write.send(Message::Text(json.into())).await?;
+                                }
+                                Err(e) => {
+                                    tracing::debug!("Docker still not available: {e}");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::debug!("Docker still not available: {e}");
+                        }
+                    }
+                }
                 server_msg = read.next() => {
                     match server_msg {
                         Some(Ok(Message::Text(text))) => {
-                            self.handle_server_message(&text, &mut write, &mut ping_manager, &mut terminal_manager, &mut network_prober, &cmd_result_tx, &capabilities, &file_manager, &file_tx).await?;
+                            self.handle_server_message(&text, &mut write, &mut ping_manager, &mut terminal_manager, &mut network_prober, &cmd_result_tx, &capabilities, &file_manager, &file_tx, &mut docker_manager, &mut docker_available, &mut docker_stats_interval).await?;
                         }
                         Some(Ok(Message::Close(_))) => {
                             tracing::info!("Server closed connection");
@@ -213,6 +298,9 @@ impl Reporter {
                             terminal_manager.close_all();
                             network_prober.stop_all();
                             file_manager.cancel_all_transfers();
+                            if let Some(dm) = docker_manager.as_mut() {
+                                dm.cleanup();
+                            }
                             return Ok(());
                         }
                         Some(Ok(Message::Ping(data))) => {
@@ -225,6 +313,9 @@ impl Reporter {
                             terminal_manager.close_all();
                             network_prober.stop_all();
                             file_manager.cancel_all_transfers();
+                            if let Some(dm) = docker_manager.as_mut() {
+                                dm.cleanup();
+                            }
                             return Err(e.into());
                         }
                         None => {
@@ -233,6 +324,9 @@ impl Reporter {
                             terminal_manager.close_all();
                             network_prober.stop_all();
                             file_manager.cancel_all_transfers();
+                            if let Some(dm) = docker_manager.as_mut() {
+                                dm.cleanup();
+                            }
                             return Ok(());
                         }
                     }
@@ -253,6 +347,9 @@ impl Reporter {
         capabilities: &Arc<AtomicU32>,
         file_manager: &FileManager,
         file_tx: &mpsc::Sender<FileEvent>,
+        docker_manager: &mut Option<DockerManager>,
+        _docker_available: &mut bool,
+        docker_stats_interval: &mut Option<tokio::time::Interval>,
     ) -> anyhow::Result<()>
     where
         S: SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
@@ -270,8 +367,18 @@ impl Reporter {
         match msg {
             ServerMessage::CapabilitiesSync { capabilities: caps } => {
                 tracing::info!("Capabilities updated: {caps}");
+                let old_caps = capabilities.load(Ordering::SeqCst);
                 capabilities.store(caps, Ordering::SeqCst);
                 network_prober.resync_capabilities();
+
+                // If Docker capability was removed, clean up
+                if has_capability(old_caps, CAP_DOCKER) && !has_capability(caps, CAP_DOCKER) {
+                    tracing::info!("Docker capability revoked, cleaning up");
+                    if let Some(dm) = docker_manager.as_mut() {
+                        dm.cleanup();
+                    }
+                    *docker_stats_interval = None;
+                }
             }
             ServerMessage::Ping => {
                 let pong = serde_json::to_string(&AgentMessage::Pong)?;
@@ -550,6 +657,43 @@ impl Reporter {
                         let json = serde_json::to_string(&msg)?;
                         write.send(Message::Text(json.into())).await?;
                     }
+                }
+            }
+            // --- Docker messages ---
+            ServerMessage::DockerStartStats { interval_secs } => {
+                if docker_manager.is_some() {
+                    let secs = interval_secs.max(1);
+                    tracing::info!("Starting Docker stats polling every {secs}s");
+                    let mut iv = tokio::time::interval(Duration::from_secs(secs as u64));
+                    iv.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                    *docker_stats_interval = Some(iv);
+                } else {
+                    tracing::warn!("DockerStartStats received but Docker is not available");
+                    let unavailable = AgentMessage::DockerUnavailable;
+                    let json = serde_json::to_string(&unavailable)?;
+                    write.send(Message::Text(json.into())).await?;
+                }
+            }
+            ServerMessage::DockerStopStats => {
+                tracing::info!("Stopping Docker stats polling");
+                *docker_stats_interval = None;
+            }
+            ServerMessage::DockerListContainers { .. }
+            | ServerMessage::DockerLogsStart { .. }
+            | ServerMessage::DockerLogsStop { .. }
+            | ServerMessage::DockerEventsStart
+            | ServerMessage::DockerEventsStop
+            | ServerMessage::DockerContainerAction { .. }
+            | ServerMessage::DockerGetInfo { .. }
+            | ServerMessage::DockerListNetworks { .. }
+            | ServerMessage::DockerListVolumes { .. } => {
+                if let Some(dm) = docker_manager.as_mut() {
+                    dm.handle_server_message(msg).await;
+                } else {
+                    tracing::warn!("Docker message received but Docker is not available");
+                    let unavailable = AgentMessage::DockerUnavailable;
+                    let json = serde_json::to_string(&unavailable)?;
+                    write.send(Message::Text(json.into())).await?;
                 }
             }
         }

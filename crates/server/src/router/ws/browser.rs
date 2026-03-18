@@ -11,7 +11,7 @@ use futures_util::{SinkExt, StreamExt};
 use crate::service::auth::AuthService;
 use crate::service::server::ServerService;
 use crate::state::AppState;
-use serverbee_common::protocol::BrowserMessage;
+use serverbee_common::protocol::{BrowserClientMessage, BrowserMessage, ServerMessage};
 use serverbee_common::types::ServerStatus;
 
 pub fn router() -> Router<Arc<AppState>> {
@@ -75,6 +75,8 @@ fn extract_api_key(headers: &HeaderMap) -> Option<String> {
 async fn handle_browser_ws(socket: WebSocket, state: Arc<AppState>) {
     let (mut ws_sink, mut ws_stream) = socket.split();
 
+    let connection_id = uuid::Uuid::new_v4().to_string();
+
     // Build FullSync message from DB servers + agent_manager online/report data
     let full_sync = build_full_sync(&state).await;
     if let Err(e) = send_browser_message(&mut ws_sink, &full_sync).await {
@@ -85,7 +87,7 @@ async fn handle_browser_ws(socket: WebSocket, state: Arc<AppState>) {
     // Subscribe to browser_tx broadcast channel
     let mut browser_rx = state.browser_tx.subscribe();
 
-    tracing::debug!("Browser WS client connected");
+    tracing::debug!("Browser WS client connected (connection_id={connection_id})");
 
     loop {
         tokio::select! {
@@ -112,9 +114,14 @@ async fn handle_browser_ws(socket: WebSocket, state: Arc<AppState>) {
                     }
                 }
             }
-            // Handle incoming messages from browser (mostly just Close)
+            // Handle incoming messages from browser
             msg = ws_stream.next() => {
                 match msg {
+                    Some(Ok(Message::Text(text))) => {
+                        if let Ok(client_msg) = serde_json::from_str::<BrowserClientMessage>(&text) {
+                            handle_browser_client_message(&state, &connection_id, client_msg).await;
+                        }
+                    }
                     Some(Ok(Message::Close(_))) | None => {
                         break;
                     }
@@ -133,7 +140,60 @@ async fn handle_browser_ws(socket: WebSocket, state: Arc<AppState>) {
         }
     }
 
-    tracing::debug!("Browser WS client disconnected");
+    // Cleanup: remove all docker viewer subscriptions for this connection
+    let affected = state
+        .docker_viewers
+        .remove_all_for_connection(&connection_id);
+    for (server_id, was_last) in affected {
+        if was_last {
+            // Last viewer disconnected — tell agent to stop streaming docker data
+            if let Some(tx) = state.agent_manager.get_sender(&server_id) {
+                let _ = tx.send(ServerMessage::DockerStopStats).await;
+                let _ = tx.send(ServerMessage::DockerEventsStop).await;
+            }
+        }
+    }
+
+    tracing::debug!("Browser WS client disconnected (connection_id={connection_id})");
+}
+
+async fn handle_browser_client_message(
+    state: &Arc<AppState>,
+    connection_id: &str,
+    msg: BrowserClientMessage,
+) {
+    match msg {
+        BrowserClientMessage::DockerSubscribe { server_id } => {
+            // Check that Docker is available for this server
+            if !state.agent_manager.has_feature(&server_id, "docker") {
+                return;
+            }
+            let is_first = state
+                .docker_viewers
+                .add_viewer(&server_id, connection_id);
+            if is_first {
+                // First viewer — tell agent to start streaming docker data
+                if let Some(tx) = state.agent_manager.get_sender(&server_id) {
+                    let _ = tx
+                        .send(ServerMessage::DockerStartStats { interval_secs: 3 })
+                        .await;
+                    let _ = tx.send(ServerMessage::DockerEventsStart).await;
+                }
+            }
+        }
+        BrowserClientMessage::DockerUnsubscribe { server_id } => {
+            let is_last = state
+                .docker_viewers
+                .remove_viewer(&server_id, connection_id);
+            if is_last {
+                // Last viewer — tell agent to stop streaming docker data
+                if let Some(tx) = state.agent_manager.get_sender(&server_id) {
+                    let _ = tx.send(ServerMessage::DockerStopStats).await;
+                    let _ = tx.send(ServerMessage::DockerEventsStop).await;
+                }
+            }
+        }
+    }
 }
 
 async fn build_full_sync(state: &Arc<AppState>) -> BrowserMessage {
