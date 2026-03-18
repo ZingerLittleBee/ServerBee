@@ -4,10 +4,14 @@ import type { DockerLogEntry } from '@/routes/_authed/servers/$serverId/docker/t
 
 const MAX_LOG_ENTRIES = 1000
 
-interface DockerLogMessage {
-  entries: DockerLogEntry[]
+interface DockerLogSessionMessage {
   session_id: string
-  type: 'docker_log'
+  type: 'session'
+}
+
+interface DockerLogEntriesMessage {
+  entries: DockerLogEntry[]
+  type: 'logs'
 }
 
 interface UseDockerLogsOptions {
@@ -39,7 +43,7 @@ export function useDockerLogs({
   const stop = useCallback(() => {
     if (wsRef.current) {
       if (sessionIdRef.current) {
-        wsRef.current.send({ type: 'docker_logs_stop', session_id: sessionIdRef.current })
+        wsRef.current.send({ type: 'unsubscribe' })
       }
       wsRef.current.close()
       wsRef.current = null
@@ -52,30 +56,28 @@ export function useDockerLogs({
     // Clean up any existing connection
     stop()
 
-    const sessionId = `log-${serverId}-${containerId}-${Date.now()}`
-    sessionIdRef.current = sessionId
-
     const ws = new WsClient(`/api/ws/docker/logs/${serverId}`)
     wsRef.current = ws
 
     ws.onConnectionStateChange((state) => {
       setIsConnected(state === 'connected')
-      if (state === 'connected') {
+    })
+
+    ws.onMessage((raw) => {
+      const msg = raw as DockerLogSessionMessage | DockerLogEntriesMessage
+      if (msg.type === 'session') {
+        sessionIdRef.current = (msg as DockerLogSessionMessage).session_id
+        // Now subscribe to the container logs
         ws.send({
-          type: 'docker_logs_start',
-          session_id: sessionId,
+          type: 'subscribe',
           container_id: containerId,
           tail,
           follow
         })
-      }
-    })
-
-    ws.onMessage((raw) => {
-      const msg = raw as DockerLogMessage
-      if (msg.type === 'docker_log' && msg.session_id === sessionId) {
+      } else if (msg.type === 'logs') {
+        const entries = (msg as DockerLogEntriesMessage).entries
         setLogs((prev) => {
-          const updated = [...prev, ...msg.entries]
+          const updated = [...prev, ...entries]
           return updated.length > MAX_LOG_ENTRIES ? updated.slice(-MAX_LOG_ENTRIES) : updated
         })
       }

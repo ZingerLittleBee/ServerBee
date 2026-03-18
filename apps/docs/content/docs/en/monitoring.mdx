@@ -248,6 +248,50 @@ The server detail page shows a collapsible traffic card with:
 
 Daily traffic aggregation respects the `scheduler.timezone` setting. Set this to your billing timezone (e.g., `Asia/Shanghai`) to ensure daily totals align with your billing provider's day boundaries.
 
+## Docker Container Monitoring
+
+ServerBee supports real-time Docker container monitoring when the agent has access to the Docker daemon. This feature requires the `CAP_DOCKER` capability to be enabled.
+
+### Overview
+
+The Docker monitoring page shows:
+
+- **Overview cards** -- Running/Stopped container counts, total CPU usage, total memory usage, Docker version
+- **Container list** -- Searchable, filterable table with Name, Image, Status, CPU%, Memory, Network I/O
+- **Events timeline** -- Container lifecycle events (start, stop, die, create, destroy) in reverse chronological order
+- **Networks dialog** -- List of Docker networks with driver, scope, and container count
+- **Volumes dialog** -- List of Docker volumes with driver, mountpoint, and creation time
+
+### Container Details
+
+Click any container row to view:
+
+- **Container info** -- Image, status, ports, creation time, container ID
+- **Stats cards** -- CPU usage, memory (with progress bar), network I/O, block I/O
+- **Log stream** -- Real-time log output with:
+  - stdout in white text, stderr in red text
+  - Follow toggle for auto-scrolling
+  - Clear button to reset the log view
+  - Connection status indicator (Connected/Disconnected)
+
+### How It Works
+
+1. When browsers navigate to the Docker page, a `DockerSubscribe` message is sent via WebSocket
+2. The server instructs the connected agent to start Docker monitoring
+3. The agent uses the bollard Docker API client to poll containers and stats
+4. Updates are broadcast to subscribing browsers in real time
+5. When all browsers leave the Docker page, monitoring stops automatically (viewer ref-counting)
+
+Container logs use a dedicated WebSocket endpoint (`/api/ws/docker/logs/{server_id}`) with subscribe/unsubscribe protocol for per-container log streaming.
+
+### Data Retention
+
+| Data Type | Default Retention | Config Key |
+|-----------|------------------|------------|
+| Docker events | 7 days | `retention.docker_events_days` |
+
+Container stats and logs are not persisted — they are streamed in real time only.
+
 ## Network Quality Monitoring
 
 ServerBee includes a built-in network quality monitoring system that probes network targets from each agent and visualizes latency, packet loss, and anomalies.
