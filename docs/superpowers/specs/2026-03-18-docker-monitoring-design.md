@@ -473,11 +473,15 @@ async fn handle_docker_logs_ws(
     // Send close frame to browser (covers both normal close and capability-revocation paths)
     let _ = ws_sink.send(Message::Close(None)).await;
 
-    // Cleanup (composite key: "server_id:session_id")
-    state.agent_manager.remove_docker_log_session(&server_id, &session_id);
-    state.agent_manager.send_to_agent(&server_id, ServerMessage::DockerLogsStop {
-        session_id,
-    });
+    // Cleanup: remove returns true if session was still present (not already cleaned up
+    // by capability revocation). Only send DockerLogsStop if we actually removed it,
+    // avoiding duplicate stop commands (DockerLogsStop is idempotent on Agent side,
+    // but no need to send twice).
+    if state.agent_manager.remove_docker_log_session(&server_id, &session_id) {
+        state.agent_manager.send_to_agent(&server_id, ServerMessage::DockerLogsStop {
+            session_id,
+        });
+    }
 }
 ```
 
@@ -960,14 +964,17 @@ features: DashMap<String, Vec<String>>,
 // Used by has_docker_capability().
 capabilities: DashMap<String, u32>,
 
-// Log session routing. Keyed as "server_id:session_id" composite key to support
-// per-server cleanup on capability revocation (iterate and match by server_id prefix).
-// All access methods use the composite key internally:
-//   add_docker_log_session(server_id, session_id, tx)  → inserts "server_id:session_id"
-//   get_docker_log_session(server_id, session_id)       → looks up "server_id:session_id"
-//   remove_docker_log_session(server_id, session_id)    → removes "server_id:session_id"
-//   remove_docker_log_sessions_for_server(server_id)    → removes all with matching prefix
-docker_log_sessions: DashMap<String, mpsc::Sender<Vec<DockerLogEntry>>>,
+// Log session routing. Two-level DashMap for clean per-server cleanup:
+//   outer: server_id → inner DashMap
+//   inner: session_id → mpsc::Sender
+// This avoids prefix-matching pitfalls (e.g., "srv1" matching "srv10").
+// Access methods:
+//   add_docker_log_session(server_id, session_id, tx)  → inserts into inner map
+//   get_docker_log_session(server_id, session_id)       → looks up in inner map
+//   remove_docker_log_session(server_id, session_id) -> bool  → removes from inner, returns true if found
+//   remove_docker_log_sessions_for_server(server_id) -> Vec<String>  → removes entire inner map, returns session_ids
+docker_log_sessions: DashMap<String, DashMap<String, mpsc::Sender<Vec<DockerLogEntry>>>>,
+// outer key: server_id, inner key: session_id
 ```
 
 ### REST API
