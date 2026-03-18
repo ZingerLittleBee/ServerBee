@@ -470,38 +470,40 @@ async fn handle_browser_ws(socket: WebSocket, state: Arc<AppState>) {
             msg = browser_rx.recv() => {
                 ws_sink.send(serialize(msg)).await?;
             }
-            // New: browser → server (Docker subscription control)
-            Some(Ok(Message::Text(text))) = ws_stream.next() => {
-                if let Ok(client_msg) = serde_json::from_str::<BrowserClientMessage>(&text) {
-                    match client_msg {
-                        BrowserClientMessage::DockerSubscribe { server_id } => {
-                            let is_first = state.docker_viewers
-                                .add_viewer(&server_id, &connection_id);
-                            if is_first {
-                                // Guard: only send to Docker-capable agents
-                                let _ = send_docker_command(&state.agent_manager, &server_id,
-                                    ServerMessage::DockerStartStats { interval_secs: 3 });
-                                let _ = send_docker_command(&state.agent_manager, &server_id,
-                                    ServerMessage::DockerEventsStart);
-                            }
-                        }
-                        BrowserClientMessage::DockerUnsubscribe { server_id } => {
-                            let is_last = state.docker_viewers
-                                .remove_viewer(&server_id, &connection_id);
-                            if is_last {
-                                let _ = send_docker_command(&state.agent_manager, &server_id,
-                                    ServerMessage::DockerStopStats);
-                                let _ = send_docker_command(&state.agent_manager, &server_id,
-                                    ServerMessage::DockerEventsStop);
+            // Browser → server: single next() call, match internally
+            // (same pattern as existing browser.rs to avoid multiple mutable borrows)
+            msg = ws_stream.next() => {
+                match msg {
+                    Some(Ok(Message::Text(text))) => {
+                        if let Ok(client_msg) = serde_json::from_str::<BrowserClientMessage>(&text) {
+                            match client_msg {
+                                BrowserClientMessage::DockerSubscribe { server_id } => {
+                                    let is_first = state.docker_viewers
+                                        .add_viewer(&server_id, &connection_id);
+                                    if is_first {
+                                        let _ = send_docker_command(&state.agent_manager, &server_id,
+                                            ServerMessage::DockerStartStats { interval_secs: 3 });
+                                        let _ = send_docker_command(&state.agent_manager, &server_id,
+                                            ServerMessage::DockerEventsStart);
+                                    }
+                                }
+                                BrowserClientMessage::DockerUnsubscribe { server_id } => {
+                                    let is_last = state.docker_viewers
+                                        .remove_viewer(&server_id, &connection_id);
+                                    if is_last {
+                                        let _ = send_docker_command(&state.agent_manager, &server_id,
+                                            ServerMessage::DockerStopStats);
+                                        let _ = send_docker_command(&state.agent_manager, &server_id,
+                                            ServerMessage::DockerEventsStop);
+                                    }
+                                }
                             }
                         }
                     }
+                    Some(Ok(Message::Close(_))) | Some(Err(_)) | None => { break; }
+                    _ => {} // Ping/Pong/Binary — ignore
                 }
             }
-            // Explicit disconnect handling: Close frame, stream end, or error
-            Some(Ok(Message::Close(_))) = ws_stream.next() => { break; }
-            Some(Err(_)) = ws_stream.next() => { break; }
-            None = ws_stream.next() => { break; }
         }
     }
 
@@ -588,47 +590,54 @@ class WsClient {
 }
 ```
 
-**Required refactor: WsClient singleton via React Context.** The existing `useServersWs` hook creates the WS connection internally and is called once in `_authed.tsx`. To allow child components to send upstream messages without creating additional connections, the `WsClient` instance must be lifted into a React Context:
+**Required refactor: extend existing `useServersWs` to expose `send` and `connectionState`.** The current `useServersWs` hook in `_authed.tsx` creates the WS connection, handles incoming messages (full_sync, update, server_online/offline, capabilities_changed, agent_info_updated, etc.), and updates the React Query cache. This existing receive-side logic must be preserved exactly as-is.
+
+The refactor adds two things without changing existing behavior:
+
+1. **`WsClient.send()` method** — add to the existing WsClient class
+2. **Expose `send` and `connectionState` to child components** — via React Context
 
 ```typescript
-// apps/web/src/contexts/servers-ws-context.tsx
-const ServersWsContext = createContext<{
+// Minimal changes to existing code:
+
+// 1. WsClient: add send() method
+class WsClient {
+    // ... existing connect/onMessage/reconnect logic unchanged ...
+    send(data: unknown): void {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify(data))
+        }
+    }
+}
+
+// 2. New context (apps/web/src/contexts/servers-ws-context.tsx)
+interface ServersWsContextValue {
     send: (data: unknown) => void
     connectionState: 'connected' | 'disconnected'
-} | null>(null)
-
-// Provider wraps _authed layout (replaces current useServersWs() call in _authed.tsx)
-export const ServersWsProvider = ({ children }) => {
-    const wsClient = useRef(new WsClient('/api/ws/servers'))
-    const [connectionState, setConnectionState] = useState<'connected' | 'disconnected'>('disconnected')
-
-    useEffect(() => {
-        wsClient.current.onOpen(() => setConnectionState('connected'))
-        wsClient.current.onClose(() => setConnectionState('disconnected'))
-        wsClient.current.connect()
-        return () => wsClient.current.disconnect()
-    }, [])
-
-    const send = useCallback((data: unknown) => wsClient.current.send(data), [])
-    return <ServersWsContext.Provider value={{ send, connectionState }}>{children}</ServersWsContext.Provider>
 }
+const ServersWsContext = createContext<ServersWsContextValue | null>(null)
 
-// Hook for child components — returns the singleton connection, never creates a new one
-export const useServersWsClient = () => {
+export const useServersWsSend = () => {
     const ctx = useContext(ServersWsContext)
-    if (!ctx) throw new Error('useServersWsClient must be used within ServersWsProvider')
+    if (!ctx) throw new Error('useServersWsSend must be used within provider')
     return ctx
 }
+
+// 3. _authed.tsx: wrap existing useServersWs with context provider
+// The existing useServersWs() call stays in place — it still handles
+// all incoming messages (full_sync, update, etc.) and updates React Query.
+// The provider just exposes the WsClient's send() and connection state
+// so child components (like useDockerSubscription) can send upstream messages.
 ```
 
-This is a strict singleton: one WS connection per authenticated session, shared by all components via context. `useDockerSubscription` consumes the context, never creates its own connection.
+This is strictly additive: existing message handling in `useServersWs` is untouched. The context only exposes `send` and `connectionState` for Docker subscription control. One WS connection per session, no duplicates.
 
 **Docker subscription hook with auto-resubscribe on reconnect:**
 
 ```typescript
 // apps/web/src/hooks/use-docker-subscription.ts
 const useDockerSubscription = (serverId: string) => {
-    const { send, connectionState } = useServersWsClient()  // consumes singleton context
+    const { send, connectionState } = useServersWsSend()  // consumes context from _authed provider
 
     useEffect(() => {
         // Subscribe on mount AND on every reconnect
