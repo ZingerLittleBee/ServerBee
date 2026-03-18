@@ -6,11 +6,11 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::service::docker::DockerService;
 use crate::service::server::ServerService;
 use crate::state::AppState;
-use serverbee_common::constants::{has_capability, CAP_DOCKER};
+use serverbee_common::constants::{CAP_DOCKER, has_capability};
 use serverbee_common::docker_types::*;
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
 
@@ -76,21 +76,12 @@ pub struct ActionResultResponse {
 /// Read endpoints accessible to all authenticated users (admin + member).
 pub fn read_router() -> Router<Arc<AppState>> {
     Router::new()
-        .route(
-            "/servers/{id}/docker/containers",
-            get(get_containers),
-        )
+        .route("/servers/{id}/docker/containers", get(get_containers))
         .route("/servers/{id}/docker/stats", get(get_stats))
         .route("/servers/{id}/docker/info", get(get_info))
         .route("/servers/{id}/docker/events", get(get_events))
-        .route(
-            "/servers/{id}/docker/networks",
-            get(get_networks),
-        )
-        .route(
-            "/servers/{id}/docker/volumes",
-            get(get_volumes),
-        )
+        .route("/servers/{id}/docker/networks", get(get_networks))
+        .route("/servers/{id}/docker/volumes", get(get_volumes))
 }
 
 /// Write endpoints restricted to admin users only.
@@ -197,10 +188,36 @@ async fn get_info(
 ) -> Result<Json<ApiResponse<DockerInfoResponse>>, AppError> {
     require_docker(&state, &id).await?;
 
-    let info = state
-        .agent_manager
-        .get_docker_info(&id)
-        .ok_or_else(|| AppError::NotFound("Docker info not yet available".into()))?;
+    let info = if let Some(info) = state.agent_manager.get_docker_info(&id) {
+        info
+    } else {
+        let msg_id = uuid::Uuid::new_v4().to_string();
+        let rx = state.agent_manager.register_pending_request(msg_id.clone());
+
+        let sender = state
+            .agent_manager
+            .get_sender(&id)
+            .ok_or(AppError::NotFound("Server offline".into()))?;
+        sender
+            .send(ServerMessage::DockerGetInfo {
+                msg_id: msg_id.clone(),
+            })
+            .await
+            .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
+
+        match tokio::time::timeout(Duration::from_secs(30), rx).await {
+            Ok(Ok(AgentMessage::DockerInfo { info, .. })) => info,
+            Ok(Ok(_)) => {
+                return Err(AppError::Internal("Unexpected response from agent".into()));
+            }
+            Ok(Err(_)) => return Err(AppError::Internal("Agent disconnected".into())),
+            Err(_) => {
+                return Err(AppError::RequestTimeout(
+                    "Agent did not respond within 30s".into(),
+                ));
+            }
+        }
+    };
     ok(DockerInfoResponse { info })
 }
 
@@ -260,9 +277,7 @@ async fn get_networks(
     require_docker(&state, &id).await?;
 
     let msg_id = uuid::Uuid::new_v4().to_string();
-    let rx = state
-        .agent_manager
-        .register_pending_request(msg_id.clone());
+    let rx = state.agent_manager.register_pending_request(msg_id.clone());
 
     let sender = state
         .agent_manager
@@ -276,9 +291,7 @@ async fn get_networks(
         .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
 
     match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::DockerNetworks { networks, .. })) => {
-            ok(NetworksResponse { networks })
-        }
+        Ok(Ok(AgentMessage::DockerNetworks { networks, .. })) => ok(NetworksResponse { networks }),
         Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
         Ok(Err(_)) => Err(AppError::Internal("Agent disconnected".into())),
         Err(_) => Err(AppError::RequestTimeout(
@@ -307,9 +320,7 @@ async fn get_volumes(
     require_docker(&state, &id).await?;
 
     let msg_id = uuid::Uuid::new_v4().to_string();
-    let rx = state
-        .agent_manager
-        .register_pending_request(msg_id.clone());
+    let rx = state.agent_manager.register_pending_request(msg_id.clone());
 
     let sender = state
         .agent_manager
@@ -361,9 +372,7 @@ async fn container_action(
     require_docker(&state, &id).await?;
 
     let msg_id = uuid::Uuid::new_v4().to_string();
-    let rx = state
-        .agent_manager
-        .register_pending_request(msg_id.clone());
+    let rx = state.agent_manager.register_pending_request(msg_id.clone());
 
     let sender = state
         .agent_manager
@@ -379,9 +388,9 @@ async fn container_action(
         .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
 
     match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::DockerActionResult {
-            success, error, ..
-        })) => ok(ActionResultResponse { success, error }),
+        Ok(Ok(AgentMessage::DockerActionResult { success, error, .. })) => {
+            ok(ActionResultResponse { success, error })
+        }
         Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
         Ok(Err(_)) => Err(AppError::Internal("Agent disconnected".into())),
         Err(_) => Err(AppError::RequestTimeout(

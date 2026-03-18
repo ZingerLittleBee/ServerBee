@@ -4,7 +4,7 @@ use std::time::Instant;
 use dashmap::DashMap;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use serverbee_common::constants::{has_capability, CAP_DOCKER};
+use serverbee_common::constants::{CAP_DOCKER, has_capability};
 use serverbee_common::docker_types::*;
 use serverbee_common::protocol::{AgentMessage, BrowserMessage, ServerMessage};
 use serverbee_common::types::{ServerStatus, SystemReport};
@@ -14,7 +14,7 @@ pub type TerminalOutputTx = mpsc::Sender<TerminalSessionEvent>;
 
 /// Events sent from agent handler to browser terminal WS.
 pub enum TerminalSessionEvent {
-    Output(String),  // base64 encoded data
+    Output(String), // base64 encoded data
     Started,
     Error(String),
 }
@@ -93,14 +93,15 @@ impl AgentManager {
             },
         );
 
-        let _ = self.browser_tx.send(BrowserMessage::ServerOnline {
-            server_id,
-        });
+        let _ = self
+            .browser_tx
+            .send(BrowserMessage::ServerOnline { server_id });
     }
 
     /// Unregister an agent connection and broadcast ServerOffline to browsers.
     pub fn remove_connection(&self, server_id: &str) {
         self.connections.remove(server_id);
+        self.remove_docker_log_sessions_for_server(server_id);
 
         let _ = self.browser_tx.send(BrowserMessage::ServerOffline {
             server_id: server_id.to_string(),
@@ -269,7 +270,8 @@ impl AgentManager {
     /// Returns a oneshot receiver that will receive the agent's response.
     pub fn register_pending_request(&self, msg_id: String) -> oneshot::Receiver<AgentMessage> {
         let (tx, rx) = oneshot::channel();
-        self.pending_requests.insert(msg_id, (tx, std::time::Instant::now()));
+        self.pending_requests
+            .insert(msg_id, (tx, std::time::Instant::now()));
         rx
     }
 
@@ -358,8 +360,7 @@ impl AgentManager {
             .await?;
         for (id, caps, features_json) in servers {
             self.capabilities.insert(id.clone(), caps as u32);
-            let features: Vec<String> =
-                serde_json::from_str(&features_json).unwrap_or_default();
+            let features: Vec<String> = serde_json::from_str(&features_json).unwrap_or_default();
             self.features.insert(id, features);
         }
         Ok(())
@@ -408,9 +409,8 @@ impl AgentManager {
     /// Remove pending requests older than `max_age`.
     pub fn cleanup_expired_requests(&self, max_age: std::time::Duration) {
         let now = std::time::Instant::now();
-        self.pending_requests.retain(|_, (_, created_at)| {
-            now.duration_since(*created_at) < max_age
-        });
+        self.pending_requests
+            .retain(|_, (_, created_at)| now.duration_since(*created_at) < max_age);
     }
 }
 
@@ -458,7 +458,11 @@ mod tests {
         let (mgr, _rx) = make_manager();
         let (tx, _) = mpsc::channel(1);
         mgr.add_connection("s1".into(), "Srv".into(), tx, test_addr());
-        let report = SystemReport { cpu: 42.5, mem_used: 8_000_000_000, ..Default::default() };
+        let report = SystemReport {
+            cpu: 42.5,
+            mem_used: 8_000_000_000,
+            ..Default::default()
+        };
         mgr.update_report("s1", report);
         let cached = mgr.get_latest_report("s1").unwrap();
         assert!((cached.cpu - 42.5).abs() < f64::EPSILON);
@@ -472,8 +476,20 @@ mod tests {
         let (tx2, _) = mpsc::channel(1);
         mgr.add_connection("s1".into(), "A".into(), tx1, test_addr());
         mgr.add_connection("s2".into(), "B".into(), tx2, test_addr());
-        mgr.update_report("s1", SystemReport { cpu: 10.0, ..Default::default() });
-        mgr.update_report("s2", SystemReport { cpu: 20.0, ..Default::default() });
+        mgr.update_report(
+            "s1",
+            SystemReport {
+                cpu: 10.0,
+                ..Default::default()
+            },
+        );
+        mgr.update_report(
+            "s2",
+            SystemReport {
+                cpu: 20.0,
+                ..Default::default()
+            },
+        );
         let all = mgr.all_latest_reports();
         assert_eq!(all.len(), 2);
     }
@@ -562,13 +578,21 @@ mod tests {
 
         let dispatched = mgr.dispatch_pending_response(
             "req1",
-            AgentMessage::FileOpResult { msg_id: "req1".into(), success: true, error: None },
+            AgentMessage::FileOpResult {
+                msg_id: "req1".into(),
+                success: true,
+                error: None,
+            },
         );
         assert!(dispatched);
 
         let dispatched2 = mgr.dispatch_pending_response(
             "req1",
-            AgentMessage::FileOpResult { msg_id: "req1".into(), success: true, error: None },
+            AgentMessage::FileOpResult {
+                msg_id: "req1".into(),
+                success: true,
+                error: None,
+            },
         );
         assert!(!dispatched2);
     }
