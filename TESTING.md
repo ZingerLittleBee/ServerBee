@@ -312,9 +312,9 @@ docker compose up -d
 | D9 | 容器详情弹窗 | 点击容器行 → 弹出 Dialog 显示元信息 + Stats + Logs | ✅ |
 | D10 | 容器 Stats | 详情弹窗中 4 张迷你卡片：CPU / Memory（含进度条） / Net I/O / Block I/O | ✅ |
 | D11 | 容器日志流 | 详情弹窗中日志区域自动连接 → 显示实时日志流 | ✅ |
-| D12 | 日志 Follow | 开启 Follow → 新日志自动滚动到底部 → 关闭 Follow → 停止滚动 | — |
-| D13 | 日志 stderr 颜色 | stderr 日志行显示红色文本 | — |
-| D14 | 日志清除 | 点击 Clear → 日志区域清空 | — |
+| D12 | 日志 Follow | 开启 Follow → 新日志自动滚动到底部 → 关闭 Follow → 停止滚动 | ✅ |
+| D13 | 日志 stderr 颜色 | stderr 日志行显示红色文本 | ✅ |
+| D14 | 日志清除 | 点击 Clear → 日志区域清空 | ✅ |
 | D15 | 日志连接状态 | 连接时绿色圆点 + "Connected" → 断开时灰色 + "Disconnected" | ✅ |
 | D16 | 实时数据更新 | WS 推送 docker_update → 容器列表和 Stats 实时刷新 | ✅ |
 | D17 | 事件时间线 | Docker 事件（start/stop/die 等）按时间倒序显示 → 相对时间戳 | ✅ |

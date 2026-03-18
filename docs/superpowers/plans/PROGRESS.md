@@ -28,7 +28,7 @@
 | P6 | 文件管理 | **已完成** | 24 tasks |
 | P7 | Docker 容器监控 | **已完成** | 25 tasks, 17 commits |
 
-**P0~P7 全部完成并已提交。测试: 226 单元 + 26 集成 + 121 前端 + 20/24 E2E 浏览器 = 393 个测试。**
+**P0~P7 全部完成并已提交。测试: 226 单元 + 26 集成 + 121 前端 + 23/24 E2E 浏览器 = 396 个测试。**
 
 ---
 
@@ -796,12 +796,13 @@ GET    /api/audit-logs                    列出审计日志 (?limit=&offset=)
 | T22 | Frontend: ContainerDetailDialog + ContainerStats (4 卡片) + ContainerLogs (实时流) | **done** |
 | T23 | Frontend: DockerNetworksDialog + DockerVolumesDialog | **done** |
 | T24 | Frontend: CAP_DOCKER 能力常量 + 服务器详情页 Docker 链接 + i18n | **done** |
-| T25 | 集成测试 + E2E 验证 (20/24 浏览器测试通过) | **done** |
+| T25 | 集成测试 + E2E 验证 (23/24 浏览器测试通过) | **done** |
 
-**E2E 中发现并修复的 Bug (3 个):**
+**E2E 中发现并修复的 Bug (4 个):**
 1. `ServerResponse` DTO 缺少 `features` 字段 — API 无法返回 Docker 特性信息
 2. Agent `poll_stats()` 只发 `DockerStats` 不发 `DockerContainers` — 导致 server 缓存空跳过广播
 3. WS features 数据不能及时到达 React 组件 — 添加 REST API fallback
+4. Docker 日志 WebSocket 协议不匹配 — 前端发送 `docker_logs_start` 但后端期望 `subscribe`，前端期望 `docker_log` 但后端发送 `logs`
 
 ---
 

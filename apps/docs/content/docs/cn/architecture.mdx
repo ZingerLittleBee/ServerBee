@@ -111,6 +111,11 @@ Agent 和 Server 之间使用 WebSocket 通信，连接地址为 `ws://<server>/
 | `PingResult` | Ping 探测结果 | 否 |
 | `TaskResult` | 远程命令执行结果 | 是 |
 | `Pong` | 心跳响应 | 否 |
+| `DockerInfo` | Docker 系统信息和功能上报 | 否 |
+| `DockerContainers` | 当前容器列表及状态 | 否 |
+| `DockerStats` | 容器资源使用统计 | 否 |
+| `DockerLog` | 容器日志条目（批量） | 否 |
+| `DockerEvent` | 容器生命周期事件 | 否 |
 
 **Server -> Agent 消息：**
 
@@ -122,6 +127,9 @@ Agent 和 Server 之间使用 WebSocket 通信，连接地址为 `ws://<server>/
 | `Exec` | 下发远程命令 |
 | `TerminalClose` | 关闭终端会话 |
 | `Ping` | 心跳探测（每 30 秒） |
+| `DockerLogsStart` | 开始为容器流式传输日志 |
+| `DockerLogsStop` | 停止流式传输日志 |
+| `DockerAction` | 执行容器操作（start/stop/restart/remove） |
 
 **握手流程：**
 
@@ -157,7 +165,7 @@ Agent                              Server
 1. **REST API**：初始加载和历史数据查询
 2. **WebSocket**：实时数据推送，连接地址 `ws://<server>/api/ws/servers`
 
-WebSocket 为单向推送（Server -> 浏览器），消息类型包括 `FullSync`、`Update`、`ServerOnline`、`ServerOffline`。
+WebSocket 为单向推送（Server -> 浏览器），消息类型包括 `FullSync`、`Update`、`ServerOnline`、`ServerOffline`、`DockerUpdate`、`DockerEvent`、`DockerAvailabilityChanged`。
 
 REST API 和 WebSocket 共享 TanStack Query 的 cache key `['servers']`，实现无缝的数据更新。
 
@@ -173,7 +181,7 @@ Binary 帧格式：`[1 byte session_id 长度][session_id bytes][payload bytes]`
 
 ## 数据库设计
 
-ServerBee 使用 SQLite 数据库，通过 sea-orm ORM 管理。共有 24 个实体（表）：
+ServerBee 使用 SQLite 数据库，通过 sea-orm ORM 管理。共有 25 个实体（表）：
 
 ### 用户与认证
 
@@ -201,6 +209,7 @@ ServerBee 使用 SQLite 数据库，通过 sea-orm ORM 管理。共有 24 个实
 | `traffic_hourly` | 每小时流量字节数（入站/出站） |
 | `traffic_daily` | 每日流量字节数（入站/出站） |
 | `traffic_state` | 最新累计流量计数器（用于增量计算） |
+| `docker_events` | Docker 容器生命周期事件（start/stop/die/create） |
 
 ### 告警与通知
 
