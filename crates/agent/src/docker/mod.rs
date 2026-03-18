@@ -162,7 +162,7 @@ impl DockerManager {
             Err(e) => {
                 self.notify_unavailable(None).await;
                 tracing::warn!("Failed to list containers for stats: {e}");
-                return Err(e.into());
+                return Err(e);
             }
         };
 
@@ -209,7 +209,7 @@ impl DockerManager {
             Err(e) => {
                 self.notify_unavailable(msg_id).await;
                 tracing::error!("Failed to list containers: {e}");
-                Err(e.into())
+                Err(e)
             }
         }
     }
@@ -363,7 +363,7 @@ impl DockerManager {
             Err(e) => {
                 self.notify_unavailable(Some(msg_id)).await;
                 tracing::error!("Failed to get Docker info: {e}");
-                Err(e.into())
+                Err(e)
             }
         }
     }
@@ -381,7 +381,7 @@ impl DockerManager {
             Err(e) => {
                 self.notify_unavailable(Some(msg_id)).await;
                 tracing::error!("Failed to list networks: {e}");
-                Err(e.into())
+                Err(e)
             }
         }
     }
@@ -399,7 +399,7 @@ impl DockerManager {
             Err(e) => {
                 self.notify_unavailable(Some(msg_id)).await;
                 tracing::error!("Failed to list volumes: {e}");
-                Err(e.into())
+                Err(e)
             }
         }
     }

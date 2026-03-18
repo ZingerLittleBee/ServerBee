@@ -253,17 +253,17 @@ impl Reporter {
                         None => None,
                     }
                 } => {
-                    if let Some(dm) = docker_manager.as_mut() {
-                        if let Err(e) = dm.poll_stats().await {
-                            tracing::warn!("Docker stats polling failed: {e}");
-                            self.demote_docker_runtime(
-                                &mut write,
-                                &mut docker_manager,
-                                &mut docker_available,
-                                &mut docker_stats_interval,
-                            )
-                            .await?;
-                        }
+                    if let Some(dm) = docker_manager.as_mut()
+                        && let Err(e) = dm.poll_stats().await
+                    {
+                        tracing::warn!("Docker stats polling failed: {e}");
+                        self.demote_docker_runtime(
+                            &mut write,
+                            &mut docker_manager,
+                            &mut docker_available,
+                            &mut docker_stats_interval,
+                        )
+                        .await?;
                     }
                 }
                 // Docker retry (reconnect when docker is unavailable)
