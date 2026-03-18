@@ -34,7 +34,17 @@ function DockerPage() {
     refetchOnWindowFocus: false
   })
   const liveServer = liveServers?.find((s) => s.id === serverId)
-  const dockerAvailable = liveServer?.features?.includes('docker') ?? false
+  const wsDockerAvailable = liveServer?.features?.includes('docker') ?? false
+
+  // Also check REST API for features (fallback when WS hasn't synced yet)
+  const { data: serverDetail } = useQuery({
+    queryKey: ['servers', serverId],
+    queryFn: () => api.get<{ features?: string[] }>(`/api/servers/${serverId}`),
+    enabled: !wsDockerAvailable && serverId.length > 0,
+    staleTime: 30_000
+  })
+  const apiDockerAvailable = serverDetail?.features?.includes('docker') ?? false
+  const dockerAvailable = wsDockerAvailable || apiDockerAvailable
 
   const { data: dockerInfo } = useQuery<DockerSystemInfo>({
     queryKey: ['docker', 'info', serverId],
