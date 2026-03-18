@@ -1,11 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeft, Container } from 'lucide-react'
+import { ArrowLeft, Container, HardDrive, Network } from 'lucide-react'
 import { useState } from 'react'
+import { Button } from '@/components/ui/button'
 import { ContainerDetailDialog } from './components/container-detail-dialog'
 import { ContainerList } from './components/container-list'
 import { DockerEvents } from './components/docker-events'
+import { DockerNetworksDialog } from './components/docker-networks-dialog'
 import { DockerOverview } from './components/docker-overview'
+import { DockerVolumesDialog } from './components/docker-volumes-dialog'
 import { useDockerSubscription } from './hooks/use-docker-subscription'
 import type { DockerContainer, DockerContainerStats, DockerEventInfo } from './types'
 
@@ -16,6 +19,8 @@ export const Route = createFileRoute('/_authed/servers/$serverId/docker/')({
 function DockerPage() {
   const { serverId } = Route.useParams()
   const [selectedContainer, setSelectedContainer] = useState<DockerContainer | null>(null)
+  const [networksOpen, setNetworksOpen] = useState(false)
+  const [volumesOpen, setVolumesOpen] = useState(false)
 
   useDockerSubscription(serverId)
 
@@ -61,6 +66,16 @@ function DockerPage() {
         <div className="flex items-center gap-3">
           <Container aria-hidden="true" className="size-6" />
           <h1 className="font-bold text-2xl">Docker</h1>
+          <div className="ml-auto flex items-center gap-2">
+            <Button onClick={() => setNetworksOpen(true)} size="sm" variant="outline">
+              <Network aria-hidden="true" className="mr-1.5 size-4" />
+              Networks
+            </Button>
+            <Button onClick={() => setVolumesOpen(true)} size="sm" variant="outline">
+              <HardDrive aria-hidden="true" className="mr-1.5 size-4" />
+              Volumes
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -93,6 +108,10 @@ function DockerPage() {
         serverId={serverId}
         stats={stats ?? []}
       />
+
+      <DockerNetworksDialog onOpenChange={setNetworksOpen} open={networksOpen} serverId={serverId} />
+
+      <DockerVolumesDialog onOpenChange={setVolumesOpen} open={volumesOpen} serverId={serverId} />
     </div>
   )
 }
