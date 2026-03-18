@@ -6,10 +6,10 @@
 # 全量测试
 cargo test --workspace && bun run test
 
-# Rust 测试（226 单元 + 26 集成 = 252）
+# Rust 测试（232 单元 + 30 集成 = 262）
 cargo test --workspace
 
-# 前端测试（119 vitest，11 个测试文件）
+# 前端测试（124 vitest，14 个测试文件）
 bun run test
 
 # 代码质量
@@ -24,7 +24,7 @@ bun run typecheck
 
 ```bash
 cargo test -p serverbee-common          # 协议 + 能力常量 + Docker 类型 (35 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 (147 + 26 = 173 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 (153 + 30 = 183 tests)
 cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager (44 tests)
 ```
 
@@ -55,7 +55,7 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `server/service/auth.rs` | 19 | 密码哈希、session、API key、TOTP、登录、改密 |
 | `server/service/notification.rs` | 16 | 模板变量替换、渠道配置解析 |
 | `server/service/record.rs` | 6 | 历史查询、聚合、清理策略、保存上报、过期清理 |
-| `server/service/agent_manager.rs` | 12 | 连接管理、广播、缓存、终端会话、离线检测、请求-响应中继 |
+| `server/service/agent_manager.rs` | 13 | 连接管理、广播、缓存、终端会话、离线检测、请求-响应中继、per-entry TTL |
 | `server/service/docker_viewer.rs` | 5 | 首位/末位观察者检测、has_viewers、批量连接移除、批量服务器移除 |
 | `server/service/server.rs` | 5 | 服务器 CRUD、批量删除 |
 | `server/service/user.rs` | 4 | 用户 CRUD、级联删除、最后 admin 保护 |
@@ -72,6 +72,8 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `server/service/file_transfer.rs` | 9 | 传输创建/获取、并发限制、过期清理、状态转换、进度更新、临时文件清理 |
 | `agent/file_manager.rs` | 24 | 路径校验(root_paths/遍历/deny_patterns/多根/空根)、目录列表(排序/空目录/元数据)、文件读写(base64编解码/大小限制)、删除/创建目录/重命名、上传流程、下载分片 |
 | `server/service/traffic.rs` | 17 | 增量计算(正常/重启/单方向重启/零值)、计费周期范围(月/季/年/自定义起始日)、预测算法(正常/早期/无限额)、DB 操作(upsert 累加/状态缓存/日聚合时区) |
+| `server/service/task_scheduler.rs` | 3 | TaskScheduler 创建、重叠检测、取消活跃运行 |
+| `server/task/task_scheduler.rs` | 2 | correlation_id 格式、唯一性 |
 | `server/config.rs` | 1 | 时区解析（chrono-tz 验证） |
 
 ### 集成测试覆盖
@@ -233,6 +235,8 @@ docker compose up -d
 | API Keys | `/settings/api-keys` | 创建表单（key name + Create）+ Active Keys 列表 | ✅ |
 | Security | `/settings/security` | 2FA 设置（Set Up 2FA）+ 密码修改表单 | ✅ |
 | 审计日志 | `/settings/audit-logs` | 表格显示操作记录（Time/Action/User/IP/Detail） | ✅ |
+| 远程命令（即时） | `/settings/tasks` (One-shot tab) | 命令输入 + 服务器选择 + 执行 + 结果展示 | ✅ |
+| 定时任务（计划） | `/settings/tasks` (Scheduled tab) | 任务列表 + 创建/编辑/删除/暂停/手动执行 + 执行历史 | — |
 | 网络质量总览 | `/network` | 显示 VPS 网络质量卡片列表，统计栏显示总数/在线/异常 | — |
 | 网络质量详情 | `/network/:id` | 目标卡片 + 多线延迟图表 + 异常摘要 + 底部统计 + CSV 导出 | — |
 | 网络探测设置 | `/settings/network-probes` | 目标管理（96 预设 + 自定义 CRUD）+ 全局设置（间隔/包数/默认目标） | — |
@@ -480,6 +484,26 @@ docker compose up -d
 | T21 | i18n 中文 | 切换中文 → "流量统计"、"每日流量"、"今日小时流量"、"预计将超出限额" 正确显示 | — |
 | T22 | i18n 英文 | 切换英文 → "Traffic Statistics"、"Daily Traffic"、"Today's Hourly Traffic" 正确显示 | — |
 
+### 验证清单 — 定时任务
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| S1 | Tab 切换 | `/settings/tasks` → 点击 Scheduled tab → 显示定时任务列表（初始为空） | — |
+| S2 | 创建定时任务 | 点击 Create → 填写名称/cron/命令/服务器/超时 → 创建 → 列表出现新任务 | — |
+| S3 | Cron 验证 | 输入无效 cron → 显示错误提示 → 输入有效 cron → 错误消失 | — |
+| S4 | 编辑任务 | 点击 Edit → 修改名称和 cron → 保存 → 列表更新 | — |
+| S5 | 暂停/恢复 | 点击 Pause → 显示 "Paused" 标签 → 点击 Resume → 标签消失 | — |
+| S6 | 手动执行 | 点击 Run Now → toast "Task triggered" → 展开查看执行结果 | — |
+| S7 | 重复执行 409 | 手动执行 → 立即再次点击 Run Now → toast "Task is currently running" | — |
+| S8 | 执行历史 | 点击任务行展开 → 显示按 run_id 分组的执行记录 + 每服务器结果 | — |
+| S9 | 删除任务 | 点击 Delete → 确认弹窗 → 确认 → 任务从列表消失 | — |
+| S10 | Cron 自动触发 | 创建每分钟任务 (0 * * * * *) → 等待 60s+ → 自动执行 → 历史中出现记录 | — |
+| S11 | 重试机制 | 创建任务 retry_count=2 → 目标服务器离线 → 3 次尝试记录 (exit_code=-3) | — |
+| S12 | CAP_EXEC 检查 | 目标服务器禁用 CAP_EXEC → 执行 → 结果 exit_code=-2 "Capability denied" | — |
+| S13 | next_run_at 更新 | 任务执行后 → 列表 Next 列更新为下次执行时间 | — |
+| S14 | i18n 中文 | 切换中文 → Tab 显示 "即时命令"/"定时任务"，按钮/标签显示中文 | — |
+| S15 | i18n 英文 | 切换英文 → Tab 显示 "One-shot"/"Scheduled"，所有 UI 英文 | — |
+
 ### 验证清单 — 告警 & 通知全链路
 
 | # | 测试场景 | 操作步骤 | 状态 |
@@ -519,7 +543,9 @@ crates/server/src/service/alert.rs      # 告警服务测试
 crates/server/src/service/auth.rs       # 认证服务测试 (含 DB 集成)
 crates/server/src/service/notification.rs # 通知服务测试
 crates/server/src/service/record.rs     # 记录服务测试
-crates/server/src/service/agent_manager.rs # AgentManager 单元测试
+crates/server/src/service/agent_manager.rs # AgentManager 单元测试 (含 per-entry TTL)
+crates/server/src/service/task_scheduler.rs # TaskScheduler 单元测试 (3 tests)
+crates/server/src/task/task_scheduler.rs   # 定时任务执行流程测试 (2 tests)
 crates/server/src/service/docker_viewer.rs # DockerViewerTracker 单元测试
 crates/server/src/service/server.rs     # 服务器 CRUD 测试
 crates/server/src/service/user.rs       # 用户服务测试
@@ -527,6 +553,7 @@ crates/server/src/service/ping.rs       # Ping 服务测试
 crates/server/src/middleware/auth.rs    # 中间件 Cookie/Key 提取测试
 crates/server/src/test_utils.rs         # 测试辅助 (setup_test_db)
 crates/server/tests/integration.rs      # 集成测试 (26 tests)
+crates/server/tests/docker_integration.rs # Docker 集成测试 (4 tests)
 crates/agent/src/collector/tests.rs     # Agent 采集器测试
 crates/agent/src/pinger.rs              # Agent Pinger 测试
 crates/agent/src/probe_utils.rs         # 批量探测解析测试
