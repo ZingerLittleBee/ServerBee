@@ -492,6 +492,11 @@ async fn handle_browser_ws(socket: WebSocket, state: Arc<AppState>) {
                         if let Ok(client_msg) = serde_json::from_str::<BrowserClientMessage>(&text) {
                             match client_msg {
                                 BrowserClientMessage::DockerSubscribe { server_id } => {
+                                    // Enforce CAP_DOCKER: reject subscription if capability is disabled.
+                                    // Uses in-memory capability from AgentManager (no DB query needed).
+                                    if !state.agent_manager.has_docker_capability(&server_id) {
+                                        continue;
+                                    }
                                     let is_first = state.docker_viewers
                                         .add_viewer(&server_id, &connection_id);
                                     if is_first {
@@ -700,15 +705,21 @@ case 'docker_event': {
 }
 case 'docker_availability_changed': {
     // msg: { type, server_id, available }
-    // Update the server's features in the servers query cache
+    // Update features in both list and detail caches (same pattern as
+    // capabilities_changed / agent_info_updated in existing code)
+    const updateFeatures = (server: Server) => ({
+        ...server,
+        features: msg.available
+            ? [...new Set([...server.features, 'docker'])]
+            : server.features.filter((f: string) => f !== 'docker')
+    })
+    // List cache
     queryClient.setQueryData(['servers'], (prev: Server[]) =>
-        prev?.map(s => s.id === msg.server_id
-            ? { ...s, features: msg.available
-                ? [...new Set([...s.features, 'docker'])]
-                : s.features.filter(f => f !== 'docker')
-              }
-            : s
-        )
+        prev?.map(s => s.id === msg.server_id ? updateFeatures(s) : s)
+    )
+    // Detail cache
+    queryClient.setQueryData(['servers', msg.server_id], (prev: Server | undefined) =>
+        prev ? updateFeatures(prev) : prev
     )
     break
 }
@@ -880,7 +891,11 @@ GET    /api/servers/{id}/docker/events                   — historical events (
 // Write routes (admin only, behind require_admin middleware)
 POST   /api/servers/{id}/docker/containers/{cid}/action  — container action (start/stop/restart/remove)
 
-All Docker REST endpoints additionally check `agent_manager.has_feature(server_id, "docker")` before dispatching to the Agent. Returns 409 Conflict if the Agent does not support Docker.
+**All Docker REST endpoints** (read and write) check **both** gates before proceeding:
+1. `has_capability(server.capabilities, CAP_DOCKER)` — returns 403 if CAP_DOCKER is disabled
+2. `agent_manager.has_feature(server_id, "docker")` — returns 409 if Agent does not support Docker
+
+This is enforced via a shared `require_docker` middleware/extractor that runs before each Docker route handler, similar to how `require_admin` works for write routes.
 ```
 
 Note: stats/events subscription is handled via browser WS messages (DockerSubscribe/Unsubscribe), not REST. Log streaming uses a dedicated WS endpoint.
