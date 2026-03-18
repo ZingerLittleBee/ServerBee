@@ -5,6 +5,7 @@ export const CAP_PING_ICMP = 8
 export const CAP_PING_TCP = 16
 export const CAP_PING_HTTP = 32
 export const CAP_FILE = 64
+export const CAP_DOCKER = 128
 export const CAP_DEFAULT = 56
 
 export const CAPABILITIES = [
@@ -14,7 +15,8 @@ export const CAPABILITIES = [
   { bit: CAP_PING_ICMP, key: 'ping_icmp', labelKey: 'cap_ping_icmp' as const, risk: 'low' as const },
   { bit: CAP_PING_TCP, key: 'ping_tcp', labelKey: 'cap_ping_tcp' as const, risk: 'low' as const },
   { bit: CAP_PING_HTTP, key: 'ping_http', labelKey: 'cap_ping_http' as const, risk: 'low' as const },
-  { bit: CAP_FILE, key: 'file', labelKey: 'cap_file' as const, risk: 'high' as const }
+  { bit: CAP_FILE, key: 'file', labelKey: 'cap_file' as const, risk: 'high' as const },
+  { bit: CAP_DOCKER, key: 'docker', labelKey: 'cap_docker' as const, risk: 'high' as const }
 ] as const
 
 export function hasCap(capabilities: number, bit: number): boolean {
