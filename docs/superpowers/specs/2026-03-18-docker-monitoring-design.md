@@ -24,6 +24,32 @@ Add Docker container monitoring and management to ServerBee. The Agent connects 
 - Container creation
 - Network / volume write operations (create, delete)
 
+## Authentication and Authorization
+
+Docker functionality follows a two-tier permission model:
+
+### Read operations (all authenticated users — Member + Admin)
+
+- View Docker Tab (if `features` includes `"docker"` and `CAP_DOCKER` is enabled)
+- View container list, stats, events, networks, volumes
+- Subscribe to real-time Docker updates (stats + events stream)
+- View container logs via dedicated WebSocket
+- View Docker system info
+
+All Docker read routes are placed in the **authenticated (non-admin) router**, alongside existing read-only server routes.
+
+### Write operations (Admin only)
+
+- Container actions: start / stop / restart / remove
+- `POST /api/servers/{id}/docker/containers/{cid}/action` is placed in the **admin router** (`require_admin` middleware).
+
+### WebSocket auth
+
+The dedicated log WebSocket (`/api/ws/docker/logs`) performs the same auth checks as the existing browser WebSocket:
+1. Session cookie or API key validation
+2. `CAP_DOCKER` capability check for the target server
+3. No admin role required (logs are read-only)
+
 ## Architecture
 
 ### Agent: DockerManager
@@ -68,7 +94,7 @@ pub struct DockerManager {
    - On success: stores `DockerManager`, sends `AgentMessage::DockerInfo` proactively.
    - On failure: stores `None`, starts a background retry timer (30s interval).
 3. **Retry loop**: When `docker_manager` is `None`, Reporter periodically calls `DockerManager::try_new()`. On success, sends `DockerInfo` and begins accepting Docker commands. This runs as an arm of the existing `tokio::select!` loop (a `docker_retry_interval` ticker).
-4. **Runtime disconnect**: If the bollard client encounters a connection error during stats/events/logs, DockerManager sends `AgentMessage::DockerUnavailable { server_id }` and transitions to retry mode. All active log sessions and event streams are aborted.
+4. **Runtime disconnect**: If the bollard client encounters a connection error during stats/events/logs, DockerManager sends `AgentMessage::DockerUnavailable` and transitions to retry mode. All active log sessions and event streams are aborted.
 5. On WebSocket disconnect (Agent ↔ Server), DockerManager cleans up all active sessions.
 
 #### Reporter integration
@@ -100,14 +126,19 @@ pub struct SystemInfo {
 }
 ```
 
+**`features` is always persisted on every Agent connect.** When Server receives `AgentMessage::SystemInfo`, it writes `SystemInfo.features` to the `servers.features` column, replacing any previous value. This ensures:
+- If Docker was available last time but not this time, `features` becomes `[]` and the stale `["docker"]` is cleared.
+- No separate `FeaturesUpdate` is needed for the initial state — `SystemInfo` is the single source of truth at connection time.
+
+`AgentMessage::FeaturesUpdate` is only sent for **runtime changes** (Docker becomes available/unavailable after initial connect).
+
 Server uses `features` to determine Agent capabilities beyond the bitmask:
 - `features` contains `"docker"` → Agent has Docker support compiled in and Docker daemon is reachable.
-- Server persists `features` to the `servers` table (new `features TEXT` column, JSON array).
 - Frontend reads `features` from server data to conditionally show Docker Tab.
 
 This decouples "Agent binary supports Docker" (feature negotiation) from "admin allows Docker operations" (CAP_DOCKER capability). Both must be true for Docker to function.
 
-Old agents (protocol_version < 3) will not send `features` and will not understand `ServerMessage::Docker*` — Server simply never sends Docker commands to them. The capabilities dialog shows a notice: "Agent upgrade required for Docker support".
+Old agents (protocol_version < 3) will not send `features` (field absent or empty) and will not understand `ServerMessage::Docker*` — Server simply never sends Docker commands to them. The capabilities dialog shows a notice: "Agent upgrade required for Docker support".
 
 ### Capability
 
@@ -134,10 +165,10 @@ Default off. Agent checks `has_capability(CAP_DOCKER)` before processing any `Se
 
 ### Graceful degradation
 
-- **Docker available** → `DockerManager::try_new()` succeeds, `features` includes `"docker"`, sends `DockerInfo` proactively on connect
-- **Docker unavailable at startup** → `DockerManager` is `None`, `features` does not include `"docker"`, retry timer active (30s)
-- **Docker becomes available later** → retry succeeds, sends `DockerInfo`, `features` updated via new `AgentMessage::FeaturesUpdate`
-- **Docker stops at runtime** → sends `AgentMessage::DockerUnavailable`, transitions to retry mode, `features` updated
+- **Docker available** → `DockerManager::try_new()` succeeds, `SystemInfo.features` includes `"docker"`, sends `DockerInfo` proactively on connect
+- **Docker unavailable at startup** → `DockerManager` is `None`, `SystemInfo.features` is `[]` (no `"docker"`), retry timer active (30s)
+- **Docker becomes available later** → retry succeeds, sends `DockerInfo` + `FeaturesUpdate { features: ["docker"] }`
+- **Docker stops at runtime** → sends `DockerUnavailable` + `FeaturesUpdate { features: [] }`, transitions to retry mode
 
 ## Protocol Messages
 
@@ -263,6 +294,24 @@ BrowserMessage::DockerAvailabilityChanged {
 }
 ```
 
+### BrowserClientMessage (Browser → Server, via /ws/servers)
+
+New message type for browser-to-server communication over the existing `/ws/servers` WebSocket. Currently the browser WS is read-only (server pushes to browser). This adds a lightweight upstream channel for Docker subscription control:
+
+```rust
+// Browser sends these JSON messages over the /ws/servers WebSocket
+enum BrowserClientMessage {
+    // Subscribe to Docker stats + events for a server.
+    // Server tracks subscriptions per WS connection (connection_id).
+    // First subscriber for a server_id triggers DockerStartStats + DockerEventsStart.
+    DockerSubscribe { server_id: String },
+
+    // Unsubscribe from Docker updates.
+    // Last subscriber for a server_id triggers DockerStopStats + DockerEventsStop.
+    DockerUnsubscribe { server_id: String },
+}
+```
+
 **Note:** `DockerLog` is NOT a BrowserMessage. Logs are delivered via a dedicated WebSocket (see below).
 
 ## Log Streaming: Dedicated WebSocket
@@ -279,6 +328,8 @@ Instead, logs use a dedicated WebSocket endpoint, following the same pattern as 
 WebSocket /api/ws/docker/logs?server_id={id}&container_id={cid}&tail={n}&follow={bool}
 ```
 
+**Auth:** Same as existing browser WS — session cookie or API key. Additionally checks `CAP_DOCKER` capability for the target server. No admin role required (logs are read-only).
+
 ### Server-side flow
 
 ```rust
@@ -291,6 +342,8 @@ async fn handle_docker_logs_ws(
     tail: Option<u64>,
     follow: bool,
 ) {
+    // Auth is already validated by middleware before reaching this handler
+
     let session_id = generate_session_id();
     let (output_tx, mut output_rx) = mpsc::channel::<Vec<DockerLogEntry>>(256);
 
@@ -313,8 +366,6 @@ async fn handle_docker_logs_ws(
                 ws_sink.send(Message::Text(serde_json::to_string(&entries)?)).await?;
             }
             Some(msg) = ws_stream.next() => {
-                // Browser can send control messages (e.g., pause/resume)
-                // or just close the connection
                 if msg.is_err() || matches!(msg, Ok(Message::Close(_))) {
                     break;
                 }
@@ -364,52 +415,135 @@ const useDockerLogs = (serverId, containerId, options) => {
 
 Stats and events use the global broadcast channel (they are low-frequency: stats every 3s, events are sparse). But they need a proper control plane to start/stop Agent-side streaming.
 
-### Server-side viewer refcount
+### Connection-bound subscriptions via browser WebSocket
+
+Instead of REST endpoints with ad-hoc viewer IDs, subscriptions are tied to the browser WebSocket connection itself. This provides automatic cleanup on disconnect — no orphan risk.
+
+#### Server-side
+
+Each browser WS connection is assigned a `connection_id` (UUID) when established. The browser handler now reads incoming messages (previously ignored) and processes `BrowserClientMessage`:
 
 ```rust
-// In AgentManager or a dedicated DockerSubscriptionManager
+// router/ws/browser.rs — enhanced to handle upstream messages
+async fn handle_browser_ws(socket: WebSocket, state: Arc<AppState>) {
+    let connection_id = Uuid::new_v4().to_string();
+    let mut browser_rx = state.browser_tx.subscribe();
+    let (mut ws_sink, mut ws_stream) = socket.split();
+
+    loop {
+        tokio::select! {
+            // Existing: broadcast → browser
+            msg = browser_rx.recv() => {
+                ws_sink.send(serialize(msg)).await?;
+            }
+            // New: browser → server (Docker subscription control)
+            Some(Ok(Message::Text(text))) = ws_stream.next() => {
+                if let Ok(client_msg) = serde_json::from_str::<BrowserClientMessage>(&text) {
+                    match client_msg {
+                        BrowserClientMessage::DockerSubscribe { server_id } => {
+                            let is_first = state.docker_viewers
+                                .add_viewer(&server_id, &connection_id);
+                            if is_first {
+                                state.agent_manager.send_to_agent(&server_id,
+                                    ServerMessage::DockerStartStats { interval_secs: 3 });
+                                state.agent_manager.send_to_agent(&server_id,
+                                    ServerMessage::DockerEventsStart);
+                            }
+                        }
+                        BrowserClientMessage::DockerUnsubscribe { server_id } => {
+                            let is_last = state.docker_viewers
+                                .remove_viewer(&server_id, &connection_id);
+                            if is_last {
+                                state.agent_manager.send_to_agent(&server_id,
+                                    ServerMessage::DockerStopStats);
+                                state.agent_manager.send_to_agent(&server_id,
+                                    ServerMessage::DockerEventsStop);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Connection closed — remove ALL subscriptions for this connection
+    let affected_servers = state.docker_viewers.remove_all_for_connection(&connection_id);
+    for (server_id, is_last) in affected_servers {
+        if is_last {
+            state.agent_manager.send_to_agent(&server_id, ServerMessage::DockerStopStats);
+            state.agent_manager.send_to_agent(&server_id, ServerMessage::DockerEventsStop);
+        }
+    }
+}
+```
+
+#### DockerViewerTracker
+
+```rust
 pub struct DockerViewerTracker {
-    // server_id → set of viewer_ids (browser session IDs)
-    stats_viewers: DashMap<String, HashSet<String>>,
-    events_viewers: DashMap<String, HashSet<String>>,
+    // server_id → set of connection_ids (browser WS connections)
+    viewers: DashMap<String, HashSet<String>>,
 }
 
 impl DockerViewerTracker {
-    /// Returns true if this is the first viewer (should send Start to Agent)
-    pub fn add_stats_viewer(&self, server_id: &str, viewer_id: &str) -> bool;
+    /// Add a viewer. Returns true if this is the first viewer (should start streaming).
+    pub fn add_viewer(&self, server_id: &str, connection_id: &str) -> bool {
+        let mut set = self.viewers.entry(server_id.to_string()).or_default();
+        let was_empty = set.is_empty();
+        set.insert(connection_id.to_string());
+        was_empty
+    }
 
-    /// Returns true if this was the last viewer (should send Stop to Agent)
-    pub fn remove_stats_viewer(&self, server_id: &str, viewer_id: &str) -> bool;
+    /// Remove a viewer. Returns true if this was the last viewer (should stop streaming).
+    pub fn remove_viewer(&self, server_id: &str, connection_id: &str) -> bool {
+        if let Some(mut set) = self.viewers.get_mut(server_id) {
+            set.remove(connection_id);
+            if set.is_empty() {
+                drop(set);
+                self.viewers.remove(server_id);
+                return true;
+            }
+        }
+        false
+    }
 
-    // Same for events
+    /// Remove all subscriptions for a disconnected connection.
+    /// Returns Vec<(server_id, was_last_viewer)>.
+    pub fn remove_all_for_connection(&self, connection_id: &str) -> Vec<(String, bool)> {
+        let mut results = Vec::new();
+        let server_ids: Vec<String> = self.viewers.iter()
+            .filter(|entry| entry.value().contains(connection_id))
+            .map(|entry| entry.key().clone())
+            .collect();
+        for server_id in server_ids {
+            let is_last = self.remove_viewer(&server_id, connection_id);
+            results.push((server_id, is_last));
+        }
+        results
+    }
 }
 ```
 
-### REST endpoints for subscription control
-
-```
-POST   /api/servers/{id}/docker/subscribe      — { viewer_id } → starts stats+events if first viewer
-DELETE /api/servers/{id}/docker/subscribe       — { viewer_id } → stops stats+events if last viewer
-```
-
-### Frontend integration
+#### Frontend integration
 
 ```typescript
-// When Docker tab mounts:
-const viewerId = useRef(crypto.randomUUID())
-useEffect(() => {
-    api.post(`/servers/${serverId}/docker/subscribe`, { viewer_id: viewerId.current })
-    return () => {
-        api.delete(`/servers/${serverId}/docker/subscribe`, { viewer_id: viewerId.current })
-    }
-}, [serverId])
+// apps/web/src/hooks/use-docker-ws.ts
+const useDockerSubscription = (serverId: string) => {
+    const ws = useServersWs()  // existing global WS connection
+
+    useEffect(() => {
+        // Send subscribe message over existing WS
+        ws.send(JSON.stringify({ type: 'DockerSubscribe', server_id: serverId }))
+        return () => {
+            ws.send(JSON.stringify({ type: 'DockerUnsubscribe', server_id: serverId }))
+        }
+    }, [serverId, ws])
+
+    // If browser crashes/closes, WS disconnects, server auto-cleans subscriptions
+}
 ```
 
-### Server-side cleanup
-
-- When a browser WebSocket disconnects, Server removes all viewer registrations for that session.
-- A periodic sweep (60s) removes stale viewers whose browser WS is no longer connected.
-- `BrowserMessage::DockerUpdate` and `BrowserMessage::DockerEvent` go through the existing global broadcast — they are low-frequency and small payload, safe for the 256-slot buffer.
+No REST endpoints needed. No viewer_id management. No api.delete compatibility issues. Connection lifecycle = subscription lifecycle.
 
 ## Data Structures
 
@@ -502,13 +636,14 @@ pub enum DockerAction {
 
 In `handle_agent_message()`:
 
-- `DockerInfo` → cache in AgentManager, persist `features` to `servers` table. If `msg_id` is present, dispatch via `pending_requests`. Broadcast `BrowserMessage::DockerAvailabilityChanged { available: true }`.
+- `SystemInfo` → (existing handler, enhanced) persist `features` to `servers.features` column on **every connect**, replacing previous value. This clears stale `["docker"]` when Docker is no longer available.
+- `DockerInfo` → cache in AgentManager. If `msg_id` is present, dispatch via `pending_requests`. Broadcast `BrowserMessage::DockerAvailabilityChanged { available: true }`.
 - `DockerContainers` → cache in AgentManager + broadcast `BrowserMessage::DockerUpdate`. If `msg_id` is present, also dispatch via `pending_requests`.
 - `DockerStats` → cache in AgentManager + broadcast `BrowserMessage::DockerUpdate`
 - `DockerLog` → route to specific log session channel via `agent_manager.get_docker_log_session()` (**not** broadcast)
 - `DockerEvent` → save to `docker_event` table + broadcast `BrowserMessage::DockerEvent`
 - `DockerUnavailable` → clear Docker caches for this server, broadcast `BrowserMessage::DockerAvailabilityChanged { available: false }`
-- `FeaturesUpdate` → update `servers.features` in database, broadcast availability change
+- `FeaturesUpdate` → update `servers.features` in database, broadcast `DockerAvailabilityChanged` accordingly
 - `DockerNetworks` / `DockerVolumes` → dispatch via `pending_requests` (request-response pattern)
 - `DockerActionResult` → dispatch via `pending_requests`
 
@@ -522,31 +657,46 @@ docker_info: DashMap<String, DockerSystemInfo>,
 
 // Log session routing (session_id → channel, NOT container_id)
 docker_log_sessions: DashMap<String, mpsc::Sender<Vec<DockerLogEntry>>>,
-
-// Viewer tracking for stats/events subscription lifecycle
-docker_viewers: DockerViewerTracker,
 ```
 
 ### REST API
 
 ```
+// Read routes (all authenticated users)
 GET    /api/servers/{id}/docker/containers              — container list (from cache)
 GET    /api/servers/{id}/docker/stats                    — container stats (from cache)
 GET    /api/servers/{id}/docker/info                     — Docker system info (from cache)
 GET    /api/servers/{id}/docker/networks                 — network list (request-response via Agent)
 GET    /api/servers/{id}/docker/volumes                  — volume list (request-response via Agent)
 GET    /api/servers/{id}/docker/events                   — historical events (from database)
+
+// Write routes (admin only, behind require_admin middleware)
 POST   /api/servers/{id}/docker/containers/{cid}/action  — container action (start/stop/restart/remove)
-POST   /api/servers/{id}/docker/subscribe                — register viewer (start stats+events if first)
-DELETE /api/servers/{id}/docker/subscribe                — unregister viewer (stop if last)
 ```
+
+Note: stats/events subscription is handled via browser WS messages (DockerSubscribe/Unsubscribe), not REST. Log streaming uses a dedicated WS endpoint.
 
 ### WebSocket endpoints
 
 ```
-WS /api/ws/servers                                      — existing, now also carries DockerUpdate + DockerEvent
-WS /api/ws/docker/logs?server_id={id}&container_id={cid}&tail={n}&follow={bool}  — dedicated log stream (new)
+WS /api/ws/servers              — existing, enhanced: now reads BrowserClientMessage upstream,
+                                  also carries DockerUpdate + DockerEvent + DockerAvailabilityChanged downstream
+WS /api/ws/docker/logs?...      — dedicated log stream (new, auth + CAP_DOCKER check, no admin required)
 ```
+
+### DTO changes for `features` propagation
+
+The `features` field must be present in all paths that deliver server data to the frontend:
+
+1. **`ServerResponse`** (REST `GET /api/servers/{id}`) — add `features: Vec<String>`
+2. **`ServerStatus`** (used in `BrowserMessage::FullSync` and `BrowserMessage::Update`) — add `features: Vec<String>`
+3. **Frontend TypeScript types** — add `features: string[]` to the Server interface
+4. **`useServersWs` hook** — propagate `features` from WS messages to React Query cache
+
+This ensures Docker Tab visibility is consistent across:
+- Initial page load (REST response)
+- WebSocket full sync (on connect / lagged resync)
+- Real-time updates (DockerAvailabilityChanged modifies the cached server's `features`)
 
 ### Database changes
 
@@ -574,27 +724,35 @@ CREATE INDEX idx_docker_event_server_time ON docker_event(server_id, timestamp D
 ALTER TABLE servers ADD COLUMN features TEXT DEFAULT '[]';  -- JSON array of strings
 ```
 
-Retention for `docker_event`: 7 days. **Requires explicit addition** to the existing cleanup task (`crates/server/src/task/cleanup.rs`) — add a `docker_event` cleanup branch alongside the existing `records`, `ping_record`, etc.
+**Cleanup task**: Add explicit `docker_event` cleanup branch to `crates/server/src/task/cleanup.rs` alongside existing `records`, `ping_record`, `network_probe_record`, etc. Retention: 7 days.
 
 ### Data flow
 
 ```
 Agent connects to Server:
-    Agent → DockerManager::try_new()
-    If Docker available:
-        Agent → AgentMessage::DockerInfo { msg_id: None, info }
-        Server → cache DockerInfo, persist features=["docker"] to servers table
-        Server → broadcast BrowserMessage::DockerAvailabilityChanged { available: true }
-    If Docker unavailable:
-        Agent starts 30s retry timer, features=[] (no "docker")
+    Agent → SystemInfo { features: ["docker"], protocol_version: 3 }
+        Server persists features=["docker"] to servers.features (always, replaces old value)
+    Agent → DockerInfo { msg_id: None, info }
+        Server caches DockerInfo in AgentManager
+        Server broadcasts BrowserMessage::DockerAvailabilityChanged { available: true }
 
-Browser opens Docker tab (only visible if server.features includes "docker"):
-    React → POST /api/servers/{id}/docker/subscribe { viewer_id }
+    (If Docker unavailable at startup:)
+    Agent → SystemInfo { features: [], protocol_version: 3 }
+        Server persists features=[] (clears any stale ["docker"] from previous session)
+    Agent starts 30s retry timer
+
+Browser loads page:
+    React → GET /api/servers (response includes features for each server)
+    React → connect /ws/servers, receive FullSync (includes features per server)
+    Docker Tab visibility: server.features.includes("docker") && hasCap(CAP_DOCKER)
+
+Browser opens Docker tab:
+    React → sends BrowserClientMessage::DockerSubscribe { server_id } over /ws/servers
     Server → if first viewer for this server:
         Server → ServerMessage::DockerStartStats { interval_secs: 3 }
         Server → ServerMessage::DockerEventsStart
     React → GET /api/servers/{id}/docker/containers (initial load from cache)
-    React → subscribe /ws/servers for BrowserMessage::DockerUpdate + DockerEvent
+    React → listens for BrowserMessage::DockerUpdate + DockerEvent on /ws/servers
     ↓
 Agent DockerManager:
     - polls container list + stats → AgentMessage::DockerContainers / DockerStats
@@ -605,13 +763,19 @@ Server receives → cache + broadcast via browser_tx
 Browser updates UI in real-time
 
 Browser closes Docker tab:
-    React → DELETE /api/servers/{id}/docker/subscribe { viewer_id }
+    React → sends BrowserClientMessage::DockerUnsubscribe { server_id } over /ws/servers
     Server → if last viewer for this server:
         Server → ServerMessage::DockerStopStats
         Server → ServerMessage::DockerEventsStop
 
+Browser crashes / network drops:
+    /ws/servers disconnects
+    Server → remove_all_for_connection(connection_id)
+    Server → if any server lost last viewer: send DockerStopStats + DockerEventsStop
+
 User views container logs (opens detail Dialog):
     React → opens WebSocket to /api/ws/docker/logs?server_id=X&container_id=Y&tail=100&follow=true
+    Server → validates auth + CAP_DOCKER
     Server → generates session_id, registers log session channel
     Server → ServerMessage::DockerLogsStart { session_id, container_id, tail, follow }
     Agent → docker.logs() stream → batches → AgentMessage::DockerLog { session_id, entries }
@@ -624,20 +788,22 @@ User views container logs (opens detail Dialog):
 
 ### Entry point
 
-Docker Tab inside the Server detail page, alongside Overview / Terminal / Files / Ping tabs. Only shown when the server's `features` array includes `"docker"` AND `CAP_DOCKER` is enabled.
+Docker Tab inside the Server detail page, alongside Overview / Terminal / Files / Ping tabs. Only shown when:
+1. `server.features` includes `"docker"` (Agent reports Docker is available)
+2. `CAP_DOCKER` is enabled for the server (admin has granted permission)
 
 ### Docker Tab layout (single-page overview)
 
 Top to bottom:
 1. **Overview cards** — Running count, Stopped count, Total CPU, Total Memory, Docker version
-2. **Container list** — Table with Name, Image, Status, CPU, Memory, Net I/O, Actions. Search and filter (All/Running/Stopped). Click row to open detail Dialog.
+2. **Container list** — Table with Name, Image, Status, CPU, Memory, Net I/O, Actions (actions only visible to admin). Search and filter (All/Running/Stopped). Click row to open detail Dialog.
 3. **Recent events timeline** — Chronological list with timestamp, action badge (start/stop/die/create), actor name.
 4. **Networks & Volumes** — Accessed via buttons or links, displayed in Dialog.
 
 ### Container detail Dialog (sectioned layout)
 
 No tabs. Vertically stacked sections:
-1. **Top: Meta info + actions** — Image, status, ports. Stop / Restart / Remove buttons.
+1. **Top: Meta info + actions** — Image, status, ports. Stop / Restart / Remove buttons (admin only).
 2. **Middle: Real-time stats** — 4 mini cards: CPU (with sparkline), Memory (with usage bar), Net I/O, Block I/O.
 3. **Bottom: Log terminal** — Monospace log output with Follow toggle and tail control. Uses dedicated WebSocket via `useDockerLogs` hook.
 
@@ -656,7 +822,7 @@ apps/web/src/routes/_authed/servers/$serverId/docker/
 │   ├── docker-networks-dialog.tsx  — Networks list Dialog
 │   └── docker-volumes-dialog.tsx   — Volumes list Dialog
 ├── hooks/
-│   ├── use-docker-ws.ts     — Subscribe/unsubscribe lifecycle + DockerUpdate from global WS
+│   ├── use-docker-subscription.ts — DockerSubscribe/Unsubscribe via global WS
 │   └── use-docker-logs.ts   — Dedicated WS for log streaming
 └── types.ts                 — Frontend Docker types
 ```
@@ -670,27 +836,32 @@ apps/web/src/routes/_authed/servers/$serverId/docker/
 - Container stats calculation (CPU%, memory%)
 - DockerService: event save/query
 - Capability check for `CAP_DOCKER`
-- DockerViewerTracker: refcount add/remove, first/last detection
+- DockerViewerTracker: add/remove viewer, first/last detection, remove_all_for_connection
 - Log session routing: session_id based dispatch
+- SystemInfo.features persistence: overwrite on reconnect, stale value cleared
+- BrowserClientMessage parsing in browser WS handler
 
 ### Frontend tests (vitest)
 
 - Docker Tab conditional rendering based on `features` + `CAP_DOCKER`
 - Container list rendering, filtering, search
+- Container action buttons visible only for admin users
 - Container detail Dialog sections
 - Docker events timeline rendering
-- Subscribe/unsubscribe lifecycle on tab mount/unmount
+- DockerSubscribe/Unsubscribe sent on tab mount/unmount via WS
 - Dedicated log WebSocket connection management
 
 ### Integration tests
 
 - Agent ↔ Server Docker message round-trip
-- Container action request-response flow
-- Log stream via dedicated WS: start, receive entries, stop on disconnect
+- Container action request-response flow (admin succeeds, member gets 403)
+- Log stream via dedicated WS: auth check, start, receive entries, stop on disconnect
 - Docker event persistence and retrieval
-- Viewer refcount: multiple browsers subscribe/unsubscribe, stats start/stop correctly
+- Viewer refcount via WS: multiple connections subscribe/unsubscribe, stats start/stop correctly
+- WS disconnect triggers automatic cleanup of all subscriptions
 - Feature negotiation: old agent (protocol v2) does not receive Docker commands
-- Docker availability change: Agent sends DockerUnavailable, Server broadcasts, frontend hides tab
+- Docker availability change: Agent reconnects without Docker, features cleared, frontend hides tab
+- SystemInfo.features overwrite: stale ["docker"] cleared on reconnect without Docker
 
 ## Reference
 
