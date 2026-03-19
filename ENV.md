@@ -110,5 +110,9 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | `SERVERBEE_FILE__ROOT_PATHS` | `file.root_paths` | string[] | `[]` | Allowed root paths for file browsing (e.g. `/home,/var/log`). Empty rejects all file operations |
 | `SERVERBEE_FILE__MAX_FILE_SIZE` | `file.max_file_size` | u64 | `1073741824` | Maximum file size in bytes for read/download (default 1GB) |
 | `SERVERBEE_FILE__DENY_PATTERNS` | `file.deny_patterns` | string[] | `*.key,*.pem,id_rsa*,.env*,shadow,passwd` | Glob patterns for files the agent will refuse to access |
+| `SERVERBEE_IP_CHANGE__ENABLED` | `ip_change.enabled` | bool | `true` | Enable periodic IP change detection. Agent enumerates NIC addresses every `interval_secs` seconds and reports changes via `IpChanged` message |
+| `SERVERBEE_IP_CHANGE__CHECK_EXTERNAL_IP` | `ip_change.check_external_ip` | bool | `false` | Also query an external URL to detect public/NAT IP changes |
+| `SERVERBEE_IP_CHANGE__EXTERNAL_IP_URL` | `ip_change.external_ip_url` | string | `https://api.ipify.org` | URL that returns the agent's external IP as plain text (used when `check_external_ip` is true) |
+| `SERVERBEE_IP_CHANGE__INTERVAL_SECS` | `ip_change.interval_secs` | u64 | `300` | IP check interval in seconds (default 5 minutes) |
 | `SERVERBEE_LOG__LEVEL` | `log.level` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `SERVERBEE_LOG__FILE` | `log.file` | string | `""` | Log file path. Empty means stdout only |

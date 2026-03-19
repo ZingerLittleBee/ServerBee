@@ -6,7 +6,7 @@
 # 全量测试
 cargo test --workspace && bun run test
 
-# Rust 测试（268 单元 + 26 集成 + 4 Docker 集成 = 298）
+# Rust 测试（273 单元 + 26 集成 + 4 Docker 集成 = 303）
 cargo test --workspace
 
 # 前端测试（124 vitest，14 个测试文件）
@@ -24,7 +24,7 @@ bun run typecheck
 
 ```bash
 cargo test -p serverbee-common          # 协议 + 能力常量 + Docker 类型 (35 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 (189 + 30 = 219 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 (194 + 30 = 224 tests)
 cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager (44 tests)
 ```
 
