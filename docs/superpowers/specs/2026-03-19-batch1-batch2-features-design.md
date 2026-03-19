@@ -43,6 +43,7 @@ Two batches of features to close the gap with competing probe/monitoring applica
 | config_json | String (JSON) | Type-specific configuration (see below) |
 | notification_group_id | Option\<String\> | Notification group for alerts |
 | retry_count | i32 | Consecutive failures before alerting, default 1 |
+| server_ids_json | Option\<String\> | Associated servers (JSON array). Used for maintenance window silence. Null = not associated with any server (never silenced). |
 | enabled | bool | — |
 | created_at | DateTime\<Utc\> | — |
 | updated_at | DateTime\<Utc\> | — |
@@ -125,7 +126,7 @@ New file: `crates/server/src/task/service_monitor_checker.rs`
 - Writes results to `service_monitor_record` **and updates `last_status`, `consecutive_failures`, `last_checked_at`** on `service_monitor` in the same transaction.
 - On failure: increments `consecutive_failures` (persisted); alerts only after `retry_count` consecutive failures.
 - On recovery (success after failures): resets `consecutive_failures` to 0, optionally sends recovery notification.
-- **Maintenance window check**: Before dispatching notifications, checks `is_in_maintenance()` for associated servers. If in maintenance, skip notification (see Section 7.3).
+- **Maintenance window check**: Before dispatching notifications, if `server_ids_json` is non-null, checks `is_in_maintenance()` for each associated server. If ALL associated servers are in maintenance, skip notification. If `server_ids_json` is null (monitor not associated with any server, e.g., external SSL check), maintenance windows never apply (see Section 7.3).
 
 **Checker trait and implementations:**
 
@@ -252,9 +253,23 @@ Returns current + historical cycle data:
 ```
 
 ```
+GET /api/traffic/overview/daily?days=30
+```
+Returns global daily trend (all servers combined):
+```json
+{
+  "days": [
+    { "date": "2026-03-01", "bytes_in": 500000, "bytes_out": 800000 },
+    { "date": "2026-03-02", "bytes_in": 600000, "bytes_out": 900000 }
+  ]
+}
+```
+Queries `traffic_daily` table, `SUM(bytes_in)` / `SUM(bytes_out)` grouped by date. Needed for the "Global trend chart" on the traffic overview page.
+
+```
 GET /api/traffic/:server_id/daily?from=&to=
 ```
-Returns daily breakdown:
+Returns per-server daily breakdown:
 ```json
 { "days": [{ "date": "2026-03-01", "bytes_in": 100, "bytes_out": 200 }] }
 ```
@@ -291,9 +306,30 @@ New "Traffic" tab in `servers/$id.tsx`:
 **Agent-side active detection (during long connection):**
 - Agent checks IP via two methods:
   1. **Local NIC enumeration** (`sysinfo::Networks`) — detects local interface IP changes
-  2. **Optional external IP check** — if `config.check_external_ip = true` (default false), Agent queries `https://api.ipify.org` to detect public IP changes (useful for cloud VPS where local NIC shows private IP that never changes while public IP may be reassigned)
+  2. **Optional external IP check** — if `check_external_ip = true` (default false), Agent queries `https://api.ipify.org` to detect public IP changes (useful for cloud VPS where local NIC shows private IP that never changes while public IP may be reassigned)
 - Runs every 5 minutes. Compares against cached IP from previous check.
 - On change: sends `IpChanged` message to Server
+
+**Agent configuration change:**
+
+Add to `AgentConfig` in `crates/agent/src/config.rs`:
+
+```rust
+pub struct IpChangeConfig {
+    pub enabled: bool,              // default true — enable IP change detection
+    pub check_external_ip: bool,    // default false — also query external IP API
+    pub external_ip_url: String,    // default "https://api.ipify.org"
+    pub interval_secs: u64,         // default 300 (5 min)
+}
+```
+
+Env vars (per project convention, `SERVERBEE_` prefix + `__` separator):
+- `SERVERBEE_IP_CHANGE__ENABLED` (default `true`)
+- `SERVERBEE_IP_CHANGE__CHECK_EXTERNAL_IP` (default `false`)
+- `SERVERBEE_IP_CHANGE__EXTERNAL_IP_URL` (default `https://api.ipify.org`)
+- `SERVERBEE_IP_CHANGE__INTERVAL_SECS` (default `300`)
+
+Documentation updates: `ENV.md` and `apps/docs/content/docs/{en,cn}/configuration.mdx`.
 
 ### 3.2 Protocol Extension
 
@@ -458,7 +494,18 @@ Rationale: Disk I/O is same-sampling-period as CPU/memory/network. JSON column a
 
 Included in migration `m20260319_000001_service_monitor.rs` (up-only).
 
-### 4.4 Frontend
+### 4.4 Full Data Pipeline (Agent -> DB -> API -> Frontend)
+
+The `disk_io` field must flow through every layer of the existing record pipeline:
+
+1. **Agent `Collector::collect()`** — calls `disk_io::collect()`, populates `SystemReport.disk_io`
+2. **Server `record_writer` task** — when writing `records` rows, serialize `SystemReport.disk_io` to JSON and store in `records.disk_io_json`. Update `RecordService::save_report()` to include the new column.
+3. **SeaORM entities** — add `disk_io_json: Option<String>` field to both `record` and `record_hourly` entity structs (+ `ToSchema` derive for OpenAPI).
+4. **Hourly aggregation** (`aggregator` task) — when aggregating `records` -> `records_hourly`, compute per-disk averages: parse each row's `disk_io_json`, group by disk name, average `read_bytes_per_sec` / `write_bytes_per_sec`, serialize result to `records_hourly.disk_io_json`.
+5. **API response** — `GET /api/servers/:id/records` already serializes the full `record` / `record_hourly` entity. Adding `disk_io_json` to the entity is sufficient for it to appear in the API response. Add `ToSchema` for OpenAPI.
+6. **Frontend** — parse `disk_io_json` string from API response, render charts.
+
+### 4.5 Frontend
 
 **Server Detail page** — new "Disk I/O" chart section:
 - One line chart group per disk (read speed + write speed)
@@ -549,8 +596,10 @@ The existing `pending_requests` mechanism is a one-shot `oneshot::channel` relay
 
 ```rust
 // AgentManager — new field
-traceroute_results: DashMap<String, (TracerouteResult, Instant)>,  // request_id -> (result, created_at)
+traceroute_results: DashMap<String, (String, TracerouteResult, Instant)>,  // request_id -> (server_id, result, created_at)
 ```
+
+The `server_id` is stored alongside the result. `GET /api/servers/:id/traceroute/:request_id` validates that the stored `server_id` matches the URL `:id` parameter, returning 404 on mismatch. This prevents cross-server result leakage.
 
 Flow:
 1. `POST /traceroute` generates `request_id`, sends `ServerMessage::Traceroute` to Agent via WS, inserts a placeholder into `traceroute_results` with `completed: false`.
