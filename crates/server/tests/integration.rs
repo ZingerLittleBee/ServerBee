@@ -1650,6 +1650,174 @@ async fn test_traffic_api_returns_data() {
 }
 
 #[tokio::test]
+async fn test_service_monitor_crud_and_check() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    // ── Step 1: Create a TCP monitor targeting the test server's own address ──
+    let addr = base_url.trim_start_matches("http://");
+    let create_resp = client
+        .post(format!("{}/api/service-monitors", base_url))
+        .json(&json!({
+            "name": "Localhost TCP Check",
+            "monitor_type": "tcp",
+            "target": addr,
+            "interval": 300,
+            "config_json": {},
+            "enabled": true
+        }))
+        .send()
+        .await
+        .expect("POST /api/service-monitors failed");
+
+    assert_eq!(create_resp.status(), 200, "create service monitor should succeed");
+    let create_body: serde_json::Value = create_resp.json().await.unwrap();
+    let monitor_id = create_body["data"]["id"]
+        .as_str()
+        .expect("monitor id missing");
+    assert_eq!(create_body["data"]["name"], "Localhost TCP Check");
+    assert_eq!(create_body["data"]["monitor_type"], "tcp");
+
+    // ── Step 2: List monitors — verify it appears ──
+    let list_resp = client
+        .get(format!("{}/api/service-monitors", base_url))
+        .send()
+        .await
+        .expect("GET /api/service-monitors failed");
+
+    assert_eq!(list_resp.status(), 200);
+    let list_body: serde_json::Value = list_resp.json().await.unwrap();
+    let monitors = list_body["data"].as_array().expect("data should be array");
+    assert!(
+        monitors.iter().any(|m| m["id"].as_str() == Some(monitor_id)),
+        "Created monitor should appear in list"
+    );
+
+    // ── Step 3: Trigger check — the test server is listening on the target port ──
+    let check_resp = client
+        .post(format!("{}/api/service-monitors/{}/check", base_url, monitor_id))
+        .send()
+        .await
+        .expect("POST /api/service-monitors/{id}/check failed");
+
+    assert_eq!(check_resp.status(), 200, "trigger check should succeed");
+    let check_body: serde_json::Value = check_resp.json().await.unwrap();
+    let record = &check_body["data"];
+    assert!(record["id"].is_number(), "record should have a numeric id");
+    assert_eq!(record["monitor_id"], monitor_id);
+    // TCP connection to our own test server should succeed
+    assert_eq!(record["success"], true, "TCP check to localhost test server should succeed");
+
+    // ── Step 4: Get records — verify the check created a record ──
+    let records_resp = client
+        .get(format!("{}/api/service-monitors/{}/records", base_url, monitor_id))
+        .send()
+        .await
+        .expect("GET /api/service-monitors/{id}/records failed");
+
+    assert_eq!(records_resp.status(), 200);
+    let records_body: serde_json::Value = records_resp.json().await.unwrap();
+    let records = records_body["data"].as_array().expect("data should be array");
+    assert_eq!(records.len(), 1, "should have 1 record after one check");
+    assert_eq!(records[0]["success"], true);
+
+    // ── Step 5: Delete monitor ──
+    let delete_resp = client
+        .delete(format!("{}/api/service-monitors/{}", base_url, monitor_id))
+        .send()
+        .await
+        .expect("DELETE /api/service-monitors/{id} failed");
+
+    assert_eq!(delete_resp.status(), 200, "delete monitor should succeed");
+
+    // Verify it's gone
+    let list_after = client
+        .get(format!("{}/api/service-monitors", base_url))
+        .send()
+        .await
+        .unwrap();
+    let list_after_body: serde_json::Value = list_after.json().await.unwrap();
+    let monitors_after = list_after_body["data"].as_array().unwrap();
+    assert!(
+        !monitors_after.iter().any(|m| m["id"].as_str() == Some(monitor_id)),
+        "Deleted monitor should not appear in list"
+    );
+}
+
+#[tokio::test]
+async fn test_traffic_overview_api() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    // ── Step 1: GET /api/traffic/overview — no servers with billing cycles ──
+    let overview_resp = client
+        .get(format!("{}/api/traffic/overview", base_url))
+        .send()
+        .await
+        .expect("GET /api/traffic/overview failed");
+
+    assert_eq!(overview_resp.status(), 200, "traffic overview should return 200");
+    let overview_body: serde_json::Value = overview_resp.json().await.unwrap();
+    let overview_data = overview_body["data"].as_array().expect("data should be an array");
+    assert!(overview_data.is_empty(), "overview should be empty when no servers have billing cycles");
+
+    // ── Step 2: Register agent and configure billing cycle ──
+    let register_resp = client
+        .post(format!("{}/api/agent/register", base_url))
+        .header("Authorization", "Bearer test-key")
+        .send()
+        .await
+        .expect("Register failed");
+    assert_eq!(register_resp.status(), 200);
+    let body: serde_json::Value = register_resp.json().await.unwrap();
+    let server_id = body["data"]["server_id"].as_str().unwrap();
+
+    // Set billing_cycle on the server
+    let update_resp = client
+        .put(format!("{}/api/servers/{}", base_url, server_id))
+        .json(&json!({
+            "billing_cycle": "monthly",
+            "billing_start_day": 1,
+            "traffic_limit": 1_099_511_627_776_i64
+        }))
+        .send()
+        .await
+        .expect("Update server failed");
+    assert_eq!(update_resp.status(), 200);
+
+    // ── Step 3: GET /api/traffic/overview — should now include the server ──
+    let overview_resp2 = client
+        .get(format!("{}/api/traffic/overview", base_url))
+        .send()
+        .await
+        .expect("GET /api/traffic/overview failed");
+
+    assert_eq!(overview_resp2.status(), 200);
+    let overview_body2: serde_json::Value = overview_resp2.json().await.unwrap();
+    let overview_data2 = overview_body2["data"].as_array().unwrap();
+    assert_eq!(overview_data2.len(), 1, "overview should include 1 server after billing config");
+    assert_eq!(overview_data2[0]["server_id"], server_id);
+    assert_eq!(overview_data2[0]["billing_cycle"], "monthly");
+    assert!(overview_data2[0]["cycle_in"].is_number());
+    assert!(overview_data2[0]["cycle_out"].is_number());
+    assert!(overview_data2[0]["days_remaining"].is_number());
+    assert!(overview_data2[0]["traffic_limit"].is_number());
+
+    // ── Step 4: GET /api/traffic/overview/daily — valid structure ──
+    let daily_resp = client
+        .get(format!("{}/api/traffic/overview/daily?days=30", base_url))
+        .send()
+        .await
+        .expect("GET /api/traffic/overview/daily failed");
+
+    assert_eq!(daily_resp.status(), 200);
+    let daily_body: serde_json::Value = daily_resp.json().await.unwrap();
+    assert!(daily_body["data"].is_array(), "daily overview data should be an array");
+}
+
+#[tokio::test]
 async fn test_server_billing_start_day() {
     let (base_url, _tmp) = start_test_server().await;
     let client = http_client();
