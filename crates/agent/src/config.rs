@@ -17,6 +17,8 @@ pub struct AgentConfig {
     pub log: LogConfig,
     #[serde(default)]
     pub file: FileConfig,
+    #[serde(default)]
+    pub ip_change: IpChangeConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -47,6 +49,37 @@ pub struct FileConfig {
     pub max_file_size: u64,
     #[serde(default = "default_deny_patterns")]
     pub deny_patterns: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct IpChangeConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub check_external_ip: bool,
+    #[serde(default = "default_external_ip_url")]
+    pub external_ip_url: String,
+    #[serde(default = "default_ip_interval")]
+    pub interval_secs: u64,
+}
+
+impl Default for IpChangeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            check_external_ip: false,
+            external_ip_url: default_external_ip_url(),
+            interval_secs: default_ip_interval(),
+        }
+    }
+}
+
+fn default_external_ip_url() -> String {
+    "https://api.ipify.org".to_string()
+}
+
+fn default_ip_interval() -> u64 {
+    300
 }
 
 fn default_max_file_size() -> u64 {
