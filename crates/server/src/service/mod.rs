@@ -12,6 +12,7 @@ pub mod notification;
 pub mod oauth;
 pub mod ping;
 pub mod record;
+pub mod service_monitor;
 pub mod server;
 pub mod task_scheduler;
 pub mod traffic;
