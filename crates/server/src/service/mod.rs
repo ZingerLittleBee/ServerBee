@@ -1,6 +1,7 @@
 pub mod agent_manager;
 pub mod alert;
 pub mod audit;
+pub mod checker;
 pub mod docker;
 pub mod docker_viewer;
 pub mod file_transfer;
