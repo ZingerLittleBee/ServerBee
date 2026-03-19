@@ -196,6 +196,93 @@ bun run test
 | i18n-13 | 品牌名保持 | 切换语言后 "ServerBee" 品牌名不被翻译 | — |
 | i18n-14 | locale 变体检测 | 浏览器语言为 zh-CN / zh-TW → 正确回退到 zh | — |
 
+## 浏览器自动化测试（agent-browser）
+
+使用 [agent-browser](https://github.com/anthropics/agent-browser) CLI 进行 E2E 浏览器测试。
+
+### 前置条件
+
+```bash
+# 安装 agent-browser
+npm i -g agent-browser
+# 或
+brew install agent-browser
+
+# 安装 Chrome（如果没有）
+agent-browser install
+```
+
+### 自动化测试流程
+
+```bash
+# 1. 构建前端 + 后端
+cd apps/web && bun install && bun run build && cd ../..
+cargo build --workspace
+
+# 2. 启动 server
+SERVERBEE_ADMIN__PASSWORD=admin123 SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server &
+sleep 8
+
+# 3. 登录
+agent-browser open http://localhost:9527/login
+agent-browser snapshot -i
+agent-browser fill @e1 "admin" && agent-browser fill @e2 "admin123" && agent-browser click @e3
+agent-browser wait --load networkidle
+
+# 4. P9: Service Monitor — 创建 TCP 监控
+agent-browser open http://localhost:9527/settings/service-monitors
+agent-browser wait --load networkidle && agent-browser snapshot -i
+agent-browser click @e20  # Add Monitor
+agent-browser wait 1000 && agent-browser snapshot -i
+# 选择 TCP 类型
+agent-browser click @e2  # Type dropdown
+agent-browser wait 500 && agent-browser snapshot -i
+agent-browser click @e7  # TCP option
+agent-browser wait 500 && agent-browser snapshot -i
+agent-browser fill @e3 "127.0.0.1:9527"  # Target
+agent-browser click @e7  # Create
+agent-browser wait --load networkidle
+# 验证：列表显示新监控项
+agent-browser snapshot -i
+# 触发检查
+agent-browser click @e24  # Trigger check
+agent-browser wait 2000
+# 查看详情
+agent-browser click @e22  # View details
+agent-browser wait --load networkidle
+agent-browser screenshot /tmp/sm-detail.png
+
+# 5. P10: Traffic — 查看流量总览
+agent-browser open http://localhost:9527/traffic
+agent-browser wait --load networkidle
+agent-browser screenshot /tmp/traffic.png
+
+# 6. P11: IP Changed — 验证告警规则类型
+agent-browser open http://localhost:9527/settings/alerts
+agent-browser wait --load networkidle && agent-browser snapshot -i
+agent-browser click @e20  # Add
+agent-browser wait 1000 && agent-browser snapshot -i
+agent-browser click @e26  # Conditions dropdown
+agent-browser wait 500 && agent-browser snapshot -i
+# 验证："IP Changed" 选项存在于列表末尾
+
+# 7. 清理
+agent-browser close
+pkill -f "target/debug/serverbee-server"
+```
+
+### 最近一次自动化测试结果（2026-03-19）
+
+| 测试项 | 结果 |
+|--------|------|
+| Service Monitor 列表页渲染 | ✅ 表格正确显示 Status/Name/Type/Target/Interval/Enabled/LastChecked/Actions |
+| 创建 TCP 监控 | ✅ 类型选择→填写 target→创建成功→列表更新 |
+| 触发手动检查 | ✅ 绿色状态点→last_checked 更新 |
+| 详情页渲染 | ✅ Uptime 100%、Avg Latency 0.3ms、Response Time 面积图、TCP Connection 卡片 |
+| Traffic 总览页渲染 | ✅ 4 张统计卡片 + "No servers with traffic data yet" |
+| 告警 IP Changed 规则类型 | ✅ 条件下拉包含 "IP Changed" 选项（第 20 种类型） |
+| 侧边栏导航 | ✅ Service Monitors 和 Traffic 入口正确 |
+
 ## 手动功能验证（E2E）
 
 ### 启动本地环境
@@ -247,13 +334,13 @@ docker compose up -d
 | 审计日志 | `/settings/audit-logs` | 表格显示操作记录（Time/Action/User/IP/Detail） | ✅ |
 | 远程命令（即时） | `/settings/tasks` (One-shot tab) | 命令输入 + 服务器选择 + 执行 + 结果展示 | ✅ |
 | 定时任务（计划） | `/settings/tasks` (Scheduled tab) | 任务列表 + 创建/编辑/删除/暂停/手动执行 + 执行历史 | — |
-| 服务监控 | `/settings/service-monitors` | 监控列表 + 创建/编辑/删除/手动触发 + 状态徽章 + 侧边栏导航 | — |
-| 服务监控详情 | `/settings/service-monitors/:id` | 状态图表 + 历史记录表格 + 时间范围过滤 | — |
+| 服务监控 | `/settings/service-monitors` | 监控列表 + 创建/编辑/删除/手动触发 + 状态徽章 + 侧边栏导航 | ✅ |
+| 服务监控详情 | `/service-monitors/:id` | Uptime%/延迟/最后检测统计卡片 + Response Time 面积图 + 类型详情卡片 + 历史记录 | ✅ |
 | 网络质量总览 | `/network` | 显示 VPS 网络质量卡片列表，统计栏显示总数/在线/异常 | — |
 | 网络质量详情 | `/network/:id` | 目标卡片 + 多线延迟图表 + 异常摘要 + 底部统计 + CSV 导出 | — |
 | 网络探测设置 | `/settings/network-probes` | 目标管理（96 预设 + 自定义 CRUD）+ 全局设置（间隔/包数/默认目标） | — |
 | Docker 监控 | `/servers/:serverId/docker` | 概览卡片 + 容器表格 + 事件时间线 + 详情弹窗 + 网络/卷弹窗 | — |
-| 流量总览 | `/traffic` | 统计卡片（周期 In/Out/最高用量/超限数）+ 服务器排名表格 + 30 天趋势 AreaChart | — |
+| 流量总览 | `/traffic` | 统计卡片（周期 In/Out/最高用量/超限数）+ 服务器排名表格 + 30 天趋势 AreaChart | ✅ |
 | 服务器流量 Tab | `/servers/:id` (Traffic tab) | 周期进度条 + 日 BarChart (7d/30d/90d) + 历史周期对比水平 BarChart | — |
 | 公共状态页 | `/status` | 无需登录，显示服务器在线状态和实时指标 | ✅ |
 | Swagger UI | `/swagger-ui/` | OpenAPI 文档加载正常 | — |
@@ -532,15 +619,15 @@ docker compose up -d
 | # | 测试场景 | 操作步骤 | 状态 |
 |---|---------|---------|------|
 | SM1 | 创建 SSL 监控 | `/settings/service-monitors` → Add → 类型 SSL → 输入域名 → 创建 → 列表出现 | — |
-| SM2 | 创建 TCP 监控 | 类型 TCP → 输入 host:port → 创建 → 状态显示 OK/FAIL | — |
+| SM2 | 创建 TCP 监控 | 类型 TCP → 输入 host:port → 创建 → 状态显示 OK/FAIL | ✅ |
 | SM3 | 创建 HTTP Keyword 监控 | 类型 HTTP → 输入 URL + 关键词 → 创建 → 检测响应体含关键词 | — |
 | SM4 | 创建 DNS 监控 | 类型 DNS → 输入域名 + 期望 IP → 创建 → 解析结果与预期匹配则 OK | — |
 | SM5 | 创建 WHOIS 监控 | 类型 WHOIS → 输入域名 → 创建 → 显示到期剩余天数 | — |
-| SM6 | 手动触发检测 | 点击 Check Now → toast 提示 → 状态和最后检测时间更新 | — |
+| SM6 | 手动触发检测 | 点击 Check Now → toast 提示 → 状态和最后检测时间更新 | ✅ |
 | SM7 | 编辑监控 | 点击 Edit → 修改名称/阈值 → 保存 → 列表更新 | — |
 | SM8 | 删除监控 | 点击 Delete → 确认 → 从列表消失 → 历史记录级联删除 | — |
-| SM9 | 状态徽章 | OK = 绿色，FAIL = 红色，PENDING = 灰色 | — |
-| SM10 | 详情页 — 状态图表 | 点击监控 → 详情页 → 显示历史状态时间线图表 | — |
+| SM9 | 状态徽章 | OK = 绿色，FAIL = 红色，PENDING = 灰色 | ✅ |
+| SM10 | 详情页 — 状态图表 | 点击监控 → 详情页 → 显示 Response Time 面积图 + Uptime/延迟/最后检测统计 | ✅ |
 | SM11 | 详情页 — 记录表格 | 详情页显示历史检测记录（时间/状态/延迟/消息）+ 时间范围过滤 | — |
 | SM12 | 自动调度 | 创建监控 → 等待 interval 秒 → 自动执行 → 历史记录出现新条目 | — |
 | SM13 | SSL 到期警告 | SSL 证书剩余天数 < threshold → 状态变为 FAIL | — |
