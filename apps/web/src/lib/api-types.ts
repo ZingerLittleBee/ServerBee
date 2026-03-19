@@ -606,7 +606,7 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    get: operations['list_tasks']
+    get: operations['list_ping_tasks']
     put?: never
     post: operations['create_ping_task']
     delete?: never
@@ -623,9 +623,9 @@ export interface paths {
       cookie?: never
     }
     get: operations['get_ping_task']
-    put: operations['update_task']
+    put: operations['update_ping_task']
     post?: never
-    delete: operations['delete_task']
+    delete: operations['delete_ping_task']
     options?: never
     head?: never
     patch?: never
@@ -2494,6 +2494,34 @@ export interface operations {
       }
     }
   }
+  delete_ping_task: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Ping task ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Ping task deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   delete_rule: {
     parameters: {
       query?: never
@@ -2591,34 +2619,6 @@ export interface operations {
     requestBody?: never
     responses: {
       /** @description Service monitor deleted */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-      /** @description Not found */
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  delete_task: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Ping task ID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description Ping task deleted */
       200: {
         headers: {
           [name: string]: unknown
@@ -3432,6 +3432,26 @@ export interface operations {
       }
     }
   }
+  list_ping_tasks: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all ping tasks */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PingTask'][]
+        }
+      }
+    }
+  }
   list_providers: {
     parameters: {
       query?: never
@@ -3531,26 +3551,6 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['AlertStateResponse'][]
-        }
-      }
-    }
-  }
-  list_tasks: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description List all ping tasks */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['PingTask'][]
         }
       }
     }
@@ -4426,6 +4426,40 @@ export interface operations {
       }
     }
   }
+  update_ping_task: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Ping task ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdatePingTask']
+      }
+    }
+    responses: {
+      /** @description Ping task updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PingTask']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   update_rule: {
     parameters: {
       query?: never
@@ -4590,40 +4624,6 @@ export interface operations {
         content: {
           'application/json': components['schemas']['SystemSettings']
         }
-      }
-    }
-  }
-  update_task: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Ping task ID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdatePingTask']
-      }
-    }
-    responses: {
-      /** @description Ping task updated */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['PingTask']
-        }
-      }
-      /** @description Not found */
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
       }
     }
   }

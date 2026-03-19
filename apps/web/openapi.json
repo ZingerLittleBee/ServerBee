@@ -1797,7 +1797,7 @@
     "/api/ping-tasks": {
       "get": {
         "tags": ["ping-tasks"],
-        "operationId": "list_tasks",
+        "operationId": "list_ping_tasks",
         "responses": {
           "200": {
             "description": "List all ping tasks",
@@ -1901,7 +1901,7 @@
       },
       "put": {
         "tags": ["ping-tasks"],
-        "operationId": "update_task",
+        "operationId": "update_ping_task",
         "parameters": [
           {
             "name": "id",
@@ -1949,7 +1949,7 @@
       },
       "delete": {
         "tags": ["ping-tasks"],
-        "operationId": "delete_task",
+        "operationId": "delete_ping_task",
         "parameters": [
           {
             "name": "id",
