@@ -31,12 +31,12 @@
 | P9 | 服务监控 (Service Monitor) | **已完成** | 10 commits (`f02fd23`..`dcca19e`) |
 | P10 | 流量统计 (Traffic Statistics) | **已完成** | 3 commits (`846bd73`..`f28a696`) |
 | P11 | IP 变更通知 (IP Change Notification) | **已完成** | 8 tasks |
-| P12 | 磁盘 I/O 监控 (Disk I/O Monitoring) | **已实现（待修复前端构建）** | 1 (`1a6d1da`) |
+| P12 | 磁盘 I/O 监控 (Disk I/O Monitoring) | **已完成（含本地构建修复）** | 1 (`1a6d1da`) |
 
-**P0~P11 已完成；P12 功能已提交并完成自动化验证与 agent-browser E2E，但前端生产构建仍有阻塞待修复。**
-**自动化测试:** 288 单元 + 29 集成 + 4 Docker 集成 + 129 前端 = 450 个测试通过；`cargo clippy --workspace -- -D warnings`、`cargo build --workspace`、`bun run typecheck`、`bun x ultracite check` 通过。
-**E2E 浏览器测试:** P9/P10/P11 共 7 项通过；P12 Disk I/O 共 10 项中 8 项通过、2 项部分验证（tooltip 悬浮态与缺失点补零未稳定抓取到 UI 证据）。
-**当前阻塞:** `cd apps/web && bun run build` 因 `apps/web/src/lib/api-types.ts` 中 `delete_task` / `list_tasks` / `update_task` 重复标识符失败。
+**P0~P12 已完成；P12 磁盘 I/O 功能已完成自动化验证、前端构建修复与 agent-browser 手动验证。**
+**自动化测试:** 288 单元 + 29 集成 + 4 Docker 集成 + 129 前端 = 450 个测试通过；`cargo test --workspace`、`cargo clippy --workspace -- -D warnings`、`cargo build --workspace`、`bun run test`、`bun run typecheck`、`bun x ultracite check`、`bun run build` 通过。
+**E2E 浏览器测试:** P9/P10/P11 共 7 项通过；P12 Disk I/O DI1~DI10 共 10/10 通过（含 tooltip 悬浮、缺失点补零、null 兼容、API JSON 解析与中文文案验证）。
+**当前状态:** 前端构建阻塞已修复；手动测试证据已保存到 `/tmp/serverbee-p12-manual-20260319/artifacts`。
 
 ---
 
@@ -953,6 +953,7 @@ POST   /api/service-monitors/:id/check   手动触发检测
 
 **分支**: `sydney-v1`
 **提交**: `1a6d1da` `feat: add historical disk I/O monitoring`
+**本地待提交修复**: ping OpenAPI `operation_id` 去重（`crates/server/src/router/api/ping.rs`、`apps/web/openapi.json`、`apps/web/src/lib/api-types.ts`）
 **实现计划**: `docs/superpowers/plans/2026-03-19-p12-disk-io-monitoring.md`
 **设计文档**: `docs/superpowers/specs/2026-03-19-batch1-batch2-features-design.md` Section 4
 
@@ -975,11 +976,11 @@ POST   /api/service-monitors/:id/check   手动触发检测
 - 服务器详情页新增 Disk I/O 历史图表，支持 Merged / Per Disk 两种视图
 - 本期保持 historical-only，不扩展 WebSocket realtime `ServerStatus`
 
-**验证进展 (2026-03-19):**
-- 自动化通过：`cargo test --workspace`、`cargo clippy --workspace -- -D warnings`、`cargo build --workspace`、`bun run test`、`bun run typecheck`、`bun x ultracite check`
-- agent-browser E2E：DI1/DI2/DI4/DI6/DI7/DI8/DI9/DI10 通过；DI3/DI5 部分验证（页面与文案正常，但未稳定捕获 tooltip / 缺失点为 0 的悬浮证据）
-- 兼容性验证：将 `disk_io_json` 置空后，历史模式页面无报错且 Disk I/O 区块按无数据处理
-- 当前阻塞：`cd apps/web && bun run build` 失败，原因是 `apps/web/src/lib/api-types.ts` 存在 `delete_task` / `list_tasks` / `update_task` 重复标识符
+**验证进展 (2026-03-20):**
+- 自动化通过：`cargo test --workspace`、`cargo clippy --workspace -- -D warnings`、`cargo build --workspace`、`bun run test`、`bun run typecheck`、`bun x ultracite check`、`bun run build`
+- 前端构建修复：为 ping API 显式设置唯一 `operation_id`（`list_ping_tasks` / `update_ping_task` / `delete_ping_task`），并重新生成 `apps/web/openapi.json` 与 `apps/web/src/lib/api-types.ts`
+- agent-browser 手动 / E2E：DI1~DI10 全部通过；已验证 realtime 隐藏、historical 渲染、Merged/Per Disk、tooltip、缺失点补零、`0 B/s`、range 切换、`disk_io_json = null` 兼容、API JSON 解析与中文文案
+- 证据：截图保存在 `/tmp/serverbee-p12-manual-20260319/artifacts`
 
 ---
 
