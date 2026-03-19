@@ -60,6 +60,9 @@ function formatRuleItem(item: AlertRuleItem, t: (key: string, options?: Record<s
   if (item.rule_type === 'expiration') {
     return t('alerts.display_expires', { count: item.duration ?? 7 })
   }
+  if (item.rule_type === 'ip_changed') {
+    return 'IP Changed'
+  }
   if (item.cycle_limit) {
     return t('alerts.display_transfer', { value: item.cycle_limit, period: item.cycle_interval ?? 'month' })
   }
@@ -109,7 +112,8 @@ function AlertsPage() {
     { label: t('alerts.metric_transfer_total'), value: 'transfer_all_cycle' },
     { label: t('alerts.metric_expiration'), value: 'expiration' },
     { label: 'Network Latency', value: 'network_latency' },
-    { label: 'Network Packet Loss', value: 'network_packet_loss' }
+    { label: 'Network Packet Loss', value: 'network_packet_loss' },
+    { label: 'IP Changed', value: 'ip_changed' }
   ]
 
   const { data: rules, isLoading } = useQuery<AlertRule[]>({
