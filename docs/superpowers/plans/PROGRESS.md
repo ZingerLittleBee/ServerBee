@@ -28,8 +28,9 @@
 | P6 | 文件管理 | **已完成** | 24 tasks |
 | P7 | Docker 容器监控 | **已完成** | 25 tasks, 17 commits |
 | P8 | 定时任务 (Scheduled Tasks) | **已完成** | 1 (`9a27711`) |
+| P9 | 服务监控 (Service Monitor) | **已完成** | 10 commits (`f02fd23`..`dcca19e`) |
 
-**P0~P8 全部完成并已提交。测试: 232 单元 + 26 集成 + 4 Docker 集成 + 124 前端 = 386 个测试。**
+**P0~P9 全部完成并已提交。测试: 268 单元 + 26 集成 + 4 Docker 集成 + 124 前端 = 422 个测试。**
 
 ---
 
@@ -846,6 +847,45 @@ POST   /api/tasks/:id/run           手动触发定时任务 (409 if running)
 - 时区感知的 `next_run_at` 计算 (chrono-tz)
 
 **测试:** 5 个新单元测试 (TaskScheduler 3 + correlation_id 2), 所有 262 Rust + 124 前端测试通过
+
+### P9: 服务监控 (Service Monitor)
+
+**分支**: `main`
+**Commits**: `f02fd23`..`dcca19e` (10 commits)
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | 依赖: x509-parser, hickory-resolver, whois-rust | **done** |
+| T2 | Server: 数据库 migration (service_monitor + service_monitor_record 表 + 索引) | **done** |
+| T3 | Server: service_monitor + service_monitor_record sea-orm 实体 | **done** |
+| T4 | Server: ServiceMonitorService (CRUD + record 管理 + check_state 更新 + 清理) | **done** |
+| T5 | Server: 5 种 Checker 实现 (SSL 证书到期 / DNS 解析 / HTTP 关键词 / TCP 端口 / WHOIS 到期) | **done** |
+| T6 | Server: 后台执行引擎 (ServiceMonitorTask — 并发 + 调度 + 重试 + 状态写入) | **done** |
+| T7 | Server: 保留配置 + 定期清理 (service_monitor_record_days) | **done** |
+| T8 | Server: REST API (7 端点: read_router + write_router + OpenAPI 注解) | **done** |
+| T9 | Frontend: 服务监控管理页面 (列表 + 创建/编辑对话框 + 手动触发 + 侧边栏导航) | **done** |
+| T10 | Frontend: 服务监控详情页面 (状态图表 + 历史记录表格 + 实时刷新) | **done** |
+| T11 | 最终验证: cargo test + clippy + typecheck + ultracite check 全部通过 | **done** |
+
+**新增 API 端点:**
+```
+GET    /api/service-monitors              列出所有服务监控
+POST   /api/service-monitors             创建服务监控
+GET    /api/service-monitors/:id         获取服务监控详情
+PUT    /api/service-monitors/:id         更新服务监控
+DELETE /api/service-monitors/:id         删除服务监控 (级联删除记录)
+GET    /api/service-monitors/:id/records 获取检测记录 (?from=&to=)
+POST   /api/service-monitors/:id/check   手动触发检测
+```
+
+**支持的监控类型:**
+- **SSL** — 检测 TLS 证书到期天数 (x509-parser)
+- **DNS** — 验证域名解析是否返回预期 IP (hickory-resolver)
+- **HTTP Keyword** — HTTP/HTTPS 响应体关键词匹配 (reqwest)
+- **TCP** — TCP 端口连通性检测
+- **WHOIS** — 域名到期日检测 (whois-rust)
+
+**测试:** 36 个新单元测试 (ServiceMonitorService 15 + checker 21: dns 3 + http_keyword 3 + ssl 3 + tcp 3 + whois 8), 所有 298 Rust + 124 前端测试通过
 
 ---
 

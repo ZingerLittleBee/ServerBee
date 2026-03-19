@@ -6,7 +6,7 @@
 # 全量测试
 cargo test --workspace && bun run test
 
-# Rust 测试（232 单元 + 30 集成 = 262）
+# Rust 测试（268 单元 + 30 集成 = 298）
 cargo test --workspace
 
 # 前端测试（124 vitest，14 个测试文件）
@@ -24,7 +24,7 @@ bun run typecheck
 
 ```bash
 cargo test -p serverbee-common          # 协议 + 能力常量 + Docker 类型 (35 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 (153 + 30 = 183 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 (189 + 30 = 219 tests)
 cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager (44 tests)
 ```
 
@@ -75,6 +75,12 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `server/service/task_scheduler.rs` | 3 | TaskScheduler 创建、重叠检测、取消活跃运行 |
 | `server/task/task_scheduler.rs` | 2 | correlation_id 格式、唯一性 |
 | `server/config.rs` | 1 | 时区解析（chrono-tz 验证） |
+| `server/service/service_monitor.rs` | 15 | CRUD、记录管理、check_state 更新、清理策略、级联删除、JSON server_ids |
+| `server/service/checker/dns.rs` | 3 | 自定义 nameserver、无效 nameserver、系统默认 resolver 构建 |
+| `server/service/checker/http_keyword.rs` | 3 | 空 headers、无效 header 值、带自定义 headers 构建 |
+| `server/service/checker/ssl.rs` | 3 | 默认端口解析、显式端口解析、config 覆盖端口解析 |
+| `server/service/checker/tcp.rs` | 3 | 连接拒绝、连接成功（本机监听）、默认超时值 |
+| `server/service/checker/whois.rs` | 8 | 多种日期格式解析、paid-till 格式、ISO 格式、注册商解析、长文本截断 |
 
 ### 集成测试覆盖
 
@@ -237,6 +243,8 @@ docker compose up -d
 | 审计日志 | `/settings/audit-logs` | 表格显示操作记录（Time/Action/User/IP/Detail） | ✅ |
 | 远程命令（即时） | `/settings/tasks` (One-shot tab) | 命令输入 + 服务器选择 + 执行 + 结果展示 | ✅ |
 | 定时任务（计划） | `/settings/tasks` (Scheduled tab) | 任务列表 + 创建/编辑/删除/暂停/手动执行 + 执行历史 | — |
+| 服务监控 | `/settings/service-monitors` | 监控列表 + 创建/编辑/删除/手动触发 + 状态徽章 + 侧边栏导航 | — |
+| 服务监控详情 | `/settings/service-monitors/:id` | 状态图表 + 历史记录表格 + 时间范围过滤 | — |
 | 网络质量总览 | `/network` | 显示 VPS 网络质量卡片列表，统计栏显示总数/在线/异常 | — |
 | 网络质量详情 | `/network/:id` | 目标卡片 + 多线延迟图表 + 异常摘要 + 底部统计 + CSV 导出 | — |
 | 网络探测设置 | `/settings/network-probes` | 目标管理（96 预设 + 自定义 CRUD）+ 全局设置（间隔/包数/默认目标） | — |
@@ -504,6 +512,28 @@ docker compose up -d
 | S14 | i18n 中文 | 切换中文 → Tab 显示 "即时命令"/"定时任务"，按钮/标签显示中文 | — |
 | S15 | i18n 英文 | 切换英文 → Tab 显示 "One-shot"/"Scheduled"，所有 UI 英文 | — |
 
+### 验证清单 — 服务监控 (Service Monitor)
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| SM1 | 创建 SSL 监控 | `/settings/service-monitors` → Add → 类型 SSL → 输入域名 → 创建 → 列表出现 | — |
+| SM2 | 创建 TCP 监控 | 类型 TCP → 输入 host:port → 创建 → 状态显示 OK/FAIL | — |
+| SM3 | 创建 HTTP Keyword 监控 | 类型 HTTP → 输入 URL + 关键词 → 创建 → 检测响应体含关键词 | — |
+| SM4 | 创建 DNS 监控 | 类型 DNS → 输入域名 + 期望 IP → 创建 → 解析结果与预期匹配则 OK | — |
+| SM5 | 创建 WHOIS 监控 | 类型 WHOIS → 输入域名 → 创建 → 显示到期剩余天数 | — |
+| SM6 | 手动触发检测 | 点击 Check Now → toast 提示 → 状态和最后检测时间更新 | — |
+| SM7 | 编辑监控 | 点击 Edit → 修改名称/阈值 → 保存 → 列表更新 | — |
+| SM8 | 删除监控 | 点击 Delete → 确认 → 从列表消失 → 历史记录级联删除 | — |
+| SM9 | 状态徽章 | OK = 绿色，FAIL = 红色，PENDING = 灰色 | — |
+| SM10 | 详情页 — 状态图表 | 点击监控 → 详情页 → 显示历史状态时间线图表 | — |
+| SM11 | 详情页 — 记录表格 | 详情页显示历史检测记录（时间/状态/延迟/消息）+ 时间范围过滤 | — |
+| SM12 | 自动调度 | 创建监控 → 等待 interval 秒 → 自动执行 → 历史记录出现新条目 | — |
+| SM13 | SSL 到期警告 | SSL 证书剩余天数 < threshold → 状态变为 FAIL | — |
+| SM14 | WHOIS 到期警告 | 域名到期剩余天数 < threshold → 状态变为 FAIL | — |
+| SM15 | 记录清理 | 配置 service_monitor_record_days=1 → cleanup 运行后旧记录删除 | — |
+| SM16 | i18n 中文 | 切换中文 → 页面标题/按钮/状态标签全部显示中文 | — |
+| SM17 | i18n 英文 | 切换英文 → 所有 UI 元素显示英文 | — |
+
 ### 验证清单 — 告警 & 通知全链路
 
 | # | 测试场景 | 操作步骤 | 状态 |
@@ -564,6 +594,12 @@ crates/server/src/service/file_transfer.rs # 文件传输管理器测试 (9 test
 crates/server/src/service/traffic.rs       # 流量统计服务测试 (17 tests)
 crates/server/src/config.rs                # 配置测试 (1 test)
 crates/agent/src/file_manager.rs           # Agent 文件管理器测试 (24 tests)
+crates/server/src/service/service_monitor.rs # 服务监控 CRUD + 记录管理测试 (15 tests)
+crates/server/src/service/checker/dns.rs   # DNS checker 单元测试 (3 tests)
+crates/server/src/service/checker/http_keyword.rs # HTTP Keyword checker 单元测试 (3 tests)
+crates/server/src/service/checker/ssl.rs   # SSL checker 单元测试 (3 tests)
+crates/server/src/service/checker/tcp.rs   # TCP checker 单元测试 (3 tests)
+crates/server/src/service/checker/whois.rs # WHOIS checker 单元测试 (8 tests)
 apps/web/src/hooks/use-terminal-ws.test.ts # Terminal WS hook 测试
 apps/web/src/lib/capabilities.test.ts   # 能力位测试
 apps/web/src/lib/api-client.test.ts     # API Client 测试
