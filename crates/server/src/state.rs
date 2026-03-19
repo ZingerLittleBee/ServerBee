@@ -8,6 +8,7 @@ use tokio::sync::broadcast;
 use crate::config::AppConfig;
 use crate::error::AppError;
 use crate::service::agent_manager::AgentManager;
+use crate::service::alert::AlertStateManager;
 use crate::service::docker_viewer::DockerViewerTracker;
 use crate::service::file_transfer::FileTransferManager;
 use crate::service::geoip::GeoIpService;
@@ -45,6 +46,8 @@ pub struct AppState {
     pub docker_viewers: DockerViewerTracker,
     /// Cron-based scheduled task scheduler.
     pub task_scheduler: Arc<TaskScheduler>,
+    /// Shared alert state manager for dedup across poll-based and event-driven evaluation.
+    pub alert_state_manager: AlertStateManager,
 }
 
 impl AppState {
@@ -106,6 +109,13 @@ impl AppState {
             std::env::temp_dir().join("serverbee-transfers"),
         ));
         let task_scheduler = Arc::new(TaskScheduler::new(&config.scheduler.timezone).await?);
+        let alert_state_manager = match AlertStateManager::load_from_db(&db).await {
+            Ok(sm) => sm,
+            Err(e) => {
+                tracing::warn!("Failed to load alert states from DB, starting empty: {e}");
+                AlertStateManager::new()
+            }
+        };
         // Preload capabilities and features from DB
         if let Err(e) = agent_manager.preload_capabilities(&db).await {
             tracing::warn!("Failed to preload capabilities: {e}");
@@ -123,6 +133,7 @@ impl AppState {
             file_transfers,
             docker_viewers: DockerViewerTracker::new(),
             task_scheduler,
+            alert_state_manager,
         }))
     }
 }
