@@ -130,6 +130,29 @@ impl Default for CollectorConfig {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ip_change_config_defaults() {
+        let config = IpChangeConfig::default();
+        assert!(config.enabled, "IP change detection should be enabled by default");
+        assert!(
+            !config.check_external_ip,
+            "external IP checking should be disabled by default"
+        );
+        assert_eq!(
+            config.interval_secs, 300,
+            "default interval should be 300 seconds"
+        );
+        assert_eq!(
+            config.external_ip_url, "https://api.ipify.org",
+            "default external IP URL should be api.ipify.org"
+        );
+    }
+}
+
 impl AgentConfig {
     pub fn load() -> anyhow::Result<Self> {
         let config: Self = Figment::new()

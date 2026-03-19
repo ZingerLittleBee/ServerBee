@@ -186,4 +186,22 @@ mod tests {
         let info: SystemInfo = serde_json::from_str(json).unwrap();
         assert_eq!(info.features, vec!["docker"]);
     }
+
+    #[test]
+    fn test_network_interface_serialization() {
+        let iface = NetworkInterface {
+            name: "eth0".to_string(),
+            ipv4: vec!["192.168.1.100".to_string(), "10.0.0.1".to_string()],
+            ipv6: vec!["fe80::1".to_string()],
+        };
+        let json = serde_json::to_string(&iface).unwrap();
+        let parsed: NetworkInterface = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.name, "eth0");
+        assert_eq!(parsed.ipv4.len(), 2);
+        assert_eq!(parsed.ipv4[0], "192.168.1.100");
+        assert_eq!(parsed.ipv4[1], "10.0.0.1");
+        assert_eq!(parsed.ipv6.len(), 1);
+        assert_eq!(parsed.ipv6[0], "fe80::1");
+        assert_eq!(parsed, iface, "NetworkInterface should implement PartialEq correctly");
+    }
 }
