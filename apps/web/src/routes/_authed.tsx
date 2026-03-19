@@ -35,18 +35,25 @@ function AuthedLayout() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  const wsRef = useServersWs()
+  const shouldConnectWs = isAuthenticated && !isLoading
+  const wsRef = useServersWs(shouldConnectWs)
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected')
 
   useEffect(() => {
+    if (!shouldConnectWs) {
+      setConnectionState('disconnected')
+      return
+    }
+
     const ws = wsRef.current
     if (!ws) {
+      setConnectionState('disconnected')
       return
     }
     // Sync initial state
     setConnectionState(ws.connectionState)
     return ws.onConnectionStateChange(setConnectionState)
-  }, [wsRef])
+  }, [shouldConnectWs, wsRef])
 
   const send = useCallback(
     (data: unknown) => {
