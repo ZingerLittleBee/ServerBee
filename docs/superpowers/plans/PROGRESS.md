@@ -29,8 +29,9 @@
 | P7 | Docker 容器监控 | **已完成** | 25 tasks, 17 commits |
 | P8 | 定时任务 (Scheduled Tasks) | **已完成** | 1 (`9a27711`) |
 | P9 | 服务监控 (Service Monitor) | **已完成** | 10 commits (`f02fd23`..`dcca19e`) |
+| P10 | 流量统计 (Traffic Statistics) | **已完成** | 3 commits (`846bd73`..`f28a696`) |
 
-**P0~P9 全部完成并已提交。测试: 268 单元 + 26 集成 + 4 Docker 集成 + 124 前端 = 422 个测试。**
+**P0~P10 全部完成并已提交。测试: 268 单元 + 26 集成 + 4 Docker 集成 + 124 前端 = 422 个测试。**
 
 ---
 
@@ -847,6 +848,33 @@ POST   /api/tasks/:id/run           手动触发定时任务 (409 if running)
 - 时区感知的 `next_run_at` 计算 (chrono-tz)
 
 **测试:** 5 个新单元测试 (TaskScheduler 3 + correlation_id 2), 所有 262 Rust + 124 前端测试通过
+
+### P10: 流量统计 (Traffic Statistics)
+
+**分支**: `main`
+**Commits**: `846bd73`..`f28a696` (3 commits)
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | Server: 流量总览 API (`GET /api/traffic/overview`) | **done** |
+| T2 | Server: 全局日聚合 API (`GET /api/traffic/overview/daily?days=N`) | **done** |
+| T3 | Server: 周期历史 API (`GET /api/traffic/{server_id}/cycle?history=N`) | **done** |
+| T4 | Server: TrafficService 新增 `overview()`/`overview_daily()`/`cycle_history()` 方法 | **done** |
+| T5 | Server: 新增类型 `ServerTrafficOverview`/`CycleTraffic`/`CycleResponse` + OpenAPI | **done** |
+| T6 | Frontend: 全局流量总览页 (`/traffic`) — 统计卡片 + 服务器排名表格 + 30d 趋势 AreaChart | **done** |
+| T7 | Frontend: 服务器详情 Traffic Tab — 周期进度条 + 日趋势 BarChart + 历史周期对比 BarChart | **done** |
+| T8 | Frontend: 侧边栏 Traffic 导航入口 + i18n 中英文 key | **done** |
+| T9 | Frontend: `traffic-card.test.tsx` (1 vitest) — TrafficCard tab 切换 + hourly/daily 图表渲染 | **done** |
+| T10 | 最终验证: cargo test + clippy + typecheck + ultracite check 全部通过 | **done** |
+
+**新增 API 端点:**
+```
+GET    /api/traffic/overview              所有服务器当前计费周期用量汇总
+GET    /api/traffic/overview/daily        全局日聚合流量（?days=30）
+GET    /api/traffic/{server_id}/cycle     指定服务器历史周期对比（?history=6）
+```
+
+**测试:** 1 个新前端测试 (traffic-card.test.tsx), 全部 298 Rust + 124 前端测试通过
 
 ### P9: 服务监控 (Service Monitor)
 
