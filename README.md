@@ -8,13 +8,14 @@ A lightweight, self-hosted VPS monitoring system built with Rust and React.
 
 - **Real-time Dashboard** -- Server status, CPU/memory/disk/network metrics with live WebSocket updates
 - **Server Groups** -- Organize servers by group with country flag display
-- **Detailed Metrics** -- Real-time streaming charts + historical views (1h/6h/24h/7d/30d) for CPU, memory, disk, network, load, temperature, GPU
+- **Detailed Metrics** -- Real-time streaming charts + historical views (1h/6h/24h/7d/30d) for CPU, memory, disk, network, load, temperature, GPU, disk I/O
 - **Alert System** -- 14+ metric types, threshold/offline/traffic/expiration rules, AND logic, 70% sampling
 - **Notifications** -- Webhook, Telegram, Bark, Email (SMTP) channels with notification groups
 - **Network Quality Monitoring** -- Multi-target network probing (96 preset China 3-ISP + international nodes), real-time/historical latency charts, anomaly detection, per-server target assignment
 - **Ping Monitoring** -- ICMP, TCP, HTTP probes with latency charts and success rate
 - **Web Terminal** -- Browser-based PTY terminal via WebSocket proxy
 - **GPU Monitoring** -- NVIDIA GPU usage/temperature/memory (via nvml-wrapper, feature-gated)
+- **Disk I/O Monitoring** -- Per-disk read/write throughput charts with merged and per-disk views (Linux, historical mode)
 - **GeoIP** -- Automatic region/country detection from agent IP (MaxMind MMDB)
 - **OAuth & 2FA** -- GitHub/Google/OIDC login, TOTP two-factor authentication
 - **Multi-user** -- Admin/Member roles, audit logging, rate limiting
