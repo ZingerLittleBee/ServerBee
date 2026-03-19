@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeft, Container, CreditCard, FileText, Pencil, Terminal as TerminalIcon } from 'lucide-react'
+import { ArrowLeft, BarChart3, Container, CreditCard, FileText, Pencil, Terminal as TerminalIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CapabilitiesDialog } from '@/components/server/capabilities-dialog'
@@ -9,8 +9,10 @@ import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
 import { TrafficCard } from '@/components/server/traffic-card'
 import { TrafficProgress } from '@/components/server/traffic-progress'
+import { TrafficTab } from '@/components/server/traffic-tab'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useServer, useServerRecords } from '@/hooks/use-api'
 import { useRealtimeMetrics } from '@/hooks/use-realtime-metrics'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
@@ -146,10 +148,134 @@ function ServerActionButtons({
   )
 }
 
+function MetricsTabContent({
+  chartData,
+  gpuChartData,
+  hasGpu,
+  hasTemperature,
+  rangeIndex,
+  realtimeFormatTime,
+  serverId
+}: {
+  chartData: Record<string, unknown>[]
+  gpuChartData: Record<string, unknown>[]
+  hasGpu: boolean
+  hasTemperature: boolean
+  rangeIndex: number
+  realtimeFormatTime: ((time: string) => string) | undefined
+  serverId: string
+}) {
+  const { t } = useTranslation('servers')
+  const navigate = Route.useNavigate()
+
+  return (
+    <>
+      <div className="mt-4 mb-4 flex gap-1">
+        {TIME_RANGES.map((tr, i) => (
+          <Button
+            className={cn(rangeIndex === i && 'bg-primary text-primary-foreground')}
+            key={tr.label}
+            onClick={() => navigate({ search: (prev) => ({ ...prev, range: tr.interval }) })}
+            size="sm"
+            variant={rangeIndex === i ? 'default' : 'outline'}
+          >
+            {t(tr.label)}
+          </Button>
+        ))}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <MetricsChart
+          color="var(--color-chart-1)"
+          data={chartData}
+          dataKey="cpu"
+          formatTime={realtimeFormatTime}
+          title={t('chart_cpu')}
+          unit="%"
+        />
+        <MetricsChart
+          color="var(--color-chart-2)"
+          data={chartData}
+          dataKey="memory_pct"
+          formatTime={realtimeFormatTime}
+          title={t('chart_memory')}
+          unit="%"
+        />
+        <MetricsChart
+          color="var(--color-chart-3)"
+          data={chartData}
+          dataKey="disk_pct"
+          formatTime={realtimeFormatTime}
+          title={t('chart_disk')}
+          unit="%"
+        />
+        <MetricsChart
+          color="var(--color-chart-4)"
+          data={chartData}
+          dataKey="net_in_speed"
+          formatTick={(v) => formatBytes(v)}
+          formatTime={realtimeFormatTime}
+          formatValue={(v) => formatBytes(v)}
+          title={t('chart_net_in')}
+        />
+        <MetricsChart
+          color="var(--color-chart-5)"
+          data={chartData}
+          dataKey="net_out_speed"
+          formatTick={(v) => formatBytes(v)}
+          formatTime={realtimeFormatTime}
+          formatValue={(v) => formatBytes(v)}
+          title={t('chart_net_out')}
+        />
+        <MetricsChart
+          color="var(--color-chart-1)"
+          data={chartData}
+          dataKey="load1"
+          formatTime={realtimeFormatTime}
+          title={t('chart_load')}
+        />
+
+        {hasTemperature && (
+          <MetricsChart
+            color="var(--color-chart-4)"
+            data={chartData}
+            dataKey="temperature"
+            formatTime={realtimeFormatTime}
+            title={t('chart_temperature')}
+            unit="°C"
+          />
+        )}
+
+        {hasGpu && (
+          <>
+            <MetricsChart
+              color="var(--color-chart-5)"
+              data={gpuChartData}
+              dataKey="gpu_usage"
+              formatTime={realtimeFormatTime}
+              title={t('chart_gpu')}
+              unit="%"
+            />
+            <MetricsChart
+              color="var(--color-chart-2)"
+              data={gpuChartData}
+              dataKey="gpu_temp"
+              formatTime={realtimeFormatTime}
+              title={t('chart_gpu_temp')}
+              unit="°C"
+            />
+          </>
+        )}
+      </div>
+
+      <TrafficCard serverId={serverId} />
+    </>
+  )
+}
+
 function ServerDetailPage() {
   const { t } = useTranslation('servers')
   const { id } = Route.useParams()
-  const navigate = Route.useNavigate()
   const { range: rangeParam } = Route.useSearch()
   const [editOpen, setEditOpen] = useState(false)
 
@@ -321,105 +447,35 @@ function ServerDetailPage() {
         </div>
       )}
 
-      <div className="mb-4 flex gap-1">
-        {TIME_RANGES.map((tr, i) => (
-          <Button
-            className={cn(rangeIndex === i && 'bg-primary text-primary-foreground')}
-            key={tr.label}
-            onClick={() => navigate({ search: (prev) => ({ ...prev, range: tr.interval }) })}
-            size="sm"
-            variant={rangeIndex === i ? 'default' : 'outline'}
-          >
-            {t(tr.label)}
-          </Button>
-        ))}
-      </div>
+      <Tabs defaultValue="metrics">
+        <TabsList>
+          <TabsTrigger value="metrics">Metrics</TabsTrigger>
+          {server.billing_cycle && (
+            <TabsTrigger value="traffic">
+              <BarChart3 aria-hidden="true" className="mr-1 size-3.5" />
+              Traffic
+            </TabsTrigger>
+          )}
+        </TabsList>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <MetricsChart
-          color="var(--color-chart-1)"
-          data={chartData}
-          dataKey="cpu"
-          formatTime={realtimeFormatTime}
-          title={t('chart_cpu')}
-          unit="%"
-        />
-        <MetricsChart
-          color="var(--color-chart-2)"
-          data={chartData}
-          dataKey="memory_pct"
-          formatTime={realtimeFormatTime}
-          title={t('chart_memory')}
-          unit="%"
-        />
-        <MetricsChart
-          color="var(--color-chart-3)"
-          data={chartData}
-          dataKey="disk_pct"
-          formatTime={realtimeFormatTime}
-          title={t('chart_disk')}
-          unit="%"
-        />
-        <MetricsChart
-          color="var(--color-chart-4)"
-          data={chartData}
-          dataKey="net_in_speed"
-          formatTick={(v) => formatBytes(v)}
-          formatTime={realtimeFormatTime}
-          formatValue={(v) => formatBytes(v)}
-          title={t('chart_net_in')}
-        />
-        <MetricsChart
-          color="var(--color-chart-5)"
-          data={chartData}
-          dataKey="net_out_speed"
-          formatTick={(v) => formatBytes(v)}
-          formatTime={realtimeFormatTime}
-          formatValue={(v) => formatBytes(v)}
-          title={t('chart_net_out')}
-        />
-        <MetricsChart
-          color="var(--color-chart-1)"
-          data={chartData}
-          dataKey="load1"
-          formatTime={realtimeFormatTime}
-          title={t('chart_load')}
-        />
-
-        {hasTemperature && (
-          <MetricsChart
-            color="var(--color-chart-4)"
-            data={chartData}
-            dataKey="temperature"
-            formatTime={realtimeFormatTime}
-            title={t('chart_temperature')}
-            unit="°C"
+        <TabsContent value="metrics">
+          <MetricsTabContent
+            chartData={chartData}
+            gpuChartData={gpuChartData}
+            hasGpu={hasGpu}
+            hasTemperature={hasTemperature}
+            rangeIndex={rangeIndex}
+            realtimeFormatTime={realtimeFormatTime}
+            serverId={id}
           />
-        )}
+        </TabsContent>
 
-        {hasGpu && (
-          <>
-            <MetricsChart
-              color="var(--color-chart-5)"
-              data={gpuChartData}
-              dataKey="gpu_usage"
-              formatTime={realtimeFormatTime}
-              title={t('chart_gpu')}
-              unit="%"
-            />
-            <MetricsChart
-              color="var(--color-chart-2)"
-              data={gpuChartData}
-              dataKey="gpu_temp"
-              formatTime={realtimeFormatTime}
-              title={t('chart_gpu_temp')}
-              unit="°C"
-            />
-          </>
+        {server.billing_cycle && (
+          <TabsContent value="traffic">
+            <TrafficTab billingCycle={server.billing_cycle} serverId={id} />
+          </TabsContent>
         )}
-      </div>
-
-      <TrafficCard serverId={id} />
+      </Tabs>
 
       <ServerEditDialog onClose={() => setEditOpen(false)} open={editOpen} server={server} />
     </div>
