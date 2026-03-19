@@ -658,6 +658,9 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 .agent_manager
                 .dispatch_pending_response(msg_id, msg.clone());
         }
+        AgentMessage::IpChanged { .. } => {
+            // Handled in a future task (P11-T5)
+        }
     }
 }
 

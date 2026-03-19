@@ -40,6 +40,7 @@ pub struct Model {
     pub protocol_version: i32,
     #[sea_orm(default_value = "[]")]
     pub features: String,
+    pub last_remote_addr: Option<String>,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }
