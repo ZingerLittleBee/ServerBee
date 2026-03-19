@@ -13,6 +13,7 @@ import { Route as StatusRouteImport } from './routes/status'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
+import { Route as AuthedTrafficIndexRouteImport } from './routes/_authed/traffic/index'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
 import { Route as AuthedServersIndexRouteImport } from './routes/_authed/servers/index'
 import { Route as AuthedNetworkIndexRouteImport } from './routes/_authed/network/index'
@@ -51,6 +52,11 @@ const AuthedRoute = AuthedRouteImport.update({
 const AuthedIndexRoute = AuthedIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedTrafficIndexRoute = AuthedTrafficIndexRouteImport.update({
+  id: '/traffic/',
+  path: '/traffic/',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
@@ -182,6 +188,7 @@ export interface FileRoutesByFullPath {
   '/network/': typeof AuthedNetworkIndexRoute
   '/servers/': typeof AuthedServersIndexRoute
   '/settings/': typeof AuthedSettingsIndexRoute
+  '/traffic/': typeof AuthedTrafficIndexRoute
   '/servers/$serverId/docker/': typeof AuthedServersServerIdDockerIndexRoute
 }
 export interface FileRoutesByTo {
@@ -207,6 +214,7 @@ export interface FileRoutesByTo {
   '/network': typeof AuthedNetworkIndexRoute
   '/servers': typeof AuthedServersIndexRoute
   '/settings': typeof AuthedSettingsIndexRoute
+  '/traffic': typeof AuthedTrafficIndexRoute
   '/servers/$serverId/docker': typeof AuthedServersServerIdDockerIndexRoute
 }
 export interface FileRoutesById {
@@ -234,6 +242,7 @@ export interface FileRoutesById {
   '/_authed/network/': typeof AuthedNetworkIndexRoute
   '/_authed/servers/': typeof AuthedServersIndexRoute
   '/_authed/settings/': typeof AuthedSettingsIndexRoute
+  '/_authed/traffic/': typeof AuthedTrafficIndexRoute
   '/_authed/servers/$serverId/docker/': typeof AuthedServersServerIdDockerIndexRoute
 }
 export interface FileRouteTypes {
@@ -261,6 +270,7 @@ export interface FileRouteTypes {
     | '/network/'
     | '/servers/'
     | '/settings/'
+    | '/traffic/'
     | '/servers/$serverId/docker/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -286,6 +296,7 @@ export interface FileRouteTypes {
     | '/network'
     | '/servers'
     | '/settings'
+    | '/traffic'
     | '/servers/$serverId/docker'
   id:
     | '__root__'
@@ -312,6 +323,7 @@ export interface FileRouteTypes {
     | '/_authed/network/'
     | '/_authed/servers/'
     | '/_authed/settings/'
+    | '/_authed/traffic/'
     | '/_authed/servers/$serverId/docker/'
   fileRoutesById: FileRoutesById
 }
@@ -349,6 +361,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AuthedIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/traffic/': {
+      id: '/_authed/traffic/'
+      path: '/traffic'
+      fullPath: '/traffic/'
+      preLoaderRoute: typeof AuthedTrafficIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/settings/': {
@@ -515,6 +534,7 @@ interface AuthedRouteChildren {
   AuthedNetworkIndexRoute: typeof AuthedNetworkIndexRoute
   AuthedServersIndexRoute: typeof AuthedServersIndexRoute
   AuthedSettingsIndexRoute: typeof AuthedSettingsIndexRoute
+  AuthedTrafficIndexRoute: typeof AuthedTrafficIndexRoute
   AuthedServersServerIdDockerIndexRoute: typeof AuthedServersServerIdDockerIndexRoute
 }
 
@@ -539,6 +559,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedNetworkIndexRoute: AuthedNetworkIndexRoute,
   AuthedServersIndexRoute: AuthedServersIndexRoute,
   AuthedSettingsIndexRoute: AuthedSettingsIndexRoute,
+  AuthedTrafficIndexRoute: AuthedTrafficIndexRoute,
   AuthedServersServerIdDockerIndexRoute: AuthedServersServerIdDockerIndexRoute,
 }
 
