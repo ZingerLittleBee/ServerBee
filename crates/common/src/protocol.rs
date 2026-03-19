@@ -341,6 +341,7 @@ pub enum BrowserClientMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::DiskIo;
 
     #[test]
     fn test_welcome_without_capabilities_deserializes() {
@@ -444,6 +445,28 @@ mod tests {
         let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
         match parsed {
             AgentMessage::NetworkProbeResults { results } => assert!(results.is_empty()),
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_report_with_disk_io_round_trip() {
+        let msg = AgentMessage::Report(SystemReport {
+            disk_io: Some(vec![DiskIo {
+                name: "sda".to_string(),
+                read_bytes_per_sec: 1024,
+                write_bytes_per_sec: 2048,
+            }]),
+            ..Default::default()
+        });
+
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+
+        match parsed {
+            AgentMessage::Report(report) => {
+                assert_eq!(report.disk_io.unwrap()[0].name, "sda");
+            }
             _ => panic!("Wrong variant"),
         }
     }

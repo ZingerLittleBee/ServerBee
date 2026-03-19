@@ -1,5 +1,6 @@
 mod cpu;
 mod disk;
+mod disk_io;
 mod gpu;
 mod load;
 mod memory;
@@ -16,6 +17,7 @@ use sysinfo::{Networks, System};
 pub struct Collector {
     sys: System,
     networks: Networks,
+    prev_disk_io: std::collections::HashMap<String, disk_io::DiskCounters>,
     prev_net_in: u64,
     prev_net_out: u64,
     prev_time: Instant,
@@ -32,6 +34,7 @@ impl Collector {
         Self {
             sys,
             networks,
+            prev_disk_io: std::collections::HashMap::new(),
             prev_net_in: net_in,
             prev_net_out: net_out,
             prev_time: Instant::now(),
@@ -52,6 +55,8 @@ impl Collector {
         self.prev_net_in = net_in;
         self.prev_net_out = net_out;
         self.prev_time = Instant::now();
+
+        let disk_io = disk_io::collect(elapsed, &mut self.prev_disk_io);
 
         let temperature = if self.enable_temperature {
             temperature::get_temperature()
@@ -75,6 +80,7 @@ impl Collector {
             udp_conn: process::udp_connections(),
             process_count: process::count(&self.sys),
             uptime: System::uptime(),
+            disk_io,
             temperature,
             gpu: if self.enable_gpu {
                 gpu::get_gpu_report()

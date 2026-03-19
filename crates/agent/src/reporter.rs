@@ -20,6 +20,7 @@ use crate::docker::DockerManager;
 use crate::file_manager::{FileEvent, FileManager};
 use crate::network_prober::NetworkProber;
 use crate::pinger::PingManager;
+use crate::register;
 use crate::terminal::{TerminalEvent, TerminalManager};
 
 const MAX_BACKOFF_SECS: u64 = 30;
@@ -45,6 +46,27 @@ impl Reporter {
                     backoff_secs = 1;
                 }
                 Err(e) => {
+                    if should_refresh_registration(&self.config, &e) {
+                        tracing::warn!(
+                            "Stored agent token was rejected, attempting re-registration with auto-discovery key"
+                        );
+
+                        match register::register_agent(&self.config).await {
+                            Ok((server_id, token)) => {
+                                tracing::info!("Re-registration successful for server {server_id}");
+                                if let Err(save_err) = register::save_token(&token) {
+                                    tracing::warn!("Failed to save refreshed token: {save_err}");
+                                }
+                                self.config.token = token;
+                                backoff_secs = 1;
+                                continue;
+                            }
+                            Err(register_err) => {
+                                tracing::error!("Re-registration failed: {register_err}");
+                            }
+                        }
+                    }
+
                     tracing::error!("Connection error: {e}");
                 }
             }
@@ -990,6 +1012,17 @@ fn build_ws_url(config: &AgentConfig) -> anyhow::Result<String> {
     Ok(format!("{ws_base}/api/agent/ws?token={}", config.token))
 }
 
+fn should_refresh_registration(
+    config: &AgentConfig,
+    error: &anyhow::Error,
+) -> bool {
+    !config.auto_discovery_key.is_empty()
+        && matches!(
+            error.downcast_ref::<tokio_tungstenite::tungstenite::Error>(),
+            Some(tokio_tungstenite::tungstenite::Error::Http(response)) if response.status().as_u16() == 401
+        )
+}
+
 fn apply_jitter(base_secs: u64) -> f64 {
     let base = base_secs as f64;
     let jitter_range = base * JITTER_FACTOR;
@@ -1077,6 +1110,67 @@ async fn derive_primary_ips(
     }
 
     (primary_ipv4, primary_ipv6)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{CollectorConfig, FileConfig, IpChangeConfig, LogConfig};
+    use tokio_tungstenite::tungstenite::http::Response;
+
+    #[test]
+    fn test_should_refresh_registration_on_unauthorized_handshake() {
+        let config = AgentConfig {
+            server_url: "http://127.0.0.1:9527".to_string(),
+            token: "stale-token".to_string(),
+            auto_discovery_key: "dev-key".to_string(),
+            collector: CollectorConfig::default(),
+            log: LogConfig::default(),
+            file: FileConfig::default(),
+            ip_change: IpChangeConfig::default(),
+        };
+        let err = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Http(
+            Response::builder().status(401).body(None).unwrap(),
+        ));
+
+        assert!(should_refresh_registration(&config, &err));
+    }
+
+    #[test]
+    fn test_should_not_refresh_registration_without_auto_discovery_key() {
+        let config = AgentConfig {
+            server_url: "http://127.0.0.1:9527".to_string(),
+            token: "stale-token".to_string(),
+            auto_discovery_key: String::new(),
+            collector: CollectorConfig::default(),
+            log: LogConfig::default(),
+            file: FileConfig::default(),
+            ip_change: IpChangeConfig::default(),
+        };
+        let err = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Http(
+            Response::builder().status(401).body(None).unwrap(),
+        ));
+
+        assert!(!should_refresh_registration(&config, &err));
+    }
+
+    #[test]
+    fn test_should_not_refresh_registration_for_non_unauthorized_handshake() {
+        let config = AgentConfig {
+            server_url: "http://127.0.0.1:9527".to_string(),
+            token: "stale-token".to_string(),
+            auto_discovery_key: "dev-key".to_string(),
+            collector: CollectorConfig::default(),
+            log: LogConfig::default(),
+            file: FileConfig::default(),
+            ip_change: IpChangeConfig::default(),
+        };
+        let err = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Http(
+            Response::builder().status(500).body(None).unwrap(),
+        ));
+
+        assert!(!should_refresh_registration(&config, &err));
+    }
 }
 
 /// Fetch external IP address from a remote service.

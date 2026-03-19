@@ -30,6 +30,7 @@ pub fn write_router() -> Router<Arc<AppState>> {
 #[utoipa::path(
     get,
     path = "/api/ping-tasks",
+    operation_id = "list_ping_tasks",
     tag = "ping-tasks",
     responses(
         (status = 200, description = "List all ping tasks", body = Vec<ping_task::Model>),
@@ -86,6 +87,7 @@ async fn create_task(
 #[utoipa::path(
     put,
     path = "/api/ping-tasks/{id}",
+    operation_id = "update_ping_task",
     tag = "ping-tasks",
     params(("id" = String, Path, description = "Ping task ID")),
     request_body = UpdatePingTask,
@@ -107,6 +109,7 @@ async fn update_task(
 #[utoipa::path(
     delete,
     path = "/api/ping-tasks/{id}",
+    operation_id = "delete_ping_task",
     tag = "ping-tasks",
     params(("id" = String, Path, description = "Ping task ID")),
     responses(

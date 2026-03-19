@@ -927,6 +927,7 @@ mod tests {
             process_count: 200,
             temperature: Some(55.0),
             gpu_usage: Some(40.0),
+            disk_io_json: None,
         }
     }
 

@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.1.0"
+    "version": "0.2.1"
   },
   "paths": {
     "/api/agent/register": {
@@ -211,6 +211,46 @@
           },
           "404": {
             "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/alert-rules/{id}/states": {
+      "get": {
+        "tags": ["alert-rules"],
+        "operationId": "list_states",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Alert rule ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert states for this rule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AlertStateResponse"
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -751,6 +791,609 @@
         ]
       }
     },
+    "/api/files/download/{transfer_id}": {
+      "get": {
+        "tags": ["files"],
+        "operationId": "download_file",
+        "parameters": [
+          {
+            "name": "transfer_id",
+            "in": "path",
+            "description": "Transfer ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File download stream"
+          },
+          "404": {
+            "description": "Transfer not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/files/transfers": {
+      "get": {
+        "tags": ["files"],
+        "operationId": "list_transfers",
+        "responses": {
+          "200": {
+            "description": "Active file transfers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransfersResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/files/transfers/{transfer_id}": {
+      "delete": {
+        "tags": ["files"],
+        "operationId": "cancel_transfer",
+        "parameters": [
+          {
+            "name": "transfer_id",
+            "in": "path",
+            "description": "Transfer ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transfer cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Transfer not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/files/{server_id}/delete": {
+      "post": {
+        "tags": ["files"],
+        "operationId": "delete_file",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "File/directory deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "File capability disabled"
+          },
+          "404": {
+            "description": "Server not found or offline"
+          },
+          "408": {
+            "description": "Agent timeout"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/files/{server_id}/download": {
+      "post": {
+        "tags": ["files"],
+        "operationId": "start_download",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DownloadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Download transfer started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "File capability disabled"
+          },
+          "404": {
+            "description": "Server not found or offline"
+          },
+          "429": {
+            "description": "Too many concurrent transfers"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/files/{server_id}/list": {
+      "post": {
+        "tags": ["files"],
+        "operationId": "list_files",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListFilesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Directory listing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListFilesResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "File capability disabled"
+          },
+          "404": {
+            "description": "Server not found or offline"
+          },
+          "408": {
+            "description": "Agent timeout"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/files/{server_id}/mkdir": {
+      "post": {
+        "tags": ["files"],
+        "operationId": "mkdir",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MkdirRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Directory created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "File capability disabled"
+          },
+          "404": {
+            "description": "Server not found or offline"
+          },
+          "408": {
+            "description": "Agent timeout"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/files/{server_id}/move": {
+      "post": {
+        "tags": ["files"],
+        "operationId": "move_file",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "File/directory moved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "File capability disabled"
+          },
+          "404": {
+            "description": "Server not found or offline"
+          },
+          "408": {
+            "description": "Agent timeout"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/files/{server_id}/read": {
+      "post": {
+        "tags": ["files"],
+        "operationId": "read_file",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "File content (UTF-8)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "File capability disabled"
+          },
+          "404": {
+            "description": "Server not found or offline"
+          },
+          "408": {
+            "description": "Agent timeout"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/files/{server_id}/stat": {
+      "post": {
+        "tags": ["files"],
+        "operationId": "stat_file",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "File metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "File capability disabled"
+          },
+          "404": {
+            "description": "Server not found or offline"
+          },
+          "408": {
+            "description": "Agent timeout"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/files/{server_id}/upload": {
+      "post": {
+        "tags": ["files"],
+        "operationId": "upload_file",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "File uploaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "File capability disabled"
+          },
+          "404": {
+            "description": "Server not found or offline"
+          },
+          "429": {
+            "description": "Too many concurrent transfers"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/files/{server_id}/write": {
+      "post": {
+        "tags": ["files"],
+        "operationId": "write_file",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "File written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "File capability disabled"
+          },
+          "404": {
+            "description": "Server not found or offline"
+          },
+          "408": {
+            "description": "Agent timeout"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
     "/api/notification-groups": {
       "get": {
         "tags": ["notification-groups"],
@@ -1154,7 +1797,7 @@
     "/api/ping-tasks": {
       "get": {
         "tags": ["ping-tasks"],
-        "operationId": "list_tasks",
+        "operationId": "list_ping_tasks",
         "responses": {
           "200": {
             "description": "List all ping tasks",
@@ -1258,7 +1901,7 @@
       },
       "put": {
         "tags": ["ping-tasks"],
-        "operationId": "update_task",
+        "operationId": "update_ping_task",
         "parameters": [
           {
             "name": "id",
@@ -1306,7 +1949,7 @@
       },
       "delete": {
         "tags": ["ping-tasks"],
-        "operationId": "delete_task",
+        "operationId": "delete_ping_task",
         "parameters": [
           {
             "name": "id",
@@ -1584,6 +2227,45 @@
         ]
       }
     },
+    "/api/servers/batch-capabilities": {
+      "put": {
+        "tags": ["servers"],
+        "operationId": "batch_update_capabilities",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchCapabilitiesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Batch capabilities update result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchCapabilitiesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
     "/api/servers/batch-delete": {
       "post": {
         "tags": ["servers"],
@@ -1840,7 +2522,17 @@
         ],
         "responses": {
           "200": {
-            "description": "Server metric records"
+            "description": "Server metric records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServerRecord"
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1851,6 +2543,38 @@
             "api_key": []
           }
         ]
+      }
+    },
+    "/api/servers/{id}/traffic": {
+      "get": {
+        "tags": ["servers"],
+        "operationId": "get_traffic",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Traffic statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TrafficResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server not found"
+          }
+        }
       }
     },
     "/api/servers/{id}/upgrade": {
@@ -1884,6 +2608,313 @@
           },
           "404": {
             "description": "Server not found or not online"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/service-monitors": {
+      "get": {
+        "tags": ["service-monitors"],
+        "operationId": "list_monitors",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Filter by monitor type (ssl, dns, http_keyword, tcp, whois).",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List all service monitors",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceMonitor"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "post": {
+        "tags": ["service-monitors"],
+        "operationId": "create_service_monitor",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateServiceMonitor"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Service monitor created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceMonitor"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/service-monitors/{id}": {
+      "get": {
+        "tags": ["service-monitors"],
+        "operationId": "get_service_monitor",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Service monitor ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service monitor with latest record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorWithRecord"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "put": {
+        "tags": ["service-monitors"],
+        "operationId": "update_service_monitor",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Service monitor ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateServiceMonitor"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Service monitor updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceMonitor"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["service-monitors"],
+        "operationId": "delete_service_monitor",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Service monitor ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service monitor deleted"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/service-monitors/{id}/check": {
+      "post": {
+        "tags": ["service-monitors"],
+        "operationId": "trigger_service_monitor_check",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Service monitor ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Check result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceMonitorRecord"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/service-monitors/{id}/records": {
+      "get": {
+        "tags": ["service-monitors"],
+        "operationId": "get_service_monitor_records",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Service monitor ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Start of time range (inclusive).",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "End of time range (inclusive).",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of records to return.",
+            "required": false,
+            "schema": {
+              "type": ["integer", "null"],
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service monitor records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceMonitorRecord"
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2079,6 +3110,43 @@
       }
     },
     "/api/tasks": {
+      "get": {
+        "tags": ["tasks"],
+        "operationId": "list_tasks",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List tasks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskResponse"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
       "post": {
         "tags": ["tasks"],
         "operationId": "create_task",
@@ -2094,7 +3162,7 @@
         },
         "responses": {
           "200": {
-            "description": "Task created and dispatched",
+            "description": "Task created",
             "content": {
               "application/json": {
                 "schema": {
@@ -2155,6 +3223,82 @@
             "api_key": []
           }
         ]
+      },
+      "put": {
+        "tags": ["tasks"],
+        "operationId": "update_task",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Task ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTaskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Task updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Task not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["tasks"],
+        "operationId": "delete_task",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Task ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task deleted"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
       }
     },
     "/api/tasks/{id}/results": {
@@ -2185,6 +3329,162 @@
                 }
               }
             }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/tasks/{id}/run": {
+      "post": {
+        "tags": ["tasks"],
+        "operationId": "run_task",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Task ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task triggered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Task already running"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/traffic/overview": {
+      "get": {
+        "tags": ["traffic"],
+        "operationId": "get_traffic_overview",
+        "responses": {
+          "200": {
+            "description": "Traffic overview for all servers with billing cycles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ServerTrafficOverview"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/traffic/overview/daily": {
+      "get": {
+        "tags": ["traffic"],
+        "operationId": "get_traffic_overview_daily",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "description": "Number of days to include (default: 30).",
+            "required": false,
+            "schema": {
+              "type": ["integer", "null"],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Global daily traffic aggregation across all servers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_DailyTraffic"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/traffic/{server_id}/cycle": {
+      "get": {
+        "tags": ["traffic"],
+        "operationId": "get_traffic_cycle",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "history",
+            "in": "query",
+            "description": "Number of historical billing cycles to return (default: 6).",
+            "required": false,
+            "schema": {
+              "type": ["integer", "null"],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current cycle and historical cycle traffic",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CycleResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server not found"
           }
         },
         "security": [
@@ -2488,6 +3788,44 @@
           }
         }
       },
+      "AlertStateResponse": {
+        "type": "object",
+        "required": [
+          "server_id",
+          "server_name",
+          "first_triggered_at",
+          "last_notified_at",
+          "count",
+          "resolved"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "first_triggered_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_notified_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolved": {
+            "type": "boolean"
+          },
+          "resolved_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "server_name": {
+            "type": "string"
+          }
+        }
+      },
       "ApiKeyResponse": {
         "type": "object",
         "required": ["id", "name", "key_prefix", "created_at"],
@@ -2506,6 +3844,174 @@
           },
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "ApiResponse_CycleResponse": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["current", "history"],
+            "properties": {
+              "current": {
+                "$ref": "#/components/schemas/CycleTraffic"
+              },
+              "history": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CycleTraffic"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ApiResponse_TrafficResponse": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "cycle_start",
+              "cycle_end",
+              "bytes_in",
+              "bytes_out",
+              "bytes_total",
+              "daily",
+              "hourly"
+            ],
+            "properties": {
+              "bytes_in": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "bytes_out": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "bytes_total": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "cycle_end": {
+                "type": "string"
+              },
+              "cycle_start": {
+                "type": "string"
+              },
+              "daily": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/DailyTraffic"
+                }
+              },
+              "hourly": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/HourlyTraffic"
+                }
+              },
+              "prediction": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TrafficPrediction"
+                  }
+                ]
+              },
+              "traffic_limit": {
+                "type": ["integer", "null"],
+                "format": "int64"
+              },
+              "traffic_limit_type": {
+                "type": ["string", "null"]
+              },
+              "usage_percent": {
+                "type": ["number", "null"],
+                "format": "double"
+              }
+            }
+          }
+        }
+      },
+      "ApiResponse_Vec_DailyTraffic": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["date", "bytes_in", "bytes_out"],
+              "properties": {
+                "bytes_in": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "bytes_out": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "date": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ApiResponse_Vec_ServerTrafficOverview": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "server_id",
+                "name",
+                "cycle_in",
+                "cycle_out",
+                "days_remaining"
+              ],
+              "properties": {
+                "billing_cycle": {
+                  "type": ["string", "null"]
+                },
+                "cycle_in": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "cycle_out": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "days_remaining": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "percent_used": {
+                  "type": ["number", "null"],
+                  "format": "double"
+                },
+                "server_id": {
+                  "type": "string"
+                },
+                "traffic_limit": {
+                  "type": ["integer", "null"],
+                  "format": "int64"
+                }
+              }
+            }
           }
         }
       },
@@ -2557,6 +4063,39 @@
         "properties": {
           "key": {
             "type": "string"
+          }
+        }
+      },
+      "BatchCapabilitiesRequest": {
+        "type": "object",
+        "required": ["server_ids"],
+        "properties": {
+          "server_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "set": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "unset": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "BatchCapabilitiesResponse": {
+        "type": "object",
+        "required": ["updated"],
+        "properties": {
+          "updated": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         }
       },
@@ -2705,6 +4244,42 @@
           }
         }
       },
+      "CreateServiceMonitor": {
+        "type": "object",
+        "required": ["name", "monitor_type", "target"],
+        "properties": {
+          "config_json": {},
+          "enabled": {
+            "type": "boolean"
+          },
+          "interval": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "monitor_type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notification_group_id": {
+            "type": ["string", "null"]
+          },
+          "retry_count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "server_ids_json": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "target": {
+            "type": "string"
+          }
+        }
+      },
       "CreateTaskRequest": {
         "type": "object",
         "required": ["command", "server_ids"],
@@ -2712,11 +4287,29 @@
           "command": {
             "type": "string"
           },
+          "cron_expression": {
+            "type": ["string", "null"]
+          },
+          "name": {
+            "type": ["string", "null"]
+          },
+          "retry_count": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
+          "retry_interval": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
           "server_ids": {
             "type": "array",
             "items": {
               "type": "string"
             }
+          },
+          "task_type": {
+            "type": "string",
+            "description": "\"oneshot\" (default) or \"scheduled\""
           },
           "timeout": {
             "type": ["integer", "null"],
@@ -2736,6 +4329,94 @@
             "type": "string"
           },
           "username": {
+            "type": "string"
+          }
+        }
+      },
+      "CycleResponse": {
+        "type": "object",
+        "required": ["current", "history"],
+        "properties": {
+          "current": {
+            "$ref": "#/components/schemas/CycleTraffic"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CycleTraffic"
+            }
+          }
+        }
+      },
+      "CycleTraffic": {
+        "type": "object",
+        "required": ["period", "start", "end", "bytes_in", "bytes_out"],
+        "properties": {
+          "bytes_in": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "bytes_out": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "end": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          }
+        }
+      },
+      "DailyTraffic": {
+        "type": "object",
+        "required": ["date", "bytes_in", "bytes_out"],
+        "properties": {
+          "bytes_in": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "bytes_out": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "date": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteRequest": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "recursive": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DownloadRequest": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "DownloadResponse": {
+        "type": "object",
+        "required": ["transfer_id", "status"],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "transfer_id": {
             "type": "string"
           }
         }
@@ -2760,6 +4441,43 @@
             "type": "string"
           }
         }
+      },
+      "FileEntry": {
+        "type": "object",
+        "required": ["name", "path", "file_type", "size", "modified"],
+        "properties": {
+          "file_type": {
+            "$ref": "#/components/schemas/FileType"
+          },
+          "group": {
+            "type": ["string", "null"]
+          },
+          "modified": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "type": ["string", "null"]
+          },
+          "path": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": ["string", "null"]
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "FileType": {
+        "type": "string",
+        "enum": ["File", "Directory", "Symlink"]
       },
       "GpuRecord": {
         "type": "object",
@@ -2811,6 +4529,44 @@
           }
         }
       },
+      "HourlyTraffic": {
+        "type": "object",
+        "required": ["hour", "bytes_in", "bytes_out"],
+        "properties": {
+          "bytes_in": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "bytes_out": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "hour": {
+            "type": "string"
+          }
+        }
+      },
+      "ListFilesRequest": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "ListFilesResponse": {
+        "type": "object",
+        "required": ["entries"],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileEntry"
+            }
+          }
+        }
+      },
       "LoginRequest": {
         "type": "object",
         "required": ["username", "password"],
@@ -2858,6 +4614,49 @@
             "type": "string"
           },
           "username": {
+            "type": "string"
+          }
+        }
+      },
+      "MkdirRequest": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "MonitorWithRecord": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ServiceMonitor"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "latest_record": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ServiceMonitorRecord"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "MoveRequest": {
+        "type": "object",
+        "required": ["from", "to"],
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
             "type": "string"
           }
         }
@@ -3037,6 +4836,24 @@
           }
         }
       },
+      "ReadRequest": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "ReadResponse": {
+        "type": "object",
+        "required": ["content"],
+        "properties": {
+          "content": {
+            "type": "string"
+          }
+        }
+      },
       "RegisterResponse": {
         "type": "object",
         "required": ["server_id", "token"],
@@ -3069,6 +4886,210 @@
           }
         }
       },
+      "ServerRecord": {
+        "type": "object",
+        "required": [
+          "id",
+          "server_id",
+          "time",
+          "cpu",
+          "mem_used",
+          "swap_used",
+          "disk_used",
+          "net_in_speed",
+          "net_out_speed",
+          "net_in_transfer",
+          "net_out_transfer",
+          "load1",
+          "load5",
+          "load15",
+          "tcp_conn",
+          "udp_conn",
+          "process_count"
+        ],
+        "properties": {
+          "cpu": {
+            "type": "number",
+            "format": "double"
+          },
+          "disk_io_json": {
+            "type": ["string", "null"]
+          },
+          "disk_used": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "gpu_usage": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "load1": {
+            "type": "number",
+            "format": "double"
+          },
+          "load15": {
+            "type": "number",
+            "format": "double"
+          },
+          "load5": {
+            "type": "number",
+            "format": "double"
+          },
+          "mem_used": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "net_in_speed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "net_in_transfer": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "net_out_speed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "net_out_transfer": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "process_count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "swap_used": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tcp_conn": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "temperature": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "udp_conn": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ServerRecordHourly": {
+        "type": "object",
+        "required": [
+          "id",
+          "server_id",
+          "time",
+          "cpu",
+          "mem_used",
+          "swap_used",
+          "disk_used",
+          "net_in_speed",
+          "net_out_speed",
+          "net_in_transfer",
+          "net_out_transfer",
+          "load1",
+          "load5",
+          "load15",
+          "tcp_conn",
+          "udp_conn",
+          "process_count"
+        ],
+        "properties": {
+          "cpu": {
+            "type": "number",
+            "format": "double"
+          },
+          "disk_io_json": {
+            "type": ["string", "null"]
+          },
+          "disk_used": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "gpu_usage": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "load1": {
+            "type": "number",
+            "format": "double"
+          },
+          "load15": {
+            "type": "number",
+            "format": "double"
+          },
+          "load5": {
+            "type": "number",
+            "format": "double"
+          },
+          "mem_used": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "net_in_speed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "net_in_transfer": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "net_out_speed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "net_out_transfer": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "process_count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "swap_used": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tcp_conn": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "temperature": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "udp_conn": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "ServerResponse": {
         "type": "object",
         "description": "Server response DTO — excludes sensitive fields (token_hash, token_prefix).",
@@ -3077,6 +5098,9 @@
           "name",
           "weight",
           "hidden",
+          "capabilities",
+          "protocol_version",
+          "features",
           "created_at",
           "updated_at"
         ],
@@ -3086,6 +5110,14 @@
           },
           "billing_cycle": {
             "type": ["string", "null"]
+          },
+          "billing_start_day": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
+          "capabilities": {
+            "type": "integer",
+            "format": "int32"
           },
           "country_code": {
             "type": ["string", "null"]
@@ -3114,6 +5146,12 @@
           "expired_at": {
             "type": ["string", "null"],
             "format": "date-time"
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "group_id": {
             "type": ["string", "null"]
@@ -3147,6 +5185,10 @@
             "type": ["number", "null"],
             "format": "double"
           },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32"
+          },
           "public_remark": {
             "type": ["string", "null"]
           },
@@ -3177,6 +5219,164 @@
           "weight": {
             "type": "integer",
             "format": "int32"
+          }
+        }
+      },
+      "ServerTrafficOverview": {
+        "type": "object",
+        "required": [
+          "server_id",
+          "name",
+          "cycle_in",
+          "cycle_out",
+          "days_remaining"
+        ],
+        "properties": {
+          "billing_cycle": {
+            "type": ["string", "null"]
+          },
+          "cycle_in": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cycle_out": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "days_remaining": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "percent_used": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "traffic_limit": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          }
+        }
+      },
+      "ServiceMonitor": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "monitor_type",
+          "target",
+          "interval",
+          "config_json",
+          "retry_count",
+          "enabled",
+          "consecutive_failures",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "config_json": {
+            "type": "string"
+          },
+          "consecutive_failures": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interval": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "last_checked_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "last_status": {
+            "type": ["boolean", "null"]
+          },
+          "monitor_type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notification_group_id": {
+            "type": ["string", "null"]
+          },
+          "retry_count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "server_ids_json": {
+            "type": ["string", "null"]
+          },
+          "target": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ServiceMonitorRecord": {
+        "type": "object",
+        "required": ["id", "monitor_id", "success", "detail_json", "time"],
+        "properties": {
+          "detail_json": {
+            "type": "string"
+          },
+          "error": {
+            "type": ["string", "null"]
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "latency": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "monitor_id": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "StatRequest": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "StatResponse": {
+        "type": "object",
+        "required": ["entry"],
+        "properties": {
+          "entry": {
+            "$ref": "#/components/schemas/FileEntry"
           }
         }
       },
@@ -3323,6 +5523,15 @@
           }
         }
       },
+      "SuccessResponse": {
+        "type": "object",
+        "required": ["success"],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        }
+      },
       "SystemSettings": {
         "type": "object",
         "properties": {
@@ -3342,7 +5551,16 @@
       },
       "TaskResponse": {
         "type": "object",
-        "required": ["id", "command", "server_ids", "created_at"],
+        "required": [
+          "id",
+          "command",
+          "server_ids",
+          "created_at",
+          "task_type",
+          "enabled",
+          "retry_count",
+          "retry_interval"
+        ],
         "properties": {
           "command": {
             "type": "string"
@@ -3351,14 +5569,46 @@
             "type": "string",
             "format": "date-time"
           },
+          "cron_expression": {
+            "type": ["string", "null"]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
           "id": {
             "type": "string"
+          },
+          "last_run_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "name": {
+            "type": ["string", "null"]
+          },
+          "next_run_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "retry_count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "retry_interval": {
+            "type": "integer",
+            "format": "int32"
           },
           "server_ids": {
             "type": "array",
             "items": {
               "type": "string"
             }
+          },
+          "task_type": {
+            "type": "string"
+          },
+          "timeout": {
+            "type": ["integer", "null"],
+            "format": "int32"
           }
         }
       },
@@ -3370,9 +5620,14 @@
           "server_id",
           "output",
           "exit_code",
+          "attempt",
           "finished_at"
         ],
         "properties": {
+          "attempt": {
+            "type": "integer",
+            "format": "int32"
+          },
           "exit_code": {
             "type": "integer",
             "format": "int32"
@@ -3388,8 +5643,15 @@
           "output": {
             "type": "string"
           },
+          "run_id": {
+            "type": ["string", "null"]
+          },
           "server_id": {
             "type": "string"
+          },
+          "started_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
           },
           "task_id": {
             "type": "string"
@@ -3435,6 +5697,145 @@
         "properties": {
           "code": {
             "type": "string"
+          }
+        }
+      },
+      "TrafficPrediction": {
+        "type": "object",
+        "required": ["estimated_total", "estimated_percent", "will_exceed"],
+        "properties": {
+          "estimated_percent": {
+            "type": "number",
+            "format": "double"
+          },
+          "estimated_total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "will_exceed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TrafficResponse": {
+        "type": "object",
+        "required": [
+          "cycle_start",
+          "cycle_end",
+          "bytes_in",
+          "bytes_out",
+          "bytes_total",
+          "daily",
+          "hourly"
+        ],
+        "properties": {
+          "bytes_in": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "bytes_out": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "bytes_total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cycle_end": {
+            "type": "string"
+          },
+          "cycle_start": {
+            "type": "string"
+          },
+          "daily": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyTraffic"
+            }
+          },
+          "hourly": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HourlyTraffic"
+            }
+          },
+          "prediction": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TrafficPrediction"
+              }
+            ]
+          },
+          "traffic_limit": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "traffic_limit_type": {
+            "type": ["string", "null"]
+          },
+          "usage_percent": {
+            "type": ["number", "null"],
+            "format": "double"
+          }
+        }
+      },
+      "TransferInfo": {
+        "type": "object",
+        "description": "Serializable transfer info for API responses.",
+        "required": [
+          "transfer_id",
+          "server_id",
+          "direction",
+          "file_path",
+          "bytes_transferred",
+          "status",
+          "created_at_secs_ago"
+        ],
+        "properties": {
+          "bytes_transferred": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "created_at_secs_ago": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "direction": {
+            "type": "string"
+          },
+          "file_path": {
+            "type": "string"
+          },
+          "file_size": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "minimum": 0
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "transfer_id": {
+            "type": "string"
+          }
+        }
+      },
+      "TransfersResponse": {
+        "type": "object",
+        "required": ["transfers"],
+        "properties": {
+          "transfers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransferInfo"
+            }
           }
         }
       },
@@ -3544,6 +5945,14 @@
           "billing_cycle": {
             "type": ["string", "null"]
           },
+          "billing_start_day": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
+          "capabilities": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
           "currency": {
             "type": ["string", "null"]
           },
@@ -3578,6 +5987,73 @@
             "type": ["string", "null"]
           },
           "weight": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          }
+        }
+      },
+      "UpdateServiceMonitor": {
+        "type": "object",
+        "properties": {
+          "config_json": {},
+          "enabled": {
+            "type": ["boolean", "null"]
+          },
+          "interval": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
+          "name": {
+            "type": ["string", "null"]
+          },
+          "notification_group_id": {
+            "type": ["string", "null"]
+          },
+          "retry_count": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
+          "server_ids_json": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "target": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "UpdateTaskRequest": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": ["string", "null"]
+          },
+          "cron_expression": {
+            "type": ["string", "null"]
+          },
+          "enabled": {
+            "type": ["boolean", "null"]
+          },
+          "name": {
+            "type": ["string", "null"]
+          },
+          "retry_count": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
+          "retry_interval": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
+          "server_ids": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "timeout": {
             "type": ["integer", "null"],
             "format": "int32"
           }
@@ -3637,6 +6113,18 @@
             "format": "date-time"
           },
           "username": {
+            "type": "string"
+          }
+        }
+      },
+      "WriteRequest": {
+        "type": "object",
+        "required": ["path", "content"],
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "path": {
             "type": "string"
           }
         }
@@ -3712,8 +6200,20 @@
       "description": "Remote command execution"
     },
     {
+      "name": "service-monitors",
+      "description": "Server-side service monitoring (SSL/DNS/HTTP/TCP/WHOIS)"
+    },
+    {
       "name": "ping-tasks",
       "description": "Ping probe tasks"
+    },
+    {
+      "name": "traffic",
+      "description": "Traffic statistics & billing cycle overview"
+    },
+    {
+      "name": "files",
+      "description": "File management"
     }
   ]
 }

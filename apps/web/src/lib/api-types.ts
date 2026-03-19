@@ -52,6 +52,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/alert-rules/{id}/states': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_states']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/audit-logs': {
     parameters: {
       query?: never
@@ -311,6 +327,198 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/files/{server_id}/delete': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['delete_file']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/{server_id}/download': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['start_download']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/{server_id}/list': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['list_files']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/{server_id}/mkdir': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['mkdir']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/{server_id}/move': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['move_file']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/{server_id}/read': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['read_file']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/{server_id}/stat': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['stat_file']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/{server_id}/upload': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['upload_file']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/{server_id}/write': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['write_file']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/download/{transfer_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['download_file']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/transfers': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_transfers']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/transfers/{transfer_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['cancel_transfer']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/notification-groups': {
     parameters: {
       query?: never
@@ -398,7 +606,7 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    get: operations['list_tasks']
+    get: operations['list_ping_tasks']
     put?: never
     post: operations['create_ping_task']
     delete?: never
@@ -415,9 +623,9 @@ export interface paths {
       cookie?: never
     }
     get: operations['get_ping_task']
-    put: operations['update_task']
+    put: operations['update_ping_task']
     post?: never
-    delete: operations['delete_task']
+    delete: operations['delete_ping_task']
     options?: never
     head?: never
     patch?: never
@@ -535,6 +743,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/servers/{id}/traffic': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_traffic']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/servers/{id}/upgrade': {
     parameters: {
       query?: never
@@ -551,6 +775,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/servers/batch-capabilities': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['batch_update_capabilities']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/servers/batch-delete': {
     parameters: {
       query?: never
@@ -561,6 +801,70 @@ export interface paths {
     get?: never
     put?: never
     post: operations['batch_delete']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/service-monitors': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_monitors']
+    put?: never
+    post: operations['create_service_monitor']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/service-monitors/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_service_monitor']
+    put: operations['update_service_monitor']
+    post?: never
+    delete: operations['delete_service_monitor']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/service-monitors/{id}/check': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['trigger_service_monitor_check']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/service-monitors/{id}/records': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_service_monitor_records']
+    put?: never
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -660,7 +964,7 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    get?: never
+    get: operations['list_tasks']
     put?: never
     post: operations['create_task']
     delete?: never
@@ -677,9 +981,9 @@ export interface paths {
       cookie?: never
     }
     get: operations['get_task']
-    put?: never
+    put: operations['update_task']
     post?: never
-    delete?: never
+    delete: operations['delete_task']
     options?: never
     head?: never
     patch?: never
@@ -693,6 +997,70 @@ export interface paths {
       cookie?: never
     }
     get: operations['get_task_results']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/tasks/{id}/run': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['run_task']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/traffic/{server_id}/cycle': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_traffic_cycle']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/traffic/overview': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_traffic_overview']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/traffic/overview/daily': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_traffic_overview_daily']
     put?: never
     post?: never
     delete?: never
@@ -770,12 +1138,77 @@ export interface components {
       min?: number | null
       rule_type: string
     }
+    AlertStateResponse: {
+      /** Format: int32 */
+      count: number
+      /** Format: date-time */
+      first_triggered_at: string
+      /** Format: date-time */
+      last_notified_at: string
+      resolved: boolean
+      /** Format: date-time */
+      resolved_at?: string | null
+      server_id: string
+      server_name: string
+    }
     ApiKeyResponse: {
       created_at: string
       id: string
       key?: string | null
       key_prefix: string
       name: string
+    }
+    ApiResponse_CycleResponse: {
+      data: {
+        current: components['schemas']['CycleTraffic']
+        history: components['schemas']['CycleTraffic'][]
+      }
+    }
+    ApiResponse_TrafficResponse: {
+      data: {
+        /** Format: int64 */
+        bytes_in: number
+        /** Format: int64 */
+        bytes_out: number
+        /** Format: int64 */
+        bytes_total: number
+        cycle_end: string
+        cycle_start: string
+        daily: components['schemas']['DailyTraffic'][]
+        hourly: components['schemas']['HourlyTraffic'][]
+        prediction?: null | components['schemas']['TrafficPrediction']
+        /** Format: int64 */
+        traffic_limit?: number | null
+        traffic_limit_type?: string | null
+        /** Format: double */
+        usage_percent?: number | null
+      }
+    }
+    ApiResponse_Vec_DailyTraffic: {
+      data: {
+        /** Format: int64 */
+        bytes_in: number
+        /** Format: int64 */
+        bytes_out: number
+        date: string
+      }[]
+    }
+    ApiResponse_Vec_ServerTrafficOverview: {
+      data: {
+        billing_cycle?: string | null
+        /** Format: int64 */
+        cycle_in: number
+        /** Format: int64 */
+        cycle_out: number
+        /** Format: int64 */
+        days_remaining: number
+        name: string
+        /** Format: double */
+        percent_used?: number | null
+        server_id: string
+        /** Format: int64 */
+        traffic_limit?: number | null
+      }[]
     }
     AuditListResponse: {
       entries: components['schemas']['AuditLogEntry'][]
@@ -793,6 +1226,17 @@ export interface components {
     }
     AutoDiscoveryKeyResponse: {
       key: string
+    }
+    BatchCapabilitiesRequest: {
+      server_ids: string[]
+      /** Format: int32 */
+      set?: number
+      /** Format: int32 */
+      unset?: number
+    }
+    BatchCapabilitiesResponse: {
+      /** Format: int64 */
+      updated: number
     }
     BatchDeleteRequest: {
       ids: string[]
@@ -839,9 +1283,30 @@ export interface components {
       server_ids?: string[]
       target: string
     }
+    CreateServiceMonitor: {
+      config_json?: unknown
+      enabled?: boolean
+      /** Format: int32 */
+      interval?: number
+      monitor_type: string
+      name: string
+      notification_group_id?: string | null
+      /** Format: int32 */
+      retry_count?: number
+      server_ids_json?: string[] | null
+      target: string
+    }
     CreateTaskRequest: {
       command: string
+      cron_expression?: string | null
+      name?: string | null
+      /** Format: int32 */
+      retry_count?: number | null
+      /** Format: int32 */
+      retry_interval?: number | null
       server_ids: string[]
+      /** @description "oneshot" (default) or "scheduled" */
+      task_type?: string
       /** Format: int32 */
       timeout?: number | null
     }
@@ -850,6 +1315,37 @@ export interface components {
       role?: string
       username: string
     }
+    CycleResponse: {
+      current: components['schemas']['CycleTraffic']
+      history: components['schemas']['CycleTraffic'][]
+    }
+    CycleTraffic: {
+      /** Format: int64 */
+      bytes_in: number
+      /** Format: int64 */
+      bytes_out: number
+      end: string
+      period: string
+      start: string
+    }
+    DailyTraffic: {
+      /** Format: int64 */
+      bytes_in: number
+      /** Format: int64 */
+      bytes_out: number
+      date: string
+    }
+    DeleteRequest: {
+      path: string
+      recursive?: boolean
+    }
+    DownloadRequest: {
+      path: string
+    }
+    DownloadResponse: {
+      status: string
+      transfer_id: string
+    }
     ErrorBody: {
       error: components['schemas']['ErrorDetail']
     }
@@ -857,6 +1353,20 @@ export interface components {
       code: string
       message: string
     }
+    FileEntry: {
+      file_type: components['schemas']['FileType']
+      group?: string | null
+      /** Format: int64 */
+      modified: number
+      name: string
+      owner?: string | null
+      path: string
+      permissions?: string | null
+      /** Format: int64 */
+      size: number
+    }
+    /** @enum {string} */
+    FileType: 'File' | 'Directory' | 'Symlink'
     GpuRecord: {
       /** Format: int32 */
       device_index: number
@@ -875,6 +1385,19 @@ export interface components {
       /** Format: double */
       utilization: number
     }
+    HourlyTraffic: {
+      /** Format: int64 */
+      bytes_in: number
+      /** Format: int64 */
+      bytes_out: number
+      hour: string
+    }
+    ListFilesRequest: {
+      path: string
+    }
+    ListFilesResponse: {
+      entries: components['schemas']['FileEntry'][]
+    }
     LoginRequest: {
       password: string
       totp_code?: string | null
@@ -891,6 +1414,16 @@ export interface components {
       role: string
       user_id: string
       username: string
+    }
+    MkdirRequest: {
+      path: string
+    }
+    MonitorWithRecord: components['schemas']['ServiceMonitor'] & {
+      latest_record?: null | components['schemas']['ServiceMonitorRecord']
+    }
+    MoveRequest: {
+      from: string
+      to: string
     }
     Notification: {
       config_json: string
@@ -945,6 +1478,12 @@ export interface components {
       server_ids_json: string
       target: string
     }
+    ReadRequest: {
+      path: string
+    }
+    ReadResponse: {
+      content: string
+    }
     RegisterResponse: {
       server_id: string
       token: string
@@ -957,10 +1496,94 @@ export interface components {
       /** Format: int32 */
       weight: number
     }
+    ServerRecord: {
+      /** Format: double */
+      cpu: number
+      disk_io_json?: string | null
+      /** Format: int64 */
+      disk_used: number
+      /** Format: double */
+      gpu_usage?: number | null
+      /** Format: int64 */
+      id: number
+      /** Format: double */
+      load1: number
+      /** Format: double */
+      load15: number
+      /** Format: double */
+      load5: number
+      /** Format: int64 */
+      mem_used: number
+      /** Format: int64 */
+      net_in_speed: number
+      /** Format: int64 */
+      net_in_transfer: number
+      /** Format: int64 */
+      net_out_speed: number
+      /** Format: int64 */
+      net_out_transfer: number
+      /** Format: int32 */
+      process_count: number
+      server_id: string
+      /** Format: int64 */
+      swap_used: number
+      /** Format: int32 */
+      tcp_conn: number
+      /** Format: double */
+      temperature?: number | null
+      /** Format: date-time */
+      time: string
+      /** Format: int32 */
+      udp_conn: number
+    }
+    ServerRecordHourly: {
+      /** Format: double */
+      cpu: number
+      disk_io_json?: string | null
+      /** Format: int64 */
+      disk_used: number
+      /** Format: double */
+      gpu_usage?: number | null
+      /** Format: int64 */
+      id: number
+      /** Format: double */
+      load1: number
+      /** Format: double */
+      load15: number
+      /** Format: double */
+      load5: number
+      /** Format: int64 */
+      mem_used: number
+      /** Format: int64 */
+      net_in_speed: number
+      /** Format: int64 */
+      net_in_transfer: number
+      /** Format: int64 */
+      net_out_speed: number
+      /** Format: int64 */
+      net_out_transfer: number
+      /** Format: int32 */
+      process_count: number
+      server_id: string
+      /** Format: int64 */
+      swap_used: number
+      /** Format: int32 */
+      tcp_conn: number
+      /** Format: double */
+      temperature?: number | null
+      /** Format: date-time */
+      time: string
+      /** Format: int32 */
+      udp_conn: number
+    }
     /** @description Server response DTO — excludes sensitive fields (token_hash, token_prefix). */
     ServerResponse: {
       agent_version?: string | null
       billing_cycle?: string | null
+      /** Format: int32 */
+      billing_start_day?: number | null
+      /** Format: int32 */
+      capabilities: number
       country_code?: string | null
       cpu_arch?: string | null
       /** Format: int32 */
@@ -973,6 +1596,7 @@ export interface components {
       disk_total?: number | null
       /** Format: date-time */
       expired_at?: string | null
+      features: string[]
       group_id?: string | null
       hidden: boolean
       id: string
@@ -985,6 +1609,8 @@ export interface components {
       os?: string | null
       /** Format: double */
       price?: number | null
+      /** Format: int32 */
+      protocol_version: number
       public_remark?: string | null
       region?: string | null
       remark?: string | null
@@ -993,17 +1619,67 @@ export interface components {
       /** Format: int64 */
       traffic_limit?: number | null
       traffic_limit_type?: string | null
-      /** Format: int32 */
-      billing_start_day?: number | null
-      /** Format: int32 */
-      capabilities: number
-      /** Format: int32 */
-      protocol_version: number
       /** Format: date-time */
       updated_at: string
       virtualization?: string | null
       /** Format: int32 */
       weight: number
+    }
+    ServerTrafficOverview: {
+      billing_cycle?: string | null
+      /** Format: int64 */
+      cycle_in: number
+      /** Format: int64 */
+      cycle_out: number
+      /** Format: int64 */
+      days_remaining: number
+      name: string
+      /** Format: double */
+      percent_used?: number | null
+      server_id: string
+      /** Format: int64 */
+      traffic_limit?: number | null
+    }
+    ServiceMonitor: {
+      config_json: string
+      /** Format: int32 */
+      consecutive_failures: number
+      /** Format: date-time */
+      created_at: string
+      enabled: boolean
+      id: string
+      /** Format: int32 */
+      interval: number
+      /** Format: date-time */
+      last_checked_at?: string | null
+      last_status?: boolean | null
+      monitor_type: string
+      name: string
+      notification_group_id?: string | null
+      /** Format: int32 */
+      retry_count: number
+      server_ids_json?: string | null
+      target: string
+      /** Format: date-time */
+      updated_at: string
+    }
+    ServiceMonitorRecord: {
+      detail_json: string
+      error?: string | null
+      /** Format: int64 */
+      id: number
+      /** Format: double */
+      latency?: number | null
+      monitor_id: string
+      success: boolean
+      /** Format: date-time */
+      time: string
+    }
+    StatRequest: {
+      path: string
+    }
+    StatResponse: {
+      entry: components['schemas']['FileEntry']
     }
     StatusGroup: {
       id: string
@@ -1051,6 +1727,9 @@ export interface components {
       public_remark?: string | null
       region?: string | null
     }
+    SuccessResponse: {
+      success: boolean
+    }
     SystemSettings: {
       custom_css?: string | null
       custom_js?: string | null
@@ -1061,10 +1740,26 @@ export interface components {
       command: string
       /** Format: date-time */
       created_at: string
+      cron_expression?: string | null
+      enabled: boolean
       id: string
+      /** Format: date-time */
+      last_run_at?: string | null
+      name?: string | null
+      /** Format: date-time */
+      next_run_at?: string | null
+      /** Format: int32 */
+      retry_count: number
+      /** Format: int32 */
+      retry_interval: number
       server_ids: string[]
+      task_type: string
+      /** Format: int32 */
+      timeout?: number | null
     }
     TaskResult: {
+      /** Format: int32 */
+      attempt: number
       /** Format: int32 */
       exit_code: number
       /** Format: date-time */
@@ -1072,7 +1767,10 @@ export interface components {
       /** Format: int64 */
       id: number
       output: string
+      run_id?: string | null
       server_id: string
+      /** Format: date-time */
+      started_at?: string | null
       task_id: string
     }
     TotpDisableRequest: {
@@ -1088,6 +1786,48 @@ export interface components {
     }
     TotpVerifyRequest: {
       code: string
+    }
+    TrafficPrediction: {
+      /** Format: double */
+      estimated_percent: number
+      /** Format: int64 */
+      estimated_total: number
+      will_exceed: boolean
+    }
+    TrafficResponse: {
+      /** Format: int64 */
+      bytes_in: number
+      /** Format: int64 */
+      bytes_out: number
+      /** Format: int64 */
+      bytes_total: number
+      cycle_end: string
+      cycle_start: string
+      daily: components['schemas']['DailyTraffic'][]
+      hourly: components['schemas']['HourlyTraffic'][]
+      prediction?: null | components['schemas']['TrafficPrediction']
+      /** Format: int64 */
+      traffic_limit?: number | null
+      traffic_limit_type?: string | null
+      /** Format: double */
+      usage_percent?: number | null
+    }
+    /** @description Serializable transfer info for API responses. */
+    TransferInfo: {
+      /** Format: int64 */
+      bytes_transferred: number
+      /** Format: int64 */
+      created_at_secs_ago: number
+      direction: string
+      file_path: string
+      /** Format: int64 */
+      file_size?: number | null
+      server_id: string
+      status: string
+      transfer_id: string
+    }
+    TransfersResponse: {
+      transfers: components['schemas']['TransferInfo'][]
     }
     UpdateAlertRule: {
       cover_type?: string | null
@@ -1124,6 +1864,10 @@ export interface components {
     }
     UpdateServerInput: {
       billing_cycle?: string | null
+      /** Format: int32 */
+      billing_start_day?: number | null
+      /** Format: int32 */
+      capabilities?: number | null
       currency?: string | null
       /** Format: date-time */
       expired_at?: string | null
@@ -1138,11 +1882,32 @@ export interface components {
       traffic_limit?: number | null
       traffic_limit_type?: string | null
       /** Format: int32 */
-      billing_start_day?: number | null
-      /** Format: int32 */
-      capabilities?: number | null
-      /** Format: int32 */
       weight?: number | null
+    }
+    UpdateServiceMonitor: {
+      config_json?: unknown
+      enabled?: boolean | null
+      /** Format: int32 */
+      interval?: number | null
+      name?: string | null
+      notification_group_id?: string | null
+      /** Format: int32 */
+      retry_count?: number | null
+      server_ids_json?: string[] | null
+      target?: string | null
+    }
+    UpdateTaskRequest: {
+      command?: string | null
+      cron_expression?: string | null
+      enabled?: boolean | null
+      name?: string | null
+      /** Format: int32 */
+      retry_count?: number | null
+      /** Format: int32 */
+      retry_interval?: number | null
+      server_ids?: string[] | null
+      /** Format: int32 */
+      timeout?: number | null
     }
     UpdateUserInput: {
       password?: string | null
@@ -1163,6 +1928,10 @@ export interface components {
       /** Format: date-time */
       updated_at: string
       username: string
+    }
+    WriteRequest: {
+      content: string
+      path: string
     }
   }
 }
@@ -1189,6 +1958,67 @@ export interface operations {
         content: {
           'application/json': components['schemas']['BatchDeleteResponse']
         }
+      }
+    }
+  }
+  batch_update_capabilities: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BatchCapabilitiesRequest']
+      }
+    }
+    responses: {
+      /** @description Batch capabilities update result */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['BatchCapabilitiesResponse']
+        }
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  cancel_transfer: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Transfer ID */
+        transfer_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Transfer cancelled */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SuccessResponse']
+        }
+      }
+      /** @description Transfer not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
       }
     }
   }
@@ -1425,6 +2255,37 @@ export interface operations {
       }
     }
   }
+  create_service_monitor: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateServiceMonitor']
+      }
+    }
+    responses: {
+      /** @description Service monitor created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServiceMonitor']
+        }
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   create_task: {
     parameters: {
       query?: never
@@ -1438,7 +2299,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Task created and dispatched */
+      /** @description Task created */
       200: {
         headers: {
           [name: string]: unknown
@@ -1529,6 +2390,54 @@ export interface operations {
       }
     }
   }
+  delete_file: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DeleteRequest']
+      }
+    }
+    responses: {
+      /** @description File/directory deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SuccessResponse']
+        }
+      }
+      /** @description File capability disabled */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Agent timeout */
+      408: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   delete_notification: {
     parameters: {
       query?: never
@@ -1570,6 +2479,34 @@ export interface operations {
     requestBody?: never
     responses: {
       /** @description Notification group deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_ping_task: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Ping task ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Ping task deleted */
       200: {
         headers: {
           [name: string]: unknown
@@ -1669,19 +2606,19 @@ export interface operations {
       }
     }
   }
-  delete_task: {
+  delete_service_monitor: {
     parameters: {
       query?: never
       header?: never
       path: {
-        /** @description Ping task ID */
+        /** @description Service monitor ID */
         id: string
       }
       cookie?: never
     }
     requestBody?: never
     responses: {
-      /** @description Ping task deleted */
+      /** @description Service monitor deleted */
       200: {
         headers: {
           [name: string]: unknown
@@ -1690,6 +2627,27 @@ export interface operations {
       }
       /** @description Not found */
       404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_task: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Task ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Task deleted */
+      200: {
         headers: {
           [name: string]: unknown
         }
@@ -1731,6 +2689,34 @@ export interface operations {
         content?: never
       }
       /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  download_file: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Transfer ID */
+        transfer_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description File download stream */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Transfer not found */
       404: {
         headers: {
           [name: string]: unknown
@@ -1983,7 +2969,69 @@ export interface operations {
         headers: {
           [name: string]: unknown
         }
+        content: {
+          'application/json': components['schemas']['ServerRecord'][]
+        }
+      }
+    }
+  }
+  get_service_monitor: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Service monitor ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Service monitor with latest record */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MonitorWithRecord']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
         content?: never
+      }
+    }
+  }
+  get_service_monitor_records: {
+    parameters: {
+      query?: {
+        /** @description Start of time range (inclusive). */
+        from?: string | null
+        /** @description End of time range (inclusive). */
+        to?: string | null
+        /** @description Maximum number of records to return. */
+        limit?: number | null
+      }
+      header?: never
+      path: {
+        /** @description Service monitor ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Service monitor records */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServiceMonitorRecord'][]
+        }
       }
     }
   }
@@ -2056,6 +3104,112 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['TaskResult'][]
+        }
+      }
+    }
+  }
+  get_traffic: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Traffic statistics */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ApiResponse_TrafficResponse']
+        }
+      }
+      /** @description Server not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_traffic_cycle: {
+    parameters: {
+      query?: {
+        /** @description Number of historical billing cycles to return (default: 6). */
+        history?: number | null
+      }
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Current cycle and historical cycle traffic */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ApiResponse_CycleResponse']
+        }
+      }
+      /** @description Server not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_traffic_overview: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Traffic overview for all servers with billing cycles */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ApiResponse_Vec_ServerTrafficOverview']
+        }
+      }
+    }
+  }
+  get_traffic_overview_daily: {
+    parameters: {
+      query?: {
+        /** @description Number of days to include (default: 30). */
+        days?: number | null
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Global daily traffic aggregation across all servers */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ApiResponse_Vec_DailyTraffic']
         }
       }
     }
@@ -2147,6 +3301,77 @@ export interface operations {
       }
     }
   }
+  list_files: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ListFilesRequest']
+      }
+    }
+    responses: {
+      /** @description Directory listing */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ListFilesResponse']
+        }
+      }
+      /** @description File capability disabled */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Agent timeout */
+      408: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  list_monitors: {
+    parameters: {
+      query?: {
+        /** @description Filter by monitor type (ssl, dns, http_keyword, tcp, whois). */
+        type?: string | null
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all service monitors */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServiceMonitor'][]
+        }
+      }
+    }
+  }
   list_notification_groups: {
     parameters: {
       query?: never
@@ -2203,6 +3428,26 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['OAuthAccount'][]
+        }
+      }
+    }
+  }
+  list_ping_tasks: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all ping tasks */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PingTask'][]
         }
       }
     }
@@ -2287,7 +3532,52 @@ export interface operations {
       }
     }
   }
+  list_states: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Alert rule ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Alert states for this rule */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AlertStateResponse'][]
+        }
+      }
+    }
+  }
   list_tasks: {
+    parameters: {
+      query?: {
+        type?: string | null
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List tasks */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TaskResponse'][]
+        }
+      }
+    }
+  }
+  list_transfers: {
     parameters: {
       query?: never
       header?: never
@@ -2296,13 +3586,13 @@ export interface operations {
     }
     requestBody?: never
     responses: {
-      /** @description List all ping tasks */
+      /** @description Active file transfers */
       200: {
         headers: {
           [name: string]: unknown
         }
         content: {
-          'application/json': components['schemas']['PingTask'][]
+          'application/json': components['schemas']['TransfersResponse']
         }
       }
     }
@@ -2417,6 +3707,102 @@ export interface operations {
       }
     }
   }
+  mkdir: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MkdirRequest']
+      }
+    }
+    responses: {
+      /** @description Directory created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SuccessResponse']
+        }
+      }
+      /** @description File capability disabled */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Agent timeout */
+      408: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  move_file: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MoveRequest']
+      }
+    }
+    responses: {
+      /** @description File/directory moved */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SuccessResponse']
+        }
+      }
+      /** @description File capability disabled */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Agent timeout */
+      408: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   oauth_authorize: {
     parameters: {
       query?: never
@@ -2498,6 +3884,54 @@ export interface operations {
       }
     }
   }
+  read_file: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReadRequest']
+      }
+    }
+    responses: {
+      /** @description File content (UTF-8) */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ReadResponse']
+        }
+      }
+      /** @description File capability disabled */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Agent timeout */
+      408: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   regenerate_auto_discovery_key: {
     parameters: {
       query?: never
@@ -2575,6 +4009,132 @@ export interface operations {
       }
       /** @description Invalid backup file */
       400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  run_task: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Task ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Task triggered */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TaskResponse']
+        }
+      }
+      /** @description Task already running */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  start_download: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DownloadRequest']
+      }
+    }
+    responses: {
+      /** @description Download transfer started */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DownloadResponse']
+        }
+      }
+      /** @description File capability disabled */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Too many concurrent transfers */
+      429: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  stat_file: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['StatRequest']
+      }
+    }
+    responses: {
+      /** @description File metadata */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['StatResponse']
+        }
+      }
+      /** @description File capability disabled */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Agent timeout */
+      408: {
         headers: {
           [name: string]: unknown
         }
@@ -2708,6 +4268,36 @@ export interface operations {
       }
     }
   }
+  trigger_service_monitor_check: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Service monitor ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Check result */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServiceMonitorRecord']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   trigger_upgrade: {
     parameters: {
       query?: never
@@ -2836,6 +4426,40 @@ export interface operations {
       }
     }
   }
+  update_ping_task: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Ping task ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdatePingTask']
+      }
+    }
+    responses: {
+      /** @description Ping task updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PingTask']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   update_rule: {
     parameters: {
       query?: never
@@ -2945,6 +4569,40 @@ export interface operations {
       }
     }
   }
+  update_service_monitor: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Service monitor ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateServiceMonitor']
+      }
+    }
+    responses: {
+      /** @description Service monitor updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServiceMonitor']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   update_settings: {
     parameters: {
       query?: never
@@ -2974,27 +4632,27 @@ export interface operations {
       query?: never
       header?: never
       path: {
-        /** @description Ping task ID */
+        /** @description Task ID */
         id: string
       }
       cookie?: never
     }
     requestBody: {
       content: {
-        'application/json': components['schemas']['UpdatePingTask']
+        'application/json': components['schemas']['UpdateTaskRequest']
       }
     }
     responses: {
-      /** @description Ping task updated */
+      /** @description Task updated */
       200: {
         headers: {
           [name: string]: unknown
         }
         content: {
-          'application/json': components['schemas']['PingTask']
+          'application/json': components['schemas']['TaskResponse']
         }
       }
-      /** @description Not found */
+      /** @description Task not found */
       404: {
         headers: {
           [name: string]: unknown
@@ -3037,6 +4695,102 @@ export interface operations {
       }
       /** @description Not found */
       404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  upload_file: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'multipart/form-data': string
+      }
+    }
+    responses: {
+      /** @description File uploaded */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SuccessResponse']
+        }
+      }
+      /** @description File capability disabled */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Too many concurrent transfers */
+      429: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  write_file: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['WriteRequest']
+      }
+    }
+    responses: {
+      /** @description File written */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SuccessResponse']
+        }
+      }
+      /** @description File capability disabled */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Agent timeout */
+      408: {
         headers: {
           [name: string]: unknown
         }

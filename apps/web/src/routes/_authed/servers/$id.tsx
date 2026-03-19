@@ -4,6 +4,7 @@ import { ArrowLeft, BarChart3, Container, CreditCard, FileText, Pencil, Terminal
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CapabilitiesDialog } from '@/components/server/capabilities-dialog'
+import { DiskIoChart } from '@/components/server/disk-io-chart'
 import { MetricsChart } from '@/components/server/metrics-chart'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
@@ -19,6 +20,7 @@ import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerResponse } from '@/lib/api-schema'
 import { CAP_DOCKER, CAP_FILE, hasCap } from '@/lib/capabilities'
+import { buildMergedDiskIoSeries, buildPerDiskIoSeries } from '@/lib/disk-io'
 import { cn, countryCodeToFlag, formatBytes } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/servers/$id')({
@@ -31,6 +33,7 @@ export const Route = createFileRoute('/_authed/servers/$id')({
 interface TimeRange {
   hours: number
   interval: string
+  key: string
   label: string
 }
 
@@ -49,12 +52,12 @@ interface ServerWithCaps {
 }
 
 const TIME_RANGES: TimeRange[] = [
-  { label: 'range_realtime', hours: 0, interval: 'realtime' },
-  { label: 'range_1h', hours: 1, interval: 'raw' },
-  { label: 'range_6h', hours: 6, interval: 'raw' },
-  { label: 'range_24h', hours: 24, interval: 'raw' },
-  { label: 'range_7d', hours: 168, interval: 'hourly' },
-  { label: 'range_30d', hours: 720, interval: 'hourly' }
+  { key: 'realtime', label: 'range_realtime', hours: 0, interval: 'realtime' },
+  { key: '1h', label: 'range_1h', hours: 1, interval: 'raw' },
+  { key: '6h', label: 'range_6h', hours: 6, interval: 'raw' },
+  { key: '24h', label: 'range_24h', hours: 24, interval: 'raw' },
+  { key: '7d', label: 'range_7d', hours: 168, interval: 'hourly' },
+  { key: '30d', label: 'range_30d', hours: 720, interval: 'hourly' }
 ]
 
 function formatCurrency(price: number, currency: string): string {
@@ -150,7 +153,10 @@ function ServerActionButtons({
 
 function MetricsTabContent({
   chartData,
+  diskIoMergedData,
+  diskIoPerDiskData,
   gpuChartData,
+  hasDiskIo,
   hasGpu,
   hasTemperature,
   rangeIndex,
@@ -158,7 +164,13 @@ function MetricsTabContent({
   serverId
 }: {
   chartData: Record<string, unknown>[]
+  diskIoMergedData: { read_bytes_per_sec: number; timestamp: string; write_bytes_per_sec: number }[]
+  diskIoPerDiskData: {
+    data: { read_bytes_per_sec: number; timestamp: string; write_bytes_per_sec: number }[]
+    name: string
+  }[]
   gpuChartData: Record<string, unknown>[]
+  hasDiskIo: boolean
   hasGpu: boolean
   hasTemperature: boolean
   rangeIndex: number
@@ -175,7 +187,7 @@ function MetricsTabContent({
           <Button
             className={cn(rangeIndex === i && 'bg-primary text-primary-foreground')}
             key={tr.label}
-            onClick={() => navigate({ search: (prev) => ({ ...prev, range: tr.interval }) })}
+            onClick={() => navigate({ search: (prev) => ({ ...prev, range: tr.key }) })}
             size="sm"
             variant={rangeIndex === i ? 'default' : 'outline'}
           >
@@ -268,6 +280,8 @@ function MetricsTabContent({
         )}
       </div>
 
+      {hasDiskIo && <DiskIoChart mergedData={diskIoMergedData} perDiskData={diskIoPerDiskData} />}
+
       <TrafficCard serverId={serverId} />
     </>
   )
@@ -279,10 +293,10 @@ function ServerDetailPage() {
   const { range: rangeParam } = Route.useSearch()
   const [editOpen, setEditOpen] = useState(false)
 
-  const selectedRange = TIME_RANGES.findIndex((tr) => tr.interval === rangeParam)
+  const selectedRange = TIME_RANGES.findIndex((tr) => tr.key === rangeParam)
   const rangeIndex = selectedRange >= 0 ? selectedRange : 0
   const range = TIME_RANGES[rangeIndex]
-  const isRealtime = range.interval === 'realtime'
+  const isRealtime = range.key === 'realtime'
 
   const { data: server, isLoading: serverLoading } = useServer(id)
   const realtimeData = useRealtimeMetrics(id)
@@ -360,8 +374,25 @@ function ServerDetailPage() {
     }))
   }, [gpuRecords])
 
+  const diskIoMergedData = useMemo(() => {
+    if (isRealtime || !records) {
+      return []
+    }
+
+    return buildMergedDiskIoSeries(records)
+  }, [isRealtime, records])
+
+  const diskIoPerDiskData = useMemo(() => {
+    if (isRealtime || !records) {
+      return []
+    }
+
+    return buildPerDiskIoSeries(records)
+  }, [isRealtime, records])
+
   const hasTemperature =
     !isRealtime && chartData.some((d) => 'temperature' in d && d.temperature != null && (d.temperature as number) > 0)
+  const hasDiskIo = !isRealtime && diskIoPerDiskData.length > 0
   const hasGpu = !isRealtime && gpuChartData.length > 0
 
   if (serverLoading) {
@@ -461,7 +492,10 @@ function ServerDetailPage() {
         <TabsContent value="metrics">
           <MetricsTabContent
             chartData={chartData}
+            diskIoMergedData={diskIoMergedData}
+            diskIoPerDiskData={diskIoPerDiskData}
             gpuChartData={gpuChartData}
+            hasDiskIo={hasDiskIo}
             hasGpu={hasGpu}
             hasTemperature={hasTemperature}
             rangeIndex={rangeIndex}

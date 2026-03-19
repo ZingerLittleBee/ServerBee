@@ -76,6 +76,21 @@ The agent collects the following metrics at a configurable interval (default: ev
 | Temperature | CPU temperature in degrees Celsius (optional) |
 | Uptime | System uptime in seconds |
 
+### Disk I/O (Linux)
+
+On Linux, the agent reads `/proc/diskstats` to collect per-disk read/write throughput:
+
+| Metric | Unit | Description |
+|--------|------|-------------|
+| Read Speed | bytes/sec | Read throughput per physical disk |
+| Write Speed | bytes/sec | Write throughput per physical disk |
+
+Only physical block devices are tracked (e.g., `sda`, `nvme0n1`). Virtual devices (`loop*`, `dm-*`, `ram*`, `sr*`) and partitions (`sda1`, `nvme0n1p1`) are excluded. On the first sample after agent startup, a baseline is established and an empty list is reported. Subsequent samples compute delta-based rates.
+
+Disk I/O data is stored as a JSON column (`disk_io_json`) in the `records` and `records_hourly` tables. The hourly aggregator computes per-device average read/write rates.
+
+On non-Linux platforms, disk I/O collection is not available and `disk_io` is reported as `null`. The server and frontend handle this gracefully.
+
 ### GPU (Optional)
 
 When GPU monitoring is enabled (`enable_gpu = true`), per-device metrics are collected:
@@ -142,6 +157,7 @@ Each server has a detail page showing:
 - Real-time streaming charts (default mode)
 - System information (hardware, OS, network)
 - Historical trend charts with time range selection
+- Disk I/O charts with merged and per-disk views (Linux, historical mode)
 - Server metadata (group, tags, remarks, pricing)
 - Actions (terminal access, edit, delete)
 
@@ -156,7 +172,16 @@ The server detail page defaults to **Real-time mode**. In this mode, charts disp
 - **Available charts**: CPU, Memory, Disk, Network In/Out, Load Average (1m)
 - **Time axis**: First tick shows `HH:mm:ss`, subsequent ticks show `mm:ss`
 
-Temperature and GPU charts are not available in real-time mode because the WebSocket `ServerStatus` message does not include these fields. Switch to a historical view to see temperature and GPU data.
+Temperature, GPU, and Disk I/O charts are not available in real-time mode because the WebSocket `ServerStatus` message does not include these fields. Switch to a historical view to see temperature, GPU, and disk I/O data.
+
+### Disk I/O Charts
+
+When historical disk I/O data is available (Linux agents only), the server detail page displays a Disk I/O chart with two views:
+
+- **Merged** -- Combined read/write throughput across all physical disks
+- **Per Disk** -- Individual charts for each physical disk (e.g., `sda`, `nvme0n1`)
+
+Both views show read speed (blue) and write speed (green) as area charts. Missing data points are filled with zero values to maintain a continuous timeline.
 
 ### Time Range Selector
 

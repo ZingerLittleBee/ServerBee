@@ -6,10 +6,10 @@
 # 全量测试
 cargo test --workspace && bun run test
 
-# Rust 测试（281 单元 + 28 集成 + 4 Docker 集成 = 313）
+# Rust 测试（288 单元 + 29 集成 + 4 Docker 集成 = 321）
 cargo test --workspace
 
-# 前端测试（124 vitest，14 个测试文件）
+# 前端测试（129 vitest，16 个测试文件）
 bun run test
 
 # 代码质量
@@ -23,9 +23,9 @@ bun run typecheck
 ### 按 crate 运行
 
 ```bash
-cargo test -p serverbee-common          # 协议 + 能力常量 + Docker 类型 (38 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 (198 + 32 = 230 tests)
-cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager + Config (45 tests)
+cargo test -p serverbee-common          # 协议 + 能力常量 + Docker 类型 (40 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 (200 + 33 = 233 tests)
+cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager + Config (48 tests)
 ```
 
 ### 仅集成测试
@@ -48,20 +48,20 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | 模块 | 测试数 | 覆盖内容 |
 |------|--------|----------|
 | `common/constants.rs` | 8 | 能力位运算、默认值、掩码、CAP_FILE、CAP_DOCKER |
-| `common/protocol.rs` | 23 | 消息序列化/反序列化（NetworkProbe + 文件管理 + Docker + IpChanged/ServerIpChanged 全协议覆盖） |
+| `common/protocol.rs` | 24 | 消息序列化/反序列化（NetworkProbe + 文件管理 + Docker + IpChanged/ServerIpChanged + Report.disk_io 覆盖） |
 | `common/docker_types.rs` | 3 | Docker 容器/动作/日志条目序列化/反序列化 |
-| `common/types.rs` | 3 | SystemInfo features 字段默认值和序列化、NetworkInterface 序列化 |
+| `common/types.rs` | 4 | SystemInfo features 字段默认值和序列化、NetworkInterface 序列化、SystemReport.disk_io 向后兼容 |
 | `server/service/alert.rs` | 20 | 阈值判定、指标提取、采样窗口、事件驱动规则类型、服务器覆盖判定、AlertStateManager 构造 |
 | `server/service/auth.rs` | 19 | 密码哈希、session、API key、TOTP、登录、改密 |
 | `server/service/notification.rs` | 16 | 模板变量替换、渠道配置解析 |
-| `server/service/record.rs` | 6 | 历史查询、聚合、清理策略、保存上报、过期清理 |
+| `server/service/record.rs` | 8 | 历史查询、聚合、清理策略、保存上报、过期清理、disk_io_json 持久化与小时聚合 |
 | `server/service/agent_manager.rs` | 13 | 连接管理、广播、缓存、终端会话、离线检测、请求-响应中继、per-entry TTL |
 | `server/service/docker_viewer.rs` | 5 | 首位/末位观察者检测、has_viewers、批量连接移除、批量服务器移除 |
 | `server/service/server.rs` | 5 | 服务器 CRUD、批量删除 |
 | `server/service/user.rs` | 4 | 用户 CRUD、级联删除、最后 admin 保护 |
 | `server/service/ping.rs` | 3 | Ping 任务 CRUD |
 | `server/middleware/auth.rs` | 6 | Cookie/API Key 提取 |
-| `agent/collector/` | 5 | 系统信息、指标范围、使用量约束 |
+| `agent/collector/` | 8 | 系统信息、指标范围、使用量约束、磁盘 I/O 基线语义、设备过滤、速率计算排序 |
 | `agent/pinger.rs` | 2 | TCP 探测（开放/关闭端口） |
 | `agent/config.rs` | 1 | IpChangeConfig 默认值（enabled/check_external_ip/interval_secs/external_ip_url） |
 | `server/service/audit.rs` | 3 | 审计日志记录、列表、排序 |
@@ -88,6 +88,7 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | 测试 | 流程 |
 |------|------|
 | `test_agent_register_connect_report` | Agent 注册 → WS 连接 → SystemInfo → 指标上报 |
+| `test_server_records_api_returns_disk_io_json` | 注册 Agent → 直接保存带 disk_io 的记录 → GET /api/servers/{id}/records 返回 disk_io_json |
 | `test_backup_restore` | 创建数据 → 备份 → 恢复 → 验证完整性 |
 | `test_login_logout_flow` | 登录 → 检查状态 → 登出 → 验证 401 |
 | `test_api_key_lifecycle` | 创建 API Key → 用 Key 访问 API |
@@ -142,6 +143,8 @@ cd apps/web && bunx vitest run src/lib/capabilities.test.ts
 | `file-utils.test.ts` | 30 | 扩展名→语言映射(yaml/json/ts/sh/rs/py/toml/go/sql/css/html/dockerfile/路径含点/大写)、文本文件判定(toml/sql/conf/exe/tar.gz)、图片文件判定(webp/ico/gif/bmp) |
 | `use-traffic.test.tsx` | 3 | 流量数据获取、查询 key 验证、空 serverId 禁用 |
 | `traffic-card.test.tsx` | 1 | TrafficCard 渲染、Today/Monthly tab 切换、hourly/daily BarChart 验证 |
+| `disk-io.test.ts` | 3 | disk_io_json 解析、汇总序列、按磁盘补零序列 |
+| `disk-io-chart.test.tsx` | 2 | DiskIoChart 汇总/按磁盘切换、空数据返回 null |
 
 ### 测试工具
 
@@ -321,7 +324,7 @@ docker compose up -d
 | 登录 | `/login` | 输入 admin/密码登录，跳转 Dashboard | ✅ |
 | Dashboard | `/` | 显示统计摘要卡片（Servers, Avg CPU, Memory, Bandwidth, Healthy），服务器卡片含实时指标 | ✅ |
 | Servers 列表 | `/servers` | 表格显示服务器，支持搜索、排序、批量选择 | ✅ |
-| 服务器详情 | `/servers/:id` | 系统信息（OS/CPU/RAM/Kernel）、实时流式图表（默认）+ 历史图表（1h/6h/24h/7d/30d）、CPU/Memory/Disk/Network In/Out/Load/Temperature | ✅ |
+| 服务器详情 | `/servers/:id` | 系统信息（OS/CPU/RAM/Kernel）、实时流式图表（默认）+ 历史图表（1h/6h/24h/7d/30d）、CPU/Memory/Disk/Network In/Out/Load/Temperature，历史模式额外显示 Disk I/O（汇总/按磁盘） | ✅ |
 | Capability Toggles | `/servers/:id` (底部) | 6 个开关：Web Terminal/Remote Exec/Auto Upgrade (High Risk, 默认关) + ICMP/TCP/HTTP Probe (Low Risk, 默认开) | ✅ |
 | 全局 Capabilities | `/settings/capabilities` | 表格视图管理所有服务器的能力开关，支持搜索和批量选择 | ✅ |
 | Agent 连接 | Dashboard | Agent 自动注册获取 token → WebSocket 连接 → 指标上报 → Dashboard 显示 Online | ✅ |
@@ -453,6 +456,45 @@ docker compose up -d
 | C16 | 深色主题 | 所有图表在深色模式下颜色、背景、文字对比度正常 | ✅ |
 | C17 | recharts outline | 图表元素无多余 outline/focus ring（CSS hack 已删除） | — |
 | C18 | Tooltip 多系列指示器 | LatencyChart/TrafficCard tooltip 行显示颜色指示器 + 系列标签（非纯文本） | — |
+
+### 验证清单 — 磁盘 I/O 监控
+
+#### 单元测试覆盖（自动化）
+
+以下自动化测试覆盖位于 Rust agent/server、协议层和前端图表层，可分别通过 `cargo test --workspace` 与 `bun run test` 运行：
+
+| 测试组 | 文件 / 测试名 | 验证内容 |
+|--------|---------------|----------|
+| 协议兼容 | `crates/common/src/types.rs` / `test_system_report_without_disk_io_defaults_to_none` | 旧 payload 缺少 `disk_io` 字段时仍能反序列化，向后兼容为 `None` |
+| 协议 round-trip | `crates/common/src/protocol.rs` / `test_report_with_disk_io_round_trip` | `AgentMessage::Report` 序列化/反序列化后保留 `disk_io` 数据 |
+| Agent 采集语义 | `crates/agent/src/collector/tests.rs` / `test_collect_disk_io_first_sample_is_empty`、`test_collect_disk_io_is_none_on_unsupported_platforms` | Linux 首次采样返回空数组建立基线；非 Linux 平台返回 `None` |
+| Agent 纯函数 | `crates/agent/src/collector/disk_io.rs` / `test_compute_disk_io_sorts_devices_and_clamps_negative_deltas`、`test_should_track_device_filters_virtual_and_partition_names` | 速率计算、设备名排序、计数器回退钳制、虚拟/分区设备过滤 |
+| Server 持久化 | `crates/server/src/service/record.rs` / `test_save_report_persists_disk_io_json`、`test_aggregate_hourly_averages_disk_io_by_device` | `disk_io_json` 原始记录持久化，以及小时聚合时按设备求平均 |
+| 前端数据转换 | `apps/web/src/lib/disk-io.test.ts` / `parseDiskIoJson`、`buildMergedDiskIoSeries`、`buildPerDiskIoSeries` | JSON 解析容错、汇总序列构建、按磁盘补零与稳定排序 |
+| 前端图表渲染 | `apps/web/src/components/server/disk-io-chart.test.tsx` / `renders merged and per-disk views`、`returns null when there is no disk I/O data` | `Merged` / `Per Disk` 视图切换、空数据时不渲染卡片 |
+
+#### 集成测试覆盖（自动化）
+
+以下集成测试位于 `crates/server/tests/integration.rs`，启动真实 Server + SQLite 临时数据库：
+
+| 测试名 | 流程 |
+|--------|------|
+| `test_server_records_api_returns_disk_io_json` | 注册 Agent → 直接保存带 `disk_io` 的记录 → `GET /api/servers/{id}/records` 返回 `disk_io_json`，且 JSON 可反序列化为按磁盘读写速率 |
+
+#### E2E 手动验证
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| DI1 | 实时模式隐藏 Disk I/O | 打开 `/servers/:id` → 默认保持 `Real-time` 模式 → 页面中不显示 Disk I/O 卡片 | — |
+| DI2 | 历史模式显示 Disk I/O | 点击 `1h`（或 `6h/24h/7d/30d`）→ 等待历史 records 加载 → 显示 `Disk I/O` 卡片与 `Merged` / `Per Disk` tabs | — |
+| DI3 | 汇总视图双线 | 保持 `Merged` tab → hover 图表 → Tooltip 显示 `Read` / `Write` 两条线，速率按 `KB/s` / `MB/s` / `GB/s` 格式化 | — |
+| DI4 | 按磁盘视图 | 点击 `Per Disk` → 每块磁盘单独渲染图表，标题按设备名排序（如 `sda`、`sdb`、`nvme0n1`） | — |
+| DI5 | 缺失时间点补零 | 构造某个时间点仅部分磁盘有数据 → 切到 `Per Disk` → 缺失磁盘的该时间点显示为 0，不报错不丢线 | — |
+| DI6 | 时间范围切换 | 依次点击 `1h/6h/24h/7d/30d` → Disk I/O 图表的时间轴和数据范围同步更新，不串用其他范围的数据 | — |
+| DI7 | 零吞吐历史可见 | 准备 read/write 全为 0 的历史记录 → 切到历史模式 → Disk I/O 卡片仍可见，图表显示空闲基线而非整卡消失 | — |
+| DI8 | 旧 Agent / 非 Linux 兼容 | 接入旧 agent 或非 Linux agent → 切到历史模式 → 页面不报错，Disk I/O 区域按无数据处理 | — |
+| DI9 | API 返回原始 JSON | 调用 `GET /api/servers/{id}/records?interval=raw` → 响应中包含 `disk_io_json`，内容可反序列化为每磁盘 `read_bytes_per_sec` / `write_bytes_per_sec` | — |
+| DI10 | i18n | 切换中文/英文 → `磁盘 I/O` / `Disk I/O`、`汇总` / `Merged`、`按磁盘` / `Per Disk`、`读取` / `Read`、`写入` / `Write` 文案正确 | — |
 
 ### 验证清单 — 文件管理
 
@@ -683,13 +725,13 @@ docker compose up -d
 
 ```
 crates/common/src/constants.rs          # 能力常量测试（含 CAP_DOCKER）
-crates/common/src/protocol.rs           # 协议序列化测试（含 Docker 消息变体）
+crates/common/src/protocol.rs           # 协议序列化测试（含 Docker 消息变体 + Report.disk_io round-trip）
 crates/common/src/docker_types.rs      # Docker 数据结构序列化测试
-crates/common/src/types.rs             # SystemInfo features 字段测试
+crates/common/src/types.rs             # SystemInfo features 字段 + SystemReport.disk_io 向后兼容测试
 crates/server/src/service/alert.rs      # 告警服务测试
 crates/server/src/service/auth.rs       # 认证服务测试 (含 DB 集成)
 crates/server/src/service/notification.rs # 通知服务测试
-crates/server/src/service/record.rs     # 记录服务测试
+crates/server/src/service/record.rs     # 记录服务测试（含 disk_io_json 持久化 / 小时聚合）
 crates/server/src/service/agent_manager.rs # AgentManager 单元测试 (含 per-entry TTL)
 crates/server/src/service/task_scheduler.rs # TaskScheduler 单元测试 (3 tests)
 crates/server/src/task/task_scheduler.rs   # 定时任务执行流程测试 (2 tests)
@@ -699,9 +741,10 @@ crates/server/src/service/user.rs       # 用户服务测试
 crates/server/src/service/ping.rs       # Ping 服务测试
 crates/server/src/middleware/auth.rs    # 中间件 Cookie/Key 提取测试
 crates/server/src/test_utils.rs         # 测试辅助 (setup_test_db)
-crates/server/tests/integration.rs      # 集成测试 (28 tests)
+crates/server/tests/integration.rs      # 集成测试 (29 tests)
 crates/server/tests/docker_integration.rs # Docker 集成测试 (4 tests)
-crates/agent/src/collector/tests.rs     # Agent 采集器测试
+crates/agent/src/collector/tests.rs     # Agent 采集器测试（含 Disk I/O 首次采样 / 平台语义）
+crates/agent/src/collector/disk_io.rs   # Disk I/O 纯函数测试（速率计算 / 设备过滤）
 crates/agent/src/pinger.rs              # Agent Pinger 测试
 crates/agent/src/probe_utils.rs         # 批量探测解析测试
 crates/agent/src/network_prober.rs      # 网络探测模块测试
@@ -727,8 +770,10 @@ apps/web/src/hooks/use-auth.test.tsx    # Auth hook 测试
 apps/web/src/hooks/use-api.test.tsx     # API hook 测试
 apps/web/src/hooks/use-realtime-metrics.test.tsx # 实时指标 hook 测试（纯函数 + renderHook 集成）
 apps/web/src/hooks/use-servers-ws.test.ts # WS 数据合并测试
+apps/web/src/lib/disk-io.test.ts       # Disk I/O 历史数据解析 / 序列构建测试
 apps/web/src/lib/file-utils.test.ts     # 文件工具函数测试
 apps/web/src/hooks/use-traffic.test.tsx # 流量 hook 测试 (3 tests)
+apps/web/src/components/server/disk-io-chart.test.tsx # Disk I/O 图表渲染测试
 apps/web/src/components/server/traffic-card.test.tsx # TrafficCard tab 切换测试 (1 test)
 apps/web/vitest.config.ts               # Vitest 配置
 .github/workflows/ci.yml               # CI 流水线
