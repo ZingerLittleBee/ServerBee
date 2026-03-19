@@ -138,11 +138,16 @@ function setServerDetailDockerAvailability(
   return prev
 }
 
-export function useServersWs(): React.RefObject<WsClient | null> {
+export function useServersWs(enabled = true): React.RefObject<WsClient | null> {
   const queryClient = useQueryClient()
   const wsRef = useRef<WsClient | null>(null)
 
   useEffect(() => {
+    if (!enabled) {
+      wsRef.current = null
+      return
+    }
+
     const ws = new WsClient('/api/ws/servers')
     wsRef.current = ws
 
@@ -244,7 +249,7 @@ export function useServersWs(): React.RefObject<WsClient | null> {
       ws.close()
       wsRef.current = null
     }
-  }, [queryClient])
+  }, [enabled, queryClient])
 
   return wsRef
 }
