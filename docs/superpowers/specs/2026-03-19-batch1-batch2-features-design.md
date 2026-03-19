@@ -127,7 +127,7 @@ struct CheckResult {
 }
 
 struct SslChecker;          // rustls + x509-parser: connect, extract cert info
-struct DnsChecker;          // trust-dns-resolver: query record_type, compare expected
+struct DnsChecker;          // hickory-resolver: query record_type, compare expected
 struct HttpKeywordChecker;  // reqwest: send request, check status + keyword
 struct TcpChecker;          // tokio::net::TcpStream::connect with timeout
 struct WhoisChecker;        // whois crate: query domain, parse expiry
@@ -161,9 +161,26 @@ All endpoints require session/API key auth. Admin only for create/update/delete.
 ### 1.7 New Dependencies
 
 - `x509-parser` — SSL certificate parsing
-- `trust-dns-resolver` — DNS resolution
-- `whois` — WHOIS query
+- `hickory-resolver` — DNS resolution (formerly `trust-dns-resolver`, renamed to hickory-dns)
+- `whois-rust` — WHOIS query (fallback: shell `whois` command for TLDs the crate cannot parse)
 - `reqwest` — already in use (for HTTP keyword checks)
+
+### 1.8 Indexes
+
+- `service_monitor`: INDEX on `enabled` (background task queries enabled monitors every 10s)
+- `service_monitor_record`: INDEX on `(monitor_id, time)` for history queries and retention cleanup
+
+### 1.9 Concurrency Control
+
+The execution engine uses `tokio::sync::Semaphore` with max **20 concurrent checks** to prevent resource exhaustion when many monitors become due simultaneously. Monitors that cannot acquire a permit are deferred to the next tick (10s later).
+
+### 1.10 Retention Config
+
+Add `service_monitor_days: u32` (default 30) to `RetentionConfig` in `crates/server/src/config.rs`. Env var: `SERVERBEE_RETENTION__SERVICE_MONITOR_DAYS`.
+
+### 1.11 OpenAPI
+
+All new endpoints annotated with `#[utoipa::path]`. All new DTOs derive `ToSchema`. Service Monitor endpoints registered under a new `service-monitors` tag in `ApiDoc`.
 
 ---
 
@@ -180,6 +197,8 @@ All endpoints require session/API key auth. Admin only for create/update/delete.
 - Server entity — `billing_cycle`, `billing_start_day`, `traffic_limit`, `traffic_limit_type` fields exist
 
 ### 2.2 New/Enhanced API Endpoints
+
+All traffic endpoints are grouped under `/api/traffic/` prefix (distinct from the existing `/api/servers/{id}/traffic` endpoint which remains unchanged for backward compatibility).
 
 ```
 GET /api/traffic/overview
@@ -250,14 +269,16 @@ New "Traffic" tab in `servers/$id.tsx`:
 
 **Server-side passive detection (on connect):**
 - When Agent WS connects, `agent.rs` handler already extracts `remote_addr` from `ConnectInfo`
-- In the existing `SystemInfo` processing logic, add: compare `remote_addr` with `servers.ipv4`
-- If different: update `ipv4`, re-run GeoIP lookup, write audit log, trigger notification
+- Store `remote_addr` in a new `servers.last_remote_addr` column (this is the TCP socket IP, which may be a NAT/proxy IP — distinct from `servers.ipv4` which is the Agent's self-reported local NIC IP)
+- On each Agent connect: compare current `remote_addr` with stored `last_remote_addr`. If different, update `last_remote_addr`, write audit log, trigger notification
+- Note: `remote_addr` vs `ipv4` are semantically different. `remote_addr` = external-facing IP (NAT gateway, public IP). `ipv4` = Agent's local NIC IP. Both are tracked independently.
 
 **Agent-side active detection (during long connection):**
-- Agent checks local network interfaces via `sysinfo::Networks` every 5 minutes
-- Compares against cached IP list from previous check
+- Agent checks IP via two methods:
+  1. **Local NIC enumeration** (`sysinfo::Networks`) — detects local interface IP changes
+  2. **Optional external IP check** — if `config.check_external_ip = true` (default false), Agent queries `https://api.ipify.org` to detect public IP changes (useful for cloud VPS where local NIC shows private IP that never changes while public IP may be reassigned)
+- Runs every 5 minutes. Compares against cached IP from previous check.
 - On change: sends `IpChanged` message to Server
-- No external API dependency — pure local NIC enumeration
 
 ### 3.2 Protocol Extension
 
@@ -292,7 +313,21 @@ Reuse existing alert system with new rule type:
 "ip_changed"  // Triggers on any IP change; no threshold evaluation needed
 ```
 
-This is an **event-driven rule** (not threshold-based). When IP change is detected, the alert evaluator checks if any enabled `ip_changed` rule covers this server, and fires the notification group.
+This is an **event-driven rule** — it bypasses the normal poll-based `alert_evaluator` cycle. Instead, the IP change detection code (in `router/ws/agent.rs`) directly calls a new `AlertService::check_event_rules(server_id, event_type)` method:
+
+```rust
+impl AlertService {
+    /// Check event-driven rules (ip_changed, etc.) — called from WS handler, not from alert_evaluator poll loop.
+    pub async fn check_event_rules(&self, server_id: &str, event_type: &str) {
+        // 1. Query enabled rules where rules_json contains an item with rule_type == event_type
+        // 2. Check cover_type/server_ids to see if this server is covered
+        // 3. If matched, fire notification via NotificationService::send_group
+        // 4. Record alert_state (reuse existing AlertStateManager for dedup/once/always logic)
+    }
+}
+```
+
+This keeps the existing `evaluate_all()` poll loop unchanged (it skips `ip_changed` rules), while event-driven rules get immediate dispatch. The `AlertRuleItem` schema is reused with `min`/`max`/`duration` fields left as `None` for event rules.
 
 Users create an `ip_changed` alert rule in the existing alert management UI, selecting notification group and server coverage (all/include/exclude).
 
@@ -320,7 +355,8 @@ Frontend Dashboard shows a brief IP change indicator on the affected Server Card
 | Agent | `reporter.rs` | New 5-min IP check timer, cached IP list comparison |
 | Server | `router/ws/agent.rs` | Handle `IpChanged`: update DB + GeoIP + audit + notify |
 | Server | `service/alert.rs` | New `ip_changed` rule type (event-driven, not threshold) |
-| Server | Agent connect handler | Compare `remote_addr` vs stored `ipv4` on connect |
+| Server | Agent connect handler | Compare `remote_addr` vs stored `last_remote_addr` on connect |
+| Server | migration | Add `last_remote_addr` column to `servers` table |
 | Frontend | Alert management page | `rule_type` dropdown adds "IP Changed" option |
 
 ---
@@ -352,8 +388,11 @@ pub struct DiskIo {
 
 ```rust
 // SystemReport — new field
-pub disk_io: Option<Vec<DiskIo>>,  // Option for backward compatibility with old agents
+#[serde(default)]
+pub disk_io: Option<Vec<DiskIo>>,  // Option + #[serde(default)] for backward compatibility with old agents
 ```
+
+The `#[serde(default)]` annotation is required so that old agents sending `Report` messages without the `disk_io` field will deserialize successfully (the field defaults to `None`).
 
 ### 4.3 Server-Side Storage
 
@@ -366,7 +405,7 @@ ALTER TABLE records_hourly ADD COLUMN disk_io_json TEXT;
 
 Rationale: Disk I/O is same-sampling-period as CPU/memory/network. JSON column avoids one-to-many join while supporting per-disk breakdown. Hourly aggregation computes per-disk averages.
 
-New migration: `m20260319_000001_disk_io.rs` (up-only).
+Included in migration `m20260319_000001_service_monitor.rs` (up-only).
 
 ### 4.4 Frontend
 
@@ -434,6 +473,7 @@ TracerouteResult {
     target: String,
     hops: Vec<TracerouteHop>,
     completed: bool,
+    error: Option<String>,  // e.g., "traceroute not installed", "permission denied"
 }
 
 // New type
@@ -451,7 +491,10 @@ pub struct TracerouteHop {
 **Agent implementation:**
 - Linux/macOS: Execute system `traceroute` command (or `mtr -r -c 3`), parse output
 - Windows: Execute `tracert` command, parse output
-- Requires `CAP_PING_ICMP` capability
+- Requires `CAP_PING_ICMP` capability (no new capability bit needed — traceroute is an extension of ICMP probing)
+- **Input validation**: Target must match `^[a-zA-Z0-9.\-:]+$` regex (domain or IP only) to prevent command injection. Reject any input containing shell metacharacters.
+- **Graceful fallback**: If `traceroute`/`mtr`/`tracert` is not installed, return `TracerouteResult` with `completed: true`, empty `hops`, and an error message in a new optional `error: Option<String>` field on `TracerouteResult`.
+- **Privilege note**: On some systems traceroute requires root. If execution fails with permission error, report the error gracefully rather than failing silently.
 
 **Server API:**
 
@@ -507,6 +550,8 @@ apps/web/src/themes/
   rose-pine.css
 ```
 
+**Lazy loading**: Only the selected theme's CSS file is loaded via dynamic `<link>` injection. When the user switches themes, the old `<link>` is replaced with the new one. The `default.css` is always bundled (no extra load). This avoids loading all 8 theme files upfront.
+
 Each theme file overrides all shadcn/ui CSS variables (`--background`, `--foreground`, `--primary`, `--card`, `--border`, etc.) in both light and dark variants:
 
 ```css
@@ -545,7 +590,7 @@ brand.favicon_url    — Custom favicon
 brand.footer_text    — Footer text (optional)
 ```
 
-**Logo upload**: `POST /api/settings/brand/logo` — upload image, store to `data/brand/` directory, serve via `/api/brand/logo` static route. Limit 512KB, formats PNG/SVG/ICO.
+**Logo upload**: `POST /api/settings/brand/logo` — upload image, store to `data/brand/` directory, serve via `/api/brand/logo` static route. Limit 512KB, formats **PNG/ICO only** (SVG excluded due to XSS risk from embedded `<script>` tags and event handlers).
 
 **API:**
 
@@ -585,7 +630,7 @@ Settings page new "Appearance" section:
 | server_ids_json | String | Included servers JSON array |
 | group_by_server_group | bool | Group by server groups, default true |
 | show_values | bool | Show metric values, default true |
-| custom_css | Option\<String\> | Optional custom styling |
+| custom_css | Option\<String\> | Optional custom styling (sanitized: only allow safe CSS properties, strip `url()`, `expression()`, `javascript:`, event handlers) |
 | enabled | bool | — |
 | created_at | DateTime\<Utc\> | — |
 | updated_at | DateTime\<Utc\> | — |
@@ -637,6 +682,7 @@ Workflow: admin creates incident -> adds updates ("Identified root cause", "Fix 
 | status_page_ids_json | Option\<String\> | Display on which pages |
 | active | bool | Whether effective |
 | created_at | DateTime\<Utc\> | — |
+| updated_at | DateTime\<Utc\> | — |
 
 **Alert integration**: `alert_evaluator` checks if a server is within an active maintenance window before evaluating rules. If so, skip alerting to avoid false positives during planned maintenance.
 
@@ -650,11 +696,13 @@ fn is_in_maintenance(server_id: &str, now: DateTime<Utc>) -> bool {
 
 **`uptime_daily` table (generated by aggregator):**
 
+UNIQUE constraint on `(server_id, date)` for upsert (`INSERT ... ON CONFLICT DO UPDATE`).
+
 | Column | Type | Description |
 |--------|------|-------------|
 | id | i64 | PK |
 | server_id | String | FK |
-| date | NaiveDate | Date |
+| date | NaiveDate | Date (UNIQUE with server_id) |
 | total_minutes | i32 | Total minutes in day (1440 or partial for first/last day) |
 | online_minutes | i32 | Online minutes |
 | downtime_incidents | i32 | Number of downtime events |
@@ -797,11 +845,15 @@ VitePWA({
 - Low ROI for this iteration
 - Can be added later without architectural changes
 
-### 8.5 New Dependencies
+### 8.5 OpenAPI
+
+All new API endpoints (service monitors, traffic, status pages, incidents, maintenances, brand) annotated with `#[utoipa::path]`. All new DTOs derive `ToSchema`. New tags registered in `ApiDoc`: `service-monitors`, `traffic`, `status-pages`, `incidents`, `maintenances`, `brand`.
+
+### 8.6 New Dependencies
 
 - `vite-plugin-pwa` — PWA manifest generation + Service Worker
 
-### 8.6 Changes Summary
+### 8.7 Changes Summary
 
 | Change | Files |
 |--------|-------|
@@ -818,7 +870,11 @@ VitePWA({
 
 ## Database Migration Summary
 
-One new migration file covering all schema changes:
+Split into **3 migration files** (one per major feature group) to reduce risk:
+
+- `m20260319_000001_service_monitor.rs` — service_monitor + service_monitor_record tables, disk_io_json columns, last_remote_addr column
+- `m20260319_000002_status_page.rs` — status_page + incident + incident_update + maintenance + uptime_daily tables
+- `m20260319_000003_seed_network_targets.rs` — Seed tri-network probe targets
 
 ### New Tables (7)
 - `service_monitor` — Service monitor definitions
@@ -829,9 +885,10 @@ One new migration file covering all schema changes:
 - `maintenance` — Maintenance window definitions
 - `uptime_daily` — Daily uptime aggregation
 
-### Altered Tables (2)
+### Altered Tables (3)
 - `records` — Add `disk_io_json TEXT`
 - `records_hourly` — Add `disk_io_json TEXT`
+- `servers` — Add `last_remote_addr TEXT`
 
 ### Seed Data
 - 9 preset tri-network probe targets (CT/CU/CM x Beijing/Shanghai/Guangzhou)
@@ -853,10 +910,11 @@ One new migration file covering all schema changes:
 ### New Types
 - `NetworkInterface { name, ipv4: Vec<String>, ipv6: Vec<String> }`
 - `TracerouteHop { hop, ip, hostname, rtt1, rtt2, rtt3, asn }`
+- `TracerouteResult` updated with `error: Option<String>` field
 - `DiskIo { name, read_bytes_per_sec, write_bytes_per_sec }`
 
 ### Modified Types
-- `SystemReport` — Add `disk_io: Option<Vec<DiskIo>>`
+- `SystemReport` — Add `#[serde(default)] disk_io: Option<Vec<DiskIo>>`
 
 ---
 
