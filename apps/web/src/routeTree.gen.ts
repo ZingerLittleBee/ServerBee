@@ -19,6 +19,7 @@ import { Route as AuthedNetworkIndexRouteImport } from './routes/_authed/network
 import { Route as AuthedTerminalServerIdRouteImport } from './routes/_authed/terminal.$serverId'
 import { Route as AuthedSettingsUsersRouteImport } from './routes/_authed/settings/users'
 import { Route as AuthedSettingsTasksRouteImport } from './routes/_authed/settings/tasks'
+import { Route as AuthedSettingsServiceMonitorsRouteImport } from './routes/_authed/settings/service-monitors'
 import { Route as AuthedSettingsSecurityRouteImport } from './routes/_authed/settings/security'
 import { Route as AuthedSettingsPingTasksRouteImport } from './routes/_authed/settings/ping-tasks'
 import { Route as AuthedSettingsNotificationsRouteImport } from './routes/_authed/settings/notifications'
@@ -27,6 +28,7 @@ import { Route as AuthedSettingsCapabilitiesRouteImport } from './routes/_authed
 import { Route as AuthedSettingsAuditLogsRouteImport } from './routes/_authed/settings/audit-logs'
 import { Route as AuthedSettingsApiKeysRouteImport } from './routes/_authed/settings/api-keys'
 import { Route as AuthedSettingsAlertsRouteImport } from './routes/_authed/settings/alerts'
+import { Route as AuthedServiceMonitorsIdRouteImport } from './routes/_authed/service-monitors/$id'
 import { Route as AuthedServersIdRouteImport } from './routes/_authed/servers/$id'
 import { Route as AuthedNetworkServerIdRouteImport } from './routes/_authed/network/$serverId'
 import { Route as AuthedFilesServerIdRouteImport } from './routes/_authed/files.$serverId'
@@ -81,6 +83,12 @@ const AuthedSettingsTasksRoute = AuthedSettingsTasksRouteImport.update({
   path: '/settings/tasks',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedSettingsServiceMonitorsRoute =
+  AuthedSettingsServiceMonitorsRouteImport.update({
+    id: '/settings/service-monitors',
+    path: '/settings/service-monitors',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 const AuthedSettingsSecurityRoute = AuthedSettingsSecurityRouteImport.update({
   id: '/settings/security',
   path: '/settings/security',
@@ -124,6 +132,11 @@ const AuthedSettingsAlertsRoute = AuthedSettingsAlertsRouteImport.update({
   path: '/settings/alerts',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedServiceMonitorsIdRoute = AuthedServiceMonitorsIdRouteImport.update({
+  id: '/service-monitors/$id',
+  path: '/service-monitors/$id',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedServersIdRoute = AuthedServersIdRouteImport.update({
   id: '/servers/$id',
   path: '/servers/$id',
@@ -153,6 +166,7 @@ export interface FileRoutesByFullPath {
   '/files/$serverId': typeof AuthedFilesServerIdRoute
   '/network/$serverId': typeof AuthedNetworkServerIdRoute
   '/servers/$id': typeof AuthedServersIdRoute
+  '/service-monitors/$id': typeof AuthedServiceMonitorsIdRoute
   '/settings/alerts': typeof AuthedSettingsAlertsRoute
   '/settings/api-keys': typeof AuthedSettingsApiKeysRoute
   '/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
@@ -161,6 +175,7 @@ export interface FileRoutesByFullPath {
   '/settings/notifications': typeof AuthedSettingsNotificationsRoute
   '/settings/ping-tasks': typeof AuthedSettingsPingTasksRoute
   '/settings/security': typeof AuthedSettingsSecurityRoute
+  '/settings/service-monitors': typeof AuthedSettingsServiceMonitorsRoute
   '/settings/tasks': typeof AuthedSettingsTasksRoute
   '/settings/users': typeof AuthedSettingsUsersRoute
   '/terminal/$serverId': typeof AuthedTerminalServerIdRoute
@@ -176,6 +191,7 @@ export interface FileRoutesByTo {
   '/files/$serverId': typeof AuthedFilesServerIdRoute
   '/network/$serverId': typeof AuthedNetworkServerIdRoute
   '/servers/$id': typeof AuthedServersIdRoute
+  '/service-monitors/$id': typeof AuthedServiceMonitorsIdRoute
   '/settings/alerts': typeof AuthedSettingsAlertsRoute
   '/settings/api-keys': typeof AuthedSettingsApiKeysRoute
   '/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
@@ -184,6 +200,7 @@ export interface FileRoutesByTo {
   '/settings/notifications': typeof AuthedSettingsNotificationsRoute
   '/settings/ping-tasks': typeof AuthedSettingsPingTasksRoute
   '/settings/security': typeof AuthedSettingsSecurityRoute
+  '/settings/service-monitors': typeof AuthedSettingsServiceMonitorsRoute
   '/settings/tasks': typeof AuthedSettingsTasksRoute
   '/settings/users': typeof AuthedSettingsUsersRoute
   '/terminal/$serverId': typeof AuthedTerminalServerIdRoute
@@ -201,6 +218,7 @@ export interface FileRoutesById {
   '/_authed/files/$serverId': typeof AuthedFilesServerIdRoute
   '/_authed/network/$serverId': typeof AuthedNetworkServerIdRoute
   '/_authed/servers/$id': typeof AuthedServersIdRoute
+  '/_authed/service-monitors/$id': typeof AuthedServiceMonitorsIdRoute
   '/_authed/settings/alerts': typeof AuthedSettingsAlertsRoute
   '/_authed/settings/api-keys': typeof AuthedSettingsApiKeysRoute
   '/_authed/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
@@ -209,6 +227,7 @@ export interface FileRoutesById {
   '/_authed/settings/notifications': typeof AuthedSettingsNotificationsRoute
   '/_authed/settings/ping-tasks': typeof AuthedSettingsPingTasksRoute
   '/_authed/settings/security': typeof AuthedSettingsSecurityRoute
+  '/_authed/settings/service-monitors': typeof AuthedSettingsServiceMonitorsRoute
   '/_authed/settings/tasks': typeof AuthedSettingsTasksRoute
   '/_authed/settings/users': typeof AuthedSettingsUsersRoute
   '/_authed/terminal/$serverId': typeof AuthedTerminalServerIdRoute
@@ -226,6 +245,7 @@ export interface FileRouteTypes {
     | '/files/$serverId'
     | '/network/$serverId'
     | '/servers/$id'
+    | '/service-monitors/$id'
     | '/settings/alerts'
     | '/settings/api-keys'
     | '/settings/audit-logs'
@@ -234,6 +254,7 @@ export interface FileRouteTypes {
     | '/settings/notifications'
     | '/settings/ping-tasks'
     | '/settings/security'
+    | '/settings/service-monitors'
     | '/settings/tasks'
     | '/settings/users'
     | '/terminal/$serverId'
@@ -249,6 +270,7 @@ export interface FileRouteTypes {
     | '/files/$serverId'
     | '/network/$serverId'
     | '/servers/$id'
+    | '/service-monitors/$id'
     | '/settings/alerts'
     | '/settings/api-keys'
     | '/settings/audit-logs'
@@ -257,6 +279,7 @@ export interface FileRouteTypes {
     | '/settings/notifications'
     | '/settings/ping-tasks'
     | '/settings/security'
+    | '/settings/service-monitors'
     | '/settings/tasks'
     | '/settings/users'
     | '/terminal/$serverId'
@@ -273,6 +296,7 @@ export interface FileRouteTypes {
     | '/_authed/files/$serverId'
     | '/_authed/network/$serverId'
     | '/_authed/servers/$id'
+    | '/_authed/service-monitors/$id'
     | '/_authed/settings/alerts'
     | '/_authed/settings/api-keys'
     | '/_authed/settings/audit-logs'
@@ -281,6 +305,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/notifications'
     | '/_authed/settings/ping-tasks'
     | '/_authed/settings/security'
+    | '/_authed/settings/service-monitors'
     | '/_authed/settings/tasks'
     | '/_authed/settings/users'
     | '/_authed/terminal/$serverId'
@@ -368,6 +393,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsTasksRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/settings/service-monitors': {
+      id: '/_authed/settings/service-monitors'
+      path: '/settings/service-monitors'
+      fullPath: '/settings/service-monitors'
+      preLoaderRoute: typeof AuthedSettingsServiceMonitorsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/settings/security': {
       id: '/_authed/settings/security'
       path: '/settings/security'
@@ -424,6 +456,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsAlertsRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/service-monitors/$id': {
+      id: '/_authed/service-monitors/$id'
+      path: '/service-monitors/$id'
+      fullPath: '/service-monitors/$id'
+      preLoaderRoute: typeof AuthedServiceMonitorsIdRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/servers/$id': {
       id: '/_authed/servers/$id'
       path: '/servers/$id'
@@ -460,6 +499,7 @@ interface AuthedRouteChildren {
   AuthedFilesServerIdRoute: typeof AuthedFilesServerIdRoute
   AuthedNetworkServerIdRoute: typeof AuthedNetworkServerIdRoute
   AuthedServersIdRoute: typeof AuthedServersIdRoute
+  AuthedServiceMonitorsIdRoute: typeof AuthedServiceMonitorsIdRoute
   AuthedSettingsAlertsRoute: typeof AuthedSettingsAlertsRoute
   AuthedSettingsApiKeysRoute: typeof AuthedSettingsApiKeysRoute
   AuthedSettingsAuditLogsRoute: typeof AuthedSettingsAuditLogsRoute
@@ -468,6 +508,7 @@ interface AuthedRouteChildren {
   AuthedSettingsNotificationsRoute: typeof AuthedSettingsNotificationsRoute
   AuthedSettingsPingTasksRoute: typeof AuthedSettingsPingTasksRoute
   AuthedSettingsSecurityRoute: typeof AuthedSettingsSecurityRoute
+  AuthedSettingsServiceMonitorsRoute: typeof AuthedSettingsServiceMonitorsRoute
   AuthedSettingsTasksRoute: typeof AuthedSettingsTasksRoute
   AuthedSettingsUsersRoute: typeof AuthedSettingsUsersRoute
   AuthedTerminalServerIdRoute: typeof AuthedTerminalServerIdRoute
@@ -482,6 +523,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedFilesServerIdRoute: AuthedFilesServerIdRoute,
   AuthedNetworkServerIdRoute: AuthedNetworkServerIdRoute,
   AuthedServersIdRoute: AuthedServersIdRoute,
+  AuthedServiceMonitorsIdRoute: AuthedServiceMonitorsIdRoute,
   AuthedSettingsAlertsRoute: AuthedSettingsAlertsRoute,
   AuthedSettingsApiKeysRoute: AuthedSettingsApiKeysRoute,
   AuthedSettingsAuditLogsRoute: AuthedSettingsAuditLogsRoute,
@@ -490,6 +532,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedSettingsNotificationsRoute: AuthedSettingsNotificationsRoute,
   AuthedSettingsPingTasksRoute: AuthedSettingsPingTasksRoute,
   AuthedSettingsSecurityRoute: AuthedSettingsSecurityRoute,
+  AuthedSettingsServiceMonitorsRoute: AuthedSettingsServiceMonitorsRoute,
   AuthedSettingsTasksRoute: AuthedSettingsTasksRoute,
   AuthedSettingsUsersRoute: AuthedSettingsUsersRoute,
   AuthedTerminalServerIdRoute: AuthedTerminalServerIdRoute,

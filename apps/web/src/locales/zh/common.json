@@ -23,6 +23,7 @@
   "nav_network": "网络质量",
   "nav_network_probes": "网络探测",
   "nav_ping_tasks": "Ping 任务",
+  "nav_service_monitors": "服务监控",
   "nav_commands": "远程命令",
   "nav_capabilities": "能力开关",
   "nav_api_keys": "API 密钥",
