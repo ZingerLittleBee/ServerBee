@@ -32,6 +32,14 @@ pub struct SystemInfo {
     pub features: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct DiskIo {
+    pub name: String,
+    pub read_bytes_per_sec: u64,
+    pub write_bytes_per_sec: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SystemReport {
     pub cpu: f64,
@@ -49,6 +57,8 @@ pub struct SystemReport {
     pub udp_conn: i32,
     pub process_count: i32,
     pub uptime: u64,
+    #[serde(default)]
+    pub disk_io: Option<Vec<DiskIo>>,
     pub temperature: Option<f64>,
     pub gpu: Option<GpuReport>,
 }
@@ -172,6 +182,7 @@ pub struct FileEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_system_info_features_default() {
@@ -203,5 +214,32 @@ mod tests {
         assert_eq!(parsed.ipv6.len(), 1);
         assert_eq!(parsed.ipv6[0], "fe80::1");
         assert_eq!(parsed, iface, "NetworkInterface should implement PartialEq correctly");
+    }
+
+    #[test]
+    fn test_system_report_without_disk_io_defaults_to_none() {
+        let legacy = json!({
+            "cpu": 1.0,
+            "mem_used": 0,
+            "swap_used": 0,
+            "disk_used": 0,
+            "net_in_speed": 0,
+            "net_out_speed": 0,
+            "net_in_transfer": 0,
+            "net_out_transfer": 0,
+            "load1": 0.0,
+            "load5": 0.0,
+            "load15": 0.0,
+            "tcp_conn": 0,
+            "udp_conn": 0,
+            "process_count": 0,
+            "uptime": 0,
+            "temperature": null,
+            "gpu": null
+        });
+
+        let report: SystemReport = serde_json::from_value(legacy).unwrap();
+
+        assert!(report.disk_io.is_none());
     }
 }

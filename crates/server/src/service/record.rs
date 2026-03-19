@@ -1,11 +1,79 @@
+use std::collections::HashMap;
+
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::*;
 
 use crate::entity::{gpu_record, record, record_hourly};
 use crate::error::AppError;
-use serverbee_common::types::{GpuReport, SystemReport};
+use serverbee_common::types::{DiskIo, GpuReport, SystemReport};
 
 pub struct RecordService;
+
+#[derive(Default)]
+struct DiskIoAccumulator {
+    read_total: u64,
+    write_total: u64,
+    samples: u64,
+}
+
+fn serialize_disk_io(disk_io: Option<&Vec<DiskIo>>) -> Result<Option<String>, AppError> {
+    disk_io
+        .map(|entries| {
+            serde_json::to_string(entries)
+                .map_err(|e| AppError::Internal(format!("Disk I/O serialization error: {e}")))
+        })
+        .transpose()
+}
+
+fn aggregate_disk_io(records: &[&record::Model]) -> Result<Option<String>, AppError> {
+    let mut saw_non_null = false;
+    let mut grouped: HashMap<String, DiskIoAccumulator> = HashMap::new();
+
+    for record in records {
+        let Some(raw) = record.disk_io_json.as_deref() else {
+            continue;
+        };
+        saw_non_null = true;
+
+        let entries = match serde_json::from_str::<Vec<DiskIo>>(raw) {
+            Ok(entries) => entries,
+            Err(error) => {
+                tracing::warn!(record_id = record.id, server_id = %record.server_id, "Failed to parse disk_io_json: {error}");
+                continue;
+            }
+        };
+
+        for entry in entries {
+            let accumulator = grouped.entry(entry.name).or_default();
+            accumulator.read_total += entry.read_bytes_per_sec;
+            accumulator.write_total += entry.write_bytes_per_sec;
+            accumulator.samples += 1;
+        }
+    }
+
+    if !saw_non_null {
+        return Ok(None);
+    }
+
+    if grouped.is_empty() {
+        return Ok(Some("[]".to_string()));
+    }
+
+    let mut aggregated = grouped
+        .into_iter()
+        .map(|(name, accumulator)| DiskIo {
+            name,
+            read_bytes_per_sec: accumulator.read_total / accumulator.samples,
+            write_bytes_per_sec: accumulator.write_total / accumulator.samples,
+        })
+        .collect::<Vec<_>>();
+    aggregated.sort_by(|left, right| left.name.cmp(&right.name));
+
+    Ok(Some(
+        serde_json::to_string(&aggregated)
+            .map_err(|e| AppError::Internal(format!("Disk I/O serialization error: {e}")))?,
+    ))
+}
 
 impl RecordService {
     /// Save a system report as a record for the given server.
@@ -15,6 +83,7 @@ impl RecordService {
         report: &SystemReport,
     ) -> Result<(), AppError> {
         let gpu_usage = report.gpu.as_ref().map(|g| g.average_usage);
+        let disk_io_json = serialize_disk_io(report.disk_io.as_ref())?;
 
         let new_record = record::ActiveModel {
             id: NotSet,
@@ -36,6 +105,7 @@ impl RecordService {
             process_count: Set(report.process_count),
             temperature: Set(report.temperature),
             gpu_usage: Set(gpu_usage),
+            disk_io_json: Set(disk_io_json),
         };
 
         new_record.insert(db).await?;
@@ -143,8 +213,7 @@ impl RecordService {
         }
 
         // Group records by server_id
-        let mut grouped: std::collections::HashMap<String, Vec<&record::Model>> =
-            std::collections::HashMap::new();
+        let mut grouped: HashMap<String, Vec<&record::Model>> = HashMap::new();
         for r in &records {
             grouped.entry(r.server_id.clone()).or_default().push(r);
         }
@@ -206,6 +275,7 @@ impl RecordService {
             } else {
                 Some(gpus.iter().sum::<f64>() / gpus.len() as f64)
             };
+            let disk_io_json = aggregate_disk_io(server_records)?;
 
             let hourly = record_hourly::ActiveModel {
                 id: NotSet,
@@ -227,6 +297,7 @@ impl RecordService {
                 process_count: Set(avg_process),
                 temperature: Set(avg_temp),
                 gpu_usage: Set(avg_gpu),
+                disk_io_json: Set(disk_io_json),
             };
 
             hourly.insert(db).await?;
@@ -290,7 +361,7 @@ mod tests {
     use crate::test_utils::setup_test_db;
     use sea_orm::{ActiveModelTrait, Set};
     use serverbee_common::constants::CAP_DEFAULT;
-    use serverbee_common::types::SystemReport;
+    use serverbee_common::types::{DiskIo, SystemReport};
 
     async fn insert_test_server(db: &DatabaseConnection, id: &str) {
         let token_hash = AuthService::hash_password("test").expect("hash_password should succeed");
@@ -381,6 +452,119 @@ mod tests {
         match after {
             QueryHistoryResult::Raw(records) => assert_eq!(records.len(), 0, "Record should be deleted"),
             _ => panic!("Expected Raw result"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_save_report_persists_disk_io_json() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-rec-disk-1").await;
+
+        let report = SystemReport {
+            disk_io: Some(vec![DiskIo {
+                name: "sda".to_string(),
+                read_bytes_per_sec: 1024,
+                write_bytes_per_sec: 2048,
+            }]),
+            ..Default::default()
+        };
+
+        RecordService::save_report(&db, "srv-rec-disk-1", &report)
+            .await
+            .expect("save_report should succeed");
+
+        let now = Utc::now();
+        let from = now - Duration::hours(1);
+        let result = RecordService::query_history(&db, "srv-rec-disk-1", from, now, "raw")
+            .await
+            .expect("query_history should succeed");
+
+        match result {
+            QueryHistoryResult::Raw(records) => {
+                let disk_io: Vec<DiskIo> = serde_json::from_str(records[0].disk_io_json.as_deref().unwrap()).unwrap();
+                assert_eq!(disk_io[0].name, "sda");
+                assert_eq!(disk_io[0].read_bytes_per_sec, 1024);
+                assert_eq!(disk_io[0].write_bytes_per_sec, 2048);
+            }
+            QueryHistoryResult::Hourly(_) => panic!("Expected Raw result for 'raw' interval"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_hourly_averages_disk_io_by_device() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-rec-disk-2").await;
+
+        let first = SystemReport {
+            disk_io: Some(vec![
+                DiskIo {
+                    name: "sdb".to_string(),
+                    read_bytes_per_sec: 100,
+                    write_bytes_per_sec: 300,
+                },
+                DiskIo {
+                    name: "sda".to_string(),
+                    read_bytes_per_sec: 400,
+                    write_bytes_per_sec: 800,
+                },
+            ]),
+            ..Default::default()
+        };
+        let second = SystemReport {
+            disk_io: Some(vec![
+                DiskIo {
+                    name: "sda".to_string(),
+                    read_bytes_per_sec: 600,
+                    write_bytes_per_sec: 1000,
+                },
+                DiskIo {
+                    name: "sdb".to_string(),
+                    read_bytes_per_sec: 300,
+                    write_bytes_per_sec: 500,
+                },
+            ]),
+            ..Default::default()
+        };
+
+        RecordService::save_report(&db, "srv-rec-disk-2", &first)
+            .await
+            .expect("first save_report should succeed");
+        RecordService::save_report(&db, "srv-rec-disk-2", &second)
+            .await
+            .expect("second save_report should succeed");
+
+        let aggregated = RecordService::aggregate_hourly(&db)
+            .await
+            .expect("aggregate_hourly should succeed");
+        assert_eq!(aggregated, 1);
+
+        let now = Utc::now();
+        let from = now - Duration::hours(2);
+        let result = RecordService::query_history(&db, "srv-rec-disk-2", from, now, "hourly")
+            .await
+            .expect("query_history should succeed");
+
+        match result {
+            QueryHistoryResult::Hourly(records) => {
+                assert_eq!(records.len(), 1);
+                let disk_io: Vec<DiskIo> = serde_json::from_str(records[0].disk_io_json.as_deref().unwrap()).unwrap();
+                assert_eq!(
+                    disk_io,
+                    vec![
+                        DiskIo {
+                            name: "sda".to_string(),
+                            read_bytes_per_sec: 500,
+                            write_bytes_per_sec: 900,
+                        },
+                        DiskIo {
+                            name: "sdb".to_string(),
+                            read_bytes_per_sec: 200,
+                            write_bytes_per_sec: 400,
+                        },
+                    ]
+                );
+            }
+            QueryHistoryResult::Raw(_) => panic!("Expected Hourly result for 'hourly' interval"),
         }
     }
 

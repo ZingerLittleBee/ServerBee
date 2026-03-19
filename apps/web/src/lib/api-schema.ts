@@ -21,6 +21,7 @@ export type ChangePasswordRequest = S['ChangePasswordRequest']
 
 // Servers
 export type ServerResponse = S['ServerResponse']
+export type ServerMetricRecord = S['ServerRecord']
 export type UpdateServerInput = S['UpdateServerInput']
 export type BatchDeleteRequest = S['BatchDeleteRequest']
 export type BatchDeleteResponse = S['BatchDeleteResponse']
