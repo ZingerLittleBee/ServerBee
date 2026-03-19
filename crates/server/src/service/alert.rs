@@ -89,7 +89,20 @@ pub struct AlertStateManager {
     triggered: DashMap<(String, String), TriggeredInfo>,
 }
 
+impl Default for AlertStateManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AlertStateManager {
+    /// Create an empty `AlertStateManager` with no pre-loaded state.
+    pub fn new() -> Self {
+        Self {
+            triggered: DashMap::new(),
+        }
+    }
+
     pub async fn load_from_db(db: &DatabaseConnection) -> Result<Self, AppError> {
         let states = alert_state::Entity::find()
             .filter(alert_state::Column::Resolved.eq(false))
