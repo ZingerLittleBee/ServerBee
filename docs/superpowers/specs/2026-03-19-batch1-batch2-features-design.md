@@ -101,16 +101,31 @@ Two batches of features to close the gap with competing probe/monitoring applica
 { "registrar": "...", "expiry_date": "...", "days_remaining": 120 }
 ```
 
-### 1.3 Server-Side Execution Engine
+### 1.3 Persistent Monitor State
+
+The `service_monitor` table itself carries runtime state columns to survive server restarts:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| last_status | Option\<bool\> | Result of most recent check (null = never checked) |
+| consecutive_failures | i32 | Current consecutive failure count, default 0 |
+| last_checked_at | Option\<DateTime\<Utc\>\> | Timestamp of last check execution |
+
+On startup, the execution engine reads `last_checked_at` to reconstruct `next_check_at` (= `last_checked_at + interval`). If `last_checked_at` is null or stale (older than `interval`), the monitor is checked immediately. `consecutive_failures` is loaded from DB so `retry_count` semantics survive restarts.
+
+After each check, the engine updates these 3 columns in the same transaction that inserts the `service_monitor_record` row.
+
+### 1.4 Server-Side Execution Engine
 
 New file: `crates/server/src/task/service_monitor_checker.rs`
 
 - Background task ticks every **10 seconds**, checks which monitors are due.
-- Maintains in-memory `next_check_at: HashMap<monitor_id, Instant>` schedule.
+- Maintains in-memory `next_check_at: HashMap<monitor_id, Instant>` schedule, **bootstrapped from `last_checked_at` on startup**.
 - Executes due monitors concurrently via `tokio::spawn`.
-- Writes results to `service_monitor_record`.
-- On failure: increments consecutive failure counter; alerts only after `retry_count` consecutive failures.
-- On recovery (success after failures): resets counter, optionally sends recovery notification.
+- Writes results to `service_monitor_record` **and updates `last_status`, `consecutive_failures`, `last_checked_at`** on `service_monitor` in the same transaction.
+- On failure: increments `consecutive_failures` (persisted); alerts only after `retry_count` consecutive failures.
+- On recovery (success after failures): resets `consecutive_failures` to 0, optionally sends recovery notification.
+- **Maintenance window check**: Before dispatching notifications, checks `is_in_maintenance()` for associated servers. If in maintenance, skip notification (see Section 7.3).
 
 **Checker trait and implementations:**
 
@@ -153,32 +168,32 @@ All endpoints require session/API key auth. Admin only for create/update/delete.
 - New page: `_authed/service-monitors/$id.tsx` — Detail page (uptime %, response time chart, history table, SSL/DNS detail card)
 - Sidebar: new "Service Monitor" entry
 
-### 1.6 Data Retention
+### 1.7 Data Retention
 
 - `service_monitor_record` retained for 30 days (configurable via `SERVERBEE_RETENTION__SERVICE_MONITOR_DAYS`)
 - `cleanup` task extended to purge expired records
 
-### 1.7 New Dependencies
+### 1.8 New Dependencies
 
 - `x509-parser` — SSL certificate parsing
 - `hickory-resolver` — DNS resolution (formerly `trust-dns-resolver`, renamed to hickory-dns)
 - `whois-rust` — WHOIS query (fallback: shell `whois` command for TLDs the crate cannot parse)
 - `reqwest` — already in use (for HTTP keyword checks)
 
-### 1.8 Indexes
+### 1.9 Indexes
 
 - `service_monitor`: INDEX on `enabled` (background task queries enabled monitors every 10s)
 - `service_monitor_record`: INDEX on `(monitor_id, time)` for history queries and retention cleanup
 
-### 1.9 Concurrency Control
+### 1.10 Concurrency Control
 
 The execution engine uses `tokio::sync::Semaphore` with max **20 concurrent checks** to prevent resource exhaustion when many monitors become due simultaneously. Monitors that cannot acquire a permit are deferred to the next tick (10s later).
 
-### 1.10 Retention Config
+### 1.11 Retention Config
 
 Add `service_monitor_days: u32` (default 30) to `RetentionConfig` in `crates/server/src/config.rs`. Env var: `SERVERBEE_RETENTION__SERVICE_MONITOR_DAYS`.
 
-### 1.11 OpenAPI
+### 1.12 OpenAPI
 
 All new endpoints annotated with `#[utoipa::path]`. All new DTOs derive `ToSchema`. Service Monitor endpoints registered under a new `service-monitors` tag in `ApiDoc`.
 
@@ -313,21 +328,53 @@ Reuse existing alert system with new rule type:
 "ip_changed"  // Triggers on any IP change; no threshold evaluation needed
 ```
 
-This is an **event-driven rule** — it bypasses the normal poll-based `alert_evaluator` cycle. Instead, the IP change detection code (in `router/ws/agent.rs`) directly calls a new `AlertService::check_event_rules(server_id, event_type)` method:
+This is an **event-driven rule** — it bypasses the normal poll-based `alert_evaluator` cycle.
+
+**Prerequisite: Move `AlertStateManager` into `AppState`.**
+
+Currently `AlertStateManager` is created locally inside `alert_evaluator::run()` and never shared. To support event-driven rules from WS handlers, `AlertStateManager` must be promoted to `AppState`:
+
+```rust
+// state.rs — new field
+pub struct AppState {
+    // ...existing fields...
+    pub alert_state_manager: AlertStateManager,  // shared across evaluator + WS handlers
+}
+
+// AppState::new() — load from DB during startup
+let alert_state_manager = AlertStateManager::load_from_db(&db).await?;
+
+// alert_evaluator::run() — use from AppState instead of local variable
+pub async fn run(state: Arc<AppState>) {
+    let state_manager = &state.alert_state_manager;  // no longer local
+    // ...rest unchanged...
+}
+```
+
+Then, the IP change detection code (in `router/ws/agent.rs`) calls a new static method:
 
 ```rust
 impl AlertService {
     /// Check event-driven rules (ip_changed, etc.) — called from WS handler, not from alert_evaluator poll loop.
-    pub async fn check_event_rules(&self, server_id: &str, event_type: &str) {
+    /// Uses the shared AlertStateManager from AppState for once/always dedup.
+    pub async fn check_event_rules(
+        db: &DatabaseConnection,
+        state_manager: &AlertStateManager,
+        server_id: &str,
+        event_type: &str,  // "ip_changed"
+    ) {
         // 1. Query enabled rules where rules_json contains an item with rule_type == event_type
         // 2. Check cover_type/server_ids to see if this server is covered
-        // 3. If matched, fire notification via NotificationService::send_group
-        // 4. Record alert_state (reuse existing AlertStateManager for dedup/once/always logic)
+        // 3. Check is_in_maintenance() — skip if server is in maintenance window
+        // 4. Use state_manager for once/always/resolved dedup (same logic as evaluate_all)
+        // 5. If matched, fire notification via NotificationService::send_group
     }
 }
 ```
 
-This keeps the existing `evaluate_all()` poll loop unchanged (it skips `ip_changed` rules), while event-driven rules get immediate dispatch. The `AlertRuleItem` schema is reused with `min`/`max`/`duration` fields left as `None` for event rules.
+This ensures once/always semantics, resolved tracking, and dedup are **identical** between poll-based and event-driven rules — they share the same `AlertStateManager` instance.
+
+The existing `evaluate_all()` poll loop skips `ip_changed` rules (they have no threshold to evaluate). The `AlertRuleItem` schema is reused with `min`/`max`/`duration` fields left as `None` for event rules.
 
 Users create an `ip_changed` alert rule in the existing alert management UI, selecting notification group and server coverage (all/include/exclude).
 
@@ -356,7 +403,9 @@ Frontend Dashboard shows a brief IP change indicator on the affected Server Card
 | Common | `types.rs` | New `NetworkInterface` struct |
 | Agent | `reporter.rs` | New 5-min IP check timer, cached IP list comparison |
 | Server | `router/ws/agent.rs` | Handle `IpChanged`: update DB + GeoIP + audit + notify |
-| Server | `service/alert.rs` | New `ip_changed` rule type (event-driven, not threshold) |
+| Server | `service/alert.rs` | New `ip_changed` rule type + `check_event_rules()` method |
+| Server | `state.rs` | Move `AlertStateManager` from `alert_evaluator` local var into `AppState` |
+| Server | `task/alert_evaluator.rs` | Use `state.alert_state_manager` instead of local variable |
 | Server | Agent connect handler | Compare `remote_addr` vs stored `last_remote_addr` on connect |
 | Server | migration | Add `last_remote_addr` column to `servers` table |
 | Frontend | Alert management page | `rule_type` dropdown adds "IP Changed" option |
@@ -427,28 +476,13 @@ Included in migration `m20260319_000001_service_monitor.rs` (up-only).
 
 The existing `network_probe_target` / `network_probe_record` / `NetworkProbeSync` infrastructure is fully reusable. Tri-network ping = preset targets with `provider` field set to CT/CU/CM.
 
-### 5.2 Preset Tri-Network Targets
+### 5.2 Tri-Network Targets via Existing Preset System
 
-Seeded on first startup (admin can add/remove via existing Network Probe management page):
+The project already has a `presets/targets.toml` system with 96 preset targets including China Telecom (31 provinces), China Unicom (31 provinces), China Mobile (31 provinces), and 3 international targets. These are compiled into the binary via `include_str!` and loaded at runtime by `PresetTargets::load()`.
 
-```
-CT (China Telecom):
-  Beijing    219.141.136.10   icmp
-  Shanghai   202.96.209.133   icmp
-  Guangzhou  58.60.188.222    icmp
+**No migration seed, no DB changes needed.** The tri-network targets already exist as presets. The work is purely frontend: group and display the existing preset data by provider (Telecom/Unicom/Mobile).
 
-CU (China Unicom):
-  Beijing    202.106.50.1     icmp
-  Shanghai   210.22.97.1      icmp
-  Guangzhou  221.5.88.88      icmp
-
-CM (China Mobile):
-  Beijing    221.179.155.161  icmp
-  Shanghai   211.136.112.200  icmp
-  Guangzhou  120.196.165.24   icmp
-```
-
-Existing `network_probe_target` table already has `provider` and `location` columns — no schema change needed.
+If additional targets are needed, they are added to `crates/server/src/presets/targets.toml` — the single source of truth for preset targets. Admin-added custom targets go into `network_probe_target` DB table (existing behavior). The two sources are merged at query time by `NetworkProbeService` (existing behavior).
 
 ### 5.3 Frontend Enhancement — Network Page
 
@@ -506,10 +540,25 @@ POST /api/servers/:id/traceroute     Trigger traceroute
   returns: { "request_id": "..." }
 
 GET  /api/servers/:id/traceroute/:request_id   Get result
-  returns: TracerouteResult (poll until completed=true)
+  returns: TracerouteResult (poll until completed=true or TTL expired)
 ```
 
-**No persistence** — results stored in `AgentManager.pending_requests` (existing mechanism), 60s TTL.
+**Result storage — independent cache, NOT `pending_requests`.**
+
+The existing `pending_requests` mechanism is a one-shot `oneshot::channel` relay — the result is consumed on dispatch and removed from the map, making it incompatible with the POST-then-GET-poll pattern. Instead, use a dedicated temporary result cache:
+
+```rust
+// AgentManager — new field
+traceroute_results: DashMap<String, (TracerouteResult, Instant)>,  // request_id -> (result, created_at)
+```
+
+Flow:
+1. `POST /traceroute` generates `request_id`, sends `ServerMessage::Traceroute` to Agent via WS, inserts a placeholder into `traceroute_results` with `completed: false`.
+2. Agent WS handler receives `AgentMessage::TracerouteResult`, writes the full result into `traceroute_results` (replacing the placeholder).
+3. `GET /traceroute/:request_id` reads from `traceroute_results`. Returns 404 if not found, or the current result (which may have `completed: false` while in progress, or `completed: true` when done).
+4. `offline_checker` task cleans up entries older than **120 seconds** (sufficient for traceroute to complete + client to poll).
+
+This avoids any interference with the existing oneshot relay used for file operations and other request-response patterns.
 
 **Frontend:**
 - "Traceroute" button on Server Detail or Network detail page
@@ -552,7 +601,24 @@ apps/web/src/themes/
   rose-pine.css
 ```
 
-**Lazy loading**: Only the selected theme's CSS file is loaded via dynamic `<link>` injection. When the user switches themes, the old `<link>` is replaced with the new one. The `default.css` is always bundled (no extra load). This avoids loading all 8 theme files upfront.
+**Lazy loading with Vite asset resolution:**
+
+Only the selected theme's CSS file is loaded dynamically. The `default.css` is always bundled (no extra load). Non-default themes are loaded on demand.
+
+**Vite asset strategy for rust-embed compatibility:**
+
+Since the frontend is compiled to `apps/web/dist/` and embedded into the Rust binary via `rust-embed`, dynamic `<link>` injection must work with Vite's content-hashed filenames (e.g., `tokyo-night-Bx7kF2.css`). The approach:
+
+1. **Vite build**: Theme CSS files are configured as separate entry points or use `import()` in a manifest module. Vite emits them as hashed assets in `dist/assets/`.
+2. **Theme manifest**: A build-time-generated `themes-manifest.json` maps theme names to their hashed asset paths:
+   ```json
+   { "tokyo-night": "/assets/tokyo-night-Bx7kF2.css", "nord": "/assets/nord-a3Kd9x.css" }
+   ```
+   This file is generated by a small Vite plugin (or post-build script) that reads the Vite manifest.
+3. **Runtime loading**: `ThemeProvider` reads `themes-manifest.json` (fetched once on app init or inlined during build) and uses the resolved path for dynamic `<link>` injection.
+4. **rust-embed**: Since all assets in `dist/` are embedded, the hashed CSS files are already available. The `static_handler` serves them like any other asset with aggressive caching (`Cache-Control: immutable` for `assets/` prefix — already implemented).
+
+This avoids loading all 8 theme files upfront while working correctly with both Vite's content hashing and rust-embed's static file serving.
 
 Each theme file overrides all shadcn/ui CSS variables (`--background`, `--foreground`, `--primary`, `--card`, `--border`, etc.) in both light and dark variants:
 
@@ -586,24 +652,27 @@ Each theme file overrides all shadcn/ui CSS variables (`--background`, `--foregr
 **Storage**: Reuse existing `config` table (key-value):
 
 ```
-brand.logo_url       — Custom logo URL (or base64 data URL)
+brand.logo_path      — Server-relative path to uploaded logo (e.g., "/api/brand/logo")
 brand.site_title     — Site title (default "ServerBee")
-brand.favicon_url    — Custom favicon
+brand.favicon_path   — Server-relative path to uploaded favicon (e.g., "/api/brand/favicon")
 brand.footer_text    — Footer text (optional)
 ```
 
-**Logo upload**: `POST /api/settings/brand/logo` — upload image, store to `data/brand/` directory, serve via `/api/brand/logo` static route. Limit 512KB, formats **PNG/ICO only** (SVG excluded due to XSS risk from embedded `<script>` tags and event handlers).
+**Security: `logo_path` and `favicon_path` only accept server-relative paths** (must start with `/api/brand/`). The `PUT /api/settings/brand` endpoint validates these fields and rejects arbitrary URLs, base64 data URIs, and external URLs. This closes the bypass where `PUT` could set `logo_url` to an SVG or external resource.
+
+**Image upload**: Store to `data/brand/` directory, serve via `/api/brand/{logo,favicon}` static routes. Limit 512KB, formats **PNG/ICO only** (SVG excluded due to XSS risk from embedded `<script>` tags and event handlers). The upload endpoint validates the file magic bytes (PNG: `\x89PNG`, ICO: `\x00\x00\x01\x00`), not just the file extension.
 
 **API:**
 
 ```
-GET  /api/settings/brand         Get brand configuration
-PUT  /api/settings/brand         Update brand configuration (admin only)
-POST /api/settings/brand/logo    Upload logo file
+GET  /api/settings/brand            Get brand configuration
+PUT  /api/settings/brand            Update brand configuration (admin only, validates paths)
+POST /api/settings/brand/logo       Upload logo file (PNG/ICO, returns server-relative path)
+POST /api/settings/brand/favicon    Upload favicon file (PNG/ICO, returns server-relative path)
 ```
 
 **Frontend application:**
-- Sidebar header: replace default logo with `brand.logo_url`, title with `brand.site_title`
+- Sidebar header: replace default logo with `brand.logo_path`, title with `brand.site_title`
 - `<head>`: dynamically replace favicon
 - Status page: also uses brand configuration
 - Settings page: new "Branding" section (logo upload + title input + preview)
@@ -686,13 +755,25 @@ Workflow: admin creates incident -> adds updates ("Identified root cause", "Fix 
 | created_at | DateTime\<Utc\> | — |
 | updated_at | DateTime\<Utc\> | — |
 
-**Alert integration**: `alert_evaluator` checks if a server is within an active maintenance window before evaluating rules. If so, skip alerting to avoid false positives during planned maintenance.
+**Alert integration — unified maintenance silence across ALL notification paths:**
+
+`is_in_maintenance(db, server_id)` is a shared utility checked by:
+1. **`alert_evaluator` poll loop** — skip threshold-based rule evaluation for servers in maintenance
+2. **`AlertService::check_event_rules()`** — skip event-driven rules (e.g., `ip_changed`) for servers in maintenance
+3. **`service_monitor_checker`** — skip notifications (but still record check results) for monitors whose associated servers are in maintenance
+
+This ensures a consistent silence window regardless of notification origin.
 
 ```rust
-fn is_in_maintenance(server_id: &str, now: DateTime<Utc>) -> bool {
-    // Query active=true AND start_at <= now <= end_at AND server_ids contains server_id
+// Shared utility in a new service/maintenance.rs (or inline in alert.rs)
+pub async fn is_in_maintenance(db: &DatabaseConnection, server_id: &str) -> bool {
+    let now = chrono::Utc::now();
+    // Query: active=true AND start_at <= now <= end_at AND
+    //        (server_ids_json IS NULL OR server_ids_json contains server_id)
 }
 ```
+
+Note: Service Monitor checks that are not associated with any specific server (e.g., an SSL check on a third-party domain) are never silenced by maintenance windows — maintenance only applies to server-scoped alerts.
 
 ### 7.4 Uptime History
 
@@ -874,9 +955,10 @@ All new API endpoints (service monitors, traffic, status pages, incidents, maint
 
 Split into **3 migration files** (one per major feature group) to reduce risk:
 
-- `m20260319_000001_service_monitor.rs` — service_monitor + service_monitor_record tables, disk_io_json columns, last_remote_addr column
+- `m20260319_000001_service_monitor.rs` — service_monitor (with state columns: last_status, consecutive_failures, last_checked_at) + service_monitor_record tables, disk_io_json columns on records/records_hourly, last_remote_addr column on servers
 - `m20260319_000002_status_page.rs` — status_page + incident + incident_update + maintenance + uptime_daily tables
-- `m20260319_000003_seed_network_targets.rs` — Seed tri-network probe targets
+
+(No migration for tri-network targets — they already exist in `presets/targets.toml`.)
 
 ### New Tables (7)
 - `service_monitor` — Service monitor definitions
@@ -893,7 +975,7 @@ Split into **3 migration files** (one per major feature group) to reduce risk:
 - `servers` — Add `last_remote_addr TEXT`
 
 ### Seed Data
-- 9 preset tri-network probe targets (CT/CU/CM x Beijing/Shanghai/Guangzhou)
+- None (tri-network targets already exist in `presets/targets.toml`)
 
 ---
 
@@ -951,7 +1033,7 @@ Split into **3 migration files** (one per major feature group) to reduce risk:
 
 ### Batch 2 (User Experience)
 4. **P12: Disk I/O Monitoring** — agent collector + protocol + migration + frontend charts
-5. **P13: Tri-Network Ping + Traceroute** — seed targets + frontend enhancement + traceroute protocol + agent executor
+5. **P13: Tri-Network Ping + Traceroute** — frontend provider grouping (presets already exist) + traceroute protocol + agent executor + result cache
 6. **P14: Multi-Theme + Branding** — CSS themes + ThemeProvider extension + brand API + settings UI
 7. **P15: Status Page Enhancement** — migration + entities + services + API + public/admin frontend
 8. **P16: Mobile Responsive + PWA** — responsive CSS + layout changes + PWA configuration
