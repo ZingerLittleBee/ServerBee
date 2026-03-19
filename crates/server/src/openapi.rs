@@ -89,6 +89,14 @@ use utoipa::OpenApi;
         crate::router::api::user::create_user,
         crate::router::api::user::update_user,
         crate::router::api::user::delete_user,
+        // service-monitors
+        crate::router::api::service_monitor::list_monitors,
+        crate::router::api::service_monitor::get_monitor,
+        crate::router::api::service_monitor::create_monitor,
+        crate::router::api::service_monitor::update_monitor,
+        crate::router::api::service_monitor::delete_monitor,
+        crate::router::api::service_monitor::get_records,
+        crate::router::api::service_monitor::trigger_check,
         // ping-tasks
         crate::router::api::ping::list_tasks,
         crate::router::api::ping::get_task,
@@ -162,6 +170,12 @@ use utoipa::OpenApi;
             crate::router::api::task::CreateTaskRequest,
             crate::router::api::task::UpdateTaskRequest,
             crate::router::api::task::TaskResponse,
+            // service-monitors
+            crate::service::service_monitor::CreateServiceMonitor,
+            crate::service::service_monitor::UpdateServiceMonitor,
+            crate::entity::service_monitor::Model,
+            crate::entity::service_monitor_record::Model,
+            crate::router::api::service_monitor::MonitorWithRecord,
             // ping-tasks
             crate::service::ping::CreatePingTask,
             crate::service::ping::UpdatePingTask,
@@ -226,6 +240,7 @@ use utoipa::OpenApi;
         (name = "audit", description = "Audit logs (admin only)"),
         (name = "users", description = "User management (admin only)"),
         (name = "tasks", description = "Remote command execution"),
+        (name = "service-monitors", description = "Server-side service monitoring (SSL/DNS/HTTP/TCP/WHOIS)"),
         (name = "ping-tasks", description = "Ping probe tasks"),
         (name = "files", description = "File management"),
     ),

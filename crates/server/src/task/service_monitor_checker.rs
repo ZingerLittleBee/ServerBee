@@ -79,16 +79,16 @@ pub async fn run(state: Arc<AppState>) {
         // Collect monitors that are due for a check
         let mut due_monitors = Vec::new();
         for monitor in &monitors {
-            if let Some(next_at) = sched.get(&monitor.id) {
-                if now >= *next_at {
-                    due_monitors.push(monitor.clone());
-                    // Schedule next check
-                    let interval_secs = monitor.interval.max(1) as u64;
-                    sched.insert(
-                        monitor.id.clone(),
-                        now + std::time::Duration::from_secs(interval_secs),
-                    );
-                }
+            if let Some(next_at) = sched.get(&monitor.id)
+                && now >= *next_at
+            {
+                due_monitors.push(monitor.clone());
+                // Schedule next check
+                let interval_secs = monitor.interval.max(1) as u64;
+                sched.insert(
+                    monitor.id.clone(),
+                    now + std::time::Duration::from_secs(interval_secs),
+                );
             }
         }
 
@@ -166,53 +166,55 @@ async fn execute_check(
     let was_failing = monitor.last_status == Some(false);
 
     // Failure notification: consecutive failures exceeded retry_count
-    if !result.success && consecutive_failures > monitor.retry_count {
-        if let Some(ref group_id) = monitor.notification_group_id {
-            let error_msg = result.error.as_deref().unwrap_or("Unknown error");
-            let ctx = NotifyContext {
-                server_name: monitor.name.clone(),
-                server_id: monitor.id.clone(),
-                rule_name: format!("{} ({})", monitor.name, monitor.monitor_type),
-                event: "triggered".to_string(),
-                message: format!(
-                    "Service monitor '{}' failed after {} consecutive failures: {}",
-                    monitor.name, consecutive_failures, error_msg
-                ),
-                time: Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
-                ..Default::default()
-            };
+    if !result.success
+        && consecutive_failures > monitor.retry_count
+        && let Some(ref group_id) = monitor.notification_group_id
+    {
+        let error_msg = result.error.as_deref().unwrap_or("Unknown error");
+        let ctx = NotifyContext {
+            server_name: monitor.name.clone(),
+            server_id: monitor.id.clone(),
+            rule_name: format!("{} ({})", monitor.name, monitor.monitor_type),
+            event: "triggered".to_string(),
+            message: format!(
+                "Service monitor '{}' failed after {} consecutive failures: {}",
+                monitor.name, consecutive_failures, error_msg
+            ),
+            time: Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            ..Default::default()
+        };
 
-            if let Err(e) = NotificationService::send_group(&state.db, group_id, &ctx).await {
-                tracing::error!(
-                    "Failed to send failure notification for {}: {e}",
-                    monitor.name
-                );
-            }
+        if let Err(e) = NotificationService::send_group(&state.db, group_id, &ctx).await {
+            tracing::error!(
+                "Failed to send failure notification for {}: {e}",
+                monitor.name
+            );
         }
     }
 
     // Recovery notification: was failing, now succeeded
-    if result.success && was_failing {
-        if let Some(ref group_id) = monitor.notification_group_id {
-            let ctx = NotifyContext {
-                server_name: monitor.name.clone(),
-                server_id: monitor.id.clone(),
-                rule_name: format!("{} ({})", monitor.name, monitor.monitor_type),
-                event: "recovered".to_string(),
-                message: format!(
-                    "Service monitor '{}' has recovered after {} consecutive failures",
-                    monitor.name, monitor.consecutive_failures
-                ),
-                time: Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
-                ..Default::default()
-            };
+    if result.success
+        && was_failing
+        && let Some(ref group_id) = monitor.notification_group_id
+    {
+        let ctx = NotifyContext {
+            server_name: monitor.name.clone(),
+            server_id: monitor.id.clone(),
+            rule_name: format!("{} ({})", monitor.name, monitor.monitor_type),
+            event: "recovered".to_string(),
+            message: format!(
+                "Service monitor '{}' has recovered after {} consecutive failures",
+                monitor.name, monitor.consecutive_failures
+            ),
+            time: Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            ..Default::default()
+        };
 
-            if let Err(e) = NotificationService::send_group(&state.db, group_id, &ctx).await {
-                tracing::error!(
-                    "Failed to send recovery notification for {}: {e}",
-                    monitor.name
-                );
-            }
+        if let Err(e) = NotificationService::send_group(&state.db, group_id, &ctx).await {
+            tracing::error!(
+                "Failed to send recovery notification for {}: {e}",
+                monitor.name
+            );
         }
     }
 }
