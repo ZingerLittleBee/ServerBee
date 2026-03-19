@@ -130,7 +130,7 @@ struct SslChecker;          // rustls + x509-parser: connect, extract cert info
 struct DnsChecker;          // hickory-resolver: query record_type, compare expected
 struct HttpKeywordChecker;  // reqwest: send request, check status + keyword
 struct TcpChecker;          // tokio::net::TcpStream::connect with timeout
-struct WhoisChecker;        // whois crate: query domain, parse expiry
+struct WhoisChecker;        // whois-rust crate: query domain, parse expiry (shell `whois` fallback)
 ```
 
 ### 1.4 API Endpoints
@@ -341,6 +341,8 @@ ServerIpChanged {
     new_ipv4: Option<String>,
     old_ipv6: Option<String>,
     new_ipv6: Option<String>,
+    old_remote_addr: Option<String>,
+    new_remote_addr: Option<String>,
 }
 ```
 
@@ -625,7 +627,7 @@ Settings page new "Appearance" section:
 |--------|------|-------------|
 | id | String (UUID) | PK |
 | title | String | Page title |
-| slug | String | URL path, unique (e.g., `asia`, `global`) |
+| slug | String | URL path, UNIQUE constraint (e.g., `asia`, `global`) |
 | description | Option\<String\> | Page description |
 | server_ids_json | String | Included servers JSON array |
 | group_by_server_group | bool | Group by server groups, default true |
