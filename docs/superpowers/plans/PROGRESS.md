@@ -30,8 +30,9 @@
 | P8 | 定时任务 (Scheduled Tasks) | **已完成** | 1 (`9a27711`) |
 | P9 | 服务监控 (Service Monitor) | **已完成** | 10 commits (`f02fd23`..`dcca19e`) |
 | P10 | 流量统计 (Traffic Statistics) | **已完成** | 3 commits (`846bd73`..`f28a696`) |
+| P11 | IP 变更通知 (IP Change Notification) | **已完成** | 8 tasks |
 
-**P0~P10 全部完成并已提交。测试: 268 单元 + 26 集成 + 4 Docker 集成 + 124 前端 = 422 个测试。**
+**P0~P11 全部完成并已提交。测试: 273 单元 + 26 集成 + 4 Docker 集成 + 124 前端 = 427 个测试。**
 
 ---
 
@@ -914,6 +915,35 @@ POST   /api/service-monitors/:id/check   手动触发检测
 - **WHOIS** — 域名到期日检测 (whois-rust)
 
 **测试:** 36 个新单元测试 (ServiceMonitorService 15 + checker 21: dns 3 + http_keyword 3 + ssl 3 + tcp 3 + whois 8), 所有 298 Rust + 124 前端测试通过
+
+### P11: IP 变更通知 (IP Change Notification)
+
+**分支**: `main`
+**实现计划**: `docs/superpowers/plans/2026-03-19-p11-ip-change-notification.md`
+**设计文档**: `docs/superpowers/specs/2026-03-19-batch1-batch2-features-design.md` Section 3
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | Common: IpChanged AgentMessage + ServerIpChanged BrowserMessage + NetworkInterface 类型 | **done** |
+| T2 | Server: migration 添加 last_remote_addr 列到 servers 表 | **done** |
+| T3 | Server: AlertStateManager 提升到 AppState 共享访问 | **done** |
+| T4 | Server: AlertService::check_event_rules() — 事件驱动告警派发 (ip_changed 规则类型) | **done** |
+| T5 | Server: 被动检测 (Agent 连接时 remote_addr 对比) + IpChanged 消息处理 | **done** |
+| T6 | Agent: IpChangeConfig + 5 分钟 NIC 枚举定时器 + 可选外部 IP 检查 | **done** |
+| T7 | Frontend: alerts.tsx 新增 "IP Changed" 规则类型 (无阈值字段) | **done** |
+| T8 | 最终验证: cargo test + clippy + typecheck + ultracite check + 文档更新 | **done** |
+
+**新增协议消息:**
+- `AgentMessage::IpChanged { ipv4, ipv6, interfaces }` — Agent 检测到 IP 变更时上报
+- `BrowserMessage::ServerIpChanged { server_id, old_ipv4, new_ipv4, ... }` — 广播到浏览器客户端
+
+**新增 Agent 配置:**
+- `ip_change.enabled` (default `true`) — 是否启用 IP 变更检测
+- `ip_change.check_external_ip` (default `false`) — 是否同时检查外部公网 IP
+- `ip_change.external_ip_url` (default `https://api.ipify.org`) — 外部 IP 查询 URL
+- `ip_change.interval_secs` (default `300`) — 检测间隔（秒）
+
+**测试:** 0 个新专项测试 (现有 273 单元 + 26 集成 + 4 Docker 集成 + 124 前端 = 427 个测试通过)
 
 ---
 
