@@ -26,6 +26,7 @@ rand = "0.8"
 base64 = "0.22"
 dashmap = "6"
 figment = { version = "0.10", features = ["toml", "env"] }
+hickory-resolver = "0.25"
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 tokio-cron-scheduler = "0.13"
@@ -41,6 +42,8 @@ totp-rs = { version = "5", features = ["qr", "gen_secret"] }
 oauth2 = "4"
 toml = "0.8"
 tokio-util = { version = "0.7", features = ["io"] }
+whois-rust = "1"
+x509-parser = "0.16"
 
 [dev-dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "cookies"] }
