@@ -11,6 +11,8 @@ use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
+use crate::service::alert::AlertService;
+use crate::service::audit::AuditService;
 use crate::service::auth::AuthService;
 use crate::service::network_probe::NetworkProbeService;
 use crate::service::ping::PingService;
@@ -234,6 +236,80 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 Some(ref g) => (g.region.clone(), g.country_code.clone()),
                 None => (None, None),
             };
+
+            // --- Passive IP change detection (remote_addr) ---
+            let current_remote_addr = state
+                .agent_manager
+                .get_remote_addr(server_id)
+                .map(|a| a.ip().to_string());
+
+            if let Ok(srv) = ServerService::get_server(&state.db, server_id).await {
+                let old_remote_addr = srv.last_remote_addr.clone();
+                let old_ipv4 = srv.ipv4.clone();
+                let old_ipv6 = srv.ipv6.clone();
+
+                // Check if remote_addr changed
+                if let Some(ref new_addr) = current_remote_addr
+                    && let Some(ref old_addr) = old_remote_addr
+                    && old_addr != new_addr
+                {
+                    tracing::info!(
+                        "Server {server_id} remote address changed: {old_addr} -> {new_addr}"
+                    );
+                    if let Err(e) = AuditService::log(
+                        &state.db,
+                        "system",
+                        "ip_changed",
+                        Some(&format!(
+                            "Remote address changed from {old_addr} to {new_addr} for server {server_id}"
+                        )),
+                        new_addr,
+                    )
+                    .await
+                    {
+                        tracing::error!("Failed to write audit log for IP change: {e}");
+                    }
+                }
+
+                // Check if agent-reported IPs changed
+                let ipv4_changed = old_ipv4 != info.ipv4;
+                let ipv6_changed = old_ipv6 != info.ipv6;
+                let remote_changed = old_remote_addr.as_ref() != current_remote_addr.as_ref();
+
+                if ipv4_changed || ipv6_changed || remote_changed {
+                    if let Err(e) = AlertService::check_event_rules(
+                        &state.db,
+                        &state.alert_state_manager,
+                        server_id,
+                        "ip_changed",
+                    )
+                    .await
+                    {
+                        tracing::error!("Failed to check event rules for IP change: {e}");
+                    }
+
+                    state
+                        .agent_manager
+                        .broadcast_browser(BrowserMessage::ServerIpChanged {
+                            server_id: server_id.to_string(),
+                            old_ipv4,
+                            new_ipv4: info.ipv4.clone(),
+                            old_ipv6,
+                            new_ipv6: info.ipv6.clone(),
+                            old_remote_addr,
+                            new_remote_addr: current_remote_addr.clone(),
+                        });
+                }
+
+                // Always update last_remote_addr
+                if let Some(ref addr) = current_remote_addr
+                    && let Err(e) = update_last_remote_addr(&state.db, server_id, addr).await
+                {
+                    tracing::error!(
+                        "Failed to update last_remote_addr for {server_id}: {e}"
+                    );
+                }
+            }
 
             if let Err(e) =
                 ServerService::update_system_info(&state.db, server_id, &info, region, country_code)
@@ -658,8 +734,101 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 .agent_manager
                 .dispatch_pending_response(msg_id, msg.clone());
         }
-        AgentMessage::IpChanged { .. } => {
-            // Handled in a future task (P11-T5)
+        AgentMessage::IpChanged {
+            ipv4,
+            ipv6,
+            interfaces: _,
+        } => {
+            match ServerService::get_server(&state.db, server_id).await {
+                Ok(srv) => {
+                    let old_ipv4 = srv.ipv4.clone();
+                    let old_ipv6 = srv.ipv6.clone();
+                    let ipv4_changed = old_ipv4 != ipv4;
+                    let ipv6_changed = old_ipv6 != ipv6;
+
+                    if ipv4_changed || ipv6_changed {
+                        // Update ipv4/ipv6 in DB
+                        if let Err(e) =
+                            update_server_ips(&state.db, server_id, &ipv4, &ipv6).await
+                        {
+                            tracing::error!("Failed to update IPs for {server_id}: {e}");
+                        }
+
+                        // Re-run GeoIP lookup based on the new IPs
+                        if let Some(ref geoip) = state.geoip {
+                            let ip_to_lookup = ipv4
+                                .as_deref()
+                                .or(ipv6.as_deref())
+                                .and_then(|ip| ip.parse::<std::net::IpAddr>().ok());
+                            if let Some(ip) = ip_to_lookup {
+                                let geo = geoip.lookup(ip);
+                                if (geo.region.is_some() || geo.country_code.is_some())
+                                    && let Err(e) = update_server_geo(
+                                        &state.db,
+                                        server_id,
+                                        geo.region,
+                                        geo.country_code,
+                                    )
+                                    .await
+                                {
+                                    tracing::error!(
+                                        "Failed to update GeoIP for {server_id}: {e}"
+                                    );
+                                }
+                            }
+                        }
+
+                        let detail = format!(
+                            "IP changed for server {server_id}: ipv4 {:?} -> {:?}, ipv6 {:?} -> {:?}",
+                            old_ipv4, ipv4, old_ipv6, ipv6
+                        );
+                        tracing::info!("{detail}");
+
+                        let remote_ip = state
+                            .agent_manager
+                            .get_remote_addr(server_id)
+                            .map(|a| a.ip().to_string())
+                            .unwrap_or_default();
+                        if let Err(e) = AuditService::log(
+                            &state.db,
+                            "system",
+                            "ip_changed",
+                            Some(&detail),
+                            &remote_ip,
+                        )
+                        .await
+                        {
+                            tracing::error!("Failed to write audit log for IP change: {e}");
+                        }
+
+                        if let Err(e) = AlertService::check_event_rules(
+                            &state.db,
+                            &state.alert_state_manager,
+                            server_id,
+                            "ip_changed",
+                        )
+                        .await
+                        {
+                            tracing::error!("Failed to check event rules for IP change: {e}");
+                        }
+
+                        state
+                            .agent_manager
+                            .broadcast_browser(BrowserMessage::ServerIpChanged {
+                                server_id: server_id.to_string(),
+                                old_ipv4,
+                                new_ipv4: ipv4,
+                                old_ipv6,
+                                new_ipv6: ipv6,
+                                old_remote_addr: None,
+                                new_remote_addr: None,
+                            });
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to load server {server_id} for IpChanged: {e}");
+                }
+            }
         }
     }
 }
@@ -737,5 +906,60 @@ async fn save_ping_result(
         time: Set(result.time),
     };
     new_record.insert(db).await?;
+    Ok(())
+}
+
+/// Update the `last_remote_addr` field on a server record.
+async fn update_last_remote_addr(
+    db: &sea_orm::DatabaseConnection,
+    server_id: &str,
+    addr: &str,
+) -> Result<(), crate::error::AppError> {
+    use crate::entity::server;
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let model = ServerService::get_server(db, server_id).await?;
+    let mut active: server::ActiveModel = model.into();
+    active.last_remote_addr = Set(Some(addr.to_string()));
+    active.updated_at = Set(chrono::Utc::now());
+    active.update(db).await?;
+    Ok(())
+}
+
+/// Update the `ipv4` and `ipv6` fields on a server record.
+async fn update_server_ips(
+    db: &sea_orm::DatabaseConnection,
+    server_id: &str,
+    ipv4: &Option<String>,
+    ipv6: &Option<String>,
+) -> Result<(), crate::error::AppError> {
+    use crate::entity::server;
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let model = ServerService::get_server(db, server_id).await?;
+    let mut active: server::ActiveModel = model.into();
+    active.ipv4 = Set(ipv4.clone());
+    active.ipv6 = Set(ipv6.clone());
+    active.updated_at = Set(chrono::Utc::now());
+    active.update(db).await?;
+    Ok(())
+}
+
+/// Update the `region` and `country_code` GeoIP fields on a server record.
+async fn update_server_geo(
+    db: &sea_orm::DatabaseConnection,
+    server_id: &str,
+    region: Option<String>,
+    country_code: Option<String>,
+) -> Result<(), crate::error::AppError> {
+    use crate::entity::server;
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let model = ServerService::get_server(db, server_id).await?;
+    let mut active: server::ActiveModel = model.into();
+    active.region = Set(region);
+    active.country_code = Set(country_code);
+    active.updated_at = Set(chrono::Utc::now());
+    active.update(db).await?;
     Ok(())
 }
