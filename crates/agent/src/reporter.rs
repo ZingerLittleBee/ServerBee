@@ -1,3 +1,4 @@
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
@@ -6,6 +7,8 @@ use futures_util::{SinkExt, StreamExt};
 use rand::Rng;
 use serverbee_common::constants::{DEFAULT_COMMAND_TIMEOUT_SECS, MAX_TASK_OUTPUT_SIZE};
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
+use serverbee_common::types::{NetworkInterface, NetworkProbeResultData};
+use sysinfo::Networks;
 use tokio::sync::mpsc;
 use tokio::time::interval;
 use tokio_tungstenite::connect_async;
@@ -18,7 +21,6 @@ use crate::file_manager::{FileEvent, FileManager};
 use crate::network_prober::NetworkProber;
 use crate::pinger::PingManager;
 use crate::terminal::{TerminalEvent, TerminalManager};
-use serverbee_common::types::NetworkProbeResultData;
 
 const MAX_BACKOFF_SECS: u64 = 30;
 const JITTER_FACTOR: f64 = 0.2;
@@ -176,6 +178,19 @@ impl Reporter {
         // Channel for background command execution results
         let (cmd_result_tx, mut cmd_result_rx) = mpsc::channel::<AgentMessage>(32);
 
+        // IP change detection setup
+        let ip_change_enabled = self.config.ip_change.enabled;
+        let mut ip_check_interval =
+            interval(Duration::from_secs(self.config.ip_change.interval_secs));
+        ip_check_interval.tick().await; // consume immediate tick
+        let mut cached_ips = if ip_change_enabled {
+            collect_interface_ips()
+        } else {
+            Vec::new()
+        };
+        let ip_check_external = self.config.ip_change.check_external_ip;
+        let ip_external_url = self.config.ip_change.external_ip_url.clone();
+
         // Main loop: send reports and handle server messages
         let mut report_interval = interval(Duration::from_secs(report_interval as u64));
         report_interval.tick().await; // consume first immediate tick
@@ -264,6 +279,24 @@ impl Reporter {
                             &mut docker_stats_interval,
                         )
                         .await?;
+                    }
+                }
+                // IP change detection
+                _ = ip_check_interval.tick(), if ip_change_enabled => {
+                    let new_ips = collect_interface_ips();
+                    if new_ips != cached_ips {
+                        tracing::info!("IP change detected");
+                        let (primary_ipv4, primary_ipv6) =
+                            derive_primary_ips(&new_ips, ip_check_external, &ip_external_url).await;
+                        let msg = AgentMessage::IpChanged {
+                            ipv4: primary_ipv4,
+                            ipv6: primary_ipv6,
+                            interfaces: new_ips.clone(),
+                        };
+                        let json = serde_json::to_string(&msg)?;
+                        write.send(Message::Text(json.into())).await?;
+                        tracing::debug!("Sent IpChanged");
+                        cached_ips = new_ips;
                     }
                 }
                 // Docker retry (reconnect when docker is unavailable)
@@ -963,6 +996,97 @@ fn apply_jitter(base_secs: u64) -> f64 {
     let mut rng = rand::thread_rng();
     let jitter: f64 = rng.gen_range(-jitter_range..=jitter_range);
     (base + jitter).max(0.5)
+}
+
+/// Collect IP addresses from all network interfaces using sysinfo.
+fn collect_interface_ips() -> Vec<NetworkInterface> {
+    let networks = Networks::new_with_refreshed_list();
+    let mut interfaces = Vec::new();
+
+    for (name, data) in networks.iter() {
+        let mut ipv4 = Vec::new();
+        let mut ipv6 = Vec::new();
+        for ip_net in data.ip_networks() {
+            match ip_net.addr {
+                IpAddr::V4(v4) => ipv4.push(v4.to_string()),
+                IpAddr::V6(v6) => ipv6.push(v6.to_string()),
+            }
+        }
+        if !ipv4.is_empty() || !ipv6.is_empty() {
+            interfaces.push(NetworkInterface {
+                name: name.to_string(),
+                ipv4,
+                ipv6,
+            });
+        }
+    }
+
+    // Sort for stable comparison
+    interfaces.sort_by(|a, b| a.name.cmp(&b.name));
+    interfaces
+}
+
+/// Derive primary IPv4/IPv6 from the interface list.
+/// If `check_external` is true, also query the external IP service.
+async fn derive_primary_ips(
+    interfaces: &[NetworkInterface],
+    check_external: bool,
+    external_url: &str,
+) -> (Option<String>, Option<String>) {
+    let mut primary_ipv4: Option<String> = None;
+    let mut primary_ipv6: Option<String> = None;
+
+    // Pick first non-loopback address from interfaces
+    for iface in interfaces {
+        if primary_ipv4.is_none() {
+            for ip in &iface.ipv4 {
+                if ip != "127.0.0.1" {
+                    primary_ipv4 = Some(ip.clone());
+                    break;
+                }
+            }
+        }
+        if primary_ipv6.is_none() {
+            for ip in &iface.ipv6 {
+                if ip != "::1" {
+                    primary_ipv6 = Some(ip.clone());
+                    break;
+                }
+            }
+        }
+        if primary_ipv4.is_some() && primary_ipv6.is_some() {
+            break;
+        }
+    }
+
+    // Optionally query external IP
+    if check_external {
+        match fetch_external_ip(external_url).await {
+            Ok(ext_ip) => {
+                // Override primary with externally visible IP
+                if ext_ip.contains(':') {
+                    primary_ipv6 = Some(ext_ip);
+                } else {
+                    primary_ipv4 = Some(ext_ip);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to fetch external IP: {e}");
+            }
+        }
+    }
+
+    (primary_ipv4, primary_ipv6)
+}
+
+/// Fetch external IP address from a remote service.
+async fn fetch_external_ip(url: &str) -> anyhow::Result<String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()?;
+    let resp = client.get(url).send().await?;
+    let ip = resp.text().await?.trim().to_string();
+    Ok(ip)
 }
 
 /// Download a new agent binary, verify checksum, replace current binary, and restart.

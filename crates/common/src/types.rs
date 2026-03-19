@@ -5,7 +5,7 @@ fn default_protocol_version() -> u32 {
     1
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NetworkInterface {
     pub name: String,
     pub ipv4: Vec<String>,
