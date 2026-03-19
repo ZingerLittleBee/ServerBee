@@ -2,6 +2,7 @@ import { Link, useMatchRoute } from '@tanstack/react-router'
 import {
   Activity,
   AlertTriangle,
+  BarChart3,
   Bell,
   ClipboardList,
   Globe,
@@ -24,6 +25,7 @@ const navItems = [
   { to: '/', labelKey: 'nav_dashboard' as const, icon: LayoutDashboard },
   { to: '/servers', labelKey: 'nav_servers' as const, icon: List },
   { to: '/network', labelKey: 'nav_network' as const, icon: Wifi },
+  { to: '/traffic', labelKey: 'nav_traffic' as const, icon: BarChart3 },
   { to: '/settings/users', labelKey: 'nav_users' as const, icon: Users, adminOnly: true },
   { to: '/settings/notifications', labelKey: 'nav_notifications' as const, icon: Bell, adminOnly: true },
   { to: '/settings/alerts', labelKey: 'nav_alerts' as const, icon: AlertTriangle, adminOnly: true },
