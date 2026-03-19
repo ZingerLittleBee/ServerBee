@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::docker_types::*;
 use crate::types::{
-    FileEntry, NetworkProbeResultData, NetworkProbeTarget, PingResult, PingTaskConfig, SystemInfo,
-    SystemReport, TaskResult,
+    FileEntry, NetworkInterface, NetworkProbeResultData, NetworkProbeTarget, PingResult,
+    PingTaskConfig, SystemInfo, SystemReport, TaskResult,
 };
 
 /// Agent -> Server messages
@@ -128,6 +128,11 @@ pub enum AgentMessage {
         msg_id: String,
         success: bool,
         error: Option<String>,
+    },
+    IpChanged {
+        ipv4: Option<String>,
+        ipv6: Option<String>,
+        interfaces: Vec<NetworkInterface>,
     },
     Pong,
 }
@@ -313,6 +318,15 @@ pub enum BrowserMessage {
     DockerAvailabilityChanged {
         server_id: String,
         available: bool,
+    },
+    ServerIpChanged {
+        server_id: String,
+        old_ipv4: Option<String>,
+        new_ipv4: Option<String>,
+        old_ipv6: Option<String>,
+        new_ipv6: Option<String>,
+        old_remote_addr: Option<String>,
+        new_remote_addr: Option<String>,
     },
 }
 
