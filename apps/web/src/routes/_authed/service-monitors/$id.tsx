@@ -48,9 +48,9 @@ interface ServiceMonitorRecord {
   time: string
 }
 
-interface MonitorWithRecord {
+// API uses #[serde(flatten)] so monitor fields are at the top level
+interface MonitorWithRecord extends ServiceMonitor {
   latest_record: ServiceMonitorRecord | null
-  monitor: ServiceMonitor
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -412,7 +412,9 @@ function ServiceMonitorDetailPage() {
     )
   }
 
-  const { monitor, latest_record: latestRecord } = data
+  // data is flat (serde flatten) — monitor fields are at top level
+  const monitor = data
+  const latestRecord = data.latest_record
 
   let latestDetail: Record<string, unknown> = {}
   if (latestRecord?.detail_json) {
