@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-03-20
+
+### Added
+
+- **Historical Disk I/O Monitoring** -- Full-stack disk I/O monitoring: Agent reads `/proc/diskstats` on Linux to collect per-disk read/write throughput, Server persists data in `disk_io_json` JSON column on both `records` and `records_hourly` tables, hourly aggregation computes per-device averages. Frontend `DiskIoChart` component with Merged (total) and Per Disk tab views on the server detail page (historical mode only)
+- **Conditional WebSocket connection** -- `useServersWs` hook gains `enabled` prop; `AuthedLayout` only establishes browser WebSocket after authentication completes, preventing premature connection attempts and handling 401 re-registration gracefully
+
+### Changed
+
+- Time range selector on server detail page now uses distinct `key` identifiers instead of matching by `interval`, fixing a bug where ranges with the same interval value (e.g., multiple `raw` ranges) could collide
+
+### Fixed
+
+- **Duplicate OpenAPI operation IDs** -- Ping task endpoints (`list_ping_tasks`, `update_ping_task`, `delete_ping_task`) now have explicit unique operation IDs, resolving OpenAPI spec generation errors and regenerated `openapi.json` / `api-types.ts`
+
+### Testing
+
+- 288 Rust tests: 288 unit + 29 integration + 4 Docker integration (unchanged from 0.5.0)
+- 129 frontend Vitest tests across 16 test files (was 121 across 13)
+- 3 new `disk-io-chart.test.tsx` tests (merged view, per-disk view, empty state)
+- 3 new `disk-io.test.ts` tests (buildMergedDiskIoSeries, buildPerDiskIoSeries, null handling)
+- 2 new `use-servers-ws-hook.test.tsx` tests (enabled prop, disabled state)
+- 2 new Rust unit tests (DiskIo round-trip serialization, SystemReport backward compatibility)
+- 2 new RecordService unit tests (disk_io_json persistence, hourly aggregation per-device averages)
+- 1 new integration test (disk I/O records end-to-end)
+- 1 new Agent collector test (disk I/O compute and device filtering)
+- 10/10 Disk I/O E2E browser verification scenarios passed (DI1-DI10)
+
 ## [0.5.0] - 2026-03-18
 
 ### Added

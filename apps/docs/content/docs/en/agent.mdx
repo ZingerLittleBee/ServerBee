@@ -4,11 +4,11 @@ description: Install and configure the ServerBee agent on your monitored servers
 icon: Cpu
 ---
 
-The ServerBee agent is a lightweight Rust binary that runs on each server you want to monitor. It collects system metrics (CPU, memory, disk, network, load, temperature, GPU) and reports them to the central ServerBee server over a persistent WebSocket connection.
+The ServerBee agent is a lightweight Rust binary that runs on each server you want to monitor. It collects system metrics (CPU, memory, disk, network, load, temperature, GPU, disk I/O) and reports them to the central ServerBee server over a persistent WebSocket connection.
 
 ## What the Agent Does
 
-- Collects system metrics every 3 seconds (configurable)
+- Collects system metrics every 3 seconds (configurable), including disk I/O throughput on Linux
 - Reports metrics to the server over WebSocket
 - Executes ping probes (ICMP, TCP, HTTP) assigned by the server
 - Provides a PTY shell for web terminal access

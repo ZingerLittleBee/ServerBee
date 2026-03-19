@@ -13,7 +13,9 @@ use serverbee_server::migration::Migrator;
 use serverbee_server::router::create_router;
 use serverbee_server::service::auth::AuthService;
 use serverbee_server::service::config::ConfigService;
+use serverbee_server::service::record::RecordService;
 use serverbee_server::state::AppState;
+use serverbee_common::types::{DiskIo, SystemReport};
 
 /// Start a test server in a temporary directory with a random port.
 /// Returns `(base_url, temp_dir)` where `temp_dir` is kept alive for the
@@ -314,6 +316,78 @@ async fn test_agent_register_connect_report() {
 
     // Clean up: close the WS connection
     let _ = ws_sink.close().await;
+}
+
+#[tokio::test]
+async fn test_server_records_api_returns_disk_io_json() {
+    let (base_url, tmp) = start_test_server().await;
+    let client = http_client();
+
+    let register_resp = client
+        .post(format!("{}/api/agent/register", base_url))
+        .header("Authorization", "Bearer test-key")
+        .send()
+        .await
+        .expect("Register request failed");
+    assert_eq!(register_resp.status(), 200, "Agent registration should succeed");
+
+    let register_body: serde_json::Value = register_resp
+        .json()
+        .await
+        .expect("Failed to parse register response");
+    let server_id = register_body["data"]["server_id"]
+        .as_str()
+        .expect("server_id missing")
+        .to_string();
+
+    let db_url = format!("sqlite://{}?mode=rwc", tmp.path().join("test.db").display());
+    let db = Database::connect(&db_url)
+        .await
+        .expect("Failed to connect to test database");
+
+    RecordService::save_report(
+        &db,
+        &server_id,
+        &SystemReport {
+            disk_io: Some(vec![DiskIo {
+                name: "sda".to_string(),
+                read_bytes_per_sec: 1024,
+                write_bytes_per_sec: 2048,
+            }]),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("save_report should succeed");
+
+    login_admin(&client, &base_url).await;
+
+    let now = chrono::Utc::now();
+    let from = (now - chrono::Duration::hours(1)).to_rfc3339();
+    let to = now.to_rfc3339();
+    let records_resp = client
+        .get(format!("{}/api/servers/{}/records", base_url, server_id))
+        .query(&[("from", from.as_str()), ("to", to.as_str()), ("interval", "raw")])
+        .send()
+        .await
+        .expect("GET /api/servers/{id}/records failed");
+
+    assert_eq!(records_resp.status(), 200);
+    let records_body: serde_json::Value = records_resp
+        .json()
+        .await
+        .expect("Failed to parse records response");
+
+    let disk_io_json = records_body["data"][0]["disk_io_json"]
+        .as_str()
+        .expect("disk_io_json should be present");
+    let disk_io: Vec<DiskIo> =
+        serde_json::from_str(disk_io_json).expect("disk_io_json should deserialize");
+
+    assert_eq!(disk_io.len(), 1);
+    assert_eq!(disk_io[0].name, "sda");
+    assert_eq!(disk_io[0].read_bytes_per_sec, 1024);
+    assert_eq!(disk_io[0].write_bytes_per_sec, 2048);
 }
 
 #[tokio::test]

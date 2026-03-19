@@ -2,27 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
 import type { ServerResponse } from '@/lib/api-schema'
 
-interface ServerRecord {
-  cpu: number
-  disk_used: number
-  gpu_usage: number | null
-  id: number
-  load1: number
-  load5: number
-  load15: number
-  mem_used: number
-  net_in_speed: number
-  net_in_transfer: number
-  net_out_speed: number
-  net_out_transfer: number
-  process_count: number
-  server_id: string
-  swap_used: number
-  tcp_conn: number
-  temperature: number | null
-  time: string
-  udp_conn: number
-}
+type ServerRecord = import('@/lib/api-schema').ServerMetricRecord
 
 export function useServer(id: string) {
   return useQuery<ServerResponse>({
@@ -48,4 +28,4 @@ export function useServerRecords(id: string, hours: number, interval: string, op
   })
 }
 
-export type { ServerRecord }
+export type { ServerMetricRecord as ServerRecord } from '@/lib/api-schema'

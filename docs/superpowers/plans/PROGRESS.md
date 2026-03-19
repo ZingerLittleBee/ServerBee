@@ -31,10 +31,12 @@
 | P9 | 服务监控 (Service Monitor) | **已完成** | 10 commits (`f02fd23`..`dcca19e`) |
 | P10 | 流量统计 (Traffic Statistics) | **已完成** | 3 commits (`846bd73`..`f28a696`) |
 | P11 | IP 变更通知 (IP Change Notification) | **已完成** | 8 tasks |
+| P12 | 磁盘 I/O 监控 (Disk I/O Monitoring) | **已完成（含本地构建修复）** | 1 (`1a6d1da`) |
 
-**P0~P11 全部完成并已提交（35 commits 未 push）。测试: 281 单元 + 28 集成 + 4 Docker 集成 + 76 前端(passing) = 389 个通过测试。**
-**注：前端 104 个测试中 28 个因 react/jsx-dev-runtime 缺失而失败（预存问题，非 P9-P11 引入）。**
-**E2E 浏览器测试: 7 项通过（agent-browser 自动化验证 P9/P10/P11 页面渲染和交互）。**
+**P0~P12 已完成；P12 磁盘 I/O 功能已完成自动化验证、前端构建修复与 agent-browser 手动验证。**
+**自动化测试:** 288 单元 + 29 集成 + 4 Docker 集成 + 129 前端 = 450 个测试通过；`cargo test --workspace`、`cargo clippy --workspace -- -D warnings`、`cargo build --workspace`、`bun run test`、`bun run typecheck`、`bun x ultracite check`、`bun run build` 通过。
+**E2E 浏览器测试:** P9/P10/P11 共 7 项通过；P12 Disk I/O DI1~DI10 共 10/10 通过（含 tooltip 悬浮、缺失点补零、null 兼容、API JSON 解析与中文文案验证）。
+**当前状态:** 前端构建阻塞已修复；手动测试证据已保存到 `/tmp/serverbee-p12-manual-20260319/artifacts`。
 
 ---
 
@@ -946,6 +948,39 @@ POST   /api/service-monitors/:id/check   手动触发检测
 - `ip_change.interval_secs` (default `300`) — 检测间隔（秒）
 
 **测试:** 0 个新专项测试 (现有 273 单元 + 26 集成 + 4 Docker 集成 + 124 前端 = 427 个测试通过)
+
+### P12: 磁盘 I/O 监控 (Disk I/O Monitoring)
+
+**分支**: `sydney-v1`
+**提交**: `1a6d1da` `feat: add historical disk I/O monitoring`
+**本地待提交修复**: ping OpenAPI `operation_id` 去重（`crates/server/src/router/api/ping.rs`、`apps/web/openapi.json`、`apps/web/src/lib/api-types.ts`）
+**实现计划**: `docs/superpowers/plans/2026-03-19-p12-disk-io-monitoring.md`
+**设计文档**: `docs/superpowers/specs/2026-03-19-batch1-batch2-features-design.md` Section 4
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | Common: `DiskIo` 类型 + `SystemReport.disk_io` + 协议向后兼容测试 | **done** |
+| T2 | Agent: Linux `/proc/diskstats` 采集、物理盘过滤、首样本基线语义 | **done** |
+| T3 | Server: `records` / `records_hourly` 增加 `disk_io_json` migration + 实体字段 | **done** |
+| T4 | Server: `RecordService::save_report()` 持久化 `disk_io_json` | **done** |
+| T5 | Server: 小时聚合按磁盘名求平均并写入 `records_hourly.disk_io_json` | **done** |
+| T6 | Server: `/api/servers/{id}/records` OpenAPI schema + frontend type generation | **done** |
+| T7 | Frontend: `disk-io.ts` 解析/汇总工具 + `DiskIoChart` 组件 | **done** |
+| T8 | Frontend: Server Detail 页面集成 Disk I/O 图表（历史模式） | **done** |
+| T9 | Frontend: 修复 Server Detail range key 冲突 (`raw/hourly` 不再折叠) | **done** |
+| T10 | 测试与文档: Rust/Vitest/TESTING.md/PROGRESS.md 更新 | **done** |
+
+**新增/变更点:**
+- Agent 新增 `collector/disk_io.rs`，Linux 平台读取 `/proc/diskstats`，非 Linux 安全回退为 `None`
+- 记录表使用 `disk_io_json` JSON 字段承载每块磁盘的读写速率，避免新增一对多表
+- 服务器详情页新增 Disk I/O 历史图表，支持 Merged / Per Disk 两种视图
+- 本期保持 historical-only，不扩展 WebSocket realtime `ServerStatus`
+
+**验证进展 (2026-03-20):**
+- 自动化通过：`cargo test --workspace`、`cargo clippy --workspace -- -D warnings`、`cargo build --workspace`、`bun run test`、`bun run typecheck`、`bun x ultracite check`、`bun run build`
+- 前端构建修复：为 ping API 显式设置唯一 `operation_id`（`list_ping_tasks` / `update_ping_task` / `delete_ping_task`），并重新生成 `apps/web/openapi.json` 与 `apps/web/src/lib/api-types.ts`
+- agent-browser 手动 / E2E：DI1~DI10 全部通过；已验证 realtime 隐藏、historical 渲染、Merged/Per Disk、tooltip、缺失点补零、`0 B/s`、range 切换、`disk_io_json = null` 兼容、API JSON 解析与中文文案
+- 证据：截图保存在 `/tmp/serverbee-p12-manual-20260319/artifacts`
 
 ---
 

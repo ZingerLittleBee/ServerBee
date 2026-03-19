@@ -74,6 +74,7 @@ const mockRecords = [
     udp_conn: 5,
     process_count: 150,
     gpu_usage: null,
+    disk_io_json: '[{"name":"sda","read_bytes_per_sec":1024,"write_bytes_per_sec":2048}]',
     temperature: null,
     time: '2026-01-01T00:00:00Z'
   },
@@ -95,6 +96,7 @@ const mockRecords = [
     udp_conn: 8,
     process_count: 160,
     gpu_usage: null,
+    disk_io_json: '[{"name":"sda","read_bytes_per_sec":4096,"write_bytes_per_sec":8192}]',
     temperature: 45.0,
     time: '2026-01-01T00:05:00Z'
   }
@@ -151,6 +153,7 @@ describe('useServerRecords', () => {
 
     expect(result.current.data).toHaveLength(2)
     expect(result.current.data?.[0].cpu).toBe(25.5)
+    expect(result.current.data?.[0].disk_io_json).toContain('read_bytes_per_sec')
     expect(result.current.data?.[1].temperature).toBe(45.0)
   })
 
