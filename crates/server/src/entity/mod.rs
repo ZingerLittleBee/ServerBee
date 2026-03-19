@@ -14,6 +14,8 @@ pub mod network_probe_target;
 pub mod notification_group;
 pub mod ping_record;
 pub mod ping_task;
+pub mod service_monitor;
+pub mod service_monitor_record;
 pub mod record;
 pub mod record_hourly;
 pub mod server;
