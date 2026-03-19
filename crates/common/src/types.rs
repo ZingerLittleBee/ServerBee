@@ -6,6 +6,13 @@ fn default_protocol_version() -> u32 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkInterface {
+    pub name: String,
+    pub ipv4: Vec<String>,
+    pub ipv6: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemInfo {
     pub cpu_name: String,
     pub cpu_cores: i32,
