@@ -7,6 +7,7 @@ use sea_orm::*;
 use crate::entity::{audit_log, ping_record};
 use crate::service::network_probe::NetworkProbeService;
 use crate::service::record::RecordService;
+use crate::service::service_monitor::ServiceMonitorService;
 use crate::service::traffic::TrafficService;
 use crate::state::AppState;
 
@@ -101,6 +102,17 @@ pub async fn run(state: Arc<AppState>) {
         {
             Ok(n) if n > 0 => tracing::info!("Cleaned up {n} expired docker events"),
             Err(e) => tracing::error!("Failed to clean up docker events: {e}"),
+            _ => {}
+        }
+
+        // Clean up service monitor records
+        match ServiceMonitorService::cleanup_records(&state.db, retention.service_monitor_days)
+            .await
+        {
+            Ok(n) if n > 0 => {
+                tracing::info!("Cleaned up {n} expired service monitor records")
+            }
+            Err(e) => tracing::error!("Failed to clean up service monitor records: {e}"),
             _ => {}
         }
 
