@@ -187,7 +187,7 @@ function SslDetail({ detail }: { detail: Record<string, unknown> }) {
           <DetailItem label="Not After" value={detail.not_after as string} />
           <DetailItem label="Days Remaining" value={String(detail.days_remaining ?? '--')} />
           <DetailItem label="SHA-256 Fingerprint" value={detail.sha256_fingerprint as string} />
-          {detail.warning && <DetailItem label="Warning" value={detail.warning as string} />}
+          {Boolean(detail.warning) && <DetailItem label="Warning" value={detail.warning as string} />}
         </dl>
       </CardContent>
     </Card>
@@ -268,7 +268,7 @@ function WhoisDetail({ detail }: { detail: Record<string, unknown> }) {
           <DetailItem label="Registrar" value={(detail.registrar as string) || '--'} />
           <DetailItem label="Expiry Date" value={(detail.expiry_date as string) || '--'} />
           <DetailItem label="Days Remaining" value={String(detail.days_remaining ?? '--')} />
-          {detail.warning && <DetailItem label="Warning" value={detail.warning as string} />}
+          {Boolean(detail.warning) && <DetailItem label="Warning" value={detail.warning as string} />}
         </dl>
       </CardContent>
     </Card>
