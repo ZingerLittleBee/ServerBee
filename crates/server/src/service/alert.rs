@@ -10,6 +10,9 @@ use crate::error::AppError;
 use crate::service::agent_manager::AgentManager;
 use crate::service::notification::{NotificationService, NotifyContext};
 
+/// Rule types that are event-driven (not evaluated on a polling interval).
+const EVENT_DRIVEN_RULE_TYPES: &[&str] = &["ip_changed"];
+
 // ── Alert Rule Types ──
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
@@ -359,6 +362,18 @@ impl AlertService {
             .await?;
 
         for rule in rules {
+            // Skip rules where ALL items are event-driven (e.g. ip_changed).
+            // These are dispatched from WS handlers via check_event_rules().
+            let items: Vec<AlertRuleItem> =
+                serde_json::from_str(&rule.rules_json).unwrap_or_default();
+            if !items.is_empty()
+                && items
+                    .iter()
+                    .all(|i| EVENT_DRIVEN_RULE_TYPES.contains(&i.rule_type.as_str()))
+            {
+                continue;
+            }
+
             if let Err(e) = Self::evaluate_rule(db, agent_manager, state_manager, &rule).await {
                 tracing::error!("Error evaluating alert rule '{}': {e}", rule.name);
             }
@@ -489,11 +504,73 @@ impl AlertService {
 
         Ok(())
     }
+
+    /// Check event-driven rules (e.g. `ip_changed`) — called from WS handler
+    /// when an event occurs for a specific server.
+    pub async fn check_event_rules(
+        db: &DatabaseConnection,
+        state_manager: &AlertStateManager,
+        server_id: &str,
+        event_type: &str,
+    ) -> Result<(), AppError> {
+        let rules = alert_rule::Entity::find()
+            .filter(alert_rule::Column::Enabled.eq(true))
+            .all(db)
+            .await?;
+
+        for rule in &rules {
+            let items: Vec<AlertRuleItem> =
+                serde_json::from_str(&rule.rules_json).unwrap_or_default();
+
+            // Check if any item in this rule matches the event type
+            let has_matching_event = items.iter().any(|i| i.rule_type == event_type);
+            if !has_matching_event {
+                continue;
+            }
+
+            // Check if this rule covers the given server
+            if !rule_covers_server(&rule.cover_type, &rule.server_ids_json, server_id) {
+                continue;
+            }
+
+            // Resolve server name for notification context
+            let server_name = server::Entity::find_by_id(server_id)
+                .one(db)
+                .await?
+                .map(|s| s.name)
+                .unwrap_or_else(|| "Unknown".to_string());
+
+            Self::handle_triggered(db, state_manager, rule, server_id, &server_name).await?;
+        }
+
+        Ok(())
+    }
 }
 
 // ── Helpers ──
 
 const VALID_COVER_TYPES: &[&str] = &["all", "include", "exclude"];
+
+/// Check if a rule's cover_type/server_ids covers a specific server (pure, no DB).
+fn rule_covers_server(cover_type: &str, server_ids_json: &Option<String>, server_id: &str) -> bool {
+    match cover_type {
+        "include" => {
+            let ids: Vec<String> = server_ids_json
+                .as_deref()
+                .and_then(|s| serde_json::from_str(s).ok())
+                .unwrap_or_default();
+            ids.iter().any(|id| id == server_id)
+        }
+        "exclude" => {
+            let ids: Vec<String> = server_ids_json
+                .as_deref()
+                .and_then(|s| serde_json::from_str(s).ok())
+                .unwrap_or_default();
+            !ids.iter().any(|id| id == server_id)
+        }
+        _ => true, // "all" (default)
+    }
+}
 
 fn validate_cover_type(cover_type: &str) -> Result<(), AppError> {
     if VALID_COVER_TYPES.contains(&cover_type) {
@@ -1035,5 +1112,48 @@ mod tests {
     #[test]
     fn test_default_cover_type() {
         assert_eq!(default_cover_type(), "all");
+    }
+
+    // ── rule_covers_server ──
+
+    #[test]
+    fn test_rule_covers_server_all() {
+        assert!(rule_covers_server("all", &None, "srv-1"));
+        assert!(rule_covers_server("all", &Some("[]".to_string()), "srv-1"));
+    }
+
+    #[test]
+    fn test_rule_covers_server_include() {
+        let ids = Some(serde_json::to_string(&vec!["srv-1", "srv-2"]).unwrap());
+        assert!(rule_covers_server("include", &ids, "srv-1"));
+        assert!(rule_covers_server("include", &ids, "srv-2"));
+        assert!(!rule_covers_server("include", &ids, "srv-3"));
+        // Empty include list covers nothing
+        assert!(!rule_covers_server("include", &Some("[]".to_string()), "srv-1"));
+    }
+
+    #[test]
+    fn test_rule_covers_server_exclude() {
+        let ids = Some(serde_json::to_string(&vec!["srv-1"]).unwrap());
+        assert!(!rule_covers_server("exclude", &ids, "srv-1"));
+        assert!(rule_covers_server("exclude", &ids, "srv-2"));
+        // Empty exclude list covers everything
+        assert!(rule_covers_server("exclude", &Some("[]".to_string()), "srv-1"));
+    }
+
+    // ── event-driven rule type detection ──
+
+    #[test]
+    fn test_event_driven_rule_types() {
+        assert!(EVENT_DRIVEN_RULE_TYPES.contains(&"ip_changed"));
+        assert!(!EVENT_DRIVEN_RULE_TYPES.contains(&"cpu"));
+        assert!(!EVENT_DRIVEN_RULE_TYPES.contains(&"offline"));
+    }
+
+    #[test]
+    fn test_alert_state_manager_new() {
+        let mgr = AlertStateManager::new();
+        assert!(!mgr.is_triggered("any-rule", "any-server"));
+        assert!(mgr.get_info("any-rule", "any-server").is_none());
     }
 }
