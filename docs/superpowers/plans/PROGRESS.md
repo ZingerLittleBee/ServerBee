@@ -32,7 +32,9 @@
 | P10 | 流量统计 (Traffic Statistics) | **已完成** | 3 commits (`846bd73`..`f28a696`) |
 | P11 | IP 变更通知 (IP Change Notification) | **已完成** | 8 tasks |
 
-**P0~P11 全部完成并已提交。测试: 273 单元 + 26 集成 + 4 Docker 集成 + 124 前端 = 427 个测试。**
+**P0~P11 全部完成并已提交（35 commits 未 push）。测试: 281 单元 + 28 集成 + 4 Docker 集成 + 76 前端(passing) = 389 个通过测试。**
+**注：前端 104 个测试中 28 个因 react/jsx-dev-runtime 缺失而失败（预存问题，非 P9-P11 引入）。**
+**E2E 浏览器测试: 7 项通过（agent-browser 自动化验证 P9/P10/P11 页面渲染和交互）。**
 
 ---
 
