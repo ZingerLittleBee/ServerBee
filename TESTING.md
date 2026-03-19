@@ -6,7 +6,7 @@
 # 全量测试
 cargo test --workspace && bun run test
 
-# Rust 测试（273 单元 + 26 集成 + 4 Docker 集成 = 303）
+# Rust 测试（281 单元 + 28 集成 + 4 Docker 集成 = 313）
 cargo test --workspace
 
 # 前端测试（124 vitest，14 个测试文件）
@@ -23,9 +23,9 @@ bun run typecheck
 ### 按 crate 运行
 
 ```bash
-cargo test -p serverbee-common          # 协议 + 能力常量 + Docker 类型 (35 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 (194 + 30 = 224 tests)
-cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager (44 tests)
+cargo test -p serverbee-common          # 协议 + 能力常量 + Docker 类型 (38 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 (198 + 32 = 230 tests)
+cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager + Config (45 tests)
 ```
 
 ### 仅集成测试
@@ -48,10 +48,10 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | 模块 | 测试数 | 覆盖内容 |
 |------|--------|----------|
 | `common/constants.rs` | 8 | 能力位运算、默认值、掩码、CAP_FILE、CAP_DOCKER |
-| `common/protocol.rs` | 21 | 消息序列化/反序列化（NetworkProbe + 文件管理 + Docker 全协议覆盖） |
+| `common/protocol.rs` | 23 | 消息序列化/反序列化（NetworkProbe + 文件管理 + Docker + IpChanged/ServerIpChanged 全协议覆盖） |
 | `common/docker_types.rs` | 3 | Docker 容器/动作/日志条目序列化/反序列化 |
-| `common/types.rs` | 2 | SystemInfo features 字段默认值和序列化 |
-| `server/service/alert.rs` | 15 | 阈值判定、指标提取、采样窗口 |
+| `common/types.rs` | 3 | SystemInfo features 字段默认值和序列化、NetworkInterface 序列化 |
+| `server/service/alert.rs` | 20 | 阈值判定、指标提取、采样窗口、事件驱动规则类型、服务器覆盖判定、AlertStateManager 构造 |
 | `server/service/auth.rs` | 19 | 密码哈希、session、API key、TOTP、登录、改密 |
 | `server/service/notification.rs` | 16 | 模板变量替换、渠道配置解析 |
 | `server/service/record.rs` | 6 | 历史查询、聚合、清理策略、保存上报、过期清理 |
@@ -63,6 +63,7 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `server/middleware/auth.rs` | 6 | Cookie/API Key 提取 |
 | `agent/collector/` | 5 | 系统信息、指标范围、使用量约束 |
 | `agent/pinger.rs` | 2 | TCP 探测（开放/关闭端口） |
+| `agent/config.rs` | 1 | IpChangeConfig 默认值（enabled/check_external_ip/interval_secs/external_ip_url） |
 | `server/service/audit.rs` | 3 | 审计日志记录、列表、排序 |
 | `server/service/config.rs` | 5 | KV 存取、upsert、类型化读写 |
 | `server/presets/mod.rs` | 8 | 预设目标加载、ID 唯一性、查找、分组元数据、探测类型校验 |
@@ -71,7 +72,7 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `agent/network_prober.rs` | 2 | 网络探测任务调度、结果上报 |
 | `server/service/file_transfer.rs` | 9 | 传输创建/获取、并发限制、过期清理、状态转换、进度更新、临时文件清理 |
 | `agent/file_manager.rs` | 24 | 路径校验(root_paths/遍历/deny_patterns/多根/空根)、目录列表(排序/空目录/元数据)、文件读写(base64编解码/大小限制)、删除/创建目录/重命名、上传流程、下载分片 |
-| `server/service/traffic.rs` | 17 | 增量计算(正常/重启/单方向重启/零值)、计费周期范围(月/季/年/自定义起始日)、预测算法(正常/早期/无限额)、DB 操作(upsert 累加/状态缓存/日聚合时区) |
+| `server/service/traffic.rs` | 21 | 增量计算(正常/重启/单方向重启/零值)、计费周期范围(月/季/年/自定义起始日)、预测算法(正常/早期/无限额)、DB 操作(upsert 累加/状态缓存/日聚合时区)、overview 空服务器、cycle_history 无计费周期、ServerTrafficOverview/CycleTraffic 序列化 |
 | `server/service/task_scheduler.rs` | 3 | TaskScheduler 创建、重叠检测、取消活跃运行 |
 | `server/task/task_scheduler.rs` | 2 | correlation_id 格式、唯一性 |
 | `server/config.rs` | 1 | 时区解析（chrono-tz 验证） |
@@ -110,6 +111,8 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `test_file_delete_requires_admin` | member 用户 POST /files/delete → 403 |
 | `test_file_mkdir_requires_admin` | member 用户 POST /files/mkdir → 403 |
 | `test_oneshot_task_backward_compat` | 新 migration 后一次性任务仍可正常创建 |
+| `test_service_monitor_crud_and_check` | 创建 TCP 监控 → 列表验证 → 触发检查 → 验证记录 → 删除 |
+| `test_traffic_overview_api` | 空 overview → 注册 Agent + 配置 billing → overview 包含服务器 → daily API 验证 |
 | `test_traffic_api_returns_data` | 注册 Agent → 查询流量 API → 验证响应结构 |
 | `test_server_billing_start_day` | 更新 billing_start_day → 验证持久化和流量 API 反映 |
 
@@ -457,6 +460,10 @@ docker compose up -d
 | **DB 操作** | `test_upsert_traffic_hourly_accumulates` | 同一小时两次 upsert → bytes 累加 |
 | | `test_load_transfer_cache_from_traffic_state` | traffic_state 表 → HashMap 缓存加载 |
 | | `test_aggregate_daily_timezone_bucketing` | Asia/Shanghai 时区 → UTC 小时正确聚合到本地日期 |
+| **总览/历史** | `test_overview_empty` | 无服务器 → overview 返回空 vec |
+| | `test_cycle_history_no_billing_cycle` | 服务器无 billing_cycle → overview 不包含 + cycle_history 返回零流量 |
+| **序列化** | `test_server_traffic_overview_serialization` | ServerTrafficOverview JSON 字段完整性 |
+| | `test_cycle_traffic_serialization` | CycleTraffic JSON 字段完整性 |
 
 #### 集成测试覆盖（自动化）
 
@@ -465,6 +472,8 @@ docker compose up -d
 | 测试名 | 流程 |
 |--------|------|
 | `test_oneshot_task_backward_compat` | migration 新增 NOT NULL 列（带默认值）后 → 一次性任务仍可正常创建 |
+| `test_service_monitor_crud_and_check` | 创建 TCP 监控（目标为测试服务器端口）→ 列表验证 → 触发检查 → TCP 连接成功 → 记录创建 → 删除清理 |
+| `test_traffic_overview_api` | 空 overview 返回空数组 → 注册 Agent + 配置 billing_cycle → overview 包含服务器 + 验证字段 → daily API 有效 |
 | `test_traffic_api_returns_data` | 注册 Agent → `GET /api/servers/{id}/traffic` → 验证响应包含 cycle_start/cycle_end/bytes_*/daily/hourly |
 | `test_server_billing_start_day` | 更新 billing_start_day=15 → GET server 验证持久化 → 流量 API 反映 traffic_limit |
 
@@ -494,6 +503,9 @@ docker compose up -d
 | T20 | 告警集成 | 创建 transfer_all_cycle 告警规则 → cycle_interval=billing → 流量超限时触发告警 | — |
 | T21 | i18n 中文 | 切换中文 → "流量统计"、"每日流量"、"今日小时流量"、"预计将超出限额" 正确显示 | — |
 | T22 | i18n 英文 | 切换英文 → "Traffic Statistics"、"Daily Traffic"、"Today's Hourly Traffic" 正确显示 | — |
+| T23 | 流量总览排行 | /traffic → 表格按用量排序 → 最高用量服务器排第一 | — |
+| T24 | 流量总览趋势图 | /traffic → 30 天趋势 AreaChart 显示入站/出站两条线 | — |
+| T25 | 服务器 Traffic Tab | 设置 billing_cycle → /servers/:id → Traffic Tab 可见 → 周期进度条 + 日柱图 + 历史对比 | — |
 
 ### 验证清单 — 定时任务
 
@@ -536,6 +548,21 @@ docker compose up -d
 | SM15 | 记录清理 | 配置 service_monitor_record_days=1 → cleanup 运行后旧记录删除 | — |
 | SM16 | i18n 中文 | 切换中文 → 页面标题/按钮/状态标签全部显示中文 | — |
 | SM17 | i18n 英文 | 切换英文 → 所有 UI 元素显示英文 | — |
+
+### 验证清单 — IP 变更通知
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| IP1 | 被动检测 — remote_addr 变更 | Agent 断线 → 从不同 IP 重连 → 审计日志出现 ip_changed 记录 | — |
+| IP2 | 被动检测 — last_remote_addr 更新 | Agent 连接 → GET /api/servers/:id → last_remote_addr 字段有值 | — |
+| IP3 | 主动检测 — NIC 变更 | Agent 运行中 → 添加/移除网络接口 → 5 分钟内检测到变更 | — |
+| IP4 | 主动检测 — 外部 IP (可选) | 配置 check_external_ip=true → 公网 IP 变化时上报 | — |
+| IP5 | 事件驱动告警 | 创建 ip_changed 告警规则 → 关联通知组 → IP 变更时触发通知 | — |
+| IP6 | 告警规则覆盖范围 | 创建 cover_type=include 规则 → 仅指定服务器触发 | — |
+| IP7 | Browser 推送 | Dashboard 打开时 → IP 变更 → WS 推送 ServerIpChanged 消息 | — |
+| IP8 | GeoIP 更新 | IP 变更后 → 服务器 region/country_code 自动更新 | — |
+| IP9 | 配置禁用 | 设置 ip_change.enabled=false → Agent 不发送 IpChanged | — |
+| IP10 | i18n | 切换中英文 → 告警规则类型 "IP Changed"/"IP 变更" 正确显示 | — |
 
 ### 验证清单 — 告警 & 通知全链路
 
@@ -585,7 +612,7 @@ crates/server/src/service/user.rs       # 用户服务测试
 crates/server/src/service/ping.rs       # Ping 服务测试
 crates/server/src/middleware/auth.rs    # 中间件 Cookie/Key 提取测试
 crates/server/src/test_utils.rs         # 测试辅助 (setup_test_db)
-crates/server/tests/integration.rs      # 集成测试 (26 tests)
+crates/server/tests/integration.rs      # 集成测试 (28 tests)
 crates/server/tests/docker_integration.rs # Docker 集成测试 (4 tests)
 crates/agent/src/collector/tests.rs     # Agent 采集器测试
 crates/agent/src/pinger.rs              # Agent Pinger 测试
@@ -594,8 +621,9 @@ crates/agent/src/network_prober.rs      # 网络探测模块测试
 crates/server/src/presets/mod.rs            # 预设目标加载测试
 crates/server/src/service/network_probe.rs # 网络探测服务单元测试
 crates/server/src/service/file_transfer.rs # 文件传输管理器测试 (9 tests)
-crates/server/src/service/traffic.rs       # 流量统计服务测试 (17 tests)
+crates/server/src/service/traffic.rs       # 流量统计服务测试 (21 tests)
 crates/server/src/config.rs                # 配置测试 (1 test)
+crates/agent/src/config.rs                # Agent IpChangeConfig 默认值测试 (1 test)
 crates/agent/src/file_manager.rs           # Agent 文件管理器测试 (24 tests)
 crates/server/src/service/service_monitor.rs # 服务监控 CRUD + 记录管理测试 (15 tests)
 crates/server/src/service/checker/dns.rs   # DNS checker 单元测试 (3 tests)
