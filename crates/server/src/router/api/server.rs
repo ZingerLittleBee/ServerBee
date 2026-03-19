@@ -374,7 +374,7 @@ async fn batch_delete(
         RecordQueryParams,
     ),
     responses(
-        (status = 200, description = "Server metric records"),
+        (status = 200, description = "Server metric records", body = Vec<crate::entity::record::Model>),
     ),
     security(("session_cookie" = []), ("api_key" = []))
 )]

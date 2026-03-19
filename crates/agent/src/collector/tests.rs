@@ -46,3 +46,19 @@ fn test_memory_used_le_total() {
     let info = collector.system_info();
     assert!(report.mem_used <= info.mem_total);
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn test_collect_disk_io_first_sample_is_empty() {
+    let mut collector = Collector::new(true, false);
+    let report = collector.collect();
+    assert_eq!(report.disk_io, Some(vec![]));
+}
+
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn test_collect_disk_io_is_none_on_unsupported_platforms() {
+    let mut collector = Collector::new(true, false);
+    let report = collector.collect();
+    assert!(report.disk_io.is_none());
+}

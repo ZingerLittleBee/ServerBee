@@ -201,6 +201,8 @@ use utoipa::OpenApi;
             crate::entity::alert_rule::Model,
             crate::entity::ping_task::Model,
             crate::entity::ping_record::Model,
+            crate::entity::record::Model,
+            crate::entity::record_hourly::Model,
             crate::entity::gpu_record::Model,
             crate::entity::task_result::Model,
             // traffic
