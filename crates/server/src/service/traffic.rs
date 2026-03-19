@@ -4,7 +4,7 @@ use chrono::{Datelike, Duration, NaiveDate, Utc};
 use sea_orm::{ConnectionTrait, DatabaseConnection, EntityTrait, Statement};
 use serde::Serialize;
 
-use crate::entity::traffic_state;
+use crate::entity::{server, traffic_state};
 use crate::error::AppError;
 
 pub struct TrafficService;
@@ -322,6 +322,124 @@ impl TrafficService {
         }
         Ok(result)
     }
+
+    /// Traffic overview for all servers that have a billing cycle configured.
+    pub async fn overview(db: &DatabaseConnection) -> Result<Vec<ServerTrafficOverview>, AppError> {
+        let servers = server::Entity::find().all(db).await?;
+        let today = Utc::now().date_naive();
+        let mut result = Vec::new();
+
+        for s in servers {
+            let billing_cycle = match s.billing_cycle.as_deref() {
+                Some(bc) if !bc.is_empty() => bc,
+                _ => continue,
+            };
+
+            let (cycle_start, cycle_end) =
+                get_cycle_range(billing_cycle, s.billing_start_day, today);
+            let (cycle_in, cycle_out) =
+                Self::query_cycle_traffic(db, &s.id, cycle_start, cycle_end).await?;
+
+            let percent_used = s.traffic_limit.and_then(|limit| {
+                if limit > 0 {
+                    Some((cycle_in + cycle_out) as f64 / limit as f64 * 100.0)
+                } else {
+                    None
+                }
+            });
+
+            let days_remaining = (cycle_end - today).num_days();
+
+            result.push(ServerTrafficOverview {
+                server_id: s.id,
+                name: s.name,
+                cycle_in,
+                cycle_out,
+                traffic_limit: s.traffic_limit,
+                billing_cycle: s.billing_cycle,
+                percent_used,
+                days_remaining,
+            });
+        }
+
+        Ok(result)
+    }
+
+    /// Global daily traffic aggregation across all servers.
+    pub async fn overview_daily(
+        db: &DatabaseConnection,
+        days: u32,
+    ) -> Result<Vec<DailyTraffic>, AppError> {
+        let cutoff = (Utc::now().date_naive() - Duration::days(days as i64))
+            .format("%Y-%m-%d")
+            .to_string();
+
+        let rows = db
+            .query_all(Statement::from_sql_and_values(
+                db.get_database_backend(),
+                "SELECT date, SUM(bytes_in) as bytes_in, SUM(bytes_out) as bytes_out \
+                 FROM traffic_daily \
+                 WHERE date >= $1 \
+                 GROUP BY date \
+                 ORDER BY date",
+                [cutoff.into()],
+            ))
+            .await?;
+
+        let mut result = Vec::new();
+        for row in rows {
+            let date: String = row.try_get_by_index(0).unwrap_or_default();
+            let bytes_in: i64 = row.try_get_by_index(1).unwrap_or(0);
+            let bytes_out: i64 = row.try_get_by_index(2).unwrap_or(0);
+            result.push(DailyTraffic {
+                date,
+                bytes_in,
+                bytes_out,
+            });
+        }
+        Ok(result)
+    }
+
+    /// Cycle history for a server: iterate backwards through `count` billing cycles.
+    pub async fn cycle_history(
+        db: &DatabaseConnection,
+        server_id: &str,
+        billing_cycle: &str,
+        billing_start_day: Option<i32>,
+        count: u32,
+    ) -> Result<Vec<CycleTraffic>, AppError> {
+        let today = Utc::now().date_naive();
+        let mut result = Vec::new();
+
+        // Start from the current cycle
+        let (mut start, mut end) = get_cycle_range(billing_cycle, billing_start_day, today);
+
+        for _ in 0..count {
+            let (bytes_in, bytes_out) =
+                Self::query_cycle_traffic(db, server_id, start, end).await?;
+
+            result.push(CycleTraffic {
+                period: format!(
+                    "{} ~ {}",
+                    start.format("%Y-%m-%d"),
+                    end.format("%Y-%m-%d")
+                ),
+                start: start.format("%Y-%m-%d").to_string(),
+                end: end.format("%Y-%m-%d").to_string(),
+                bytes_in,
+                bytes_out,
+            });
+
+            // Move to the previous cycle: go to the day before `start`
+            let prev_day = start - Duration::days(1);
+            let (prev_start, prev_end) =
+                get_cycle_range(billing_cycle, billing_start_day, prev_day);
+            start = prev_start;
+            end = prev_end;
+        }
+
+        Ok(result)
+    }
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -334,6 +452,27 @@ pub struct DailyTraffic {
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct HourlyTraffic {
     pub hour: String,
+    pub bytes_in: i64,
+    pub bytes_out: i64,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct ServerTrafficOverview {
+    pub server_id: String,
+    pub name: String,
+    pub cycle_in: i64,
+    pub cycle_out: i64,
+    pub traffic_limit: Option<i64>,
+    pub billing_cycle: Option<String>,
+    pub percent_used: Option<f64>,
+    pub days_remaining: i64,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct CycleTraffic {
+    pub period: String,
+    pub start: String,
+    pub end: String,
     pub bytes_in: i64,
     pub bytes_out: i64,
 }
