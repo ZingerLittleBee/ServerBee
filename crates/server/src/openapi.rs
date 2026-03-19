@@ -106,6 +106,9 @@ use utoipa::OpenApi;
         crate::router::api::ping::get_records,
         // traffic
         crate::router::api::traffic::get_traffic,
+        crate::router::api::traffic::get_traffic_overview,
+        crate::router::api::traffic::get_traffic_overview_daily,
+        crate::router::api::traffic::get_traffic_cycle,
         // files
         crate::router::api::file::list_files,
         crate::router::api::file::stat_file,
@@ -202,9 +205,12 @@ use utoipa::OpenApi;
             crate::entity::task_result::Model,
             // traffic
             crate::router::api::traffic::TrafficResponse,
+            crate::router::api::traffic::CycleResponse,
             crate::service::traffic::TrafficPrediction,
             crate::service::traffic::DailyTraffic,
             crate::service::traffic::HourlyTraffic,
+            crate::service::traffic::ServerTrafficOverview,
+            crate::service::traffic::CycleTraffic,
             // files
             serverbee_common::types::FileEntry,
             serverbee_common::types::FileType,
@@ -242,6 +248,7 @@ use utoipa::OpenApi;
         (name = "tasks", description = "Remote command execution"),
         (name = "service-monitors", description = "Server-side service monitoring (SSL/DNS/HTTP/TCP/WHOIS)"),
         (name = "ping-tasks", description = "Ping probe tasks"),
+        (name = "traffic", description = "Traffic statistics & billing cycle overview"),
         (name = "files", description = "File management"),
     ),
     security(
