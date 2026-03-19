@@ -807,4 +807,79 @@ mod tests {
         assert!(parsed.avg_latency.is_none());
         assert_eq!(parsed.packet_loss, 1.0);
     }
+
+    #[test]
+    fn test_ip_changed_serialization() {
+        use crate::types::NetworkInterface;
+        let msg = AgentMessage::IpChanged {
+            ipv4: Some("1.2.3.4".to_string()),
+            ipv6: None,
+            interfaces: vec![NetworkInterface {
+                name: "eth0".to_string(),
+                ipv4: vec!["192.168.1.100".to_string()],
+                ipv6: vec!["fe80::1".to_string()],
+            }],
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"ip_changed\""));
+        assert!(json.contains("\"ipv4\":\"1.2.3.4\""));
+        assert!(json.contains("\"eth0\""));
+
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::IpChanged {
+                ipv4,
+                ipv6,
+                interfaces,
+            } => {
+                assert_eq!(ipv4, Some("1.2.3.4".to_string()));
+                assert_eq!(ipv6, None);
+                assert_eq!(interfaces.len(), 1);
+                assert_eq!(interfaces[0].name, "eth0");
+                assert_eq!(interfaces[0].ipv4, vec!["192.168.1.100"]);
+                assert_eq!(interfaces[0].ipv6, vec!["fe80::1"]);
+            }
+            _ => panic!("Expected IpChanged"),
+        }
+    }
+
+    #[test]
+    fn test_server_ip_changed_serialization() {
+        let msg = BrowserMessage::ServerIpChanged {
+            server_id: "srv-1".to_string(),
+            old_ipv4: Some("1.2.3.4".to_string()),
+            new_ipv4: Some("5.6.7.8".to_string()),
+            old_ipv6: None,
+            new_ipv6: Some("2001:db8::1".to_string()),
+            old_remote_addr: Some("1.2.3.4:54321".to_string()),
+            new_remote_addr: Some("5.6.7.8:12345".to_string()),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"server_ip_changed\""));
+        assert!(json.contains("\"server_id\":\"srv-1\""));
+        assert!(json.contains("\"old_ipv4\":\"1.2.3.4\""));
+        assert!(json.contains("\"new_ipv4\":\"5.6.7.8\""));
+
+        let parsed: BrowserMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            BrowserMessage::ServerIpChanged {
+                server_id,
+                old_ipv4,
+                new_ipv4,
+                old_ipv6,
+                new_ipv6,
+                old_remote_addr,
+                new_remote_addr,
+            } => {
+                assert_eq!(server_id, "srv-1");
+                assert_eq!(old_ipv4, Some("1.2.3.4".to_string()));
+                assert_eq!(new_ipv4, Some("5.6.7.8".to_string()));
+                assert_eq!(old_ipv6, None);
+                assert_eq!(new_ipv6, Some("2001:db8::1".to_string()));
+                assert_eq!(old_remote_addr, Some("1.2.3.4:54321".to_string()));
+                assert_eq!(new_remote_addr, Some("5.6.7.8:12345".to_string()));
+            }
+            _ => panic!("Expected ServerIpChanged"),
+        }
+    }
 }

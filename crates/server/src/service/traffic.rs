@@ -835,4 +835,78 @@ mod tests {
         assert_eq!(daily[0].bytes_in, 400);
         assert_eq!(daily[0].bytes_out, 600);
     }
+
+    #[tokio::test]
+    async fn test_overview_empty() {
+        let (db, _tmp) = crate::test_utils::setup_test_db().await;
+        // No servers at all → overview returns empty vec
+        let result = TrafficService::overview(&db).await.unwrap();
+        assert!(result.is_empty(), "overview with no servers should return empty vec");
+    }
+
+    #[tokio::test]
+    async fn test_cycle_history_no_billing_cycle() {
+        let (db, _tmp) = crate::test_utils::setup_test_db().await;
+        insert_test_server(&db, "srv-no-cycle").await;
+        // Server exists but has no billing_cycle set (default None) →
+        // overview skips it, and cycle_history with explicit params returns data
+        // but overview should not include it
+        let overview = TrafficService::overview(&db).await.unwrap();
+        assert!(
+            !overview.iter().any(|o| o.server_id == "srv-no-cycle"),
+            "server without billing_cycle should not appear in overview"
+        );
+
+        // cycle_history with explicit params should still work but return zero traffic
+        let history = TrafficService::cycle_history(&db, "srv-no-cycle", "monthly", None, 3)
+            .await
+            .unwrap();
+        assert_eq!(history.len(), 3, "cycle_history should return requested count");
+        for cycle in &history {
+            assert_eq!(cycle.bytes_in, 0, "empty server should have 0 bytes_in");
+            assert_eq!(cycle.bytes_out, 0, "empty server should have 0 bytes_out");
+        }
+    }
+
+    #[test]
+    fn test_server_traffic_overview_serialization() {
+        let overview = ServerTrafficOverview {
+            server_id: "srv-1".to_string(),
+            name: "Test Server".to_string(),
+            cycle_in: 1_000_000_000,
+            cycle_out: 500_000_000,
+            traffic_limit: Some(10_000_000_000),
+            billing_cycle: Some("monthly".to_string()),
+            percent_used: Some(15.0),
+            days_remaining: 20,
+        };
+        let json = serde_json::to_string(&overview).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["server_id"], "srv-1");
+        assert_eq!(parsed["name"], "Test Server");
+        assert_eq!(parsed["cycle_in"], 1_000_000_000_i64);
+        assert_eq!(parsed["cycle_out"], 500_000_000_i64);
+        assert_eq!(parsed["traffic_limit"], 10_000_000_000_i64);
+        assert_eq!(parsed["billing_cycle"], "monthly");
+        assert_eq!(parsed["percent_used"], 15.0);
+        assert_eq!(parsed["days_remaining"], 20);
+    }
+
+    #[test]
+    fn test_cycle_traffic_serialization() {
+        let cycle = CycleTraffic {
+            period: "2026-03-01 ~ 2026-03-31".to_string(),
+            start: "2026-03-01".to_string(),
+            end: "2026-03-31".to_string(),
+            bytes_in: 2_000_000_000,
+            bytes_out: 1_000_000_000,
+        };
+        let json = serde_json::to_string(&cycle).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["period"], "2026-03-01 ~ 2026-03-31");
+        assert_eq!(parsed["start"], "2026-03-01");
+        assert_eq!(parsed["end"], "2026-03-31");
+        assert_eq!(parsed["bytes_in"], 2_000_000_000_i64);
+        assert_eq!(parsed["bytes_out"], 1_000_000_000_i64);
+    }
 }
