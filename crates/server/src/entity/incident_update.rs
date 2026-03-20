@@ -9,7 +9,6 @@ pub struct Model {
     pub id: String,
     pub incident_id: String,
     pub status: String,
-    #[sea_orm(column_type = "Text")]
     pub message: String,
     #[schema(value_type = String, format = DateTime)]
     pub created_at: DateTimeUtc,
