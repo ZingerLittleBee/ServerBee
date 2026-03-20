@@ -117,7 +117,7 @@ function ServerActionButtons({
 }) {
   const { t } = useTranslation('servers')
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2">
       <Button onClick={onEditOpen} size="sm" variant="outline">
         <Pencil aria-hidden="true" className="mr-1 size-4" />
         {t('detail_edit')}
@@ -182,7 +182,7 @@ function MetricsTabContent({
 
   return (
     <>
-      <div className="mt-4 mb-4 flex gap-1">
+      <div className="mt-4 mb-4 flex flex-wrap gap-1">
         {TIME_RANGES.map((tr, i) => (
           <Button
             className={cn(rangeIndex === i && 'bg-primary text-primary-foreground')}
@@ -440,7 +440,7 @@ function ServerDetailPage() {
           {t('detail_back')}
         </Link>
 
-        <div className="flex items-start justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="flex items-center gap-3">
               {flag && <span className="text-xl">{flag}</span>}
