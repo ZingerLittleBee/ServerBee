@@ -6,6 +6,7 @@ use chrono::Utc;
 use tokio::sync::Semaphore;
 
 use crate::service::checker;
+use crate::service::maintenance::MaintenanceService;
 use crate::service::notification::{NotificationService, NotifyContext};
 use crate::service::service_monitor::ServiceMonitorService;
 use crate::state::AppState;
@@ -164,6 +165,33 @@ async fn execute_check(
 
     // Determine if we need to send notifications
     let was_failing = monitor.last_status == Some(false);
+
+    // Skip notifications if any associated server is in maintenance
+    let in_maintenance = if let Some(ref server_ids_json) = monitor.server_ids_json {
+        let server_ids: Vec<String> =
+            serde_json::from_str(server_ids_json).unwrap_or_default();
+        let mut any_in_maintenance = false;
+        for sid in &server_ids {
+            if MaintenanceService::is_in_maintenance(&state.db, sid)
+                .await
+                .unwrap_or(false)
+            {
+                any_in_maintenance = true;
+                break;
+            }
+        }
+        any_in_maintenance
+    } else {
+        false
+    };
+
+    if in_maintenance {
+        tracing::debug!(
+            "Skipping notification for service monitor '{}': associated server in maintenance",
+            monitor.name
+        );
+        return;
+    }
 
     // Failure notification: consecutive failures exceeded retry_count
     if !result.success

@@ -104,6 +104,23 @@ use utoipa::OpenApi;
         crate::router::api::service_monitor::delete_monitor,
         crate::router::api::service_monitor::get_records,
         crate::router::api::service_monitor::trigger_check,
+        // status-pages
+        crate::router::api::status_page::get_public_status_page,
+        crate::router::api::status_page::list_status_pages,
+        crate::router::api::status_page::create_status_page,
+        crate::router::api::status_page::update_status_page,
+        crate::router::api::status_page::delete_status_page,
+        // incidents
+        crate::router::api::incident::list_incidents,
+        crate::router::api::incident::create_incident,
+        crate::router::api::incident::update_incident,
+        crate::router::api::incident::delete_incident,
+        crate::router::api::incident::add_incident_update,
+        // maintenances
+        crate::router::api::maintenance_api::list_maintenances,
+        crate::router::api::maintenance_api::create_maintenance,
+        crate::router::api::maintenance_api::update_maintenance,
+        crate::router::api::maintenance_api::delete_maintenance,
         // ping-tasks
         crate::router::api::ping::list_tasks,
         crate::router::api::ping::get_task,
@@ -207,6 +224,26 @@ use utoipa::OpenApi;
             crate::service::user::UserResponse,
             crate::service::user::CreateUserInput,
             crate::service::user::UpdateUserInput,
+            // status-pages
+            crate::router::api::status_page::StatusPageInfo,
+            crate::router::api::status_page::ServerStatusInfo,
+            crate::router::api::status_page::IncidentWithUpdates,
+            crate::router::api::status_page::PublicStatusPageData,
+            crate::service::status_page::CreateStatusPage,
+            crate::service::status_page::UpdateStatusPage,
+            crate::entity::status_page::Model,
+            // incidents
+            crate::service::incident::CreateIncident,
+            crate::service::incident::UpdateIncident,
+            crate::service::incident::CreateIncidentUpdate,
+            crate::entity::incident::Model,
+            crate::entity::incident_update::Model,
+            // maintenances
+            crate::service::maintenance::CreateMaintenance,
+            crate::service::maintenance::UpdateMaintenance,
+            crate::entity::maintenance::Model,
+            // uptime
+            crate::entity::uptime_daily::Model,
             // entity models used as responses
             crate::entity::server_group::Model,
             crate::entity::notification::Model,
@@ -264,6 +301,9 @@ use utoipa::OpenApi;
         (name = "notification-groups", description = "Notification groups"),
         (name = "alert-rules", description = "Alert rules"),
         (name = "status", description = "Public server status page"),
+        (name = "status-pages", description = "Status page management & public view"),
+        (name = "incidents", description = "Incident management"),
+        (name = "maintenances", description = "Maintenance window management"),
         (name = "audit", description = "Audit logs (admin only)"),
         (name = "users", description = "User management (admin only)"),
         (name = "tasks", description = "Remote command execution"),

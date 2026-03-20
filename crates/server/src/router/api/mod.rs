@@ -5,6 +5,8 @@ pub mod auth;
 pub mod brand;
 pub mod docker;
 pub mod file;
+pub mod incident;
+pub mod maintenance_api;
 pub mod network_probe;
 pub mod notification;
 pub mod oauth;
@@ -14,6 +16,7 @@ pub mod server;
 pub mod server_group;
 pub mod setting;
 pub mod status;
+pub mod status_page;
 pub mod task;
 pub mod traceroute;
 pub mod traffic;
@@ -32,6 +35,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(agent::public_router())
         .merge(oauth::router())
         .merge(status::router())
+        .merge(status_page::public_router())
         .merge(brand::public_router())
         .merge(
             Router::new()
@@ -46,6 +50,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 .merge(traffic::read_router())
                 .merge(traceroute::read_router())
                 .merge(service_monitor::read_router())
+                .merge(status_page::read_router())
                 // Admin-only routes (write operations + management)
                 .merge(
                     Router::new()
@@ -64,6 +69,9 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                         .merge(task::router())
                         .merge(audit::router())
                         .merge(user::router())
+                        .merge(incident::router())
+                        .merge(maintenance_api::router())
+                        .merge(status_page::write_router())
                         .layer(middleware::from_fn(require_admin)),
                 )
                 .layer(middleware::from_fn_with_state(
