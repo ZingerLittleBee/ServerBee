@@ -189,13 +189,13 @@ pub async fn get_public_status_page(
                 incident: inc,
                 updates,
             });
-        } else if let Some(resolved_at) = inc.resolved_at {
-            if resolved_at >= seven_days_ago {
-                recent_incidents.push(IncidentWithUpdates {
-                    incident: inc,
-                    updates,
-                });
-            }
+        } else if let Some(resolved_at) = inc.resolved_at
+            && resolved_at >= seven_days_ago
+        {
+            recent_incidents.push(IncidentWithUpdates {
+                incident: inc,
+                updates,
+            });
         }
     }
 

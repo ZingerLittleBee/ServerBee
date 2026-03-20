@@ -83,19 +83,19 @@ pub async fn update_brand_config(
     Json(body): Json<BrandConfig>,
 ) -> Result<Json<ApiResponse<BrandConfig>>, AppError> {
     // Validate paths — must start with "/api/brand/" or be null
-    if let Some(ref p) = body.logo_path {
-        if !p.starts_with("/api/brand/") {
-            return Err(AppError::Validation(
-                "logo_path must start with \"/api/brand/\" or be null".to_string(),
-            ));
-        }
+    if let Some(ref p) = body.logo_path
+        && !p.starts_with("/api/brand/")
+    {
+        return Err(AppError::Validation(
+            "logo_path must start with \"/api/brand/\" or be null".to_string(),
+        ));
     }
-    if let Some(ref p) = body.favicon_path {
-        if !p.starts_with("/api/brand/") {
-            return Err(AppError::Validation(
-                "favicon_path must start with \"/api/brand/\" or be null".to_string(),
-            ));
-        }
+    if let Some(ref p) = body.favicon_path
+        && !p.starts_with("/api/brand/")
+    {
+        return Err(AppError::Validation(
+            "favicon_path must start with \"/api/brand/\" or be null".to_string(),
+        ));
     }
 
     ConfigService::set_typed(&state.db, CONFIG_KEY_BRAND, &body).await?;
