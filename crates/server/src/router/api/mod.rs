@@ -2,6 +2,7 @@ pub mod agent;
 pub mod alert;
 pub mod audit;
 pub mod auth;
+pub mod brand;
 pub mod docker;
 pub mod file;
 pub mod network_probe;
@@ -31,6 +32,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(agent::public_router())
         .merge(oauth::router())
         .merge(status::router())
+        .merge(brand::public_router())
         .merge(
             Router::new()
                 .merge(auth::protected_router())
@@ -56,6 +58,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                         .merge(service_monitor::write_router())
                         .merge(traceroute::write_router())
                         .merge(setting::router())
+                        .merge(brand::write_router())
                         .merge(notification::router())
                         .merge(alert::router())
                         .merge(task::router())
