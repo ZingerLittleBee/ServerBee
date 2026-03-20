@@ -67,6 +67,12 @@ impl MigrationTrait for Migration {
                             .text()
                             .not_null(),
                     )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .from(Alias::new("dashboard_widget"), Alias::new("dashboard_id"))
+                            .to(Alias::new("dashboard"), Alias::new("id"))
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
                     .col(
                         ColumnDef::new(Alias::new("widget_type"))
                             .text()
@@ -125,17 +131,6 @@ impl MigrationTrait for Migration {
                     .name("idx_widget_dashboard")
                     .table(Alias::new("dashboard_widget"))
                     .col(Alias::new("dashboard_id"))
-                    .to_owned(),
-            )
-            .await?;
-
-        manager
-            .create_foreign_key(
-                ForeignKey::create()
-                    .name("fk_widget_dashboard")
-                    .from(Alias::new("dashboard_widget"), Alias::new("dashboard_id"))
-                    .to(Alias::new("dashboard"), Alias::new("id"))
-                    .on_delete(ForeignKeyAction::Cascade)
                     .to_owned(),
             )
             .await?;
