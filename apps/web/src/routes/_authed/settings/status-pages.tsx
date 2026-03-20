@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { ExternalLink, Pencil, Plus, Trash2 } from 'lucide-react'
-import { type FormEvent, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -88,7 +88,7 @@ function StatusPageFormDialog({
     }
   }
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!(title.trim() && slug.trim())) {
       return
@@ -389,7 +389,7 @@ function IncidentFormDialog({
     }
   }
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!title.trim()) {
       return
@@ -430,7 +430,7 @@ function IncidentFormDialog({
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label htmlFor="inc-severity">{t('incidents.field_severity')}</Label>
-              <Select onValueChange={setSeverity} value={severity}>
+              <Select onValueChange={(v) => v && setSeverity(v)} value={severity}>
                 <SelectTrigger id="inc-severity">
                   <SelectValue />
                 </SelectTrigger>
@@ -445,7 +445,7 @@ function IncidentFormDialog({
             </div>
             <div className="space-y-1">
               <Label htmlFor="inc-status">{t('incidents.field_status')}</Label>
-              <Select onValueChange={setStatus} value={status}>
+              <Select onValueChange={(v) => v && setStatus(v)} value={status}>
                 <SelectTrigger id="inc-status">
                   <SelectValue />
                 </SelectTrigger>
@@ -508,7 +508,7 @@ function IncidentUpdateDialog({
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed')
   })
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!message.trim()) {
       return
@@ -533,7 +533,7 @@ function IncidentUpdateDialog({
         <form className="space-y-4" id="incident-update-form" onSubmit={handleSubmit}>
           <div className="space-y-1">
             <Label htmlFor="upd-status">{t('incidents.field_status')}</Label>
-            <Select onValueChange={setStatus} value={status}>
+            <Select onValueChange={(v) => v && setStatus(v)} value={status}>
               <SelectTrigger id="upd-status">
                 <SelectValue />
               </SelectTrigger>
@@ -789,7 +789,7 @@ function MaintenanceFormDialog({
     }
   }
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!(title.trim() && startAt && endAt)) {
       return
