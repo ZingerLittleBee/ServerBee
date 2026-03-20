@@ -27,6 +27,7 @@ import { Route as AuthedSettingsNotificationsRouteImport } from './routes/_authe
 import { Route as AuthedSettingsNetworkProbesRouteImport } from './routes/_authed/settings/network-probes'
 import { Route as AuthedSettingsCapabilitiesRouteImport } from './routes/_authed/settings/capabilities'
 import { Route as AuthedSettingsAuditLogsRouteImport } from './routes/_authed/settings/audit-logs'
+import { Route as AuthedSettingsAppearanceRouteImport } from './routes/_authed/settings/appearance'
 import { Route as AuthedSettingsApiKeysRouteImport } from './routes/_authed/settings/api-keys'
 import { Route as AuthedSettingsAlertsRouteImport } from './routes/_authed/settings/alerts'
 import { Route as AuthedServiceMonitorsIdRouteImport } from './routes/_authed/service-monitors/$id'
@@ -128,6 +129,12 @@ const AuthedSettingsAuditLogsRoute = AuthedSettingsAuditLogsRouteImport.update({
   path: '/settings/audit-logs',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedSettingsAppearanceRoute =
+  AuthedSettingsAppearanceRouteImport.update({
+    id: '/settings/appearance',
+    path: '/settings/appearance',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 const AuthedSettingsApiKeysRoute = AuthedSettingsApiKeysRouteImport.update({
   id: '/settings/api-keys',
   path: '/settings/api-keys',
@@ -175,6 +182,7 @@ export interface FileRoutesByFullPath {
   '/service-monitors/$id': typeof AuthedServiceMonitorsIdRoute
   '/settings/alerts': typeof AuthedSettingsAlertsRoute
   '/settings/api-keys': typeof AuthedSettingsApiKeysRoute
+  '/settings/appearance': typeof AuthedSettingsAppearanceRoute
   '/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
   '/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
   '/settings/network-probes': typeof AuthedSettingsNetworkProbesRoute
@@ -201,6 +209,7 @@ export interface FileRoutesByTo {
   '/service-monitors/$id': typeof AuthedServiceMonitorsIdRoute
   '/settings/alerts': typeof AuthedSettingsAlertsRoute
   '/settings/api-keys': typeof AuthedSettingsApiKeysRoute
+  '/settings/appearance': typeof AuthedSettingsAppearanceRoute
   '/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
   '/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
   '/settings/network-probes': typeof AuthedSettingsNetworkProbesRoute
@@ -229,6 +238,7 @@ export interface FileRoutesById {
   '/_authed/service-monitors/$id': typeof AuthedServiceMonitorsIdRoute
   '/_authed/settings/alerts': typeof AuthedSettingsAlertsRoute
   '/_authed/settings/api-keys': typeof AuthedSettingsApiKeysRoute
+  '/_authed/settings/appearance': typeof AuthedSettingsAppearanceRoute
   '/_authed/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
   '/_authed/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
   '/_authed/settings/network-probes': typeof AuthedSettingsNetworkProbesRoute
@@ -257,6 +267,7 @@ export interface FileRouteTypes {
     | '/service-monitors/$id'
     | '/settings/alerts'
     | '/settings/api-keys'
+    | '/settings/appearance'
     | '/settings/audit-logs'
     | '/settings/capabilities'
     | '/settings/network-probes'
@@ -283,6 +294,7 @@ export interface FileRouteTypes {
     | '/service-monitors/$id'
     | '/settings/alerts'
     | '/settings/api-keys'
+    | '/settings/appearance'
     | '/settings/audit-logs'
     | '/settings/capabilities'
     | '/settings/network-probes'
@@ -310,6 +322,7 @@ export interface FileRouteTypes {
     | '/_authed/service-monitors/$id'
     | '/_authed/settings/alerts'
     | '/_authed/settings/api-keys'
+    | '/_authed/settings/appearance'
     | '/_authed/settings/audit-logs'
     | '/_authed/settings/capabilities'
     | '/_authed/settings/network-probes'
@@ -461,6 +474,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsAuditLogsRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/settings/appearance': {
+      id: '/_authed/settings/appearance'
+      path: '/settings/appearance'
+      fullPath: '/settings/appearance'
+      preLoaderRoute: typeof AuthedSettingsAppearanceRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/settings/api-keys': {
       id: '/_authed/settings/api-keys'
       path: '/settings/api-keys'
@@ -521,6 +541,7 @@ interface AuthedRouteChildren {
   AuthedServiceMonitorsIdRoute: typeof AuthedServiceMonitorsIdRoute
   AuthedSettingsAlertsRoute: typeof AuthedSettingsAlertsRoute
   AuthedSettingsApiKeysRoute: typeof AuthedSettingsApiKeysRoute
+  AuthedSettingsAppearanceRoute: typeof AuthedSettingsAppearanceRoute
   AuthedSettingsAuditLogsRoute: typeof AuthedSettingsAuditLogsRoute
   AuthedSettingsCapabilitiesRoute: typeof AuthedSettingsCapabilitiesRoute
   AuthedSettingsNetworkProbesRoute: typeof AuthedSettingsNetworkProbesRoute
@@ -546,6 +567,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedServiceMonitorsIdRoute: AuthedServiceMonitorsIdRoute,
   AuthedSettingsAlertsRoute: AuthedSettingsAlertsRoute,
   AuthedSettingsApiKeysRoute: AuthedSettingsApiKeysRoute,
+  AuthedSettingsAppearanceRoute: AuthedSettingsAppearanceRoute,
   AuthedSettingsAuditLogsRoute: AuthedSettingsAuditLogsRoute,
   AuthedSettingsCapabilitiesRoute: AuthedSettingsCapabilitiesRoute,
   AuthedSettingsNetworkProbesRoute: AuthedSettingsNetworkProbesRoute,

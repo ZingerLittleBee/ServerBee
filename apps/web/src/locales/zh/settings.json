@@ -206,5 +206,20 @@
   "tasks.scheduled.pause": "暂停",
   "tasks.scheduled.resume": "恢复",
   "tasks.scheduled.no_runs": "暂无执行记录",
-  "tasks.scheduled.confirm_delete": "确定删除此定时任务？"
+  "tasks.scheduled.confirm_delete": "确定删除此定时任务？",
+
+  "appearance.title": "外观",
+  "appearance.color_theme": "颜色主题",
+  "appearance.color_theme_description": "选择仪表盘的颜色主题，主题同时适用于浅色和深色模式。",
+  "appearance.brand_settings": "品牌设置",
+  "appearance.brand_description": "自定义 Logo、站点标题、页脚文本和网站图标。",
+  "appearance.site_title": "站点标题",
+  "appearance.footer_text": "页脚文本",
+  "appearance.footer_placeholder": "如：由 ServerBee 提供支持",
+  "appearance.logo": "Logo",
+  "appearance.upload_logo": "上传 Logo",
+  "appearance.favicon": "网站图标",
+  "appearance.upload_favicon": "上传图标",
+  "appearance.brand_saved": "品牌设置已保存",
+  "appearance.save_failed": "保存品牌设置失败"
 }
