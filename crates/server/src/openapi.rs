@@ -104,6 +104,9 @@ use utoipa::OpenApi;
         crate::router::api::ping::update_task,
         crate::router::api::ping::delete_task,
         crate::router::api::ping::get_records,
+        // traceroute
+        crate::router::api::traceroute::trigger_traceroute,
+        crate::router::api::traceroute::get_traceroute_result,
         // traffic
         crate::router::api::traffic::get_traffic,
         crate::router::api::traffic::get_traffic_overview,
@@ -231,6 +234,11 @@ use utoipa::OpenApi;
             crate::router::api::file::SuccessResponse,
             crate::router::api::file::TransfersResponse,
             crate::service::file_transfer::TransferInfo,
+            // traceroute
+            crate::router::api::traceroute::TriggerTracerouteRequest,
+            crate::router::api::traceroute::TriggerTracerouteResponse,
+            crate::router::api::traceroute::TracerouteResultResponse,
+            serverbee_common::types::TracerouteHop,
         ),
     ),
     tags(
@@ -250,6 +258,7 @@ use utoipa::OpenApi;
         (name = "tasks", description = "Remote command execution"),
         (name = "service-monitors", description = "Server-side service monitoring (SSL/DNS/HTTP/TCP/WHOIS)"),
         (name = "ping-tasks", description = "Ping probe tasks"),
+        (name = "traceroute", description = "Traceroute diagnostics"),
         (name = "traffic", description = "Traffic statistics & billing cycle overview"),
         (name = "files", description = "File management"),
     ),
