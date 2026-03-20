@@ -333,7 +333,7 @@ docker compose up -d
 | 功能 | 路由/地址 | 验证方法 | 状态 |
 |------|-----------|----------|------|
 | 登录 | `/login` | 输入 admin/密码登录，跳转 Dashboard | ✅ |
-| Dashboard | `/` | 显示统计摘要卡片（Servers, Avg CPU, Memory, Bandwidth, Healthy），服务器卡片含实时指标 | ✅ |
+| Dashboard | `/` | 自定义仪表盘：默认加载 default dashboard（6 个预设 widget），支持切换/新建/删除仪表盘，编辑模式拖拽布局 + 添加/配置/删除 widget，12 种 widget 类型 | — |
 | Servers 列表 | `/servers` | 表格显示服务器，支持搜索、排序、批量选择 | ✅ |
 | 服务器详情 | `/servers/:id` | 系统信息（OS/CPU/RAM/Kernel）、实时流式图表（默认）+ 历史图表（1h/6h/24h/7d/30d）、CPU/Memory/Disk/Network In/Out/Load/Temperature，历史模式额外显示 Disk I/O（汇总/按磁盘） | ✅ |
 | Capability Toggles | `/servers/:id` (底部) | 6 个开关：Web Terminal/Remote Exec/Auto Upgrade (High Risk, 默认关) + ICMP/TCP/HTTP Probe (Low Risk, 默认开) | ✅ |
@@ -703,6 +703,78 @@ docker compose up -d
 | IP8 | GeoIP 更新 | IP 变更后 → 服务器 region/country_code 自动更新 | — |
 | IP9 | 配置禁用 | 设置 ip_change.enabled=false → Agent 不发送 IpChanged | — |
 | IP10 | i18n | 切换中英文 → 告警规则类型 "IP Changed"/"IP 变更" 正确显示 | — |
+
+### 验证清单 — 自定义仪表盘
+
+#### 仪表盘 CRUD
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| DB1 | 默认仪表盘自动创建 | 首次登录 → `/` 自动创建默认 Dashboard → 显示 6 个预设 widget（5 stat-number + 1 server-cards） | — |
+| DB2 | 默认仪表盘幂等 | 刷新页面 → 仍显示相同仪表盘 ID 和 6 个 widget | — |
+| DB3 | 新建仪表盘 | 点击 `+ New` → 输入名称 → 创建 → 切换到新仪表盘（空白） | — |
+| DB4 | 切换仪表盘 | 下拉选择另一个仪表盘 → 页面加载对应 widget 布局 | — |
+| DB5 | 设为默认 | 选择非默认仪表盘 → 点击 Set Default（星号按钮）→ 刷新后默认加载该仪表盘 | — |
+| DB6 | 删除仪表盘 | 选择非默认仪表盘 → 点击 Delete → 确认 → 切换回其他仪表盘 | — |
+| DB7 | 删除默认仪表盘保护 | 默认仪表盘的 Delete 按钮不显示或禁用 | — |
+| DB8 | RBAC — Member 只读 | Member 用户登录 → 不显示 Edit/New/Delete 按钮 → 仅可查看 | — |
+
+#### 编辑模式
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| DB9 | 进入编辑模式 | 点击 Edit 按钮 → widget 可拖拽/调整大小 → 显示 Save/Cancel 按钮 | — |
+| DB10 | 拖拽布局 | 编辑模式下拖拽 widget 到新位置 → 释放后布局更新 | — |
+| DB11 | 调整大小 | 编辑模式下拖拽 widget 右下角 → 尺寸变化 | — |
+| DB12 | 添加 Widget | 编辑模式 → 点击 Add Widget → 弹出 Widget Picker → 选择类型 → 弹出配置对话框 → 填写 → 确认 → widget 出现在画布 | — |
+| DB13 | 编辑 Widget 配置 | 编辑模式 → hover widget → 点击铅笔图标 → 修改配置 → 确认 → widget 更新 | — |
+| DB14 | 删除 Widget | 编辑模式 → hover widget → 点击垃圾桶图标 → widget 移除 | — |
+| DB15 | 保存布局 | 编辑后点击 Save → PUT /api/dashboards/:id → 刷新后布局保持 | — |
+| DB16 | 取消编辑 | 编辑后点击 Cancel → 所有修改丢弃 → 恢复原布局 | — |
+
+#### Widget 类型渲染
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| DB17 | stat-number | 添加 stat-number widget → 选择 metric（server_count/avg_cpu/avg_memory/total_bandwidth/health）→ 显示图标 + 数值 + 标签 | — |
+| DB18 | server-cards | 添加 server-cards widget → 显示服务器卡片网格 → 实时更新 | — |
+| DB19 | gauge | 添加 gauge widget → 选择服务器 + 指标 → 显示径向进度条 + 百分比 | — |
+| DB20 | top-n | 添加 top-n widget → 选择指标 + 数量 → 显示排名列表 + 进度条 | — |
+| DB21 | line-chart | 添加 line-chart widget → 选择服务器 + 指标 + 时间范围 → 显示历史折线图 | — |
+| DB22 | multi-line | 添加 multi-line widget → 选择多台服务器 + 指标 → 显示多线对比图 + 图例 | — |
+| DB23 | traffic-bar | 添加 traffic-bar widget → 可选服务器 → 显示 in/out 堆叠柱状图 | — |
+| DB24 | disk-io | 添加 disk-io widget → 选择服务器 → 显示磁盘读写折线图 | — |
+| DB25 | alert-list | 添加 alert-list widget → 显示告警事件列表（红/绿状态点 + 规则名 + 服务器 + 相对时间） | — |
+| DB26 | service-status | 添加 service-status widget → 显示服务监控点阵（绿/黄/红/灰圆点）→ hover 显示监控名 + 状态 | — |
+| DB27 | server-map | 添加 server-map widget → SVG 世界地图高亮有服务器的国家 → 圆形标记在国家质心 | — |
+| DB28 | markdown | 添加 markdown widget → 输入 Markdown 内容 → 渲染标题/粗体/链接/列表 → 无 XSS（`<script>` 被转义） | — |
+
+#### 响应式 & 移动端
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| DB29 | 移动端布局 | 窗口宽度 < 768px → widget 按 sort_order 垂直排列（非 grid 布局） | — |
+| DB30 | 桌面端布局 | 窗口宽度 ≥ 768px → 12 列 grid 布局 + 拖拽调整 | — |
+
+#### API 验证
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| DB31 | GET /api/dashboards | 返回所有仪表盘列表，按 sort_order 排序 | — |
+| DB32 | GET /api/dashboards/default | 首次调用自动创建 → 返回 6 个 widget → 第二次返回相同 ID | — |
+| DB33 | POST /api/dashboards | 创建新仪表盘 → 返回 dashboard model | — |
+| DB34 | PUT /api/dashboards/:id | 更新名称/widget diff（增/改/删）→ 返回完整 DashboardWithWidgets | — |
+| DB35 | DELETE /api/dashboards/:id | 删除非默认仪表盘 → 200 → 删除默认仪表盘 → 400 | — |
+| DB36 | GET /api/alert-events | 返回聚合告警事件列表，firing 在前 → 支持 limit 参数 | — |
+| DB37 | OpenAPI | `/swagger-ui/` 包含 6 个 dashboards + 1 个 alert-events 端点 | — |
+
+#### i18n
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| DB38 | 中文模式 | 切换中文 → 编辑/保存/取消/添加组件/新建仪表盘/删除 等按钮显示中文 | — |
+| DB39 | 英文模式 | 切换英文 → Edit/Save/Cancel/Add Widget/New Dashboard/Delete 显示英文 | — |
+| DB40 | Widget Picker 中文 | Widget 选择面板中 12 种类型的名称和描述显示中文 | — |
 
 ### 验证清单 — 告警 & 通知全链路
 
