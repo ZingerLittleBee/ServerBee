@@ -8,6 +8,7 @@ mod m20260317_000005_traffic_and_scheduled_tasks;
 mod m20260318_000006_docker_support;
 mod m20260319_000007_service_monitor;
 mod m20260319_000008_disk_io_records;
+mod m20260320_000009_dashboard;
 
 pub struct Migrator;
 
@@ -22,6 +23,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260318_000006_docker_support::Migration),
             Box::new(m20260319_000007_service_monitor::Migration),
             Box::new(m20260319_000008_disk_io_records::Migration),
+            Box::new(m20260320_000009_dashboard::Migration),
         ]
     }
 }
