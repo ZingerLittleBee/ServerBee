@@ -42,6 +42,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 .merge(docker::read_router())
                 .merge(traffic::read_router())
                 .merge(service_monitor::read_router())
+                .merge(alert::alert_events_router())
                 // Admin-only routes (write operations + management)
                 .merge(
                     Router::new()

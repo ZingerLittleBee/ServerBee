@@ -73,6 +73,7 @@ use utoipa::OpenApi;
         crate::router::api::alert::update_rule,
         crate::router::api::alert::delete_rule,
         crate::router::api::alert::list_states,
+        crate::router::api::alert::list_alert_events,
         // tasks
         crate::router::api::task::list_tasks,
         crate::router::api::task::create_task,
@@ -169,6 +170,7 @@ use utoipa::OpenApi;
             crate::service::alert::CreateAlertRule,
             crate::service::alert::UpdateAlertRule,
             crate::service::alert::AlertStateResponse,
+            crate::service::alert::AlertEventResponse,
             // tasks
             crate::router::api::task::CreateTaskRequest,
             crate::router::api::task::UpdateTaskRequest,
