@@ -37,5 +37,6 @@
   "search_placeholder_ellipsis": "Search\u2026",
   "confirm_title": "Confirm",
   "confirm_delete_message": "This action cannot be undone. Are you sure?",
-  "main_navigation": "Main navigation"
+  "main_navigation": "Main navigation",
+  "open_menu": "Open menu"
 }

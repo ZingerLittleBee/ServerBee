@@ -37,5 +37,6 @@
   "search_placeholder_ellipsis": "搜索\u2026",
   "confirm_title": "确认",
   "confirm_delete_message": "此操作无法撤销，确定要继续吗？",
-  "main_navigation": "主导航"
+  "main_navigation": "主导航",
+  "open_menu": "打开菜单"
 }
