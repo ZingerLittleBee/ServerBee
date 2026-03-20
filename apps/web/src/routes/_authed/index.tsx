@@ -1,45 +1,29 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { Activity, Cpu, HardDrive, MemoryStick, Server, Wifi } from 'lucide-react'
-import { useMemo } from 'react'
+import { PencilIcon, SaveIcon, XIcon } from 'lucide-react'
+import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ServerCard } from '@/components/server/server-card'
+import { DashboardGrid } from '@/components/dashboard/dashboard-grid'
+import { DashboardSwitcher } from '@/components/dashboard/dashboard-switcher'
+import { WidgetConfigDialog } from '@/components/dashboard/widget-config-dialog'
+import { WidgetPicker } from '@/components/dashboard/widget-picker'
+import { Button } from '@/components/ui/button'
+import { useAuth } from '@/hooks/use-auth'
+import { useDashboard, useDashboards, useDefaultDashboard, useUpdateDashboard } from '@/hooks/use-dashboard'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { api } from '@/lib/api-client'
-import type { ServerGroup } from '@/lib/api-schema'
-import { formatBytes } from '@/lib/utils'
+import type { DashboardWidget } from '@/lib/widget-types'
+import { WIDGET_TYPES } from '@/lib/widget-types'
 
 export const Route = createFileRoute('/_authed/')({
   component: DashboardPage
 })
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  sub
-}: {
-  icon: typeof Server
-  label: string
-  sub?: string
-  value: string
-}) {
-  return (
-    <div className="flex items-center gap-3 rounded-lg border bg-card p-4">
-      <div className="rounded-md bg-muted p-2">
-        <Icon className="size-5 text-muted-foreground" />
-      </div>
-      <div>
-        <p className="font-semibold text-lg leading-tight">{value}</p>
-        <p className="text-muted-foreground text-xs">{label}</p>
-        {sub && <p className="text-muted-foreground text-xs">{sub}</p>}
-      </div>
-    </div>
-  )
-}
-
 function DashboardPage() {
   const { t } = useTranslation('dashboard')
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+
+  // Server data from WebSocket (set by use-servers-ws hook in layout)
   const { data: servers = [] } = useQuery<ServerMetrics[]>({
     queryKey: ['servers'],
     queryFn: () => [],
@@ -47,125 +31,218 @@ function DashboardPage() {
     refetchOnMount: false,
     refetchOnWindowFocus: false
   })
-  const onlineServers = servers.filter((s) => s.online)
-  const onlineCount = onlineServers.length
 
-  const { data: groups } = useQuery<ServerGroup[]>({
-    queryKey: ['server-groups'],
-    queryFn: () => api.get<ServerGroup[]>('/api/server-groups'),
-    staleTime: 60_000
-  })
+  // Dashboard data
+  const { data: dashboards = [] } = useDashboards()
+  const { data: defaultDashboard } = useDefaultDashboard()
 
-  const stats = useMemo(() => {
-    const online = servers.filter((s) => s.online)
-    if (online.length === 0) {
-      return { avgCpu: 0, avgMem: 0, totalBandwidth: 0 }
+  // Currently selected dashboard
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const activeId = selectedId ?? defaultDashboard?.id ?? ''
+  const { data: activeDashboard } = useDashboard(activeId)
+
+  // Use the specifically loaded dashboard or fall back to the default
+  const dashboard = selectedId ? activeDashboard : (activeDashboard ?? defaultDashboard)
+  const widgets = dashboard?.widgets ?? []
+
+  // Editing state
+  const [isEditing, setIsEditing] = useState(false)
+  const [draftWidgets, setDraftWidgets] = useState<DashboardWidget[]>([])
+
+  // Widget picker state
+  const [pickerOpen, setPickerOpen] = useState(false)
+
+  // Widget config dialog state
+  const [configOpen, setConfigOpen] = useState(false)
+  const [configWidgetType, setConfigWidgetType] = useState('')
+  const [editingWidget, setEditingWidget] = useState<DashboardWidget | undefined>(undefined)
+
+  const updateDashboard = useUpdateDashboard()
+
+  const displayWidgets = isEditing ? draftWidgets : widgets
+
+  // Enter edit mode
+  const handleEdit = () => {
+    setDraftWidgets([...widgets])
+    setIsEditing(true)
+  }
+
+  // Cancel editing
+  const handleCancel = () => {
+    setDraftWidgets([])
+    setIsEditing(false)
+  }
+
+  // Save changes
+  const handleSave = () => {
+    if (!dashboard) {
+      return
     }
-    const avgCpu = online.reduce((sum, s) => sum + s.cpu, 0) / online.length
-    const avgMem =
-      online.reduce((sum, s) => {
-        return sum + (s.mem_total > 0 ? (s.mem_used / s.mem_total) * 100 : 0)
-      }, 0) / online.length
-    const totalBandwidth = online.reduce((sum, s) => sum + s.net_in_speed + s.net_out_speed, 0)
-    return { avgCpu, avgMem, totalBandwidth }
-  }, [servers])
-
-  const groupMap = useMemo(() => new Map(groups?.map((g) => [g.id, g.name]) ?? []), [groups])
-
-  const grouped = useMemo(() => {
-    const map = new Map<string, ServerMetrics[]>()
-    for (const server of servers) {
-      const key = server.group_id ?? '__ungrouped__'
-      const list = map.get(key)
-      if (list) {
-        list.push(server)
-      } else {
-        map.set(key, [server])
+    const widgetInputs = draftWidgets.map((w, idx) => ({
+      id: w.id.startsWith('temp-') ? undefined : w.id,
+      widget_type: w.widget_type,
+      title: w.title,
+      config_json: JSON.parse(w.config_json),
+      grid_x: w.grid_x,
+      grid_y: w.grid_y,
+      grid_w: w.grid_w,
+      grid_h: w.grid_h,
+      sort_order: idx
+    }))
+    updateDashboard.mutate(
+      { id: dashboard.id, widgets: widgetInputs },
+      {
+        onSuccess: () => {
+          setIsEditing(false)
+          setDraftWidgets([])
+        }
       }
+    )
+  }
+
+  // Layout change handler for react-grid-layout
+  const handleLayoutChange = useCallback(
+    (updates: { id: string; grid_x: number; grid_y: number; grid_w: number; grid_h: number }[]) => {
+      setDraftWidgets((prev) =>
+        prev.map((w) => {
+          const update = updates.find((u) => u.id === w.id)
+          if (!update) {
+            return w
+          }
+          return { ...w, grid_x: update.grid_x, grid_y: update.grid_y, grid_w: update.grid_w, grid_h: update.grid_h }
+        })
+      )
+    },
+    []
+  )
+
+  // Widget picker -> config dialog flow
+  const handlePickerSelect = (widgetType: string) => {
+    setConfigWidgetType(widgetType)
+    setEditingWidget(undefined)
+    setConfigOpen(true)
+  }
+
+  // Edit existing widget
+  const handleWidgetEdit = (widgetId: string) => {
+    const widget = draftWidgets.find((w) => w.id === widgetId)
+    if (!widget) {
+      return
     }
-    return map
-  }, [servers])
+    setConfigWidgetType(widget.widget_type)
+    setEditingWidget(widget)
+    setConfigOpen(true)
+  }
 
-  const sortedKeys = useMemo(() => {
-    return [...grouped.keys()].sort((a, b) => {
-      if (a === '__ungrouped__') {
-        return 1
-      }
-      if (b === '__ungrouped__') {
-        return -1
-      }
-      return (groupMap.get(a) ?? '').localeCompare(groupMap.get(b) ?? '')
-    })
-  }, [grouped, groupMap])
+  // Delete widget from draft
+  const handleWidgetDelete = (widgetId: string) => {
+    setDraftWidgets((prev) => prev.filter((w) => w.id !== widgetId))
+  }
 
-  const hasGroups = sortedKeys.length > 1 || (sortedKeys.length === 1 && sortedKeys[0] !== '__ungrouped__')
+  // Submit from config dialog (add or update widget)
+  const handleConfigSubmit = (title: string, configJson: string) => {
+    if (editingWidget) {
+      // Update existing
+      setDraftWidgets((prev) =>
+        prev.map((w) => (w.id === editingWidget.id ? { ...w, title: title || null, config_json: configJson } : w))
+      )
+    } else {
+      // Add new widget
+      const def = WIDGET_TYPES.find((wt) => wt.id === configWidgetType)
+      const newWidget: DashboardWidget = {
+        id: `temp-${crypto.randomUUID()}`,
+        dashboard_id: dashboard?.id ?? '',
+        widget_type: configWidgetType,
+        title: title || null,
+        config_json: configJson,
+        grid_x: 0,
+        grid_y: Number.POSITIVE_INFINITY, // react-grid-layout will place at bottom
+        grid_w: def?.defaultW ?? 4,
+        grid_h: def?.defaultH ?? 3,
+        sort_order: draftWidgets.length,
+        created_at: new Date().toISOString()
+      }
+      setDraftWidgets((prev) => [...prev, newWidget])
+    }
+  }
+
+  // Switch dashboard
+  const handleDashboardSelect = (id: string) => {
+    if (isEditing) {
+      // Discard edits when switching
+      setIsEditing(false)
+      setDraftWidgets([])
+    }
+    setSelectedId(id)
+  }
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="font-bold text-2xl">{t('title')}</h1>
-        <p className="text-muted-foreground text-sm">
-          {t('servers_online', { online: onlineCount, total: servers.length })}
-        </p>
+      {/* Top bar */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <DashboardSwitcher
+          currentId={activeId}
+          dashboards={dashboards}
+          isAdmin={isAdmin}
+          onSelect={handleDashboardSelect}
+        />
+        <div className="flex items-center gap-2">
+          {isAdmin && !isEditing && (
+            <Button onClick={handleEdit} size="sm" variant="outline">
+              <PencilIcon className="mr-1 size-4" />
+              {t('edit')}
+            </Button>
+          )}
+          {isEditing && (
+            <>
+              <Button disabled={updateDashboard.isPending} onClick={handleSave} size="sm">
+                <SaveIcon className="mr-1 size-4" />
+                {t('save')}
+              </Button>
+              <Button onClick={handleCancel} size="sm" variant="ghost">
+                <XIcon className="mr-1 size-4" />
+                {t('cancel')}
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
-      {servers.length > 0 && (
-        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <StatCard
-            icon={Server}
-            label={t('stat_servers')}
-            sub={t('offline_count', { count: servers.length - onlineCount })}
-            value={`${onlineCount} / ${servers.length}`}
-          />
-          <StatCard icon={Cpu} label={t('avg_cpu')} value={`${stats.avgCpu.toFixed(1)}%`} />
-          <StatCard icon={MemoryStick} label={t('avg_memory')} value={`${stats.avgMem.toFixed(1)}%`} />
-          <StatCard
-            icon={Wifi}
-            label={t('total_bandwidth')}
-            sub={t('per_second')}
-            value={formatBytes(stats.totalBandwidth)}
-          />
-          <StatCard
-            icon={onlineCount > 0 ? Activity : HardDrive}
-            label={t('online')}
-            value={onlineCount > 0 ? t('healthy') : t('no_data')}
-          />
-        </div>
-      )}
-
-      {servers.length === 0 && (
+      {/* Empty state */}
+      {displayWidgets.length === 0 && !isEditing && (
         <div className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed">
           <div className="text-center">
-            <p className="text-muted-foreground text-sm">{t('no_servers_title')}</p>
-            <p className="mt-1 text-muted-foreground text-xs">{t('no_servers_description')}</p>
+            <p className="text-muted-foreground text-sm">{t('no_widgets_title')}</p>
+            <p className="mt-1 text-muted-foreground text-xs">{t('no_widgets_description')}</p>
           </div>
         </div>
       )}
-      {servers.length > 0 && hasGroups && (
-        <div className="space-y-8">
-          {sortedKeys.map((key) => {
-            const groupServers = grouped.get(key) ?? []
-            const groupName = key === '__ungrouped__' ? t('ungrouped') : (groupMap.get(key) ?? t('unknown'))
-            return (
-              <section key={key}>
-                <h2 className="mb-3 font-semibold text-lg">{groupName}</h2>
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {groupServers.map((server) => (
-                    <ServerCard key={server.id} server={server} />
-                  ))}
-                </div>
-              </section>
-            )
-          })}
-        </div>
+
+      {/* Dashboard grid */}
+      {(displayWidgets.length > 0 || isEditing) && (
+        <DashboardGrid
+          isEditing={isEditing}
+          onAddWidget={() => setPickerOpen(true)}
+          onLayoutChange={handleLayoutChange}
+          onWidgetDelete={handleWidgetDelete}
+          onWidgetEdit={handleWidgetEdit}
+          servers={servers}
+          widgets={displayWidgets}
+        />
       )}
-      {servers.length > 0 && !hasGroups && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {servers.map((server) => (
-            <ServerCard key={server.id} server={server} />
-          ))}
-        </div>
-      )}
+
+      {/* Widget picker dialog */}
+      <WidgetPicker onOpenChange={setPickerOpen} onSelect={handlePickerSelect} open={pickerOpen} />
+
+      {/* Widget config dialog */}
+      <WidgetConfigDialog
+        onOpenChange={setConfigOpen}
+        onSubmit={handleConfigSubmit}
+        open={configOpen}
+        servers={servers}
+        widget={editingWidget}
+        widgetType={configWidgetType}
+      />
     </div>
   )
 }
