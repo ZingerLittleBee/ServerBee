@@ -201,6 +201,19 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
+        // Index on maintenance for is_in_maintenance() query
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_maintenance_active_time")
+                    .table(Maintenance::Table)
+                    .col(Maintenance::Active)
+                    .col(Maintenance::StartAt)
+                    .col(Maintenance::EndAt)
+                    .to_owned(),
+            )
+            .await?;
+
         // 5. uptime_daily table
         manager
             .create_table(
