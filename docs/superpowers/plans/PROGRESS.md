@@ -38,8 +38,10 @@
 | P16 | 移动端响应式 + PWA | **已完成** | 1 commit |
 
 **P0~P16 全部完成。**
-**自动化测试:** 43 common + 55 agent + 132 前端 = 230 个测试通过；`cargo test -p serverbee-common`、`cargo test -p serverbee-agent`、`bun run test`、`bun run typecheck`、`bun x ultracite check` 通过。
-**分支:** `feature/batch2-p13-p16`，11 commits。
+**自动化测试:** 467 Rust (common 43 + agent 55 + server unit 204 + server integration 29 + docker 4 + misc 132 bench 0) + 132 前端 vitest = **599 个测试全部通过**。
+**代码质量:** `cargo clippy --workspace` 0 warnings、`bun run typecheck` 通过、`bun x ultracite check` 165 files 0 issues、`bun run build` 成功 (含 PWA SW)。
+**E2E 浏览器测试 (agent-browser):** 主题切换 (Tokyo Night/Dracula/Default)、状态页管理 (3-tab CRUD)、公开状态页 `/status/:slug`、移动端抽屉导航 (375×812 viewport) 全部验证通过。
+**分支:** `feature/batch2-p13-p16`，13 commits，未 push。
 
 ---
 

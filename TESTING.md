@@ -24,7 +24,7 @@ bun run typecheck
 
 ```bash
 cargo test -p serverbee-common          # 协议 + 能力常量 + Docker 类型 + Traceroute (43 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 (200 + 33 = 233 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 (204 unit + 29 integration + 4 docker = 237 tests)
 cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager + Traceroute (55 tests)
 ```
 
