@@ -1933,3 +1933,461 @@ async fn test_server_billing_start_day() {
     let traffic: serde_json::Value = traffic_resp.json().await.unwrap();
     assert!(traffic["data"]["traffic_limit"].as_i64().is_some());
 }
+
+// ── Dashboard integration tests ───────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_dashboard_crud_cycle() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    // ── Step 1: POST /api/dashboards — create a dashboard ──
+    let create_resp = client
+        .post(format!("{}/api/dashboards", base_url))
+        .json(&json!({ "name": "Test Dashboard" }))
+        .send()
+        .await
+        .expect("POST /api/dashboards failed");
+
+    assert_eq!(create_resp.status(), 200, "dashboard creation should succeed");
+    let create_body: serde_json::Value = create_resp.json().await.unwrap();
+    let dash_id = create_body["data"]["id"]
+        .as_str()
+        .expect("dashboard id missing");
+    assert_eq!(create_body["data"]["name"], "Test Dashboard");
+    // First dashboard created becomes default
+    assert_eq!(create_body["data"]["is_default"], true);
+
+    // ── Step 2: GET /api/dashboards/{id} — verify it exists with 0 widgets ──
+    let get_resp = client
+        .get(format!("{}/api/dashboards/{}", base_url, dash_id))
+        .send()
+        .await
+        .expect("GET /api/dashboards/{id} failed");
+
+    assert_eq!(get_resp.status(), 200);
+    let get_body: serde_json::Value = get_resp.json().await.unwrap();
+    assert_eq!(get_body["data"]["id"], dash_id);
+    assert_eq!(get_body["data"]["name"], "Test Dashboard");
+    let widgets = get_body["data"]["widgets"].as_array().expect("widgets should be array");
+    assert!(widgets.is_empty(), "Newly created dashboard should have 0 widgets");
+
+    // ── Step 3: PUT /api/dashboards/{id} — add 3 widgets ──
+    let update1_resp = client
+        .put(format!("{}/api/dashboards/{}", base_url, dash_id))
+        .json(&json!({
+            "widgets": [
+                {
+                    "widget_type": "stat-number",
+                    "config_json": {"metric": "server_count"},
+                    "grid_x": 0, "grid_y": 0, "grid_w": 2, "grid_h": 2, "sort_order": 0
+                },
+                {
+                    "widget_type": "gauge",
+                    "title": "CPU Gauge",
+                    "config_json": {"metric": "cpu"},
+                    "grid_x": 2, "grid_y": 0, "grid_w": 4, "grid_h": 3, "sort_order": 1
+                },
+                {
+                    "widget_type": "server-cards",
+                    "config_json": {"scope": "all"},
+                    "grid_x": 0, "grid_y": 3, "grid_w": 12, "grid_h": 6, "sort_order": 2
+                }
+            ]
+        }))
+        .send()
+        .await
+        .expect("PUT /api/dashboards/{id} (add widgets) failed");
+
+    assert_eq!(update1_resp.status(), 200, "adding widgets should succeed");
+    let update1_body: serde_json::Value = update1_resp.json().await.unwrap();
+    let widgets1 = update1_body["data"]["widgets"].as_array().unwrap();
+    assert_eq!(widgets1.len(), 3, "should have 3 widgets after first update");
+
+    // Collect widget ids for the diff test
+    let widget_id_0 = widgets1[0]["id"].as_str().unwrap().to_string();
+    let widget_id_1 = widgets1[1]["id"].as_str().unwrap().to_string();
+    // widget_id_2 will be deleted
+
+    // ── Step 4: PUT /api/dashboards/{id} — widget diff: update 1, keep 1, delete 1, add 2 ──
+    let update2_resp = client
+        .put(format!("{}/api/dashboards/{}", base_url, dash_id))
+        .json(&json!({
+            "widgets": [
+                {
+                    "id": widget_id_0,
+                    "widget_type": "stat-number",
+                    "config_json": {"metric": "server_count"},
+                    "grid_x": 0, "grid_y": 0, "grid_w": 2, "grid_h": 2, "sort_order": 0
+                },
+                {
+                    "id": widget_id_1,
+                    "widget_type": "gauge",
+                    "title": "CPU Gauge Updated",
+                    "config_json": {"metric": "cpu", "server_id": "all"},
+                    "grid_x": 2, "grid_y": 0, "grid_w": 6, "grid_h": 3, "sort_order": 1
+                },
+                {
+                    "widget_type": "alert-list",
+                    "config_json": {"limit": 10},
+                    "grid_x": 0, "grid_y": 3, "grid_w": 6, "grid_h": 4, "sort_order": 2
+                },
+                {
+                    "widget_type": "markdown",
+                    "title": "Notes",
+                    "config_json": {"content": "# Hello"},
+                    "grid_x": 6, "grid_y": 3, "grid_w": 6, "grid_h": 4, "sort_order": 3
+                }
+            ]
+        }))
+        .send()
+        .await
+        .expect("PUT /api/dashboards/{id} (widget diff) failed");
+
+    assert_eq!(update2_resp.status(), 200, "widget diff update should succeed");
+    let update2_body: serde_json::Value = update2_resp.json().await.unwrap();
+    let widgets2 = update2_body["data"]["widgets"].as_array().unwrap();
+    assert_eq!(widgets2.len(), 4, "should have 4 widgets after diff update (kept 2 + added 2, deleted 1)");
+
+    // ── Step 5: GET /api/dashboards/{id} — verify the final state ──
+    let get_final = client
+        .get(format!("{}/api/dashboards/{}", base_url, dash_id))
+        .send()
+        .await
+        .expect("GET /api/dashboards/{id} final failed");
+
+    assert_eq!(get_final.status(), 200);
+    let final_body: serde_json::Value = get_final.json().await.unwrap();
+    let final_widgets = final_body["data"]["widgets"].as_array().unwrap();
+    assert_eq!(final_widgets.len(), 4);
+
+    // The updated widget should have the new title and grid_w
+    let updated_gauge = final_widgets.iter().find(|w| w["id"] == widget_id_1).unwrap();
+    assert_eq!(updated_gauge["title"], "CPU Gauge Updated");
+    assert_eq!(updated_gauge["grid_w"], 6);
+
+    // The kept stat-number widget should still be present
+    assert!(final_widgets.iter().any(|w| w["id"] == widget_id_0.as_str()));
+
+    // The deleted server-cards widget should be gone
+    let widget_types: Vec<&str> = final_widgets
+        .iter()
+        .map(|w| w["widget_type"].as_str().unwrap())
+        .collect();
+    assert!(!widget_types.contains(&"server-cards"), "server-cards widget should have been deleted");
+    assert!(widget_types.contains(&"alert-list"), "alert-list widget should be present");
+    assert!(widget_types.contains(&"markdown"), "markdown widget should be present");
+
+    // ── Step 6: Create a second dashboard, then DELETE first (cannot delete default) ──
+    let create2_resp = client
+        .post(format!("{}/api/dashboards", base_url))
+        .json(&json!({ "name": "Second" }))
+        .send()
+        .await
+        .expect("POST /api/dashboards (second) failed");
+
+    assert_eq!(create2_resp.status(), 200);
+    let create2_body: serde_json::Value = create2_resp.json().await.unwrap();
+    let dash2_id = create2_body["data"]["id"].as_str().unwrap();
+
+    // Try to delete default dashboard — should fail
+    let del_default_resp = client
+        .delete(format!("{}/api/dashboards/{}", base_url, dash_id))
+        .send()
+        .await
+        .expect("DELETE /api/dashboards (default) failed");
+
+    assert_eq!(del_default_resp.status(), 400, "Deleting default dashboard should fail with 400");
+
+    // Delete the non-default second dashboard — should succeed
+    let del_resp = client
+        .delete(format!("{}/api/dashboards/{}", base_url, dash2_id))
+        .send()
+        .await
+        .expect("DELETE /api/dashboards (non-default) failed");
+
+    assert_eq!(del_resp.status(), 200, "Deleting non-default dashboard should succeed");
+
+    // Verify it's gone from the list
+    let list_resp = client
+        .get(format!("{}/api/dashboards", base_url))
+        .send()
+        .await
+        .expect("GET /api/dashboards failed");
+
+    assert_eq!(list_resp.status(), 200);
+    let list_body: serde_json::Value = list_resp.json().await.unwrap();
+    let dashboards = list_body["data"].as_array().unwrap();
+    assert_eq!(dashboards.len(), 1, "Should have 1 dashboard after delete");
+    assert!(
+        !dashboards.iter().any(|d| d["id"].as_str() == Some(dash2_id)),
+        "Deleted dashboard should not appear in list"
+    );
+}
+
+#[tokio::test]
+async fn test_dashboard_default_auto_creates() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    // ── Step 1: GET /api/dashboards/default — first call auto-creates ──
+    let resp1 = client
+        .get(format!("{}/api/dashboards/default", base_url))
+        .send()
+        .await
+        .expect("GET /api/dashboards/default (first) failed");
+
+    assert_eq!(resp1.status(), 200, "default dashboard should auto-create");
+    let body1: serde_json::Value = resp1.json().await.unwrap();
+    let dash_id = body1["data"]["id"].as_str().expect("id missing");
+    assert_eq!(body1["data"]["is_default"], true);
+    assert_eq!(body1["data"]["name"], "Dashboard");
+
+    let widgets1 = body1["data"]["widgets"].as_array().expect("widgets should be array");
+    assert_eq!(widgets1.len(), 6, "Default dashboard should have 6 preset widgets");
+
+    // Verify widget types match expected presets
+    let types: Vec<&str> = widgets1
+        .iter()
+        .map(|w| w["widget_type"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        types.iter().filter(|&&t| t == "stat-number").count(),
+        5,
+        "Should have 5 stat-number widgets"
+    );
+    assert_eq!(
+        types.iter().filter(|&&t| t == "server-cards").count(),
+        1,
+        "Should have 1 server-cards widget"
+    );
+
+    // ── Step 2: GET /api/dashboards/default — second call returns same dashboard ──
+    let resp2 = client
+        .get(format!("{}/api/dashboards/default", base_url))
+        .send()
+        .await
+        .expect("GET /api/dashboards/default (second) failed");
+
+    assert_eq!(resp2.status(), 200);
+    let body2: serde_json::Value = resp2.json().await.unwrap();
+    assert_eq!(
+        body2["data"]["id"].as_str().unwrap(),
+        dash_id,
+        "Second call should return the same dashboard id"
+    );
+
+    let widgets2 = body2["data"]["widgets"].as_array().unwrap();
+    assert_eq!(
+        widgets2.len(),
+        6,
+        "Second call should still return 6 widgets"
+    );
+}
+
+#[tokio::test]
+async fn test_dashboard_rbac_member_cannot_write() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin_client = http_client();
+
+    // Login as admin and create a member user
+    login_admin(&admin_client, &base_url).await;
+
+    let create_user_resp = admin_client
+        .post(format!("{}/api/users", base_url))
+        .json(&json!({
+            "username": "dashmember",
+            "password": "memberpass123",
+            "role": "member"
+        }))
+        .send()
+        .await
+        .expect("POST /api/users failed");
+
+    assert_eq!(create_user_resp.status(), 200, "Admin should be able to create member");
+
+    // Create a dashboard as admin to use for PUT/DELETE tests
+    let dash_resp = admin_client
+        .post(format!("{}/api/dashboards", base_url))
+        .json(&json!({ "name": "Admin Dashboard" }))
+        .send()
+        .await
+        .expect("POST /api/dashboards failed");
+
+    assert_eq!(dash_resp.status(), 200);
+    let dash_body: serde_json::Value = dash_resp.json().await.unwrap();
+    let dash_id = dash_body["data"]["id"].as_str().unwrap();
+
+    // Login as the member user in a separate client
+    let member_client = http_client();
+    let member_login = member_client
+        .post(format!("{}/api/auth/login", base_url))
+        .json(&json!({
+            "username": "dashmember",
+            "password": "memberpass123"
+        }))
+        .send()
+        .await
+        .expect("Member login request failed");
+
+    assert_eq!(member_login.status(), 200, "Member login should succeed");
+
+    // ── Member can READ dashboards ──
+    let get_resp = member_client
+        .get(format!("{}/api/dashboards/{}", base_url, dash_id))
+        .send()
+        .await
+        .expect("GET /api/dashboards/{id} as member failed");
+
+    assert_eq!(get_resp.status(), 200, "Member should be able to read dashboards");
+
+    // ── Member cannot POST /api/dashboards ──
+    let post_resp = member_client
+        .post(format!("{}/api/dashboards", base_url))
+        .json(&json!({ "name": "Member Dashboard" }))
+        .send()
+        .await
+        .expect("POST /api/dashboards as member failed");
+
+    assert_eq!(
+        post_resp.status(),
+        403,
+        "Member should receive 403 when attempting to create dashboard"
+    );
+
+    // ── Member cannot PUT /api/dashboards/{id} ──
+    let put_resp = member_client
+        .put(format!("{}/api/dashboards/{}", base_url, dash_id))
+        .json(&json!({
+            "widgets": [{
+                "widget_type": "markdown",
+                "config_json": {"content": "hack"},
+                "grid_x": 0, "grid_y": 0, "grid_w": 4, "grid_h": 3, "sort_order": 0
+            }]
+        }))
+        .send()
+        .await
+        .expect("PUT /api/dashboards/{id} as member failed");
+
+    assert_eq!(
+        put_resp.status(),
+        403,
+        "Member should receive 403 when attempting to update dashboard"
+    );
+
+    // ── Member cannot DELETE /api/dashboards/{id} ──
+    let delete_resp = member_client
+        .delete(format!("{}/api/dashboards/{}", base_url, dash_id))
+        .send()
+        .await
+        .expect("DELETE /api/dashboards/{id} as member failed");
+
+    assert_eq!(
+        delete_resp.status(),
+        403,
+        "Member should receive 403 when attempting to delete dashboard"
+    );
+}
+
+#[tokio::test]
+async fn test_alert_events_endpoint() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    // ── Step 1: GET /api/alert-events?limit=5 — empty initially ──
+    let events_resp = client
+        .get(format!("{}/api/alert-events?limit=5", base_url))
+        .send()
+        .await
+        .expect("GET /api/alert-events failed");
+
+    assert_eq!(events_resp.status(), 200, "alert-events should return 200");
+    let events_body: serde_json::Value = events_resp.json().await.unwrap();
+    let events = events_body["data"].as_array().expect("data should be array");
+    assert!(events.is_empty(), "alert events should be empty initially");
+
+    // ── Step 2: GET /api/alert-events without limit — should use default limit ──
+    let events_default_resp = client
+        .get(format!("{}/api/alert-events", base_url))
+        .send()
+        .await
+        .expect("GET /api/alert-events (no limit) failed");
+
+    assert_eq!(events_default_resp.status(), 200, "alert-events with default limit should return 200");
+    let events_default_body: serde_json::Value = events_default_resp.json().await.unwrap();
+    assert!(events_default_body["data"].is_array(), "data should be an array");
+
+    // ── Step 3: Create alert infrastructure to seed events ──
+    // Create notification channel
+    let notif_resp = client
+        .post(format!("{}/api/notifications", base_url))
+        .json(&json!({
+            "name": "Events Test Webhook",
+            "notify_type": "webhook",
+            "config_json": {
+                "type": "webhook",
+                "url": "https://example.com/hook",
+                "method": "POST",
+                "headers": {},
+                "body_template": null
+            },
+            "enabled": true
+        }))
+        .send()
+        .await
+        .expect("POST /api/notifications failed");
+
+    assert_eq!(notif_resp.status(), 200);
+    let notif_body: serde_json::Value = notif_resp.json().await.unwrap();
+    let notif_id = notif_body["data"]["id"].as_str().unwrap();
+
+    // Create notification group
+    let group_resp = client
+        .post(format!("{}/api/notification-groups", base_url))
+        .json(&json!({
+            "name": "Events Test Group",
+            "notification_ids": [notif_id]
+        }))
+        .send()
+        .await
+        .expect("POST /api/notification-groups failed");
+
+    assert_eq!(group_resp.status(), 200);
+
+    // Create alert rules
+    let rule_resp = client
+        .post(format!("{}/api/alert-rules", base_url))
+        .json(&json!({
+            "name": "CPU Alert for Events",
+            "rules": [{"rule_type": "cpu", "min": 90.0}],
+            "cover_type": "all",
+            "trigger_mode": "always"
+        }))
+        .send()
+        .await
+        .expect("POST /api/alert-rules failed");
+
+    assert_eq!(rule_resp.status(), 200);
+    let rule_body: serde_json::Value = rule_resp.json().await.unwrap();
+    let _rule_id = rule_body["data"]["id"].as_str().unwrap();
+
+    // ── Step 4: GET /api/alert-events?limit=5 — still empty (no states triggered) ──
+    let events_resp2 = client
+        .get(format!("{}/api/alert-events?limit=5", base_url))
+        .send()
+        .await
+        .expect("GET /api/alert-events failed");
+
+    assert_eq!(events_resp2.status(), 200);
+    let events_body2: serde_json::Value = events_resp2.json().await.unwrap();
+    let events2 = events_body2["data"].as_array().unwrap();
+    // Alert events require alert_state records (created by the evaluator when rules fire).
+    // Without agent reports triggering the evaluator, there are no states, so events remain empty.
+    assert!(
+        events2.is_empty(),
+        "alert events should be empty when no alert states exist"
+    );
+}
