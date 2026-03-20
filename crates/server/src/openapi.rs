@@ -90,6 +90,13 @@ use utoipa::OpenApi;
         crate::router::api::user::create_user,
         crate::router::api::user::update_user,
         crate::router::api::user::delete_user,
+        // dashboards
+        crate::router::api::dashboard::list_dashboards,
+        crate::router::api::dashboard::get_default_dashboard,
+        crate::router::api::dashboard::get_dashboard,
+        crate::router::api::dashboard::create_dashboard,
+        crate::router::api::dashboard::update_dashboard,
+        crate::router::api::dashboard::delete_dashboard,
         // service-monitors
         crate::router::api::service_monitor::list_monitors,
         crate::router::api::service_monitor::get_monitor,
@@ -175,6 +182,13 @@ use utoipa::OpenApi;
             crate::router::api::task::CreateTaskRequest,
             crate::router::api::task::UpdateTaskRequest,
             crate::router::api::task::TaskResponse,
+            // dashboards
+            crate::entity::dashboard::Model,
+            crate::entity::dashboard_widget::Model,
+            crate::service::dashboard::DashboardWithWidgets,
+            crate::service::dashboard::CreateDashboardInput,
+            crate::service::dashboard::UpdateDashboardInput,
+            crate::service::dashboard::WidgetInput,
             // service-monitors
             crate::service::service_monitor::CreateServiceMonitor,
             crate::service::service_monitor::UpdateServiceMonitor,
@@ -250,6 +264,7 @@ use utoipa::OpenApi;
         (name = "audit", description = "Audit logs (admin only)"),
         (name = "users", description = "User management (admin only)"),
         (name = "tasks", description = "Remote command execution"),
+        (name = "dashboards", description = "Custom dashboard management"),
         (name = "service-monitors", description = "Server-side service monitoring (SSL/DNS/HTTP/TCP/WHOIS)"),
         (name = "ping-tasks", description = "Ping probe tasks"),
         (name = "traffic", description = "Traffic statistics & billing cycle overview"),
