@@ -104,6 +104,7 @@ pub struct TaskResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct TracerouteHop {
     pub hop: u8,
     pub ip: Option<String>,

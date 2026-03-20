@@ -7,7 +7,7 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use serverbee_common::constants::{CAP_DOCKER, has_capability};
 use serverbee_common::docker_types::*;
 use serverbee_common::protocol::{AgentMessage, BrowserMessage, ServerMessage};
-use serverbee_common::types::{ServerStatus, SystemReport};
+use serverbee_common::types::{ServerStatus, SystemReport, TracerouteHop};
 
 /// Sender for forwarding terminal output from agent to browser WS.
 pub type TerminalOutputTx = mpsc::Sender<TerminalSessionEvent>;
@@ -17,6 +17,19 @@ pub enum TerminalSessionEvent {
     Output(String), // base64 encoded data
     Started,
     Error(String),
+}
+
+pub struct TracerouteResultData {
+    pub target: String,
+    pub hops: Vec<TracerouteHop>,
+    pub completed: bool,
+    pub error: Option<String>,
+}
+
+pub struct TracerouteResultEntry {
+    pub server_id: String,
+    pub result: TracerouteResultData,
+    pub created_at: Instant,
 }
 
 pub struct AgentManager {
@@ -35,6 +48,8 @@ pub struct AgentManager {
     capabilities: DashMap<String, u32>,
     /// Maps server_id -> (session_id -> log entry sender)
     docker_log_sessions: DashMap<String, DashMap<String, mpsc::Sender<Vec<DockerLogEntry>>>>,
+    /// Maps request_id -> traceroute result entry (cached for polling)
+    traceroute_results: DashMap<String, TracerouteResultEntry>,
 }
 
 #[allow(dead_code)]
@@ -68,6 +83,7 @@ impl AgentManager {
             features: DashMap::new(),
             capabilities: DashMap::new(),
             docker_log_sessions: DashMap::new(),
+            traceroute_results: DashMap::new(),
         }
     }
 
@@ -433,6 +449,54 @@ impl AgentManager {
         self.pending_requests.retain(|_, (_, created_at, ttl)| {
             now.duration_since(*created_at) < *ttl
         });
+    }
+
+    // --- Traceroute result cache ---
+
+    /// Insert a placeholder traceroute result entry (completed=false) before sending to agent.
+    pub fn insert_traceroute_placeholder(&self, request_id: &str, server_id: &str, target: &str) {
+        self.traceroute_results.insert(
+            request_id.to_string(),
+            TracerouteResultEntry {
+                server_id: server_id.to_string(),
+                result: TracerouteResultData {
+                    target: target.to_string(),
+                    hops: vec![],
+                    completed: false,
+                    error: None,
+                },
+                created_at: Instant::now(),
+            },
+        );
+    }
+
+    /// Update a traceroute result entry with the actual data from the agent.
+    pub fn update_traceroute_result(&self, request_id: &str, result: TracerouteResultData) {
+        if let Some(mut entry) = self.traceroute_results.get_mut(request_id) {
+            entry.result = result;
+        }
+    }
+
+    /// Get a traceroute result by request_id. Returns (server_id, result) clone.
+    pub fn get_traceroute_result(&self, request_id: &str) -> Option<(String, TracerouteResultData)> {
+        self.traceroute_results.get(request_id).map(|entry| {
+            (
+                entry.server_id.clone(),
+                TracerouteResultData {
+                    target: entry.result.target.clone(),
+                    hops: entry.result.hops.clone(),
+                    completed: entry.result.completed,
+                    error: entry.result.error.clone(),
+                },
+            )
+        })
+    }
+
+    /// Remove traceroute result entries older than 120 seconds.
+    pub fn cleanup_traceroute_results(&self) {
+        let now = Instant::now();
+        self.traceroute_results
+            .retain(|_, entry| now.duration_since(entry.created_at).as_secs() < 120);
     }
 }
 
