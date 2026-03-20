@@ -10,6 +10,7 @@ import {
   Key,
   LayoutDashboard,
   List,
+  Palette,
   Radar,
   Settings,
   Shield,
@@ -36,6 +37,7 @@ const navItems = [
   { to: '/settings/capabilities', labelKey: 'nav_capabilities' as const, icon: Shield, adminOnly: true },
   { to: '/settings/api-keys', labelKey: 'nav_api_keys' as const, icon: Key },
   { to: '/settings/security', labelKey: 'nav_security' as const, icon: Shield },
+  { to: '/settings/appearance', labelKey: 'nav_appearance' as const, icon: Palette },
   { to: '/settings/audit-logs', labelKey: 'nav_audit_logs' as const, icon: ClipboardList, adminOnly: true },
   { to: '/settings', labelKey: 'nav_settings' as const, icon: Settings, adminOnly: true }
 ] as const

@@ -206,5 +206,20 @@
   "tasks.scheduled.pause": "Pause",
   "tasks.scheduled.resume": "Resume",
   "tasks.scheduled.no_runs": "No execution history",
-  "tasks.scheduled.confirm_delete": "Delete this scheduled task?"
+  "tasks.scheduled.confirm_delete": "Delete this scheduled task?",
+
+  "appearance.title": "Appearance",
+  "appearance.color_theme": "Color Theme",
+  "appearance.color_theme_description": "Choose a color theme for the dashboard. The theme applies to both light and dark modes.",
+  "appearance.brand_settings": "Brand Settings",
+  "appearance.brand_description": "Customize the logo, site title, footer text, and favicon.",
+  "appearance.site_title": "Site Title",
+  "appearance.footer_text": "Footer Text",
+  "appearance.footer_placeholder": "e.g. Powered by ServerBee",
+  "appearance.logo": "Logo",
+  "appearance.upload_logo": "Upload Logo",
+  "appearance.favicon": "Favicon",
+  "appearance.upload_favicon": "Upload Favicon",
+  "appearance.brand_saved": "Brand settings saved",
+  "appearance.save_failed": "Failed to save brand settings"
 }
