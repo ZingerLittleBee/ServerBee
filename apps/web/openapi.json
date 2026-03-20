@@ -38,6 +38,47 @@
         ]
       }
     },
+    "/api/alert-events": {
+      "get": {
+        "tags": ["alert-rules"],
+        "operationId": "list_alert_events",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent alert events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AlertEventResponse"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
     "/api/alert-rules": {
       "get": {
         "tags": ["alert-rules"],
@@ -779,6 +820,220 @@
           },
           "422": {
             "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/dashboards": {
+      "get": {
+        "tags": ["dashboards"],
+        "operationId": "list_dashboards",
+        "responses": {
+          "200": {
+            "description": "List all dashboards",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Model"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "post": {
+        "tags": ["dashboards"],
+        "operationId": "create_dashboard",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDashboardInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Dashboard created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Model"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/dashboards/default": {
+      "get": {
+        "tags": ["dashboards"],
+        "operationId": "get_default_dashboard",
+        "responses": {
+          "200": {
+            "description": "Default dashboard with widgets (auto-creates if none exists)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardWithWidgets"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/dashboards/{id}": {
+      "get": {
+        "tags": ["dashboards"],
+        "operationId": "get_dashboard",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Dashboard ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dashboard with widgets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardWithWidgets"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Dashboard not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "put": {
+        "tags": ["dashboards"],
+        "operationId": "update_dashboard",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Dashboard ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDashboardInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Dashboard updated with widgets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardWithWidgets"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (e.g. cannot unset default, unknown widget type)"
+          },
+          "404": {
+            "description": "Dashboard not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["dashboards"],
+        "operationId": "delete_dashboard",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Dashboard ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dashboard deleted"
+          },
+          "400": {
+            "description": "Cannot delete default or last dashboard"
+          },
+          "404": {
+            "description": "Dashboard not found"
           }
         },
         "security": [
@@ -3706,6 +3961,47 @@
   },
   "components": {
     "schemas": {
+      "AlertEventResponse": {
+        "type": "object",
+        "required": [
+          "rule_id",
+          "rule_name",
+          "server_id",
+          "server_name",
+          "status",
+          "event_at",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "event_at": {
+            "type": "string",
+            "description": "first_triggered_at for firing, resolved_at for resolved"
+          },
+          "resolved_at": {
+            "type": ["string", "null"]
+          },
+          "rule_id": {
+            "type": "string"
+          },
+          "rule_name": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "server_name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "\"firing\" or \"resolved\""
+          }
+        }
+      },
       "AlertRule": {
         "type": "object",
         "required": [
@@ -4176,6 +4472,15 @@
           }
         }
       },
+      "CreateDashboardInput": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "CreateGroupRequest": {
         "type": "object",
         "required": ["name"],
@@ -4387,6 +4692,25 @@
             "type": "string"
           }
         }
+      },
+      "DashboardWithWidgets": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Model"
+          },
+          {
+            "type": "object",
+            "required": ["widgets"],
+            "properties": {
+              "widgets": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Model"
+                }
+              }
+            }
+          }
+        ]
       },
       "DeleteRequest": {
         "type": "object",
@@ -4623,6 +4947,61 @@
         "required": ["path"],
         "properties": {
           "path": {
+            "type": "string"
+          }
+        }
+      },
+      "Model": {
+        "type": "object",
+        "required": [
+          "id",
+          "dashboard_id",
+          "widget_type",
+          "config_json",
+          "grid_x",
+          "grid_y",
+          "grid_w",
+          "grid_h",
+          "sort_order",
+          "created_at"
+        ],
+        "properties": {
+          "config_json": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "dashboard_id": {
+            "type": "string"
+          },
+          "grid_h": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "grid_w": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "grid_x": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "grid_y": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "id": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "title": {
+            "type": ["string", "null"]
+          },
+          "widget_type": {
             "type": "string"
           }
         }
@@ -5871,6 +6250,27 @@
           }
         }
       },
+      "UpdateDashboardInput": {
+        "type": "object",
+        "properties": {
+          "is_default": {
+            "type": ["boolean", "null"]
+          },
+          "name": {
+            "type": ["string", "null"]
+          },
+          "sort_order": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
+          "widgets": {
+            "type": ["array", "null"],
+            "items": {
+              "$ref": "#/components/schemas/WidgetInput"
+            }
+          }
+        }
+      },
       "UpdateGroupRequest": {
         "type": "object",
         "properties": {
@@ -6117,6 +6517,50 @@
           }
         }
       },
+      "WidgetInput": {
+        "type": "object",
+        "required": [
+          "widget_type",
+          "config_json",
+          "grid_x",
+          "grid_y",
+          "grid_w",
+          "grid_h",
+          "sort_order"
+        ],
+        "properties": {
+          "config_json": {},
+          "grid_h": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "grid_w": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "grid_x": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "grid_y": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "id": {
+            "type": ["string", "null"]
+          },
+          "sort_order": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "title": {
+            "type": ["string", "null"]
+          },
+          "widget_type": {
+            "type": "string"
+          }
+        }
+      },
       "WriteRequest": {
         "type": "object",
         "required": ["path", "content"],
@@ -6198,6 +6642,10 @@
     {
       "name": "tasks",
       "description": "Remote command execution"
+    },
+    {
+      "name": "dashboards",
+      "description": "Custom dashboard management"
     },
     {
       "name": "service-monitors",
