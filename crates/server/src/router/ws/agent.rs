@@ -830,6 +830,12 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 }
             }
         }
+        AgentMessage::TracerouteResult { request_id, .. } => {
+            // TODO(P13): Forward traceroute result to requesting browser session
+            tracing::info!(
+                "Received TracerouteResult from {server_id} (request_id={request_id})"
+            );
+        }
     }
 }
 
