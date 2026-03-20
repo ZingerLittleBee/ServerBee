@@ -47,6 +47,13 @@ use utoipa::OpenApi;
         crate::router::api::server_group::create_group,
         crate::router::api::server_group::update_group,
         crate::router::api::server_group::delete_group,
+        // brand
+        crate::router::api::brand::get_brand_config,
+        crate::router::api::brand::update_brand_config,
+        crate::router::api::brand::upload_logo,
+        crate::router::api::brand::upload_favicon,
+        crate::router::api::brand::serve_logo,
+        crate::router::api::brand::serve_favicon,
         // settings
         crate::router::api::setting::get_settings,
         crate::router::api::setting::update_settings,
@@ -159,6 +166,9 @@ use utoipa::OpenApi;
             // server-groups
             crate::router::api::server_group::CreateGroupRequest,
             crate::router::api::server_group::UpdateGroupRequest,
+            // brand
+            crate::router::api::brand::BrandConfig,
+            crate::router::api::brand::UploadResponse,
             // settings
             crate::router::api::setting::SystemSettings,
             crate::router::api::setting::AutoDiscoveryKeyResponse,
@@ -248,6 +258,7 @@ use utoipa::OpenApi;
         (name = "agent", description = "Agent registration"),
         (name = "servers", description = "Server management"),
         (name = "server-groups", description = "Server group management"),
+        (name = "brand", description = "Custom branding (logo, favicon, site title)"),
         (name = "settings", description = "System settings"),
         (name = "notifications", description = "Notification channels"),
         (name = "notification-groups", description = "Notification groups"),
