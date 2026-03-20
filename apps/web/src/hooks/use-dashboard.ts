@@ -8,10 +8,23 @@ export interface CreateDashboardInput {
   name: string
 }
 
+export interface WidgetInput {
+  config_json: unknown
+  grid_h: number
+  grid_w: number
+  grid_x: number
+  grid_y: number
+  id?: string
+  sort_order: number
+  title?: string | null
+  widget_type: string
+}
+
 export interface UpdateDashboardInput {
   is_default?: boolean
   name?: string
   sort_order?: number
+  widgets?: WidgetInput[]
 }
 
 export function useDashboards() {
@@ -54,7 +67,7 @@ export function useUpdateDashboard() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ id, ...input }: { id: string } & UpdateDashboardInput) =>
-      api.put<Dashboard>(`/api/dashboards/${id}`, input),
+      api.put<DashboardWithWidgets>(`/api/dashboards/${id}`, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dashboards'] })
       toast.success('Dashboard updated')
