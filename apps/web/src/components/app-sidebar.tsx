@@ -27,6 +27,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -89,13 +90,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton render={<Link to="/" />} size="lg">
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                <Radar className="size-4" />
-              </div>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">ServerBee</span>
-                <span className="truncate text-xs">Monitoring</span>
-              </div>
+              <Radar className="size-5 text-primary" />
+              <span className="font-semibold text-sm">ServerBee</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -157,22 +153,26 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 side={isMobile ? 'bottom' : 'right'}
                 sideOffset={4}
               >
-                <DropdownMenuLabel className="p-0 font-normal">
-                  <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                    <Avatar>
-                      <AvatarFallback>{user?.username?.charAt(0).toUpperCase() ?? 'U'}</AvatarFallback>
-                    </Avatar>
-                    <div className="grid flex-1 text-left text-sm leading-tight">
-                      <span className="truncate font-medium">{user?.username ?? 'User'}</span>
-                      <span className="truncate text-xs capitalize">{user?.role ?? ''}</span>
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel className="p-0 font-normal">
+                    <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+                      <Avatar>
+                        <AvatarFallback>{user?.username?.charAt(0).toUpperCase() ?? 'U'}</AvatarFallback>
+                      </Avatar>
+                      <div className="grid flex-1 text-left text-sm leading-tight">
+                        <span className="truncate font-medium">{user?.username ?? 'User'}</span>
+                        <span className="truncate text-xs capitalize">{user?.role ?? ''}</span>
+                      </div>
                     </div>
-                  </div>
-                </DropdownMenuLabel>
+                  </DropdownMenuLabel>
+                </DropdownMenuGroup>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={handleLogout}>
-                  <LogOut />
-                  {t('logout')}
-                </DropdownMenuItem>
+                <DropdownMenuGroup>
+                  <DropdownMenuItem onSelect={handleLogout}>
+                    <LogOut />
+                    {t('logout')}
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarMenuItem>
