@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { renderMarkdown } from '@/lib/markdown'
+import { parseConfig } from '@/lib/widget-helpers'
 import type {
   AlertListConfig,
   DashboardWidget,
@@ -20,6 +21,7 @@ import type {
   StatNumberConfig,
   TopNConfig,
   TrafficBarConfig,
+  UptimeTimelineConfig,
   WidgetConfig
 } from '@/lib/widget-types'
 
@@ -80,11 +82,7 @@ function parseExistingConfig(widget?: DashboardWidget): WidgetConfig | null {
   if (!widget) {
     return null
   }
-  try {
-    return JSON.parse(widget.config_json) as WidgetConfig
-  } catch {
-    return null
-  }
+  return parseConfig<WidgetConfig>(widget.config_json)
 }
 
 function ServerSelect({
@@ -463,6 +461,51 @@ function MarkdownForm({
   )
 }
 
+const UPTIME_DAYS_OPTIONS = [
+  { label: '30 days', value: '30' },
+  { label: '60 days', value: '60' },
+  { label: '90 days', value: '90' }
+]
+
+function UptimeTimelineForm({
+  config,
+  servers,
+  onChange
+}: {
+  config: Partial<UptimeTimelineConfig>
+  onChange: (c: Partial<UptimeTimelineConfig>) => void
+  servers: ServerMetrics[]
+}) {
+  return (
+    <>
+      <ServerMultiSelect
+        label="Servers"
+        onChange={(ids) => onChange({ ...config, server_ids: ids })}
+        selected={config.server_ids ?? []}
+        servers={servers}
+      />
+      <div className="space-y-1.5">
+        <Label>Days</Label>
+        <Select
+          onValueChange={(v) => v !== null && onChange({ ...config, days: Number(v) })}
+          value={String(config.days ?? '90')}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Select range" />
+          </SelectTrigger>
+          <SelectContent>
+            {UPTIME_DAYS_OPTIONS.map((r) => (
+              <SelectItem key={r.value} value={r.value}>
+                {r.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </>
+  )
+}
+
 export function WidgetConfigDialog({
   open,
   onOpenChange,
@@ -472,10 +515,16 @@ export function WidgetConfigDialog({
   servers
 }: WidgetConfigDialogProps) {
   const { t } = useTranslation('dashboard')
-  const existingConfig = parseExistingConfig(widget)
 
   const [title, setTitle] = useState(widget?.title ?? '')
-  const [config, setConfig] = useState<Record<string, unknown>>(() => (existingConfig as Record<string, unknown>) ?? {})
+  const [config, setConfig] = useState<Record<string, unknown>>(
+    () => (parseExistingConfig(widget) as Record<string, unknown>) ?? {}
+  )
+
+  useEffect(() => {
+    setTitle(widget?.title ?? '')
+    setConfig((parseExistingConfig(widget) as Record<string, unknown>) ?? {})
+  }, [widget])
 
   const needsNoConfig = widgetType === 'service-status' || widgetType === 'server-map'
 
@@ -525,6 +574,13 @@ export function WidgetConfigDialog({
           )}
           {widgetType === 'markdown' && (
             <MarkdownForm config={config as Partial<MarkdownConfig>} onChange={setConfig} />
+          )}
+          {widgetType === 'uptime-timeline' && (
+            <UptimeTimelineForm
+              config={config as Partial<UptimeTimelineConfig>}
+              onChange={setConfig}
+              servers={servers}
+            />
           )}
           {needsNoConfig && <p className="text-muted-foreground text-sm">No additional configuration needed.</p>}
         </div>

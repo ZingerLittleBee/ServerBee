@@ -222,4 +222,23 @@ describe('WidgetConfigDialog', () => {
 
     expect(screen.queryByText('Configure Widget')).not.toBeInTheDocument()
   })
+
+  it('renders server multi-select and days selector for uptime-timeline widget', () => {
+    render(
+      <WidgetConfigDialog
+        onOpenChange={noop}
+        onSubmit={noop}
+        open
+        servers={mockServers as never}
+        widgetType="uptime-timeline"
+      />
+    )
+
+    expect(screen.getByText('Servers')).toBeInTheDocument()
+    expect(screen.getByText('Days')).toBeInTheDocument()
+    expect(screen.getByText('Server 1')).toBeInTheDocument()
+    expect(screen.getByText('30 days')).toBeInTheDocument()
+    expect(screen.getByText('60 days')).toBeInTheDocument()
+    expect(screen.getByText('90 days')).toBeInTheDocument()
+  })
 })

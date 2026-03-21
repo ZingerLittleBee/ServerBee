@@ -40,6 +40,9 @@ vi.mock('./widgets/server-map', () => ({
 vi.mock('./widgets/markdown', () => ({
   MarkdownWidget: () => <div data-testid="widget-markdown">markdown</div>
 }))
+vi.mock('./widgets/uptime-timeline-widget', () => ({
+  UptimeTimelineWidget: () => <div data-testid="widget-uptime-timeline">uptime-timeline</div>
+}))
 
 function makeWidget(widgetType: string): DashboardWidget {
   return {
@@ -69,7 +72,8 @@ const WIDGET_TYPES = [
   'traffic-bar',
   'disk-io',
   'server-map',
-  'markdown'
+  'markdown',
+  'uptime-timeline'
 ] as const
 
 describe('WidgetRenderer', () => {
