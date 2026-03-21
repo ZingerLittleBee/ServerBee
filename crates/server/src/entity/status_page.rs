@@ -15,6 +15,8 @@ pub struct Model {
     pub show_values: bool,
     pub custom_css: Option<String>,
     pub enabled: bool,
+    pub uptime_yellow_threshold: f64,
+    pub uptime_red_threshold: f64,
     #[schema(value_type = String, format = DateTime)]
     pub created_at: DateTimeUtc,
     #[schema(value_type = String, format = DateTime)]
