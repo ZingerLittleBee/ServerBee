@@ -5,6 +5,7 @@ import type { ServerMetrics } from './use-servers-ws'
 
 const MAX_BUFFER_SIZE = 200
 const TRIM_THRESHOLD = 250
+const RENDER_THROTTLE_MS = 2000
 
 // Persist buffers across unmounts so route switches don't lose data
 const bufferCache = new WeakMap<QueryClient, Map<string, { buffer: RealtimeDataPoint[]; lastActive: number }>>()
@@ -54,12 +55,15 @@ export function useRealtimeMetrics(serverId: string): RealtimeDataPoint[] {
   const queryClient = useQueryClient()
   const bufferRef = useRef<RealtimeDataPoint[]>([])
   const lastActiveRef = useRef<number>(0)
+  const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingRef = useRef(false)
   const [, setTick] = useState(0)
 
   useEffect(() => {
     const cache = getQueryClientBufferCache(queryClient)
     bufferRef.current = []
     lastActiveRef.current = 0
+    pendingRef.current = false
 
     const servers = queryClient.getQueryData<ServerMetrics[]>(['servers'])
     const server = servers?.find((s) => s.id === serverId)
@@ -77,6 +81,21 @@ export function useRealtimeMetrics(serverId: string): RealtimeDataPoint[] {
       setTick((t) => t + 1)
     } else {
       cache.delete(serverId)
+    }
+
+    const scheduleRender = () => {
+      if (throttleTimerRef.current) {
+        pendingRef.current = true
+        return
+      }
+      setTick((t) => t + 1)
+      throttleTimerRef.current = setTimeout(() => {
+        throttleTimerRef.current = null
+        if (pendingRef.current) {
+          pendingRef.current = false
+          setTick((t) => t + 1)
+        }
+      }, RENDER_THROTTLE_MS)
     }
 
     // Subscribe to cache updates
@@ -107,11 +126,15 @@ export function useRealtimeMetrics(serverId: string): RealtimeDataPoint[] {
         bufferRef.current = bufferRef.current.slice(-MAX_BUFFER_SIZE)
       }
 
-      setTick((t) => t + 1)
+      scheduleRender()
     })
 
     return () => {
       unsubscribe()
+      if (throttleTimerRef.current) {
+        clearTimeout(throttleTimerRef.current)
+        throttleTimerRef.current = null
+      }
       // Persist buffer so route switches don't lose data
       if (bufferRef.current.length > 0) {
         cache.set(serverId, {
