@@ -1,6 +1,6 @@
 # ServerBee 实现进度
 
-> 最后更新: 2026-03-20
+> 最后更新: 2026-03-21
 
 ## 总览
 
@@ -37,10 +37,11 @@
 | P15 | 状态页增强 | **已完成** | 4 commits |
 | P16 | 移动端响应式 + PWA | **已完成** | 1 commit |
 | P17 | 自定义仪表盘 (Custom Dashboard) | **已完成** | 17 commits |
+| P18 | Uptime 90 天时间线 | **已完成** | 9 commits (`0034346`..`e1e4ae9`) |
 
-**P0~P17 全部完成。**
-**自动化测试:** Rust (common 43 + agent 55 + server unit 218 + server integration 33 + docker 4) + 172 前端 vitest = 测试全部通过。
-**P17 新增测试:** Rust 14 新单元测试 (dashboard 12 + alert list_events 2) + 4 新集成测试 (dashboard CRUD/default/RBAC + alert-events) + 40 新前端测试 (hooks 7 + widget-renderer 13 + grid 4 + config-dialog 8 + markdown 8)。
+**P0~P18 全部完成。**
+**自动化测试:** Rust (common 43 + agent 55 + server unit 223 + server integration 36 + docker 4) + 186 前端 vitest = 测试全部通过。
+**P18 新增测试:** Rust 5 新单元测试 (uptime get_daily_filled) + 3 新集成测试 (uptime-daily auth/404/data) + 14 新前端测试 (uptime-timeline 11 + widget-renderer 1 + config-dialog 1 + aggregate-uptime 1)。
 
 ---
 
