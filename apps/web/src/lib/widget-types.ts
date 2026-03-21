@@ -10,7 +10,7 @@ export interface WidgetTypeDefinition {
   minW: number
 }
 
-export const WIDGET_TYPES: WidgetTypeDefinition[] = [
+export const WIDGET_TYPES = [
   { id: 'stat-number', label: 'Stat Number', category: 'Real-time', defaultW: 2, defaultH: 2, minW: 2, minH: 2 },
   { id: 'server-cards', label: 'Server Cards', category: 'Real-time', defaultW: 12, defaultH: 6, minW: 4, minH: 3 },
   { id: 'gauge', label: 'Gauge', category: 'Real-time', defaultW: 3, defaultH: 3, minW: 2, minH: 2 },
@@ -30,8 +30,11 @@ export const WIDGET_TYPES: WidgetTypeDefinition[] = [
   { id: 'traffic-bar', label: 'Traffic Bar', category: 'Charts', defaultW: 6, defaultH: 4, minW: 4, minH: 3 },
   { id: 'disk-io', label: 'Disk I/O', category: 'Charts', defaultW: 6, defaultH: 4, minW: 4, minH: 3 },
   { id: 'server-map', label: 'Server Map', category: 'Status', defaultW: 8, defaultH: 5, minW: 4, minH: 3 },
-  { id: 'markdown', label: 'Markdown', category: 'Status', defaultW: 4, defaultH: 3, minW: 2, minH: 2 }
-] as const
+  { id: 'markdown', label: 'Markdown', category: 'Status', defaultW: 4, defaultH: 3, minW: 2, minH: 2 },
+  { id: 'uptime-timeline', label: 'Uptime Timeline', category: 'Status', defaultW: 8, defaultH: 3, minW: 4, minH: 2 }
+] as const satisfies readonly WidgetTypeDefinition[]
+
+export type WidgetTypeId = (typeof WIDGET_TYPES)[number]['id']
 
 // Per-type widget configurations stored as JSON in config_json
 
@@ -102,6 +105,11 @@ export interface MarkdownConfig {
   content: string
 }
 
+export interface UptimeTimelineConfig {
+  days?: number
+  server_ids: string[]
+}
+
 export type WidgetConfig =
   | StatNumberConfig
   | ServerCardsConfig
@@ -115,6 +123,7 @@ export type WidgetConfig =
   | DiskIoConfig
   | ServerMapConfig
   | MarkdownConfig
+  | UptimeTimelineConfig
 
 // API response types
 
