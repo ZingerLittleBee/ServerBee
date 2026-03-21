@@ -14,7 +14,8 @@ import { TrafficTab } from '@/components/server/traffic-tab'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { useServer, useServerRecords } from '@/hooks/use-api'
+import { UptimeTimeline } from '@/components/uptime/uptime-timeline'
+import { useServer, useServerRecords, useUptimeDaily } from '@/hooks/use-api'
 import { useRealtimeMetrics } from '@/hooks/use-realtime-metrics'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
@@ -22,6 +23,7 @@ import type { ServerResponse } from '@/lib/api-schema'
 import { CAP_DOCKER, CAP_FILE, hasCap } from '@/lib/capabilities'
 import { buildMergedDiskIoSeries, buildPerDiskIoSeries } from '@/lib/disk-io'
 import { cn, countryCodeToFlag, formatBytes } from '@/lib/utils'
+import { computeAggregateUptime } from '@/lib/widget-helpers'
 
 export const Route = createFileRoute('/_authed/servers/$id')({
   component: ServerDetailPage,
@@ -287,6 +289,23 @@ function MetricsTabContent({
   )
 }
 
+function UptimeCard({ serverId }: { serverId: string }) {
+  const { data: uptimeDays } = useUptimeDaily(serverId)
+  if (!uptimeDays || uptimeDays.length === 0) {
+    return null
+  }
+  const uptimePct = computeAggregateUptime(uptimeDays)
+  return (
+    <div className="mb-6 rounded-lg border bg-card p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="font-semibold text-sm">Uptime (90 days)</h3>
+        <span className="font-medium text-sm">{uptimePct !== null ? `${uptimePct.toFixed(2)}%` : '\u2014'}</span>
+      </div>
+      <UptimeTimeline days={uptimeDays} rangeDays={90} showLabels showLegend />
+    </div>
+  )
+}
+
 function ServerDetailPage() {
   const { t } = useTranslation('servers')
   const { id } = Route.useParams()
@@ -477,6 +496,8 @@ function ServerDetailPage() {
           </span>
         </div>
       )}
+
+      <UptimeCard serverId={id} />
 
       <Tabs defaultValue="metrics">
         <TabsList>
