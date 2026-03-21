@@ -2,8 +2,20 @@ import { createFileRoute, Link, Outlet, useLocation, useNavigate } from '@tansta
 import { TriangleAlert } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Header } from '@/components/layout/header'
-import { MobileSidebar, Sidebar } from '@/components/layout/sidebar'
+import { AppSidebar } from '@/components/app-sidebar'
+import { ThemeToggle } from '@/components/layout/theme-toggle'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator
+} from '@/components/ui/breadcrumb'
+import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
+import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { ServersWsContext } from '@/contexts/servers-ws-context'
 import { useAuth } from '@/hooks/use-auth'
 import { useServersWs } from '@/hooks/use-servers-ws'
@@ -26,6 +38,18 @@ function isAdminRoute(pathname: string): boolean {
   return ADMIN_ONLY_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`))
 }
 
+function LanguageSwitcher() {
+  const { i18n } = useTranslation()
+  const isZh = (i18n.resolvedLanguage ?? i18n.language).startsWith('zh')
+  const toggle = () => i18n.changeLanguage(isZh ? 'en' : 'zh')
+
+  return (
+    <Button onClick={toggle} size="icon" variant="ghost">
+      {isZh ? 'EN' : '中文'}
+    </Button>
+  )
+}
+
 export const Route = createFileRoute('/_authed')({
   component: AuthedLayout
 })
@@ -38,7 +62,6 @@ function AuthedLayout() {
   const shouldConnectWs = isAuthenticated && !isLoading
   const wsRef = useServersWs(shouldConnectWs)
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected')
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
     if (!shouldConnectWs) {
@@ -102,17 +125,38 @@ function AuthedLayout() {
 
   return (
     <ServersWsContext.Provider value={wsContextValue}>
-      <div className="flex min-h-screen">
-        <Sidebar />
-        <MobileSidebar onOpenChange={setMobileMenuOpen} open={mobileMenuOpen} />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <Header onMenuClick={() => setMobileMenuOpen(true)} />
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset className="min-h-0 overflow-hidden">
+          <header className="flex h-16 shrink-0 items-center justify-between gap-2 px-4">
+            <div className="flex items-center gap-2">
+              <SidebarTrigger className="-ml-1" />
+              <Separator className="mr-2 data-[orientation=vertical]:h-4" orientation="vertical" />
+              <Breadcrumb>
+                <BreadcrumbList>
+                  <BreadcrumbItem className="hidden md:block">
+                    <BreadcrumbLink href="#">ServerBee</BreadcrumbLink>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator className="hidden md:block" />
+                  <BreadcrumbItem>
+                    <BreadcrumbPage>Dashboard</BreadcrumbPage>
+                  </BreadcrumbItem>
+                </BreadcrumbList>
+              </Breadcrumb>
+            </div>
+            <div className="flex items-center gap-2">
+              <LanguageSwitcher />
+              <ThemeToggle />
+            </div>
+          </header>
           {user?.must_change_password && <DefaultPasswordBanner />}
-          <main className="flex-1 overflow-auto p-4 sm:p-6">
-            <Outlet />
-          </main>
-        </div>
-      </div>
+          <ScrollArea className="min-h-0 flex-1 overflow-hidden">
+            <main className="p-4 pt-0">
+              <Outlet />
+            </main>
+          </ScrollArea>
+        </SidebarInset>
+      </SidebarProvider>
     </ServersWsContext.Provider>
   )
 }
