@@ -1,5 +1,5 @@
 import { PencilIcon, PlusIcon, TrashIcon } from 'lucide-react'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { GridLayout, type Layout, type LayoutItem, useContainerWidth } from 'react-grid-layout'
 import { useTranslation } from 'react-i18next'
 import 'react-grid-layout/css/styles.css'
@@ -24,8 +24,10 @@ const ROW_HEIGHT = 80
 const MARGIN: [number, number] = [16, 16]
 const MOBILE_BREAKPOINT = 768
 
+const WIDGET_TYPE_MAP = new Map<string, (typeof WIDGET_TYPES)[number]>(WIDGET_TYPES.map((w) => [w.id, w]))
+
 function getMinConstraints(widgetType: string): { minH: number; minW: number } {
-  const def = WIDGET_TYPES.find((w) => w.id === widgetType)
+  const def = WIDGET_TYPE_MAP.get(widgetType)
   return { minW: def?.minW ?? 2, minH: def?.minH ?? 2 }
 }
 
@@ -45,11 +47,21 @@ function widgetsToLayout(widgets: DashboardWidget[]): Layout {
 }
 
 function useIsMobile(): boolean {
-  // Using a simple check; SSR-safe since window is checked in effect
-  if (typeof window === 'undefined') {
-    return false
-  }
-  return window.innerWidth < MOBILE_BREAKPOINT
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < MOBILE_BREAKPOINT : false
+  )
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') {
+      return
+    }
+    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mql.addEventListener('change', handler)
+    return () => mql.removeEventListener('change', handler)
+  }, [])
+
+  return isMobile
 }
 
 export function DashboardGrid({
@@ -69,23 +81,33 @@ export function DashboardGrid({
 
   const handleLayoutChange = useCallback(
     (newLayout: Layout) => {
-      const updates = newLayout.map((item: LayoutItem) => ({
-        id: item.i,
-        grid_x: item.x,
-        grid_y: item.y,
-        grid_w: item.w,
-        grid_h: item.h
-      }))
-      onLayoutChange(updates)
+      const updateMap = new Map<string, LayoutItem>()
+      for (const item of newLayout) {
+        updateMap.set(item.i, item)
+      }
+      const updates: { id: string; grid_x: number; grid_y: number; grid_w: number; grid_h: number }[] = []
+      let changed = false
+      for (const w of widgets) {
+        const item = updateMap.get(w.id)
+        if (!item) {
+          continue
+        }
+        if (item.x !== w.grid_x || item.y !== w.grid_y || item.w !== w.grid_w || item.h !== w.grid_h) {
+          changed = true
+        }
+        updates.push({ id: item.i, grid_x: item.x, grid_y: item.y, grid_w: item.w, grid_h: item.h })
+      }
+      if (changed) {
+        onLayoutChange(updates)
+      }
     },
-    [onLayoutChange]
+    [onLayoutChange, widgets]
   )
 
   const sortedWidgets = useMemo(() => {
     return [...widgets].sort((a, b) => a.sort_order - b.sort_order)
   }, [widgets])
 
-  // Mobile: render as vertical list
   if (isMobile) {
     return (
       <div className="space-y-4">
@@ -104,7 +126,6 @@ export function DashboardGrid({
     )
   }
 
-  // Desktop: react-grid-layout
   return (
     <div ref={containerRef}>
       {mounted && (

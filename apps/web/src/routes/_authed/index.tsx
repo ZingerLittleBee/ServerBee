@@ -23,7 +23,6 @@ function DashboardPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
-  // Server data from WebSocket (set by use-servers-ws hook in layout)
   const { data: servers = [] } = useQuery<ServerMetrics[]>({
     queryKey: ['servers'],
     queryFn: () => [],
@@ -32,27 +31,19 @@ function DashboardPage() {
     refetchOnWindowFocus: false
   })
 
-  // Dashboard data
   const { data: dashboards = [] } = useDashboards()
   const { data: defaultDashboard } = useDefaultDashboard()
 
-  // Currently selected dashboard
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const activeId = selectedId ?? defaultDashboard?.id ?? ''
   const { data: activeDashboard } = useDashboard(activeId)
 
-  // Use the specifically loaded dashboard or fall back to the default
   const dashboard = selectedId ? activeDashboard : (activeDashboard ?? defaultDashboard)
   const widgets = dashboard?.widgets ?? []
 
-  // Editing state
   const [isEditing, setIsEditing] = useState(false)
   const [draftWidgets, setDraftWidgets] = useState<DashboardWidget[]>([])
-
-  // Widget picker state
   const [pickerOpen, setPickerOpen] = useState(false)
-
-  // Widget config dialog state
   const [configOpen, setConfigOpen] = useState(false)
   const [configWidgetType, setConfigWidgetType] = useState('')
   const [editingWidget, setEditingWidget] = useState<DashboardWidget | undefined>(undefined)
@@ -61,19 +52,16 @@ function DashboardPage() {
 
   const displayWidgets = isEditing ? draftWidgets : widgets
 
-  // Enter edit mode
   const handleEdit = () => {
     setDraftWidgets([...widgets])
     setIsEditing(true)
   }
 
-  // Cancel editing
   const handleCancel = () => {
     setDraftWidgets([])
     setIsEditing(false)
   }
 
-  // Save changes
   const handleSave = () => {
     if (!dashboard) {
       return
@@ -100,7 +88,6 @@ function DashboardPage() {
     )
   }
 
-  // Layout change handler for react-grid-layout
   const handleLayoutChange = useCallback(
     (updates: { id: string; grid_x: number; grid_y: number; grid_w: number; grid_h: number }[]) => {
       setDraftWidgets((prev) =>
@@ -116,14 +103,12 @@ function DashboardPage() {
     []
   )
 
-  // Widget picker -> config dialog flow
   const handlePickerSelect = (widgetType: string) => {
     setConfigWidgetType(widgetType)
     setEditingWidget(undefined)
     setConfigOpen(true)
   }
 
-  // Edit existing widget
   const handleWidgetEdit = (widgetId: string) => {
     const widget = draftWidgets.find((w) => w.id === widgetId)
     if (!widget) {
@@ -134,20 +119,16 @@ function DashboardPage() {
     setConfigOpen(true)
   }
 
-  // Delete widget from draft
   const handleWidgetDelete = (widgetId: string) => {
     setDraftWidgets((prev) => prev.filter((w) => w.id !== widgetId))
   }
 
-  // Submit from config dialog (add or update widget)
   const handleConfigSubmit = (title: string, configJson: string) => {
     if (editingWidget) {
-      // Update existing
       setDraftWidgets((prev) =>
         prev.map((w) => (w.id === editingWidget.id ? { ...w, title: title || null, config_json: configJson } : w))
       )
     } else {
-      // Add new widget
       const def = WIDGET_TYPES.find((wt) => wt.id === configWidgetType)
       const newWidget: DashboardWidget = {
         id: `temp-${crypto.randomUUID()}`,
@@ -156,7 +137,7 @@ function DashboardPage() {
         title: title || null,
         config_json: configJson,
         grid_x: 0,
-        grid_y: Number.POSITIVE_INFINITY, // react-grid-layout will place at bottom
+        grid_y: Number.POSITIVE_INFINITY,
         grid_w: def?.defaultW ?? 4,
         grid_h: def?.defaultH ?? 3,
         sort_order: draftWidgets.length,
@@ -166,10 +147,8 @@ function DashboardPage() {
     }
   }
 
-  // Switch dashboard
   const handleDashboardSelect = (id: string) => {
     if (isEditing) {
-      // Discard edits when switching
       setIsEditing(false)
       setDraftWidgets([])
     }
@@ -178,7 +157,6 @@ function DashboardPage() {
 
   return (
     <div>
-      {/* Top bar */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <DashboardSwitcher
           currentId={activeId}
@@ -208,7 +186,6 @@ function DashboardPage() {
         </div>
       </div>
 
-      {/* Empty state */}
       {displayWidgets.length === 0 && !isEditing && (
         <div className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed">
           <div className="text-center">
@@ -218,7 +195,6 @@ function DashboardPage() {
         </div>
       )}
 
-      {/* Dashboard grid */}
       {(displayWidgets.length > 0 || isEditing) && (
         <DashboardGrid
           isEditing={isEditing}
@@ -231,10 +207,8 @@ function DashboardPage() {
         />
       )}
 
-      {/* Widget picker dialog */}
       <WidgetPicker onOpenChange={setPickerOpen} onSelect={handlePickerSelect} open={pickerOpen} />
 
-      {/* Widget config dialog */}
       <WidgetConfigDialog
         onOpenChange={setConfigOpen}
         onSubmit={handleConfigSubmit}

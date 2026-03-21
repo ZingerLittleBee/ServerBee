@@ -1,25 +1,10 @@
 import { useMemo } from 'react'
 import { Badge } from '@/components/ui/badge'
+import { formatRelativeTime } from '@/lib/widget-helpers'
 import type { DockerEventInfo } from '../types'
 
 interface DockerEventsProps {
   events: DockerEventInfo[]
-}
-
-function formatRelativeTime(timestamp: number): string {
-  const now = Date.now() / 1000
-  const diff = Math.max(0, Math.floor(now - timestamp))
-
-  if (diff < 60) {
-    return `${diff}s ago`
-  }
-  if (diff < 3600) {
-    return `${Math.floor(diff / 60)}m ago`
-  }
-  if (diff < 86_400) {
-    return `${Math.floor(diff / 3600)}h ago`
-  }
-  return `${Math.floor(diff / 86_400)}d ago`
 }
 
 function eventTypeBadgeVariant(eventType: string): 'default' | 'secondary' | 'outline' | 'destructive' {

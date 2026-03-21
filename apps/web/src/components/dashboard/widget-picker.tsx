@@ -61,7 +61,7 @@ export function WidgetPicker({ onSelect, open, onOpenChange }: WidgetPickerProps
   const { t } = useTranslation('dashboard')
 
   const grouped = useMemo(() => {
-    const map = new Map<WidgetCategory, typeof WIDGET_TYPES>()
+    const map = new Map<WidgetCategory, (typeof WIDGET_TYPES)[number][]>()
     for (const category of CATEGORY_ORDER) {
       map.set(
         category,

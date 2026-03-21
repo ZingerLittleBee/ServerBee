@@ -36,9 +36,15 @@ export function useDashboards() {
 }
 
 export function useDefaultDashboard() {
+  const queryClient = useQueryClient()
   return useQuery<DashboardWithWidgets>({
     queryKey: ['dashboards', 'default'],
-    queryFn: () => api.get<DashboardWithWidgets>('/api/dashboards/default'),
+    queryFn: async () => {
+      const data = await api.get<DashboardWithWidgets>('/api/dashboards/default')
+      // Seed the per-id cache so useDashboard(id) won't re-fetch the same data
+      queryClient.setQueryData(['dashboards', data.id], data)
+      return data
+    },
     staleTime: 30_000
   })
 }
