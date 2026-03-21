@@ -1,26 +1,12 @@
 import { useMemo } from 'react'
 import { PolarAngleAxis, RadialBar, RadialBarChart, ResponsiveContainer } from 'recharts'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import { extractLiveMetric, METRIC_LABELS } from '@/lib/widget-helpers'
 import type { GaugeConfig } from '@/lib/widget-types'
 
 interface GaugeWidgetProps {
   config: GaugeConfig
   servers: ServerMetrics[]
-}
-
-function extractMetric(server: ServerMetrics, metric: string): number {
-  switch (metric) {
-    case 'cpu':
-      return server.cpu
-    case 'memory':
-      return server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
-    case 'disk':
-      return server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
-    case 'swap':
-      return server.swap_total > 0 ? (server.swap_used / server.swap_total) * 100 : 0
-    default:
-      return 0
-  }
 }
 
 function getGaugeColor(value: number): string {
@@ -33,13 +19,6 @@ function getGaugeColor(value: number): string {
   return 'var(--color-chart-1)'
 }
 
-const METRIC_LABELS: Record<string, string> = {
-  cpu: 'CPU',
-  memory: 'Memory',
-  disk: 'Disk',
-  swap: 'Swap'
-}
-
 export function GaugeWidget({ config, servers }: GaugeWidgetProps) {
   const { server_id, metric } = config
   const max = config.max ?? 100
@@ -50,7 +29,7 @@ export function GaugeWidget({ config, servers }: GaugeWidgetProps) {
     if (!server) {
       return 0
     }
-    return Math.min(max, Math.max(0, extractMetric(server, metric)))
+    return Math.min(max, Math.max(0, extractLiveMetric(server, metric)))
   }, [server, metric, max])
 
   const label = config.label ?? METRIC_LABELS[metric] ?? metric

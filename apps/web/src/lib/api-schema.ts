@@ -122,6 +122,14 @@ export interface TrafficPrediction {
   will_exceed: boolean
 }
 
+// Uptime daily entry (from /api/servers/{id}/uptime-daily)
+export interface UptimeDailyEntry {
+  date: string
+  downtime_incidents: number
+  online_minutes: number
+  total_minutes: number
+}
+
 // Public status page (slug-based)
 export interface PublicStatusPageData {
   active_incidents: Array<{
@@ -142,6 +150,8 @@ export interface PublicStatusPageData {
     description: string | null
     show_values: boolean
     title: string
+    uptime_red_threshold: number
+    uptime_yellow_threshold: number
   }
   planned_maintenances: Array<{
     description: string | null
@@ -170,6 +180,7 @@ export interface PublicStatusPageData {
     online: boolean
     server_id: string
     server_name: string
+    uptime_daily: UptimeDailyEntry[]
     uptime_percent: number | null
   }>
 }
@@ -184,6 +195,8 @@ export interface StatusPageItem {
   slug: string
   title: string
   updated_at: string
+  uptime_red_threshold: number
+  uptime_yellow_threshold: number
 }
 
 export interface IncidentItem {

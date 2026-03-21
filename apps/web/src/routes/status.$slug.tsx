@@ -4,9 +4,11 @@ import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Clock, Server, 
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
+import { UptimeTimeline } from '@/components/uptime/uptime-timeline'
 import { api } from '@/lib/api-client'
 import type { PublicStatusPageData } from '@/lib/api-schema'
 import { cn } from '@/lib/utils'
+import { computeAggregateUptime } from '@/lib/widget-helpers'
 
 export const Route = createFileRoute('/status/$slug')({
   component: PublicStatusPage
@@ -82,27 +84,14 @@ function ServerStatusDot({ inMaintenance, online }: { inMaintenance: boolean; on
   return <span className="inline-block size-3 rounded-full bg-gray-400" title="Offline" />
 }
 
-function UptimeBar({ percent }: { percent: number | null }) {
-  if (percent === null) {
-    return <div className="h-2 w-full rounded-full bg-muted" title="No data" />
-  }
-  let color = 'bg-red-500'
-  if (percent >= 99.9) {
-    color = 'bg-emerald-500'
-  } else if (percent >= 95) {
-    color = 'bg-amber-500'
-  }
-  return (
-    <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
-      <div
-        className={cn('h-full rounded-full transition-all', color)}
-        style={{ width: `${Math.min(100, percent)}%` }}
-      />
-    </div>
-  )
-}
-
-function ServerRow({ server }: { server: PublicStatusPageData['servers'][number] }) {
+function ServerRow({
+  page,
+  server
+}: {
+  page: PublicStatusPageData['page']
+  server: PublicStatusPageData['servers'][number]
+}) {
+  const uptimePct = computeAggregateUptime(server.uptime_daily)
   return (
     <div className="flex items-center gap-3 rounded-md border px-4 py-3">
       <ServerStatusDot inMaintenance={server.in_maintenance} online={server.online} />
@@ -113,11 +102,17 @@ function ServerRow({ server }: { server: PublicStatusPageData['servers'][number]
           Maintenance
         </Badge>
       )}
-      <div className="hidden w-48 sm:block">
-        <UptimeBar percent={server.uptime_percent} />
+      <div className="hidden w-64 sm:block">
+        <UptimeTimeline
+          days={server.uptime_daily}
+          height={20}
+          rangeDays={90}
+          redThreshold={page.uptime_red_threshold}
+          yellowThreshold={page.uptime_yellow_threshold}
+        />
       </div>
       <span className="w-16 shrink-0 text-right text-muted-foreground text-xs">
-        {server.uptime_percent !== null ? `${server.uptime_percent.toFixed(1)}%` : '--'}
+        {uptimePct !== null ? `${uptimePct.toFixed(1)}%` : '\u2014'}
       </span>
     </div>
   )
@@ -309,7 +304,7 @@ function StatusPageContent({ data }: { data: PublicStatusPageData }) {
                 )}
                 <div className="space-y-2">
                   {servers.map((s) => (
-                    <ServerRow key={s.server_id} server={s} />
+                    <ServerRow key={s.server_id} page={data.page} server={s} />
                   ))}
                 </div>
               </div>

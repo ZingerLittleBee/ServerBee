@@ -12,7 +12,7 @@ use crate::error::{ok, ApiResponse, AppError};
 use crate::service::incident::IncidentService;
 use crate::service::maintenance::MaintenanceService;
 use crate::service::status_page::{CreateStatusPage, StatusPageService, UpdateStatusPage};
-use crate::service::uptime::UptimeService;
+use crate::service::uptime::{UptimeDailyEntry, UptimeService};
 use crate::state::AppState;
 
 // ---------------------------------------------------------------------------
@@ -28,11 +28,15 @@ pub struct StatusPageInfo {
     pub group_by_server_group: bool,
     pub show_values: bool,
     pub custom_css: Option<String>,
+    pub uptime_yellow_threshold: f64,
+    pub uptime_red_threshold: f64,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ServerStatusInfo {
+    #[serde(rename = "server_id")]
     pub id: String,
+    #[serde(rename = "server_name")]
     pub name: String,
     pub region: Option<String>,
     pub country_code: Option<String>,
@@ -40,7 +44,9 @@ pub struct ServerStatusInfo {
     pub group_id: Option<String>,
     pub group_name: Option<String>,
     pub online: bool,
-    pub uptime_percentage: f64,
+    #[serde(rename = "uptime_percent")]
+    pub uptime_percentage: Option<f64>,
+    pub uptime_daily: Vec<UptimeDailyEntry>,
     pub in_maintenance: bool,
 }
 
@@ -139,9 +145,17 @@ pub async fn get_public_status_page(
     let mut server_infos = Vec::new();
     for s in &servers {
         let online = state.agent_manager.is_online(&s.id);
-        let uptime_percentage = UptimeService::get_availability(&state.db, &s.id, 90)
-            .await
-            .unwrap_or(100.0);
+        let daily = UptimeService::get_daily_filled(&state.db, &s.id, 90).await?;
+
+        // Compute uptime percentage from daily data
+        let total_minutes: i64 = daily.iter().map(|d| d.total_minutes as i64).sum();
+        let online_minutes: i64 = daily.iter().map(|d| d.online_minutes as i64).sum();
+        let uptime_percentage = if total_minutes == 0 {
+            None
+        } else {
+            Some((online_minutes as f64 / total_minutes as f64) * 100.0)
+        };
+
         let in_maintenance = MaintenanceService::is_in_maintenance(&state.db, &s.id)
             .await
             .unwrap_or(false);
@@ -156,6 +170,7 @@ pub async fn get_public_status_page(
             group_name: s.group_id.as_ref().and_then(|gid| group_map.get(gid).cloned()),
             online,
             uptime_percentage,
+            uptime_daily: daily,
             in_maintenance,
         });
     }
@@ -225,6 +240,8 @@ pub async fn get_public_status_page(
         group_by_server_group: page.group_by_server_group,
         show_values: page.show_values,
         custom_css: page.custom_css,
+        uptime_yellow_threshold: page.uptime_yellow_threshold,
+        uptime_red_threshold: page.uptime_red_threshold,
     };
 
     ok(PublicStatusPageData {

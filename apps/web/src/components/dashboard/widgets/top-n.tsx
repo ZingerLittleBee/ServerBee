@@ -1,26 +1,12 @@
 import { useMemo } from 'react'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { cn, formatBytes } from '@/lib/utils'
+import { extractLiveMetric, METRIC_LABELS } from '@/lib/widget-helpers'
 import type { TopNConfig } from '@/lib/widget-types'
 
 interface TopNWidgetProps {
   config: TopNConfig
   servers: ServerMetrics[]
-}
-
-function extractMetric(server: ServerMetrics, metric: string): number {
-  switch (metric) {
-    case 'cpu':
-      return server.cpu
-    case 'memory':
-      return server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
-    case 'disk':
-      return server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
-    case 'bandwidth':
-      return server.net_in_speed + server.net_out_speed
-    default:
-      return 0
-  }
 }
 
 function formatValue(metric: string, value: number): string {
@@ -35,7 +21,7 @@ function getBarColor(rank: number): string {
   return colors[rank % colors.length]
 }
 
-const METRIC_LABELS: Record<string, string> = {
+const TOP_N_LABELS: Record<string, string> = {
   cpu: 'Top CPU',
   memory: 'Top Memory',
   disk: 'Top Disk',
@@ -51,7 +37,7 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
     const withMetric = online.map((s) => ({
       id: s.id,
       name: s.name,
-      value: extractMetric(s, metric)
+      value: extractLiveMetric(s, metric)
     }))
 
     withMetric.sort((a, b) => (sort === 'desc' ? b.value - a.value : a.value - b.value))
@@ -66,7 +52,7 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
     return 100
   }, [ranked, metric])
 
-  const title = METRIC_LABELS[metric] ?? `Top ${metric}`
+  const title = TOP_N_LABELS[metric] ?? `Top ${METRIC_LABELS[metric] ?? metric}`
 
   return (
     <div className="flex h-full flex-col rounded-lg border bg-card p-4">

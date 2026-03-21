@@ -158,6 +158,7 @@ Each server has a detail page showing:
 - System information (hardware, OS, network)
 - Historical trend charts with time range selection
 - Disk I/O charts with merged and per-disk views (Linux, historical mode)
+- 90-day uptime timeline with daily availability breakdown
 - Server metadata (group, tags, remarks, pricing)
 - Actions (terminal access, edit, delete)
 
@@ -182,6 +183,17 @@ When historical disk I/O data is available (Linux agents only), the server detai
 - **Per Disk** -- Individual charts for each physical disk (e.g., `sda`, `nvme0n1`)
 
 Both views show read speed (blue) and write speed (green) as area charts. Missing data points are filled with zero values to maintain a continuous timeline.
+
+### Uptime Timeline
+
+The server detail page includes an uptime card with a 90-day timeline. Each day is shown as a colored bar:
+
+- **Green** -- 100% uptime
+- **Yellow** -- Below the yellow threshold (degraded)
+- **Red** -- Below the red threshold (major outage)
+- **Gray** -- No data
+
+Uptime data is queried via `GET /api/servers/{server_id}/uptime-daily?days=90`. The endpoint returns a `UptimeDailyEntry` per day with `date`, `online_minutes`, `total_minutes`, and `uptime_percent` fields. Missing dates are gap-filled with zero values.
 
 ### Time Range Selector
 

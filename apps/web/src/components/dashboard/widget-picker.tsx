@@ -35,7 +35,8 @@ const WIDGET_ICONS: Record<string, typeof Server> = {
   'traffic-bar': Network,
   'disk-io': HardDrive,
   'server-map': Globe,
-  markdown: FileText
+  markdown: FileText,
+  'uptime-timeline': Activity
 }
 
 const WIDGET_DESCRIPTIONS: Record<string, string> = {
@@ -50,7 +51,8 @@ const WIDGET_DESCRIPTIONS: Record<string, string> = {
   'traffic-bar': 'Daily traffic bar chart',
   'disk-io': 'Disk I/O read/write chart',
   'server-map': 'World map with server locations',
-  markdown: 'Custom markdown content'
+  markdown: 'Custom markdown content',
+  'uptime-timeline': '90-day uptime timeline bar'
 }
 
 const CATEGORY_ORDER: WidgetCategory[] = ['Real-time', 'Charts', 'Status']
@@ -59,7 +61,7 @@ export function WidgetPicker({ onSelect, open, onOpenChange }: WidgetPickerProps
   const { t } = useTranslation('dashboard')
 
   const grouped = useMemo(() => {
-    const map = new Map<WidgetCategory, typeof WIDGET_TYPES>()
+    const map = new Map<WidgetCategory, (typeof WIDGET_TYPES)[number][]>()
     for (const category of CATEGORY_ORDER) {
       map.set(
         category,

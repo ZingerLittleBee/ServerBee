@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
-import type { ServerResponse } from '@/lib/api-schema'
+import type { ServerResponse, UptimeDailyEntry } from '@/lib/api-schema'
 
 type ServerRecord = import('@/lib/api-schema').ServerMetricRecord
 
@@ -25,6 +25,15 @@ export function useServerRecords(id: string, hours: number, interval: string, op
     },
     enabled: id.length > 0 && (options?.enabled ?? true),
     refetchInterval: 60_000
+  })
+}
+
+export function useUptimeDaily(serverId: string, days = 90) {
+  return useQuery<UptimeDailyEntry[]>({
+    queryKey: ['servers', serverId, 'uptime-daily', days],
+    queryFn: () => api.get<UptimeDailyEntry[]>(`/api/servers/${serverId}/uptime-daily?days=${days}`),
+    enabled: serverId.length > 0,
+    staleTime: 300_000
   })
 }
 

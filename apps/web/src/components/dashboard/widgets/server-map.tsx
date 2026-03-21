@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import { filterByIds } from '@/lib/widget-helpers'
 import type { ServerMapConfig } from '@/lib/widget-types'
 import { WORLD_MAP_PATHS } from '@/lib/world-map-paths'
 
@@ -17,21 +18,16 @@ interface CountryGroup {
   serverNames: string[]
 }
 
-// SVG viewBox matches the coordinate system: longitude -180..180, latitude -90..90
 const VIEW_BOX = '-180 -90 360 180'
 
+const COUNTRY_MAP = new Map(WORLD_MAP_PATHS.map((p) => [p.id, p]))
+
 export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
-  const serverIds = config.server_ids
+  const filteredServers = useMemo(
+    () => filterByIds(servers, config.server_ids, (s) => s.id),
+    [servers, config.server_ids]
+  )
 
-  const filteredServers = useMemo(() => {
-    if (!serverIds || serverIds.length === 0) {
-      return servers
-    }
-    const idSet = new Set(serverIds)
-    return servers.filter((s) => idSet.has(s.id))
-  }, [servers, serverIds])
-
-  // Group servers by country_code
   const countryGroups = useMemo(() => {
     const groups = new Map<string, CountryGroup>()
 
@@ -46,8 +42,7 @@ export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
         existing.count++
         existing.serverNames.push(server.name)
       } else {
-        // Find centroid from map data
-        const countryPath = WORLD_MAP_PATHS.find((p) => p.id === upper)
+        const countryPath = COUNTRY_MAP.get(upper)
         if (countryPath) {
           groups.set(upper, {
             countryCode: upper,
@@ -84,7 +79,6 @@ export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
           viewBox={VIEW_BOX}
         >
           <title>Server Map</title>
-          {/* Country paths */}
           {WORLD_MAP_PATHS.map((country) => (
             <path
               className="transition-colors"
@@ -99,7 +93,6 @@ export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
             </path>
           ))}
 
-          {/* Server markers */}
           {countryGroups.map((group) => {
             const radius = 1.5 + (group.count / maxCount) * 3
             return (
@@ -119,7 +112,6 @@ export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
                     {group.serverNames.join(', ')}
                   </title>
                 </circle>
-                {/* Ping animation ring */}
                 <circle
                   cx={group.cx}
                   cy={group.cy}

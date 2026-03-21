@@ -1,5 +1,5 @@
 import { useQueries } from '@tanstack/react-query'
-import { useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts'
 import {
   type ChartConfig,
@@ -14,6 +14,13 @@ import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerMetricRecord } from '@/lib/api-schema'
 import { formatBytes } from '@/lib/utils'
+import {
+  extractRecordMetric,
+  formatChartTime,
+  isNetworkMetric,
+  METRIC_LABELS,
+  METRIC_UNITS
+} from '@/lib/widget-helpers'
 import type { MultiLineConfig } from '@/lib/widget-types'
 
 interface MultiLineWidgetProps {
@@ -23,74 +30,43 @@ interface MultiLineWidgetProps {
 
 const DEFAULT_HOURS = 24
 const DEFAULT_INTERVAL = 'raw'
+const REFETCH_INTERVAL = 60_000
 
 const CHART_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)']
-
-const METRIC_LABELS: Record<string, string> = {
-  cpu: 'CPU',
-  memory: 'Memory',
-  disk: 'Disk',
-  load1: 'Load (1m)',
-  net_in: 'Network In',
-  net_out: 'Network Out'
-}
-
-function isNetworkMetric(metric: string): boolean {
-  return metric === 'net_in' || metric === 'net_out'
-}
-
-function extractValue(record: ServerMetricRecord, metric: string, server?: ServerMetrics): number {
-  switch (metric) {
-    case 'cpu':
-      return record.cpu
-    case 'memory':
-      return server?.mem_total ? (record.mem_used / server.mem_total) * 100 : 0
-    case 'disk':
-      return server?.disk_total ? (record.disk_used / server.disk_total) * 100 : 0
-    case 'load1':
-      return record.load1
-    case 'load5':
-      return record.load5
-    case 'load15':
-      return record.load15
-    case 'net_in':
-      return record.net_in_speed
-    case 'net_out':
-      return record.net_out_speed
-    default:
-      return 0
-  }
-}
-
-function formatTime(time: string): string {
-  const date = new Date(time)
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
-const METRIC_UNITS: Record<string, string> = {
-  cpu: '%',
-  memory: '%',
-  disk: '%'
-}
 
 export function MultiLineWidget({ config, servers }: MultiLineWidgetProps) {
   const { server_ids, metric } = config
   const hours = config.hours ?? DEFAULT_HOURS
   const interval = config.interval ?? DEFAULT_INTERVAL
 
-  const now = useMemo(() => new Date(), [])
-  const from = useMemo(() => new Date(now.getTime() - hours * 3600 * 1000).toISOString(), [now, hours])
-  const to = useMemo(() => now.toISOString(), [now])
+  // Sliding time window: update `from`/`to` on each refetch cycle
+  const [timeRange, setTimeRange] = useState(() => {
+    const now = new Date()
+    return {
+      from: new Date(now.getTime() - hours * 3600 * 1000).toISOString(),
+      to: now.toISOString()
+    }
+  })
+
+  const refreshTimeRange = useCallback(() => {
+    const now = new Date()
+    setTimeRange({
+      from: new Date(now.getTime() - hours * 3600 * 1000).toISOString(),
+      to: now.toISOString()
+    })
+  }, [hours])
 
   const queries = useQueries({
     queries: server_ids.map((sid) => ({
       queryKey: ['servers', sid, 'records', hours, interval],
-      queryFn: () =>
-        api.get<ServerMetricRecord[]>(
-          `/api/servers/${sid}/records?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&interval=${encodeURIComponent(interval)}`
-        ),
+      queryFn: () => {
+        refreshTimeRange()
+        return api.get<ServerMetricRecord[]>(
+          `/api/servers/${sid}/records?from=${encodeURIComponent(timeRange.from)}&to=${encodeURIComponent(timeRange.to)}&interval=${encodeURIComponent(interval)}`
+        )
+      },
       enabled: sid.length > 0,
-      refetchInterval: 60_000
+      refetchInterval: REFETCH_INTERVAL
     }))
   })
 
@@ -106,7 +82,6 @@ export function MultiLineWidget({ config, servers }: MultiLineWidgetProps) {
     return map
   }, [servers])
 
-  // Build chart config with server names as labels
   const chartConfig = useMemo(() => {
     const cfg: ChartConfig = {}
     for (let i = 0; i < server_ids.length; i++) {
@@ -117,7 +92,6 @@ export function MultiLineWidget({ config, servers }: MultiLineWidgetProps) {
     return cfg
   }, [server_ids, serverMap])
 
-  // Merge all server data into a single dataset keyed by timestamp
   const chartData = useMemo(() => {
     const timeMap = new Map<string, Record<string, unknown>>()
 
@@ -135,7 +109,7 @@ export function MultiLineWidget({ config, servers }: MultiLineWidgetProps) {
           row = { timestamp: key }
           timeMap.set(key, row)
         }
-        row[sid] = extractValue(record, metric, server)
+        row[sid] = extractRecordMetric(record, metric, server)
       }
     }
 
@@ -160,7 +134,7 @@ export function MultiLineWidget({ config, servers }: MultiLineWidgetProps) {
         <ChartContainer className="h-full w-full" config={chartConfig}>
           <LineChart accessibilityLayer data={chartData}>
             <CartesianGrid vertical={false} />
-            <XAxis axisLine={false} dataKey="timestamp" tickFormatter={formatTime} tickLine={false} />
+            <XAxis axisLine={false} dataKey="timestamp" tickFormatter={formatChartTime} tickLine={false} />
             <YAxis
               axisLine={false}
               tickFormatter={isNetwork ? (v: number) => formatBytes(v) : undefined}
@@ -170,7 +144,7 @@ export function MultiLineWidget({ config, servers }: MultiLineWidgetProps) {
             <ChartTooltip
               content={
                 <ChartTooltipContent
-                  labelFormatter={(l) => formatTime(String(l))}
+                  labelFormatter={(l) => formatChartTime(String(l))}
                   valueFormatter={(v) => (isNetwork ? `${formatBytes(v)}/s` : `${Number(v).toFixed(1)}${unit}`)}
                 />
               }
