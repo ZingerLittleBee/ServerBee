@@ -18,6 +18,8 @@ pub struct CreateStatusPage {
     pub show_values: Option<bool>,
     pub custom_css: Option<String>,
     pub enabled: Option<bool>,
+    pub uptime_yellow_threshold: Option<f64>,
+    pub uptime_red_threshold: Option<f64>,
 }
 
 #[derive(Debug, Deserialize, Serialize, utoipa::ToSchema)]
@@ -30,6 +32,8 @@ pub struct UpdateStatusPage {
     pub show_values: Option<bool>,
     pub custom_css: Option<Option<String>>,
     pub enabled: Option<bool>,
+    pub uptime_yellow_threshold: Option<f64>,
+    pub uptime_red_threshold: Option<f64>,
 }
 
 impl StatusPageService {
@@ -88,6 +92,8 @@ impl StatusPageService {
             show_values: Set(input.show_values.unwrap_or(true)),
             custom_css: Set(input.custom_css),
             enabled: Set(input.enabled.unwrap_or(true)),
+            uptime_yellow_threshold: Set(input.uptime_yellow_threshold.unwrap_or(100.0)),
+            uptime_red_threshold: Set(input.uptime_red_threshold.unwrap_or(95.0)),
             created_at: Set(now),
             updated_at: Set(now),
         };
@@ -139,6 +145,12 @@ impl StatusPageService {
         }
         if let Some(enabled) = input.enabled {
             model.enabled = Set(enabled);
+        }
+        if let Some(yellow) = input.uptime_yellow_threshold {
+            model.uptime_yellow_threshold = Set(yellow);
+        }
+        if let Some(red) = input.uptime_red_threshold {
+            model.uptime_red_threshold = Set(red);
         }
         model.updated_at = Set(Utc::now());
 

@@ -1,5 +1,6 @@
-import { Component, type ReactNode } from 'react'
+import { Component, memo, type ReactNode, useMemo } from 'react'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import { parseConfig } from '@/lib/widget-helpers'
 import type {
   AlertListConfig,
   DashboardWidget,
@@ -13,7 +14,8 @@ import type {
   ServiceStatusConfig,
   StatNumberConfig,
   TopNConfig,
-  TrafficBarConfig
+  TrafficBarConfig,
+  UptimeTimelineConfig
 } from '@/lib/widget-types'
 
 import { AlertListWidget } from './widgets/alert-list'
@@ -28,13 +30,13 @@ import { ServiceStatusWidget } from './widgets/service-status'
 import { StatNumberWidget } from './widgets/stat-number'
 import { TopNWidget } from './widgets/top-n'
 import { TrafficBarWidget } from './widgets/traffic-bar'
+import { UptimeTimelineWidget } from './widgets/uptime-timeline-widget'
 
 interface WidgetRendererProps {
   servers: ServerMetrics[]
   widget: DashboardWidget
 }
 
-// Error boundary to catch widget render errors
 interface ErrorBoundaryProps {
   children: ReactNode
   fallback: ReactNode
@@ -63,14 +65,6 @@ class WidgetErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 }
 
-function parseConfig<T>(configJson: string): T {
-  try {
-    return JSON.parse(configJson) as T
-  } catch {
-    return {} as T
-  }
-}
-
 function ErrorFallback() {
   return (
     <div className="flex h-full items-center justify-center rounded-lg border border-destructive/30 bg-card p-4 text-destructive text-sm">
@@ -79,32 +73,36 @@ function ErrorFallback() {
   )
 }
 
-function renderWidgetContent(widget: DashboardWidget, servers: ServerMetrics[]): ReactNode {
+function WidgetContent({ widget, servers }: WidgetRendererProps) {
+  const config = useMemo(() => parseConfig<Record<string, unknown>>(widget.config_json), [widget.config_json])
+
   switch (widget.widget_type) {
     case 'stat-number':
-      return <StatNumberWidget config={parseConfig<StatNumberConfig>(widget.config_json)} servers={servers} />
+      return <StatNumberWidget config={config as unknown as StatNumberConfig} servers={servers} />
     case 'server-cards':
-      return <ServerCardsWidget config={parseConfig<ServerCardsConfig>(widget.config_json)} servers={servers} />
+      return <ServerCardsWidget config={config as unknown as ServerCardsConfig} servers={servers} />
     case 'gauge':
-      return <GaugeWidget config={parseConfig<GaugeConfig>(widget.config_json)} servers={servers} />
+      return <GaugeWidget config={config as unknown as GaugeConfig} servers={servers} />
     case 'line-chart':
-      return <LineChartWidget config={parseConfig<LineChartConfig>(widget.config_json)} servers={servers} />
+      return <LineChartWidget config={config as unknown as LineChartConfig} servers={servers} />
     case 'multi-line':
-      return <MultiLineWidget config={parseConfig<MultiLineConfig>(widget.config_json)} servers={servers} />
+      return <MultiLineWidget config={config as unknown as MultiLineConfig} servers={servers} />
     case 'top-n':
-      return <TopNWidget config={parseConfig<TopNConfig>(widget.config_json)} servers={servers} />
+      return <TopNWidget config={config as unknown as TopNConfig} servers={servers} />
     case 'alert-list':
-      return <AlertListWidget config={parseConfig<AlertListConfig>(widget.config_json)} servers={servers} />
+      return <AlertListWidget config={config as unknown as AlertListConfig} servers={servers} />
     case 'service-status':
-      return <ServiceStatusWidget config={parseConfig<ServiceStatusConfig>(widget.config_json)} />
+      return <ServiceStatusWidget config={config as unknown as ServiceStatusConfig} />
     case 'traffic-bar':
-      return <TrafficBarWidget config={parseConfig<TrafficBarConfig>(widget.config_json)} servers={servers} />
+      return <TrafficBarWidget config={config as unknown as TrafficBarConfig} servers={servers} />
     case 'disk-io':
-      return <DiskIoWidget config={parseConfig<DiskIoConfig>(widget.config_json)} servers={servers} />
+      return <DiskIoWidget config={config as unknown as DiskIoConfig} servers={servers} />
     case 'server-map':
-      return <ServerMapWidget config={parseConfig<ServerMapConfig>(widget.config_json)} servers={servers} />
+      return <ServerMapWidget config={config as unknown as ServerMapConfig} servers={servers} />
     case 'markdown':
-      return <MarkdownWidget config={parseConfig<MarkdownConfig>(widget.config_json)} />
+      return <MarkdownWidget config={config as unknown as MarkdownConfig} />
+    case 'uptime-timeline':
+      return <UptimeTimelineWidget config={config as unknown as UptimeTimelineConfig} servers={servers} />
     default:
       return (
         <div className="flex h-full items-center justify-center rounded-lg border bg-card text-muted-foreground text-sm">
@@ -114,6 +112,12 @@ function renderWidgetContent(widget: DashboardWidget, servers: ServerMetrics[]):
   }
 }
 
+const MemoizedWidgetContent = memo(WidgetContent)
+
 export function WidgetRenderer({ widget, servers }: WidgetRendererProps) {
-  return <WidgetErrorBoundary fallback={<ErrorFallback />}>{renderWidgetContent(widget, servers)}</WidgetErrorBoundary>
+  return (
+    <WidgetErrorBoundary fallback={<ErrorFallback />}>
+      <MemoizedWidgetContent servers={servers} widget={widget} />
+    </WidgetErrorBoundary>
+  )
 }

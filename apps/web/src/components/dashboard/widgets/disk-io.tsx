@@ -13,6 +13,7 @@ import { useServerRecords } from '@/hooks/use-api'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { buildMergedDiskIoSeries } from '@/lib/disk-io'
 import { formatSpeed } from '@/lib/utils'
+import { formatChartTime } from '@/lib/widget-helpers'
 import type { DiskIoConfig } from '@/lib/widget-types'
 
 interface DiskIoWidgetProps {
@@ -27,11 +28,6 @@ const chartConfig = {
   read_bytes_per_sec: { label: 'Read', color: 'var(--chart-1)' },
   write_bytes_per_sec: { label: 'Write', color: 'var(--chart-2)' }
 } satisfies ChartConfig
-
-function formatTime(time: string): string {
-  const date = new Date(time)
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
 
 export function DiskIoWidget({ config, servers }: DiskIoWidgetProps) {
   const { server_id } = config
@@ -82,12 +78,12 @@ export function DiskIoWidget({ config, servers }: DiskIoWidgetProps) {
         <ChartContainer className="h-full w-full" config={chartConfig}>
           <LineChart accessibilityLayer data={chartData}>
             <CartesianGrid vertical={false} />
-            <XAxis axisLine={false} dataKey="timestamp" tickFormatter={formatTime} tickLine={false} />
+            <XAxis axisLine={false} dataKey="timestamp" tickFormatter={formatChartTime} tickLine={false} />
             <YAxis axisLine={false} tickFormatter={formatSpeed} tickLine={false} width={70} />
             <ChartTooltip
               content={
                 <ChartTooltipContent
-                  labelFormatter={(l) => formatTime(String(l))}
+                  labelFormatter={(l) => formatChartTime(String(l))}
                   valueFormatter={(v) => formatSpeed(v)}
                 />
               }

@@ -136,6 +136,8 @@ use utoipa::OpenApi;
         crate::router::api::ping::update_task,
         crate::router::api::ping::delete_task,
         crate::router::api::ping::get_records,
+        // uptime
+        crate::router::api::uptime::get_uptime_daily,
         // traceroute
         crate::router::api::traceroute::trigger_traceroute,
         crate::router::api::traceroute::get_traceroute_result,
@@ -260,6 +262,7 @@ use utoipa::OpenApi;
             crate::entity::maintenance::Model,
             // uptime
             crate::entity::uptime_daily::Model,
+            crate::service::uptime::UptimeDailyEntry,
             // entity models used as responses
             crate::entity::server_group::Model,
             crate::entity::notification::Model,
@@ -328,6 +331,7 @@ use utoipa::OpenApi;
         (name = "ping-tasks", description = "Ping probe tasks"),
         (name = "traceroute", description = "Traceroute diagnostics"),
         (name = "traffic", description = "Traffic statistics & billing cycle overview"),
+        (name = "uptime", description = "Uptime statistics"),
         (name = "files", description = "File management"),
     ),
     security(

@@ -21,6 +21,7 @@ pub mod status_page;
 pub mod task;
 pub mod traceroute;
 pub mod traffic;
+pub mod uptime;
 pub mod user;
 
 use std::sync::Arc;
@@ -52,6 +53,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 .merge(traceroute::read_router())
                 .merge(service_monitor::read_router())
                 .merge(status_page::read_router())
+                .merge(uptime::read_router())
                 .merge(dashboard::read_router())
                 .merge(alert::alert_events_router())
                 // Admin-only routes (write operations + management)

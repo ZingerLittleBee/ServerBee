@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
+import { filterByIds, formatRelativeTime } from '@/lib/widget-helpers'
 import type { AlertListConfig } from '@/lib/widget-types'
 
 interface AlertListWidgetProps {
@@ -20,21 +21,6 @@ interface AlertEvent {
   status: string
 }
 
-function formatRelativeTime(isoString: string): string {
-  const diff = Math.max(0, Math.floor((Date.now() - new Date(isoString).getTime()) / 1000))
-
-  if (diff < 60) {
-    return `${diff}s ago`
-  }
-  if (diff < 3600) {
-    return `${Math.floor(diff / 60)}m ago`
-  }
-  if (diff < 86_400) {
-    return `${Math.floor(diff / 3600)}h ago`
-  }
-  return `${Math.floor(diff / 86_400)}d ago`
-}
-
 export function AlertListWidget({ config, servers }: AlertListWidgetProps) {
   const limit = config.max_items ?? 10
   const serverIds = config.server_ids
@@ -45,18 +31,8 @@ export function AlertListWidget({ config, servers }: AlertListWidgetProps) {
     refetchInterval: 60_000
   })
 
-  const filtered = useMemo(() => {
-    if (!events) {
-      return []
-    }
-    if (!serverIds || serverIds.length === 0) {
-      return events
-    }
-    const idSet = new Set(serverIds)
-    return events.filter((e) => idSet.has(e.server_id))
-  }, [events, serverIds])
+  const filtered = useMemo(() => filterByIds(events ?? [], serverIds, (e) => e.server_id), [events, serverIds])
 
-  // Resolve server name from live data if possible
   const serverNameMap = useMemo(() => {
     const map = new Map<string, string>()
     for (const s of servers) {

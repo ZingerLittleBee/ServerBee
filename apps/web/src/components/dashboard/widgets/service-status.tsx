@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { api } from '@/lib/api-client'
+import { formatRelativeTime } from '@/lib/widget-helpers'
 import type { ServiceStatusConfig } from '@/lib/widget-types'
 
 interface ServiceMonitor {
@@ -51,23 +52,6 @@ function getStatusLabel(monitor: ServiceMonitor): string {
   return 'Down'
 }
 
-function formatCheckTime(isoString: string | null): string {
-  if (!isoString) {
-    return 'Never'
-  }
-  const diff = Math.max(0, Math.floor((Date.now() - new Date(isoString).getTime()) / 1000))
-  if (diff < 60) {
-    return `${diff}s ago`
-  }
-  if (diff < 3600) {
-    return `${Math.floor(diff / 60)}m ago`
-  }
-  if (diff < 86_400) {
-    return `${Math.floor(diff / 3600)}h ago`
-  }
-  return `${Math.floor(diff / 86_400)}d ago`
-}
-
 export function ServiceStatusWidget({ config }: ServiceStatusWidgetProps) {
   const monitorIds = config.monitor_ids
 
@@ -105,14 +89,14 @@ export function ServiceStatusWidget({ config }: ServiceStatusWidgetProps) {
           <div
             className="group relative inline-flex items-center justify-center"
             key={monitor.id}
-            title={`${monitor.name} - ${getStatusLabel(monitor)} - Last check: ${formatCheckTime(monitor.last_checked_at)}`}
+            title={`${monitor.name} - ${getStatusLabel(monitor)} - Last check: ${formatRelativeTime(monitor.last_checked_at)}`}
           >
             <span className={`inline-block size-3.5 rounded-full ${getStatusColor(monitor)} cursor-default`} />
             <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 rounded-md bg-popover px-2.5 py-1.5 shadow-md ring-1 ring-border group-hover:block">
               <div className="whitespace-nowrap text-xs">
                 <p className="font-medium">{monitor.name}</p>
                 <p className="text-muted-foreground">
-                  {getStatusLabel(monitor)} &middot; {formatCheckTime(monitor.last_checked_at)}
+                  {getStatusLabel(monitor)} &middot; {formatRelativeTime(monitor.last_checked_at)}
                 </p>
               </div>
             </div>

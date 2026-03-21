@@ -20,13 +20,7 @@ interface TrafficBarWidgetProps {
   servers: ServerMetrics[]
 }
 
-interface DailyItem {
-  bytes_in: number
-  bytes_out: number
-  date: string
-}
-
-interface DailyGlobalItem {
+interface DailyTrafficItem {
   bytes_in: number
   bytes_out: number
   date: string
@@ -60,10 +54,10 @@ export function TrafficBarWidget({ config, servers }: TrafficBarWidgetProps) {
   const toDate = useMemo(() => new Date().toISOString().slice(0, 10), [])
 
   // Per-server daily traffic
-  const { data: serverDaily, isLoading: serverLoading } = useQuery<DailyItem[]>({
+  const { data: serverDaily, isLoading: serverLoading } = useQuery<DailyTrafficItem[]>({
     queryKey: ['traffic', server_id, 'daily', days],
     queryFn: () =>
-      api.get<DailyItem[]>(
+      api.get<DailyTrafficItem[]>(
         `/api/traffic/${server_id}/daily?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}`
       ),
     staleTime: 60_000,
@@ -71,9 +65,9 @@ export function TrafficBarWidget({ config, servers }: TrafficBarWidgetProps) {
   })
 
   // Global overview daily traffic
-  const { data: globalDaily, isLoading: globalLoading } = useQuery<DailyGlobalItem[]>({
+  const { data: globalDaily, isLoading: globalLoading } = useQuery<DailyTrafficItem[]>({
     queryKey: ['traffic', 'overview', 'daily', days],
-    queryFn: () => api.get<DailyGlobalItem[]>(`/api/traffic/overview/daily?days=${days}`),
+    queryFn: () => api.get<DailyTrafficItem[]>(`/api/traffic/overview/daily?days=${days}`),
     staleTime: 60_000,
     enabled: !hasServerId
   })

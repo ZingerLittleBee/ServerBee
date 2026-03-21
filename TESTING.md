@@ -24,7 +24,7 @@ bun run typecheck
 
 ```bash
 cargo test -p serverbee-common          # 协议 + 能力常量 + Docker 类型 + Traceroute (43 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 + dashboard (218 unit + 33 integration + 4 docker = 255 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 + dashboard + uptime (223 unit + 36 integration + 4 docker = 263 tests)
 cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager + Traceroute (55 tests)
 ```
 
@@ -83,6 +83,7 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `server/service/checker/tcp.rs` | 3 | 连接拒绝、连接成功（本机监听）、默认超时值 |
 | `server/service/checker/whois.rs` | 8 | 多种日期格式解析、paid-till 格式、ISO 格式、注册商解析、长文本截断 |
 | `server/service/dashboard.rs` | 12 | 仪表盘 CRUD、默认仪表盘自动创建/幂等性、widget diff 更新、排序、删除保护（默认/最后一个）、set_default 清除旧值、未知 widget 类型拒绝 |
+| `server/service/uptime.rs` | 5 | get_daily_filled 精确天数返回、日期边界验证、部分数据补零、单日查询、90 天查询 |
 
 ### 集成测试覆盖
 
@@ -121,6 +122,9 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `test_dashboard_default_auto_creates` | GET /dashboards/default → 自动创建默认仪表盘 → 幂等 |
 | `test_dashboard_rbac_member_cannot_write` | member 用户 POST/PUT/DELETE → 403 |
 | `test_alert_events_endpoint` | 创建告警规则 → GET /alert-events → 验证响应结构 |
+| `test_uptime_daily_requires_auth` | 无认证访问 /api/servers/{id}/uptime-daily → 401 |
+| `test_uptime_daily_server_not_found` | 认证后访问不存在的 server → 404 |
+| `test_uptime_daily_returns_data` | 注册 Agent → days=0 → 400、days=366 → 400、默认 → 200 (90 条零填充) |
 
 ## 前端测试
 
@@ -151,11 +155,12 @@ cd apps/web && bunx vitest run src/lib/capabilities.test.ts
 | `disk-io.test.ts` | 3 | disk_io_json 解析、汇总序列、按磁盘补零序列 |
 | `disk-io-chart.test.tsx` | 2 | DiskIoChart 汇总/按磁盘切换、空数据返回 null |
 | `use-dashboard.test.tsx` | 7 | useDashboards/useDefaultDashboard/useDashboard 查询、useCreateDashboard/useUpdateDashboard/useDeleteDashboard 变更、空 id 守卫 |
-| `widget-renderer.test.tsx` | 13 | 12 种 widget 类型逐一渲染无崩溃（stat-number/server-cards/gauge/top-n/line-chart/multi-line/traffic-bar/disk-io/alert-list/service-status/server-map/markdown）+ 未知类型 fallback |
+| `widget-renderer.test.tsx` | 14 | 13 种 widget 类型逐一渲染无崩溃（stat-number/server-cards/gauge/top-n/line-chart/multi-line/traffic-bar/disk-io/alert-list/service-status/server-map/markdown/uptime-timeline）+ 未知类型 fallback |
 | `dashboard-grid.test.tsx` | 4 | view 模式无编辑覆层、edit 模式显示 Add Widget、移动端单列布局、桌面端 GridLayout |
-| `widget-config-dialog.test.tsx` | 8 | stat-number metric 选择、line-chart server+metric+range 选择、markdown textarea、service-status/server-map 无配置提示、title 输入、编辑模式标题、关闭时不渲染 |
+| `widget-config-dialog.test.tsx` | 9 | stat-number metric 选择、line-chart server+metric+range 选择、markdown textarea、service-status/server-map 无配置提示、title 输入、编辑模式标题、关闭时不渲染、uptime-timeline server 多选 |
 | `markdown.test.ts` | 8 | 标题/粗体斜体/安全链接/javascript:链接拦截/HTML 标签转义/img onerror 转义/行内代码/无序列表 |
 | `capabilities-dialog.test.tsx` | 1 | admin 用户触发按钮打开能力控制对话框 |
+| `uptime-timeline.test.tsx` | 11 | 分段数量、绿/黄/红/灰颜色逻辑、自定义阈值、标签显示、图例显示、数据补零、computeAggregateUptime null/正常值/100% |
 
 ### 测试工具
 
@@ -285,6 +290,33 @@ agent-browser close
 pkill -f "target/debug/serverbee-server"
 ```
 
+```bash
+# 8. P18: Uptime Timeline — 公共状态页时间线
+agent-browser open http://localhost:9527/status
+agent-browser wait --load networkidle
+agent-browser screenshot /tmp/p18-status-simple.png
+
+# 创建状态页（如果还没有的话）
+agent-browser open http://localhost:9527/settings/status-pages
+agent-browser wait --load networkidle && agent-browser snapshot -i
+# 查看状态页有无 uptime 阈值配置字段
+agent-browser screenshot /tmp/p18-status-admin.png
+
+# 服务器详情页 — Uptime 卡片
+agent-browser open http://localhost:9527/servers
+agent-browser wait --load networkidle && agent-browser snapshot -i
+# 点击第一台服务器
+agent-browser click @e1
+agent-browser wait --load networkidle
+agent-browser screenshot /tmp/p18-server-detail.png
+# 验证：Uptime 卡片显示百分比 + 90 天时间线
+
+# Dashboard — Uptime Timeline Widget
+agent-browser open http://localhost:9527
+agent-browser wait --load networkidle && agent-browser snapshot -i
+agent-browser screenshot /tmp/p18-dashboard.png
+```
+
 ### 最近一次自动化测试结果（2026-03-19）
 
 | 测试项 | 结果 |
@@ -333,9 +365,9 @@ docker compose up -d
 | 功能 | 路由/地址 | 验证方法 | 状态 |
 |------|-----------|----------|------|
 | 登录 | `/login` | 输入 admin/密码登录，跳转 Dashboard | ✅ |
-| Dashboard | `/` | 自定义仪表盘：默认加载 default dashboard（6 个预设 widget），支持切换/新建/删除仪表盘，编辑模式拖拽布局 + 添加/配置/删除 widget，12 种 widget 类型 | — |
+| Dashboard | `/` | 自定义仪表盘：默认加载 default dashboard（6 个预设 widget），支持切换/新建/删除仪表盘，编辑模式拖拽布局 + 添加/配置/删除 widget，13 种 widget 类型（含 Uptime Timeline） | — |
 | Servers 列表 | `/servers` | 表格显示服务器，支持搜索、排序、批量选择 | ✅ |
-| 服务器详情 | `/servers/:id` | 系统信息（OS/CPU/RAM/Kernel）、实时流式图表（默认）+ 历史图表（1h/6h/24h/7d/30d）、CPU/Memory/Disk/Network In/Out/Load/Temperature，历史模式额外显示 Disk I/O（汇总/按磁盘） | ✅ |
+| 服务器详情 | `/servers/:id` | 系统信息（OS/CPU/RAM/Kernel）、Uptime 卡片（90 天百分比 + 时间线）、实时流式图表（默认）+ 历史图表（1h/6h/24h/7d/30d）、CPU/Memory/Disk/Network In/Out/Load/Temperature，历史模式额外显示 Disk I/O（汇总/按磁盘） | — |
 | Capability Toggles | `/servers/:id` (底部) | 6 个开关：Web Terminal/Remote Exec/Auto Upgrade (High Risk, 默认关) + ICMP/TCP/HTTP Probe (Low Risk, 默认开) | ✅ |
 | 全局 Capabilities | `/settings/capabilities` | 表格视图管理所有服务器的能力开关，支持搜索和批量选择 | ✅ |
 | Agent 连接 | Dashboard | Agent 自动注册获取 token → WebSocket 连接 → 指标上报 → Dashboard 显示 Online | ✅ |
@@ -767,6 +799,53 @@ docker compose up -d
 | DB35 | DELETE /api/dashboards/:id | 删除非默认仪表盘 → 200 → 删除默认仪表盘 → 400 | — |
 | DB36 | GET /api/alert-events | 返回聚合告警事件列表，firing 在前 → 支持 limit 参数 | — |
 | DB37 | OpenAPI | `/swagger-ui/` 包含 6 个 dashboards + 1 个 alert-events 端点 | — |
+
+### 验证清单 — Uptime 90 天时间线 (P18)
+
+#### 公共状态页
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| UT1 | 时间线替换进度条 | 打开 `/status/:slug` → 每台服务器行显示 90 段色块时间线（替代旧进度条） | — |
+| UT2 | Hover Tooltip | 鼠标悬停色块 → 显示日期、在线率、在线时长、宕机次数 | — |
+| UT3 | 百分比显示 | 每行末尾显示聚合在线率百分比（或"—"表示无数据） | — |
+| UT4 | 阈值颜色 | 100% 日显示绿色、低于阈值显示黄色/红色、无数据显示灰色 | — |
+| UT5 | 移动端隐藏 | 窗口宽度 < 640px → 时间线隐藏，仅显示百分比文字 | — |
+
+#### 服务器详情页
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| UT6 | Uptime 卡片 | 打开 `/servers/:id` → 指标区域上方显示 Uptime 卡片（大字百分比 + 时间线 + 标签 + 图例） | — |
+| UT7 | 无数据显示 | 新注册服务器无 uptime 数据 → 显示"—"和全灰时间线 | — |
+
+#### 仪表盘 Widget
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| UT8 | 添加 Widget | 编辑模式 → Add Widget → 选择 "Uptime Timeline" → 选择服务器 + 天数 → 添加 | — |
+| UT9 | 单服务器 | 配置 1 台服务器 → 显示名称 + 百分比 + 完整时间线 | — |
+| UT10 | 多服务器 | 配置多台服务器 → 垂直堆叠每行一台，较矮时间线(20px) | — |
+| UT11 | 天数选择 | 30/60/90 天选项 → 时间线段数对应变化 | — |
+
+#### 状态页管理 — 阈值配置
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| UT12 | 创建时配置阈值 | 创建状态页 → 黄色阈值 99.9%、红色阈值 95% → 创建成功 | — |
+| UT13 | 编辑时读取已保存值 | 编辑已有状态页 → 阈值输入框显示已保存的值 | — |
+| UT14 | 默认值 | 不修改阈值 → 使用默认值 100/95 | — |
+
+#### API 验证
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| UT15 | GET /api/servers/:id/uptime-daily | 认证后请求 → 200，返回 90 条 entries | — |
+| UT16 | 404 不存在的服务器 | 请求不存在 ID → 404 | — |
+| UT17 | 401 无认证 | 无 session 请求 → 401 | — |
+| UT18 | days 参数校验 | days=0 → 400、days=366 → 400、days=30 → 200 (30 条) | — |
+| UT19 | 状态页 API 包含 daily | GET /api/status/:slug → servers 数组每项包含 uptime_daily 数组 | — |
+| UT20 | serde rename 对齐 | 响应字段名为 server_id/server_name/uptime_percent（非 id/name/uptime_percentage） | — |
 
 #### i18n
 

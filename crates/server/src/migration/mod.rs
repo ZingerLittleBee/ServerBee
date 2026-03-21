@@ -10,6 +10,7 @@ mod m20260319_000007_service_monitor;
 mod m20260319_000008_disk_io_records;
 mod m20260320_000009_status_page;
 mod m20260320_000010_dashboard;
+mod m20260321_000011_status_page_uptime_thresholds;
 
 pub struct Migrator;
 
@@ -26,6 +27,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260319_000008_disk_io_records::Migration),
             Box::new(m20260320_000009_status_page::Migration),
             Box::new(m20260320_000010_dashboard::Migration),
+            Box::new(m20260321_000011_status_page_uptime_thresholds::Migration),
         ]
     }
 }
