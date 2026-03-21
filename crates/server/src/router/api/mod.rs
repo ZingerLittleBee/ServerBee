@@ -2,8 +2,11 @@ pub mod agent;
 pub mod alert;
 pub mod audit;
 pub mod auth;
+pub mod brand;
 pub mod docker;
 pub mod file;
+pub mod incident;
+pub mod maintenance_api;
 pub mod network_probe;
 pub mod notification;
 pub mod oauth;
@@ -13,7 +16,9 @@ pub mod server;
 pub mod server_group;
 pub mod setting;
 pub mod status;
+pub mod status_page;
 pub mod task;
+pub mod traceroute;
 pub mod traffic;
 pub mod user;
 
@@ -30,6 +35,8 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(agent::public_router())
         .merge(oauth::router())
         .merge(status::router())
+        .merge(status_page::public_router())
+        .merge(brand::public_router())
         .merge(
             Router::new()
                 .merge(auth::protected_router())
@@ -41,7 +48,9 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 .merge(file::read_router())
                 .merge(docker::read_router())
                 .merge(traffic::read_router())
+                .merge(traceroute::read_router())
                 .merge(service_monitor::read_router())
+                .merge(status_page::read_router())
                 // Admin-only routes (write operations + management)
                 .merge(
                     Router::new()
@@ -52,12 +61,17 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                         .merge(file::write_router())
                         .merge(docker::write_router())
                         .merge(service_monitor::write_router())
+                        .merge(traceroute::write_router())
                         .merge(setting::router())
+                        .merge(brand::write_router())
                         .merge(notification::router())
                         .merge(alert::router())
                         .merge(task::router())
                         .merge(audit::router())
                         .merge(user::router())
+                        .merge(incident::router())
+                        .merge(maintenance_api::router())
+                        .merge(status_page::write_router())
                         .layer(middleware::from_fn(require_admin)),
                 )
                 .layer(middleware::from_fn_with_state(

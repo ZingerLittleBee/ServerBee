@@ -122,6 +122,99 @@ export interface TrafficPrediction {
   will_exceed: boolean
 }
 
+// Public status page (slug-based)
+export interface PublicStatusPageData {
+  active_incidents: Array<{
+    created_at: string
+    id: string
+    severity: string
+    status: string
+    title: string
+    updates: Array<{
+      created_at: string
+      id: string
+      message: string
+      status: string
+    }>
+  }>
+  page: {
+    custom_css: string | null
+    description: string | null
+    show_values: boolean
+    title: string
+  }
+  planned_maintenances: Array<{
+    description: string | null
+    end_at: string
+    id: string
+    start_at: string
+    title: string
+  }>
+  recent_incidents: Array<{
+    created_at: string
+    id: string
+    resolved_at: string | null
+    severity: string
+    status: string
+    title: string
+    updates: Array<{
+      created_at: string
+      id: string
+      message: string
+      status: string
+    }>
+  }>
+  servers: Array<{
+    group_name: string | null
+    in_maintenance: boolean
+    online: boolean
+    server_id: string
+    server_name: string
+    uptime_percent: number | null
+  }>
+}
+
+// Admin status page management
+export interface StatusPageItem {
+  created_at: string
+  description: string | null
+  enabled: boolean
+  id: string
+  server_ids: string[]
+  slug: string
+  title: string
+  updated_at: string
+}
+
+export interface IncidentItem {
+  created_at: string
+  id: string
+  resolved_at: string | null
+  server_ids: string[]
+  severity: string
+  status: string
+  title: string
+  updated_at: string
+  updates: Array<{
+    created_at: string
+    id: string
+    message: string
+    status: string
+  }>
+}
+
+export interface MaintenanceItem {
+  active: boolean
+  created_at: string
+  description: string | null
+  end_at: string
+  id: string
+  server_ids: string[]
+  start_at: string
+  title: string
+  updated_at: string
+}
+
 // Errors
 export type ErrorBody = S['ErrorBody']
 export type ErrorDetail = S['ErrorDetail']

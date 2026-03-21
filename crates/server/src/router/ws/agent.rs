@@ -830,6 +830,26 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 }
             }
         }
+        AgentMessage::TracerouteResult {
+            request_id,
+            target,
+            hops,
+            completed,
+            error,
+        } => {
+            tracing::info!(
+                "Received TracerouteResult from {server_id} (request_id={request_id}, completed={completed})"
+            );
+            state.agent_manager.update_traceroute_result(
+                &request_id,
+                crate::service::agent_manager::TracerouteResultData {
+                    target,
+                    hops,
+                    completed,
+                    error,
+                },
+            );
+        }
     }
 }
 

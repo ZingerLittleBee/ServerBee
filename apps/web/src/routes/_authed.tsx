@@ -3,7 +3,7 @@ import { TriangleAlert } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Header } from '@/components/layout/header'
-import { Sidebar } from '@/components/layout/sidebar'
+import { MobileSidebar, Sidebar } from '@/components/layout/sidebar'
 import { ServersWsContext } from '@/contexts/servers-ws-context'
 import { useAuth } from '@/hooks/use-auth'
 import { useServersWs } from '@/hooks/use-servers-ws'
@@ -38,6 +38,7 @@ function AuthedLayout() {
   const shouldConnectWs = isAuthenticated && !isLoading
   const wsRef = useServersWs(shouldConnectWs)
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected')
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
     if (!shouldConnectWs) {
@@ -103,10 +104,11 @@ function AuthedLayout() {
     <ServersWsContext.Provider value={wsContextValue}>
       <div className="flex min-h-screen">
         <Sidebar />
-        <div className="flex flex-1 flex-col">
-          <Header />
+        <MobileSidebar onOpenChange={setMobileMenuOpen} open={mobileMenuOpen} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Header onMenuClick={() => setMobileMenuOpen(true)} />
           {user?.must_change_password && <DefaultPasswordBanner />}
-          <main className="flex-1 overflow-auto p-6">
+          <main className="flex-1 overflow-auto p-4 sm:p-6">
             <Outlet />
           </main>
         </div>

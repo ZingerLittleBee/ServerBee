@@ -1,4 +1,4 @@
-import { LogOut } from 'lucide-react'
+import { LogOut, Menu } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/use-auth'
@@ -16,7 +16,7 @@ function LanguageSwitcher() {
   )
 }
 
-export function Header() {
+export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
   const { user, logout } = useAuth()
   const { t } = useTranslation()
 
@@ -29,17 +29,25 @@ export function Header() {
   }
 
   return (
-    <header className="flex h-14 items-center justify-end gap-2 border-b bg-card px-4">
-      <LanguageSwitcher />
-      <ThemeToggle />
-      {user && (
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground text-sm">{user.username}</span>
-          <Button aria-label={t('log_out')} onClick={handleLogout} size="icon" variant="ghost">
-            <LogOut className="size-4" />
-          </Button>
-        </div>
-      )}
+    <header className="flex h-14 items-center justify-between gap-2 border-b bg-card px-4">
+      <div className="lg:hidden">
+        <Button aria-label={t('common:open_menu')} onClick={onMenuClick} size="icon" variant="ghost">
+          <Menu className="size-5" />
+        </Button>
+      </div>
+      <div className="flex-1" />
+      <div className="flex items-center gap-2">
+        <LanguageSwitcher />
+        <ThemeToggle />
+        {user && (
+          <div className="flex items-center gap-2">
+            <span className="hidden text-muted-foreground text-sm sm:inline">{user.username}</span>
+            <Button aria-label={t('log_out')} onClick={handleLogout} size="icon" variant="ghost">
+              <LogOut className="size-4" />
+            </Button>
+          </div>
+        )}
+      </div>
     </header>
   )
 }

@@ -1,6 +1,6 @@
 # ServerBee 实现进度
 
-> 最后更新: 2026-03-19
+> 最后更新: 2026-03-20
 
 ## 总览
 
@@ -32,11 +32,16 @@
 | P10 | 流量统计 (Traffic Statistics) | **已完成** | 3 commits (`846bd73`..`f28a696`) |
 | P11 | IP 变更通知 (IP Change Notification) | **已完成** | 8 tasks |
 | P12 | 磁盘 I/O 监控 (Disk I/O Monitoring) | **已完成（含本地构建修复）** | 1 (`1a6d1da`) |
+| P13 | 三网 Ping + Traceroute | **已完成** | 3 commits |
+| P14 | 多主题 + 品牌定制 | **已完成** | 2 commits |
+| P15 | 状态页增强 | **已完成** | 4 commits |
+| P16 | 移动端响应式 + PWA | **已完成** | 1 commit |
 
-**P0~P12 已完成；P12 磁盘 I/O 功能已完成自动化验证、前端构建修复与 agent-browser 手动验证。**
-**自动化测试:** 288 单元 + 29 集成 + 4 Docker 集成 + 129 前端 = 450 个测试通过；`cargo test --workspace`、`cargo clippy --workspace -- -D warnings`、`cargo build --workspace`、`bun run test`、`bun run typecheck`、`bun x ultracite check`、`bun run build` 通过。
-**E2E 浏览器测试:** P9/P10/P11 共 7 项通过；P12 Disk I/O DI1~DI10 共 10/10 通过（含 tooltip 悬浮、缺失点补零、null 兼容、API JSON 解析与中文文案验证）。
-**当前状态:** 前端构建阻塞已修复；手动测试证据已保存到 `/tmp/serverbee-p12-manual-20260319/artifacts`。
+**P0~P16 全部完成。**
+**自动化测试:** 467 Rust (common 43 + agent 55 + server unit 204 + server integration 29 + docker 4 + misc 132 bench 0) + 132 前端 vitest = **599 个测试全部通过**。
+**代码质量:** `cargo clippy --workspace` 0 warnings、`bun run typecheck` 通过、`bun x ultracite check` 165 files 0 issues、`bun run build` 成功 (含 PWA SW)。
+**E2E 浏览器测试 (agent-browser):** 主题切换 (Tokyo Night/Dracula/Default)、状态页管理 (3-tab CRUD)、公开状态页 `/status/:slug`、移动端抽屉导航 (375×812 viewport) 全部验证通过。
+**分支:** `feature/batch2-p13-p16`，13 commits，未 push。
 
 ---
 
@@ -981,6 +986,92 @@ POST   /api/service-monitors/:id/check   手动触发检测
 - 前端构建修复：为 ping API 显式设置唯一 `operation_id`（`list_ping_tasks` / `update_ping_task` / `delete_ping_task`），并重新生成 `apps/web/openapi.json` 与 `apps/web/src/lib/api-types.ts`
 - agent-browser 手动 / E2E：DI1~DI10 全部通过；已验证 realtime 隐藏、historical 渲染、Merged/Per Disk、tooltip、缺失点补零、`0 B/s`、range 切换、`disk_io_json = null` 兼容、API JSON 解析与中文文案
 - 证据：截图保存在 `/tmp/serverbee-p12-manual-20260319/artifacts`
+
+### P13: 三网 Ping + Traceroute
+
+**分支**: `feature/batch2-p13-p16`
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | Common: TracerouteHop 类型 + AgentMessage::TracerouteResult + ServerMessage::Traceroute | **done** |
+| T2 | Agent: traceroute 执行器 (traceroute/mtr/tracert 命令, 输出解析, 目标验证, 能力校验) | **done** |
+| T3 | Server: AgentManager traceroute_results DashMap 缓存 + 120s TTL 清理 | **done** |
+| T4 | Server: Traceroute API (POST trigger + GET poll, 2 端点) | **done** |
+| T5 | Frontend: 网络详情页 By Provider 分组视图 (CT/CU/CM/International) | **done** |
+| T6 | Frontend: Traceroute UI (目标输入 + 结果表格 + 色彩编码延迟) | **done** |
+
+**新增 API 端点:**
+```
+POST /api/servers/:id/traceroute        触发 traceroute
+GET  /api/servers/:id/traceroute/:id    轮询结果
+```
+
+### P14: 多主题 + 品牌定制
+
+**分支**: `feature/batch2-p13-p16`
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | Server: Brand API (GET/PUT config + POST logo/favicon 上传, 4 端点) | **done** |
+| T2 | Server: 图片上传验证 (512KB 限制, PNG/ICO magic bytes) | **done** |
+| T3 | Frontend: 7 主题 CSS (Tokyo Night/Nord/Catppuccin/Dracula/One Dark/Solarized/Rose Pine) | **done** |
+| T4 | Frontend: ThemeProvider 扩展 (colorTheme + 动态 CSS 加载) | **done** |
+| T5 | Frontend: Appearance 设置页 (主题选择网格 + 品牌设置) | **done** |
+
+**新增 API 端点:**
+```
+GET  /api/settings/brand              获取品牌配置
+PUT  /api/settings/brand              更新品牌配置
+POST /api/settings/brand/logo         上传 Logo
+POST /api/settings/brand/favicon      上传 Favicon
+GET  /api/brand/logo                  获取 Logo 文件
+GET  /api/brand/favicon               获取 Favicon 文件
+```
+
+### P15: 状态页增强
+
+**分支**: `feature/batch2-p13-p16`
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | Server: Migration (status_page/incident/incident_update/maintenance/uptime_daily 5 表) | **done** |
+| T2 | Server: 5 个 sea-orm 实体 | **done** |
+| T3 | Server: StatusPageService/IncidentService/MaintenanceService/UptimeService 4 个服务 | **done** |
+| T4 | Server: is_in_maintenance() 共享工具 + 告警/服务监控集成 | **done** |
+| T5 | Server: 14+ API 端点 (status-pages/incidents/maintenances CRUD + 公开 status/:slug) | **done** |
+| T6 | Server: Aggregator 扩展 (uptime_daily 每小时聚合) | **done** |
+| T7 | Frontend: 公开状态页 /status/:slug (状态横幅 + 事件 + 维护 + 服务器 uptime) | **done** |
+| T8 | Frontend: Admin 管理页 (3 Tab: 状态页/事件/维护 CRUD) | **done** |
+
+**新增 API 端点:**
+```
+GET    /api/status/:slug               公开状态页数据 (无需认证)
+GET    /api/status-pages               列出状态页
+POST   /api/status-pages               创建状态页
+PUT    /api/status-pages/:id           更新状态页
+DELETE /api/status-pages/:id           删除状态页
+GET    /api/incidents                  列出事件
+POST   /api/incidents                  创建事件
+PUT    /api/incidents/:id              更新事件
+DELETE /api/incidents/:id              删除事件
+POST   /api/incidents/:id/updates      添加事件更新
+GET    /api/maintenances               列出维护窗口
+POST   /api/maintenances               创建维护窗口
+PUT    /api/maintenances/:id           更新维护窗口
+DELETE /api/maintenances/:id           删除维护窗口
+```
+
+### P16: 移动端响应式 + PWA
+
+**分支**: `feature/batch2-p13-p16`
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | Frontend: Sidebar → Sheet 抽屉 (lg 以下 hamburger 菜单) | **done** |
+| T2 | Frontend: Dashboard 网格响应式 (4→3→2→1 列) | **done** |
+| T3 | Frontend: Dialog 小屏全屏化 | **done** |
+| T4 | Frontend: PWA (vite-plugin-pwa + manifest + Service Worker) | **done** |
+| T5 | Frontend: 服务器详情页响应式布局 | **done** |
 
 ---
 

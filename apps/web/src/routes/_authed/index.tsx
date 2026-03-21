@@ -110,7 +110,7 @@ function DashboardPage() {
       </div>
 
       {servers.length > 0 && (
-        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
           <StatCard
             icon={Server}
             label={t('stat_servers')}
@@ -149,7 +149,7 @@ function DashboardPage() {
             return (
               <section key={key}>
                 <h2 className="mb-3 font-semibold text-lg">{groupName}</h2>
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {groupServers.map((server) => (
                     <ServerCard key={server.id} server={server} />
                   ))}
@@ -160,7 +160,7 @@ function DashboardPage() {
         </div>
       )}
       {servers.length > 0 && !hasGroups && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {servers.map((server) => (
             <ServerCard key={server.id} server={server} />
           ))}

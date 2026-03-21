@@ -19,5 +19,8 @@ pub async fn run(state: Arc<AppState>) {
 
         // Clean up expired pending requests (HTTP→WS relay) based on per-entry TTL
         state.agent_manager.cleanup_expired_requests();
+
+        // Clean up expired traceroute results (older than 120s)
+        state.agent_manager.cleanup_traceroute_results();
     }
 }

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeft, Download, Settings2 } from 'lucide-react'
+import { ArrowLeft, Download, Loader2, Play, Settings2 } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -8,8 +8,12 @@ import { LatencyChart } from '@/components/network/latency-chart'
 import { TargetCard } from '@/components/network/target-card'
 import { StatusBadge } from '@/components/server/status-badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useServer } from '@/hooks/use-api'
 import { useAuth } from '@/hooks/use-auth'
 import {
@@ -17,11 +21,14 @@ import {
   useNetworkRecords,
   useNetworkServerSummary,
   useNetworkTargets,
-  useSetServerTargets
+  useSetServerTargets,
+  useStartTraceroute,
+  useTracerouteResult
 } from '@/hooks/use-network-api'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
 import { CHART_COLORS } from '@/lib/chart-colors'
-import type { NetworkProbeRecord } from '@/lib/network-types'
+import type { NetworkProbeRecord, NetworkTargetSummary } from '@/lib/network-types'
+import { formatLatency, formatPacketLoss, getProviderLabel, latencyColorClass } from '@/lib/network-types'
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/network/$serverId')({
@@ -46,6 +53,197 @@ const TIME_RANGES: TimeRangeOption[] = [
   { label: '7d', value: 168 },
   { label: '30d', value: 720 }
 ]
+
+const PROVIDER_KEYS = ['ct', 'cu', 'cm', 'international'] as const
+
+function groupTargetsByProvider(targets: NetworkTargetSummary[]) {
+  const groups: Record<string, NetworkTargetSummary[]> = {}
+  for (const target of targets) {
+    const key = target.provider || 'unknown'
+    if (!groups[key]) {
+      groups[key] = []
+    }
+    groups[key].push(target)
+  }
+  return groups
+}
+
+function ProviderColumn({
+  provider,
+  targets,
+  t
+}: {
+  provider: string
+  targets: NetworkTargetSummary[]
+  t: (key: string) => string
+}) {
+  const providerI18nKey = `provider_${provider}`
+  const label = t(providerI18nKey) || getProviderLabel(provider)
+
+  const avgLatency = useMemo(() => {
+    const valid = targets.filter((t) => t.avg_latency != null)
+    if (valid.length === 0) {
+      return null
+    }
+    return valid.reduce((sum, t) => sum + (t.avg_latency ?? 0), 0) / valid.length
+  }, [targets])
+
+  const avgPacketLoss = useMemo(() => {
+    if (targets.length === 0) {
+      return 0
+    }
+    return targets.reduce((sum, t) => sum + t.packet_loss, 0) / targets.length
+  }, [targets])
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{label}</CardTitle>
+        <div className="flex gap-3 text-muted-foreground text-xs">
+          <span>
+            {t('avg_latency')}: <span className="font-mono">{formatLatency(avgLatency)}</span>
+          </span>
+          <span>
+            {t('packet_loss')}: <span className="font-mono">{formatPacketLoss(avgPacketLoss)}</span>
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {targets.length === 0 ? (
+          <p className="text-center text-muted-foreground text-sm">{t('no_data')}</p>
+        ) : (
+          <div className="space-y-2">
+            {targets.map((target) => (
+              <div
+                className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                key={target.target_id}
+              >
+                <span className="font-medium">{target.target_name}</span>
+                <div className="flex items-center gap-3 text-xs">
+                  <span className={cn('font-mono', latencyColorClass(target.avg_latency))}>
+                    {formatLatency(target.avg_latency)}
+                  </span>
+                  <span className="text-muted-foreground">{formatPacketLoss(target.packet_loss)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function TracerouteSection({ serverId, t }: { serverId: string; t: (key: string) => string }) {
+  const [target, setTarget] = useState('')
+  const [requestId, setRequestId] = useState<string | null>(null)
+
+  const startTraceroute = useStartTraceroute(serverId)
+  const { data: result } = useTracerouteResult(serverId, requestId)
+
+  const isRunning = !!requestId && !result?.completed && !result?.error
+
+  const handleRun = useCallback(() => {
+    const trimmed = target.trim()
+    if (!trimmed) {
+      return
+    }
+
+    setRequestId(null)
+    startTraceroute.mutate(trimmed, {
+      onSuccess: (data) => {
+        setRequestId(data.request_id)
+      },
+      onError: (err) => {
+        toast.error(err instanceof Error ? err.message : t('traceroute_error'))
+      }
+    })
+  }, [target, startTraceroute, t])
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        handleRun()
+      }
+    },
+    [handleRun]
+  )
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t('traceroute')}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex gap-2">
+          <Input
+            disabled={isRunning || startTraceroute.isPending}
+            onChange={(e) => setTarget(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={t('traceroute_target')}
+            value={target}
+          />
+          <Button disabled={!target.trim() || isRunning || startTraceroute.isPending} onClick={handleRun} size="sm">
+            {isRunning || startTraceroute.isPending ? (
+              <Loader2 aria-hidden="true" className="mr-1 size-4 animate-spin" />
+            ) : (
+              <Play aria-hidden="true" className="mr-1 size-4" />
+            )}
+            {isRunning ? t('traceroute_running') : t('run_traceroute')}
+          </Button>
+        </div>
+
+        {result?.error && (
+          <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-destructive text-sm">
+            {result.error}
+          </div>
+        )}
+
+        {result && result.hops.length > 0 && (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-16">{t('hop')}</TableHead>
+                <TableHead>{t('ip_address')}</TableHead>
+                <TableHead>{t('hostname')}</TableHead>
+                <TableHead className="text-right">RTT1</TableHead>
+                <TableHead className="text-right">RTT2</TableHead>
+                <TableHead className="text-right">RTT3</TableHead>
+                <TableHead>{t('asn')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {result.hops.map((hop) => (
+                <TableRow key={hop.hop}>
+                  <TableCell className="font-mono">{hop.hop}</TableCell>
+                  <TableCell className="font-mono">{hop.ip ?? t('no_response')}</TableCell>
+                  <TableCell className="max-w-[200px] truncate text-muted-foreground">{hop.hostname ?? '-'}</TableCell>
+                  <TableCell className={cn('text-right font-mono', latencyColorClass(hop.rtt1))}>
+                    {hop.rtt1 != null ? `${hop.rtt1.toFixed(1)} ms` : t('no_response')}
+                  </TableCell>
+                  <TableCell className={cn('text-right font-mono', latencyColorClass(hop.rtt2))}>
+                    {hop.rtt2 != null ? `${hop.rtt2.toFixed(1)} ms` : t('no_response')}
+                  </TableCell>
+                  <TableCell className={cn('text-right font-mono', latencyColorClass(hop.rtt3))}>
+                    {hop.rtt3 != null ? `${hop.rtt3.toFixed(1)} ms` : t('no_response')}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{hop.asn ?? '-'}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+
+        {isRunning && (
+          <div className="flex items-center justify-center gap-2 py-4 text-muted-foreground text-sm">
+            <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+            {t('traceroute_running')}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
 
 function NetworkDetailPage() {
   const { t } = useTranslation('network')
@@ -89,6 +287,18 @@ function NetworkDetailPage() {
   const setServerTargets = useSetServerTargets(serverId)
 
   const targets = useMemo(() => summary?.targets ?? [], [summary])
+
+  // Group targets by provider for the "By Provider" tab
+  const providerGroups = useMemo(() => groupTargetsByProvider(targets), [targets])
+
+  // Ordered provider keys: known providers first, then any remaining
+  const orderedProviderKeys = useMemo(() => {
+    const known = PROVIDER_KEYS.filter((k) => providerGroups[k]?.length)
+    const remaining = Object.keys(providerGroups).filter(
+      (k) => !PROVIDER_KEYS.includes(k as (typeof PROVIDER_KEYS)[number])
+    )
+    return [...known, ...remaining]
+  }, [providerGroups])
 
   // Initialize visible targets to all when summary loads
   const effectiveVisible = useMemo(() => {
@@ -340,19 +550,36 @@ function NetworkDetailPage() {
         ))}
       </div>
 
-      {/* Target cards */}
+      {/* Target cards with tabs: All Targets / By Provider */}
       {targets.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
-          {targets.map((target) => (
-            <TargetCard
-              color={targetColorMap[target.target_id] ?? CHART_COLORS[0]}
-              key={target.target_id}
-              onToggle={() => toggleTarget(target.target_id)}
-              target={target}
-              visible={effectiveVisible.has(target.target_id)}
-            />
-          ))}
-        </div>
+        <Tabs className="mb-4" defaultValue="all">
+          <TabsList>
+            <TabsTrigger value="all">{t('all_targets')}</TabsTrigger>
+            <TabsTrigger value="provider">{t('by_provider')}</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="all">
+            <div className="flex flex-wrap gap-2 pt-2">
+              {targets.map((target) => (
+                <TargetCard
+                  color={targetColorMap[target.target_id] ?? CHART_COLORS[0]}
+                  key={target.target_id}
+                  onToggle={() => toggleTarget(target.target_id)}
+                  target={target}
+                  visible={effectiveVisible.has(target.target_id)}
+                />
+              ))}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="provider">
+            <div className="grid gap-4 pt-2 md:grid-cols-2 lg:grid-cols-3">
+              {orderedProviderKeys.map((provider) => (
+                <ProviderColumn key={provider} provider={provider} t={t} targets={providerGroups[provider]} />
+              ))}
+            </div>
+          </TabsContent>
+        </Tabs>
       )}
 
       {/* Latency chart */}
@@ -380,6 +607,11 @@ function NetworkDetailPage() {
 
       {/* Anomaly table */}
       <AnomalyTable anomalies={anomalies} />
+
+      {/* Traceroute section */}
+      <div className="mt-6">
+        <TracerouteSection serverId={serverId} t={t} />
+      </div>
 
       {/* Manage Targets Dialog */}
       <Dialog

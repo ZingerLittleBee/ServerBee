@@ -1,17 +1,21 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { type ColorTheme, isColorTheme, loadThemeCSS } from '@/themes'
 
 type Theme = 'dark' | 'light' | 'system'
 type ResolvedTheme = 'dark' | 'light'
 
 interface ThemeProviderProps {
   children: ReactNode
+  colorThemeStorageKey?: string
   defaultTheme?: Theme
   disableTransitionOnChange?: boolean
   storageKey?: string
 }
 
 interface ThemeProviderState {
+  colorTheme: ColorTheme
+  setColorTheme: (colorTheme: ColorTheme) => void
   setTheme: (theme: Theme) => void
   theme: Theme
 }
@@ -85,6 +89,7 @@ export function ThemeProvider({
   children,
   defaultTheme = 'system',
   storageKey = 'theme',
+  colorThemeStorageKey = 'color-theme',
   disableTransitionOnChange = true,
   ...props
 }: ThemeProviderProps) {
@@ -97,12 +102,28 @@ export function ThemeProvider({
     return defaultTheme
   })
 
+  const [colorTheme, setColorThemeState] = useState<ColorTheme>(() => {
+    const stored = localStorage.getItem(colorThemeStorageKey)
+    if (isColorTheme(stored)) {
+      return stored
+    }
+    return 'default'
+  })
+
   const setTheme = useCallback(
     (nextTheme: Theme) => {
       localStorage.setItem(storageKey, nextTheme)
       setThemeState(nextTheme)
     },
     [storageKey]
+  )
+
+  const setColorTheme = useCallback(
+    (nextColorTheme: ColorTheme) => {
+      localStorage.setItem(colorThemeStorageKey, nextColorTheme)
+      setColorThemeState(nextColorTheme)
+    },
+    [colorThemeStorageKey]
   )
 
   const applyTheme = useCallback(
@@ -121,6 +142,7 @@ export function ThemeProvider({
     [disableTransitionOnChange]
   )
 
+  // Apply light/dark theme
   useEffect(() => {
     applyTheme(theme)
 
@@ -139,6 +161,20 @@ export function ThemeProvider({
       mediaQuery.removeEventListener('change', handleChange)
     }
   }, [theme, applyTheme])
+
+  // Apply color theme
+  useEffect(() => {
+    const root = document.documentElement
+
+    if (colorTheme === 'default') {
+      root.removeAttribute('data-theme')
+      return
+    }
+
+    loadThemeCSS(colorTheme).then(() => {
+      root.setAttribute('data-theme', colorTheme)
+    })
+  }, [colorTheme])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -178,16 +214,22 @@ export function ThemeProvider({
         return
       }
 
-      if (event.key !== storageKey) {
+      if (event.key === storageKey) {
+        if (isTheme(event.newValue)) {
+          setThemeState(event.newValue)
+          return
+        }
+        setThemeState(defaultTheme)
         return
       }
 
-      if (isTheme(event.newValue)) {
-        setThemeState(event.newValue)
-        return
+      if (event.key === colorThemeStorageKey) {
+        if (isColorTheme(event.newValue)) {
+          setColorThemeState(event.newValue)
+          return
+        }
+        setColorThemeState('default')
       }
-
-      setThemeState(defaultTheme)
     }
 
     window.addEventListener('storage', handleStorageChange)
@@ -195,14 +237,16 @@ export function ThemeProvider({
     return () => {
       window.removeEventListener('storage', handleStorageChange)
     }
-  }, [defaultTheme, storageKey])
+  }, [defaultTheme, storageKey, colorThemeStorageKey])
 
   const value = useMemo(
     () => ({
       theme,
-      setTheme
+      setTheme,
+      colorTheme,
+      setColorTheme
     }),
-    [theme, setTheme]
+    [theme, setTheme, colorTheme, setColorTheme]
   )
 
   return (

@@ -25,15 +25,18 @@
   "nav_network_probes": "Network Probes",
   "nav_ping_tasks": "Ping Tasks",
   "nav_service_monitors": "Service Monitors",
+  "nav_status_pages": "Status Pages",
   "nav_commands": "Commands",
   "nav_capabilities": "Capabilities",
   "nav_api_keys": "API Keys",
   "nav_security": "Security",
+  "nav_appearance": "Appearance",
   "nav_audit_logs": "Audit Logs",
   "nav_settings": "Settings",
   "search": "Search",
   "search_placeholder_ellipsis": "Search\u2026",
   "confirm_title": "Confirm",
   "confirm_delete_message": "This action cannot be undone. Are you sure?",
-  "main_navigation": "Main navigation"
+  "main_navigation": "Main navigation",
+  "open_menu": "Open menu"
 }
