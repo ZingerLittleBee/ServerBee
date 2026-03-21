@@ -3,6 +3,8 @@ pub mod alert_state;
 pub mod api_key;
 pub mod audit_log;
 pub mod config;
+pub mod dashboard;
+pub mod dashboard_widget;
 pub mod docker_event;
 pub mod gpu_record;
 pub mod incident;

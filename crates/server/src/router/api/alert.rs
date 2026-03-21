@@ -1,11 +1,14 @@
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
+use serde::Deserialize;
 
 use crate::error::{ok, ApiResponse, AppError};
-use crate::service::alert::{AlertService, AlertStateResponse, CreateAlertRule, UpdateAlertRule};
+use crate::service::alert::{
+    AlertEventResponse, AlertService, AlertStateResponse, CreateAlertRule, UpdateAlertRule,
+};
 use crate::state::AppState;
 
 pub fn router() -> Router<Arc<AppState>> {
@@ -128,4 +131,39 @@ async fn list_states(
 ) -> Result<Json<ApiResponse<Vec<AlertStateResponse>>>, AppError> {
     let states = AlertService::list_states(&state.db, &id).await?;
     ok(states)
+}
+
+// ── Alert Events (read-only, all authenticated users) ──
+
+/// Read-only router for alert events, accessible to all authenticated users.
+pub fn alert_events_router() -> Router<Arc<AppState>> {
+    Router::new().route("/alert-events", get(list_alert_events))
+}
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct AlertEventsQuery {
+    #[serde(default = "default_events_limit")]
+    pub limit: u64,
+}
+
+fn default_events_limit() -> u64 {
+    20
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/alert-events",
+    tag = "alert-rules",
+    params(AlertEventsQuery),
+    responses(
+        (status = 200, description = "Recent alert events", body = Vec<AlertEventResponse>),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+pub async fn list_alert_events(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<AlertEventsQuery>,
+) -> Result<Json<ApiResponse<Vec<AlertEventResponse>>>, AppError> {
+    let events = AlertService::list_events(&state.db, q.limit).await?;
+    ok(events)
 }

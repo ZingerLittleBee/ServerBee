@@ -215,6 +215,20 @@ impl AlertStateManager {
     }
 }
 
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct AlertEventResponse {
+    pub rule_id: String,
+    pub rule_name: String,
+    pub server_id: String,
+    pub server_name: String,
+    /// "firing" or "resolved"
+    pub status: String,
+    /// first_triggered_at for firing, resolved_at for resolved
+    pub event_at: String,
+    pub resolved_at: Option<String>,
+    pub count: i32,
+}
+
 // ── Alert Rule CRUD ──
 
 pub struct AlertService;
@@ -333,6 +347,74 @@ impl AlertService {
                 resolved_at: state.resolved_at,
             });
         }
+        Ok(result)
+    }
+
+    /// List recent alert events across all rules and servers.
+    ///
+    /// Joins `alert_state` with `alert_rule` (for rule_name) and `server` (for
+    /// server_name). Results are ordered: firing events first, then by event_at
+    /// DESC. Capped at `limit`.
+    pub async fn list_events(
+        db: &DatabaseConnection,
+        limit: u64,
+    ) -> Result<Vec<AlertEventResponse>, AppError> {
+        let states = alert_state::Entity::find()
+            .order_by_asc(alert_state::Column::Resolved)
+            .order_by_desc(alert_state::Column::UpdatedAt)
+            .limit(limit)
+            .all(db)
+            .await?;
+
+        // Collect unique rule_ids and server_ids for batch lookup
+        let rule_ids: Vec<&str> = states.iter().map(|s| s.rule_id.as_str()).collect();
+        let server_ids: Vec<&str> = states.iter().map(|s| s.server_id.as_str()).collect();
+
+        let rules = alert_rule::Entity::find()
+            .filter(alert_rule::Column::Id.is_in(rule_ids))
+            .all(db)
+            .await?;
+        let rule_map: std::collections::HashMap<String, String> =
+            rules.into_iter().map(|r| (r.id, r.name)).collect();
+
+        let servers = server::Entity::find()
+            .filter(server::Column::Id.is_in(server_ids))
+            .all(db)
+            .await?;
+        let server_map: std::collections::HashMap<String, String> =
+            servers.into_iter().map(|s| (s.id, s.name)).collect();
+
+        let result = states
+            .into_iter()
+            .map(|s| {
+                let status = if s.resolved { "resolved" } else { "firing" };
+                let event_at = if s.resolved {
+                    s.resolved_at
+                        .map(|t| t.to_rfc3339())
+                        .unwrap_or_else(|| s.first_triggered_at.to_rfc3339())
+                } else {
+                    s.first_triggered_at.to_rfc3339()
+                };
+                let resolved_at = s.resolved_at.map(|t| t.to_rfc3339());
+                AlertEventResponse {
+                    rule_id: s.rule_id.clone(),
+                    rule_name: rule_map
+                        .get(&s.rule_id)
+                        .cloned()
+                        .unwrap_or_else(|| "Unknown".to_string()),
+                    server_id: s.server_id.clone(),
+                    server_name: server_map
+                        .get(&s.server_id)
+                        .cloned()
+                        .unwrap_or_else(|| "Unknown".to_string()),
+                    status: status.to_string(),
+                    event_at,
+                    resolved_at,
+                    count: s.count,
+                }
+            })
+            .collect();
+
         Ok(result)
     }
 
@@ -1180,5 +1262,146 @@ mod tests {
         let mgr = AlertStateManager::new();
         assert!(!mgr.is_triggered("any-rule", "any-server"));
         assert!(mgr.get_info("any-rule", "any-server").is_none());
+    }
+
+    // ── list_events ──
+
+    use crate::test_utils::setup_test_db;
+    use sea_orm::{ActiveModelTrait, Set};
+
+    /// Helper: insert a test server into the database.
+    async fn insert_test_server(db: &DatabaseConnection, id: &str, name: &str) {
+        let now = Utc::now();
+        server::ActiveModel {
+            id: Set(id.to_string()),
+            token_hash: Set("hash".to_string()),
+            token_prefix: Set("prefix".to_string()),
+            name: Set(name.to_string()),
+            weight: Set(0),
+            hidden: Set(false),
+            capabilities: Set(0),
+            protocol_version: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert test server");
+    }
+
+    /// Helper: insert an alert rule into the database.
+    async fn insert_test_rule(db: &DatabaseConnection, id: &str, name: &str) {
+        let now = Utc::now();
+        alert_rule::ActiveModel {
+            id: Set(id.to_string()),
+            name: Set(name.to_string()),
+            enabled: Set(true),
+            rules_json: Set("[]".to_string()),
+            trigger_mode: Set("always".to_string()),
+            notification_group_id: Set(None),
+            fail_trigger_tasks: Set(None),
+            recover_trigger_tasks: Set(None),
+            cover_type: Set("all".to_string()),
+            server_ids_json: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(db)
+        .await
+        .expect("insert test rule");
+    }
+
+    /// Helper: insert an alert state into the database.
+    async fn insert_test_state(
+        db: &DatabaseConnection,
+        rule_id: &str,
+        server_id: &str,
+        resolved: bool,
+        first_triggered_at: chrono::DateTime<Utc>,
+        resolved_at: Option<chrono::DateTime<Utc>>,
+        count: i32,
+    ) {
+        let now = Utc::now();
+        alert_state::ActiveModel {
+            id: NotSet,
+            rule_id: Set(rule_id.to_string()),
+            server_id: Set(server_id.to_string()),
+            first_triggered_at: Set(first_triggered_at),
+            last_notified_at: Set(now),
+            count: Set(count),
+            resolved: Set(resolved),
+            resolved_at: Set(resolved_at),
+            updated_at: Set(now),
+        }
+        .insert(db)
+        .await
+        .expect("insert test state");
+    }
+
+    #[tokio::test]
+    async fn test_list_events_returns_aggregated_states() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // Set up test data
+        insert_test_server(&db, "srv-1", "Server Alpha").await;
+        insert_test_server(&db, "srv-2", "Server Beta").await;
+        insert_test_rule(&db, "rule-1", "CPU Alert").await;
+        insert_test_rule(&db, "rule-2", "Memory Alert").await;
+
+        let now = Utc::now();
+        let earlier = now - Duration::hours(1);
+
+        // Firing state (resolved=false) should appear first
+        insert_test_state(&db, "rule-1", "srv-1", false, earlier, None, 3).await;
+        // Resolved state should appear after firing
+        insert_test_state(&db, "rule-2", "srv-2", true, earlier, Some(now), 1).await;
+
+        let events = AlertService::list_events(&db, 20).await.unwrap();
+
+        assert_eq!(events.len(), 2);
+
+        // Firing events come first (ordered by resolved ASC)
+        assert_eq!(events[0].status, "firing");
+        assert_eq!(events[0].rule_name, "CPU Alert");
+        assert_eq!(events[0].server_name, "Server Alpha");
+        assert_eq!(events[0].count, 3);
+        assert!(events[0].resolved_at.is_none());
+        // event_at should be first_triggered_at for firing
+        assert!(events[0].event_at.contains(&earlier.format("%Y").to_string()));
+
+        assert_eq!(events[1].status, "resolved");
+        assert_eq!(events[1].rule_name, "Memory Alert");
+        assert_eq!(events[1].server_name, "Server Beta");
+        assert_eq!(events[1].count, 1);
+        assert!(events[1].resolved_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_list_events_respects_limit() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // Create 5 distinct servers and 5 rules to avoid UNIQUE(rule_id, server_id) conflict
+        for i in 0..5 {
+            insert_test_server(&db, &format!("srv-{i}"), &format!("Server {i}")).await;
+            insert_test_rule(&db, &format!("rule-{i}"), &format!("Rule {i}")).await;
+        }
+
+        let now = Utc::now();
+
+        // Insert 5 states, each with a different (rule_id, server_id) pair
+        for i in 0..5 {
+            let t = now - Duration::minutes(i as i64);
+            insert_test_state(&db, &format!("rule-{i}"), &format!("srv-{i}"), false, t, None, 1)
+                .await;
+        }
+
+        // Request only 3
+        let events = AlertService::list_events(&db, 3).await.unwrap();
+        assert_eq!(events.len(), 3);
+
+        // Request all
+        let events_all = AlertService::list_events(&db, 20).await.unwrap();
+        assert_eq!(events_all.len(), 5);
     }
 }

@@ -36,12 +36,11 @@
 | P14 | 多主题 + 品牌定制 | **已完成** | 2 commits |
 | P15 | 状态页增强 | **已完成** | 4 commits |
 | P16 | 移动端响应式 + PWA | **已完成** | 1 commit |
+| P17 | 自定义仪表盘 (Custom Dashboard) | **已完成** | 17 commits |
 
-**P0~P16 全部完成。**
-**自动化测试:** 467 Rust (common 43 + agent 55 + server unit 204 + server integration 29 + docker 4 + misc 132 bench 0) + 132 前端 vitest = **599 个测试全部通过**。
-**代码质量:** `cargo clippy --workspace` 0 warnings、`bun run typecheck` 通过、`bun x ultracite check` 165 files 0 issues、`bun run build` 成功 (含 PWA SW)。
-**E2E 浏览器测试 (agent-browser):** 主题切换 (Tokyo Night/Dracula/Default)、状态页管理 (3-tab CRUD)、公开状态页 `/status/:slug`、移动端抽屉导航 (375×812 viewport) 全部验证通过。
-**分支:** `feature/batch2-p13-p16`，13 commits，未 push。
+**P0~P17 全部完成。**
+**自动化测试:** Rust (common 43 + agent 55 + server unit 218 + server integration 33 + docker 4) + 172 前端 vitest = 测试全部通过。
+**P17 新增测试:** Rust 14 新单元测试 (dashboard 12 + alert list_events 2) + 4 新集成测试 (dashboard CRUD/default/RBAC + alert-events) + 40 新前端测试 (hooks 7 + widget-renderer 13 + grid 4 + config-dialog 8 + markdown 8)。
 
 ---
 
@@ -986,6 +985,48 @@ POST   /api/service-monitors/:id/check   手动触发检测
 - 前端构建修复：为 ping API 显式设置唯一 `operation_id`（`list_ping_tasks` / `update_ping_task` / `delete_ping_task`），并重新生成 `apps/web/openapi.json` 与 `apps/web/src/lib/api-types.ts`
 - agent-browser 手动 / E2E：DI1~DI10 全部通过；已验证 realtime 隐藏、historical 渲染、Merged/Per Disk、tooltip、缺失点补零、`0 B/s`、range 切换、`disk_io_json = null` 兼容、API JSON 解析与中文文案
 - 证据：截图保存在 `/tmp/serverbee-p12-manual-20260319/artifacts`
+
+### P17: 自定义仪表盘 (Custom Dashboard)
+
+**分支**: `main`
+**Commits**: `6b326d3`..`b26d8c9` (14 commits)
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | Server: 数据库 migration (dashboard + dashboard_widget 表) | **done** |
+| T2 | Server: DashboardService (CRUD + widget diff + default 管理 + 12 单元测试) | **done** |
+| T3 | Server: AlertService::list_events() 聚合端点 + 2 单元测试 | **done** |
+| T4 | Server: Dashboard REST API (6 端点: read_router + write_router + OpenAPI 注解) | **done** |
+| T5 | Server: 集成测试 (dashboard CRUD/default/RBAC + alert-events, 4 tests) | **done** |
+| T6 | Frontend: react-grid-layout + Widget 类型定义 + dashboard hooks | **done** |
+| T7 | Frontend: 安全 Markdown→HTML 转换器 + XSS 防护测试 (8 tests) | **done** |
+| T8 | Frontend: 简化版 SVG 世界地图数据 | **done** |
+| T9 | Frontend: 实时 Widget (stat-number, server-cards, gauge, top-n) | **done** |
+| T10 | Frontend: 历史 Widget (line-chart, multi-line, traffic-bar, disk-io) | **done** |
+| T11 | Frontend: 状态 Widget (alert-list, service-status, server-map, markdown) | **done** |
+| T12 | Frontend: Dashboard Grid + Widget Renderer + Picker + Config Dialog | **done** |
+| T13 | Frontend: 首页重写为自定义仪表盘系统 + Dashboard Switcher | **done** |
+| T14 | Frontend: 前端测试 (hooks 7 + widget-renderer 13 + grid 4 + config-dialog 8, 共 32 tests) | **done** |
+| T15 | 最终验证: cargo test + clippy + typecheck + ultracite check + OpenAPI 重新生成 | **done** |
+| T16 | 文档更新: PROGRESS.md + TESTING.md | **done** |
+
+**新增 API 端点:**
+```
+GET    /api/dashboards              列出所有仪表盘
+POST   /api/dashboards              创建仪表盘
+GET    /api/dashboards/default      获取默认仪表盘（首次自动创建）
+GET    /api/dashboards/:id          获取仪表盘详情（含 widgets）
+PUT    /api/dashboards/:id          更新仪表盘（名称 + widget diff）
+DELETE /api/dashboards/:id          删除仪表盘（禁止删除默认/最后一个）
+GET    /api/alert-events            聚合告警事件 Feed（?limit=N）
+```
+
+**支持的 Widget 类型 (12 种):**
+- **实时**: stat-number (单指标数值), server-cards (服务器卡片), gauge (仪表盘), top-n (排行榜)
+- **历史**: line-chart (折线图), multi-line (多服务器对比), traffic-bar (流量柱图), disk-io (磁盘I/O)
+- **状态**: alert-list (告警事件), service-status (服务监控), server-map (世界地图), markdown (自定义内容)
+
+**测试:** 14 个新 Rust 单元测试 (DashboardService 12 + AlertService list_events 2) + 4 个新集成测试 + 40 个新前端 vitest 测试
 
 ### P13: 三网 Ping + Traceroute
 
