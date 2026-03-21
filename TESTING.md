@@ -6,10 +6,10 @@
 # 全量测试
 cargo test --workspace && bun run test
 
-# Rust 测试（305 单元 + 33 集成 + 4 Docker 集成 = 342）
+# Rust 测试
 cargo test --workspace
 
-# 前端测试（172 vitest，22 个测试文件）
+# 前端测试
 bun run test
 
 # 代码质量
@@ -23,9 +23,9 @@ bun run typecheck
 ### 按 crate 运行
 
 ```bash
-cargo test -p serverbee-common          # 协议 + 能力常量 + Docker 类型 (40 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 (214 + 4 + 33 = 251 tests)
-cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager + Config (51 tests)
+cargo test -p serverbee-common          # 协议 + 能力常量 + Docker 类型 + Traceroute (43 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 + dashboard (218 unit + 33 integration + 4 docker = 255 tests)
+cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager + Traceroute (55 tests)
 ```
 
 ### 仅集成测试
@@ -804,6 +804,57 @@ docker compose up -d
 | 告警状态无 UI | 后端有 alert_state 但前端无展示 | 新增 API + 可展开 per-server 状态面板 (`a8defea`) |
 | Capabilities API 500 | `update_server`/`batch_capabilities` 使用 `Extension<(String,String,String)>` 无人注入 | 改为 `Extension<CurrentUser>` + `HeaderMap` |
 
+### 验证清单 — 三网 Ping + Traceroute (P13)
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| TR1 | By Provider 视图 | `/network/:serverId` → 点击 "By Provider" tab → 显示 CT/CU/CM/International 分组 | — |
+| TR2 | Provider 延迟统计 | By Provider 视图 → 每个 provider 显示平均延迟和丢包率 | — |
+| TR3 | Traceroute 触发 | `/network/:serverId` → 输入 IP → 点击 "Run Traceroute" → 显示加载状态 | — |
+| TR4 | Traceroute 结果 | 等待完成 → 表格显示 Hop/IP/RTT1/RTT2/RTT3 → 延迟色彩编码 | — |
+| TR5 | Traceroute 错误 | 输入无效目标 → 显示错误消息 | — |
+| TR6 | 能力校验 | 禁用 CAP_PING_ICMP → traceroute 请求 → 403 | — |
+
+### 验证清单 — 多主题 + 品牌定制 (P14)
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| TH1 | 主题切换 | `/settings/appearance` → 点击 Tokyo Night → 全站颜色立即变化 | — |
+| TH2 | 主题持久化 | 选择 Nord → 刷新页面 → 仍为 Nord 主题 | — |
+| TH3 | 深/浅模式兼容 | 选择 Catppuccin → 切换深/浅模式 → 两种模式都有正确配色 | — |
+| TH4 | 默认主题恢复 | 选择 Default → 恢复原始配色 | — |
+| TH5 | Logo 上传 | 品牌设置 → 上传 PNG logo → 预览显示 → 保存 → 侧边栏 logo 更新 | — |
+| TH6 | Favicon 上传 | 上传 favicon → 保存 → 浏览器标签 favicon 更新 | — |
+| TH7 | 标题修改 | 修改 site_title → 保存 → 侧边栏标题更新 | — |
+| TH8 | 文件类型限制 | 上传 SVG 文件 → 被拒绝（仅 PNG/ICO） | — |
+| TH9 | 大小限制 | 上传 >512KB 文件 → 被拒绝 | — |
+
+### 验证清单 — 状态页增强 (P15)
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| SP1 | 创建状态页 | `/settings/status-pages` → Status Pages tab → Create → 填写标题/slug → 创建 | — |
+| SP2 | 公开访问 | 未登录 → 访问 `/status/:slug` → 显示状态页 | — |
+| SP3 | 全局状态横幅 | 所有服务器在线 → 绿色 "All Systems Operational" | — |
+| SP4 | 创建事件 | Incidents tab → Create → 填写标题/严重程度 → 创建 | — |
+| SP5 | 添加事件更新 | 点击事件 → 添加状态更新（investigating → identified → resolved） | — |
+| SP6 | 事件在状态页显示 | 公开状态页显示活跃事件 + 更新时间线 | — |
+| SP7 | 创建维护窗口 | Maintenance tab → Create → 设置开始/结束时间 → 创建 | — |
+| SP8 | 维护告警静默 | 服务器在维护窗口内 → 告警不触发通知 | — |
+| SP9 | 维护在状态页显示 | 公开状态页显示计划维护通知 | — |
+| SP10 | 删除状态页 | 删除 → 公开访问返回 404 | — |
+
+### 验证清单 — 移动端响应式 + PWA (P16)
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| RW1 | 侧边栏抽屉 | 缩小窗口 <1024px → 侧边栏隐藏 → 点击汉堡菜单 → 侧边栏从左滑入 | — |
+| RW2 | 抽屉导航 | 点击侧边栏链接 → 导航到目标页 → 抽屉自动关闭 | — |
+| RW3 | Dashboard 响应式 | 缩小窗口 → 服务器卡片从 4 列变 2 列变 1 列 | — |
+| RW4 | Dialog 全屏 | 缩小窗口 <640px → 打开对话框 → 对话框全屏显示 | — |
+| RW5 | PWA 安装 | Chrome → 地址栏出现安装提示 → 安装 → 独立窗口打开 | — |
+| RW6 | 离线 Shell | 断网 → 页面骨架仍可显示（Service Worker 缓存 shell） | — |
+
 ## 测试文件位置
 
 ```
@@ -837,6 +888,8 @@ crates/server/src/service/file_transfer.rs # 文件传输管理器测试 (9 test
 crates/server/src/service/traffic.rs       # 流量统计服务测试 (21 tests)
 crates/server/src/config.rs                # 配置测试 (1 test)
 crates/agent/src/config.rs                # Agent IpChangeConfig 默认值测试 (1 test)
+crates/agent/src/reporter.rs              # Traceroute 目标验证 + 输出解析测试 (4 tests)
+crates/server/src/router/api/brand.rs     # Brand API magic bytes + 配置测试 (4 tests)
 crates/agent/src/file_manager.rs           # Agent 文件管理器测试 (24 tests)
 crates/server/src/service/service_monitor.rs # 服务监控 CRUD + 记录管理测试 (15 tests)
 crates/server/src/service/checker/dns.rs   # DNS checker 单元测试 (3 tests)

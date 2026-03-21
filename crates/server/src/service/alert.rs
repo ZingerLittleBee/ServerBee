@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::entity::{alert_rule, alert_state, network_probe_record, record, server};
 use crate::error::AppError;
 use crate::service::agent_manager::AgentManager;
+use crate::service::maintenance::MaintenanceService;
 use crate::service::notification::{NotificationService, NotifyContext};
 
 /// Rule types that are event-driven (not evaluated on a polling interval).
@@ -481,6 +482,18 @@ impl AlertService {
             let triggered = Self::check_server(db, agent_manager, &items, &srv.id).await;
 
             if triggered {
+                // Skip alerting if the server is in a maintenance window
+                if MaintenanceService::is_in_maintenance(db, &srv.id)
+                    .await
+                    .unwrap_or(false)
+                {
+                    tracing::debug!(
+                        "Skipping alert '{}' for server '{}': in maintenance",
+                        rule.name,
+                        srv.name
+                    );
+                    continue;
+                }
                 Self::handle_triggered(db, state_manager, rule, &srv.id, &srv.name).await?;
             } else if state_manager.is_triggered(&rule.id, &srv.id) {
                 // Recovered
@@ -612,6 +625,17 @@ impl AlertService {
 
             // Check if this rule covers the given server
             if !rule_covers_server(&rule.cover_type, &rule.server_ids_json, server_id) {
+                continue;
+            }
+
+            // Skip if server is in maintenance
+            if MaintenanceService::is_in_maintenance(db, server_id)
+                .await
+                .unwrap_or(false)
+            {
+                tracing::debug!(
+                    "Skipping event alert for server {server_id}: in maintenance"
+                );
                 continue;
             }
 

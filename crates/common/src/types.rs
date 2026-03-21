@@ -103,6 +103,18 @@ pub struct TaskResult {
     pub exit_code: i32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct TracerouteHop {
+    pub hop: u8,
+    pub ip: Option<String>,
+    pub hostname: Option<String>,
+    pub rtt1: Option<f64>, // ms
+    pub rtt2: Option<f64>,
+    pub rtt3: Option<f64>,
+    pub asn: Option<String>,
+}
+
 /// Agent-facing wire type for network probe targets (minimal fields for probing)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkProbeTarget {
