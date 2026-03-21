@@ -1,7 +1,7 @@
 {
   "servers": "servers",
   "online": "online",
-  "loading": "Loading status…",
+  "loading": "Loading status\u2026",
   "load_failed": "Failed to load status data",
   "no_servers": "No servers available",
   "ungrouped": "Ungrouped",
@@ -9,5 +9,12 @@
   "cpu": "CPU",
   "memory": "Memory",
   "disk": "Disk",
-  "offline": "Offline"
+  "offline": "Offline",
+  "all_operational": "All Systems Operational",
+  "partial_outage": "Partial System Outage",
+  "major_outage": "Major System Outage",
+  "active_incidents": "Active Incidents",
+  "planned_maintenance": "Planned Maintenance",
+  "server_status": "Server Status",
+  "recent_incidents": "Recent Incidents (Last 7 Days)"
 }

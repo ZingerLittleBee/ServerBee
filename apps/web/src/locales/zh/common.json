@@ -25,15 +25,18 @@
   "nav_network_probes": "网络探测",
   "nav_ping_tasks": "Ping 任务",
   "nav_service_monitors": "服务监控",
+  "nav_status_pages": "状态页面",
   "nav_commands": "远程命令",
   "nav_capabilities": "能力开关",
   "nav_api_keys": "API 密钥",
   "nav_security": "安全",
+  "nav_appearance": "外观",
   "nav_audit_logs": "审计日志",
   "nav_settings": "设置",
   "search": "搜索",
   "search_placeholder_ellipsis": "搜索\u2026",
   "confirm_title": "确认",
   "confirm_delete_message": "此操作无法撤销，确定要继续吗？",
-  "main_navigation": "主导航"
+  "main_navigation": "主导航",
+  "open_menu": "打开菜单"
 }

@@ -5,7 +5,9 @@ import type {
   NetworkProbeRecord,
   NetworkProbeSetting,
   NetworkProbeTarget,
-  NetworkServerSummary
+  NetworkServerSummary,
+  TracerouteResponse,
+  TracerouteResult
 } from '@/lib/network-types'
 
 export function useNetworkTargets() {
@@ -130,5 +132,20 @@ export function useSetServerTargets(serverId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['servers', serverId, 'network-probes'] })
     }
+  })
+}
+
+export function useStartTraceroute(serverId: string) {
+  return useMutation({
+    mutationFn: (target: string) => api.post<TracerouteResponse>(`/api/servers/${serverId}/traceroute`, { target })
+  })
+}
+
+export function useTracerouteResult(serverId: string, requestId: string | null) {
+  return useQuery<TracerouteResult>({
+    queryKey: ['servers', serverId, 'traceroute', requestId],
+    queryFn: () => api.get(`/api/servers/${serverId}/traceroute/${requestId}`),
+    enabled: !!requestId,
+    refetchInterval: (query) => (query.state.data?.completed ? false : 2000)
   })
 }

@@ -4,6 +4,7 @@ use std::time::Duration;
 use crate::service::network_probe::NetworkProbeService;
 use crate::service::record::RecordService;
 use crate::service::traffic::TrafficService;
+use crate::service::uptime::UptimeService;
 use crate::state::AppState;
 
 /// Periodically aggregates raw records into hourly summaries (every 3600 seconds).
@@ -43,6 +44,17 @@ pub async fn run(state: Arc<AppState>) {
             }
             Err(e) => {
                 tracing::error!("Failed to aggregate daily traffic: {e}");
+            }
+        }
+
+        match UptimeService::aggregate_daily(&state.db).await {
+            Ok(count) => {
+                if count > 0 {
+                    tracing::info!("Aggregated daily uptime for {count} servers");
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to aggregate daily uptime: {e}");
             }
         }
     }

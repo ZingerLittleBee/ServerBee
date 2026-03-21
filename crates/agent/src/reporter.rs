@@ -7,7 +7,7 @@ use futures_util::{SinkExt, StreamExt};
 use rand::Rng;
 use serverbee_common::constants::{DEFAULT_COMMAND_TIMEOUT_SECS, MAX_TASK_OUTPUT_SIZE};
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
-use serverbee_common::types::{NetworkInterface, NetworkProbeResultData};
+use serverbee_common::types::{NetworkInterface, NetworkProbeResultData, TracerouteHop};
 use sysinfo::Networks;
 use tokio::sync::mpsc;
 use tokio::time::interval;
@@ -551,6 +551,60 @@ impl Reporter {
                 );
                 network_prober.sync(targets, interval, packet_count);
             }
+            ServerMessage::Traceroute {
+                request_id,
+                target,
+                max_hops,
+            } => {
+                let caps = capabilities.load(Ordering::SeqCst);
+                if !has_capability(caps, CAP_PING_ICMP) {
+                    tracing::warn!(
+                        "Traceroute denied: capability disabled (request_id={request_id})"
+                    );
+                    let denied = AgentMessage::CapabilityDenied {
+                        msg_id: Some(request_id),
+                        session_id: None,
+                        capability: "ping_icmp".to_string(),
+                    };
+                    let tx = cmd_result_tx.clone();
+                    tokio::spawn(async move {
+                        let _ = tx.send(denied).await;
+                    });
+                    return Ok(());
+                }
+
+                // Input validation: target must be domain or IP only
+                if !is_valid_traceroute_target(&target) {
+                    tracing::warn!(
+                        "Traceroute rejected: invalid target '{target}' (request_id={request_id})"
+                    );
+                    let tx = cmd_result_tx.clone();
+                    tokio::spawn(async move {
+                        let msg = AgentMessage::TracerouteResult {
+                            request_id,
+                            target,
+                            hops: vec![],
+                            completed: true,
+                            error: Some("Invalid target: must be a domain or IP address".into()),
+                        };
+                        let _ = tx.send(msg).await;
+                    });
+                    return Ok(());
+                }
+
+                tracing::info!(
+                    "Executing traceroute to {target} (max_hops={max_hops}, request_id={request_id})"
+                );
+                let tx = cmd_result_tx.clone();
+                tokio::spawn(async move {
+                    let msg = execute_traceroute(&request_id, &target, max_hops).await;
+                    if tx.send(msg).await.is_err() {
+                        tracing::warn!(
+                            "Failed to send TracerouteResult for request_id={request_id}: channel closed"
+                        );
+                    }
+                });
+            }
             // --- File management messages ---
             ServerMessage::FileList { msg_id, path } => {
                 let caps = capabilities.load(Ordering::SeqCst);
@@ -1000,6 +1054,256 @@ async fn execute_command(
     }
 }
 
+/// Validate that a traceroute target contains only safe characters (domain or IP).
+/// Matches `^[a-zA-Z0-9.\-:]+$` — rejects shell metacharacters.
+fn is_valid_traceroute_target(target: &str) -> bool {
+    !target.is_empty()
+        && target
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == ':')
+}
+
+/// Execute a traceroute command and parse the output into TracerouteHop structures.
+async fn execute_traceroute(
+    request_id: &str,
+    target: &str,
+    max_hops: u8,
+) -> AgentMessage {
+    let timeout_duration = Duration::from_secs(60);
+
+    let result = tokio::time::timeout(timeout_duration, async {
+        // Platform-specific command selection
+        #[cfg(windows)]
+        let cmd_result = {
+            tokio::process::Command::new("tracert")
+                .args(["-d", "-h", &max_hops.to_string(), target])
+                .output()
+                .await
+        };
+
+        #[cfg(not(windows))]
+        let cmd_result = {
+            // Try traceroute first
+            let traceroute_result = tokio::process::Command::new("traceroute")
+                .args(["-n", "-m", &max_hops.to_string(), target])
+                .output()
+                .await;
+
+            match traceroute_result {
+                Ok(output) => Ok(output),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    // Fall back to mtr
+                    tracing::info!("traceroute not found, trying mtr");
+                    tokio::process::Command::new("mtr")
+                        .args(["-r", "-n", "-c", "3", "-m", &max_hops.to_string(), target])
+                        .output()
+                        .await
+                }
+                Err(e) => Err(e),
+            }
+        };
+
+        cmd_result
+    })
+    .await;
+
+    match result {
+        Ok(Ok(output)) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+
+            if !output.status.success() {
+                // Check for permission errors
+                let combined = format!("{stdout}\n{stderr}");
+                let error_msg = if combined.to_lowercase().contains("permission")
+                    || combined.to_lowercase().contains("operation not permitted")
+                {
+                    format!("Permission denied: {}", combined.trim())
+                } else {
+                    format!(
+                        "Command exited with code {}: {}",
+                        output.status.code().unwrap_or(-1),
+                        combined.trim()
+                    )
+                };
+                return AgentMessage::TracerouteResult {
+                    request_id: request_id.to_string(),
+                    target: target.to_string(),
+                    hops: vec![],
+                    completed: true,
+                    error: Some(error_msg),
+                };
+            }
+
+            let hops = parse_traceroute_output(&stdout);
+
+            AgentMessage::TracerouteResult {
+                request_id: request_id.to_string(),
+                target: target.to_string(),
+                hops,
+                completed: true,
+                error: None,
+            }
+        }
+        Ok(Err(e)) => {
+            let error_msg = if e.kind() == std::io::ErrorKind::NotFound {
+                "traceroute not installed".to_string()
+            } else if e.kind() == std::io::ErrorKind::PermissionDenied {
+                format!("Permission denied: {e}")
+            } else {
+                format!("Failed to execute traceroute: {e}")
+            };
+            AgentMessage::TracerouteResult {
+                request_id: request_id.to_string(),
+                target: target.to_string(),
+                hops: vec![],
+                completed: true,
+                error: Some(error_msg),
+            }
+        }
+        Err(_) => AgentMessage::TracerouteResult {
+            request_id: request_id.to_string(),
+            target: target.to_string(),
+            hops: vec![],
+            completed: true,
+            error: Some("Traceroute timed out after 60s".to_string()),
+        },
+    }
+}
+
+/// Parse traceroute/mtr output into a list of TracerouteHop.
+///
+/// Handles standard traceroute output format:
+///   1  192.168.1.1  1.234 ms  1.456 ms  1.678 ms
+///   2  * * *
+///
+/// And mtr report format:
+///   HOST: hostname                    Loss%   Snt   Last   Avg  Best  Wrst StDev
+///   1.|-- 192.168.1.1                 0.0%     3    1.2   1.3   1.1   1.5   0.2
+fn parse_traceroute_output(output: &str) -> Vec<TracerouteHop> {
+    let mut hops = Vec::new();
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        // Try to parse as standard traceroute format
+        if let Some(hop) = parse_traceroute_line(trimmed) {
+            hops.push(hop);
+        } else if let Some(hop) = parse_mtr_line(trimmed) {
+            hops.push(hop);
+        }
+    }
+
+    hops
+}
+
+/// Parse a standard traceroute output line.
+/// Format: `<hop>  <ip_or_*>  <rtt1> ms  <rtt2> ms  <rtt3> ms`
+fn parse_traceroute_line(line: &str) -> Option<TracerouteHop> {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    if parts.is_empty() {
+        return None;
+    }
+
+    // First token must be a hop number
+    let hop: u8 = parts[0].parse().ok()?;
+
+    // If the line is all stars (no response), return a hop with no data
+    if parts.len() >= 2 && parts[1] == "*" {
+        return Some(TracerouteHop {
+            hop,
+            ip: None,
+            hostname: None,
+            rtt1: None,
+            rtt2: None,
+            rtt3: None,
+            asn: None,
+        });
+    }
+
+    // Second token should be an IP address
+    let ip = if parts.len() > 1 && parts[1] != "*" {
+        Some(parts[1].to_string())
+    } else {
+        None
+    };
+
+    // Extract RTT values — look for tokens followed by "ms"
+    let mut rtts = Vec::new();
+    let mut i = 2;
+    while i < parts.len() {
+        if parts[i] == "*" {
+            rtts.push(None);
+            i += 1;
+        } else if let Ok(rtt) = parts[i].parse::<f64>() {
+            // Check if next token is "ms"
+            if i + 1 < parts.len() && parts[i + 1] == "ms" {
+                rtts.push(Some(rtt));
+                i += 2;
+            } else {
+                rtts.push(Some(rtt));
+                i += 1;
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    Some(TracerouteHop {
+        hop,
+        ip,
+        hostname: None,
+        rtt1: rtts.first().copied().flatten(),
+        rtt2: rtts.get(1).copied().flatten(),
+        rtt3: rtts.get(2).copied().flatten(),
+        asn: None,
+    })
+}
+
+/// Parse an mtr report line.
+/// Format: `<hop>.|-- <ip_or_???>  <loss%>  <snt>  <last>  <avg>  <best>  <wrst> <stdev>`
+fn parse_mtr_line(line: &str) -> Option<TracerouteHop> {
+    // mtr lines start with a number followed by `.|--`
+    if !line.contains(".|--") {
+        return None;
+    }
+
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    if parts.len() < 6 {
+        return None;
+    }
+
+    // First token: "1.|--"
+    let hop_str = parts[0].split(".|").next()?;
+    let hop: u8 = hop_str.parse().ok()?;
+
+    // Second token: IP or "???"
+    let ip = if parts[1] == "???" {
+        None
+    } else {
+        Some(parts[1].to_string())
+    };
+
+    // RTT values: mtr gives Last, Avg, Best, Wrst — use Last for rtt1, Avg for rtt2, Best for rtt3
+    // Columns: Loss% Snt Last Avg Best Wrst StDev (indices 2-8)
+    let rtt1 = parts.get(4).and_then(|s| s.parse::<f64>().ok()); // Last
+    let rtt2 = parts.get(5).and_then(|s| s.parse::<f64>().ok()); // Avg
+    let rtt3 = parts.get(6).and_then(|s| s.parse::<f64>().ok()); // Best
+
+    Some(TracerouteHop {
+        hop,
+        ip,
+        hostname: None,
+        rtt1,
+        rtt2,
+        rtt3,
+        asn: None,
+    })
+}
+
 fn build_ws_url(config: &AgentConfig) -> anyhow::Result<String> {
     let base = config.server_url.trim_end_matches('/');
     let ws_base = if base.starts_with("https://") {
@@ -1170,6 +1474,85 @@ mod tests {
         ));
 
         assert!(!should_refresh_registration(&config, &err));
+    }
+
+    #[test]
+    fn test_is_valid_traceroute_target() {
+        // Valid targets
+        assert!(is_valid_traceroute_target("8.8.8.8"));
+        assert!(is_valid_traceroute_target("google.com"));
+        assert!(is_valid_traceroute_target("sub.example.com"));
+        assert!(is_valid_traceroute_target("2001:db8::1"));
+        assert!(is_valid_traceroute_target("my-server.example.com"));
+
+        // Invalid targets — shell metacharacters
+        assert!(!is_valid_traceroute_target(""));
+        assert!(!is_valid_traceroute_target("8.8.8.8; rm -rf /"));
+        assert!(!is_valid_traceroute_target("$(whoami)"));
+        assert!(!is_valid_traceroute_target("target | cat /etc/passwd"));
+        assert!(!is_valid_traceroute_target("host`id`"));
+        assert!(!is_valid_traceroute_target("foo&bar"));
+        assert!(!is_valid_traceroute_target("target > /tmp/out"));
+    }
+
+    #[test]
+    fn test_parse_traceroute_standard_output() {
+        let output = "\
+traceroute to 8.8.8.8 (8.8.8.8), 30 hops max, 60 byte packets
+ 1  192.168.1.1  1.234 ms  1.456 ms  1.678 ms
+ 2  10.0.0.1  5.123 ms  5.456 ms  5.789 ms
+ 3  * * *
+ 4  8.8.8.8  10.123 ms  10.456 ms  10.789 ms
+";
+        let hops = parse_traceroute_output(output);
+        assert_eq!(hops.len(), 4);
+
+        assert_eq!(hops[0].hop, 1);
+        assert_eq!(hops[0].ip, Some("192.168.1.1".to_string()));
+        assert_eq!(hops[0].rtt1, Some(1.234));
+        assert_eq!(hops[0].rtt2, Some(1.456));
+        assert_eq!(hops[0].rtt3, Some(1.678));
+
+        assert_eq!(hops[1].hop, 2);
+        assert_eq!(hops[1].ip, Some("10.0.0.1".to_string()));
+
+        assert_eq!(hops[2].hop, 3);
+        assert!(hops[2].ip.is_none());
+        assert!(hops[2].rtt1.is_none());
+
+        assert_eq!(hops[3].hop, 4);
+        assert_eq!(hops[3].ip, Some("8.8.8.8".to_string()));
+    }
+
+    #[test]
+    fn test_parse_mtr_output() {
+        let output = "\
+Start: 2026-03-20T10:00:00+0000
+HOST: agent                       Loss%   Snt   Last   Avg  Best  Wrst StDev
+  1.|-- 192.168.1.1                0.0%     3    1.2   1.3   1.1   1.5   0.2
+  2.|-- 10.0.0.1                   0.0%     3    5.0   5.1   4.9   5.3   0.1
+  3.|-- ???                       100.0     3    0.0   0.0   0.0   0.0   0.0
+";
+        let hops = parse_traceroute_output(output);
+        assert_eq!(hops.len(), 3);
+
+        assert_eq!(hops[0].hop, 1);
+        assert_eq!(hops[0].ip, Some("192.168.1.1".to_string()));
+        assert_eq!(hops[0].rtt1, Some(1.2)); // Last
+        assert_eq!(hops[0].rtt2, Some(1.3)); // Avg
+        assert_eq!(hops[0].rtt3, Some(1.1)); // Best
+
+        assert_eq!(hops[1].hop, 2);
+        assert_eq!(hops[1].ip, Some("10.0.0.1".to_string()));
+
+        assert_eq!(hops[2].hop, 3);
+        assert!(hops[2].ip.is_none());
+    }
+
+    #[test]
+    fn test_parse_traceroute_empty_output() {
+        let hops = parse_traceroute_output("");
+        assert!(hops.is_empty());
     }
 }
 
