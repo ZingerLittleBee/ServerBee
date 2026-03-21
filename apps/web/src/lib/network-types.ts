@@ -79,3 +79,48 @@ export interface NetworkProbeResultData {
   target_id: string
   timestamp: string
 }
+
+export interface TracerouteHop {
+  asn: string | null
+  hop: number
+  hostname: string | null
+  ip: string | null
+  rtt1: number | null
+  rtt2: number | null
+  rtt3: number | null
+}
+
+export interface TracerouteResult {
+  completed: boolean
+  error: string | null
+  hops: TracerouteHop[]
+  target: string
+}
+
+export interface TracerouteResponse {
+  request_id: string
+}
+
+export const PROVIDER_LABELS: Record<string, string> = {
+  ct: 'China Telecom',
+  cu: 'China Unicom',
+  cm: 'China Mobile',
+  international: 'International'
+}
+
+export function getProviderLabel(provider: string): string {
+  return PROVIDER_LABELS[provider] ?? provider
+}
+
+export function latencyColorClass(ms: number | null): string {
+  if (ms == null) {
+    return 'text-muted-foreground'
+  }
+  if (ms < 50) {
+    return 'text-green-600 dark:text-green-400'
+  }
+  if (ms < 100) {
+    return 'text-yellow-600 dark:text-yellow-400'
+  }
+  return 'text-red-600 dark:text-red-400'
+}

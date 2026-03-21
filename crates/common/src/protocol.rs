@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::docker_types::*;
 use crate::types::{
     FileEntry, NetworkInterface, NetworkProbeResultData, NetworkProbeTarget, PingResult,
-    PingTaskConfig, SystemInfo, SystemReport, TaskResult,
+    PingTaskConfig, SystemInfo, SystemReport, TaskResult, TracerouteHop,
 };
 
 /// Agent -> Server messages
@@ -133,6 +133,13 @@ pub enum AgentMessage {
         ipv4: Option<String>,
         ipv6: Option<String>,
         interfaces: Vec<NetworkInterface>,
+    },
+    TracerouteResult {
+        request_id: String,
+        target: String,
+        hops: Vec<TracerouteHop>,
+        completed: bool,
+        error: Option<String>,
     },
     Pong,
 }
@@ -266,6 +273,11 @@ pub enum ServerMessage {
     },
     DockerListVolumes {
         msg_id: String,
+    },
+    Traceroute {
+        request_id: String,
+        target: String,
+        max_hops: u8,
     },
     Ping,
     Upgrade {
@@ -863,6 +875,113 @@ mod tests {
                 assert_eq!(interfaces[0].ipv6, vec!["fe80::1"]);
             }
             _ => panic!("Expected IpChanged"),
+        }
+    }
+
+    #[test]
+    fn test_traceroute_server_message_round_trip() {
+        let msg = ServerMessage::Traceroute {
+            request_id: "req-1".to_string(),
+            target: "8.8.8.8".to_string(),
+            max_hops: 30,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"traceroute\""));
+        assert!(json.contains("\"max_hops\":30"));
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ServerMessage::Traceroute {
+                request_id,
+                target,
+                max_hops,
+            } => {
+                assert_eq!(request_id, "req-1");
+                assert_eq!(target, "8.8.8.8");
+                assert_eq!(max_hops, 30);
+            }
+            _ => panic!("Expected Traceroute"),
+        }
+    }
+
+    #[test]
+    fn test_traceroute_result_round_trip() {
+        use crate::types::TracerouteHop;
+        let msg = AgentMessage::TracerouteResult {
+            request_id: "req-1".to_string(),
+            target: "8.8.8.8".to_string(),
+            hops: vec![
+                TracerouteHop {
+                    hop: 1,
+                    ip: Some("192.168.1.1".to_string()),
+                    hostname: None,
+                    rtt1: Some(1.234),
+                    rtt2: Some(1.456),
+                    rtt3: Some(1.678),
+                    asn: None,
+                },
+                TracerouteHop {
+                    hop: 2,
+                    ip: None,
+                    hostname: None,
+                    rtt1: None,
+                    rtt2: None,
+                    rtt3: None,
+                    asn: None,
+                },
+            ],
+            completed: true,
+            error: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"traceroute_result\""));
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::TracerouteResult {
+                request_id,
+                target,
+                hops,
+                completed,
+                error,
+            } => {
+                assert_eq!(request_id, "req-1");
+                assert_eq!(target, "8.8.8.8");
+                assert_eq!(hops.len(), 2);
+                assert_eq!(hops[0].hop, 1);
+                assert_eq!(hops[0].ip, Some("192.168.1.1".to_string()));
+                assert_eq!(hops[0].rtt1, Some(1.234));
+                assert_eq!(hops[1].hop, 2);
+                assert!(hops[1].ip.is_none());
+                assert!(hops[1].rtt1.is_none());
+                assert!(completed);
+                assert!(error.is_none());
+            }
+            _ => panic!("Expected TracerouteResult"),
+        }
+    }
+
+    #[test]
+    fn test_traceroute_result_with_error_round_trip() {
+        let msg = AgentMessage::TracerouteResult {
+            request_id: "req-2".to_string(),
+            target: "example.com".to_string(),
+            hops: vec![],
+            completed: true,
+            error: Some("traceroute not installed".to_string()),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::TracerouteResult {
+                hops,
+                completed,
+                error,
+                ..
+            } => {
+                assert!(hops.is_empty());
+                assert!(completed);
+                assert_eq!(error, Some("traceroute not installed".to_string()));
+            }
+            _ => panic!("Expected TracerouteResult"),
         }
     }
 
