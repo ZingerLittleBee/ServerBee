@@ -20,6 +20,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/alert-events': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_alert_events']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/alert-rules': {
     parameters: {
       query?: never
@@ -320,6 +336,54 @@ export interface paths {
     }
     get?: never
     put: operations['change_password']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/dashboards': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_dashboards']
+    put?: never
+    post: operations['create_dashboard']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/dashboards/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_dashboard']
+    put: operations['update_dashboard']
+    post?: never
+    delete: operations['delete_dashboard']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/dashboards/default': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_default_dashboard']
+    put?: never
     post?: never
     delete?: never
     options?: never
@@ -1110,6 +1174,19 @@ export interface components {
   requestBodies: never
   responses: never
   schemas: {
+    AlertEventResponse: {
+      /** Format: int32 */
+      count: number
+      /** @description first_triggered_at for firing, resolved_at for resolved */
+      event_at: string
+      resolved_at?: string | null
+      rule_id: string
+      rule_name: string
+      server_id: string
+      server_name: string
+      /** @description "firing" or "resolved" */
+      status: string
+    }
     AlertRule: {
       cover_type: string
       /** Format: date-time */
@@ -1261,6 +1338,9 @@ export interface components {
     CreateApiKeyRequest: {
       name: string
     }
+    CreateDashboardInput: {
+      name: string
+    }
     CreateGroupRequest: {
       name: string
     }
@@ -1334,6 +1414,9 @@ export interface components {
       /** Format: int64 */
       bytes_out: number
       date: string
+    }
+    DashboardWithWidgets: components['schemas']['Model'] & {
+      widgets: components['schemas']['Model'][]
     }
     DeleteRequest: {
       path: string
@@ -1417,6 +1500,24 @@ export interface components {
     }
     MkdirRequest: {
       path: string
+    }
+    Model: {
+      config_json: string
+      created_at: string
+      dashboard_id: string
+      /** Format: int32 */
+      grid_h: number
+      /** Format: int32 */
+      grid_w: number
+      /** Format: int32 */
+      grid_x: number
+      /** Format: int32 */
+      grid_y: number
+      id: string
+      /** Format: int32 */
+      sort_order: number
+      title?: string | null
+      widget_type: string
     }
     MonitorWithRecord: components['schemas']['ServiceMonitor'] & {
       latest_record?: null | components['schemas']['ServiceMonitorRecord']
@@ -1838,6 +1939,13 @@ export interface components {
       server_ids?: string[] | null
       trigger_mode?: string | null
     }
+    UpdateDashboardInput: {
+      is_default?: boolean | null
+      name?: string | null
+      /** Format: int32 */
+      sort_order?: number | null
+      widgets?: components['schemas']['WidgetInput'][] | null
+    }
     UpdateGroupRequest: {
       name?: string | null
       /** Format: int32 */
@@ -1928,6 +2036,22 @@ export interface components {
       /** Format: date-time */
       updated_at: string
       username: string
+    }
+    WidgetInput: {
+      config_json: unknown
+      /** Format: int32 */
+      grid_h: number
+      /** Format: int32 */
+      grid_w: number
+      /** Format: int32 */
+      grid_x: number
+      /** Format: int32 */
+      grid_y: number
+      id?: string | null
+      /** Format: int32 */
+      sort_order: number
+      title?: string | null
+      widget_type: string
     }
     WriteRequest: {
       content: string
@@ -2097,6 +2221,30 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
+      }
+    }
+  }
+  create_dashboard: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateDashboardInput']
+      }
+    }
+    responses: {
+      /** @description Dashboard created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Model']
+        }
       }
     }
   }
@@ -2382,6 +2530,41 @@ export interface operations {
         content?: never
       }
       /** @description API key not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_dashboard: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Dashboard ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Dashboard deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Cannot delete default or last dashboard */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Dashboard not found */
       404: {
         headers: {
           [name: string]: unknown
@@ -2741,6 +2924,56 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['AutoDiscoveryKeyResponse']
+        }
+      }
+    }
+  }
+  get_dashboard: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Dashboard ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Dashboard with widgets */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DashboardWithWidgets']
+        }
+      }
+      /** @description Dashboard not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_default_dashboard: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Default dashboard with widgets (auto-creates if none exists) */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DashboardWithWidgets']
         }
       }
     }
@@ -3251,6 +3484,28 @@ export interface operations {
       }
     }
   }
+  list_alert_events: {
+    parameters: {
+      query?: {
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Recent alert events */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AlertEventResponse'][]
+        }
+      }
+    }
+  }
   list_api_keys: {
     parameters: {
       query?: never
@@ -3298,6 +3553,26 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
+      }
+    }
+  }
+  list_dashboards: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all dashboards */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Model'][]
+        }
       }
     }
   }
@@ -4350,6 +4625,47 @@ export interface operations {
         content?: never
       }
       /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_dashboard: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Dashboard ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateDashboardInput']
+      }
+    }
+    responses: {
+      /** @description Dashboard updated with widgets */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DashboardWithWidgets']
+        }
+      }
+      /** @description Validation error (e.g. cannot unset default, unknown widget type) */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Dashboard not found */
       404: {
         headers: {
           [name: string]: unknown

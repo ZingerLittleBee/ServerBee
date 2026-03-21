@@ -3,6 +3,7 @@ pub mod alert;
 pub mod audit;
 pub mod auth;
 pub mod brand;
+pub mod dashboard;
 pub mod docker;
 pub mod file;
 pub mod incident;
@@ -51,6 +52,8 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 .merge(traceroute::read_router())
                 .merge(service_monitor::read_router())
                 .merge(status_page::read_router())
+                .merge(dashboard::read_router())
+                .merge(alert::alert_events_router())
                 // Admin-only routes (write operations + management)
                 .merge(
                     Router::new()
@@ -62,6 +65,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                         .merge(docker::write_router())
                         .merge(service_monitor::write_router())
                         .merge(traceroute::write_router())
+                        .merge(dashboard::write_router())
                         .merge(setting::router())
                         .merge(brand::write_router())
                         .merge(notification::router())
