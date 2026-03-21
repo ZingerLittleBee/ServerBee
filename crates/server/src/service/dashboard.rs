@@ -20,6 +20,7 @@ const VALID_WIDGET_TYPES: &[&str] = &[
     "disk-io",
     "server-map",
     "markdown",
+    "uptime-timeline",
 ];
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -199,7 +200,6 @@ impl DashboardService {
                 let is_existing = w.id.as_ref().is_some_and(|wid| old_ids.contains(wid));
 
                 if is_existing {
-                    // Update existing widget
                     let wid = w.id.unwrap();
                     new_ids.insert(wid.clone());
                     let am = dashboard_widget::ActiveModel {
@@ -217,7 +217,6 @@ impl DashboardService {
                     };
                     am.update(&txn).await?;
                 } else {
-                    // Insert new widget
                     let new_id = Uuid::new_v4().to_string();
                     new_ids.insert(new_id.clone());
                     let am = dashboard_widget::ActiveModel {
@@ -237,7 +236,6 @@ impl DashboardService {
                 }
             }
 
-            // Delete removed widgets
             let to_delete: Vec<String> = old_ids.difference(&new_ids).cloned().collect();
             if !to_delete.is_empty() {
                 dashboard_widget::Entity::delete_many()
