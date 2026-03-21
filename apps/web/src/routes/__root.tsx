@@ -14,7 +14,7 @@ function RootLayout() {
       {import.meta.env.DEV && <Agentation />}
       <ThemeProvider>
         <TooltipProvider>
-          <div className="min-h-screen bg-background text-foreground">
+          <div className="h-screen overflow-hidden bg-background text-foreground">
             <Outlet />
           </div>
           <Toaster />
