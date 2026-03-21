@@ -20,6 +20,8 @@ The status page displays:
 - **Server list**: All non-hidden servers organized by group
 - **Online status**: Each server shows an online/offline indicator
 - **Live metrics**: Online servers display CPU, memory, and disk usage progress bars
+- **90-day uptime timeline**: Each server shows a color-coded bar chart of daily uptime over the past 90 days
+- **Uptime percentage**: Overall uptime percentage calculated from daily uptime data
 - **Auto-refresh**: The page automatically fetches updated data every 10 seconds
 
 ## Display Rules
@@ -61,6 +63,28 @@ Public endpoint, no authentication required. Response structure:
   }
 }
 ```
+
+## Uptime Timeline
+
+Each server on the status page displays a 90-day uptime timeline. The timeline is a horizontal bar chart where each bar represents one day:
+
+- **Green** -- 100% uptime (fully online all day)
+- **Yellow** -- Degraded uptime (below the yellow threshold, default 100%)
+- **Red** -- Major outage (below the red threshold, default 95%)
+- **Gray** -- No data available for that day
+
+Hovering over a bar shows a tooltip with the date, uptime percentage, and online/total minutes.
+
+The uptime data comes from the `uptime_daily` table, which is populated by the server's background aggregation task. The status page API returns daily entries with gap-filling for dates where no data was recorded (shown as gray bars with 0 minutes).
+
+### Uptime Thresholds
+
+Admins can customize the color thresholds per status page in **Settings > Status Pages**:
+
+- **Yellow threshold** (default: 100%) -- Days below this percentage are shown in yellow
+- **Red threshold** (default: 95%) -- Days below this percentage are shown in red
+
+These thresholds are stored per status page and returned in the public API response, allowing different status pages to have different sensitivity levels.
 
 ## Hiding Servers
 
