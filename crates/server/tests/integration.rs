@@ -2391,3 +2391,113 @@ async fn test_alert_events_endpoint() {
         "alert events should be empty when no alert states exist"
     );
 }
+
+#[tokio::test]
+async fn test_uptime_daily_requires_auth() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+
+    // Without login, should get 401
+    let resp = client
+        .get(format!("{}/api/servers/nonexistent/uptime-daily", base_url))
+        .send()
+        .await
+        .expect("GET /api/servers/{id}/uptime-daily failed");
+
+    assert_eq!(resp.status(), 401, "Unauthenticated request should return 401");
+}
+
+#[tokio::test]
+async fn test_uptime_daily_server_not_found() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let resp = client
+        .get(format!(
+            "{}/api/servers/nonexistent-server-id/uptime-daily",
+            base_url
+        ))
+        .send()
+        .await
+        .expect("GET /api/servers/{id}/uptime-daily failed");
+
+    assert_eq!(resp.status(), 404, "Non-existent server should return 404");
+}
+
+#[tokio::test]
+async fn test_uptime_daily_returns_data() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    // Register agent to create a server
+    let register_resp = client
+        .post(format!("{}/api/agent/register", base_url))
+        .header("Authorization", "Bearer test-key")
+        .send()
+        .await
+        .expect("Register failed");
+    assert_eq!(register_resp.status(), 200);
+    let body: serde_json::Value = register_resp.json().await.unwrap();
+    let server_id = body["data"]["server_id"].as_str().unwrap();
+
+    // ── Test: days=0 should return 400 ──
+    let resp_zero = client
+        .get(format!(
+            "{}/api/servers/{}/uptime-daily?days=0",
+            base_url, server_id
+        ))
+        .send()
+        .await
+        .expect("GET uptime-daily?days=0 failed");
+    assert_eq!(resp_zero.status(), 400, "days=0 should return 400");
+
+    // ── Test: days=366 should return 400 ──
+    let resp_over = client
+        .get(format!(
+            "{}/api/servers/{}/uptime-daily?days=366",
+            base_url, server_id
+        ))
+        .send()
+        .await
+        .expect("GET uptime-daily?days=366 failed");
+    assert_eq!(resp_over.status(), 400, "days=366 should return 400");
+
+    // ── Test: default (no days param) should return 200 with 90 entries ──
+    let resp_default = client
+        .get(format!(
+            "{}/api/servers/{}/uptime-daily",
+            base_url, server_id
+        ))
+        .send()
+        .await
+        .expect("GET uptime-daily (default) failed");
+    assert_eq!(resp_default.status(), 200, "Default request should return 200");
+
+    let resp_body: serde_json::Value = resp_default.json().await.unwrap();
+    let entries = resp_body["data"].as_array().expect("data should be array");
+    assert_eq!(entries.len(), 90, "Default should return 90 entries");
+
+    // Each entry should have the expected fields, all zero-filled
+    let first = &entries[0];
+    assert!(first["date"].is_string(), "date should be a string");
+    assert_eq!(first["total_minutes"].as_i64(), Some(0));
+    assert_eq!(first["online_minutes"].as_i64(), Some(0));
+    assert_eq!(first["downtime_incidents"].as_i64(), Some(0));
+
+    // ── Test: days=7 should return 7 entries ──
+    let resp_7 = client
+        .get(format!(
+            "{}/api/servers/{}/uptime-daily?days=7",
+            base_url, server_id
+        ))
+        .send()
+        .await
+        .expect("GET uptime-daily?days=7 failed");
+    assert_eq!(resp_7.status(), 200);
+
+    let resp_7_body: serde_json::Value = resp_7.json().await.unwrap();
+    let entries_7 = resp_7_body["data"].as_array().unwrap();
+    assert_eq!(entries_7.len(), 7, "days=7 should return 7 entries");
+}
