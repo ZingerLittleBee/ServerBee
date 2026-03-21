@@ -68,6 +68,8 @@ function StatusPageFormDialog({
   const [description, setDescription] = useState('')
   const [enabled, setEnabled] = useState(true)
   const [selectedServers, setSelectedServers] = useState<string[]>([])
+  const [yellowThreshold, setYellowThreshold] = useState(100)
+  const [redThreshold, setRedThreshold] = useState(95)
 
   const handleOpenChange = (isOpen: boolean) => {
     if (isOpen && editing) {
@@ -76,12 +78,16 @@ function StatusPageFormDialog({
       setDescription(editing.description ?? '')
       setEnabled(editing.enabled)
       setSelectedServers(editing.server_ids ?? [])
+      setYellowThreshold(editing.uptime_yellow_threshold ?? 100)
+      setRedThreshold(editing.uptime_red_threshold ?? 95)
     } else if (isOpen) {
       setTitle('')
       setSlug('')
       setDescription('')
       setEnabled(true)
       setSelectedServers([])
+      setYellowThreshold(100)
+      setRedThreshold(95)
     }
     if (!isOpen) {
       onClose()
@@ -98,7 +104,9 @@ function StatusPageFormDialog({
       slug: slug.trim(),
       description: description.trim() || null,
       enabled,
-      server_ids: selectedServers
+      server_ids: selectedServers,
+      uptime_yellow_threshold: yellowThreshold,
+      uptime_red_threshold: redThreshold
     }
     onSubmit(payload, editing?.id)
   }
@@ -155,6 +163,34 @@ function StatusPageFormDialog({
               <Switch checked={enabled} onCheckedChange={setEnabled} />
               {t('status_pages.field_enabled')}
             </label>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="sp-yellow">Uptime Yellow Threshold (%)</Label>
+              <Input
+                id="sp-yellow"
+                max={100}
+                min={0}
+                onChange={(e) => setYellowThreshold(Number(e.target.value) || 100)}
+                step={0.1}
+                type="number"
+                value={yellowThreshold}
+              />
+              <p className="text-muted-foreground text-xs">Below this = yellow (degraded)</p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="sp-red">Uptime Red Threshold (%)</Label>
+              <Input
+                id="sp-red"
+                max={100}
+                min={0}
+                onChange={(e) => setRedThreshold(Number(e.target.value) || 95)}
+                step={0.1}
+                type="number"
+                value={redThreshold}
+              />
+              <p className="text-muted-foreground text-xs">Below this = red (down)</p>
+            </div>
           </div>
           <div className="space-y-2">
             <Label>{t('status_pages.field_servers')}</Label>
