@@ -6,6 +6,9 @@ set -euo pipefail
 ADMIN_PASS="admin123"
 SERVER_URL="http://127.0.0.1:9527"
 
+echo "Building web assets (required by rust-embed)..."
+(cd apps/web && bun install --silent && bun run build)
+
 echo "Starting ServerBee server (admin / $ADMIN_PASS)..."
 SERVERBEE_ADMIN__PASSWORD="$ADMIN_PASS" SERVERBEE_AUTH__SECURE_COOKIE=false \
   cargo run -p serverbee-server &
