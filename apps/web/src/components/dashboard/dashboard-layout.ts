@@ -14,15 +14,29 @@ const WIDGET_TYPE_MAP = new Map<string, (typeof WIDGET_TYPES)[number]>(
   WIDGET_TYPES.map((widget) => [widget.id, widget])
 )
 
-function getMinConstraints(widgetType: string) {
+function getSizeConstraints(widgetType: string) {
   const definition = WIDGET_TYPE_MAP.get(widgetType)
-  return { minW: definition?.minW ?? 2, minH: definition?.minH ?? 2 }
+  return {
+    minW: definition?.minW ?? 2,
+    minH: definition?.minH ?? 2,
+    maxW: definition?.maxW,
+    maxH: definition?.maxH
+  }
+}
+
+function isWidgetStatic(configJson: string): boolean {
+  try {
+    const config = JSON.parse(configJson)
+    return config?.is_static === true
+  } catch {
+    return false
+  }
 }
 
 export function widgetsToLayout(widgets: DashboardWidget[]): Layout {
   return widgets.map((widget) => {
-    const { minW, minH } = getMinConstraints(widget.widget_type)
-    return {
+    const { minW, minH, maxW, maxH } = getSizeConstraints(widget.widget_type)
+    const item: LayoutItem = {
       i: widget.id,
       x: widget.grid_x,
       y: widget.grid_y,
@@ -31,6 +45,16 @@ export function widgetsToLayout(widgets: DashboardWidget[]): Layout {
       minW,
       minH
     }
+    if (maxW !== undefined) {
+      item.maxW = maxW
+    }
+    if (maxH !== undefined) {
+      item.maxH = maxH
+    }
+    if (isWidgetStatic(widget.config_json)) {
+      item.static = true
+    }
+    return item
   })
 }
 

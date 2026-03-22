@@ -1,4 +1,4 @@
-import { PencilIcon, PlusIcon, TrashIcon } from 'lucide-react'
+import { LockIcon, PencilIcon, PlusIcon, TrashIcon, UnlockIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { GridLayout, type Layout, useContainerWidth } from 'react-grid-layout'
 import { useTranslation } from 'react-i18next'
@@ -15,8 +15,17 @@ interface DashboardGridProps {
   onLayoutChange: (updates: { id: string; grid_x: number; grid_y: number; grid_w: number; grid_h: number }[]) => void
   onWidgetDelete: (widgetId: string) => void
   onWidgetEdit: (widgetId: string) => void
+  onWidgetToggleStatic?: (widgetId: string) => void
   servers: ServerMetrics[]
   widgets: DashboardWidget[]
+}
+
+function isWidgetStatic(configJson: string): boolean {
+  try {
+    return JSON.parse(configJson)?.is_static === true
+  } catch {
+    return false
+  }
 }
 
 const COLS = 12
@@ -50,6 +59,7 @@ export function DashboardGrid({
   onLayoutChange,
   onWidgetEdit,
   onWidgetDelete,
+  onWidgetToggleStatic,
   onAddWidget,
   servers
 }: DashboardGridProps) {
@@ -105,7 +115,12 @@ export function DashboardGrid({
         {sortedWidgets.map((widget) => (
           <div className="relative" key={widget.id}>
             {isEditing && (
-              <EditOverlay onDelete={() => onWidgetDelete(widget.id)} onEdit={() => onWidgetEdit(widget.id)} />
+              <EditOverlay
+                isStatic={isWidgetStatic(widget.config_json)}
+                onDelete={() => onWidgetDelete(widget.id)}
+                onEdit={() => onWidgetEdit(widget.id)}
+                onToggleStatic={onWidgetToggleStatic ? () => onWidgetToggleStatic(widget.id) : undefined}
+              />
             )}
             <div style={{ minHeight: widget.grid_h * ROW_HEIGHT }}>
               <WidgetRenderer servers={servers} widget={widget} />
@@ -132,13 +147,18 @@ export function DashboardGrid({
           onResize={updateLiveLayout}
           onResizeStart={() => setInteractionState('resizing')}
           onResizeStop={commitLayoutChange}
-          resizeConfig={{ enabled: isEditing, handles: ['se'] }}
+          resizeConfig={{ enabled: isEditing, handles: ['s', 'e', 'se'] }}
           width={width}
         >
           {widgets.map((widget) => (
             <div className="relative h-full" key={widget.id}>
               {isEditing && (
-                <EditOverlay onDelete={() => onWidgetDelete(widget.id)} onEdit={() => onWidgetEdit(widget.id)} />
+                <EditOverlay
+                  isStatic={isWidgetStatic(widget.config_json)}
+                  onDelete={() => onWidgetDelete(widget.id)}
+                  onEdit={() => onWidgetEdit(widget.id)}
+                  onToggleStatic={onWidgetToggleStatic ? () => onWidgetToggleStatic(widget.id) : undefined}
+                />
               )}
               <div className="h-full">
                 <WidgetRenderer servers={servers} widget={widget} />
@@ -156,9 +176,32 @@ export function DashboardGrid({
   )
 }
 
-function EditOverlay({ onEdit, onDelete }: { onDelete: () => void; onEdit: () => void }) {
+function EditOverlay({
+  isStatic,
+  onEdit,
+  onDelete,
+  onToggleStatic
+}: {
+  isStatic?: boolean
+  onDelete: () => void
+  onEdit: () => void
+  onToggleStatic?: () => void
+}) {
   return (
     <div className="absolute top-1 right-1 z-10 flex gap-1 opacity-0 transition-opacity [div:hover>&]:opacity-100">
+      {onToggleStatic && (
+        <Button
+          className="size-7"
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggleStatic()
+          }}
+          size="icon-sm"
+          variant="outline"
+        >
+          {isStatic ? <LockIcon className="size-3.5" /> : <UnlockIcon className="size-3.5" />}
+        </Button>
+      )}
       <Button
         className="size-7"
         onClick={(e) => {
