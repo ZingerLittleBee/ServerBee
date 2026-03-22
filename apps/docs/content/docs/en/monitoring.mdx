@@ -76,20 +76,22 @@ The agent collects the following metrics at a configurable interval (default: ev
 | Temperature | CPU temperature in degrees Celsius (optional) |
 | Uptime | System uptime in seconds |
 
-### Disk I/O (Linux)
+### Disk I/O
 
-On Linux, the agent reads `/proc/diskstats` to collect per-disk read/write throughput:
+The agent collects per-disk read/write throughput on all major platforms:
 
 | Metric | Unit | Description |
 |--------|------|-------------|
-| Read Speed | bytes/sec | Read throughput per physical disk |
-| Write Speed | bytes/sec | Write throughput per physical disk |
+| Read Speed | bytes/sec | Read throughput per disk |
+| Write Speed | bytes/sec | Write throughput per disk |
 
-Only physical block devices are tracked (e.g., `sda`, `nvme0n1`). Virtual devices (`loop*`, `dm-*`, `ram*`, `sr*`) and partitions (`sda1`, `nvme0n1p1`) are excluded. On the first sample after agent startup, a baseline is established and an empty list is reported. Subsequent samples compute delta-based rates.
+**Linux**: Reads `/proc/diskstats` directly. Only physical block devices are tracked (e.g., `sda`, `nvme0n1`). Virtual devices (`loop*`, `dm-*`, `ram*`, `sr*`) and partitions are excluded. DiskIo.name is the block device name.
+
+**macOS / Windows**: Uses sysinfo `Disk::usage()` API with `mount_point()` as the key. This provides per-mount-path semantics (e.g., `/`, `/home`, `C:\`) rather than per-physical-disk. Known limitation: on macOS with APFS, multiple volumes sharing one physical disk may report overlapping I/O counters.
+
+On the first sample after agent startup, a baseline is established and an empty list is reported. Subsequent samples compute delta-based rates.
 
 Disk I/O data is stored as a JSON column (`disk_io_json`) in the `records` and `records_hourly` tables. The hourly aggregator computes per-device average read/write rates.
-
-On non-Linux platforms, disk I/O collection is not available and `disk_io` is reported as `null`. The server and frontend handle this gracefully.
 
 ### GPU (Optional)
 
@@ -157,7 +159,7 @@ Each server has a detail page showing:
 - Real-time streaming charts (default mode)
 - System information (hardware, OS, network)
 - Historical trend charts with time range selection
-- Disk I/O charts with merged and per-disk views (Linux, historical mode)
+- Disk I/O charts with merged and per-disk views (all platforms, historical mode)
 - 90-day uptime timeline with daily availability breakdown
 - Server metadata (group, tags, remarks, pricing)
 - Actions (terminal access, edit, delete)
@@ -177,7 +179,7 @@ Temperature, GPU, and Disk I/O charts are not available in real-time mode becaus
 
 ### Disk I/O Charts
 
-When historical disk I/O data is available (Linux agents only), the server detail page displays a Disk I/O chart with two views:
+When historical disk I/O data is available, the server detail page displays a Disk I/O chart with two views:
 
 - **Merged** -- Combined read/write throughput across all physical disks
 - **Per Disk** -- Individual charts for each physical disk (e.g., `sda`, `nvme0n1`)

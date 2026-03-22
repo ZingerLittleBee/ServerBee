@@ -15,8 +15,9 @@
 - **Ping 探测** -- ICMP、TCP、HTTP 探测，延迟图表和成功率统计
 - **Web 终端** -- 基于 WebSocket 代理的浏览器 PTY 终端
 - **GPU 监控** -- NVIDIA GPU 使用率/温度/显存 (nvml-wrapper，可选功能)
-- **磁盘 I/O 监控** -- 每块磁盘读写吞吐量图表，支持合并和分盘视图 (Linux，历史模式)
-- **GeoIP** -- 根据 Agent IP 自动检测地区/国家 (MaxMind MMDB)
+- **磁盘 I/O 监控** -- 每块磁盘读写吞吐量图表，支持合并和分盘视图。Linux 通过 `/proc/diskstats`，macOS/Windows 通过 sysinfo
+- **GeoIP** -- 根据 Agent IP 自动检测地区/国家，支持应用内下载/更新 GeoIP 数据库
+- **自定义仪表盘** -- 拖拽式仪表盘布局，13 种 widget 类型，多仪表盘切换，编辑模式
 - **OAuth & 2FA** -- GitHub/Google/OIDC 登录，TOTP 两步验证
 - **多用户** -- Admin/Member 角色，审计日志，速率限制
 - **文件管理** -- 远程文件浏览器，Monaco 编辑器，上传/下载带进度显示，路径沙箱安全机制 (`root_paths` + `deny_patterns`)
@@ -107,8 +108,8 @@ make server-dev                                           # 终端 1: 服务端 
 SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # 终端 2: Agent
 
 # 测试与代码质量:
-make cargo-test        # 运行全部 Rust 测试 (252)
-make test              # 运行前端测试 (121)
+make cargo-test        # 运行全部 Rust 测试 (362)
+make test              # 运行前端测试 (220)
 make cargo-clippy      # Rust 代码检查
 make                   # 交互式菜单 (需要 fzf)
 ```

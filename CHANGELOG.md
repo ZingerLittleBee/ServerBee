@@ -5,34 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] - 2026-03-21
+## [0.7.0] - 2026-03-23
 
 ### Added
 
+- **GeoIP Database Download** -- New `GET /api/geoip/status` and `POST /api/geoip/download` endpoints for managing the GeoIP database. Settings page includes a GeoIP card showing installation status with download/update button. Server Map widget prompts to download GeoIP when not installed
+- **Cross-platform Disk I/O** -- Disk I/O collection now works on macOS and Windows via sysinfo `Disk::usage()` API, using mount point paths as keys. Linux `/proc/diskstats` implementation unchanged. Per-mount-path semantics on non-Linux (known APFS overcounting limitation documented)
+- **Custom Dashboard** -- Fully customizable dashboard with drag-and-drop grid layout, 13 widget types (stat-number, server-cards, gauge, top-n, line-chart, multi-line, traffic-bar, disk-io, alert-list, service-status, server-map, markdown, uptime-timeline), dashboard switcher, editor mode with add/edit/delete widgets
 - **Uptime Timeline** -- 90-day uptime visualization with per-day online/offline breakdown. New `UptimeTimeline` component renders a color-coded bar for each day (green = 100%, yellow = degraded, red = major outage, gray = no data) with hover tooltips showing date, uptime percentage, and online/total minutes
 - **Uptime Daily API** -- New `GET /api/servers/{server_id}/uptime-daily` endpoint returning per-day uptime entries with configurable day range (default 90). Gap-filling logic ensures missing dates are represented with zero values for continuous timeline display
 - **Uptime on Status Page** -- Public status pages now display a 90-day uptime timeline per server, replacing the previous simple uptime bar. Each server row shows the timeline alongside overall uptime percentage computed from daily data
 - **Uptime on Server Detail** -- Server detail page now includes an uptime card showing the 90-day timeline for quick availability assessment
 - **Uptime Timeline Dashboard Widget** -- New `uptime-timeline` widget type available in the customizable dashboard, allowing users to add uptime timelines to their dashboard layout
 - **Uptime Threshold Configuration** -- Status page admin settings now include configurable uptime thresholds (`uptime_yellow_threshold` and `uptime_red_threshold`) that control the color breakpoints on the uptime timeline bars
+- **Sidebar State Persistence** -- Sidebar open/collapsed state persisted to localStorage via zustand store, replacing previous cookie-based persistence
+- **Agent IPv4/IPv6 Reporting** -- Agent now populates `ipv4` and `ipv6` fields in SystemInfo from detected network interfaces
 
 ### Changed
 
 - Dashboard widget system refactored to extract shared logic into `widget-helpers.ts`, reducing code duplication across 13 widget components
 - Status page API response fields renamed for consistency: `id` → `server_id`, `name` → `server_name`, `uptime_percentage` changed from `f64` to `Option<f64>` (returns `null` when no uptime data exists)
+- GeoIP settings merged into the main Settings page (removed standalone `/settings/geoip` route and sidebar entry)
+- Add Widget button moved to editor toolbar for better discoverability
 
 ### Fixed
 
+- **Dashboard resize handles** -- Themed resize handles with proper border/background colors matching the current theme
 - **TypeScript strict mode build errors** -- Resolved strict `tsc` build errors in `dashboard-grid.tsx` and `widget-picker.tsx` related to optional chaining and type narrowing
+- **Server Map useQueryClient** -- Added missing import causing runtime error
+- **Header separator alignment** -- Vertical separator between sidebar toggle and breadcrumb now properly centered
 
 ### Testing
 
-- 361 Rust tests: 223 unit + 36 integration + 4 Docker integration + 43 common + 55 agent (was 288 unit + 29 integration + 4 Docker in 0.6.0 counting)
-- 186 frontend Vitest tests across 23 test files (was 129 across 16)
+- 362 Rust tests: 223 unit + 39 integration + 4 Docker integration + 43 common + 56 agent (was 361 in 0.7.0-pre)
+- 220 frontend Vitest tests across 28 test files (was 186 across 23)
+- 1 new `compute_disk_io` unit test for mount-path key rate calculation
 - 3 new `uptime-timeline.test.tsx` tests (renders days, tooltip on hover, empty state)
 - 3 new `UptimeService` unit tests (gap-filling empty returns zeros, gap-filling with data, date range boundaries)
-- 7 new integration tests (uptime-daily auth, uptime-daily default/custom range, status page uptime thresholds, status page uptime daily data)
+- 7 new integration tests (uptime-daily, status page uptime, GeoIP status/download auth)
 - 1 new `widget-config-dialog.test.tsx` test (uptime-timeline widget config)
+- 9 new `dashboard-grid.test.tsx` tests (drag/resize local layout, mobile single-column)
+- 8 new `use-dashboard.test.tsx` tests (CRUD hooks, cache sync)
+- 7 new `dashboard-editor-view.test.tsx` tests (save/cancel, widget add/edit/delete)
 
 ## [0.6.0] - 2026-03-20
 
