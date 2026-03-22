@@ -50,6 +50,8 @@ interface BreadcrumbEntry {
   to?: string
 }
 
+const TRAILING_SLASH_RE = /\/$/
+
 function useBreadcrumbs(): BreadcrumbEntry[] {
   const { pathname } = useLocation()
   const { t } = useTranslation()
@@ -59,7 +61,7 @@ function useBreadcrumbs(): BreadcrumbEntry[] {
       return [{ label: t('nav_dashboard') }]
     }
 
-    const segments = pathname.replace(/\/$/, '').split('/').filter(Boolean)
+    const segments = pathname.replace(TRAILING_SLASH_RE, '').split('/').filter(Boolean)
     const crumbs: BreadcrumbEntry[] = []
 
     let accumulated = ''
