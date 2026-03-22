@@ -136,7 +136,7 @@ export function DashboardGrid({
           width={width}
         >
           {widgets.map((widget) => (
-            <div className="relative" key={widget.id}>
+            <div className="relative h-full" key={widget.id}>
               {isEditing && (
                 <EditOverlay onDelete={() => onWidgetDelete(widget.id)} onEdit={() => onWidgetEdit(widget.id)} />
               )}

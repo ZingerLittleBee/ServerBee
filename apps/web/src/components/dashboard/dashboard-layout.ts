@@ -10,7 +10,9 @@ export interface LayoutPatch {
   id: string
 }
 
-const WIDGET_TYPE_MAP = new Map<string, (typeof WIDGET_TYPES)[number]>(WIDGET_TYPES.map((widget) => [widget.id, widget]))
+const WIDGET_TYPE_MAP = new Map<string, (typeof WIDGET_TYPES)[number]>(
+  WIDGET_TYPES.map((widget) => [widget.id, widget])
+)
 
 function getMinConstraints(widgetType: string) {
   const definition = WIDGET_TYPE_MAP.get(widgetType)
