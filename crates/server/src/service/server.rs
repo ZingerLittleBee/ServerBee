@@ -198,12 +198,8 @@ impl ServerService {
         active.ipv6 = Set(info.ipv6.clone());
         active.virtualization = Set(info.virtualization.clone());
         active.agent_version = Set(Some(info.agent_version.clone()));
-        if region.is_some() {
-            active.region = Set(region);
-        }
-        if country_code.is_some() {
-            active.country_code = Set(country_code);
-        }
+        active.region = Set(region);
+        active.country_code = Set(country_code);
         active.protocol_version = Set(info.protocol_version as i32);
         active.updated_at = Set(Utc::now());
 

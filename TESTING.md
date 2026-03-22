@@ -24,8 +24,8 @@ bun run typecheck
 
 ```bash
 cargo test -p serverbee-common          # 协议 + 能力常量 + Docker 类型 + Traceroute (43 tests)
-cargo test -p serverbee-server          # 服务端单元 + 集成 + dashboard + uptime (223 unit + 36 integration + 4 docker = 263 tests)
-cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager + Traceroute (55 tests)
+cargo test -p serverbee-server          # 服务端单元 + 集成 + dashboard + uptime + geoip (227 unit + 39 integration + 4 docker = 270 tests)
+cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager + Traceroute (56 tests)
 ```
 
 ### 仅集成测试
@@ -51,6 +51,7 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `common/protocol.rs` | 24 | 消息序列化/反序列化（NetworkProbe + 文件管理 + Docker + IpChanged/ServerIpChanged + Report.disk_io 覆盖） |
 | `common/docker_types.rs` | 3 | Docker 容器/动作/日志条目序列化/反序列化 |
 | `common/types.rs` | 4 | SystemInfo features 字段默认值和序列化、NetworkInterface 序列化、SystemReport.disk_io 向后兼容 |
+| `server/service/geoip.rs` | 4 | 加载不存在路径返回 None、无效 MMDB 数据返回 Err、IPv4 私有地址判定（10.x/172.16.x/192.168.x/169.254.x/公网）、IPv6 私有地址判定 |
 | `server/service/alert.rs` | 22 | 阈值判定、指标提取、采样窗口、事件驱动规则类型、服务器覆盖判定、AlertStateManager 构造、list_events 聚合与分页 |
 | `server/service/auth.rs` | 19 | 密码哈希、session、API key、TOTP、登录、改密 |
 | `server/service/notification.rs` | 16 | 模板变量替换、渠道配置解析 |
@@ -61,7 +62,7 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `server/service/user.rs` | 4 | 用户 CRUD、级联删除、最后 admin 保护 |
 | `server/service/ping.rs` | 3 | Ping 任务 CRUD |
 | `server/middleware/auth.rs` | 6 | Cookie/API Key 提取 |
-| `agent/collector/` | 8 | 系统信息、指标范围、使用量约束、磁盘 I/O 基线语义、设备过滤、速率计算排序 |
+| `agent/collector/` | 9 | 系统信息、指标范围、使用量约束、磁盘 I/O 基线语义、设备过滤、速率计算排序、mount-path key 速率验证 |
 | `agent/pinger.rs` | 2 | TCP 探测（开放/关闭端口） |
 | `agent/config.rs` | 1 | IpChangeConfig 默认值（enabled/check_external_ip/interval_secs/external_ip_url） |
 | `server/service/audit.rs` | 3 | 审计日志记录、列表、排序 |
@@ -125,6 +126,9 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `test_uptime_daily_requires_auth` | 无认证访问 /api/servers/{id}/uptime-daily → 401 |
 | `test_uptime_daily_server_not_found` | 认证后访问不存在的 server → 404 |
 | `test_uptime_daily_returns_data` | 注册 Agent → days=0 → 400、days=366 → 400、默认 → 200 (90 条零填充) |
+| `test_geoip_status_endpoint` | GET /api/geoip/status → 200、初始状态 installed=false |
+| `test_geoip_status_accessible_by_member` | 创建 member → member 访问 geoip status → 200 |
+| `test_geoip_download_requires_admin` | member 用户 POST /api/geoip/download → 403 |
 
 ## 前端测试
 
@@ -154,13 +158,18 @@ cd apps/web && bunx vitest run src/lib/capabilities.test.ts
 | `traffic-card.test.tsx` | 1 | TrafficCard 渲染、Today/Monthly tab 切换、hourly/daily BarChart 验证 |
 | `disk-io.test.ts` | 3 | disk_io_json 解析、汇总序列、按磁盘补零序列 |
 | `disk-io-chart.test.tsx` | 2 | DiskIoChart 汇总/按磁盘切换、空数据返回 null |
-| `use-dashboard.test.tsx` | 7 | useDashboards/useDefaultDashboard/useDashboard 查询、useCreateDashboard/useUpdateDashboard/useDeleteDashboard 变更、空 id 守卫 |
+| `dashboard-layout.test.ts` | 4 | widgetsToLayout/layoutToPatch/mergeLayoutPatch 转换、normalizeNewWidgetPlacement 处理新 widget 初始落位 |
+| `use-dashboard-editor.test.tsx` | 9 | 编辑草稿生命周期、layout patch 合并、add/update/delete/cancel、buildSaveInput 解析 config_json |
+| `use-dashboard.test.tsx` | 8 | useDashboards/useDefaultDashboard/useDashboard 查询、useCreateDashboard/useUpdateDashboard/useDeleteDashboard 变更、空 id 守卫、保存成功后同步 dashboard/default cache |
 | `widget-renderer.test.tsx` | 14 | 13 种 widget 类型逐一渲染无崩溃（stat-number/server-cards/gauge/top-n/line-chart/multi-line/traffic-bar/disk-io/alert-list/service-status/server-map/markdown/uptime-timeline）+ 未知类型 fallback |
-| `dashboard-grid.test.tsx` | 4 | view 模式无编辑覆层、edit 模式显示 Add Widget、移动端单列布局、桌面端 GridLayout |
+| `dashboard-grid.test.tsx` | 9 | 拖拽/缩放期间仅更新本地 live layout、stop 时才向父层提交 patch、交互中不被外部 rerender 覆盖、移动端单列布局 |
+| `dashboard-editor-view.test.tsx` | 7 | Save/Cancel 编排、layout draft 提交、picker+config 添加 widget、编辑已有 widget、dashboard 切换时 reset/flush 本地编辑态、加载间隙保持选中 dashboard id |
+| `routes/_authed/-index.test.tsx` | 1 | route 在切换 dashboard 且目标数据尚未返回时，仍向 editor view 传递稳定的 activeDashboardId |
 | `widget-config-dialog.test.tsx` | 9 | stat-number metric 选择、line-chart server+metric+range 选择、markdown textarea、service-status/server-map 无配置提示、title 输入、编辑模式标题、关闭时不渲染、uptime-timeline server 多选 |
 | `markdown.test.ts` | 8 | 标题/粗体斜体/安全链接/javascript:链接拦截/HTML 标签转义/img onerror 转义/行内代码/无序列表 |
 | `capabilities-dialog.test.tsx` | 1 | admin 用户触发按钮打开能力控制对话框 |
 | `uptime-timeline.test.tsx` | 11 | 分段数量、绿/黄/红/灰颜色逻辑、自定义阈值、标签显示、图例显示、数据补零、computeAggregateUptime null/正常值/100% |
+| `geoip.test.tsx` | 7 | GeoIP 设置页渲染标题、未安装状态显示、已安装状态显示、加载骨架屏、Download 按钮（未安装）、Update 按钮（已安装）、自定义 MMDB 时隐藏按钮 |
 
 ### 测试工具
 
@@ -328,6 +337,95 @@ agent-browser screenshot /tmp/p18-dashboard.png
 | Traffic 总览页渲染 | ✅ 4 张统计卡片 + "No servers with traffic data yet" |
 | 告警 IP Changed 规则类型 | ✅ 条件下拉包含 "IP Changed" 选项（第 20 种类型） |
 | 侧边栏导航 | ✅ Service Monitors 和 Traffic 入口正确 |
+
+## 前端性能测试
+
+### 实时图表性能
+
+Server 详情页 realtime 模式下有 7 个 Recharts 图表随 WebSocket 数据实时更新，是性能热点。
+
+#### 优化措施
+
+| 措施 | 文件 | 说明 |
+|------|------|------|
+| 渲染节流 | `hooks/use-realtime-metrics.ts` | `RENDER_THROTTLE_MS=2000`，限制最多每 2 秒触发一次 re-render |
+| 缩短动画 | `components/server/metrics-chart.tsx` | `animationDuration={800}`（默认 1500ms），避免与 2s 更新周期叠加 |
+| 缩短动画 | `components/server/disk-io-chart.tsx` | 同上 |
+
+#### 使用 agent-browser 测量性能
+
+```bash
+# 1. 登录并导航到 server 详情 realtime 页面
+agent-browser open http://localhost:5173/login
+agent-browser snapshot -i
+agent-browser fill @e5 "admin" && agent-browser fill @e6 "admin123" && agent-browser click @e4
+agent-browser wait --load networkidle
+agent-browser open "http://localhost:5173/servers/<SERVER_ID>?range=realtime"
+agent-browser wait --load networkidle
+
+# 2. 测量 DOM mutations + Long Tasks（10 秒）
+agent-browser eval --stdin <<'EVALEOF'
+(function() {
+  return new Promise(resolve => {
+    let domMutations = 0, longTasks = 0, longTaskDurations = [];
+    const observer = new MutationObserver(m => { domMutations += m.length; });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    const perfObserver = new PerformanceObserver(list => {
+      for (const e of list.getEntries()) { longTasks++; longTaskDurations.push(Math.round(e.duration)); }
+    });
+    try { perfObserver.observe({ entryTypes: ['longtask'] }); } catch(e) {}
+    setTimeout(() => {
+      observer.disconnect(); perfObserver.disconnect();
+      resolve(JSON.stringify({ domMutations, longTasks, longTaskDurations }));
+    }, 10000);
+  });
+})()
+EVALEOF
+
+# 3. 测量 FPS（10 秒）
+agent-browser eval --stdin <<'EVALEOF'
+(function() {
+  return new Promise(resolve => {
+    let frames = 0, lastTime = performance.now(), fpsReadings = [];
+    function tick() {
+      frames++;
+      const now = performance.now();
+      if (now - lastTime >= 1000) {
+        fpsReadings.push(Math.round(frames * 1000 / (now - lastTime)));
+        frames = 0; lastTime = now;
+      }
+      if (fpsReadings.length < 10) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+    setTimeout(() => {
+      const avg = fpsReadings.length ? Math.round(fpsReadings.reduce((a,b) => a+b, 0) / fpsReadings.length) : 0;
+      resolve(JSON.stringify({ avgFps: avg, minFps: Math.min(...fpsReadings), maxFps: Math.max(...fpsReadings), fpsPerSecond: fpsReadings }));
+    }, 10500);
+  });
+})()
+EVALEOF
+
+# 4. 清理
+agent-browser close
+```
+
+#### 性能基准（2026-03-21）
+
+测试环境：Server 详情页 realtime 模式，7 个图表，1920×963 视口
+
+| 指标 | 数值 | 阈值 |
+|------|------|------|
+| DOM mutations / 10s | 2469 | < 5000 |
+| Long tasks | 3 次（68/72/69ms） | 每个 < 100ms |
+| 平均 FPS | 62 | > 50 |
+| 最低 FPS | 50 | > 30 |
+| 内存 (JS Heap) | 37→50 MB / 10s | < 200 MB |
+
+#### 性能回归判断标准
+
+- **FPS 平均值 < 30**：需要优化
+- **Long task > 200ms**：需要排查
+- **DOM mutations / 10s > 10000**：可能有动画叠加或缺少节流
 
 ## 手动功能验证（E2E）
 
@@ -510,8 +608,8 @@ docker compose up -d
 |--------|---------------|----------|
 | 协议兼容 | `crates/common/src/types.rs` / `test_system_report_without_disk_io_defaults_to_none` | 旧 payload 缺少 `disk_io` 字段时仍能反序列化，向后兼容为 `None` |
 | 协议 round-trip | `crates/common/src/protocol.rs` / `test_report_with_disk_io_round_trip` | `AgentMessage::Report` 序列化/反序列化后保留 `disk_io` 数据 |
-| Agent 采集语义 | `crates/agent/src/collector/tests.rs` / `test_collect_disk_io_first_sample_is_empty`、`test_collect_disk_io_is_none_on_unsupported_platforms` | Linux 首次采样返回空数组建立基线；非 Linux 平台返回 `None` |
-| Agent 纯函数 | `crates/agent/src/collector/disk_io.rs` / `test_compute_disk_io_sorts_devices_and_clamps_negative_deltas`、`test_should_track_device_filters_virtual_and_partition_names` | 速率计算、设备名排序、计数器回退钳制、虚拟/分区设备过滤 |
+| Agent 采集语义 | `crates/agent/src/collector/tests.rs` / `test_collect_disk_io_first_sample_is_empty`、`test_collect_disk_io_first_sample_is_empty_on_non_linux` | Linux 和非 Linux 首次采样均返回空数组建立基线（非 Linux 使用 sysinfo `Disk::usage()` + mount_point key） |
+| Agent 纯函数 | `crates/agent/src/collector/disk_io.rs` / `test_compute_disk_io_sorts_devices_and_clamps_negative_deltas`、`test_should_track_device_filters_virtual_and_partition_names`、`test_compute_disk_io_with_mount_path_keys` | 速率计算、设备名排序、计数器回退钳制、虚拟/分区设备过滤、mount-path key 速率计算 |
 | Server 持久化 | `crates/server/src/service/record.rs` / `test_save_report_persists_disk_io_json`、`test_aggregate_hourly_averages_disk_io_by_device` | `disk_io_json` 原始记录持久化，以及小时聚合时按设备求平均 |
 | 前端数据转换 | `apps/web/src/lib/disk-io.test.ts` / `parseDiskIoJson`、`buildMergedDiskIoSeries`、`buildPerDiskIoSeries` | JSON 解析容错、汇总序列构建、按磁盘补零与稳定排序 |
 | 前端图表渲染 | `apps/web/src/components/server/disk-io-chart.test.tsx` / `renders merged and per-disk views`、`returns null when there is no disk I/O data` | `Merged` / `Per Disk` 视图切换、空数据时不渲染卡片 |
@@ -535,7 +633,7 @@ docker compose up -d
 | DI5 | 缺失时间点补零 | 构造某个时间点仅部分磁盘有数据 → 切到 `Per Disk` → 缺失磁盘的该时间点显示为 0，不报错不丢线 | — |
 | DI6 | 时间范围切换 | 依次点击 `1h/6h/24h/7d/30d` → Disk I/O 图表的时间轴和数据范围同步更新，不串用其他范围的数据 | — |
 | DI7 | 零吞吐历史可见 | 准备 read/write 全为 0 的历史记录 → 切到历史模式 → Disk I/O 卡片仍可见，图表显示空闲基线而非整卡消失 | — |
-| DI8 | 旧 Agent / 非 Linux 兼容 | 接入旧 agent 或非 Linux agent → 切到历史模式 → 页面不报错，Disk I/O 区域按无数据处理 | — |
+| DI8 | 旧 Agent / 非 Linux 兼容 | 接入旧 agent（无 disk_io 字段）→ 切到历史模式 → 页面不报错，Disk I/O 区域按无数据处理；macOS/Windows agent → 正常显示 Disk I/O 数据（name 为挂载路径） | — |
 | DI9 | API 返回原始 JSON | 调用 `GET /api/servers/{id}/records?interval=raw` → 响应中包含 `disk_io_json`，内容可反序列化为每磁盘 `read_bytes_per_sec` / `write_bytes_per_sec` | — |
 | DI10 | i18n | 切换中文/英文 → `磁盘 I/O` / `Disk I/O`、`汇总` / `Merged`、`按磁盘` / `Per Disk`、`读取` / `Read`、`写入` / `Write` 文案正确 | — |
 
@@ -732,7 +830,7 @@ docker compose up -d
 | IP5 | 事件驱动告警 | 创建 ip_changed 告警规则 → 关联通知组 → IP 变更时触发通知 | — |
 | IP6 | 告警规则覆盖范围 | 创建 cover_type=include 规则 → 仅指定服务器触发 | — |
 | IP7 | Browser 推送 | Dashboard 打开时 → IP 变更 → WS 推送 ServerIpChanged 消息 | — |
-| IP8 | GeoIP 更新 | IP 变更后 → 服务器 region/country_code 自动更新 | — |
+| IP8 | GeoIP 更新 | IP 变更后 → 服务器 region/country_code 自动更新（需先安装 GeoIP 数据库） | — |
 | IP9 | 配置禁用 | 设置 ip_change.enabled=false → Agent 不发送 IpChanged | — |
 | IP10 | i18n | 切换中英文 → 告警规则类型 "IP Changed"/"IP 变更" 正确显示 | — |
 
@@ -778,7 +876,9 @@ docker compose up -d
 | DB24 | disk-io | 添加 disk-io widget → 选择服务器 → 显示磁盘读写折线图 | — |
 | DB25 | alert-list | 添加 alert-list widget → 显示告警事件列表（红/绿状态点 + 规则名 + 服务器 + 相对时间） | — |
 | DB26 | service-status | 添加 service-status widget → 显示服务监控点阵（绿/黄/红/灰圆点）→ hover 显示监控名 + 状态 | — |
-| DB27 | server-map | 添加 server-map widget → SVG 世界地图高亮有服务器的国家 → 圆形标记在国家质心 | — |
+| DB27 | server-map (无 GeoIP) | 添加 server-map widget → 未安装 GeoIP 时显示 "GeoIP database not installed" + Download 按钮（admin）/ 仅文字（member） | — |
+| DB27a | server-map (GeoIP 下载) | 点击 Download GeoIP Database 按钮 → loading → 成功 toast → 地图开始显示数据（Agent 重连后） | — |
+| DB27b | server-map (有数据) | GeoIP 已安装 + Agent 有公网 IP → SVG 世界地图高亮有服务器的国家 → 圆形标记在国家质心 → 底部显示 "GeoIP by DB-IP" | — |
 | DB28 | markdown | 添加 markdown widget → 输入 Markdown 内容 → 渲染标题/粗体/链接/列表 → 无 XSS（`<script>` 被转义） | — |
 
 #### 响应式 & 移动端
@@ -799,6 +899,21 @@ docker compose up -d
 | DB35 | DELETE /api/dashboards/:id | 删除非默认仪表盘 → 200 → 删除默认仪表盘 → 400 | — |
 | DB36 | GET /api/alert-events | 返回聚合告警事件列表，firing 在前 → 支持 limit 参数 | — |
 | DB37 | OpenAPI | `/swagger-ui/` 包含 6 个 dashboards + 1 个 alert-events 端点 | — |
+
+### 验证清单 — GeoIP 数据库管理
+
+| # | 测试场景 | 操作步骤 | 状态 |
+|---|---------|---------|------|
+| GEO1 | Settings 页面 — 未安装 | 导航到 Settings → GeoIP → 显示 "Not Installed" + Download 按钮 + DB-IP CC BY 4.0 归属 | — |
+| GEO2 | Settings 页面 — 下载 | 点击 Download → loading 状态 → 成功 toast → 状态切换为 "Installed" + 文件大小 + 更新日期 | — |
+| GEO3 | Settings 页面 — 更新 | 已安装时按钮文字变为 "Update" + RefreshCw 图标 → 点击可重新下载最新版 | — |
+| GEO4 | Settings 页面 — 自定义 MMDB | 配置 geoip.mmdb_path → 显示 "Using custom MMDB file" → 无 Download/Update 按钮 | — |
+| GEO5 | Server Map — 下载提示 | 未安装 GeoIP → Server Map widget 显示 "GeoIP database not installed" + Download 按钮 | — |
+| GEO6 | Server Map — member 用户 | member 用户 → 看到未安装提示但无 Download 按钮 | — |
+| GEO7 | 侧边栏导航 | admin 用户 → 侧边栏 Settings 下显示 GeoIP 菜单项（MapPin 图标）→ member 不可见 | — |
+| GEO8 | 热加载 | 下载完成后无需重启服务 → Agent 下次上报 SystemInfo 时自动查询 country_code | — |
+| GEO9 | 并发下载保护 | 快速双击 Download → 第二次返回 "Download already in progress" | — |
+| GEO10 | 脏数据清理 | Agent IP 变为私网 → GeoIP 查询返回 None → country_code 被清除 → 地图不再显示旧位置 | — |
 
 ### 验证清单 — Uptime 90 天时间线 (P18)
 
@@ -957,7 +1072,7 @@ crates/server/src/test_utils.rs         # 测试辅助 (setup_test_db)
 crates/server/tests/integration.rs      # 集成测试 (33 tests)
 crates/server/tests/docker_integration.rs # Docker 集成测试 (4 tests)
 crates/agent/src/collector/tests.rs     # Agent 采集器测试（含 Disk I/O 首次采样 / 平台语义）
-crates/agent/src/collector/disk_io.rs   # Disk I/O 纯函数测试（速率计算 / 设备过滤）
+crates/agent/src/collector/disk_io.rs   # Disk I/O 纯函数测试（速率计算 / 设备过滤 / mount-path key）
 crates/agent/src/pinger.rs              # Agent Pinger 测试
 crates/agent/src/probe_utils.rs         # 批量探测解析测试
 crates/agent/src/network_prober.rs      # 网络探测模块测试
@@ -992,10 +1107,14 @@ apps/web/src/hooks/use-traffic.test.tsx # 流量 hook 测试 (3 tests)
 apps/web/src/components/server/disk-io-chart.test.tsx # Disk I/O 图表渲染测试
 apps/web/src/components/server/traffic-card.test.tsx # TrafficCard tab 切换测试 (1 test)
 apps/web/src/components/server/capabilities-dialog.test.tsx # 能力控制对话框测试 (1 test)
-apps/web/src/hooks/use-dashboard.test.tsx            # Dashboard hooks 测试 (7 tests)
-apps/web/src/components/dashboard/widget-renderer.test.tsx # Widget 渲染器测试 (13 tests)
-apps/web/src/components/dashboard/dashboard-grid.test.tsx  # Dashboard Grid 布局测试 (4 tests)
-apps/web/src/components/dashboard/widget-config-dialog.test.tsx # Widget 配置对话框测试 (8 tests)
+apps/web/src/components/dashboard/dashboard-layout.test.ts # Dashboard layout 纯函数测试 (4 tests)
+apps/web/src/hooks/use-dashboard-editor.test.tsx     # Dashboard editor hook 测试 (9 tests)
+apps/web/src/hooks/use-dashboard.test.tsx            # Dashboard hooks 测试 (8 tests)
+apps/web/src/components/dashboard/widget-renderer.test.tsx # Widget 渲染器测试 (14 tests)
+apps/web/src/components/dashboard/dashboard-grid.test.tsx  # Dashboard Grid 交互测试 (9 tests)
+apps/web/src/components/dashboard/dashboard-editor-view.test.tsx # DashboardEditorView 编排测试 (7 tests)
+apps/web/src/components/dashboard/widget-config-dialog.test.tsx # Widget 配置对话框测试 (9 tests)
+apps/web/src/routes/_authed/-index.test.tsx          # Dashboard route 选中态保持测试 (1 test)
 apps/web/src/lib/markdown.test.ts                    # Markdown→HTML 转换器 + XSS 防护测试 (8 tests)
 apps/web/vitest.config.ts               # Vitest 配置
 .github/workflows/ci.yml               # CI 流水线

@@ -11,13 +11,16 @@ import {
   useUpdateDashboard
 } from './use-dashboard'
 
-function createWrapper() {
-  const queryClient = new QueryClient({
+function createTestQueryClient() {
+  return new QueryClient({
     defaultOptions: {
       queries: { retry: false },
       mutations: { retry: false }
     }
   })
+}
+
+function createWrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   }
@@ -73,7 +76,8 @@ describe('useDashboards', () => {
   it('calls GET /api/dashboards', async () => {
     mockFetchResponse({ data: [mockDashboard] })
 
-    const { result } = renderHook(() => useDashboards(), { wrapper: createWrapper() })
+    const queryClient = createTestQueryClient()
+    const { result } = renderHook(() => useDashboards(), { wrapper: createWrapper(queryClient) })
 
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true)
@@ -88,7 +92,8 @@ describe('useDefaultDashboard', () => {
   it('calls GET /api/dashboards/default', async () => {
     mockFetchResponse({ data: mockDashboardWithWidgets })
 
-    const { result } = renderHook(() => useDefaultDashboard(), { wrapper: createWrapper() })
+    const queryClient = createTestQueryClient()
+    const { result } = renderHook(() => useDefaultDashboard(), { wrapper: createWrapper(queryClient) })
 
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true)
@@ -104,7 +109,8 @@ describe('useDashboard', () => {
   it('calls GET /api/dashboards/:id', async () => {
     mockFetchResponse({ data: mockDashboardWithWidgets })
 
-    const { result } = renderHook(() => useDashboard('dash-1'), { wrapper: createWrapper() })
+    const queryClient = createTestQueryClient()
+    const { result } = renderHook(() => useDashboard('dash-1'), { wrapper: createWrapper(queryClient) })
 
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true)
@@ -115,7 +121,8 @@ describe('useDashboard', () => {
   })
 
   it('does not fetch when id is empty', async () => {
-    const { result } = renderHook(() => useDashboard(''), { wrapper: createWrapper() })
+    const queryClient = createTestQueryClient()
+    const { result } = renderHook(() => useDashboard(''), { wrapper: createWrapper(queryClient) })
 
     await waitFor(() => {
       expect(result.current.fetchStatus).toBe('idle')
@@ -129,7 +136,8 @@ describe('useCreateDashboard', () => {
   it('calls POST /api/dashboards with name', async () => {
     mockFetchResponse({ data: mockDashboard })
 
-    const { result } = renderHook(() => useCreateDashboard(), { wrapper: createWrapper() })
+    const queryClient = createTestQueryClient()
+    const { result } = renderHook(() => useCreateDashboard(), { wrapper: createWrapper(queryClient) })
 
     result.current.mutate({ name: 'My Dashboard' })
 
@@ -151,7 +159,8 @@ describe('useUpdateDashboard', () => {
   it('calls PUT /api/dashboards/:id with correct body', async () => {
     mockFetchResponse({ data: mockDashboardWithWidgets })
 
-    const { result } = renderHook(() => useUpdateDashboard(), { wrapper: createWrapper() })
+    const queryClient = createTestQueryClient()
+    const { result } = renderHook(() => useUpdateDashboard(), { wrapper: createWrapper(queryClient) })
 
     result.current.mutate({ id: 'dash-1', name: 'Updated Name', widgets: [] })
 
@@ -167,13 +176,37 @@ describe('useUpdateDashboard', () => {
       })
     )
   })
+
+  it('updates detail and default caches after save', async () => {
+    const updatedDashboard = {
+      ...mockDashboardWithWidgets,
+      name: 'Updated Dashboard'
+    }
+    mockFetchResponse({ data: updatedDashboard })
+
+    const queryClient = createTestQueryClient()
+    queryClient.setQueryData(['dashboards', 'dash-1'], mockDashboardWithWidgets)
+    queryClient.setQueryData(['dashboards', 'default'], mockDashboardWithWidgets)
+
+    const { result } = renderHook(() => useUpdateDashboard(), { wrapper: createWrapper(queryClient) })
+
+    result.current.mutate({ id: 'dash-1', name: 'Updated Dashboard' })
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true)
+    })
+
+    expect(queryClient.getQueryData(['dashboards', 'dash-1'])).toEqual(updatedDashboard)
+    expect(queryClient.getQueryData(['dashboards', 'default'])).toEqual(updatedDashboard)
+  })
 })
 
 describe('useDeleteDashboard', () => {
   it('calls DELETE /api/dashboards/:id', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(new Response(null, { status: 204 }))
 
-    const { result } = renderHook(() => useDeleteDashboard(), { wrapper: createWrapper() })
+    const queryClient = createTestQueryClient()
+    const { result } = renderHook(() => useDeleteDashboard(), { wrapper: createWrapper(queryClient) })
 
     result.current.mutate('dash-1')
 

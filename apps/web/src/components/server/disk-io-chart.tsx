@@ -35,6 +35,7 @@ function DiskIoLineChart({ config, data }: { config: ChartConfig; data: DiskIoCh
         <ChartTooltip content={<ChartTooltipContent hideLabel valueFormatter={(value) => formatSpeed(value)} />} />
         <ChartLegend content={<ChartLegendContent />} />
         <Line
+          animationDuration={800}
           dataKey="read_bytes_per_sec"
           dot={false}
           stroke="var(--color-read_bytes_per_sec)"
@@ -42,6 +43,7 @@ function DiskIoLineChart({ config, data }: { config: ChartConfig; data: DiskIoCh
           type="monotone"
         />
         <Line
+          animationDuration={800}
           dataKey="write_bytes_per_sec"
           dot={false}
           stroke="var(--color-write_bytes_per_sec)"

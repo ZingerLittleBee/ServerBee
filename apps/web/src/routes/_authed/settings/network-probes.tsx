@@ -457,6 +457,7 @@ function NetworkProbeSettingsPage() {
                 {t('target_type')}
               </label>
               <Select
+                items={probeTypes}
                 onValueChange={(value) => setForm((prev) => ({ ...prev, probe_type: value as ProbeType }))}
                 value={form.probe_type}
               >

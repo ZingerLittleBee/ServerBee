@@ -20,7 +20,8 @@ function getGaugeColor(value: number): string {
 }
 
 export function GaugeWidget({ config, servers }: GaugeWidgetProps) {
-  const { server_id, metric } = config
+  const server_id = config.server_id ?? ''
+  const { metric } = config
   const max = config.max ?? 100
 
   const server = useMemo(() => servers.find((s) => s.id === server_id), [servers, server_id])

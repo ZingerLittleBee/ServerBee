@@ -35,7 +35,7 @@ const REFETCH_INTERVAL = 60_000
 const CHART_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)']
 
 export function MultiLineWidget({ config, servers }: MultiLineWidgetProps) {
-  const { server_ids, metric } = config
+  const { server_ids = [], metric } = config
   const hours = config.hours ?? DEFAULT_HOURS
   const interval = config.interval ?? DEFAULT_INTERVAL
 

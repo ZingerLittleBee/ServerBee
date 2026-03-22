@@ -228,7 +228,11 @@ function PingTasksPage() {
               />
 
               <div className="flex gap-3">
-                <Select onValueChange={(value) => setProbeType(value as ProbeType)} value={probeType}>
+                <Select
+                  items={probeTypeLabels}
+                  onValueChange={(value) => setProbeType(value as ProbeType)}
+                  value={probeType}
+                >
                   <SelectTrigger className="w-full flex-1">
                     <SelectValue />
                   </SelectTrigger>

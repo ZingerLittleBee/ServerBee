@@ -32,6 +32,7 @@
   "nav_security": "安全",
   "nav_appearance": "外观",
   "nav_audit_logs": "审计日志",
+  "nav_geoip": "GeoIP",
   "nav_settings": "设置",
   "search": "搜索",
   "search_placeholder_ellipsis": "搜索\u2026",

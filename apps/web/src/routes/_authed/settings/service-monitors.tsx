@@ -433,6 +433,7 @@ function MonitorFormDialog({
             <div className="space-y-1">
               <Label htmlFor="monitor-type">Type</Label>
               <Select
+                items={MONITOR_TYPES}
                 onValueChange={(v) => {
                   setMonitorType(v as MonitorType)
                   setConfig({})

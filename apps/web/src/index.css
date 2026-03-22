@@ -134,6 +134,30 @@
   }
 }
 
+/* Dashboard grid placeholder — !important needed to override react-grid-layout/css/styles.css loaded later */
+.react-grid-item.react-grid-placeholder {
+  background: var(--primary) !important;
+  border-radius: var(--radius) !important;
+  opacity: 0.15 !important;
+}
+
+/* Dashboard resize handle overrides the library's hard-coded dark marker */
+.dashboard-grid .dashboard-resize-handle::after {
+  content: none !important;
+}
+
+.dashboard-grid--editing > .react-grid-item > .dashboard-resize-handle {
+  opacity: 0.8 !important;
+}
+
+.dashboard-grid--editing > .react-grid-item:hover > .dashboard-resize-handle,
+.dashboard-grid--editing > .react-grid-item.resizing > .dashboard-resize-handle,
+.dashboard-grid--editing
+  > .react-grid-item.react-draggable-dragging
+  > .dashboard-resize-handle {
+  opacity: 1 !important;
+}
+
 /* Fullscreen dialogs on small screens */
 @media (max-width: 639px) {
   [data-slot="dialog-content"] {

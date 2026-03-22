@@ -1,5 +1,11 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Download } from 'lucide-react'
 import { useMemo } from 'react'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { useAuth } from '@/hooks/use-auth'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import { api } from '@/lib/api-client'
 import { filterByIds } from '@/lib/widget-helpers'
 import type { ServerMapConfig } from '@/lib/widget-types'
 import { WORLD_MAP_PATHS } from '@/lib/world-map-paths'
@@ -23,6 +29,30 @@ const VIEW_BOX = '-180 -90 360 180'
 const COUNTRY_MAP = new Map(WORLD_MAP_PATHS.map((p) => [p.id, p]))
 
 export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+  const queryClient = useQueryClient()
+
+  const { data: geoStatus } = useQuery<{ installed: boolean; source?: string }>({
+    queryKey: ['geoip-status'],
+    queryFn: () => api.get('/api/geoip/status')
+  })
+
+  const downloadMutation = useMutation({
+    mutationFn: () => api.post<{ success: boolean; message: string }>('/api/geoip/download'),
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success(data.message)
+        queryClient.invalidateQueries({ queryKey: ['geoip-status'] })
+      } else {
+        toast.error(data.message)
+      }
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Download failed')
+    }
+  })
+
   const filteredServers = useMemo(
     () => filterByIds(servers, config.server_ids, (s) => s.id),
     [servers, config.server_ids]
@@ -126,9 +156,26 @@ export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
           })}
         </svg>
       </div>
-      {countryGroups.length === 0 && (
-        <p className="py-2 text-center text-muted-foreground text-xs">No server location data available</p>
-      )}
+      {countryGroups.length === 0 &&
+        (geoStatus?.installed === false ? (
+          <div className="space-y-2 py-2 text-center">
+            <p className="text-muted-foreground text-xs">GeoIP database not installed</p>
+            {isAdmin && (
+              <Button
+                disabled={downloadMutation.isPending}
+                onClick={() => downloadMutation.mutate()}
+                size="sm"
+                variant="outline"
+              >
+                <Download className="mr-1 size-3.5" />
+                {downloadMutation.isPending ? 'Downloading...' : 'Download GeoIP Database'}
+              </Button>
+            )}
+          </div>
+        ) : (
+          <p className="py-2 text-center text-muted-foreground text-xs">No server location data available</p>
+        ))}
+      {countryGroups.length > 0 && <p className="text-right text-[10px] text-muted-foreground">GeoIP by DB-IP</p>}
     </div>
   )
 }
