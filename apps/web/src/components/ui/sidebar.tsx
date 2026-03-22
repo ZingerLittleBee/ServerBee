@@ -4,6 +4,7 @@ import { mergeProps } from '@base-ui/react/merge-props'
 import { useRender } from '@base-ui/react/use-render'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { PanelLeftIcon } from 'lucide-react'
+// biome-ignore lint/performance/noNamespaceImport: shadcn/ui component uses React.* extensively
 import * as React from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,13 +21,13 @@ const SIDEBAR_WIDTH_MOBILE = '18rem'
 const SIDEBAR_WIDTH_ICON = '3rem'
 const SIDEBAR_KEYBOARD_SHORTCUT = 'b'
 
-type SidebarContextProps = {
-  state: 'expanded' | 'collapsed'
-  open: boolean
-  setOpen: (open: boolean) => void
-  openMobile: boolean
-  setOpenMobile: (open: boolean) => void
+interface SidebarContextProps {
   isMobile: boolean
+  open: boolean
+  openMobile: boolean
+  setOpen: (open: boolean) => void
+  setOpenMobile: (open: boolean) => void
+  state: 'expanded' | 'collapsed'
   toggleSidebar: () => void
 }
 
@@ -86,7 +87,7 @@ function SidebarProvider({ className, style, children, ...props }: React.Compone
       setOpenMobile,
       toggleSidebar
     }),
-    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
+    [state, open, setOpen, isMobile, openMobile, toggleSidebar]
   )
 
   return (
