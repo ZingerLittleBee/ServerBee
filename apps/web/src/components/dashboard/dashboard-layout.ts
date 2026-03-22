@@ -10,7 +10,7 @@ export interface LayoutPatch {
   id: string
 }
 
-const WIDGET_TYPE_MAP = new Map(WIDGET_TYPES.map((widget) => [widget.id, widget]))
+const WIDGET_TYPE_MAP = new Map<string, (typeof WIDGET_TYPES)[number]>(WIDGET_TYPES.map((widget) => [widget.id, widget]))
 
 function getMinConstraints(widgetType: string) {
   const definition = WIDGET_TYPE_MAP.get(widgetType)
@@ -33,7 +33,7 @@ export function widgetsToLayout(widgets: DashboardWidget[]): Layout {
 }
 
 export function layoutToPatch(
-  layout: Pick<LayoutItem, 'i' | 'x' | 'y' | 'w' | 'h'>[],
+  layout: ReadonlyArray<Pick<LayoutItem, 'i' | 'x' | 'y' | 'w' | 'h'>>,
   widgets: DashboardWidget[]
 ): LayoutPatch[] {
   const widgetMap = new Map(widgets.map((widget) => [widget.id, widget]))
