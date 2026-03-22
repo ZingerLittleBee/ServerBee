@@ -1,4 +1,4 @@
-import { PencilIcon, SaveIcon, XIcon } from 'lucide-react'
+import { PencilIcon, PlusIcon, SaveIcon, XIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
@@ -159,6 +159,10 @@ export function DashboardEditorView({
           )}
           {editor.isEditing && (
             <>
+              <Button onClick={() => setPickerOpen(true)} size="sm" variant="outline">
+                <PlusIcon className="mr-1 size-4" />
+                {t('add_widget', 'Add Widget')}
+              </Button>
               <Button disabled={isSaving} onClick={handleSave} size="sm">
                 <SaveIcon className="mr-1 size-4" />
                 {t('save')}
@@ -188,7 +192,6 @@ export function DashboardEditorView({
       {(displayWidgets.length > 0 || editor.isEditing) && (
         <DashboardGrid
           isEditing={editor.isEditing}
-          onAddWidget={() => setPickerOpen(true)}
           onLayoutChange={editor.commitLayoutPatch}
           onWidgetDelete={handleWidgetDelete}
           onWidgetEdit={handleWidgetEdit}

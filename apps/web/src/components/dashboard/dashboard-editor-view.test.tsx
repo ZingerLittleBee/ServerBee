@@ -32,14 +32,12 @@ vi.mock('./dashboard-switcher', () => ({
 vi.mock('./dashboard-grid', () => ({
   DashboardGrid: ({
     isEditing,
-    onAddWidget,
     onLayoutChange,
     onWidgetDelete,
     onWidgetEdit,
     widgets
   }: {
     isEditing: boolean
-    onAddWidget?: () => void
     onLayoutChange: (patch: { grid_h: number; grid_w: number; grid_x: number; grid_y: number; id: string }[]) => void
     onWidgetDelete: (widgetId: string) => void
     onWidgetEdit: (widgetId: string) => void
@@ -56,9 +54,6 @@ vi.mock('./dashboard-grid', () => ({
       </button>
       <button onClick={() => onWidgetEdit('w-1')} type="button">
         edit-widget
-      </button>
-      <button onClick={() => onAddWidget?.()} type="button">
-        add-widget
       </button>
     </div>
   )
@@ -254,7 +249,7 @@ describe('DashboardEditorView', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'edit' }))
-    fireEvent.click(screen.getByRole('button', { name: 'add-widget' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Widget' }))
     fireEvent.click(screen.getByRole('button', { name: 'pick-line-chart' }))
     expect(screen.getByTestId('config-widget-type')).toHaveTextContent('line-chart')
     fireEvent.click(screen.getByRole('button', { name: 'submit-config' }))
@@ -285,6 +280,27 @@ describe('DashboardEditorView', () => {
         sort_order: 1
       })
     ])
+  })
+
+  it('shows the add widget action in the top toolbar only while editing', () => {
+    render(
+      <DashboardEditorView
+        activeDashboardId={primaryDashboard.id}
+        dashboard={primaryDashboard}
+        dashboards={dashboards}
+        isAdmin
+        isSaving={false}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+        onSelectDashboard={vi.fn()}
+        servers={[]}
+      />
+    )
+
+    expect(screen.queryByRole('button', { name: 'Add Widget' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'edit' }))
+
+    expect(screen.getByRole('button', { name: 'Add Widget' })).toBeInTheDocument()
   })
 
   it('updates an existing widget through the edit flow and saves the changed payload', async () => {
