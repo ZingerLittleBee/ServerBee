@@ -134,6 +134,13 @@
   }
 }
 
+/* Dashboard grid placeholder — !important needed to override react-grid-layout/css/styles.css loaded later */
+.react-grid-item.react-grid-placeholder {
+  background: var(--primary) !important;
+  border-radius: var(--radius) !important;
+  opacity: 0.15 !important;
+}
+
 /* Fullscreen dialogs on small screens */
 @media (max-width: 639px) {
   [data-slot="dialog-content"] {

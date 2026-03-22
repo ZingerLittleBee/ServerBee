@@ -122,7 +122,10 @@ export function DashboardGrid({
                 onToggleStatic={onWidgetToggleStatic ? () => onWidgetToggleStatic(widget.id) : undefined}
               />
             )}
-            <div style={{ minHeight: widget.grid_h * ROW_HEIGHT }}>
+            <div
+              className={isEditing ? 'pointer-events-none' : undefined}
+              style={{ minHeight: widget.grid_h * ROW_HEIGHT }}
+            >
               <WidgetRenderer servers={servers} widget={widget} />
             </div>
           </div>
@@ -160,7 +163,7 @@ export function DashboardGrid({
                   onToggleStatic={onWidgetToggleStatic ? () => onWidgetToggleStatic(widget.id) : undefined}
                 />
               )}
-              <div className="h-full">
+              <div className={isEditing ? 'pointer-events-none h-full' : 'h-full'}>
                 <WidgetRenderer servers={servers} widget={widget} />
               </div>
             </div>
