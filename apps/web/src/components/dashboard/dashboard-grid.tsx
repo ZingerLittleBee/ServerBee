@@ -4,13 +4,11 @@ import {
   MoveHorizontalIcon,
   MoveVerticalIcon,
   PencilIcon,
-  PlusIcon,
   TrashIcon,
   UnlockIcon
 } from 'lucide-react'
 import { type Ref, useCallback, useEffect, useMemo, useState } from 'react'
 import { GridLayout, type Layout, type ResizeHandleAxis, useContainerWidth } from 'react-grid-layout'
-import { useTranslation } from 'react-i18next'
 import 'react-grid-layout/css/styles.css'
 import { Button } from '@/components/ui/button'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
@@ -21,7 +19,6 @@ import { WidgetRenderer } from './widget-renderer'
 
 interface DashboardGridProps {
   isEditing: boolean
-  onAddWidget?: () => void
   onLayoutChange: (updates: { id: string; grid_x: number; grid_y: number; grid_w: number; grid_h: number }[]) => void
   onWidgetDelete: (widgetId: string) => void
   onWidgetEdit: (widgetId: string) => void
@@ -85,7 +82,7 @@ function renderResizeHandle(axis: ResizeHandleAxis, ref: Ref<HTMLElement>) {
         axis === 'w' && 'justify-start pl-1',
         axis === 'nw' && 'justify-start pt-1 pl-1'
       )}
-      ref={ref}
+      ref={ref as Ref<HTMLDivElement>}
     >
       <span className="flex size-4 items-center justify-center rounded-md border border-border bg-background/95 shadow-sm ring-1 ring-black/5 backdrop-blur-sm dark:ring-white/10">
         <Icon
@@ -122,10 +119,8 @@ export function DashboardGrid({
   onWidgetEdit,
   onWidgetDelete,
   onWidgetToggleStatic,
-  onAddWidget,
   servers
 }: DashboardGridProps) {
-  const { t } = useTranslation('dashboard')
   const isMobile = useIsMobile()
   const { width, containerRef, mounted } = useContainerWidth()
 
@@ -192,7 +187,6 @@ export function DashboardGrid({
             </div>
           </div>
         ))}
-        {isEditing && onAddWidget && <AddWidgetButton label={t('add_widget', 'Add Widget')} onClick={onAddWidget} />}
       </div>
     )
   }
@@ -232,11 +226,6 @@ export function DashboardGrid({
             </div>
           ))}
         </GridLayout>
-      )}
-      {isEditing && onAddWidget && (
-        <div className="mt-4 flex justify-center">
-          <AddWidgetButton label={t('add_widget', 'Add Widget')} onClick={onAddWidget} />
-        </div>
       )}
     </div>
   )
@@ -291,14 +280,5 @@ function EditOverlay({
         <TrashIcon className="size-3.5" />
       </Button>
     </div>
-  )
-}
-
-function AddWidgetButton({ onClick, label }: { label: string; onClick: () => void }) {
-  return (
-    <Button className="gap-1.5" onClick={onClick} variant="outline">
-      <PlusIcon className="size-4" />
-      {label}
-    </Button>
   )
 }
