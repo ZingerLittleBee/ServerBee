@@ -1,5 +1,6 @@
 import { act, render, screen } from '@testing-library/react'
-import type { ReactNode } from 'react'
+import { MoveDiagonal2Icon, MoveHorizontalIcon, MoveVerticalIcon } from 'lucide-react'
+import { isValidElement, type ReactNode, type Ref } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardWidget } from '@/lib/widget-types'
 import { DashboardGrid } from './dashboard-grid'
@@ -14,6 +15,11 @@ interface MockGridLayoutProps {
   onResize?: (...args: unknown[]) => void
   onResizeStart?: (...args: unknown[]) => void
   onResizeStop?: (...args: unknown[]) => void
+  resizeConfig?: {
+    enabled?: boolean
+    handleComponent?: ((axis: string, ref: Ref<HTMLElement>) => ReactNode) | ReactNode
+    handles?: string[]
+  }
 }
 
 let latestGridLayoutProps: MockGridLayoutProps | undefined
@@ -312,5 +318,65 @@ describe('DashboardGrid', () => {
 
     expect(onLayoutChange).toHaveBeenCalledTimes(1)
     expect(onLayoutChange).toHaveBeenCalledWith([{ id: 'w-1', grid_x: 0, grid_y: 0, grid_w: 4, grid_h: 3 }])
+  })
+
+  it('uses a themed custom resize handle in edit mode', () => {
+    render(
+      <DashboardGrid
+        isEditing
+        onLayoutChange={noop}
+        onWidgetDelete={noop}
+        onWidgetEdit={noop}
+        servers={[]}
+        widgets={widgets}
+      />
+    )
+
+    const resizeConfig = getGridLayoutProps().resizeConfig
+
+    expect(resizeConfig?.enabled).toBe(true)
+    expect(typeof resizeConfig?.handleComponent).toBe('function')
+
+    const handleComponent = resizeConfig?.handleComponent
+    if (typeof handleComponent !== 'function') {
+      throw new Error('Expected resize handle component to be a function')
+    }
+
+    for (const [axis, expectedIcon, expectedRotationClass] of [
+      ['s', MoveVerticalIcon, '-rotate-45'],
+      ['e', MoveHorizontalIcon, 'rotate-45'],
+      ['se', MoveDiagonal2Icon, undefined]
+    ] as const) {
+      const handle = handleComponent(axis, null)
+      expect(isValidElement(handle)).toBe(true)
+
+      if (!isValidElement(handle)) {
+        throw new Error('Expected resize handle to be a valid React element')
+      }
+
+      expect(handle.props.className).toContain('react-resizable-handle')
+
+      const grip = handle.props.children
+      expect(isValidElement(grip)).toBe(true)
+
+      if (!isValidElement(grip)) {
+        throw new Error('Expected themed resize grip to be a valid React element')
+      }
+
+      expect(grip.props.className).toContain('bg-background')
+      expect(grip.props.className).toContain('border-border')
+
+      const icon = grip.props.children
+      expect(isValidElement(icon)).toBe(true)
+
+      if (!isValidElement(icon)) {
+        throw new Error('Expected resize icon to be a valid React element')
+      }
+
+      expect(icon.type).toBe(expectedIcon)
+      if (expectedRotationClass) {
+        expect(icon.props.className).toContain(expectedRotationClass)
+      }
+    }
   })
 })

@@ -1,10 +1,20 @@
-import { LockIcon, PencilIcon, PlusIcon, TrashIcon, UnlockIcon } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { GridLayout, type Layout, useContainerWidth } from 'react-grid-layout'
+import {
+  LockIcon,
+  MoveDiagonal2Icon,
+  MoveHorizontalIcon,
+  MoveVerticalIcon,
+  PencilIcon,
+  PlusIcon,
+  TrashIcon,
+  UnlockIcon
+} from 'lucide-react'
+import { type Ref, useCallback, useEffect, useMemo, useState } from 'react'
+import { GridLayout, type Layout, type ResizeHandleAxis, useContainerWidth } from 'react-grid-layout'
 import { useTranslation } from 'react-i18next'
 import 'react-grid-layout/css/styles.css'
 import { Button } from '@/components/ui/button'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import { cn } from '@/lib/utils'
 import type { DashboardWidget } from '@/lib/widget-types'
 import { layoutToPatch, widgetsToLayout } from './dashboard-layout'
 import { WidgetRenderer } from './widget-renderer'
@@ -34,6 +44,58 @@ const MARGIN: [number, number] = [16, 16]
 const MOBILE_BREAKPOINT = 768
 
 type InteractionState = 'dragging' | 'idle' | 'resizing'
+
+const resizeHandleIconMap: Record<ResizeHandleAxis, typeof MoveDiagonal2Icon> = {
+  n: MoveVerticalIcon,
+  ne: MoveDiagonal2Icon,
+  e: MoveHorizontalIcon,
+  se: MoveDiagonal2Icon,
+  s: MoveVerticalIcon,
+  sw: MoveDiagonal2Icon,
+  w: MoveHorizontalIcon,
+  nw: MoveDiagonal2Icon
+}
+
+const resizeHandleIconRotationClassMap: Record<ResizeHandleAxis, string | undefined> = {
+  n: 'rotate-[135deg]',
+  ne: 'rotate-90',
+  e: 'rotate-45',
+  se: undefined,
+  s: '-rotate-45',
+  sw: '-rotate-90',
+  w: '-rotate-[135deg]',
+  nw: 'rotate-180'
+}
+
+function renderResizeHandle(axis: ResizeHandleAxis, ref: Ref<HTMLElement>) {
+  const Icon = resizeHandleIconMap[axis]
+
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        `react-resizable-handle react-resizable-handle-${axis}`,
+        'dashboard-resize-handle flex touch-none select-none items-center justify-center',
+        axis === 'n' && 'pt-1',
+        axis === 'ne' && 'justify-end pt-1 pr-1',
+        axis === 'e' && 'justify-end pr-1',
+        axis === 'se' && 'items-end justify-end pr-1 pb-1',
+        axis === 's' && 'items-end pb-1',
+        axis === 'sw' && 'items-end justify-start pb-1 pl-1',
+        axis === 'w' && 'justify-start pl-1',
+        axis === 'nw' && 'justify-start pt-1 pl-1'
+      )}
+      ref={ref}
+    >
+      <span className="flex size-4 items-center justify-center rounded-md border border-border bg-background/95 shadow-sm ring-1 ring-black/5 backdrop-blur-sm dark:ring-white/10">
+        <Icon
+          className={cn('size-2.5 text-muted-foreground', resizeHandleIconRotationClassMap[axis])}
+          strokeWidth={2.25}
+        />
+      </span>
+    </div>
+  )
+}
 
 function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(() =>
@@ -140,6 +202,7 @@ export function DashboardGrid({
       {mounted && (
         <GridLayout
           autoSize
+          className={cn('dashboard-grid', isEditing && 'dashboard-grid--editing')}
           dragConfig={{ enabled: isEditing, bounded: false, threshold: 3 }}
           gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: MARGIN }}
           layout={liveLayout}
@@ -150,7 +213,7 @@ export function DashboardGrid({
           onResize={updateLiveLayout}
           onResizeStart={() => setInteractionState('resizing')}
           onResizeStop={commitLayoutChange}
-          resizeConfig={{ enabled: isEditing, handles: ['s', 'e', 'se'] }}
+          resizeConfig={{ enabled: isEditing, handleComponent: renderResizeHandle, handles: ['s', 'e', 'se'] }}
           width={width}
         >
           {widgets.map((widget) => (
