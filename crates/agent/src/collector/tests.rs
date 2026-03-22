@@ -57,8 +57,8 @@ fn test_collect_disk_io_first_sample_is_empty() {
 
 #[cfg(not(target_os = "linux"))]
 #[test]
-fn test_collect_disk_io_is_none_on_unsupported_platforms() {
+fn test_collect_disk_io_first_sample_is_empty_on_non_linux() {
     let mut collector = Collector::new(true, false);
     let report = collector.collect();
-    assert!(report.disk_io.is_none());
+    assert_eq!(report.disk_io, Some(vec![]));
 }

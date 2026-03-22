@@ -37,7 +37,32 @@ fn read_disk_counters() -> Option<HashMap<String, DiskCounters>> {
 
     #[cfg(not(target_os = "linux"))]
     {
-        None
+        use sysinfo::{DiskRefreshKind, Disks};
+
+        // Use mount_point as key: stable between samples, unique per mount path.
+        // This gives per-mount-path (not per-physical-disk) semantics.
+        let disks =
+            Disks::new_with_refreshed_list_specifics(DiskRefreshKind::nothing().with_io_usage());
+        let mut counters = HashMap::new();
+
+        for disk in disks.list() {
+            let name = disk.mount_point().to_string_lossy().to_string();
+
+            if counters.contains_key(&name) {
+                continue;
+            }
+
+            let usage = disk.usage();
+            counters.insert(
+                name,
+                DiskCounters {
+                    read_bytes: usage.total_read_bytes,
+                    write_bytes: usage.total_written_bytes,
+                },
+            );
+        }
+
+        Some(counters)
     }
 }
 
