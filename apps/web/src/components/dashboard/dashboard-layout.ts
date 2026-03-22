@@ -1,5 +1,5 @@
 import type { Layout, LayoutItem } from 'react-grid-layout'
-import type { DashboardWidget } from '@/lib/widget-types'
+import type { DashboardWidget, WidgetTypeDefinition } from '@/lib/widget-types'
 import { WIDGET_TYPES } from '@/lib/widget-types'
 
 export interface LayoutPatch {
@@ -10,9 +10,7 @@ export interface LayoutPatch {
   id: string
 }
 
-const WIDGET_TYPE_MAP = new Map<string, (typeof WIDGET_TYPES)[number]>(
-  WIDGET_TYPES.map((widget) => [widget.id, widget])
-)
+const WIDGET_TYPE_MAP = new Map<string, WidgetTypeDefinition>(WIDGET_TYPES.map((widget) => [widget.id, widget]))
 
 function getSizeConstraints(widgetType: string) {
   const definition = WIDGET_TYPE_MAP.get(widgetType)
@@ -59,7 +57,7 @@ export function widgetsToLayout(widgets: DashboardWidget[]): Layout {
 }
 
 export function layoutToPatch(
-  layout: ReadonlyArray<Pick<LayoutItem, 'i' | 'x' | 'y' | 'w' | 'h'>>,
+  layout: readonly Pick<LayoutItem, 'i' | 'x' | 'y' | 'w' | 'h'>[],
   widgets: DashboardWidget[]
 ): LayoutPatch[] {
   const widgetMap = new Map(widgets.map((widget) => [widget.id, widget]))
