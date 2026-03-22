@@ -1146,3 +1146,19 @@ DELETE /api/maintenances/:id           删除维护窗口
 - ~~P3-e T2 OpenAPI 类型生成~~ — **已完成**
 - P3-c T8 Playwright E2E — 有单元测试和手动验证足够
 - P3-f T5 Fumadocs — 有 README 和 Swagger UI 足够
+
+## GeoIP 数据库一键下载
+
+**分支**: `kabul-v1`
+**设计文档**: `docs/superpowers/specs/2026-03-22-geoip-download-design.md`
+**实现计划**: `docs/superpowers/plans/2026-03-22-geoip-download.md`
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | GeoIpService 重写 (RwLock hot-reload + download_dbip + 移除 ip-api.com) | **done** |
+| T2 | agent.rs 调用链简化 (优先 reported IP + 脏数据清理) | **done** |
+| T3 | GeoIP API 端点 (GET /geoip/status + POST /geoip/download) | **done** |
+| T4 | Server Map widget 下载提示 | **done** |
+| T5 | GeoIP Settings 页面 + 侧边栏导航 + i18n | **done** |
+| T6 | Code review 修复 (路由拆分 read/write + query invalidation) | **done** |
+| T7 | 单元测试 + 集成测试 + 前端测试 (14 tests) + TESTING.md 更新 | **done** |
