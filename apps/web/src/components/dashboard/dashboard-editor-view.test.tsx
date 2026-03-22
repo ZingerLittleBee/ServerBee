@@ -180,6 +180,7 @@ describe('DashboardEditorView', () => {
 
     render(
       <DashboardEditorView
+        activeDashboardId={primaryDashboard.id}
         dashboard={primaryDashboard}
         dashboards={dashboards}
         isAdmin
@@ -213,6 +214,7 @@ describe('DashboardEditorView', () => {
   it('cancel restores server widgets after deleting from the draft', () => {
     render(
       <DashboardEditorView
+        activeDashboardId={primaryDashboard.id}
         dashboard={primaryDashboard}
         dashboards={dashboards}
         isAdmin
@@ -240,6 +242,7 @@ describe('DashboardEditorView', () => {
 
     render(
       <DashboardEditorView
+        activeDashboardId={primaryDashboard.id}
         dashboard={primaryDashboard}
         dashboards={dashboards}
         isAdmin
@@ -289,6 +292,7 @@ describe('DashboardEditorView', () => {
 
     render(
       <DashboardEditorView
+        activeDashboardId={primaryDashboard.id}
         dashboard={primaryDashboard}
         dashboards={dashboards}
         isAdmin
@@ -326,6 +330,7 @@ describe('DashboardEditorView', () => {
   it('resets edit and dialog state when the dashboard id changes', () => {
     const { rerender } = render(
       <DashboardEditorView
+        activeDashboardId={primaryDashboard.id}
         dashboard={primaryDashboard}
         dashboards={dashboards}
         isAdmin
@@ -343,6 +348,7 @@ describe('DashboardEditorView', () => {
 
     rerender(
       <DashboardEditorView
+        activeDashboardId={secondaryDashboard.id}
         dashboard={secondaryDashboard}
         dashboards={dashboards}
         isAdmin
@@ -370,6 +376,7 @@ describe('DashboardEditorView', () => {
 
     render(
       <DashboardEditorView
+        activeDashboardId={primaryDashboard.id}
         dashboard={primaryDashboard}
         dashboards={dashboards}
         isAdmin
@@ -387,5 +394,25 @@ describe('DashboardEditorView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'switch-dashboard' }))
 
     expect(onSelectDashboard).toHaveBeenCalledWith('dash-2')
+  })
+
+  it('keeps the selected dashboard id while the next dashboard is still loading', () => {
+    render(
+      <DashboardEditorView
+        activeDashboardId="dash-2"
+        dashboard={undefined}
+        dashboards={dashboards}
+        isAdmin
+        isSaving={false}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+        onSelectDashboard={vi.fn()}
+        servers={[]}
+      />
+    )
+
+    expect(screen.getByTestId('dashboard-switcher')).toHaveTextContent('dash-2')
+    expect(screen.queryByRole('button', { name: 'edit' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-grid')).not.toBeInTheDocument()
+    expect(screen.queryByText('no_widgets_title')).not.toBeInTheDocument()
   })
 })

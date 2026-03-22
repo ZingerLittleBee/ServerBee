@@ -13,6 +13,7 @@ import { WidgetConfigDialog } from './widget-config-dialog'
 import { WidgetPicker } from './widget-picker'
 
 interface DashboardEditorViewProps {
+  activeDashboardId: string
   dashboard?: DashboardWithWidgets
   dashboards: Dashboard[]
   isAdmin: boolean
@@ -23,6 +24,7 @@ interface DashboardEditorViewProps {
 }
 
 export function DashboardEditorView({
+  activeDashboardId,
   dashboard,
   dashboards,
   isAdmin,
@@ -38,9 +40,9 @@ export function DashboardEditorView({
   const [configWidgetType, setConfigWidgetType] = useState('')
   const [editingWidgetId, setEditingWidgetId] = useState<string | null>(null)
 
-  const dashboardId = dashboard?.id ?? null
-  const activeId = dashboardId ?? ''
-  const widgets = dashboard?.widgets ?? []
+  const isDashboardReady = dashboard?.id === activeDashboardId
+  const isDashboardLoading = activeDashboardId !== '' && !isDashboardReady
+  const widgets = isDashboardReady ? dashboard.widgets : []
   const displayWidgets = editor.isEditing ? editor.draftWidgets : widgets
   const editingWidget =
     editor.isEditing && editingWidgetId
@@ -50,21 +52,15 @@ export function DashboardEditorView({
   cancelEditingRef.current = editor.cancelEditing
 
   useEffect(() => {
-    if (dashboardId === null) {
-      cancelEditingRef.current()
-      setPickerOpen(false)
-      setConfigOpen(false)
-      setConfigWidgetType('')
-      setEditingWidgetId(null)
-      return
-    }
-
     cancelEditingRef.current()
     setPickerOpen(false)
     setConfigOpen(false)
     setConfigWidgetType('')
     setEditingWidgetId(null)
-  }, [dashboardId])
+    if (activeDashboardId === '') {
+      return
+    }
+  }, [activeDashboardId])
 
   function resetViewState() {
     setPickerOpen(false)
@@ -74,6 +70,9 @@ export function DashboardEditorView({
   }
 
   function handleEdit() {
+    if (!isDashboardReady) {
+      return
+    }
     editor.startEditing(widgets)
   }
 
@@ -83,6 +82,9 @@ export function DashboardEditorView({
   }
 
   async function handleSave() {
+    if (!isDashboardReady) {
+      return
+    }
     await onSave(editor.buildSaveInput())
     handleCancel()
   }
@@ -118,7 +120,7 @@ export function DashboardEditorView({
         title: title || null,
         config_json: configJson
       })
-    } else if (dashboard) {
+    } else if (isDashboardReady && dashboard) {
       editor.addWidget({
         dashboardId: dashboard.id,
         widgetType: configWidgetType,
@@ -143,13 +145,13 @@ export function DashboardEditorView({
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <DashboardSwitcher
-          currentId={activeId}
+          currentId={activeDashboardId}
           dashboards={dashboards}
           isAdmin={isAdmin}
           onSelect={handleDashboardSelect}
         />
         <div className="flex items-center gap-2">
-          {isAdmin && !editor.isEditing && (
+          {isAdmin && !editor.isEditing && isDashboardReady && (
             <Button onClick={handleEdit} size="sm" variant="outline">
               <PencilIcon className="mr-1 size-4" />
               {t('edit')}
@@ -170,13 +172,17 @@ export function DashboardEditorView({
         </div>
       </div>
 
-      {displayWidgets.length === 0 && !editor.isEditing && (
+      {isDashboardReady && displayWidgets.length === 0 && !editor.isEditing && (
         <div className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed">
           <div className="text-center">
             <p className="text-muted-foreground text-sm">{t('no_widgets_title')}</p>
             <p className="mt-1 text-muted-foreground text-xs">{t('no_widgets_description')}</p>
           </div>
         </div>
+      )}
+
+      {isDashboardLoading && (
+        <div aria-hidden="true" className="min-h-[300px] rounded-lg border border-dashed bg-muted/10" />
       )}
 
       {(displayWidgets.length > 0 || editor.isEditing) && (
