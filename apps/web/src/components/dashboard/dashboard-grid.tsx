@@ -1,5 +1,5 @@
 import { PencilIcon, PlusIcon, TrashIcon } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { GridLayout, type Layout, useContainerWidth } from 'react-grid-layout'
 import { useTranslation } from 'react-i18next'
 import 'react-grid-layout/css/styles.css'
@@ -59,11 +59,9 @@ export function DashboardGrid({
 
   const baseLayout = useMemo(() => widgetsToLayout(widgets), [widgets])
   const [liveLayout, setLiveLayout] = useState<Layout>(baseLayout)
-  const liveLayoutRef = useRef<Layout>(baseLayout)
   const [interactionState, setInteractionState] = useState<InteractionState>('idle')
 
   const updateLiveLayout = useCallback((nextLayout: Layout) => {
-    liveLayoutRef.current = nextLayout
     setLiveLayout(nextLayout)
   }, [])
 
@@ -79,13 +77,11 @@ export function DashboardGrid({
     }
   }, [isMobile])
 
-  const handleLayoutChange = useCallback((newLayout: Layout) => {
-    updateLiveLayout(newLayout)
-  }, [updateLiveLayout])
+  const handleLayoutChange = useCallback((_newLayout: Layout) => {}, [])
 
-  const commitLayoutChange = useCallback(() => {
+  const commitLayoutChange = useCallback((finalLayout: Layout) => {
     setInteractionState('idle')
-    const patch = layoutToPatch(liveLayoutRef.current, widgets)
+    const patch = layoutToPatch(finalLayout, widgets)
     if (patch.length > 0) {
       onLayoutChange(patch)
     }
@@ -121,9 +117,11 @@ export function DashboardGrid({
           dragConfig={{ enabled: isEditing, bounded: false, threshold: 3 }}
           gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: MARGIN }}
           layout={liveLayout}
+          onDrag={updateLiveLayout}
           onDragStart={() => setInteractionState('dragging')}
           onDragStop={commitLayoutChange}
           onLayoutChange={handleLayoutChange}
+          onResize={updateLiveLayout}
           onResizeStart={() => setInteractionState('resizing')}
           onResizeStop={commitLayoutChange}
           resizeConfig={{ enabled: isEditing, handles: ['se'] }}

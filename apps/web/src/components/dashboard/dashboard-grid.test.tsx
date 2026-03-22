@@ -7,9 +7,11 @@ import { DashboardGrid } from './dashboard-grid'
 type MockGridLayoutProps = {
   children: ReactNode
   layout: Array<{ h: number; i: string; minH?: number; minW?: number; w: number; x: number; y: number }>
+  onDrag?: (...args: unknown[]) => void
   onDragStart?: (...args: unknown[]) => void
   onDragStop?: (...args: unknown[]) => void
   onLayoutChange?: (layout: Array<{ h: number; i: string; w: number; x: number; y: number }>) => void
+  onResize?: (...args: unknown[]) => void
   onResizeStart?: (...args: unknown[]) => void
   onResizeStop?: (...args: unknown[]) => void
 }
@@ -181,7 +183,7 @@ describe('DashboardGrid', () => {
 
     act(() => {
       getGridLayoutProps().onDragStart?.()
-      getGridLayoutProps().onLayoutChange?.(dragLayout)
+      getGridLayoutProps().onDrag?.(dragLayout)
     })
 
     expect(onLayoutChange).not.toHaveBeenCalled()
@@ -204,11 +206,14 @@ describe('DashboardGrid', () => {
 
     act(() => {
       getGridLayoutProps().onDragStart?.()
-      getGridLayoutProps().onLayoutChange?.([
+      getGridLayoutProps().onDrag?.([
         { i: 'w-1', x: 1, y: 1, w: 2, h: 2 },
         { i: 'w-2', x: 2, y: 0, w: 3, h: 3 }
       ])
-      getGridLayoutProps().onDragStop?.()
+      getGridLayoutProps().onDragStop?.([
+        { i: 'w-1', x: 1, y: 1, w: 2, h: 2 },
+        { i: 'w-2', x: 2, y: 0, w: 3, h: 3 }
+      ])
     })
 
     expect(onLayoutChange).toHaveBeenCalledTimes(1)
@@ -235,7 +240,7 @@ describe('DashboardGrid', () => {
 
     act(() => {
       getGridLayoutProps().onDragStart?.()
-      getGridLayoutProps().onLayoutChange?.(dragLayout)
+      getGridLayoutProps().onDrag?.(dragLayout)
     })
 
     rerender(
@@ -254,5 +259,34 @@ describe('DashboardGrid', () => {
 
     expect(getGridLayoutProps().layout).toEqual(dragLayout)
     expect(onLayoutChange).not.toHaveBeenCalled()
+  })
+
+  it('commits changed widget patches on resize stop from the callback layout argument', () => {
+    const onLayoutChange = vi.fn()
+
+    render(
+      <DashboardGrid
+        isEditing
+        onLayoutChange={onLayoutChange}
+        onWidgetDelete={noop}
+        onWidgetEdit={noop}
+        servers={[]}
+        widgets={widgets}
+      />
+    )
+
+    const resizeLayout = [
+      { i: 'w-1', x: 0, y: 0, w: 4, h: 3 },
+      { i: 'w-2', x: 2, y: 0, w: 3, h: 3 }
+    ]
+
+    act(() => {
+      getGridLayoutProps().onResizeStart?.()
+      getGridLayoutProps().onResize?.(resizeLayout)
+      getGridLayoutProps().onResizeStop?.(resizeLayout)
+    })
+
+    expect(onLayoutChange).toHaveBeenCalledTimes(1)
+    expect(onLayoutChange).toHaveBeenCalledWith([{ id: 'w-1', grid_x: 0, grid_y: 0, grid_w: 4, grid_h: 3 }])
   })
 })
