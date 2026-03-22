@@ -57,6 +57,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 .merge(uptime::read_router())
                 .merge(dashboard::read_router())
                 .merge(alert::alert_events_router())
+                .merge(geoip::read_router())
                 // Admin-only routes (write operations + management)
                 .merge(
                     Router::new()
@@ -77,7 +78,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                         .merge(audit::router())
                         .merge(user::router())
                         .merge(incident::router())
-                        .merge(geoip::router())
+                        .merge(geoip::write_router())
                         .merge(maintenance_api::router())
                         .merge(status_page::write_router())
                         .layer(middleware::from_fn(require_admin)),
