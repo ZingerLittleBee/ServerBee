@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardWidget } from '@/lib/widget-types'
 import { DashboardGrid } from './dashboard-grid'
 
-type MockGridLayoutProps = {
+interface MockGridLayoutProps {
   children: ReactNode
   layout: Array<{ h: number; i: string; minH?: number; minW?: number; w: number; x: number; y: number }>
   onDrag?: (...args: unknown[]) => void
@@ -277,10 +277,7 @@ describe('DashboardGrid', () => {
         onWidgetDelete={noop}
         onWidgetEdit={noop}
         servers={[]}
-        widgets={[
-          { ...widgets[0], grid_x: 9, grid_y: 9 },
-          widgets[1]
-        ]}
+        widgets={[{ ...widgets[0], grid_x: 9, grid_y: 9 }, widgets[1]]}
       />
     )
 

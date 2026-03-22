@@ -77,17 +77,23 @@ export function DashboardGrid({
     }
   }, [isMobile])
 
-  const handleLayoutChange = useCallback((newLayout: Layout) => {
-    updateLiveLayout(newLayout)
-  }, [updateLiveLayout])
+  const handleLayoutChange = useCallback(
+    (newLayout: Layout) => {
+      updateLiveLayout(newLayout)
+    },
+    [updateLiveLayout]
+  )
 
-  const commitLayoutChange = useCallback((finalLayout: Layout) => {
-    setInteractionState('idle')
-    const patch = layoutToPatch(finalLayout, widgets)
-    if (patch.length > 0) {
-      onLayoutChange(patch)
-    }
-  }, [onLayoutChange, widgets])
+  const commitLayoutChange = useCallback(
+    (finalLayout: Layout) => {
+      setInteractionState('idle')
+      const patch = layoutToPatch(finalLayout, widgets)
+      if (patch.length > 0) {
+        onLayoutChange(patch)
+      }
+    },
+    [onLayoutChange, widgets]
+  )
 
   const sortedWidgets = useMemo(() => {
     return [...widgets].sort((a, b) => a.sort_order - b.sort_order)

@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
 import {
+  type LayoutPatch,
   mergeLayoutPatch,
-  normalizeNewWidgetPlacement,
-  type LayoutPatch
+  normalizeNewWidgetPlacement
 } from '@/components/dashboard/dashboard-layout'
 import { parseConfig } from '@/lib/widget-helpers'
-import { WIDGET_TYPES, type WidgetTypeDefinition } from '@/lib/widget-types'
 import type { DashboardWidget } from '@/lib/widget-types'
+import { WIDGET_TYPES, type WidgetTypeDefinition } from '@/lib/widget-types'
 import type { WidgetInput } from './use-dashboard'
 
 interface AddWidgetInput {
@@ -77,9 +77,7 @@ export function useDashboardEditor() {
   }
 
   function updateWidget(id: string, changes: UpdateWidgetChanges) {
-    setDraftWidgets((current) =>
-      current.map((widget) => (widget.id === id ? { ...widget, ...changes } : widget))
-    )
+    setDraftWidgets((current) => current.map((widget) => (widget.id === id ? { ...widget, ...changes } : widget)))
   }
 
   function deleteWidget(id: string) {
