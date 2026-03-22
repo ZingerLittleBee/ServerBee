@@ -31,6 +31,7 @@ const COUNTRY_MAP = new Map(WORLD_MAP_PATHS.map((p) => [p.id, p]))
 export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  const queryClient = useQueryClient()
 
   const { data: geoStatus } = useQuery<{ installed: boolean; source?: string }>({
     queryKey: ['geoip-status'],
@@ -42,6 +43,7 @@ export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
     onSuccess: (data) => {
       if (data.success) {
         toast.success(data.message)
+        queryClient.invalidateQueries({ queryKey: ['geoip-status'] })
       } else {
         toast.error(data.message)
       }

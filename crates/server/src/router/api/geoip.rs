@@ -98,8 +98,10 @@ async fn geoip_download(
     }
 }
 
-pub fn router() -> Router<Arc<AppState>> {
-    Router::new()
-        .route("/geoip/status", routing::get(geoip_status))
-        .route("/geoip/download", routing::post(geoip_download))
+pub fn read_router() -> Router<Arc<AppState>> {
+    Router::new().route("/geoip/status", routing::get(geoip_status))
+}
+
+pub fn write_router() -> Router<Arc<AppState>> {
+    Router::new().route("/geoip/download", routing::post(geoip_download))
 }
