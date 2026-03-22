@@ -60,5 +60,9 @@ export function mergeLayoutPatch(widgets: DashboardWidget[], patch: LayoutPatch[
 }
 
 export function normalizeNewWidgetPlacement(widgets: DashboardWidget[], newWidget: DashboardWidget): DashboardWidget[] {
-  return [...widgets, { ...newWidget, sort_order: widgets.length }]
+  const normalizedGridY = Number.isFinite(newWidget.grid_y)
+    ? newWidget.grid_y
+    : widgets.reduce((maxY, widget) => Math.max(maxY, widget.grid_y + widget.grid_h), 0)
+
+  return [...widgets, { ...newWidget, grid_y: normalizedGridY, sort_order: widgets.length }]
 }

@@ -85,6 +85,7 @@ describe('dashboard-layout', () => {
     expect(normalized.at(-1)).toMatchObject({
       id: 'temp-1',
       grid_x: 0,
+      grid_y: 6,
       grid_w: 4,
       grid_h: 3,
       sort_order: widgets.length
