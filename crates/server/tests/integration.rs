@@ -2501,3 +2501,123 @@ async fn test_uptime_daily_returns_data() {
     let entries_7 = resp_7_body["data"].as_array().unwrap();
     assert_eq!(entries_7.len(), 7, "days=7 should return 7 entries");
 }
+
+// ── GeoIP integration tests ──────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_geoip_status_endpoint() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+
+    // Login as admin
+    login_admin(&client, &base_url).await;
+
+    // GET /api/geoip/status — should return not installed initially
+    let resp = client
+        .get(format!("{}/api/geoip/status", base_url))
+        .send()
+        .await
+        .expect("GET /api/geoip/status failed");
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["data"]["installed"], false);
+    assert!(body["data"]["source"].is_null(), "source should be absent when not installed");
+    assert!(body["data"]["file_size"].is_null(), "file_size should be absent when not installed");
+}
+
+#[tokio::test]
+async fn test_geoip_status_accessible_by_member() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin_client = http_client();
+
+    // Login as admin and create a member user
+    login_admin(&admin_client, &base_url).await;
+
+    let create_resp = admin_client
+        .post(format!("{}/api/users", base_url))
+        .json(&json!({
+            "username": "geoipmember",
+            "password": "memberpass123",
+            "role": "member"
+        }))
+        .send()
+        .await
+        .expect("POST /api/users failed");
+
+    assert_eq!(create_resp.status(), 200, "Admin should be able to create member");
+
+    // Login as the member user in a separate client
+    let member_client = http_client();
+    let member_login = member_client
+        .post(format!("{}/api/auth/login", base_url))
+        .json(&json!({
+            "username": "geoipmember",
+            "password": "memberpass123"
+        }))
+        .send()
+        .await
+        .expect("Member login request failed");
+
+    assert_eq!(member_login.status(), 200, "Member login should succeed");
+
+    // Member can access geoip status (read-only route)
+    let resp = member_client
+        .get(format!("{}/api/geoip/status", base_url))
+        .send()
+        .await
+        .expect("GET /api/geoip/status as member failed");
+
+    assert_eq!(resp.status(), 200, "Member should be able to read geoip status");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["data"]["installed"], false);
+}
+
+#[tokio::test]
+async fn test_geoip_download_requires_admin() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin_client = http_client();
+
+    // Login as admin and create a member user
+    login_admin(&admin_client, &base_url).await;
+
+    let create_resp = admin_client
+        .post(format!("{}/api/users", base_url))
+        .json(&json!({
+            "username": "geoipmember2",
+            "password": "memberpass123",
+            "role": "member"
+        }))
+        .send()
+        .await
+        .expect("POST /api/users failed");
+
+    assert_eq!(create_resp.status(), 200, "Admin should be able to create member");
+
+    // Login as the member user in a separate client
+    let member_client = http_client();
+    let member_login = member_client
+        .post(format!("{}/api/auth/login", base_url))
+        .json(&json!({
+            "username": "geoipmember2",
+            "password": "memberpass123"
+        }))
+        .send()
+        .await
+        .expect("Member login request failed");
+
+    assert_eq!(member_login.status(), 200, "Member login should succeed");
+
+    // Member cannot trigger geoip download (admin-only write route)
+    let resp = member_client
+        .post(format!("{}/api/geoip/download", base_url))
+        .send()
+        .await
+        .expect("POST /api/geoip/download as member failed");
+
+    assert_eq!(
+        resp.status(),
+        403,
+        "Member should receive 403 when attempting geoip download"
+    );
+}

@@ -168,3 +168,45 @@ fn is_private(ip: &IpAddr) -> bool {
         IpAddr::V6(_) => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_nonexistent_returns_none() {
+        assert!(GeoIpService::load("").is_none());
+        assert!(GeoIpService::load("/nonexistent/path.mmdb").is_none());
+    }
+
+    #[test]
+    fn test_load_from_bytes_invalid_data() {
+        let result = GeoIpService::load_from_bytes(vec![0, 1, 2, 3], "test.mmdb".into());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_is_private_ipv4() {
+        // Private ranges
+        assert!(is_private(&"192.168.1.1".parse().unwrap()));
+        assert!(is_private(&"10.0.0.1".parse().unwrap()));
+        assert!(is_private(&"172.16.0.1".parse().unwrap()));
+        assert!(is_private(&"172.31.255.255".parse().unwrap()));
+
+        // Link-local
+        assert!(is_private(&"169.254.1.1".parse().unwrap()));
+
+        // Public
+        assert!(!is_private(&"8.8.8.8".parse().unwrap()));
+        assert!(!is_private(&"1.1.1.1".parse().unwrap()));
+        assert!(!is_private(&"203.0.113.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_private_ipv6() {
+        // IPv6 always returns false in current implementation
+        assert!(!is_private(&"::1".parse().unwrap()));
+        assert!(!is_private(&"fe80::1".parse().unwrap()));
+        assert!(!is_private(&"2001:db8::1".parse().unwrap()));
+    }
+}
