@@ -1,8 +1,20 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardWidget } from '@/lib/widget-types'
 import { DashboardGrid } from './dashboard-grid'
+
+type MockGridLayoutProps = {
+  children: ReactNode
+  layout: Array<{ h: number; i: string; minH?: number; minW?: number; w: number; x: number; y: number }>
+  onDragStart?: (...args: unknown[]) => void
+  onDragStop?: (...args: unknown[]) => void
+  onLayoutChange?: (layout: Array<{ h: number; i: string; w: number; x: number; y: number }>) => void
+  onResizeStart?: (...args: unknown[]) => void
+  onResizeStop?: (...args: unknown[]) => void
+}
+
+let latestGridLayoutProps: MockGridLayoutProps | undefined
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -17,7 +29,10 @@ vi.mock('./widget-renderer', () => ({
 }))
 
 vi.mock('react-grid-layout', () => ({
-  GridLayout: ({ children }: { children: ReactNode }) => <div data-testid="grid-layout">{children}</div>,
+  GridLayout: (props: MockGridLayoutProps) => {
+    latestGridLayoutProps = props
+    return <div data-testid="grid-layout">{props.children}</div>
+  },
   useContainerWidth: () => ({ width: 1200, containerRef: { current: null }, mounted: true })
 }))
 
@@ -54,10 +69,18 @@ const widgets: DashboardWidget[] = [
 
 const noop = vi.fn()
 
+function getGridLayoutProps(): MockGridLayoutProps {
+  if (!latestGridLayoutProps) {
+    throw new Error('GridLayout props were not captured')
+  }
+  return latestGridLayoutProps
+}
+
 describe('DashboardGrid', () => {
   const originalInnerWidth = window.innerWidth
 
   beforeEach(() => {
+    latestGridLayoutProps = undefined
     Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 1200 })
   })
 
@@ -135,5 +158,101 @@ describe('DashboardGrid', () => {
     )
 
     expect(screen.getByTestId('grid-layout')).toBeInTheDocument()
+  })
+
+  it('keeps drag-time layout changes internal until commit', () => {
+    const onLayoutChange = vi.fn()
+
+    render(
+      <DashboardGrid
+        isEditing
+        onLayoutChange={onLayoutChange}
+        onWidgetDelete={noop}
+        onWidgetEdit={noop}
+        servers={[]}
+        widgets={widgets}
+      />
+    )
+
+    const dragLayout = [
+      { i: 'w-1', x: 1, y: 2, w: 2, h: 2 },
+      { i: 'w-2', x: 2, y: 0, w: 3, h: 3 }
+    ]
+
+    act(() => {
+      getGridLayoutProps().onDragStart?.()
+      getGridLayoutProps().onLayoutChange?.(dragLayout)
+    })
+
+    expect(onLayoutChange).not.toHaveBeenCalled()
+    expect(getGridLayoutProps().layout).toEqual(dragLayout)
+  })
+
+  it('commits only changed widget patches on drag stop', () => {
+    const onLayoutChange = vi.fn()
+
+    render(
+      <DashboardGrid
+        isEditing
+        onLayoutChange={onLayoutChange}
+        onWidgetDelete={noop}
+        onWidgetEdit={noop}
+        servers={[]}
+        widgets={widgets}
+      />
+    )
+
+    act(() => {
+      getGridLayoutProps().onDragStart?.()
+      getGridLayoutProps().onLayoutChange?.([
+        { i: 'w-1', x: 1, y: 1, w: 2, h: 2 },
+        { i: 'w-2', x: 2, y: 0, w: 3, h: 3 }
+      ])
+      getGridLayoutProps().onDragStop?.()
+    })
+
+    expect(onLayoutChange).toHaveBeenCalledTimes(1)
+    expect(onLayoutChange).toHaveBeenCalledWith([{ id: 'w-1', grid_x: 1, grid_y: 1, grid_w: 2, grid_h: 2 }])
+  })
+
+  it('does not overwrite liveLayout from external widget rerenders while dragging', () => {
+    const onLayoutChange = vi.fn()
+    const { rerender } = render(
+      <DashboardGrid
+        isEditing
+        onLayoutChange={onLayoutChange}
+        onWidgetDelete={noop}
+        onWidgetEdit={noop}
+        servers={[]}
+        widgets={widgets}
+      />
+    )
+
+    const dragLayout = [
+      { i: 'w-1', x: 5, y: 4, w: 2, h: 2 },
+      { i: 'w-2', x: 2, y: 0, w: 3, h: 3 }
+    ]
+
+    act(() => {
+      getGridLayoutProps().onDragStart?.()
+      getGridLayoutProps().onLayoutChange?.(dragLayout)
+    })
+
+    rerender(
+      <DashboardGrid
+        isEditing
+        onLayoutChange={onLayoutChange}
+        onWidgetDelete={noop}
+        onWidgetEdit={noop}
+        servers={[]}
+        widgets={[
+          { ...widgets[0], grid_x: 9, grid_y: 9 },
+          widgets[1]
+        ]}
+      />
+    )
+
+    expect(getGridLayoutProps().layout).toEqual(dragLayout)
+    expect(onLayoutChange).not.toHaveBeenCalled()
   })
 })

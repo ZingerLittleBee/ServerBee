@@ -1,12 +1,12 @@
 import { PencilIcon, PlusIcon, TrashIcon } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { GridLayout, type Layout, type LayoutItem, useContainerWidth } from 'react-grid-layout'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { GridLayout, type Layout, useContainerWidth } from 'react-grid-layout'
 import { useTranslation } from 'react-i18next'
 import 'react-grid-layout/css/styles.css'
 import { Button } from '@/components/ui/button'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { DashboardWidget } from '@/lib/widget-types'
-import { WIDGET_TYPES } from '@/lib/widget-types'
+import { layoutToPatch, widgetsToLayout } from './dashboard-layout'
 import { WidgetRenderer } from './widget-renderer'
 
 interface DashboardGridProps {
@@ -24,27 +24,7 @@ const ROW_HEIGHT = 80
 const MARGIN: [number, number] = [16, 16]
 const MOBILE_BREAKPOINT = 768
 
-const WIDGET_TYPE_MAP = new Map<string, (typeof WIDGET_TYPES)[number]>(WIDGET_TYPES.map((w) => [w.id, w]))
-
-function getMinConstraints(widgetType: string): { minH: number; minW: number } {
-  const def = WIDGET_TYPE_MAP.get(widgetType)
-  return { minW: def?.minW ?? 2, minH: def?.minH ?? 2 }
-}
-
-function widgetsToLayout(widgets: DashboardWidget[]): Layout {
-  return widgets.map((w) => {
-    const { minW, minH } = getMinConstraints(w.widget_type)
-    return {
-      i: w.id,
-      x: w.grid_x,
-      y: w.grid_y,
-      w: w.grid_w,
-      h: w.grid_h,
-      minW,
-      minH
-    }
-  })
-}
+type InteractionState = 'dragging' | 'idle' | 'resizing'
 
 function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(() =>
@@ -77,32 +57,39 @@ export function DashboardGrid({
   const isMobile = useIsMobile()
   const { width, containerRef, mounted } = useContainerWidth()
 
-  const layout = useMemo(() => widgetsToLayout(widgets), [widgets])
+  const baseLayout = useMemo(() => widgetsToLayout(widgets), [widgets])
+  const [liveLayout, setLiveLayout] = useState<Layout>(baseLayout)
+  const liveLayoutRef = useRef<Layout>(baseLayout)
+  const [interactionState, setInteractionState] = useState<InteractionState>('idle')
 
-  const handleLayoutChange = useCallback(
-    (newLayout: Layout) => {
-      const updateMap = new Map<string, LayoutItem>()
-      for (const item of newLayout) {
-        updateMap.set(item.i, item)
-      }
-      const updates: { id: string; grid_x: number; grid_y: number; grid_w: number; grid_h: number }[] = []
-      let changed = false
-      for (const w of widgets) {
-        const item = updateMap.get(w.id)
-        if (!item) {
-          continue
-        }
-        if (item.x !== w.grid_x || item.y !== w.grid_y || item.w !== w.grid_w || item.h !== w.grid_h) {
-          changed = true
-        }
-        updates.push({ id: item.i, grid_x: item.x, grid_y: item.y, grid_w: item.w, grid_h: item.h })
-      }
-      if (changed) {
-        onLayoutChange(updates)
-      }
-    },
-    [onLayoutChange, widgets]
-  )
+  const updateLiveLayout = useCallback((nextLayout: Layout) => {
+    liveLayoutRef.current = nextLayout
+    setLiveLayout(nextLayout)
+  }, [])
+
+  useEffect(() => {
+    if (interactionState === 'idle') {
+      updateLiveLayout(baseLayout)
+    }
+  }, [baseLayout, interactionState, updateLiveLayout])
+
+  useEffect(() => {
+    if (isMobile) {
+      setInteractionState('idle')
+    }
+  }, [isMobile])
+
+  const handleLayoutChange = useCallback((newLayout: Layout) => {
+    updateLiveLayout(newLayout)
+  }, [updateLiveLayout])
+
+  const commitLayoutChange = useCallback(() => {
+    setInteractionState('idle')
+    const patch = layoutToPatch(liveLayoutRef.current, widgets)
+    if (patch.length > 0) {
+      onLayoutChange(patch)
+    }
+  }, [onLayoutChange, widgets])
 
   const sortedWidgets = useMemo(() => {
     return [...widgets].sort((a, b) => a.sort_order - b.sort_order)
@@ -133,8 +120,12 @@ export function DashboardGrid({
           autoSize
           dragConfig={{ enabled: isEditing, bounded: false, threshold: 3 }}
           gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: MARGIN }}
-          layout={layout}
+          layout={liveLayout}
+          onDragStart={() => setInteractionState('dragging')}
+          onDragStop={commitLayoutChange}
           onLayoutChange={handleLayoutChange}
+          onResizeStart={() => setInteractionState('resizing')}
+          onResizeStop={commitLayoutChange}
           resizeConfig={{ enabled: isEditing, handles: ['se'] }}
           width={width}
         >
