@@ -110,6 +110,8 @@ let (region, country_code) = match ip {
 
 IP change handler follows the same pattern.
 
+**Stale data cleanup**: When GeoIP lookup returns `(None, None)` (private IP, lookup failure, or GeoIP not installed), the handler should **overwrite** the DB fields with `None` rather than preserving old values. This prevents stale country_code from persisting after an agent moves behind NAT or its IP changes to a private range. Concretely: remove the `if country_code.is_some()` / `if region.is_some()` guards in `ServerService::update_system_info()` — always write the resolved values, even if `None`.
+
 **Agent reporter.rs**: Keep the fix that populates `ipv4`/`ipv6` in SystemInfo before sending.
 
 ## Frontend
