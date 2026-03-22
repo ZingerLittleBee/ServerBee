@@ -27,6 +27,7 @@ describe('useDashboardEditor', () => {
     act(() => result.current.startEditing(widgets))
 
     expect(result.current.isEditing).toBe(true)
+    expect(result.current.isDirty).toBe(false)
     expect(result.current.draftWidgets).toEqual(widgets)
     expect(result.current.draftWidgets).not.toBe(widgets)
   })
@@ -49,6 +50,16 @@ describe('useDashboardEditor', () => {
     })
   })
 
+  it('commitLayoutPatch with an empty patch is a no-op', () => {
+    const { result } = renderHook(() => useDashboardEditor())
+
+    act(() => result.current.startEditing(widgets))
+    act(() => result.current.commitLayoutPatch([]))
+
+    expect(result.current.draftWidgets).toEqual(widgets)
+    expect(result.current.isDirty).toBe(false)
+  })
+
   it('updateWidget leaves layout untouched', () => {
     const { result } = renderHook(() => useDashboardEditor())
 
@@ -63,25 +74,32 @@ describe('useDashboardEditor', () => {
     })
   })
 
-  it('addWidget appends a new draft widget with stable sort order', () => {
+  it('addWidget creates and places a new draft widget internally', () => {
     const { result } = renderHook(() => useDashboardEditor())
 
     act(() => result.current.startEditing(widgets))
     act(() =>
       result.current.addWidget({
-        ...widgets[0],
-        id: 'temp-2',
+        dashboardId: 'dash-1',
+        widgetType: 'line-chart',
         title: 'Memory',
-        config_json: '{"metric":"avg_mem"}',
-        sort_order: 99
+        configJson: '{"metric":"avg_mem"}'
       })
     )
 
     expect(result.current.draftWidgets).toHaveLength(2)
     expect(result.current.draftWidgets[1]).toMatchObject({
-      id: 'temp-2',
+      dashboard_id: 'dash-1',
+      id: expect.stringMatching(/^temp-/),
+      widget_type: 'line-chart',
       title: 'Memory',
-      sort_order: 1
+      config_json: '{"metric":"avg_mem"}',
+      grid_x: 0,
+      grid_y: 2,
+      grid_w: 6,
+      grid_h: 4,
+      sort_order: 1,
+      created_at: expect.any(String)
     })
   })
 
@@ -98,15 +116,49 @@ describe('useDashboardEditor', () => {
     })
   })
 
-  it('buildSaveInput keeps sort_order stable and strips temp ids', () => {
+  it('cancelEditing clears editor state', () => {
+    const { result } = renderHook(() => useDashboardEditor())
+
+    act(() => result.current.startEditing(widgets))
+    act(() => result.current.updateWidget('w-1', { title: 'Memory' }))
+    expect(result.current.isDirty).toBe(true)
+
+    act(() => result.current.cancelEditing())
+
+    expect(result.current.isEditing).toBe(false)
+    expect(result.current.isDirty).toBe(false)
+    expect(result.current.draftWidgets).toEqual([])
+  })
+
+  it('buildSaveInput parses config_json and preserves layout fields', () => {
     const { result } = renderHook(() => useDashboardEditor())
 
     act(() => result.current.startEditing([{ ...widgets[0], id: 'temp-1', sort_order: 0 }]))
+    act(() =>
+      result.current.updateWidget('temp-1', {
+        title: null,
+        config_json: '{"metric":"avg_mem","window":5}'
+      })
+    )
 
-    expect(result.current.buildSaveInput()[0]).toMatchObject({
+    expect(result.current.buildSaveInput()[0]).toEqual({
       id: undefined,
       widget_type: 'stat-number',
+      title: null,
+      config_json: { metric: 'avg_mem', window: 5 },
+      grid_x: 0,
+      grid_y: 0,
+      grid_w: 2,
+      grid_h: 2,
       sort_order: 0
     })
+  })
+
+  it('buildSaveInput falls back to an empty config object for invalid JSON', () => {
+    const { result } = renderHook(() => useDashboardEditor())
+
+    act(() => result.current.startEditing([{ ...widgets[0], id: 'temp-1', sort_order: 0, config_json: '{' }]))
+
+    expect(result.current.buildSaveInput()[0].config_json).toEqual({})
   })
 })
