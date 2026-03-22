@@ -1,11 +1,34 @@
 import { useMemo, useState } from 'react'
-import { mergeLayoutPatch, type LayoutPatch } from '@/components/dashboard/dashboard-layout'
+import {
+  mergeLayoutPatch,
+  normalizeNewWidgetPlacement,
+  type LayoutPatch
+} from '@/components/dashboard/dashboard-layout'
+import { parseConfig } from '@/lib/widget-helpers'
+import { WIDGET_TYPES, type WidgetTypeDefinition } from '@/lib/widget-types'
 import type { DashboardWidget } from '@/lib/widget-types'
 import type { WidgetInput } from './use-dashboard'
+
+interface AddWidgetInput {
+  configJson: string
+  dashboardId: string
+  title: string | null
+  widgetType: string
+}
 
 interface UpdateWidgetChanges {
   config_json?: string
   title?: string | null
+}
+
+const WIDGET_TYPE_MAP = new Map<string, WidgetTypeDefinition>(WIDGET_TYPES.map((widget) => [widget.id, widget]))
+
+function getWidgetTypeDefaults(widgetType: string) {
+  const definition = WIDGET_TYPE_MAP.get(widgetType)
+  return {
+    grid_h: definition?.defaultH ?? 2,
+    grid_w: definition?.defaultW ?? 2
+  }
 }
 
 export function useDashboardEditor() {
@@ -33,8 +56,24 @@ export function useDashboardEditor() {
     setDraftWidgets((current) => mergeLayoutPatch(current, patch))
   }
 
-  function addWidget(widget: DashboardWidget) {
-    setDraftWidgets((current) => [...current, { ...widget, sort_order: current.length }])
+  function addWidget({ configJson, dashboardId, title, widgetType }: AddWidgetInput) {
+    setDraftWidgets((current) => {
+      const { grid_h, grid_w } = getWidgetTypeDefaults(widgetType)
+      const newWidget: DashboardWidget = {
+        config_json: configJson,
+        created_at: new Date().toISOString(),
+        dashboard_id: dashboardId,
+        grid_h,
+        grid_w,
+        grid_x: 0,
+        grid_y: Number.POSITIVE_INFINITY,
+        id: `temp-${crypto.randomUUID()}`,
+        sort_order: current.length,
+        title,
+        widget_type: widgetType
+      }
+      return normalizeNewWidgetPlacement(current, newWidget)
+    })
   }
 
   function updateWidget(id: string, changes: UpdateWidgetChanges) {
@@ -54,7 +93,7 @@ export function useDashboardEditor() {
       id: widget.id.startsWith('temp-') ? undefined : widget.id,
       widget_type: widget.widget_type,
       title: widget.title,
-      config_json: JSON.parse(widget.config_json),
+      config_json: parseConfig(widget.config_json),
       grid_x: widget.grid_x,
       grid_y: widget.grid_y,
       grid_w: widget.grid_w,
