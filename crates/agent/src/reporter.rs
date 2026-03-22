@@ -169,11 +169,20 @@ impl Reporter {
             self.config.collector.enable_gpu,
         );
         let info = collector.system_info();
+        let initial_ips = collect_interface_ips();
+        let (initial_ipv4, initial_ipv6) = derive_primary_ips(
+            &initial_ips,
+            self.config.ip_change.check_external_ip,
+            &self.config.ip_change.external_ip_url,
+        )
+        .await;
         let info_msg = AgentMessage::SystemInfo {
             msg_id: uuid::Uuid::new_v4().to_string(),
             info: serverbee_common::types::SystemInfo {
                 protocol_version: PROTOCOL_VERSION,
                 features,
+                ipv4: initial_ipv4,
+                ipv6: initial_ipv6,
                 ..info
             },
         };
