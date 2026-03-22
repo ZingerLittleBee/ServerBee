@@ -10,7 +10,7 @@ export const Route = createFileRoute('/_authed/')({
   component: DashboardPage
 })
 
-function DashboardPage() {
+export function DashboardPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
@@ -46,11 +46,12 @@ function DashboardPage() {
 
   return (
     <DashboardEditorView
+      activeDashboardId={activeId}
       dashboard={dashboard}
       dashboards={dashboards}
       isAdmin={isAdmin}
       isSaving={updateDashboard.isPending}
-      key={dashboard?.id ?? 'no-dashboard'}
+      key={activeId || 'no-dashboard'}
       onSave={handleSave}
       onSelectDashboard={handleDashboardSelect}
       servers={servers}
