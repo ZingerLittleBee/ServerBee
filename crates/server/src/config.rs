@@ -216,8 +216,6 @@ fn default_oidc_scopes() -> Vec<String> {
 #[allow(dead_code)]
 pub struct GeoIpConfig {
     #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
     pub mmdb_path: String,
 }
 

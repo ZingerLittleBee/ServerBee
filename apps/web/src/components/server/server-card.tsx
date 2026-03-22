@@ -52,7 +52,7 @@ export function ServerCard({ server }: ServerCardProps) {
 
   return (
     <Link
-      className="group block rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-accent/50"
+      className="group flex h-full flex-col rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-accent/50"
       params={{ id: server.id }}
       search={{ range: 'realtime' }}
       to="/servers/$id"
@@ -74,13 +74,13 @@ export function ServerCard({ server }: ServerCardProps) {
         <StatusBadge online={server.online} />
       </div>
 
-      <div className="space-y-2.5">
+      <div className="flex flex-1 flex-col justify-center space-y-2.5">
         <ProgressBar color="bg-chart-1" label={t('col_cpu')} value={server.cpu} />
         <ProgressBar color="bg-chart-2" label={t('col_memory')} value={memoryPct} />
         <ProgressBar color="bg-chart-3" label={t('col_disk')} value={diskPct} />
       </div>
 
-      <div className="mt-3 flex items-center justify-between text-muted-foreground text-xs">
+      <div className="mt-auto flex items-center justify-between pt-3 text-muted-foreground text-xs">
         <div className="flex gap-3">
           <span title={t('chart_net_in')}>{formatSpeed(server.net_in_speed)}</span>
           <span title={t('chart_net_out')}>{formatSpeed(server.net_out_speed)}</span>

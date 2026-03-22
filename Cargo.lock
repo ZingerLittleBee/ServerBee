@@ -3923,6 +3923,7 @@ dependencies = [
  "cron",
  "dashmap",
  "figment",
+ "flate2",
  "futures-util",
  "hickory-resolver",
  "lettre",

@@ -52,6 +52,7 @@ export function MetricsChart({
             }
           />
           <Area
+            animationDuration={800}
             dataKey={dataKey}
             fill={`var(--color-${dataKey})`}
             fillOpacity={0.1}

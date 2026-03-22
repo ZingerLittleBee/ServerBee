@@ -23,7 +23,8 @@ const DEFAULT_HOURS = 24
 const DEFAULT_INTERVAL = 'raw'
 
 export function LineChartWidget({ config, servers }: LineChartWidgetProps) {
-  const { server_id, metric } = config
+  const server_id = config.server_id ?? ''
+  const { metric } = config
   const hours = config.hours ?? DEFAULT_HOURS
   const interval = config.interval ?? DEFAULT_INTERVAL
 

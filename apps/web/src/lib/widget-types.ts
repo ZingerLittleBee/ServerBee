@@ -6,18 +6,60 @@ export interface WidgetTypeDefinition {
   defaultW: number
   id: string
   label: string
+  maxH?: number
+  maxW?: number
   minH: number
   minW: number
 }
 
 export const WIDGET_TYPES = [
-  { id: 'stat-number', label: 'Stat Number', category: 'Real-time', defaultW: 2, defaultH: 2, minW: 2, minH: 2 },
+  {
+    id: 'stat-number',
+    label: 'Stat Number',
+    category: 'Real-time',
+    defaultW: 2,
+    defaultH: 2,
+    minW: 2,
+    minH: 2,
+    maxW: 4,
+    maxH: 3
+  },
   { id: 'server-cards', label: 'Server Cards', category: 'Real-time', defaultW: 12, defaultH: 6, minW: 4, minH: 3 },
-  { id: 'gauge', label: 'Gauge', category: 'Real-time', defaultW: 3, defaultH: 3, minW: 2, minH: 2 },
-  { id: 'line-chart', label: 'Line Chart', category: 'Charts', defaultW: 6, defaultH: 4, minW: 4, minH: 3 },
-  { id: 'multi-line', label: 'Multi Line', category: 'Charts', defaultW: 8, defaultH: 4, minW: 4, minH: 3 },
-  { id: 'top-n', label: 'Top N', category: 'Real-time', defaultW: 4, defaultH: 4, minW: 3, minH: 3 },
-  { id: 'alert-list', label: 'Alert List', category: 'Status', defaultW: 4, defaultH: 4, minW: 3, minH: 2 },
+  { id: 'gauge', label: 'Gauge', category: 'Real-time', defaultW: 3, defaultH: 3, minW: 2, minH: 2, maxW: 6, maxH: 6 },
+  {
+    id: 'line-chart',
+    label: 'Line Chart',
+    category: 'Charts',
+    defaultW: 6,
+    defaultH: 4,
+    minW: 4,
+    minH: 3,
+    maxW: 12,
+    maxH: 8
+  },
+  {
+    id: 'multi-line',
+    label: 'Multi Line',
+    category: 'Charts',
+    defaultW: 8,
+    defaultH: 4,
+    minW: 4,
+    minH: 3,
+    maxW: 12,
+    maxH: 8
+  },
+  { id: 'top-n', label: 'Top N', category: 'Real-time', defaultW: 4, defaultH: 4, minW: 3, minH: 3, maxW: 6, maxH: 8 },
+  {
+    id: 'alert-list',
+    label: 'Alert List',
+    category: 'Status',
+    defaultW: 4,
+    defaultH: 4,
+    minW: 3,
+    minH: 2,
+    maxW: 8,
+    maxH: 8
+  },
   {
     id: 'service-status',
     label: 'Service Status',
@@ -25,13 +67,55 @@ export const WIDGET_TYPES = [
     defaultW: 6,
     defaultH: 3,
     minW: 3,
-    minH: 2
+    minH: 2,
+    maxW: 12,
+    maxH: 6
   },
-  { id: 'traffic-bar', label: 'Traffic Bar', category: 'Charts', defaultW: 6, defaultH: 4, minW: 4, minH: 3 },
-  { id: 'disk-io', label: 'Disk I/O', category: 'Charts', defaultW: 6, defaultH: 4, minW: 4, minH: 3 },
-  { id: 'server-map', label: 'Server Map', category: 'Status', defaultW: 8, defaultH: 5, minW: 4, minH: 3 },
+  {
+    id: 'traffic-bar',
+    label: 'Traffic Bar',
+    category: 'Charts',
+    defaultW: 6,
+    defaultH: 4,
+    minW: 4,
+    minH: 3,
+    maxW: 12,
+    maxH: 8
+  },
+  {
+    id: 'disk-io',
+    label: 'Disk I/O',
+    category: 'Charts',
+    defaultW: 6,
+    defaultH: 4,
+    minW: 4,
+    minH: 3,
+    maxW: 12,
+    maxH: 8
+  },
+  {
+    id: 'server-map',
+    label: 'Server Map',
+    category: 'Status',
+    defaultW: 8,
+    defaultH: 5,
+    minW: 4,
+    minH: 3,
+    maxW: 12,
+    maxH: 8
+  },
   { id: 'markdown', label: 'Markdown', category: 'Status', defaultW: 4, defaultH: 3, minW: 2, minH: 2 },
-  { id: 'uptime-timeline', label: 'Uptime Timeline', category: 'Status', defaultW: 8, defaultH: 3, minW: 4, minH: 2 }
+  {
+    id: 'uptime-timeline',
+    label: 'Uptime Timeline',
+    category: 'Status',
+    defaultW: 8,
+    defaultH: 3,
+    minW: 4,
+    minH: 2,
+    maxW: 12,
+    maxH: 6
+  }
 ] as const satisfies readonly WidgetTypeDefinition[]
 
 export type WidgetTypeId = (typeof WIDGET_TYPES)[number]['id']

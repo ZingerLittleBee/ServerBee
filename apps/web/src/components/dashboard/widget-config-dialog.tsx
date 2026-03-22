@@ -99,7 +99,11 @@ function ServerSelect({
   return (
     <div className="space-y-1.5">
       <Label>{label}</Label>
-      <Select onValueChange={(v) => v !== null && onChange(v)} value={value}>
+      <Select
+        items={servers.map((s) => ({ value: s.id, label: s.name }))}
+        onValueChange={(v) => v !== null && onChange(v)}
+        value={value}
+      >
         <SelectTrigger className="w-full">
           <SelectValue placeholder="Select server" />
         </SelectTrigger>
@@ -129,7 +133,7 @@ function MetricSelect({
   return (
     <div className="space-y-1.5">
       <Label>{label}</Label>
-      <Select onValueChange={(v) => v !== null && onChange(v)} value={value}>
+      <Select items={metrics} onValueChange={(v) => v !== null && onChange(v)} value={value}>
         <SelectTrigger className="w-full">
           <SelectValue placeholder="Select metric" />
         </SelectTrigger>
@@ -149,7 +153,7 @@ function RangeSelect({ value, onChange }: { onChange: (v: string) => void; value
   return (
     <div className="space-y-1.5">
       <Label>Time Range</Label>
-      <Select onValueChange={(v) => v !== null && onChange(v)} value={value}>
+      <Select items={RANGE_OPTIONS} onValueChange={(v) => v !== null && onChange(v)} value={value}>
         <SelectTrigger className="w-full">
           <SelectValue placeholder="Select range" />
         </SelectTrigger>
@@ -365,6 +369,7 @@ function TrafficBarForm({
       <div className="space-y-1.5">
         <Label>Server (optional, leave empty for global)</Label>
         <Select
+          items={[{ value: '__all__', label: 'All Servers' }, ...servers.map((s) => ({ value: s.id, label: s.name }))]}
           onValueChange={(v) => onChange({ ...config, server_id: v === '__all__' ? '' : (v ?? '') })}
           value={config.server_id || '__all__'}
         >
@@ -487,6 +492,7 @@ function UptimeTimelineForm({
       <div className="space-y-1.5">
         <Label>Days</Label>
         <Select
+          items={UPTIME_DAYS_OPTIONS}
           onValueChange={(v) => v !== null && onChange({ ...config, days: Number(v) })}
           value={String(config.days ?? '90')}
         >
