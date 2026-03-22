@@ -217,4 +217,58 @@ mod tests {
         assert!(!should_track_device("dm-0", &physical));
         assert!(!should_track_device("sr0", &physical));
     }
+
+    #[test]
+    fn test_compute_disk_io_with_mount_path_keys() {
+        let previous = HashMap::from([
+            (
+                "/".to_string(),
+                DiskCounters {
+                    read_bytes: 1_000_000,
+                    write_bytes: 2_000_000,
+                },
+            ),
+            (
+                "/home".to_string(),
+                DiskCounters {
+                    read_bytes: 500_000,
+                    write_bytes: 300_000,
+                },
+            ),
+        ]);
+        let current = HashMap::from([
+            (
+                "/".to_string(),
+                DiskCounters {
+                    read_bytes: 1_100_000,
+                    write_bytes: 2_200_000,
+                },
+            ),
+            (
+                "/home".to_string(),
+                DiskCounters {
+                    read_bytes: 600_000,
+                    write_bytes: 400_000,
+                },
+            ),
+        ]);
+
+        let result = compute_disk_io(&previous, &current, 10.0);
+
+        assert_eq!(
+            result,
+            vec![
+                DiskIo {
+                    name: "/".to_string(),
+                    read_bytes_per_sec: 10_000,
+                    write_bytes_per_sec: 20_000,
+                },
+                DiskIo {
+                    name: "/home".to_string(),
+                    read_bytes_per_sec: 10_000,
+                    write_bytes_per_sec: 10_000,
+                },
+            ]
+        );
+    }
 }
