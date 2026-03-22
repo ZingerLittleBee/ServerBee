@@ -11,7 +11,8 @@ interface ServerCardsWidgetProps {
 
 export function ServerCardsWidget({ config, servers }: ServerCardsWidgetProps) {
   const filtered = useMemo(() => filterByIds(servers, config.server_ids, (s) => s.id), [servers, config.server_ids])
-  const columns = config.columns ?? 3
+  const maxColumns = config.columns ?? 3
+  const columns = Math.min(maxColumns, filtered.length || 1)
 
   return (
     <div
