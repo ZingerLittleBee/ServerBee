@@ -30,7 +30,7 @@ const chartConfig = {
 } satisfies ChartConfig
 
 export function DiskIoWidget({ config, servers }: DiskIoWidgetProps) {
-  const { server_id } = config
+  const server_id = config.server_id ?? ''
   const hours = config.hours ?? DEFAULT_HOURS
   const interval = config.interval ?? DEFAULT_INTERVAL
 
