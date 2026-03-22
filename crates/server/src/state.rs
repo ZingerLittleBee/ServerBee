@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use dashmap::DashMap;
@@ -31,7 +32,8 @@ pub struct AppState {
     pub agent_manager: AgentManager,
     pub browser_tx: broadcast::Sender<BrowserMessage>,
     pub config: AppConfig,
-    pub geoip: Option<GeoIpService>,
+    pub geoip: Arc<std::sync::RwLock<Option<GeoIpService>>>,
+    pub geoip_downloading: AtomicBool,
     /// CSRF state tokens for OAuth flow, keyed by state string → provider.
     pub oauth_states: DashMap<String, (String, chrono::DateTime<chrono::Utc>)>,
     /// Pending TOTP secrets for 2FA setup, keyed by user_id.
@@ -100,11 +102,18 @@ impl AppState {
     pub async fn new(db: DatabaseConnection, config: AppConfig) -> Result<Arc<Self>, AppError> {
         let (browser_tx, _) = broadcast::channel(256);
         let agent_manager = AgentManager::new(browser_tx.clone());
-        let geoip = if config.geoip.enabled {
+        let geoip = if !config.geoip.mmdb_path.is_empty() {
             GeoIpService::load(&config.geoip.mmdb_path)
         } else {
-            None
+            let default_path = std::path::Path::new(&config.server.data_dir)
+                .join(crate::service::geoip::DBIP_FILENAME);
+            GeoIpService::load(&default_path.display().to_string())
         };
+        if geoip.is_some() {
+            tracing::info!("GeoIP database loaded");
+        } else {
+            tracing::info!("GeoIP database not available — download via Settings or Server Map widget");
+        }
         let file_transfers = Arc::new(FileTransferManager::new(
             std::env::temp_dir().join("serverbee-transfers"),
         ));
@@ -125,7 +134,8 @@ impl AppState {
             agent_manager,
             browser_tx,
             config,
-            geoip,
+            geoip: Arc::new(std::sync::RwLock::new(geoip)),
+            geoip_downloading: AtomicBool::new(false),
             oauth_states: DashMap::new(),
             pending_totp: DashMap::new(),
             login_rate_limit: DashMap::new(),

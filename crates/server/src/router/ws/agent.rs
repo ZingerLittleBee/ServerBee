@@ -226,14 +226,30 @@ async fn handle_agent_ws(
 async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: AgentMessage) {
     match msg {
         AgentMessage::SystemInfo { msg_id, info } => {
-            // Resolve GeoIP from agent's remote address
-            let geo = state.geoip.as_ref().and_then(|g| {
-                let conn = state.agent_manager.get_remote_addr(server_id);
-                conn.map(|addr| g.lookup(addr.ip()))
-            });
+            // Resolve GeoIP — prefer agent-reported public IP, fall back to remote_addr
+            let ip = info
+                .ipv4
+                .as_deref()
+                .or(info.ipv6.as_deref())
+                .and_then(|ip| ip.parse::<std::net::IpAddr>().ok())
+                .or_else(|| {
+                    state
+                        .agent_manager
+                        .get_remote_addr(server_id)
+                        .map(|addr| addr.ip())
+                });
 
-            let (region, country_code) = match geo {
-                Some(ref g) => (g.region.clone(), g.country_code.clone()),
+            let (region, country_code) = match ip {
+                Some(ip) => {
+                    let guard = state.geoip.read().unwrap();
+                    match guard.as_ref() {
+                        Some(g) => {
+                            let geo = g.lookup(ip);
+                            (geo.region, geo.country_code)
+                        }
+                        None => (None, None),
+                    }
+                }
                 None => (None, None),
             };
 
@@ -755,26 +771,27 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                         }
 
                         // Re-run GeoIP lookup based on the new IPs
-                        if let Some(ref geoip) = state.geoip {
-                            let ip_to_lookup = ipv4
-                                .as_deref()
-                                .or(ipv6.as_deref())
-                                .and_then(|ip| ip.parse::<std::net::IpAddr>().ok());
-                            if let Some(ip) = ip_to_lookup {
-                                let geo = geoip.lookup(ip);
-                                if (geo.region.is_some() || geo.country_code.is_some())
-                                    && let Err(e) = update_server_geo(
-                                        &state.db,
-                                        server_id,
-                                        geo.region,
-                                        geo.country_code,
-                                    )
-                                    .await
-                                {
-                                    tracing::error!(
-                                        "Failed to update GeoIP for {server_id}: {e}"
-                                    );
-                                }
+                        let ip_to_lookup = ipv4
+                            .as_deref()
+                            .or(ipv6.as_deref())
+                            .and_then(|ip| ip.parse::<std::net::IpAddr>().ok());
+                        if let Some(ip) = ip_to_lookup {
+                            let geo = {
+                                let guard = state.geoip.read().unwrap();
+                                guard.as_ref().map(|g| g.lookup(ip))
+                            };
+                            if let Some(geo) = geo
+                                && let Err(e) = update_server_geo(
+                                    &state.db,
+                                    server_id,
+                                    geo.region,
+                                    geo.country_code,
+                                )
+                                .await
+                            {
+                                tracing::error!(
+                                    "Failed to update GeoIP for {server_id}: {e}"
+                                );
                             }
                         }
 
