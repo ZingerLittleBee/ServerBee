@@ -25,7 +25,7 @@ bun run typecheck
 ```bash
 cargo test -p serverbee-common          # 协议 + 能力常量 + Docker 类型 + Traceroute (43 tests)
 cargo test -p serverbee-server          # 服务端单元 + 集成 + dashboard + uptime + geoip (227 unit + 39 integration + 4 docker = 270 tests)
-cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager + Traceroute (55 tests)
+cargo test -p serverbee-agent           # Agent 采集器 + Pinger + NetworkProber + FileManager + Traceroute (56 tests)
 ```
 
 ### 仅集成测试
@@ -62,7 +62,7 @@ cargo test --workspace -- --nocapture   # 显示 stdout
 | `server/service/user.rs` | 4 | 用户 CRUD、级联删除、最后 admin 保护 |
 | `server/service/ping.rs` | 3 | Ping 任务 CRUD |
 | `server/middleware/auth.rs` | 6 | Cookie/API Key 提取 |
-| `agent/collector/` | 8 | 系统信息、指标范围、使用量约束、磁盘 I/O 基线语义、设备过滤、速率计算排序 |
+| `agent/collector/` | 9 | 系统信息、指标范围、使用量约束、磁盘 I/O 基线语义、设备过滤、速率计算排序、mount-path key 速率验证 |
 | `agent/pinger.rs` | 2 | TCP 探测（开放/关闭端口） |
 | `agent/config.rs` | 1 | IpChangeConfig 默认值（enabled/check_external_ip/interval_secs/external_ip_url） |
 | `server/service/audit.rs` | 3 | 审计日志记录、列表、排序 |
@@ -1072,7 +1072,7 @@ crates/server/src/test_utils.rs         # 测试辅助 (setup_test_db)
 crates/server/tests/integration.rs      # 集成测试 (33 tests)
 crates/server/tests/docker_integration.rs # Docker 集成测试 (4 tests)
 crates/agent/src/collector/tests.rs     # Agent 采集器测试（含 Disk I/O 首次采样 / 平台语义）
-crates/agent/src/collector/disk_io.rs   # Disk I/O 纯函数测试（速率计算 / 设备过滤）
+crates/agent/src/collector/disk_io.rs   # Disk I/O 纯函数测试（速率计算 / 设备过滤 / mount-path key）
 crates/agent/src/pinger.rs              # Agent Pinger 测试
 crates/agent/src/probe_utils.rs         # 批量探测解析测试
 crates/agent/src/network_prober.rs      # 网络探测模块测试
