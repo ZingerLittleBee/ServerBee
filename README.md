@@ -15,8 +15,9 @@ A lightweight, self-hosted VPS monitoring system built with Rust and React.
 - **Ping Monitoring** -- ICMP, TCP, HTTP probes with latency charts and success rate
 - **Web Terminal** -- Browser-based PTY terminal via WebSocket proxy
 - **GPU Monitoring** -- NVIDIA GPU usage/temperature/memory (via nvml-wrapper, feature-gated)
-- **Disk I/O Monitoring** -- Per-disk read/write throughput charts with merged and per-disk views (Linux, historical mode)
-- **GeoIP** -- Automatic region/country detection from agent IP (MaxMind MMDB)
+- **Disk I/O Monitoring** -- Per-disk read/write throughput charts with merged and per-disk views. Linux via `/proc/diskstats`, macOS/Windows via sysinfo
+- **GeoIP** -- Automatic region/country detection from agent IP with in-app database download/update
+- **Custom Dashboard** -- Drag-and-drop dashboard with 13 widget types, multiple dashboards, editor mode
 - **OAuth & 2FA** -- GitHub/Google/OIDC login, TOTP two-factor authentication
 - **Multi-user** -- Admin/Member roles, audit logging, rate limiting
 - **File Management** -- Remote file browser with Monaco Editor, upload/download with progress, path sandbox security (`root_paths` + `deny_patterns`)
@@ -107,8 +108,8 @@ make server-dev                                           # Terminal 1: server o
 SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # Terminal 2: agent
 
 # Testing & code quality:
-make cargo-test        # Run all Rust tests (252)
-make test              # Run frontend tests (121)
+make cargo-test        # Run all Rust tests (362)
+make test              # Run frontend tests (220)
 make cargo-clippy      # Lint Rust code
 make                   # Interactive menu (requires fzf)
 ```
