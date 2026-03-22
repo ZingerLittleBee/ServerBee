@@ -248,7 +248,11 @@ function AlertsPage() {
               />
 
               <div className="flex gap-3">
-                <Select onValueChange={(v) => v !== null && setTriggerMode(v)} value={triggerMode}>
+                <Select
+                  items={{ always: t('alerts.trigger_always'), once: t('alerts.trigger_once') }}
+                  onValueChange={(v) => v !== null && setTriggerMode(v)}
+                  value={triggerMode}
+                >
                   <SelectTrigger aria-label={t('alerts.trigger_always')} className="h-9 w-full flex-1">
                     <SelectValue />
                   </SelectTrigger>
@@ -258,7 +262,14 @@ function AlertsPage() {
                   </SelectContent>
                 </Select>
 
-                <Select onValueChange={(v) => setGroupId(v ?? '')} value={groupId}>
+                <Select
+                  items={[
+                    { value: '', label: t('alerts.no_notification') },
+                    ...(groups?.map((g) => ({ value: g.id, label: g.name })) ?? [])
+                  ]}
+                  onValueChange={(v) => setGroupId(v ?? '')}
+                  value={groupId}
+                >
                   <SelectTrigger aria-label={t('alerts.no_notification')} className="h-9 w-full flex-1">
                     <SelectValue placeholder={t('alerts.no_notification')} />
                   </SelectTrigger>
@@ -277,6 +288,11 @@ function AlertsPage() {
                 <span className="font-medium text-sm">{t('alerts.coverage')}</span>
                 <div className="flex gap-3">
                   <Select
+                    items={{
+                      all: t('alerts.all_servers'),
+                      include: t('alerts.include_servers'),
+                      exclude: t('alerts.exclude_servers')
+                    }}
                     onValueChange={(val) => {
                       if (val === null) {
                         return
@@ -332,6 +348,7 @@ function AlertsPage() {
                 {ruleItems.map((item, index) => (
                   <div className="flex gap-2" key={`rule-${index.toString()}`}>
                     <Select
+                      items={ruleTypes}
                       onValueChange={(val) => val !== null && updateRuleItem(index, 'rule_type', val)}
                       value={item.rule_type}
                     >
@@ -389,6 +406,13 @@ function AlertsPage() {
                     {CYCLE_TYPES.has(item.rule_type) && (
                       <>
                         <Select
+                          items={{
+                            hour: t('alerts.period_hour'),
+                            day: t('alerts.period_day'),
+                            week: t('alerts.period_week'),
+                            month: t('alerts.period_month'),
+                            year: t('alerts.period_year')
+                          }}
                           onValueChange={(val) => val !== null && updateRuleItem(index, 'cycle_interval', val)}
                           value={item.cycle_interval ?? 'month'}
                         >

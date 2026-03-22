@@ -147,6 +147,10 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
             </div>
             <Field label={t('edit_group')}>
               <Select
+                items={[
+                  { value: '__none__', label: t('edit_no_group') },
+                  ...(groups?.map((g) => ({ value: g.id, label: g.name })) ?? [])
+                ]}
                 onValueChange={(v) => setGroupId(v === '__none__' || v === null ? '' : v)}
                 value={groupId || '__none__'}
               >
@@ -220,6 +224,12 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
               </Field>
               <Field label={t('edit_billing_cycle')}>
                 <Select
+                  items={{
+                    __none__: t('edit_none'),
+                    monthly: t('edit_monthly'),
+                    quarterly: t('edit_quarterly'),
+                    yearly: t('edit_yearly')
+                  }}
                   onValueChange={(v) => setBillingCycle(v === '__none__' || v === null ? '' : v)}
                   value={billingCycle || '__none__'}
                 >
@@ -259,7 +269,15 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                 />
               </Field>
               <Field label={t('edit_limit_type')}>
-                <Select onValueChange={(v) => v !== null && setTrafficLimitType(v)} value={trafficLimitType}>
+                <Select
+                  items={{
+                    sum: t('edit_total_in_out'),
+                    up: t('edit_upload_only'),
+                    down: t('edit_download_only')
+                  }}
+                  onValueChange={(v) => v !== null && setTrafficLimitType(v)}
+                  value={trafficLimitType}
+                >
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
