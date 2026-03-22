@@ -19,7 +19,14 @@ vi.mock('@/components/ui/button', () => ({
 }))
 
 vi.mock('./dashboard-switcher', () => ({
-  DashboardSwitcher: ({ currentId }: { currentId: string }) => <div data-testid="dashboard-switcher">{currentId}</div>
+  DashboardSwitcher: ({ currentId, onSelect }: { currentId: string; onSelect: (id: string) => void }) => (
+    <div>
+      <div data-testid="dashboard-switcher">{currentId}</div>
+      <button onClick={() => onSelect('dash-2')} type="button">
+        switch-dashboard
+      </button>
+    </div>
+  )
 }))
 
 vi.mock('./dashboard-grid', () => ({
@@ -114,10 +121,18 @@ const dashboards: Dashboard[] = [
     sort_order: 0,
     created_at: '2026-03-20T00:00:00Z',
     updated_at: '2026-03-20T00:00:00Z'
+  },
+  {
+    id: 'dash-2',
+    name: 'Secondary',
+    is_default: false,
+    sort_order: 1,
+    created_at: '2026-03-20T00:00:00Z',
+    updated_at: '2026-03-20T00:00:00Z'
   }
 ]
 
-const dashboard: DashboardWithWidgets = {
+const primaryDashboard: DashboardWithWidgets = {
   ...dashboards[0],
   widgets: [
     {
@@ -136,6 +151,25 @@ const dashboard: DashboardWithWidgets = {
   ]
 }
 
+const secondaryDashboard: DashboardWithWidgets = {
+  ...dashboards[1],
+  widgets: [
+    {
+      id: 'w-2',
+      dashboard_id: 'dash-2',
+      widget_type: 'gauge',
+      title: 'Memory',
+      config_json: '{"metric":"memory","server_id":"srv-2"}',
+      grid_x: 2,
+      grid_y: 1,
+      grid_w: 3,
+      grid_h: 2,
+      sort_order: 0,
+      created_at: '2026-03-20T00:00:00Z'
+    }
+  ]
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
 })
@@ -146,7 +180,7 @@ describe('DashboardEditorView', () => {
 
     render(
       <DashboardEditorView
-        dashboard={dashboard}
+        dashboard={primaryDashboard}
         dashboards={dashboards}
         isAdmin
         isSaving={false}
@@ -179,7 +213,7 @@ describe('DashboardEditorView', () => {
   it('cancel restores server widgets after deleting from the draft', () => {
     render(
       <DashboardEditorView
-        dashboard={dashboard}
+        dashboard={primaryDashboard}
         dashboards={dashboards}
         isAdmin
         isSaving={false}
@@ -206,7 +240,7 @@ describe('DashboardEditorView', () => {
 
     render(
       <DashboardEditorView
-        dashboard={dashboard}
+        dashboard={primaryDashboard}
         dashboards={dashboards}
         isAdmin
         isSaving={false}
@@ -248,5 +282,110 @@ describe('DashboardEditorView', () => {
         sort_order: 1
       })
     ])
+  })
+
+  it('updates an existing widget through the edit flow and saves the changed payload', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined)
+
+    render(
+      <DashboardEditorView
+        dashboard={primaryDashboard}
+        dashboards={dashboards}
+        isAdmin
+        isSaving={false}
+        onSave={onSave}
+        onSelectDashboard={vi.fn()}
+        servers={[]}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'edit' }))
+    fireEvent.click(screen.getByRole('button', { name: 'edit-widget' }))
+    expect(screen.getByTestId('config-widget-type')).toHaveTextContent('stat-number')
+    expect(screen.getByTestId('config-widget-title')).toHaveTextContent('CPU')
+
+    fireEvent.click(screen.getByRole('button', { name: 'submit-config' }))
+    fireEvent.click(screen.getByRole('button', { name: 'save' }))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+    expect(onSave).toHaveBeenCalledWith([
+      {
+        id: 'w-1',
+        widget_type: 'stat-number',
+        title: 'CPU updated',
+        config_json: { metric: 'avg_mem' },
+        grid_x: 0,
+        grid_y: 0,
+        grid_w: 2,
+        grid_h: 2,
+        sort_order: 0
+      }
+    ])
+  })
+
+  it('resets edit and dialog state when the dashboard id changes', () => {
+    const { rerender } = render(
+      <DashboardEditorView
+        dashboard={primaryDashboard}
+        dashboards={dashboards}
+        isAdmin
+        isSaving={false}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+        onSelectDashboard={vi.fn()}
+        servers={[]}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'edit' }))
+    fireEvent.click(screen.getByRole('button', { name: 'edit-widget' }))
+    expect(screen.getByTestId('grid-mode')).toHaveTextContent('editing')
+    expect(screen.getByTestId('widget-config-dialog')).toBeInTheDocument()
+
+    rerender(
+      <DashboardEditorView
+        dashboard={secondaryDashboard}
+        dashboards={dashboards}
+        isAdmin
+        isSaving={false}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+        onSelectDashboard={vi.fn()}
+        servers={[]}
+      />
+    )
+
+    expect(screen.queryByRole('button', { name: 'save' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'edit' })).toBeInTheDocument()
+    expect(screen.queryByTestId('widget-config-dialog')).not.toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-switcher')).toHaveTextContent('dash-2')
+    expect(screen.getByTestId('grid-mode')).toHaveTextContent('viewing')
+    expect(screen.getByTestId('grid-widget-ids')).toHaveTextContent('w-2')
+  })
+
+  it('flushes local cancel state before notifying dashboard selection', () => {
+    const onSelectDashboard = vi.fn(() => {
+      expect(screen.queryByRole('button', { name: 'save' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'edit' })).toBeInTheDocument()
+      expect(screen.queryByTestId('widget-config-dialog')).not.toBeInTheDocument()
+    })
+
+    render(
+      <DashboardEditorView
+        dashboard={primaryDashboard}
+        dashboards={dashboards}
+        isAdmin
+        isSaving={false}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+        onSelectDashboard={onSelectDashboard}
+        servers={[]}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'edit' }))
+    fireEvent.click(screen.getByRole('button', { name: 'edit-widget' }))
+    expect(screen.getByTestId('widget-config-dialog')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'switch-dashboard' }))
+
+    expect(onSelectDashboard).toHaveBeenCalledWith('dash-2')
   })
 })
