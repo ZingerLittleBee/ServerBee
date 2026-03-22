@@ -74,7 +74,11 @@ export function useUpdateDashboard() {
   return useMutation({
     mutationFn: ({ id, ...input }: { id: string } & UpdateDashboardInput) =>
       api.put<DashboardWithWidgets>(`/api/dashboards/${id}`, input),
-    onSuccess: () => {
+    onSuccess: updated => {
+      queryClient.setQueryData(['dashboards', updated.id], updated)
+      if (updated.is_default) {
+        queryClient.setQueryData(['dashboards', 'default'], updated)
+      }
       queryClient.invalidateQueries({ queryKey: ['dashboards'] })
       toast.success('Dashboard updated')
     }
