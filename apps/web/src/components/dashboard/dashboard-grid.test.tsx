@@ -162,6 +162,33 @@ describe('DashboardGrid', () => {
     expect(screen.getByTestId('grid-layout')).toBeInTheDocument()
   })
 
+  it('updates liveLayout from library onLayoutChange without notifying the parent', () => {
+    const onLayoutChange = vi.fn()
+
+    render(
+      <DashboardGrid
+        isEditing
+        onLayoutChange={onLayoutChange}
+        onWidgetDelete={noop}
+        onWidgetEdit={noop}
+        servers={[]}
+        widgets={widgets}
+      />
+    )
+
+    const nextLayout = [
+      { i: 'w-1', x: 1, y: 2, w: 2, h: 2 },
+      { i: 'w-2', x: 2, y: 0, w: 3, h: 3 }
+    ]
+
+    act(() => {
+      getGridLayoutProps().onLayoutChange?.(nextLayout)
+    })
+
+    expect(onLayoutChange).not.toHaveBeenCalled()
+    expect(getGridLayoutProps().layout).toEqual(nextLayout)
+  })
+
   it('keeps drag-time layout changes internal until commit', () => {
     const onLayoutChange = vi.fn()
 
