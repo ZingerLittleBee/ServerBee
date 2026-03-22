@@ -70,7 +70,7 @@ function DownloadButton({
   )
 }
 
-function GeoIpPage() {
+export function GeoIpPage() {
   const queryClient = useQueryClient()
 
   const { data: status, isLoading } = useQuery<GeoIpStatus>({
