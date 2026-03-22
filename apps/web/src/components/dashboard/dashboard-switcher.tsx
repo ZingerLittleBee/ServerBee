@@ -83,6 +83,7 @@ export function DashboardSwitcher({ dashboards, currentId, onSelect, isAdmin }: 
     <div className="flex items-center gap-2">
       <LayoutDashboard className="size-5 text-muted-foreground" />
       <Select
+        items={dashboards.map((d) => ({ value: d.id, label: d.name }))}
         onValueChange={(v) => {
           if (v !== null) {
             onSelect(v)

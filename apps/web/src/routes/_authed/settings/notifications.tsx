@@ -205,7 +205,11 @@ function NotificationsPage() {
                 type="text"
                 value={name}
               />
-              <Select onValueChange={(val) => handleTypeChange(val as NotifyType)} value={notifyType}>
+              <Select
+                items={typeLabels}
+                onValueChange={(val) => handleTypeChange(val as NotifyType)}
+                value={notifyType}
+              >
                 <SelectTrigger className="h-9 w-full">
                   <SelectValue />
                 </SelectTrigger>
