@@ -32,6 +32,7 @@
   "nav_security": "Security",
   "nav_appearance": "Appearance",
   "nav_audit_logs": "Audit Logs",
+  "nav_geoip": "GeoIP",
   "nav_settings": "Settings",
   "search": "Search",
   "search_placeholder_ellipsis": "Search\u2026",

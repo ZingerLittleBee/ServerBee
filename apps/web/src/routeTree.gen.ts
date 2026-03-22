@@ -27,6 +27,7 @@ import { Route as AuthedSettingsSecurityRouteImport } from './routes/_authed/set
 import { Route as AuthedSettingsPingTasksRouteImport } from './routes/_authed/settings/ping-tasks'
 import { Route as AuthedSettingsNotificationsRouteImport } from './routes/_authed/settings/notifications'
 import { Route as AuthedSettingsNetworkProbesRouteImport } from './routes/_authed/settings/network-probes'
+import { Route as AuthedSettingsGeoipRouteImport } from './routes/_authed/settings/geoip'
 import { Route as AuthedSettingsCapabilitiesRouteImport } from './routes/_authed/settings/capabilities'
 import { Route as AuthedSettingsAuditLogsRouteImport } from './routes/_authed/settings/audit-logs'
 import { Route as AuthedSettingsAppearanceRouteImport } from './routes/_authed/settings/appearance'
@@ -131,6 +132,11 @@ const AuthedSettingsNetworkProbesRoute =
     path: '/settings/network-probes',
     getParentRoute: () => AuthedRoute,
   } as any)
+const AuthedSettingsGeoipRoute = AuthedSettingsGeoipRouteImport.update({
+  id: '/settings/geoip',
+  path: '/settings/geoip',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedSettingsCapabilitiesRoute =
   AuthedSettingsCapabilitiesRouteImport.update({
     id: '/settings/capabilities',
@@ -199,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/settings/appearance': typeof AuthedSettingsAppearanceRoute
   '/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
   '/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
+  '/settings/geoip': typeof AuthedSettingsGeoipRoute
   '/settings/network-probes': typeof AuthedSettingsNetworkProbesRoute
   '/settings/notifications': typeof AuthedSettingsNotificationsRoute
   '/settings/ping-tasks': typeof AuthedSettingsPingTasksRoute
@@ -228,6 +235,7 @@ export interface FileRoutesByTo {
   '/settings/appearance': typeof AuthedSettingsAppearanceRoute
   '/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
   '/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
+  '/settings/geoip': typeof AuthedSettingsGeoipRoute
   '/settings/network-probes': typeof AuthedSettingsNetworkProbesRoute
   '/settings/notifications': typeof AuthedSettingsNotificationsRoute
   '/settings/ping-tasks': typeof AuthedSettingsPingTasksRoute
@@ -259,6 +267,7 @@ export interface FileRoutesById {
   '/_authed/settings/appearance': typeof AuthedSettingsAppearanceRoute
   '/_authed/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
   '/_authed/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
+  '/_authed/settings/geoip': typeof AuthedSettingsGeoipRoute
   '/_authed/settings/network-probes': typeof AuthedSettingsNetworkProbesRoute
   '/_authed/settings/notifications': typeof AuthedSettingsNotificationsRoute
   '/_authed/settings/ping-tasks': typeof AuthedSettingsPingTasksRoute
@@ -290,6 +299,7 @@ export interface FileRouteTypes {
     | '/settings/appearance'
     | '/settings/audit-logs'
     | '/settings/capabilities'
+    | '/settings/geoip'
     | '/settings/network-probes'
     | '/settings/notifications'
     | '/settings/ping-tasks'
@@ -319,6 +329,7 @@ export interface FileRouteTypes {
     | '/settings/appearance'
     | '/settings/audit-logs'
     | '/settings/capabilities'
+    | '/settings/geoip'
     | '/settings/network-probes'
     | '/settings/notifications'
     | '/settings/ping-tasks'
@@ -349,6 +360,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/appearance'
     | '/_authed/settings/audit-logs'
     | '/_authed/settings/capabilities'
+    | '/_authed/settings/geoip'
     | '/_authed/settings/network-probes'
     | '/_authed/settings/notifications'
     | '/_authed/settings/ping-tasks'
@@ -499,6 +511,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsNetworkProbesRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/settings/geoip': {
+      id: '/_authed/settings/geoip'
+      path: '/settings/geoip'
+      fullPath: '/settings/geoip'
+      preLoaderRoute: typeof AuthedSettingsGeoipRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/settings/capabilities': {
       id: '/_authed/settings/capabilities'
       path: '/settings/capabilities'
@@ -583,6 +602,7 @@ interface AuthedRouteChildren {
   AuthedSettingsAppearanceRoute: typeof AuthedSettingsAppearanceRoute
   AuthedSettingsAuditLogsRoute: typeof AuthedSettingsAuditLogsRoute
   AuthedSettingsCapabilitiesRoute: typeof AuthedSettingsCapabilitiesRoute
+  AuthedSettingsGeoipRoute: typeof AuthedSettingsGeoipRoute
   AuthedSettingsNetworkProbesRoute: typeof AuthedSettingsNetworkProbesRoute
   AuthedSettingsNotificationsRoute: typeof AuthedSettingsNotificationsRoute
   AuthedSettingsPingTasksRoute: typeof AuthedSettingsPingTasksRoute
@@ -610,6 +630,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedSettingsAppearanceRoute: AuthedSettingsAppearanceRoute,
   AuthedSettingsAuditLogsRoute: AuthedSettingsAuditLogsRoute,
   AuthedSettingsCapabilitiesRoute: AuthedSettingsCapabilitiesRoute,
+  AuthedSettingsGeoipRoute: AuthedSettingsGeoipRoute,
   AuthedSettingsNetworkProbesRoute: AuthedSettingsNetworkProbesRoute,
   AuthedSettingsNotificationsRoute: AuthedSettingsNotificationsRoute,
   AuthedSettingsPingTasksRoute: AuthedSettingsPingTasksRoute,
