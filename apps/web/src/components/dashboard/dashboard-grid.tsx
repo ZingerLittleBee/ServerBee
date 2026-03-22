@@ -77,7 +77,9 @@ export function DashboardGrid({
     }
   }, [isMobile])
 
-  const handleLayoutChange = useCallback((_newLayout: Layout) => {}, [])
+  const handleLayoutChange = useCallback((newLayout: Layout) => {
+    updateLiveLayout(newLayout)
+  }, [updateLiveLayout])
 
   const commitLayoutChange = useCallback((finalLayout: Layout) => {
     setInteractionState('idle')
