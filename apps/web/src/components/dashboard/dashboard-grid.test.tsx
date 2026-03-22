@@ -1,6 +1,6 @@
 import { act, render, screen } from '@testing-library/react'
 import { MoveDiagonal2Icon, MoveHorizontalIcon, MoveVerticalIcon } from 'lucide-react'
-import { isValidElement, type ReactNode, type Ref } from 'react'
+import { isValidElement, type ReactElement, type ReactNode, type Ref } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardWidget } from '@/lib/widget-types'
 import { DashboardGrid } from './dashboard-grid'
@@ -114,13 +114,10 @@ describe('DashboardGrid', () => {
     expect(screen.queryByText('Add Widget')).not.toBeInTheDocument()
   })
 
-  it('shows Add Widget button in edit mode', () => {
-    const onAddWidget = vi.fn()
-
+  it('does not render Add Widget button inside the grid in edit mode', () => {
     render(
       <DashboardGrid
         isEditing
-        onAddWidget={onAddWidget}
         onLayoutChange={noop}
         onWidgetDelete={noop}
         onWidgetEdit={noop}
@@ -129,7 +126,7 @@ describe('DashboardGrid', () => {
       />
     )
 
-    expect(screen.getByText('Add Widget')).toBeInTheDocument()
+    expect(screen.queryByText('Add Widget')).not.toBeInTheDocument()
   })
 
   it('renders single-column list on mobile (width < 768)', () => {
@@ -347,31 +344,19 @@ describe('DashboardGrid', () => {
       ['e', MoveHorizontalIcon, 'rotate-45'],
       ['se', MoveDiagonal2Icon, undefined]
     ] as const) {
-      const handle = handleComponent(axis, null)
+      const handle = handleComponent(axis, null) as ReactElement<{ className: string; children: ReactNode }>
       expect(isValidElement(handle)).toBe(true)
-
-      if (!isValidElement(handle)) {
-        throw new Error('Expected resize handle to be a valid React element')
-      }
 
       expect(handle.props.className).toContain('react-resizable-handle')
 
-      const grip = handle.props.children
+      const grip = handle.props.children as ReactElement<{ className: string; children: ReactNode }>
       expect(isValidElement(grip)).toBe(true)
-
-      if (!isValidElement(grip)) {
-        throw new Error('Expected themed resize grip to be a valid React element')
-      }
 
       expect(grip.props.className).toContain('bg-background')
       expect(grip.props.className).toContain('border-border')
 
-      const icon = grip.props.children
+      const icon = grip.props.children as ReactElement<{ className: string }>
       expect(isValidElement(icon)).toBe(true)
-
-      if (!isValidElement(icon)) {
-        throw new Error('Expected resize icon to be a valid React element')
-      }
 
       expect(icon.type).toBe(expectedIcon)
       if (expectedRotationClass) {
