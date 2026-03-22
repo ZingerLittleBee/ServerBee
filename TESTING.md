@@ -154,9 +154,13 @@ cd apps/web && bunx vitest run src/lib/capabilities.test.ts
 | `traffic-card.test.tsx` | 1 | TrafficCard 渲染、Today/Monthly tab 切换、hourly/daily BarChart 验证 |
 | `disk-io.test.ts` | 3 | disk_io_json 解析、汇总序列、按磁盘补零序列 |
 | `disk-io-chart.test.tsx` | 2 | DiskIoChart 汇总/按磁盘切换、空数据返回 null |
-| `use-dashboard.test.tsx` | 7 | useDashboards/useDefaultDashboard/useDashboard 查询、useCreateDashboard/useUpdateDashboard/useDeleteDashboard 变更、空 id 守卫 |
+| `dashboard-layout.test.ts` | 4 | widgetsToLayout/layoutToPatch/mergeLayoutPatch 转换、normalizeNewWidgetPlacement 处理新 widget 初始落位 |
+| `use-dashboard-editor.test.tsx` | 9 | 编辑草稿生命周期、layout patch 合并、add/update/delete/cancel、buildSaveInput 解析 config_json |
+| `use-dashboard.test.tsx` | 8 | useDashboards/useDefaultDashboard/useDashboard 查询、useCreateDashboard/useUpdateDashboard/useDeleteDashboard 变更、空 id 守卫、保存成功后同步 dashboard/default cache |
 | `widget-renderer.test.tsx` | 14 | 13 种 widget 类型逐一渲染无崩溃（stat-number/server-cards/gauge/top-n/line-chart/multi-line/traffic-bar/disk-io/alert-list/service-status/server-map/markdown/uptime-timeline）+ 未知类型 fallback |
-| `dashboard-grid.test.tsx` | 4 | view 模式无编辑覆层、edit 模式显示 Add Widget、移动端单列布局、桌面端 GridLayout |
+| `dashboard-grid.test.tsx` | 9 | 拖拽/缩放期间仅更新本地 live layout、stop 时才向父层提交 patch、交互中不被外部 rerender 覆盖、移动端单列布局 |
+| `dashboard-editor-view.test.tsx` | 7 | Save/Cancel 编排、layout draft 提交、picker+config 添加 widget、编辑已有 widget、dashboard 切换时 reset/flush 本地编辑态、加载间隙保持选中 dashboard id |
+| `routes/_authed/index.test.tsx` | 1 | route 在切换 dashboard 且目标数据尚未返回时，仍向 editor view 传递稳定的 activeDashboardId |
 | `widget-config-dialog.test.tsx` | 9 | stat-number metric 选择、line-chart server+metric+range 选择、markdown textarea、service-status/server-map 无配置提示、title 输入、编辑模式标题、关闭时不渲染、uptime-timeline server 多选 |
 | `markdown.test.ts` | 8 | 标题/粗体斜体/安全链接/javascript:链接拦截/HTML 标签转义/img onerror 转义/行内代码/无序列表 |
 | `capabilities-dialog.test.tsx` | 1 | admin 用户触发按钮打开能力控制对话框 |
@@ -1081,10 +1085,14 @@ apps/web/src/hooks/use-traffic.test.tsx # 流量 hook 测试 (3 tests)
 apps/web/src/components/server/disk-io-chart.test.tsx # Disk I/O 图表渲染测试
 apps/web/src/components/server/traffic-card.test.tsx # TrafficCard tab 切换测试 (1 test)
 apps/web/src/components/server/capabilities-dialog.test.tsx # 能力控制对话框测试 (1 test)
-apps/web/src/hooks/use-dashboard.test.tsx            # Dashboard hooks 测试 (7 tests)
-apps/web/src/components/dashboard/widget-renderer.test.tsx # Widget 渲染器测试 (13 tests)
-apps/web/src/components/dashboard/dashboard-grid.test.tsx  # Dashboard Grid 布局测试 (4 tests)
-apps/web/src/components/dashboard/widget-config-dialog.test.tsx # Widget 配置对话框测试 (8 tests)
+apps/web/src/components/dashboard/dashboard-layout.test.ts # Dashboard layout 纯函数测试 (4 tests)
+apps/web/src/hooks/use-dashboard-editor.test.tsx     # Dashboard editor hook 测试 (9 tests)
+apps/web/src/hooks/use-dashboard.test.tsx            # Dashboard hooks 测试 (8 tests)
+apps/web/src/components/dashboard/widget-renderer.test.tsx # Widget 渲染器测试 (14 tests)
+apps/web/src/components/dashboard/dashboard-grid.test.tsx  # Dashboard Grid 交互测试 (9 tests)
+apps/web/src/components/dashboard/dashboard-editor-view.test.tsx # DashboardEditorView 编排测试 (7 tests)
+apps/web/src/components/dashboard/widget-config-dialog.test.tsx # Widget 配置对话框测试 (9 tests)
+apps/web/src/routes/_authed/index.test.tsx           # Dashboard route 选中态保持测试 (1 test)
 apps/web/src/lib/markdown.test.ts                    # Markdown→HTML 转换器 + XSS 防护测试 (8 tests)
 apps/web/vitest.config.ts               # Vitest 配置
 .github/workflows/ci.yml               # CI 流水线
