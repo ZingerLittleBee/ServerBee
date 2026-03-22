@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DashboardWidget } from '@/lib/widget-types'
-import {
-  layoutToPatch,
-  mergeLayoutPatch,
-  normalizeNewWidgetPlacement,
-  widgetsToLayout
-} from './dashboard-layout'
+import { layoutToPatch, mergeLayoutPatch, normalizeNewWidgetPlacement, widgetsToLayout } from './dashboard-layout'
 
 const widgets: DashboardWidget[] = [
   {

@@ -3,11 +3,11 @@ import type { DashboardWidget } from '@/lib/widget-types'
 import { WIDGET_TYPES } from '@/lib/widget-types'
 
 export interface LayoutPatch {
-  id: string
   grid_h: number
   grid_w: number
   grid_x: number
   grid_y: number
+  id: string
 }
 
 const WIDGET_TYPE_MAP = new Map(WIDGET_TYPES.map((widget) => [widget.id, widget]))

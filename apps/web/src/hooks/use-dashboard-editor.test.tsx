@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 import type { DashboardWidget } from '@/lib/widget-types'
 import { useDashboardEditor } from './use-dashboard-editor'
 
+const TEMP_ID_PATTERN = /^temp-/
+
 const widgets: DashboardWidget[] = [
   {
     id: 'w-1',
@@ -36,9 +38,7 @@ describe('useDashboardEditor', () => {
     const { result } = renderHook(() => useDashboardEditor())
 
     act(() => result.current.startEditing(widgets))
-    act(() =>
-      result.current.commitLayoutPatch([{ id: 'w-1', grid_x: 4, grid_y: 1, grid_w: 3, grid_h: 2 }])
-    )
+    act(() => result.current.commitLayoutPatch([{ id: 'w-1', grid_x: 4, grid_y: 1, grid_w: 3, grid_h: 2 }]))
 
     expect(result.current.draftWidgets[0]).toMatchObject({
       title: 'CPU',
@@ -90,7 +90,7 @@ describe('useDashboardEditor', () => {
     expect(result.current.draftWidgets).toHaveLength(2)
     expect(result.current.draftWidgets[1]).toMatchObject({
       dashboard_id: 'dash-1',
-      id: expect.stringMatching(/^temp-/),
+      id: expect.stringMatching(TEMP_ID_PATTERN),
       widget_type: 'line-chart',
       title: 'Memory',
       config_json: '{"metric":"avg_mem"}',
