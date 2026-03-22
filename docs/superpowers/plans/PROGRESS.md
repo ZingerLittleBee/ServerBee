@@ -1,6 +1,6 @@
 # ServerBee 实现进度
 
-> 最后更新: 2026-03-21
+> 最后更新: 2026-03-23
 
 ## 总览
 
@@ -31,17 +31,18 @@
 | P9 | 服务监控 (Service Monitor) | **已完成** | 10 commits (`f02fd23`..`dcca19e`) |
 | P10 | 流量统计 (Traffic Statistics) | **已完成** | 3 commits (`846bd73`..`f28a696`) |
 | P11 | IP 变更通知 (IP Change Notification) | **已完成** | 8 tasks |
-| P12 | 磁盘 I/O 监控 (Disk I/O Monitoring) | **已完成（含本地构建修复）** | 1 (`1a6d1da`) |
+| P12 | 磁盘 I/O 监控 (Disk I/O Monitoring) | **已完成（含本地构建修复 + P19 跨平台）** | 1 (`1a6d1da`) |
 | P13 | 三网 Ping + Traceroute | **已完成** | 3 commits |
 | P14 | 多主题 + 品牌定制 | **已完成** | 2 commits |
 | P15 | 状态页增强 | **已完成** | 4 commits |
 | P16 | 移动端响应式 + PWA | **已完成** | 1 commit |
 | P17 | 自定义仪表盘 (Custom Dashboard) | **已完成** | 17 commits |
 | P18 | Uptime 90 天时间线 | **已完成** | 9 commits (`0034346`..`e1e4ae9`) |
+| P19 | 跨平台磁盘 I/O (Cross-Platform Disk I/O) | **已完成** | 3 commits (`a1996e1`..`a87ace7`) |
 
-**P0~P18 全部完成。**
-**自动化测试:** Rust (common 43 + agent 55 + server unit 223 + server integration 36 + docker 4) + 186 前端 vitest = 测试全部通过。
-**P18 新增测试:** Rust 5 新单元测试 (uptime get_daily_filled) + 3 新集成测试 (uptime-daily auth/404/data) + 14 新前端测试 (uptime-timeline 11 + widget-renderer 1 + config-dialog 1 + aggregate-uptime 1)。
+**P0~P19 全部完成。**
+**自动化测试:** Rust (common 43 + agent 56 + server unit 223 + server integration 36 + docker 4) + 186 前端 vitest = 测试全部通过。
+**P19 变更:** agent 56 tests（+1 mount-path key 单元测试，非 Linux 断言从 `is_none` → `Some(vec![])`）。
 
 ---
 
@@ -976,7 +977,7 @@ POST   /api/service-monitors/:id/check   手动触发检测
 | T10 | 测试与文档: Rust/Vitest/TESTING.md/PROGRESS.md 更新 | **done** |
 
 **新增/变更点:**
-- Agent 新增 `collector/disk_io.rs`，Linux 平台读取 `/proc/diskstats`，非 Linux 安全回退为 `None`
+- Agent 新增 `collector/disk_io.rs`，Linux 平台读取 `/proc/diskstats`，非 Linux 使用 sysinfo `Disk::usage()` + mount_point key（P19 实现）
 - 记录表使用 `disk_io_json` JSON 字段承载每块磁盘的读写速率，避免新增一对多表
 - 服务器详情页新增 Disk I/O 历史图表，支持 Merged / Per Disk 两种视图
 - 本期保持 historical-only，不扩展 WebSocket realtime `ServerStatus`
@@ -986,6 +987,26 @@ POST   /api/service-monitors/:id/check   手动触发检测
 - 前端构建修复：为 ping API 显式设置唯一 `operation_id`（`list_ping_tasks` / `update_ping_task` / `delete_ping_task`），并重新生成 `apps/web/openapi.json` 与 `apps/web/src/lib/api-types.ts`
 - agent-browser 手动 / E2E：DI1~DI10 全部通过；已验证 realtime 隐藏、historical 渲染、Merged/Per Disk、tooltip、缺失点补零、`0 B/s`、range 切换、`disk_io_json = null` 兼容、API JSON 解析与中文文案
 - 证据：截图保存在 `/tmp/serverbee-p12-manual-20260319/artifacts`
+
+### P19: 跨平台磁盘 I/O (Cross-Platform Disk I/O)
+
+**分支**: `kabul-v1`
+**Commits**: `a1996e1`..`a87ace7` (3 commits)
+**设计文档**: `docs/superpowers/specs/2026-03-22-cross-platform-disk-io-design.md`
+**实现计划**: `docs/superpowers/plans/2026-03-22-cross-platform-disk-io.md`
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | 添加 `compute_disk_io` mount-path key 单元测试 | **done** |
+| T2 | 实现 sysinfo fallback `read_disk_counters()` + 更新集成测试 | **done** |
+| T3 | 更新 TESTING.md | **done** |
+
+**新增/变更点:**
+- `read_disk_counters()` 非 Linux 分支从 `None` → sysinfo `Disk::usage()` 实现
+- 使用 `mount_point()` 作为 key（per-mount-path 语义，非 per-physical-disk）
+- 使用 `DiskRefreshKind::nothing().with_io_usage()` 仅刷新 I/O 数据
+- Linux `/proc/diskstats` 实现完全不变
+- 已知限制：macOS APFS 可能 overcount、Windows 多挂载路径可能重复
 
 ### P17: 自定义仪表盘 (Custom Dashboard)
 
