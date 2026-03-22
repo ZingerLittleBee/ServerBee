@@ -1,14 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute } from '@tanstack/react-router'
 import { Database, Download, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
-
-export const Route = createFileRoute('/_authed/settings/geoip')({
-  component: GeoIpPage
-})
 
 interface GeoIpStatus {
   file_size?: number
@@ -70,7 +65,7 @@ function DownloadButton({
   )
 }
 
-export function GeoIpPage() {
+export function GeoIpCard() {
   const queryClient = useQueryClient()
 
   const { data: status, isLoading } = useQuery<GeoIpStatus>({
@@ -94,50 +89,51 @@ export function GeoIpPage() {
   })
 
   return (
-    <div>
-      <h1 className="mb-6 font-bold text-2xl">GeoIP Database</h1>
-
-      <div className="max-w-2xl space-y-6">
-        <div className="rounded-lg border bg-card p-6">
-          {isLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-5 w-32" />
-              <Skeleton className="h-4 w-48" />
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <Database className="size-5 text-muted-foreground" />
-                {status && <StatusDetails status={status} />}
-              </div>
-
-              {status?.source !== 'custom' && (
-                <DownloadButton
-                  installed={status?.installed ?? false}
-                  isPending={downloadMutation.isPending}
-                  onDownload={() => downloadMutation.mutate()}
-                />
-              )}
-            </div>
-          )}
-        </div>
-
-        <p className="text-muted-foreground text-xs">
-          Data provided by{' '}
-          <a className="underline" href="https://db-ip.com" rel="noopener noreferrer" target="_blank">
-            DB-IP
-          </a>
-          , licensed under{' '}
-          <a
-            className="underline"
-            href="https://creativecommons.org/licenses/by/4.0/"
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            CC BY 4.0
-          </a>
+    <div className="space-y-4">
+      <div className="rounded-lg border bg-card p-6">
+        <h2 className="mb-1 font-semibold text-lg">GeoIP Database</h2>
+        <p className="mb-4 text-muted-foreground text-sm">
+          Download the GeoIP database to show server locations on the map
         </p>
+
+        {isLoading ? (
+          <div className="space-y-3">
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-4 w-48" />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <Database className="size-5 text-muted-foreground" />
+              {status && <StatusDetails status={status} />}
+            </div>
+
+            {status?.source !== 'custom' && (
+              <DownloadButton
+                installed={status?.installed ?? false}
+                isPending={downloadMutation.isPending}
+                onDownload={() => downloadMutation.mutate()}
+              />
+            )}
+          </div>
+        )}
       </div>
+
+      <p className="text-muted-foreground text-xs">
+        Data provided by{' '}
+        <a className="underline" href="https://db-ip.com" rel="noopener noreferrer" target="_blank">
+          DB-IP
+        </a>
+        , licensed under{' '}
+        <a
+          className="underline"
+          href="https://creativecommons.org/licenses/by/4.0/"
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          CC BY 4.0
+        </a>
+      </p>
     </div>
   )
 }

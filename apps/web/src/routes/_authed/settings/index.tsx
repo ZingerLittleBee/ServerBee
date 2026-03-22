@@ -64,6 +64,8 @@ function SettingsPage() {
             <Skeleton className="h-10 rounded-md" />
           )}
         </div>
+
+        <GeoIpCard />
       </div>
     </div>
   )

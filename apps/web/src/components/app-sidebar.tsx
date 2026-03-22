@@ -12,7 +12,6 @@ import {
   LayoutDashboard,
   List,
   LogOut,
-  MapPin,
   Monitor,
   Palette,
   Radar,
@@ -69,7 +68,6 @@ const settingsItems = [
   { to: '/settings/security', labelKey: 'nav_security', icon: Shield },
   { to: '/settings/appearance', labelKey: 'nav_appearance', icon: Palette },
   { to: '/settings/audit-logs', labelKey: 'nav_audit_logs', icon: ClipboardList, adminOnly: true },
-  { to: '/settings/geoip', labelKey: 'nav_geoip', icon: MapPin, adminOnly: true },
   { to: '/settings', labelKey: 'nav_settings', icon: Settings, adminOnly: true }
 ] as const
 
