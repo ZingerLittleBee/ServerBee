@@ -32,10 +32,23 @@ const widgets: DashboardWidget[] = [
 ]
 
 describe('dashboard-layout', () => {
-  it('widgetsToLayout adds min constraints from widget definitions', () => {
+  it('widgetsToLayout adds min and max constraints from widget definitions', () => {
     const layout = widgetsToLayout(widgets)
-    expect(layout[0]).toMatchObject({ i: 'w-1', x: 0, y: 0, w: 2, h: 2, minW: 2, minH: 2 })
+    expect(layout[0]).toMatchObject({ i: 'w-1', x: 0, y: 0, w: 2, h: 2, minW: 2, minH: 2, maxW: 4, maxH: 3 })
+    // server-cards has no maxW/maxH
     expect(layout[1]).toMatchObject({ i: 'w-2', x: 2, y: 0, w: 3, h: 6, minW: 4, minH: 3 })
+    expect(layout[1]).not.toHaveProperty('maxW')
+    expect(layout[1]).not.toHaveProperty('maxH')
+  })
+
+  it('widgetsToLayout marks widgets with is_static in config_json as static', () => {
+    const staticWidgets: DashboardWidget[] = [
+      { ...widgets[0], config_json: '{"metric":"avg_cpu","is_static":true}' },
+      { ...widgets[1] }
+    ]
+    const layout = widgetsToLayout(staticWidgets)
+    expect(layout[0].static).toBe(true)
+    expect(layout[1].static).toBeUndefined()
   })
 
   it('layoutToPatch only returns changed widgets', () => {

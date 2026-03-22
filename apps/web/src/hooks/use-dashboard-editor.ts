@@ -86,6 +86,21 @@ export function useDashboardEditor() {
     )
   }
 
+  function toggleWidgetStatic(id: string) {
+    setDraftWidgets((current) =>
+      current.map((widget) => {
+        if (widget.id !== id) {
+          return widget
+        }
+        const config = parseConfig<Record<string, unknown>>(widget.config_json)
+        const isStatic = config.is_static === true
+        const { is_static: _, ...rest } = config
+        const nextConfig = isStatic ? rest : { ...rest, is_static: true }
+        return { ...widget, config_json: JSON.stringify(nextConfig) }
+      })
+    )
+  }
+
   function buildSaveInput(): WidgetInput[] {
     return draftWidgets.map((widget) => ({
       id: widget.id.startsWith('temp-') ? undefined : widget.id,
@@ -115,6 +130,7 @@ export function useDashboardEditor() {
     isDirty,
     isEditing,
     startEditing,
+    toggleWidgetStatic,
     updateWidget
   }
 }

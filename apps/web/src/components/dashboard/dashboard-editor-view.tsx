@@ -192,6 +192,7 @@ export function DashboardEditorView({
           onLayoutChange={editor.commitLayoutPatch}
           onWidgetDelete={handleWidgetDelete}
           onWidgetEdit={handleWidgetEdit}
+          onWidgetToggleStatic={editor.toggleWidgetStatic}
           servers={servers}
           widgets={displayWidgets}
         />

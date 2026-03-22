@@ -154,6 +154,29 @@ describe('useDashboardEditor', () => {
     })
   })
 
+  it('toggleWidgetStatic sets is_static in config_json', () => {
+    const { result } = renderHook(() => useDashboardEditor())
+
+    act(() => result.current.startEditing(widgets))
+    act(() => result.current.toggleWidgetStatic('w-1'))
+
+    const config = JSON.parse(result.current.draftWidgets[0].config_json)
+    expect(config.is_static).toBe(true)
+    expect(config.metric).toBe('avg_cpu')
+  })
+
+  it('toggleWidgetStatic removes is_static when already set', () => {
+    const { result } = renderHook(() => useDashboardEditor())
+    const staticWidgets = [{ ...widgets[0], config_json: '{"metric":"avg_cpu","is_static":true}' }]
+
+    act(() => result.current.startEditing(staticWidgets))
+    act(() => result.current.toggleWidgetStatic('w-1'))
+
+    const config = JSON.parse(result.current.draftWidgets[0].config_json)
+    expect(config.is_static).toBeUndefined()
+    expect(config.metric).toBe('avg_cpu')
+  })
+
   it('buildSaveInput falls back to an empty config object for invalid JSON', () => {
     const { result } = renderHook(() => useDashboardEditor())
 
