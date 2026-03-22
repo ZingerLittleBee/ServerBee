@@ -80,7 +80,12 @@ Both endpoints require admin role.
 
 **Concurrent download guard**: `AtomicBool` on `AppState`, checked at endpoint entry. Prevents races from double-clicks or multiple admins.
 
-**Status endpoint**: Check file existence at data_dir path, `fs::metadata()` for size and mtime.
+**Status endpoint**: Reports the **currently effective** database, following the same priority as startup:
+1. If user override `mmdb_path` is loaded → `{ installed: true, source: "custom", ... }`
+2. Else if data_dir downloaded file is loaded → `{ installed: true, source: "downloaded", ... }`
+3. Else → `{ installed: false }`
+
+The `source` field lets the frontend distinguish: when `source: "custom"`, the Download/Update button can show "Using custom database" instead of prompting download. File size and mtime come from whichever file is active.
 
 ### Agent-Side Call Chain
 
@@ -110,7 +115,11 @@ let (region, country_code) = match ip {
 
 IP change handler follows the same pattern.
 
-**Stale data cleanup**: When GeoIP lookup returns `(None, None)` (private IP, lookup failure, or GeoIP not installed), the handler should **overwrite** the DB fields with `None` rather than preserving old values. This prevents stale country_code from persisting after an agent moves behind NAT or its IP changes to a private range. Concretely: remove the `if country_code.is_some()` / `if region.is_some()` guards in `ServerService::update_system_info()` — always write the resolved values, even if `None`.
+**Stale data cleanup**: Both paths must unconditionally write the resolved geo values, even when `None`:
+- `ServerService::update_system_info()`: Remove `if country_code.is_some()` / `if region.is_some()` guards — always `Set(region)` and `Set(country_code)`.
+- `update_server_geo()` (called from IpChanged handler): Remove the `if geo.region.is_some() || geo.country_code.is_some()` guard — always call `update_server_geo()` with the lookup result, including `(None, None)` on miss.
+
+This prevents stale country_code from persisting after an agent moves behind NAT or its IP changes to a private range.
 
 **Agent reporter.rs**: Keep the fix that populates `ipv4`/`ipv6` in SystemInfo before sending.
 
