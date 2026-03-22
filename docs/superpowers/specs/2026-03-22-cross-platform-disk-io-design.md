@@ -28,16 +28,24 @@ Replace the `#[cfg(not(target_os = "linux"))]` block (currently returns `None`) 
 ```rust
 #[cfg(not(target_os = "linux"))]
 {
-    use sysinfo::Disks;
-    use std::collections::HashSet;
+    use sysinfo::{DiskRefreshKind, Disks};
 
-    let disks = Disks::new_with_refreshed_list();
+    let disks = Disks::new_with_refreshed_list_specifics(
+        DiskRefreshKind::nothing().with_io_usage()
+    );
     let mut counters = HashMap::new();
-    let mut seen = HashSet::new();
 
     for disk in disks.list() {
-        let name = disk.name().to_string_lossy().to_string();
-        if !seen.insert(name.clone()) {
+        let name = if cfg!(target_os = "macos") {
+            // macOS: use name() for APFS dedup (same strategy as disk.rs)
+            disk.name().to_string_lossy().to_string()
+        } else {
+            // Windows/other: use mount_point to avoid merging distinct volumes with same label
+            disk.mount_point().to_string_lossy().to_string()
+        };
+
+        // On macOS, skip duplicate APFS volumes (same name = same underlying disk)
+        if counters.contains_key(&name) {
             continue;
         }
 
@@ -55,8 +63,8 @@ Replace the `#[cfg(not(target_os = "linux"))]` block (currently returns `None`) 
 **Key points:**
 
 - `total_read_bytes` / `total_written_bytes` are cumulative counters since boot, equivalent to Linux sector counts from `/proc/diskstats`.
-- `Disks::new_with_refreshed_list()` uses `DiskRefreshKind::everything()` which includes `io_usage: true`.
-- macOS APFS dedup via HashSet on `disk.name()` (same strategy as existing `disk.rs`).
+- Uses `DiskRefreshKind::nothing().with_io_usage()` to only refresh I/O data, skipping unnecessary storage/kind queries.
+- macOS uses `disk.name()` for APFS dedup (same strategy as existing `disk.rs`). Windows uses `mount_point()` to avoid merging distinct volumes with the same label.
 - Returns `Some(counters)` so `collect()` enters the rate calculation branch.
 - Existing `compute_disk_io()` handles rate computation — no changes needed.
 
@@ -64,11 +72,11 @@ Replace the `#[cfg(not(target_os = "linux"))]` block (currently returns `None`) 
 
 **File:** `crates/agent/src/collector/tests.rs`
 
-Update the non-Linux assertion from `is_none()` to `is_some()`:
+Update the non-Linux assertion to match the Linux test's precision — first sample returns `Some(vec![])`:
 
 ```rust
 #[cfg(not(target_os = "linux"))]
-assert!(report.disk_io.is_some());
+assert_eq!(report.disk_io, Some(vec![]));
 ```
 
 ## What does NOT change
