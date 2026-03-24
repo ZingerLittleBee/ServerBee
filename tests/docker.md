@@ -2,7 +2,7 @@
 
 ## 前置条件
 
-参照 [TESTING.md](../TESTING.md) 中的「启动本地环境」部分完成 Server + Agent 启动和登录。
+参照 [README.md](README.md) 中的「启动本地环境」部分完成 Server + Agent 启动和登录。
 
 Agent 所在主机需要安装 Docker 环境。
 

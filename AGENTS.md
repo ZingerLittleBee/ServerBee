@@ -111,9 +111,7 @@ This project uses **Ultracite** (Biome-based) for frontend linting and formattin
 
 ## Testing
 
-See `TESTING.md` for the full testing guide with commands, coverage tables, and manual verification checklist.
-
-**Keep `TESTING.md` in sync with code changes.** When adding/removing tests or testable features, update test counts, file locations, and the verification checklist to reflect the current codebase.
+E2E manual verification checklists are in `tests/` directory, organized by feature/page. See `tests/README.md` for the full index and local environment setup.
 
 ## Documentation
 
