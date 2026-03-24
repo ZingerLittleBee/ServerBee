@@ -56,10 +56,17 @@ const TIME_RANGES: TimeRangeOption[] = [
 
 const PROVIDER_KEYS = ['ct', 'cu', 'cm', 'international'] as const
 
+const PROVIDER_TO_KEY: Record<string, string> = {
+  Telecom: 'ct',
+  Unicom: 'cu',
+  Mobile: 'cm',
+  International: 'international'
+}
+
 function groupTargetsByProvider(targets: NetworkTargetSummary[]) {
   const groups: Record<string, NetworkTargetSummary[]> = {}
   for (const target of targets) {
-    const key = target.provider || 'unknown'
+    const key = PROVIDER_TO_KEY[target.provider] || target.provider || 'unknown'
     if (!groups[key]) {
       groups[key] = []
     }
