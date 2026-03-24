@@ -185,7 +185,7 @@ function NetworkOverviewPage() {
             className="pl-9"
             name="search"
             onChange={(e) => navigate({ search: { q: e.target.value } })}
-            placeholder="Search servers..."
+            placeholder={t('servers:search_placeholder')}
             type="text"
             value={search}
           />
