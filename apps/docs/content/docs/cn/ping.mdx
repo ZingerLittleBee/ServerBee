@@ -169,6 +169,10 @@ Server 在以下时机会向 Agent 同步探测任务：
 
 同步通过 `PingTasksSync` WebSocket 消息完成，Agent 收到后会更新本地的探测任务列表。
 
+## 界面反馈
+
+在 Web 控制台中，创建、删除、启用、禁用 Ping 任务都会根据当前语言显示对应的成功或失败提示。启用/禁用请求发送期间，切换按钮会暂时禁用，以减少误触发的重复提交。
+
 <Cards>
   <Card title="监控功能" href="/cn/docs/monitoring" />
   <Card title="告警与通知" href="/cn/docs/alerts" />

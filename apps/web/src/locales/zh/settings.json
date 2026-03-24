@@ -171,6 +171,13 @@
   "ping.success_rate": "成功率：{{rate}}%",
   "ping.avg_latency": "平均延迟：{{value}}ms",
   "ping.record_count": "{{count}} 条记录（24h）",
+  "ping.task_created": "Ping 任务已创建",
+  "ping.task_deleted": "Ping 任务已删除",
+  "ping.task_enabled": "Ping 任务已启用",
+  "ping.task_disabled": "Ping 任务已禁用",
+  "ping.task_create_failed": "创建 Ping 任务失败",
+  "ping.task_delete_failed": "删除 Ping 任务失败",
+  "ping.task_toggle_failed": "更新 Ping 任务失败",
 
   "tasks.title": "远程命令",
   "tasks.execute": "执行命令",

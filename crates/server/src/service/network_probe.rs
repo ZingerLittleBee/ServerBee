@@ -608,15 +608,19 @@ impl NetworkProbeService {
         // avoiding an N+1 query pattern (one query per target).
         let latest_records = Self::fetch_latest_records_for_server(db, server_id).await?;
 
-        // Build a lookup from target_id -> target info
-        let target_info: HashMap<String, &TargetDto> =
-            targets.iter().map(|t| (t.id.clone(), t)).collect();
+        // Build a lookup from target_id -> latest record
+        let record_by_target: HashMap<String, &LatestRecordRow> = latest_records
+            .iter()
+            .map(|r| (r.target_id.clone(), r))
+            .collect();
 
         let mut target_summaries = Vec::new();
         let mut last_probe_at: Option<DateTime<Utc>> = None;
 
-        for record in &latest_records {
-            if let Some(target) = target_info.get(&record.target_id) {
+        // Iterate over ALL configured targets so that newly-added targets
+        // (which have no probe records yet) still appear in the summary.
+        for target in &targets {
+            if let Some(record) = record_by_target.get(&target.id) {
                 // Track the most recent probe timestamp
                 match last_probe_at {
                     Some(existing) if record.timestamp > existing => {
@@ -637,6 +641,18 @@ impl NetworkProbeService {
                     max_latency: record.max_latency,
                     packet_loss: record.packet_loss,
                     availability: 1.0 - record.packet_loss,
+                });
+            } else {
+                // Target has no records yet — include with None latency values
+                target_summaries.push(TargetSummary {
+                    target_id: target.id.clone(),
+                    target_name: target.name.clone(),
+                    provider: target.provider.clone(),
+                    avg_latency: None,
+                    min_latency: None,
+                    max_latency: None,
+                    packet_loss: 0.0,
+                    availability: 0.0,
                 });
             }
         }
@@ -716,13 +732,21 @@ impl NetworkProbeService {
             let mut target_summaries = Vec::new();
             let mut last_probe_at: Option<DateTime<Utc>> = None;
 
-            if let Some(records) = records_by_server.get(server_id) {
-                for record in records {
-                    // Only include records for targets that are configured for this server
-                    if !valid_target_ids.contains(&record.target_id) {
-                        continue;
-                    }
+            // Build a lookup from target_id -> latest record for this server
+            let record_map: HashMap<&String, &LatestRecordRow> = records_by_server
+                .get(server_id)
+                .map(|rs| rs.iter().map(|r| (&r.target_id, r)).collect())
+                .unwrap_or_default();
 
+            // Iterate over ALL configured targets so that newly-added targets
+            // (which have no probe records yet) still appear in the overview.
+            for target_id in &valid_target_ids {
+                let (target_name, provider) = target_map
+                    .get(*target_id)
+                    .cloned()
+                    .unwrap_or_else(|| ((*target_id).clone(), String::new()));
+
+                if let Some(record) = record_map.get(*target_id) {
                     match last_probe_at {
                         Some(existing) if record.timestamp > existing => {
                             last_probe_at = Some(record.timestamp);
@@ -733,13 +757,8 @@ impl NetworkProbeService {
                         _ => {}
                     }
 
-                    let (target_name, provider) = target_map
-                        .get(&record.target_id)
-                        .cloned()
-                        .unwrap_or_else(|| (record.target_id.clone(), String::new()));
-
                     target_summaries.push(TargetSummary {
-                        target_id: record.target_id.clone(),
+                        target_id: (*target_id).clone(),
                         target_name,
                         provider,
                         avg_latency: record.avg_latency,
@@ -747,6 +766,17 @@ impl NetworkProbeService {
                         max_latency: record.max_latency,
                         packet_loss: record.packet_loss,
                         availability: 1.0 - record.packet_loss,
+                    });
+                } else {
+                    target_summaries.push(TargetSummary {
+                        target_id: (*target_id).clone(),
+                        target_name,
+                        provider,
+                        avg_latency: None,
+                        min_latency: None,
+                        max_latency: None,
+                        packet_loss: 0.0,
+                        availability: 0.0,
                     });
                 }
             }
