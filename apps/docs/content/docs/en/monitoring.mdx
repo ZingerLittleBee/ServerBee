@@ -197,6 +197,14 @@ The server detail page includes an uptime card with a 90-day timeline. Each day 
 
 Uptime data is queried via `GET /api/servers/{server_id}/uptime-daily?days=90`. The endpoint returns a `UptimeDailyEntry` per day with `date`, `online_minutes`, `total_minutes`, and `uptime_percent` fields. Missing dates are gap-filled with zero values.
 
+## Network Quality Views
+
+The `/network` overview and `/network/{server_id}` detail pages summarize configured probe targets for each server.
+
+- Newly assigned targets appear immediately, even before the first probe result is written
+- Targets without probe data render a no-data state instead of disappearing from the summary
+- The overview search box follows the active UI language
+
 ### Time Range Selector
 
 The time range bar offers these options:

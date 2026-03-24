@@ -114,6 +114,8 @@ make cargo-clippy      # Rust 代码检查
 make                   # 交互式菜单 (需要 fzf)
 ```
 
+手动浏览器验证清单索引见 `tests/README.md`。
+
 服务端启动时会打印完整的 auto-discovery key，复制后启动 Agent。
 
 > **说明**: `make dev-full` 启动带 HMR 的 Vite 开发服务器 (`http://localhost:5173`)，自动代理 `/api/*` 到 Rust 服务端 (`:9527`)。生产构建请使用 `make build` 然后 `make server-run`。
