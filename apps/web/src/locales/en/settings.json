@@ -171,6 +171,13 @@
   "ping.success_rate": "Success: {{rate}}%",
   "ping.avg_latency": "Avg Latency: {{value}}ms",
   "ping.record_count": "{{count}} records (24h)",
+  "ping.task_created": "Ping task created",
+  "ping.task_deleted": "Ping task deleted",
+  "ping.task_enabled": "Ping task enabled",
+  "ping.task_disabled": "Ping task disabled",
+  "ping.task_create_failed": "Failed to create ping task",
+  "ping.task_delete_failed": "Failed to delete ping task",
+  "ping.task_toggle_failed": "Failed to update ping task",
 
   "tasks.title": "Remote Commands",
   "tasks.execute": "Execute Command",

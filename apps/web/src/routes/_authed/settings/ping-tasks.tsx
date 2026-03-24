@@ -345,6 +345,7 @@ function PingTasksPage() {
                           <BarChart3 className="size-3.5" />
                         </Button>
                         <Button
+                          disabled={toggleMutation.isPending}
                           onClick={() =>
                             toggleMutation.mutate(
                               { id: task.id, enabled: !task.enabled },
