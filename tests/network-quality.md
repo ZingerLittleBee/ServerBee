@@ -2,6 +2,8 @@
 
 ## 前置条件
 
+> 通用环境搭建参照 [TESTING.md](../TESTING.md) 中的「启动本地环境」部分。以下为完整独立步骤：
+
 ```bash
 # 1. 构建并启动 Server
 cd apps/web && bun install && bun run build && cd ../..
