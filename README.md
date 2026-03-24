@@ -114,6 +114,8 @@ make cargo-clippy      # Lint Rust code
 make                   # Interactive menu (requires fzf)
 ```
 
+Manual browser verification checklists are indexed in `tests/README.md`.
+
 The server prints the full auto-discovery key on startup. Copy it to start the agent.
 
 > **Note**: `make dev-full` starts a Vite dev server with HMR at `http://localhost:5173` (proxies `/api/*` to the Rust server at `:9527`). For production builds, use `make build` then `make server-run`.

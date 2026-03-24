@@ -73,6 +73,10 @@ When you create or update a ping task, the server syncs it to the appropriate ag
 
 If an agent disconnects and reconnects, the server automatically re-syncs all assigned ping tasks.
 
+## UI Feedback
+
+In the web dashboard, ping task create/delete/enable/disable actions show localized success and error toasts in the current language. While an enable/disable request is in flight, the toggle button is temporarily disabled to reduce accidental double submissions.
+
 ## Assigning Tasks to Servers
 
 The `server_ids_json` field controls which agents execute the probe:
