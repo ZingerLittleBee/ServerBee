@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-03-25
+
+### Fixed
+
+- **Network quality target visibility** -- Network overview and detail summaries now include newly assigned probe targets before their first probe result arrives, rendering an empty state instead of omitting the target
+- **Network overview localization** -- The `/network` search field now uses the translated placeholder text instead of a hardcoded English string
+- **Ping task action feedback** -- Ping task create/delete/enable/disable flows now use localized success and error toasts in both English and Chinese, and the enable/disable button is disabled while an update is pending
+
+### Testing
+
+- **Manual verification index** -- Replaced the monolithic `TESTING.md` with `tests/README.md` plus feature-scoped browser verification checklists for auth, dashboard, network quality, ping tasks, Docker, traffic, uptime, and related pages
+
 ## [0.7.0] - 2026-03-23
 
 ### Added
