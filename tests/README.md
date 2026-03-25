@@ -44,12 +44,16 @@ docker compose up -d
 | [file-manager.md](file-manager.md) | 文件管理 | `/servers/:id` (Files) |
 | [service-monitor.md](service-monitor.md) | 服务监控 | `/settings/service-monitors`, `/service-monitors/:id` |
 | [scheduled-tasks.md](scheduled-tasks.md) | 定时任务 | `/settings/tasks` (Scheduled tab) |
+| [security.md](security.md) | 安全设置（密码、2FA、OAuth） | `/settings/security` |
 | [alerts-notifications.md](alerts-notifications.md) | 告警 & 通知 + IP 变更 | `/settings/alerts`, `/settings/notifications` |
 | [uptime.md](uptime.md) | Uptime 90 天时间线 | `/status/:slug`, `/servers/:id`, Dashboard widget |
+| [general-settings.md](general-settings.md) | 通用设置（Key、备份） | `/settings` |
 | [geoip.md](geoip.md) | GeoIP 数据库管理 | `/settings/geoip` |
 | [status-page.md](status-page.md) | 状态页增强 | `/status/:slug`, `/settings/status-pages` |
 | [appearance.md](appearance.md) | 主题、品牌、响应式 | `/settings/appearance` |
+| [audit-logs.md](audit-logs.md) | 审计日志 | `/settings/audit-logs` |
 | [i18n.md](i18n.md) | 国际化 | 全站 |
+| [terminal.md](terminal.md) | Web 终端 | `/terminal/:serverId` |
 | [performance.md](performance.md) | 前端性能测试 | `/servers/:id` (realtime) |
 
 ## 页面渲染快速验证
@@ -76,4 +80,4 @@ docker compose up -d
 | 远程命令 | `/settings/tasks` | ✅ |
 | 公共状态页 | `/status` | ✅ |
 | Swagger UI | `/swagger-ui/` | ✅ |
-| 终端 | `/terminal/:id` | — |
+| 终端 | `/terminal/:id` | ✅ |
