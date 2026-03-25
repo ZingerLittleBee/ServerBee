@@ -57,14 +57,16 @@ docker compose up -d
 | 功能 | 路由 | 状态 |
 |------|------|------|
 | 登录 | `/login` | ✅ |
-| Dashboard | `/` | — |
+| Dashboard | `/` | ✅ |
 | Servers 列表 | `/servers` | ✅ |
-| 服务器详情 | `/servers/:id` | — |
-| 网络质量总览 | `/network` | — |
-| 网络质量详情 | `/network/:id` | — |
+| 服务器详情 | `/servers/:id` | ✅ |
+| 网络质量总览 | `/network` | ✅ |
+| 网络质量详情 | `/network/:id` | ✅ |
 | Docker 监控 | `/servers/:id/docker` | — |
 | 流量总览 | `/traffic` | ✅ |
-| 服务监控 | `/settings/service-monitors` | ✅ |
+| 流量 Traffic Tab | `/servers/:id` (Traffic tab) | ✅ |
+| 服务监控列表 | `/settings/service-monitors` | ✅ |
+| 服务监控详情 | `/service-monitors/:id` | ✅ |
 | 用户管理 | `/settings/users` | ✅ |
 | 通知 | `/settings/notifications` | ✅ |
 | 告警 | `/settings/alerts` | ✅ |
@@ -73,5 +75,5 @@ docker compose up -d
 | 审计日志 | `/settings/audit-logs` | ✅ |
 | 远程命令 | `/settings/tasks` | ✅ |
 | 公共状态页 | `/status` | ✅ |
-| Swagger UI | `/swagger-ui/` | — |
+| Swagger UI | `/swagger-ui/` | ✅ |
 | 终端 | `/terminal/:id` | — |
