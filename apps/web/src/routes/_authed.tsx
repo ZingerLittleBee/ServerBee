@@ -94,7 +94,6 @@ const ADMIN_ONLY_ROUTES = [
   '/settings/notifications',
   '/settings/alerts',
   '/settings/tasks',
-  '/settings/ping-tasks',
   '/settings/audit-logs',
   '/settings/users',
   '/settings/capabilities'
