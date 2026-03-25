@@ -12,13 +12,13 @@ Agent 需配置 `root_paths`（如 `SERVERBEE_FILE__ROOT_PATHS=/home,/tmp`）。
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| F1 | 能力开关（启用） | Server Detail → 启用 File Manager capability | Files 按钮出现 | — |
-| F2 | 能力开关（禁用） | 关闭 CAP_FILE | Files 按钮消失，直接调 API 返回 403 | — |
-| F3 | 文件浏览 | 点击 Files | 显示 root_paths 下文件列表（名称/大小/权限/修改时间） | — |
-| F4 | 目录导航（进入） | 点击文件夹 | 进入子目录，面包屑导航更新 | — |
-| F5 | 目录导航（返回） | 点击面包屑段落 / 点击 `..` | 跳转到对应层级 / 返回上级 | — |
-| F6 | 空目录显示 | 进入空目录 | 显示 "Empty directory" 占位文字 | — |
-| F7 | 目录排序 | 查看文件列表 | 目录排在前面，同类按名称字母排序 | — |
+| F1 | 能力开关（启用） | Server Detail → 启用 File Manager capability | Files 按钮出现 | ✅ |
+| F2 | 能力开关（禁用） | 关闭 CAP_FILE | Files 按钮消失，直接调 API 返回 403 | ✅ |
+| F3 | 文件浏览 | 点击 Files | 显示 root_paths 下文件列表（名称/大小/权限/修改时间） | ✅ |
+| F4 | 目录导航（进入） | 点击文件夹 | 进入子目录，面包屑导航更新 | ✅ |
+| F5 | 目录导航（返回） | 点击面包屑段落 / 点击 `..` | 跳转到对应层级 / 返回上级 | ✅ |
+| F6 | 空目录显示 | 进入空目录 | 显示 "Empty directory" 占位文字 | ✅ |
+| F7 | 目录排序 | 查看文件列表 | 目录排在前面，同类按名称字母排序 | ✅ |
 
 ---
 
@@ -26,13 +26,13 @@ Agent 需配置 `root_paths`（如 `SERVERBEE_FILE__ROOT_PATHS=/home,/tmp`）。
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| F8 | 文本文件查看 | 点击 .yaml/.json/.sh 文件 | Monaco Editor 显示内容 + 语法高亮正确 | — |
-| F9 | 语法高亮映射 | 分别打开 .yaml/.json/.ts/.py/.rs/.toml/.sh/.go | 语言标识正确 | — |
-| F10 | 文件编辑保存（Ctrl+S） | 编辑文本 → Ctrl+S | toast 提示 "File saved" → 重新打开验证 | — |
-| F11 | 文件编辑保存（按钮） | 编辑文本 → 点击 Save 按钮 | 保存成功 | — |
+| F8 | 文本文件查看 | 点击 .yaml/.json/.sh 文件 | Monaco Editor 显示内容 + 语法高亮正确 | ✅ |
+| F9 | 语法高亮映射 | 分别打开 .yaml/.json/.ts/.py/.rs/.toml/.sh/.go | 语言标识正确 | ✅ |
+| F10 | 文件编辑保存（Ctrl+S） | 编辑文本 → Ctrl+S | toast 提示 "File saved" → 重新打开验证 | ✅ |
+| F11 | 文件编辑保存（按钮） | 编辑文本 → 点击 Save 按钮 | 保存成功 | ✅ |
 | F12 | 保存冲突检测 | 编辑文件 → 另一端修改同文件 → 保存 | 弹出 "File modified externally, overwrite?" | — |
-| F13 | 大文件不预览 | 点击 >384KB 的文件 | 显示文件信息 + Download 按钮（不加载编辑器） | — |
-| F14 | Monaco 主题同步 | 切换深色/浅色主题 | Monaco Editor 主题跟随变化 | — |
+| F13 | 大文件不预览 | 点击 >384KB 的文件 | 显示文件信息 + Download 按钮（不加载编辑器） | ✅ |
+| F14 | Monaco 主题同步 | 切换深色/浅色主题 | Monaco Editor 主题跟随变化 | ✅ |
 
 ---
 
@@ -40,11 +40,11 @@ Agent 需配置 `root_paths`（如 `SERVERBEE_FILE__ROOT_PATHS=/home,/tmp`）。
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| F15 | 新建目录 | 点击 New Folder → 输入名称 → 创建 | 列表显示新目录 | — |
-| F16 | 文件删除 | 右键 → Delete → 确认对话框 → 确认 | 文件从列表消失 | — |
-| F17 | 目录删除（递归） | 右键非空目录 → Delete → 确认 | 目录及其内容全部删除 | — |
-| F18 | 文件重命名 | 右键 → Rename → 输入新名称 | 文件名更新 | — |
-| F19 | 复制路径 | 右键 → Copy Path | 剪贴板包含完整路径 | — |
+| F15 | 新建目录 | 点击 New Folder → 输入名称 → 创建 | 列表显示新目录 | ✅ |
+| F16 | 文件删除 | 右键 → Delete → 确认对话框 → 确认 | 文件从列表消失 | ✅ |
+| F17 | 目录删除（递归） | 右键非空目录 → Delete → 确认 | 目录及其内容全部删除 | ✅ |
+| F18 | 文件重命名 | 右键 → Rename → 输入新名称 | 文件名更新 | ✅ |
+| F19 | 复制路径 | 右键 → Copy Path | 剪贴板包含完整路径 | ✅ |
 
 ---
 
@@ -52,12 +52,12 @@ Agent 需配置 `root_paths`（如 `SERVERBEE_FILE__ROOT_PATHS=/home,/tmp`）。
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| F20 | 文件上传（选择） | 点击 Upload → 选择文件 → 上传 | 上传成功，列表显示新文件 | — |
+| F20 | 文件上传（选择） | 点击 Upload → 选择文件 → 上传 | 上传成功，列表显示新文件 | ✅ |
 | F21 | 文件上传（拖拽） | 拖拽文件到上传区域 | 上传成功 | — |
-| F22 | 文件下载 | 右键 → Download | 浏览器开始下载，transfer bar 显示进度 | — |
+| F22 | 文件下载 | 右键 → Download | 浏览器开始下载，transfer bar 显示进度 | ✅ |
 | F23 | 大文件传输进度 | 上传/下载 >10MB 文件 | transfer bar 显示进度百分比和字节数 | — |
 | F24 | 取消传输 | 传输进行中 → 点击取消按钮 | 传输停止 | — |
-| F25 | 传输列表 | GET /api/files/transfers | 返回当前所有传输状态 | — |
+| F25 | 传输列表 | GET /api/files/transfers | 返回当前所有传输状态 | ✅ |
 
 ---
 
@@ -65,14 +65,14 @@ Agent 需配置 `root_paths`（如 `SERVERBEE_FILE__ROOT_PATHS=/home,/tmp`）。
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| F26 | 路径沙箱 | Agent 配置 root_paths=["/home"] → 尝试访问 /etc | 被拒绝 "path outside allowed roots" | — |
-| F27 | 路径穿越防护 | 尝试访问 `/home/../../etc/passwd` | canonicalize 后被拒绝 | — |
-| F28 | deny_patterns 拦截 | 尝试读取 .env / *.key / *.pem / id_rsa / shadow | Agent 拒绝 "file type blocked" | — |
-| F29 | 空 root_paths 全拒绝 | Agent 配置 root_paths=[] | 所有文件操作被拒绝 | — |
+| F26 | 路径沙箱 | Agent 配置 root_paths=["/home"] → 尝试访问 /etc | 被拒绝 "path outside allowed roots" | ✅ |
+| F27 | 路径穿越防护 | 尝试访问 `/home/../../etc/passwd` | canonicalize 后被拒绝 | ✅ |
+| F28 | deny_patterns 拦截 | 尝试读取 .env / *.key / *.pem / id_rsa / shadow | Agent 拒绝 "file type blocked" | ✅ |
+| F29 | 空 root_paths 全拒绝 | Agent 配置 root_paths=[] | 所有文件操作被拒绝 | ✅ |
 | F30 | Member 用户只读 | member 角色 | 可浏览/读取，写入/删除/创建返回 403 | — |
-| F31 | 审计日志记录 | 执行 write/delete/upload/download | 审计日志出现对应 file_* 记录 | — |
-| F32 | 离线服务器 | Agent 离线 → 文件操作 | 返回 404 "Server offline" | — |
-| F33 | 并发传输限制 | 同时发起 4 个下载 | 第 4 个返回 429 "Too many concurrent transfers" | — |
+| F31 | 审计日志记录 | 执行 write/delete/upload/download | 审计日志出现对应 file_* 记录 | ✅ |
+| F32 | 离线服务器 | Agent 离线 → 文件操作 | 返回 404 "Server offline" | ✅ |
+| F33 | 并发传输限制 | 同时发起 4 个下载 | 第 4 个返回 429 "Too many concurrent transfers" | ✅ |
 
 ---
 
@@ -80,6 +80,6 @@ Agent 需配置 `root_paths`（如 `SERVERBEE_FILE__ROOT_PATHS=/home,/tmp`）。
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| F34 | 中文模式 | 切换中文 | 文件管理页面标题/按钮/对话框/toast 全部显示中文 | — |
-| F35 | 英文模式 | 切换英文 | 所有 UI 元素显示英文 | — |
-| F36 | 传输状态标签 | 查看传输状态 | pending/in_progress/ready/failed 显示正确的本地化文本 | — |
+| F34 | 中文模式 | 切换中文 | 文件管理页面标题/按钮/对话框/toast 全部显示中文 | ✅ |
+| F35 | 英文模式 | 切换英文 | 所有 UI 元素显示英文 | ✅ |
+| F36 | 传输状态标签 | 查看传输状态 | pending/in_progress/ready/failed 显示正确的本地化文本 | ✅ |
