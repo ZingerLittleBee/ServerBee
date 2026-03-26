@@ -527,6 +527,7 @@ impl Reporter {
             ServerMessage::Upgrade {
                 version,
                 download_url,
+                sha256: _,
             } => {
                 let caps = capabilities.load(Ordering::SeqCst);
                 if !has_capability(caps, CAP_UPGRADE) {
