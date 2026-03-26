@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use dashmap::DashMap;
@@ -52,9 +52,22 @@ pub struct AppState {
     pub alert_state_manager: AlertStateManager,
 }
 
+static RATE_CHECK_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Remove entries older than `window_minutes` from the DashMap.
+fn cleanup_expired_entries(map: &DashMap<String, RateLimitEntry>, window_minutes: i64) {
+    let cutoff = chrono::Utc::now() - chrono::Duration::minutes(window_minutes);
+    map.retain(|_, entry| entry.window_start > cutoff);
+}
+
 impl AppState {
     /// Check rate limit against a given DashMap. Returns true if allowed.
     fn check_rate(map: &DashMap<String, RateLimitEntry>, ip: &str, max: u32) -> bool {
+        let count = RATE_CHECK_COUNTER.fetch_add(1, Ordering::Relaxed);
+        if count.is_multiple_of(100) {
+            cleanup_expired_entries(map, 15);
+        }
+
         let now = chrono::Utc::now();
         let window = chrono::Duration::minutes(15);
 
@@ -145,5 +158,33 @@ impl AppState {
             task_scheduler,
             alert_state_manager,
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expired_entries_are_cleaned() {
+        let map: DashMap<String, RateLimitEntry> = DashMap::new();
+        map.insert(
+            "old_ip".to_string(),
+            RateLimitEntry {
+                count: 5,
+                window_start: chrono::Utc::now() - chrono::Duration::minutes(20),
+            },
+        );
+        map.insert(
+            "new_ip".to_string(),
+            RateLimitEntry {
+                count: 1,
+                window_start: chrono::Utc::now(),
+            },
+        );
+
+        cleanup_expired_entries(&map, 15);
+        assert!(!map.contains_key("old_ip"));
+        assert!(map.contains_key("new_ip"));
     }
 }

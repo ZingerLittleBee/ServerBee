@@ -61,6 +61,8 @@ pub struct AgentConnection {
     pub last_report_at: Instant,
     pub remote_addr: SocketAddr,
     pub protocol_version: u32,
+    pub os: String,
+    pub arch: String,
 }
 
 #[allow(dead_code)]
@@ -106,6 +108,8 @@ impl AgentManager {
                 last_report_at: now,
                 remote_addr,
                 protocol_version: 1,
+                os: String::new(),
+                arch: String::new(),
             },
         );
 
@@ -276,6 +280,17 @@ impl AgentManager {
 
     pub fn get_protocol_version(&self, server_id: &str) -> Option<u32> {
         self.connections.get(server_id).map(|c| c.protocol_version)
+    }
+
+    pub fn update_agent_platform(&self, server_id: &str, os: String, arch: String) {
+        if let Some(mut conn) = self.connections.get_mut(server_id) {
+            conn.os = os;
+            conn.arch = arch;
+        }
+    }
+
+    pub fn get_agent_platform(&self, server_id: &str) -> Option<(String, String)> {
+        self.connections.get(server_id).map(|c| (c.os.clone(), c.arch.clone()))
     }
 
     pub fn broadcast_browser(&self, msg: BrowserMessage) {

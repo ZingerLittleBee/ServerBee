@@ -2017,6 +2017,9 @@ name = "ipnet"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d98f6fed1fde3f8c21bc40a1abb88dd75e67924f9cffc3ef95607bad8017f8e2"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "ipnetwork"
@@ -3870,7 +3873,7 @@ dependencies = [
 
 [[package]]
 name = "serverbee-agent"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3900,7 +3903,7 @@ dependencies = [
 
 [[package]]
 name = "serverbee-common"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "chrono",
  "serde",
@@ -3911,7 +3914,7 @@ dependencies = [
 
 [[package]]
 name = "serverbee-server"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "argon2",
@@ -3926,6 +3929,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "hickory-resolver",
+ "ipnet",
  "lettre",
  "maxminddb",
  "mime_guess",

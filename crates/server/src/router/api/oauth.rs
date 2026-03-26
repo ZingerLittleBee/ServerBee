@@ -1,11 +1,14 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::header::SET_COOKIE;
 use axum::http::HeaderMap;
 use axum::response::Redirect;
 use axum::routing::get;
 use axum::Router;
+
+use crate::router::utils::extract_client_ip;
 use chrono::Utc;
 use oauth2::reqwest::async_http_client;
 use oauth2::{AuthorizationCode, CsrfToken, Scope, TokenResponse};
@@ -132,6 +135,7 @@ pub async fn oauth_authorize(
 )]
 pub async fn oauth_callback(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(provider): Path<String>,
     Query(query): Query<CallbackQuery>,
     headers: HeaderMap,
@@ -184,11 +188,12 @@ pub async fn oauth_callback(
     .await?;
 
     // Extract real IP and user-agent from request headers
-    let ip = headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.split(',').next().unwrap_or("unknown").trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
     let user_agent = headers
         .get("user-agent")
         .and_then(|v| v.to_str().ok())

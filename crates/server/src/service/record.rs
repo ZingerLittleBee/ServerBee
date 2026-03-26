@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use chrono::{DateTime, Duration, Utc};
-use sea_orm::*;
+use chrono::{DateTime, Duration, DurationRound, SecondsFormat, Utc};
+use sea_orm::{Statement, *};
 
 use crate::entity::{gpu_record, record, record_hourly};
 use crate::error::AppError;
@@ -196,115 +196,113 @@ impl RecordService {
         Ok(records)
     }
 
-    /// Aggregate records from the last hour into hourly averages per server.
+    /// Aggregate records from the previous completed hour bucket into hourly averages per server.
+    /// Time is truncated to the hour boundary (e.g. at 14:37, aggregates 13:00–14:00).
+    /// Uses SQL AVG/MAX pushed to SQLite and an ON CONFLICT upsert for idempotency.
+    /// disk_io_json is aggregated in Rust due to per-device JSON parsing requirements.
     pub async fn aggregate_hourly(db: &DatabaseConnection) -> Result<u64, AppError> {
         let now = Utc::now();
-        let one_hour_ago = now - Duration::hours(1);
+        let hour = now
+            .duration_trunc(chrono::Duration::hours(1))
+            .map_err(|e| AppError::Internal(format!("Time truncation failed: {e}")))?;
+        let hour_start = hour - chrono::Duration::hours(1);
+        let hour_end = hour;
 
-        // Get distinct server IDs with records in the last hour
-        let records = record::Entity::find()
-            .filter(record::Column::Time.gte(one_hour_ago))
-            .filter(record::Column::Time.lt(now))
-            .all(db)
+        // Use RFC3339 format matching sqlx's DateTimeUtc storage format (AutoSi, no Z suffix)
+        let hour_start_str = hour_start.to_rfc3339_opts(SecondsFormat::AutoSi, false);
+        let hour_end_str = hour_end.to_rfc3339_opts(SecondsFormat::AutoSi, false);
+
+        // SQL aggregation for numeric columns with upsert
+        let sql = "INSERT INTO records_hourly \
+            (server_id, time, cpu, mem_used, swap_used, disk_used, \
+             net_in_speed, net_out_speed, net_in_transfer, net_out_transfer, \
+             load1, load5, load15, tcp_conn, udp_conn, process_count, \
+             temperature, gpu_usage) \
+            SELECT \
+                server_id, \
+                ?, \
+                AVG(cpu), \
+                CAST(AVG(mem_used) AS INTEGER), \
+                CAST(AVG(swap_used) AS INTEGER), \
+                CAST(AVG(disk_used) AS INTEGER), \
+                CAST(AVG(net_in_speed) AS INTEGER), \
+                CAST(AVG(net_out_speed) AS INTEGER), \
+                CAST(MAX(net_in_transfer) AS INTEGER), \
+                CAST(MAX(net_out_transfer) AS INTEGER), \
+                AVG(load1), \
+                AVG(load5), \
+                AVG(load15), \
+                CAST(AVG(tcp_conn) AS INTEGER), \
+                CAST(AVG(udp_conn) AS INTEGER), \
+                CAST(AVG(process_count) AS INTEGER), \
+                AVG(temperature), \
+                AVG(gpu_usage) \
+            FROM records \
+            WHERE time >= ? AND time < ? \
+            GROUP BY server_id \
+            ON CONFLICT(server_id, time) DO UPDATE SET \
+                cpu = excluded.cpu, \
+                mem_used = excluded.mem_used, \
+                swap_used = excluded.swap_used, \
+                disk_used = excluded.disk_used, \
+                net_in_speed = excluded.net_in_speed, \
+                net_out_speed = excluded.net_out_speed, \
+                net_in_transfer = excluded.net_in_transfer, \
+                net_out_transfer = excluded.net_out_transfer, \
+                load1 = excluded.load1, \
+                load5 = excluded.load5, \
+                load15 = excluded.load15, \
+                tcp_conn = excluded.tcp_conn, \
+                udp_conn = excluded.udp_conn, \
+                process_count = excluded.process_count, \
+                temperature = excluded.temperature, \
+                gpu_usage = excluded.gpu_usage";
+
+        let result = db
+            .execute(Statement::from_sql_and_values(
+                db.get_database_backend(),
+                sql,
+                [
+                    hour_start_str.clone().into(),
+                    hour_start_str.clone().into(),
+                    hour_end_str.into(),
+                ],
+            ))
             .await?;
 
-        if records.is_empty() {
+        let rows_affected = result.rows_affected();
+
+        if rows_affected == 0 {
             return Ok(0);
         }
 
-        // Group records by server_id
+        // disk_io_json: Rust-side aggregation (per-device grouping)
+        let records = record::Entity::find()
+            .filter(record::Column::Time.gte(hour_start))
+            .filter(record::Column::Time.lt(hour_end))
+            .all(db)
+            .await?;
+
         let mut grouped: HashMap<String, Vec<&record::Model>> = HashMap::new();
         for r in &records {
             grouped.entry(r.server_id.clone()).or_default().push(r);
         }
 
-        let mut inserted = 0u64;
-
         for (server_id, server_records) in &grouped {
-            let count = server_records.len() as f64;
-
-            let avg_cpu = server_records.iter().map(|r| r.cpu).sum::<f64>() / count;
-            let avg_mem = (server_records.iter().map(|r| r.mem_used).sum::<i64>() as f64 / count)
-                as i64;
-            let avg_swap = (server_records.iter().map(|r| r.swap_used).sum::<i64>() as f64 / count)
-                as i64;
-            let avg_disk = (server_records.iter().map(|r| r.disk_used).sum::<i64>() as f64 / count)
-                as i64;
-            let avg_net_in_speed =
-                (server_records.iter().map(|r| r.net_in_speed).sum::<i64>() as f64 / count) as i64;
-            let avg_net_out_speed =
-                (server_records.iter().map(|r| r.net_out_speed).sum::<i64>() as f64 / count)
-                    as i64;
-            let avg_net_in_transfer =
-                (server_records.iter().map(|r| r.net_in_transfer).sum::<i64>() as f64 / count)
-                    as i64;
-            let avg_net_out_transfer =
-                (server_records.iter().map(|r| r.net_out_transfer).sum::<i64>() as f64 / count)
-                    as i64;
-            let avg_load1 = server_records.iter().map(|r| r.load1).sum::<f64>() / count;
-            let avg_load5 = server_records.iter().map(|r| r.load5).sum::<f64>() / count;
-            let avg_load15 = server_records.iter().map(|r| r.load15).sum::<f64>() / count;
-            let avg_tcp =
-                (server_records.iter().map(|r| r.tcp_conn as i64).sum::<i64>() as f64 / count)
-                    as i32;
-            let avg_udp =
-                (server_records.iter().map(|r| r.udp_conn as i64).sum::<i64>() as f64 / count)
-                    as i32;
-            let avg_process = (server_records
-                .iter()
-                .map(|r| r.process_count as i64)
-                .sum::<i64>() as f64
-                / count) as i32;
-
-            let temps: Vec<f64> = server_records
-                .iter()
-                .filter_map(|r| r.temperature)
-                .collect();
-            let avg_temp = if temps.is_empty() {
-                None
-            } else {
-                Some(temps.iter().sum::<f64>() / temps.len() as f64)
-            };
-
-            let gpus: Vec<f64> = server_records
-                .iter()
-                .filter_map(|r| r.gpu_usage)
-                .collect();
-            let avg_gpu = if gpus.is_empty() {
-                None
-            } else {
-                Some(gpus.iter().sum::<f64>() / gpus.len() as f64)
-            };
             let disk_io_json = aggregate_disk_io(server_records)?;
-
-            let hourly = record_hourly::ActiveModel {
-                id: NotSet,
-                server_id: Set(server_id.clone()),
-                time: Set(one_hour_ago),
-                cpu: Set(avg_cpu),
-                mem_used: Set(avg_mem),
-                swap_used: Set(avg_swap),
-                disk_used: Set(avg_disk),
-                net_in_speed: Set(avg_net_in_speed),
-                net_out_speed: Set(avg_net_out_speed),
-                net_in_transfer: Set(avg_net_in_transfer),
-                net_out_transfer: Set(avg_net_out_transfer),
-                load1: Set(avg_load1),
-                load5: Set(avg_load5),
-                load15: Set(avg_load15),
-                tcp_conn: Set(avg_tcp),
-                udp_conn: Set(avg_udp),
-                process_count: Set(avg_process),
-                temperature: Set(avg_temp),
-                gpu_usage: Set(avg_gpu),
-                disk_io_json: Set(disk_io_json),
+            let json_value: sea_orm::Value = match disk_io_json {
+                Some(s) => s.into(),
+                None => sea_orm::Value::String(None),
             };
-
-            hourly.insert(db).await?;
-            inserted += 1;
+            db.execute(Statement::from_sql_and_values(
+                db.get_database_backend(),
+                "UPDATE records_hourly SET disk_io_json = ? WHERE server_id = ? AND time = ?",
+                [json_value, server_id.clone().into(), hour_start_str.clone().into()],
+            ))
+            .await?;
         }
 
-        Ok(inserted)
+        Ok(rows_affected)
     }
 
     /// Clean up expired records from a table with a `time` column.
@@ -495,50 +493,99 @@ mod tests {
         let (db, _tmp) = setup_test_db().await;
         insert_test_server(&db, "srv-rec-disk-2").await;
 
-        let first = SystemReport {
-            disk_io: Some(vec![
-                DiskIo {
-                    name: "sdb".to_string(),
-                    read_bytes_per_sec: 100,
-                    write_bytes_per_sec: 300,
-                },
-                DiskIo {
-                    name: "sda".to_string(),
-                    read_bytes_per_sec: 400,
-                    write_bytes_per_sec: 800,
-                },
-            ]),
-            ..Default::default()
-        };
-        let second = SystemReport {
-            disk_io: Some(vec![
-                DiskIo {
-                    name: "sda".to_string(),
-                    read_bytes_per_sec: 600,
-                    write_bytes_per_sec: 1000,
-                },
-                DiskIo {
-                    name: "sdb".to_string(),
-                    read_bytes_per_sec: 300,
-                    write_bytes_per_sec: 500,
-                },
-            ]),
-            ..Default::default()
-        };
+        // Compute the previous completed hour bucket so records fall within [hour_start, hour_end)
+        let now = Utc::now();
+        let hour = now
+            .duration_trunc(chrono::Duration::hours(1))
+            .expect("duration_trunc should succeed");
+        let hour_start = hour - chrono::Duration::hours(1);
+        // Place records 30 minutes into the previous hour
+        let record_time = hour_start + chrono::Duration::minutes(30);
 
-        RecordService::save_report(&db, "srv-rec-disk-2", &first)
-            .await
-            .expect("first save_report should succeed");
-        RecordService::save_report(&db, "srv-rec-disk-2", &second)
-            .await
-            .expect("second save_report should succeed");
+        let first_disk_io = serde_json::to_string(&vec![
+            DiskIo {
+                name: "sdb".to_string(),
+                read_bytes_per_sec: 100,
+                write_bytes_per_sec: 300,
+            },
+            DiskIo {
+                name: "sda".to_string(),
+                read_bytes_per_sec: 400,
+                write_bytes_per_sec: 800,
+            },
+        ])
+        .unwrap();
+        let second_disk_io = serde_json::to_string(&vec![
+            DiskIo {
+                name: "sda".to_string(),
+                read_bytes_per_sec: 600,
+                write_bytes_per_sec: 1000,
+            },
+            DiskIo {
+                name: "sdb".to_string(),
+                read_bytes_per_sec: 300,
+                write_bytes_per_sec: 500,
+            },
+        ])
+        .unwrap();
+
+        record::ActiveModel {
+            id: NotSet,
+            server_id: Set("srv-rec-disk-2".to_string()),
+            time: Set(record_time),
+            cpu: Set(0.0),
+            mem_used: Set(0),
+            swap_used: Set(0),
+            disk_used: Set(0),
+            net_in_speed: Set(0),
+            net_out_speed: Set(0),
+            net_in_transfer: Set(0),
+            net_out_transfer: Set(0),
+            load1: Set(0.0),
+            load5: Set(0.0),
+            load15: Set(0.0),
+            tcp_conn: Set(0),
+            udp_conn: Set(0),
+            process_count: Set(0),
+            temperature: Set(None),
+            gpu_usage: Set(None),
+            disk_io_json: Set(Some(first_disk_io)),
+        }
+        .insert(&db)
+        .await
+        .expect("first record insert should succeed");
+
+        record::ActiveModel {
+            id: NotSet,
+            server_id: Set("srv-rec-disk-2".to_string()),
+            time: Set(record_time),
+            cpu: Set(0.0),
+            mem_used: Set(0),
+            swap_used: Set(0),
+            disk_used: Set(0),
+            net_in_speed: Set(0),
+            net_out_speed: Set(0),
+            net_in_transfer: Set(0),
+            net_out_transfer: Set(0),
+            load1: Set(0.0),
+            load5: Set(0.0),
+            load15: Set(0.0),
+            tcp_conn: Set(0),
+            udp_conn: Set(0),
+            process_count: Set(0),
+            temperature: Set(None),
+            gpu_usage: Set(None),
+            disk_io_json: Set(Some(second_disk_io)),
+        }
+        .insert(&db)
+        .await
+        .expect("second record insert should succeed");
 
         let aggregated = RecordService::aggregate_hourly(&db)
             .await
             .expect("aggregate_hourly should succeed");
         assert_eq!(aggregated, 1);
 
-        let now = Utc::now();
         let from = now - Duration::hours(2);
         let result = RecordService::query_history(&db, "srv-rec-disk-2", from, now, "hourly")
             .await
@@ -684,4 +731,5 @@ mod tests {
         };
         assert_eq!(avg_no_temp, None, "all-None should produce None average");
     }
+
 }

@@ -24,6 +24,7 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
         server: ServerConfig {
             listen: "127.0.0.1:0".to_string(),
             data_dir: data_dir.clone(),
+            trusted_proxies: Vec::new(),
         },
         database: DatabaseConfig {
             path: "test.db".to_string(),

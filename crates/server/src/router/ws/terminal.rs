@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 
 use crate::service::agent_manager::TerminalSessionEvent;
 use crate::state::AppState;
-use serverbee_common::constants::TERMINAL_IDLE_TIMEOUT_SECS;
+use serverbee_common::constants::{MAX_WS_MESSAGE_SIZE, TERMINAL_IDLE_TIMEOUT_SECS};
 use serverbee_common::protocol::ServerMessage;
 
 pub fn router() -> Router<Arc<AppState>> {
@@ -59,7 +59,8 @@ async fn terminal_ws_handler(
                     return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
                 }
             }
-            ws.on_upgrade(move |socket| handle_terminal_ws(socket, state, server_id))
+            ws.max_message_size(MAX_WS_MESSAGE_SIZE)
+                .on_upgrade(move |socket| handle_terminal_ws(socket, state, server_id))
         }
         None => axum::http::StatusCode::UNAUTHORIZED.into_response(),
     }
