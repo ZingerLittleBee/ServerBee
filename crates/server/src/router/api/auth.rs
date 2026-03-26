@@ -1,12 +1,15 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::{Extension, Path, State};
+use axum::extract::{ConnectInfo, Extension, Path, State};
 use axum::http::header::SET_COOKIE;
 use axum::http::HeaderMap;
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use sea_orm::EntityTrait;
 use serde::{Deserialize, Serialize};
+
+use crate::router::utils::extract_client_ip;
 
 use crate::error::{ok, ApiResponse, AppError};
 use crate::middleware::auth::CurrentUser;
@@ -116,6 +119,7 @@ pub fn protected_router() -> Router<Arc<AppState>> {
 )]
 pub async fn login(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     req_headers: HeaderMap,
     Json(body): Json<LoginRequest>,
 ) -> Result<(HeaderMap, Json<ApiResponse<LoginResponse>>), AppError> {
@@ -125,7 +129,12 @@ pub async fn login(
         ));
     }
 
-    let ip = extract_client_ip(&req_headers);
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &req_headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
     let user_agent = extract_user_agent(&req_headers);
 
     // Rate limiting
@@ -355,6 +364,7 @@ pub async fn delete_api_key(
 )]
 pub async fn change_password(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Extension(current_user): Extension<CurrentUser>,
     req_headers: HeaderMap,
     Json(body): Json<ChangePasswordRequest>,
@@ -373,7 +383,12 @@ pub async fn change_password(
     )
     .await?;
 
-    let ip = extract_client_ip(&req_headers);
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &req_headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
     let _ = AuditService::log(
         &state.db,
         &current_user.user_id,
@@ -432,6 +447,7 @@ pub async fn totp_setup(
 )]
 pub async fn totp_enable(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Extension(current_user): Extension<CurrentUser>,
     req_headers: HeaderMap,
     Json(body): Json<TotpVerifyRequest>,
@@ -468,7 +484,12 @@ pub async fn totp_enable(
 
     AuthService::enable_2fa(&state.db, &current_user.user_id, &pending_totp.secret).await?;
 
-    let ip = extract_client_ip(&req_headers);
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &req_headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
     let _ = AuditService::log(
         &state.db,
         &current_user.user_id,
@@ -494,6 +515,7 @@ pub async fn totp_enable(
 )]
 pub async fn totp_disable(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Extension(current_user): Extension<CurrentUser>,
     req_headers: HeaderMap,
     Json(body): Json<TotpDisableRequest>,
@@ -512,7 +534,12 @@ pub async fn totp_disable(
 
     AuthService::disable_2fa(&state.db, &current_user.user_id).await?;
 
-    let ip = extract_client_ip(&req_headers);
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &req_headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
     let _ = AuditService::log(
         &state.db,
         &current_user.user_id,
@@ -589,21 +616,6 @@ pub async fn unlink_oauth_account(
 }
 
 // ── Helpers ──
-
-/// Extract the client IP from request headers (X-Forwarded-For, X-Real-IP, or fallback).
-fn extract_client_ip(headers: &HeaderMap) -> String {
-    headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.split(',').next().unwrap_or("unknown").trim().to_string())
-        .or_else(|| {
-            headers
-                .get("x-real-ip")
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_else(|| "unknown".to_string())
-}
 
 /// Extract the User-Agent from request headers.
 fn extract_user_agent(headers: &HeaderMap) -> String {

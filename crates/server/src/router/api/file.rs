@@ -1,12 +1,15 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
 use axum::body::Body;
-use axum::extract::{Extension, Multipart, Path, State};
+use axum::extract::{ConnectInfo, Extension, Multipart, Path, State};
 use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
+
+use crate::router::utils::extract_client_ip;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{ok, ApiResponse, AppError};
@@ -127,20 +130,6 @@ pub fn write_router() -> Router<Arc<AppState>> {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-fn extract_client_ip(headers: &HeaderMap) -> String {
-    headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.split(',').next().unwrap_or("unknown").trim().to_string())
-        .or_else(|| {
-            headers
-                .get("x-real-ip")
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_else(|| "unknown".to_string())
-}
 
 /// Map agent-side error messages to the appropriate HTTP error type.
 fn agent_error(msg: String) -> AppError {
@@ -446,6 +435,7 @@ async fn list_transfers(
 )]
 async fn write_file(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Extension(current_user): Extension<CurrentUser>,
     headers: HeaderMap,
     Path(server_id): Path<String>,
@@ -486,7 +476,12 @@ async fn write_file(
     };
 
     // Audit log (fire-and-forget)
-    let ip = extract_client_ip(&headers);
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
     let detail = serde_json::json!({
         "server_id": server_id,
         "path": body.path,
@@ -520,6 +515,7 @@ async fn write_file(
 )]
 async fn delete_file(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Extension(current_user): Extension<CurrentUser>,
     headers: HeaderMap,
     Path(server_id): Path<String>,
@@ -559,7 +555,12 @@ async fn delete_file(
         )),
     };
 
-    let ip = extract_client_ip(&headers);
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
     let detail = serde_json::json!({
         "server_id": server_id,
         "path": body.path,
@@ -594,6 +595,7 @@ async fn delete_file(
 )]
 async fn mkdir(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Extension(current_user): Extension<CurrentUser>,
     headers: HeaderMap,
     Path(server_id): Path<String>,
@@ -632,7 +634,12 @@ async fn mkdir(
         )),
     };
 
-    let ip = extract_client_ip(&headers);
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
     let detail = serde_json::json!({
         "server_id": server_id,
         "path": body.path,
@@ -666,6 +673,7 @@ async fn mkdir(
 )]
 async fn move_file(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Extension(current_user): Extension<CurrentUser>,
     headers: HeaderMap,
     Path(server_id): Path<String>,
@@ -705,7 +713,12 @@ async fn move_file(
         )),
     };
 
-    let ip = extract_client_ip(&headers);
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
     let detail = serde_json::json!({
         "server_id": server_id,
         "from": body.from,
@@ -740,6 +753,7 @@ async fn move_file(
 )]
 async fn start_download(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Extension(current_user): Extension<CurrentUser>,
     headers: HeaderMap,
     Path(server_id): Path<String>,
@@ -773,7 +787,12 @@ async fn start_download(
             AppError::Internal("Failed to send to agent".into())
         })?;
 
-    let ip = extract_client_ip(&headers);
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
     let detail = serde_json::json!({
         "server_id": server_id,
         "path": body.path,
@@ -812,6 +831,7 @@ async fn start_download(
 )]
 async fn upload_file(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Extension(current_user): Extension<CurrentUser>,
     headers: HeaderMap,
     Path(server_id): Path<String>,
@@ -1067,7 +1087,12 @@ async fn upload_file(
     // Cleanup transfer entry since upload is done
     state.file_transfers.remove(&transfer_id);
 
-    let ip = extract_client_ip(&headers);
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
     let detail = serde_json::json!({
         "server_id": server_id,
         "path": remote_path,
