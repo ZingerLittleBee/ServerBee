@@ -32,13 +32,22 @@ export function useTerminalWs(serverId: string) {
     }
 
     ws.onmessage = (event) => {
-      const msg: TerminalMessage = JSON.parse(event.data as string)
+      let msg: TerminalMessage
+      try {
+        msg = JSON.parse(event.data as string)
+      } catch {
+        console.warn('Terminal WS: invalid JSON', event.data)
+        return
+      }
       switch (msg.type) {
         case 'output':
-          if (msg.data && onDataRef.current) {
-            // Decode base64 to binary string
-            const decoded = atob(msg.data)
-            onDataRef.current(decoded)
+          if (typeof msg.data === 'string' && onDataRef.current) {
+            try {
+              const decoded = atob(msg.data)
+              onDataRef.current(decoded)
+            } catch {
+              console.warn('Terminal WS: invalid base64 data')
+            }
           }
           break
         case 'started':
