@@ -533,7 +533,7 @@ impl Reporter {
             ServerMessage::Upgrade {
                 version,
                 download_url,
-                sha256: _,
+                sha256,
             } => {
                 let caps = capabilities.load(Ordering::SeqCst);
                 if !has_capability(caps, CAP_UPGRADE) {
@@ -549,7 +549,7 @@ impl Reporter {
                 }
                 tracing::info!("Upgrade requested: v{version} from {download_url}");
                 tokio::spawn(async move {
-                    if let Err(e) = perform_upgrade(&version, &download_url).await {
+                    if let Err(e) = perform_upgrade(&version, &download_url, &sha256).await {
                         tracing::error!("Upgrade to v{version} failed: {e}");
                     }
                 });
@@ -1583,16 +1583,23 @@ async fn fetch_external_ip(url: &str) -> anyhow::Result<String> {
 }
 
 /// Download a new agent binary, verify checksum, replace current binary, and restart.
-async fn perform_upgrade(version: &str, download_url: &str) -> anyhow::Result<()> {
+async fn perform_upgrade(version: &str, download_url: &str, sha256: &str) -> anyhow::Result<()> {
     use sha2::{Digest, Sha256};
     use std::io::Write;
+
+    // Validate URL scheme
+    if !download_url.starts_with("https://") {
+        anyhow::bail!("Upgrade URL must use HTTPS, got: {download_url}");
+    }
 
     let current_exe = std::env::current_exe()?;
     let tmp_path = current_exe.with_extension("new");
     let backup_path = current_exe.with_extension("bak");
 
-    tracing::info!("Downloading agent v{version}...");
-    let client = reqwest::Client::new();
+    tracing::info!("Downloading agent v{version} from {download_url}...");
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(600)) // 10 minute timeout
+        .build()?;
     let response = client
         .get(download_url)
         .header("User-Agent", "ServerBee-Agent")
@@ -1603,26 +1610,17 @@ async fn perform_upgrade(version: &str, download_url: &str) -> anyhow::Result<()
         anyhow::bail!("Download failed with status {}", response.status());
     }
 
-    // Extract expected checksum from header if present
-    let expected_checksum = response
-        .headers()
-        .get("x-checksum-sha256")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-
     let bytes = response.bytes().await?;
     tracing::info!("Downloaded {} bytes", bytes.len());
 
-    // Verify checksum if provided
-    if let Some(expected) = &expected_checksum {
-        let mut hasher = Sha256::new();
-        hasher.update(&bytes);
-        let actual = format!("{:x}", hasher.finalize());
-        if actual != *expected {
-            anyhow::bail!("Checksum mismatch: expected {expected}, got {actual}");
-        }
-        tracing::info!("Checksum verified");
+    // Mandatory SHA-256 verification
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    let actual = format!("{:x}", hasher.finalize());
+    if actual != sha256 {
+        anyhow::bail!("Checksum mismatch: expected {sha256}, got {actual}");
     }
+    tracing::info!("Checksum verified");
 
     // Write to temporary file
     {
@@ -1647,7 +1645,6 @@ async fn perform_upgrade(version: &str, download_url: &str) -> anyhow::Result<()
 
     tracing::info!("Agent binary replaced. Restarting...");
 
-    // Restart: exec the new binary with the same args
     let args: Vec<String> = std::env::args().collect();
     let mut cmd = std::process::Command::new(&current_exe);
     if args.len() > 1 {
@@ -1655,6 +1652,5 @@ async fn perform_upgrade(version: &str, download_url: &str) -> anyhow::Result<()
     }
     cmd.spawn()?;
 
-    // Exit current process
     std::process::exit(0);
 }
