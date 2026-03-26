@@ -471,6 +471,7 @@ async fn trigger_upgrade(
     let msg = ServerMessage::Upgrade {
         version: body.version,
         download_url: body.download_url,
+        sha256: String::new(), // Temporary - will be properly implemented in Task 11
     };
     sender
         .send(msg)

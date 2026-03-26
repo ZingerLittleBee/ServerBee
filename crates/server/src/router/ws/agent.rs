@@ -353,6 +353,13 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 .agent_manager
                 .set_protocol_version(server_id, agent_pv);
 
+            // Store os/arch for upgrade platform mapping
+            state.agent_manager.update_agent_platform(
+                server_id,
+                info.os.clone(),
+                info.cpu_arch.clone(),
+            );
+
             // Broadcast to browsers
             state
                 .agent_manager
