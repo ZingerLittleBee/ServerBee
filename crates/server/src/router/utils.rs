@@ -10,8 +10,7 @@ use ipnet::IpNet;
 /// - If `trusted_proxies` is empty, return the TCP source IP directly (XFF ignored).
 /// - If the TCP source IP is in `trusted_proxies`, walk `X-Forwarded-For` right-to-left
 ///   to find the first IP that is NOT in the trusted set.
-/// - If no XFF header, or all IPs in the chain are trusted, fall back to `X-Real-IP`.
-/// - If everything fails, return the TCP source IP.
+/// - If no XFF header, or all IPs in the chain are trusted, return the TCP source IP.
 ///
 /// This prevents spoofing: an untrusted client cannot forge XFF to bypass rate limiting.
 pub fn extract_client_ip(
@@ -45,16 +44,10 @@ pub fn extract_client_ip(
         }
     }
 
-    // Fall back to X-Real-IP if present.
-    if let Some(real_ip) = headers
-        .get("x-real-ip")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.trim().parse::<IpAddr>().ok())
-    {
-        return real_ip;
-    }
-
-    // All else fails — return TCP source IP.
+    // XFF didn't yield a non-trusted IP — return TCP source.
+    // We intentionally do NOT fall back to X-Real-IP here: if the reverse proxy
+    // merely forwards (rather than overwrites) client-supplied X-Real-IP, an
+    // attacker behind a trusted proxy could still spoof it.
     tcp_ip
 }
 
@@ -119,7 +112,7 @@ mod tests {
         let proxies = vec![make_cidr("10.0.0.0/8")];
         // Both IPs are in the 10.x.x.x trusted range.
         let headers = headers_with_xff("10.0.0.5, 10.0.0.1");
-        // No X-Real-IP fallback either — returns TCP source.
+        // All XFF entries trusted — returns TCP source.
         let ip = extract_client_ip(&ci, &headers, &proxies);
         assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)));
     }

@@ -13,18 +13,22 @@ impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
 
-        // Step 1: Deduplicate existing data
+        // Step 1: Deduplicate existing data.
+        // Existing time values are RFC3339: 'YYYY-MM-DDTHH:MM:SS+00:00'
+        // substr(time,1,13) extracts 'YYYY-MM-DDTHH' as the hour bucket key.
         db.execute_unprepared(
             "DELETE FROM records_hourly WHERE id NOT IN (
                 SELECT MAX(id) FROM records_hourly
-                GROUP BY server_id, strftime('%Y-%m-%d %H:00:00', time)
+                GROUP BY server_id, substr(time, 1, 13)
             )",
         )
         .await?;
 
-        // Step 2: Align existing timestamps to hour boundaries
+        // Step 2: Truncate existing timestamps to hour boundary in RFC3339 format.
+        // 'YYYY-MM-DDTHH:MM:SS+00:00' → 'YYYY-MM-DDTHH:00:00+00:00'
+        // This matches sqlx/sea-orm's DateTimeUtc storage format.
         db.execute_unprepared(
-            "UPDATE records_hourly SET time = strftime('%Y-%m-%d %H:00:00', time)",
+            "UPDATE records_hourly SET time = substr(time, 1, 13) || ':00:00+00:00'",
         )
         .await?;
 
