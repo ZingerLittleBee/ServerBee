@@ -39,10 +39,8 @@ pub fn extract_client_ip(
         // Walk the comma-separated list from right to left.
         for part in xff.split(',').rev() {
             let trimmed = part.trim();
-            if let Ok(ip) = trimmed.parse::<IpAddr>() {
-                if !is_trusted(ip, trusted_proxies) {
-                    return ip;
-                }
+            if let Ok(ip) = trimmed.parse::<IpAddr>() && !is_trusted(ip, trusted_proxies) {
+                return ip;
             }
         }
     }

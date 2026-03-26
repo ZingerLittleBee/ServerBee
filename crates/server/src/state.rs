@@ -64,7 +64,7 @@ impl AppState {
     /// Check rate limit against a given DashMap. Returns true if allowed.
     fn check_rate(map: &DashMap<String, RateLimitEntry>, ip: &str, max: u32) -> bool {
         let count = RATE_CHECK_COUNTER.fetch_add(1, Ordering::Relaxed);
-        if count % 100 == 0 {
+        if count.is_multiple_of(100) {
             cleanup_expired_entries(map, 15);
         }
 
