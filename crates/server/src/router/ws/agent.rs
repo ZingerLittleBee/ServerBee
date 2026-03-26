@@ -31,12 +31,11 @@ pub struct OptionalWsQuery {
 
 fn extract_agent_token(headers: &HeaderMap, query: &OptionalWsQuery) -> Option<String> {
     // Prefer Authorization header
-    if let Some(auth) = headers.get("authorization") {
-        if let Ok(val) = auth.to_str() {
-            if let Some(token) = val.strip_prefix("Bearer ") {
-                return Some(token.to_string());
-            }
-        }
+    if let Some(auth) = headers.get("authorization")
+        && let Ok(val) = auth.to_str()
+        && let Some(token) = val.strip_prefix("Bearer ")
+    {
+        return Some(token.to_string());
     }
     // Fallback to query param (deprecated)
     if let Some(ref token) = query.token {
