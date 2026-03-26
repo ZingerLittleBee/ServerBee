@@ -19,6 +19,7 @@ use crate::service::ping::PingService;
 use crate::service::record::RecordService;
 use crate::service::server::ServerService;
 use crate::state::AppState;
+use serverbee_common::constants::MAX_WS_MESSAGE_SIZE;
 use serverbee_common::protocol::{AgentMessage, BrowserMessage, ServerMessage};
 use serverbee_common::types::NetworkProbeTarget as NetworkProbeTargetDto;
 
@@ -60,16 +61,17 @@ async fn agent_ws_handler(
     let server_capabilities = server.capabilities;
     tracing::info!("Agent WS upgrading for server {server_id} ({server_name}) from {addr}");
 
-    ws.on_upgrade(move |socket| {
-        handle_agent_ws(
-            socket,
-            state,
-            server_id,
-            server_name,
-            server_capabilities,
-            addr,
-        )
-    })
+    ws.max_message_size(MAX_WS_MESSAGE_SIZE)
+        .on_upgrade(move |socket| {
+            handle_agent_ws(
+                socket,
+                state,
+                server_id,
+                server_name,
+                server_capabilities,
+                addr,
+            )
+        })
 }
 
 async fn handle_agent_ws(
