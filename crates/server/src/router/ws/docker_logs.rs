@@ -11,7 +11,7 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 
 use crate::state::AppState;
-use serverbee_common::constants::{has_capability, CAP_DOCKER};
+use serverbee_common::constants::{has_capability, CAP_DOCKER, MAX_WS_MESSAGE_SIZE};
 use serverbee_common::protocol::ServerMessage;
 
 pub fn router() -> Router<Arc<AppState>> {
@@ -51,7 +51,8 @@ async fn docker_logs_ws_handler(
                     return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
                 }
             }
-            ws.on_upgrade(move |socket| handle_docker_logs_ws(socket, state, server_id))
+            ws.max_message_size(MAX_WS_MESSAGE_SIZE)
+                .on_upgrade(move |socket| handle_docker_logs_ws(socket, state, server_id))
         }
         None => axum::http::StatusCode::UNAUTHORIZED.into_response(),
     }

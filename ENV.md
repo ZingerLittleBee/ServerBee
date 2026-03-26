@@ -14,6 +14,7 @@ Example: TOML `admin.password` → env var `SERVERBEE_ADMIN__PASSWORD`
 |---------------------|----------|------|---------|-------------|
 | `SERVERBEE_SERVER__LISTEN` | `server.listen` | string | `0.0.0.0:9527` | Listen address and port |
 | `SERVERBEE_SERVER__DATA_DIR` | `server.data_dir` | string | `./data` | Data directory for SQLite and backups |
+| `SERVERBEE_SERVER__TRUSTED_PROXIES` | `server.trusted_proxies` | string[] | `[]` | CIDR list of trusted reverse proxies (e.g. `["127.0.0.1/32", "10.0.0.0/8"]`) |
 
 ### Database (`database.*`)
 
@@ -93,6 +94,12 @@ Example: TOML `admin.password` → env var `SERVERBEE_ADMIN__PASSWORD`
 |---------------------|----------|------|---------|-------------|
 | `SERVERBEE_LOG__LEVEL` | `log.level` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `SERVERBEE_LOG__FILE` | `log.file` | string | `""` | Log file path. Empty means stdout only |
+
+### Upgrade (`upgrade.*`)
+
+| Environment Variable | TOML Key | Type | Default | Description |
+|---------------------|----------|------|---------|-------------|
+| `SERVERBEE_UPGRADE__RELEASE_BASE_URL` | `upgrade.release_base_url` | string | `https://github.com/ZingerLittleBee/ServerBee/releases` | Base URL for agent upgrade release assets |
 
 ## Agent
 

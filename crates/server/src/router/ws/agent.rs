@@ -5,6 +5,7 @@ use std::time::Duration;
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, Query, State};
+use axum::http::HeaderMap;
 use axum::response::Response;
 use axum::routing::get;
 use futures_util::{SinkExt, StreamExt};
@@ -19,12 +20,29 @@ use crate::service::ping::PingService;
 use crate::service::record::RecordService;
 use crate::service::server::ServerService;
 use crate::state::AppState;
+use serverbee_common::constants::MAX_WS_MESSAGE_SIZE;
 use serverbee_common::protocol::{AgentMessage, BrowserMessage, ServerMessage};
 use serverbee_common::types::NetworkProbeTarget as NetworkProbeTargetDto;
 
 #[derive(Debug, Deserialize)]
-pub struct WsQuery {
-    token: String,
+pub struct OptionalWsQuery {
+    token: Option<String>,
+}
+
+fn extract_agent_token(headers: &HeaderMap, query: &OptionalWsQuery) -> Option<String> {
+    // Prefer Authorization header
+    if let Some(auth) = headers.get("authorization")
+        && let Ok(val) = auth.to_str()
+        && let Some(token) = val.strip_prefix("Bearer ")
+    {
+        return Some(token.to_string());
+    }
+    // Fallback to query param (deprecated)
+    if let Some(ref token) = query.token {
+        tracing::warn!("Agent using deprecated query param token — please upgrade agent");
+        return Some(token.clone());
+    }
+    None
 }
 
 pub fn router() -> Router<Arc<AppState>> {
@@ -33,12 +51,24 @@ pub fn router() -> Router<Arc<AppState>> {
 
 async fn agent_ws_handler(
     State(state): State<Arc<AppState>>,
-    Query(query): Query<WsQuery>,
+    Query(query): Query<OptionalWsQuery>,
+    headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     ws: WebSocketUpgrade,
 ) -> Response {
+    // Extract agent token from Authorization header or query param
+    let token = match extract_agent_token(&headers, &query) {
+        Some(t) => t,
+        None => {
+            return Response::builder()
+                .status(401)
+                .body("Unauthorized".into())
+                .unwrap();
+        }
+    };
+
     // Validate agent token
-    let server = match AuthService::validate_agent_token(&state.db, &query.token).await {
+    let server = match AuthService::validate_agent_token(&state.db, &token).await {
         Ok(Some(server)) => server,
         Ok(None) => {
             return Response::builder()
@@ -60,16 +90,17 @@ async fn agent_ws_handler(
     let server_capabilities = server.capabilities;
     tracing::info!("Agent WS upgrading for server {server_id} ({server_name}) from {addr}");
 
-    ws.on_upgrade(move |socket| {
-        handle_agent_ws(
-            socket,
-            state,
-            server_id,
-            server_name,
-            server_capabilities,
-            addr,
-        )
-    })
+    ws.max_message_size(MAX_WS_MESSAGE_SIZE)
+        .on_upgrade(move |socket| {
+            handle_agent_ws(
+                socket,
+                state,
+                server_id,
+                server_name,
+                server_capabilities,
+                addr,
+            )
+        })
 }
 
 async fn handle_agent_ws(
@@ -350,6 +381,13 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             state
                 .agent_manager
                 .set_protocol_version(server_id, agent_pv);
+
+            // Store os/arch for upgrade platform mapping
+            state.agent_manager.update_agent_platform(
+                server_id,
+                info.os.clone(),
+                info.cpu_arch.clone(),
+            );
 
             // Broadcast to browsers
             state

@@ -18,7 +18,7 @@ chrono-tz.workspace = true
 
 axum = { version = "0.8", features = ["ws", "macros", "multipart"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
+tower-http = { version = "0.6", features = ["trace", "fs"] }
 sea-orm = { version = "1", features = ["sqlx-sqlite", "runtime-tokio-rustls", "macros"] }
 sea-orm-migration = { version = "1", features = ["sqlx-sqlite", "runtime-tokio-rustls"] }
 argon2 = "0.5"
@@ -49,6 +49,7 @@ tokio-rustls = "0.26"
 rustls = "0.23"
 webpki-roots = "1"
 sha2 = "0.10"
+ipnet = { version = "2", features = ["serde"] }
 
 [dev-dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "cookies"] }

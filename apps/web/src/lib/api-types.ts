@@ -343,6 +343,38 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/brand/favicon': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['serve_favicon']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/brand/logo': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['serve_logo']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/dashboards': {
     parameters: {
       query?: never
@@ -583,6 +615,86 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/incidents': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_incidents']
+    put?: never
+    post: operations['create_incident']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/incidents/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['update_incident']
+    post?: never
+    delete: operations['delete_incident']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/incidents/{id}/updates': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['add_incident_update']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/maintenances': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_maintenances']
+    put?: never
+    post: operations['create_maintenance']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/maintenances/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['update_maintenance']
+    post?: never
+    delete: operations['delete_maintenance']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/notification-groups': {
     parameters: {
       query?: never
@@ -807,6 +919,40 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/servers/{id}/traceroute': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Trigger a traceroute to a target from the specified server's agent. */
+    post: operations['trigger_traceroute']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/{id}/traceroute/{request_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Poll for the result of a previously triggered traceroute. */
+    get: operations['get_traceroute_result']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/servers/{id}/traffic': {
     parameters: {
       query?: never
@@ -833,6 +979,22 @@ export interface paths {
     get?: never
     put?: never
     post: operations['trigger_upgrade']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/{server_id}/uptime-daily': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_uptime_daily']
+    put?: never
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -984,6 +1146,54 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/settings/brand': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_brand_config']
+    put: operations['update_brand_config']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/brand/favicon': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['upload_favicon']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/brand/logo': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['upload_logo']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/settings/restore': {
     parameters: {
       query?: never
@@ -1013,6 +1223,54 @@ export interface paths {
       cookie?: never
     }
     get: operations['public_status']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/status-pages': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_status_pages']
+    put?: never
+    post: operations['create_status_page']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/status-pages/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['update_status_page']
+    post?: never
+    delete: operations['delete_status_page']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/status/{slug}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_public_status_page']
     put?: never
     post?: never
     delete?: never
@@ -1287,6 +1545,18 @@ export interface components {
         traffic_limit?: number | null
       }[]
     }
+    ApiResponse_Vec_UptimeDailyEntry: {
+      data: {
+        /** Format: date */
+        date: string
+        /** Format: int32 */
+        downtime_incidents: number
+        /** Format: int32 */
+        online_minutes: number
+        /** Format: int32 */
+        total_minutes: number
+      }[]
+    }
     AuditListResponse: {
       entries: components['schemas']['AuditLogEntry'][]
       /** Format: int64 */
@@ -1322,6 +1592,12 @@ export interface components {
       /** Format: int64 */
       deleted: number
     }
+    BrandConfig: {
+      favicon_path?: string | null
+      footer_text?: string | null
+      logo_path?: string | null
+      site_title?: string | null
+    }
     ChangePasswordRequest: {
       new_password: string
       old_password: string
@@ -1343,6 +1619,28 @@ export interface components {
     }
     CreateGroupRequest: {
       name: string
+    }
+    CreateIncident: {
+      server_ids_json?: string[] | null
+      severity?: string
+      status?: string
+      status_page_ids_json?: string[] | null
+      title: string
+    }
+    CreateIncidentUpdate: {
+      message: string
+      status: string
+    }
+    CreateMaintenance: {
+      active?: boolean | null
+      description?: string | null
+      /** Format: date-time */
+      end_at: string
+      server_ids_json?: string[] | null
+      /** Format: date-time */
+      start_at: string
+      status_page_ids_json?: string[] | null
+      title: string
     }
     CreateNotification: {
       config_json: unknown
@@ -1375,6 +1673,20 @@ export interface components {
       retry_count?: number
       server_ids_json?: string[] | null
       target: string
+    }
+    CreateStatusPage: {
+      custom_css?: string | null
+      description?: string | null
+      enabled?: boolean | null
+      group_by_server_group?: boolean | null
+      server_ids_json: string[]
+      show_values?: boolean | null
+      slug: string
+      title: string
+      /** Format: double */
+      uptime_red_threshold?: number | null
+      /** Format: double */
+      uptime_yellow_threshold?: number | null
     }
     CreateTaskRequest: {
       command: string
@@ -1475,6 +1787,31 @@ export interface components {
       bytes_out: number
       hour: string
     }
+    Incident: {
+      /** Format: date-time */
+      created_at: string
+      id: string
+      /** Format: date-time */
+      resolved_at?: string | null
+      server_ids_json?: string | null
+      severity: string
+      status: string
+      status_page_ids_json?: string | null
+      title: string
+      /** Format: date-time */
+      updated_at: string
+    }
+    IncidentUpdate: {
+      /** Format: date-time */
+      created_at: string
+      id: string
+      incident_id: string
+      message: string
+      status: string
+    }
+    IncidentWithUpdates: components['schemas']['Incident'] & {
+      updates: components['schemas']['IncidentUpdate'][]
+    }
     ListFilesRequest: {
       path: string
     }
@@ -1491,6 +1828,22 @@ export interface components {
       role: string
       user_id: string
       username: string
+    }
+    Maintenance: {
+      active: boolean
+      /** Format: date-time */
+      created_at: string
+      description?: string | null
+      /** Format: date-time */
+      end_at: string
+      id: string
+      server_ids_json?: string | null
+      /** Format: date-time */
+      start_at: string
+      status_page_ids_json?: string | null
+      title: string
+      /** Format: date-time */
+      updated_at: string
     }
     MeResponse: {
       must_change_password: boolean
@@ -1578,6 +1931,13 @@ export interface components {
       probe_type: string
       server_ids_json: string
       target: string
+    }
+    PublicStatusPageData: {
+      active_incidents: components['schemas']['IncidentWithUpdates'][]
+      page: components['schemas']['StatusPageInfo']
+      planned_maintenances: components['schemas']['Maintenance'][]
+      recent_incidents: components['schemas']['IncidentWithUpdates'][]
+      servers: components['schemas']['ServerStatusInfo'][]
     }
     ReadRequest: {
       path: string
@@ -1726,6 +2086,20 @@ export interface components {
       /** Format: int32 */
       weight: number
     }
+    ServerStatusInfo: {
+      country_code?: string | null
+      group_id?: string | null
+      group_name?: string | null
+      in_maintenance: boolean
+      online: boolean
+      os?: string | null
+      region?: string | null
+      server_id: string
+      server_name: string
+      uptime_daily: components['schemas']['UptimeDailyEntry'][]
+      /** Format: double */
+      uptime_percent?: number | null
+    }
     ServerTrafficOverview: {
       billing_cycle?: string | null
       /** Format: int64 */
@@ -1810,6 +2184,38 @@ export interface components {
       /** Format: int64 */
       uptime: number
     }
+    StatusPage: {
+      /** Format: date-time */
+      created_at: string
+      custom_css?: string | null
+      description?: string | null
+      enabled: boolean
+      group_by_server_group: boolean
+      id: string
+      server_ids_json: string
+      show_values: boolean
+      slug: string
+      title: string
+      /** Format: date-time */
+      updated_at: string
+      /** Format: double */
+      uptime_red_threshold: number
+      /** Format: double */
+      uptime_yellow_threshold: number
+    }
+    StatusPageInfo: {
+      custom_css?: string | null
+      description?: string | null
+      group_by_server_group: boolean
+      id: string
+      show_values: boolean
+      slug: string
+      title: string
+      /** Format: double */
+      uptime_red_threshold: number
+      /** Format: double */
+      uptime_yellow_threshold: number
+    }
     StatusPageResponse: {
       groups: components['schemas']['StatusGroup'][]
       online_count: number
@@ -1888,6 +2294,25 @@ export interface components {
     TotpVerifyRequest: {
       code: string
     }
+    TracerouteHop: {
+      asn?: string | null
+      /** Format: int32 */
+      hop: number
+      hostname?: string | null
+      ip?: string | null
+      /** Format: double */
+      rtt1?: number | null
+      /** Format: double */
+      rtt2?: number | null
+      /** Format: double */
+      rtt3?: number | null
+    }
+    TracerouteResultResponse: {
+      completed: boolean
+      error?: string | null
+      hops: components['schemas']['TracerouteHop'][]
+      target: string
+    }
     TrafficPrediction: {
       /** Format: double */
       estimated_percent: number
@@ -1930,6 +2355,14 @@ export interface components {
     TransfersResponse: {
       transfers: components['schemas']['TransferInfo'][]
     }
+    TriggerTracerouteRequest: {
+      /** @description Target host or IP (e.g. "1.2.3.4" or "example.com") */
+      target: string
+    }
+    TriggerTracerouteResponse: {
+      /** @description Unique request ID used to poll for results */
+      request_id: string
+    }
     UpdateAlertRule: {
       cover_type?: string | null
       enabled?: boolean | null
@@ -1950,6 +2383,24 @@ export interface components {
       name?: string | null
       /** Format: int32 */
       weight?: number | null
+    }
+    UpdateIncident: {
+      server_ids_json?: string[] | null
+      severity?: string | null
+      status?: string | null
+      status_page_ids_json?: string[] | null
+      title?: string | null
+    }
+    UpdateMaintenance: {
+      active?: boolean | null
+      description?: string | null
+      /** Format: date-time */
+      end_at?: string | null
+      server_ids_json?: string[] | null
+      /** Format: date-time */
+      start_at?: string | null
+      status_page_ids_json?: string[] | null
+      title?: string | null
     }
     UpdateNotification: {
       config_json?: unknown
@@ -2004,6 +2455,20 @@ export interface components {
       server_ids_json?: string[] | null
       target?: string | null
     }
+    UpdateStatusPage: {
+      custom_css?: string | null
+      description?: string | null
+      enabled?: boolean | null
+      group_by_server_group?: boolean | null
+      server_ids_json?: string[] | null
+      show_values?: boolean | null
+      slug?: string | null
+      title?: string | null
+      /** Format: double */
+      uptime_red_threshold?: number | null
+      /** Format: double */
+      uptime_yellow_threshold?: number | null
+    }
     UpdateTaskRequest: {
       command?: string | null
       cron_expression?: string | null
@@ -2022,10 +2487,35 @@ export interface components {
       role?: string | null
     }
     UpgradeRequest: {
-      /** @description URL to download the new agent binary from */
-      download_url: string
-      /** @description Target version string (e.g. "0.2.0") */
+      /** @description Target version string (e.g. "0.2.0" or "v0.2.0") */
       version: string
+    }
+    UploadResponse: {
+      path: string
+    }
+    UptimeDaily: {
+      /** Format: date */
+      date: string
+      /** Format: int32 */
+      downtime_incidents: number
+      /** Format: int64 */
+      id: number
+      /** Format: int32 */
+      online_minutes: number
+      server_id: string
+      /** Format: int32 */
+      total_minutes: number
+    }
+    /** @description A single day's uptime data, with gap-filling for missing dates. */
+    UptimeDailyEntry: {
+      /** Format: date */
+      date: string
+      /** Format: int32 */
+      downtime_incidents: number
+      /** Format: int32 */
+      online_minutes: number
+      /** Format: int32 */
+      total_minutes: number
     }
     UserResponse: {
       /** Format: date-time */
@@ -2061,6 +2551,47 @@ export interface components {
 }
 export type $defs = Record<string, never>
 export interface operations {
+  add_incident_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Incident ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateIncidentUpdate']
+      }
+    }
+    responses: {
+      /** @description Incident update added */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['IncidentUpdate']
+        }
+      }
+      /** @description Incident not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   batch_delete: {
     parameters: {
       query?: never
@@ -2248,6 +2779,68 @@ export interface operations {
       }
     }
   }
+  create_incident: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateIncident']
+      }
+    }
+    responses: {
+      /** @description Incident created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Incident']
+        }
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  create_maintenance: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateMaintenance']
+      }
+    }
+    responses: {
+      /** @description Maintenance window created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Maintenance']
+        }
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   create_notification: {
     parameters: {
       query?: never
@@ -2424,6 +3017,44 @@ export interface operations {
         content: {
           'application/json': components['schemas']['ServiceMonitor']
         }
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  create_status_page: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateStatusPage']
+      }
+    }
+    responses: {
+      /** @description Status page created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['StatusPage']
+        }
+      }
+      /** @description Slug conflict */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
       }
       /** @description Validation error */
       422: {
@@ -2614,6 +3245,62 @@ export interface operations {
       }
       /** @description Agent timeout */
       408: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_incident: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Incident ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Incident deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_maintenance: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Maintenance ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Maintenance window deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
         headers: {
           [name: string]: unknown
         }
@@ -2817,6 +3504,34 @@ export interface operations {
       }
     }
   }
+  delete_status_page: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Status page ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Status page deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   delete_task: {
     parameters: {
       query?: never
@@ -2924,6 +3639,26 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['AutoDiscoveryKeyResponse']
+        }
+      }
+    }
+  }
+  get_brand_config: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Brand config */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['BrandConfig']
         }
       }
     }
@@ -3110,6 +3845,36 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['PingTask']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_public_status_page: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Status page URL slug */
+        slug: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Public status page data */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PublicStatusPageData']
         }
       }
       /** @description Not found */
@@ -3341,6 +4106,38 @@ export interface operations {
       }
     }
   }
+  get_traceroute_result: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        id: string
+        /** @description Traceroute request ID */
+        request_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Traceroute result */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TracerouteResultResponse']
+        }
+      }
+      /** @description Result not found or server mismatch */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   get_traffic: {
     parameters: {
       query?: never
@@ -3444,6 +4241,46 @@ export interface operations {
         content: {
           'application/json': components['schemas']['ApiResponse_Vec_DailyTraffic']
         }
+      }
+    }
+  }
+  get_uptime_daily: {
+    parameters: {
+      query?: {
+        /** @description Number of days to include (default: 90, min: 1, max: 365). */
+        days?: number | null
+      }
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Daily uptime entries */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ApiResponse_Vec_UptimeDailyEntry']
+        }
+      }
+      /** @description Invalid days parameter */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
       }
     }
   }
@@ -3621,6 +4458,49 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
+      }
+    }
+  }
+  list_incidents: {
+    parameters: {
+      query?: {
+        /** @description Filter by status (investigating, identified, monitoring, resolved). */
+        status?: string | null
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all incidents */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Incident'][]
+        }
+      }
+    }
+  }
+  list_maintenances: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all maintenance windows */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Maintenance'][]
+        }
       }
     }
   }
@@ -3826,6 +4706,26 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['AlertStateResponse'][]
+        }
+      }
+    }
+  }
+  list_status_pages: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all status pages */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['StatusPage'][]
         }
       }
     }
@@ -4321,6 +5221,56 @@ export interface operations {
       }
     }
   }
+  serve_favicon: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Favicon image */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description No favicon uploaded */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  serve_logo: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Logo image */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description No logo uploaded */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   start_download: {
     parameters: {
       query?: never
@@ -4573,6 +5523,47 @@ export interface operations {
       }
     }
   }
+  trigger_traceroute: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TriggerTracerouteRequest']
+      }
+    }
+    responses: {
+      /** @description Traceroute triggered */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TriggerTracerouteResponse']
+        }
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Invalid target */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   trigger_upgrade: {
     parameters: {
       query?: never
@@ -4633,6 +5624,37 @@ export interface operations {
       }
     }
   }
+  update_brand_config: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BrandConfig']
+      }
+    }
+    responses: {
+      /** @description Brand config updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['BrandConfig']
+        }
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   update_dashboard: {
     parameters: {
       query?: never
@@ -4666,6 +5688,81 @@ export interface operations {
         content?: never
       }
       /** @description Dashboard not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_incident: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Incident ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateIncident']
+      }
+    }
+    responses: {
+      /** @description Incident updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Incident']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_maintenance: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Maintenance ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateMaintenance']
+      }
+    }
+    responses: {
+      /** @description Maintenance window updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Maintenance']
+        }
+      }
+      /** @description Not found */
       404: {
         headers: {
           [name: string]: unknown
@@ -4943,6 +6040,47 @@ export interface operations {
       }
     }
   }
+  update_status_page: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Status page ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateStatusPage']
+      }
+    }
+    responses: {
+      /** @description Status page updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['StatusPage']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Slug conflict */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   update_task: {
     parameters: {
       query?: never
@@ -5018,6 +6156,44 @@ export interface operations {
       }
     }
   }
+  upload_favicon: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'multipart/form-data': string
+      }
+    }
+    responses: {
+      /** @description Favicon uploaded */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['UploadResponse']
+        }
+      }
+      /** @description Invalid file */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   upload_file: {
     parameters: {
       query?: never
@@ -5059,6 +6235,44 @@ export interface operations {
       }
       /** @description Too many concurrent transfers */
       429: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  upload_logo: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'multipart/form-data': string
+      }
+    }
+    responses: {
+      /** @description Logo uploaded */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['UploadResponse']
+        }
+      }
+      /** @description Invalid file */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
         headers: {
           [name: string]: unknown
         }

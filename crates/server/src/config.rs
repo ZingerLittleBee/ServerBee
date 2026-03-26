@@ -2,6 +2,7 @@ use figment::{
     Figment,
     providers::{Env, Format, Toml},
 };
+use ipnet::IpNet;
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -27,6 +28,8 @@ pub struct AppConfig {
     pub log: LogConfig,
     #[serde(default)]
     pub scheduler: SchedulerConfig,
+    #[serde(default)]
+    pub upgrade: UpgradeConfig,
 }
 
 impl Default for AppConfig {
@@ -42,6 +45,7 @@ impl Default for AppConfig {
             geoip: GeoIpConfig::default(),
             log: LogConfig::default(),
             scheduler: SchedulerConfig::default(),
+            upgrade: UpgradeConfig::default(),
         }
     }
 }
@@ -52,6 +56,8 @@ pub struct ServerConfig {
     pub listen: String,
     #[serde(default = "default_data_dir")]
     pub data_dir: String,
+    #[serde(default)]
+    pub trusted_proxies: Vec<IpNet>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -251,6 +257,24 @@ impl Default for SchedulerConfig {
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpgradeConfig {
+    #[serde(default = "default_release_base_url")]
+    pub release_base_url: String,
+}
+
+fn default_release_base_url() -> String {
+    "https://github.com/ZingerLittleBee/ServerBee/releases".to_string()
+}
+
+impl Default for UpgradeConfig {
+    fn default() -> Self {
+        Self {
+            release_base_url: default_release_base_url(),
+        }
+    }
+}
+
 fn default_utc() -> String {
     "UTC".to_string()
 }
@@ -260,6 +284,7 @@ fn default_server() -> ServerConfig {
     ServerConfig {
         listen: default_listen(),
         data_dir: default_data_dir(),
+        trusted_proxies: Vec::new(),
     }
 }
 

@@ -138,6 +138,155 @@ function setServerDetailDockerAvailability(
   return prev
 }
 
+type QueryClient = ReturnType<typeof useQueryClient>
+
+function isWsMessageLike(raw: unknown): raw is { type: string } & Record<string, unknown> {
+  return typeof raw === 'object' && raw !== null && 'type' in raw && typeof (raw as { type: unknown }).type === 'string'
+}
+
+function handleServerMetricsMessage(raw: { type: string } & Record<string, unknown>, queryClient: QueryClient): void {
+  if (raw.type === 'full_sync' || raw.type === 'update') {
+    if (!Array.isArray(raw.servers) || raw.servers.some((s: unknown) => s == null || typeof s !== 'object')) {
+      return
+    }
+    const msg = raw as WsMessage & { type: 'full_sync' | 'update' }
+    if (raw.type === 'full_sync') {
+      queryClient.setQueryData<ServerMetrics[]>(['servers'], msg.servers)
+    } else {
+      queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
+        prev ? mergeServerUpdate(prev, msg.servers) : msg.servers
+      )
+    }
+    return
+  }
+  if (raw.type === 'server_online' || raw.type === 'server_offline') {
+    if (typeof raw.server_id !== 'string') {
+      return
+    }
+    const online = raw.type === 'server_online'
+    const server_id = raw.server_id as string
+    queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
+      prev ? setServerOnlineStatus(prev, server_id, online) : prev
+    )
+  }
+}
+
+function handleCapabilityMessage(raw: { type: string } & Record<string, unknown>, queryClient: QueryClient): void {
+  if (raw.type === 'capabilities_changed') {
+    if (typeof raw.server_id !== 'string' || typeof raw.capabilities !== 'number') {
+      return
+    }
+    const msg = raw as WsMessage & { type: 'capabilities_changed' }
+    const { server_id, capabilities } = msg
+    queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
+      prev?.map((s) => (s.id === server_id ? { ...s, capabilities } : s))
+    )
+    queryClient.setQueryData(['servers', server_id], (prev: Record<string, unknown> | undefined) =>
+      prev ? { ...prev, capabilities } : prev
+    )
+    queryClient.invalidateQueries({ queryKey: ['servers-list'] })
+    return
+  }
+  if (raw.type === 'agent_info_updated') {
+    if (typeof raw.server_id !== 'string' || typeof raw.protocol_version !== 'number') {
+      return
+    }
+    const msg = raw as WsMessage & { type: 'agent_info_updated' }
+    const { server_id, protocol_version } = msg
+    queryClient.setQueryData(['servers', server_id], (prev: Record<string, unknown> | undefined) =>
+      prev ? { ...prev, protocol_version } : prev
+    )
+    queryClient.invalidateQueries({ queryKey: ['servers-list'] })
+  }
+}
+
+function handleDockerMessage(raw: { type: string } & Record<string, unknown>, queryClient: QueryClient): void {
+  if (raw.type === 'docker_update') {
+    if (
+      typeof raw.server_id !== 'string' ||
+      !Array.isArray(raw.containers) ||
+      raw.containers.some((c: unknown) => c == null || typeof c !== 'object')
+    ) {
+      return
+    }
+    const msg = raw as WsMessage & { type: 'docker_update' }
+    const { server_id, containers, stats } = msg
+    queryClient.setQueryData<DockerContainer[]>(['docker', 'containers', server_id], containers)
+    if (stats) {
+      queryClient.setQueryData<DockerContainerStats[]>(['docker', 'stats', server_id], stats)
+    }
+    return
+  }
+  if (raw.type === 'docker_event') {
+    if (typeof raw.server_id !== 'string' || typeof raw.event !== 'object' || raw.event === null) {
+      return
+    }
+    const msg = raw as WsMessage & { type: 'docker_event' }
+    const { server_id, event } = msg
+    queryClient.setQueryData<DockerEventInfo[]>(['docker', 'events', server_id], (prev) => {
+      const events = prev ?? []
+      const updated = [event, ...events]
+      return updated.length > MAX_DOCKER_EVENTS ? updated.slice(0, MAX_DOCKER_EVENTS) : updated
+    })
+    return
+  }
+  if (raw.type === 'docker_availability_changed') {
+    if (typeof raw.server_id !== 'string' || typeof raw.available !== 'boolean') {
+      return
+    }
+    const msg = raw as WsMessage & { type: 'docker_availability_changed' }
+    const { server_id, available } = msg
+    queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
+      prev ? setServerDockerAvailability(prev, server_id, available) : prev
+    )
+    queryClient.setQueryData(['servers', server_id], (prev: Record<string, unknown> | undefined) =>
+      setServerDetailDockerAvailability(prev, available)
+    )
+  }
+}
+
+function handleWsMessage(raw: unknown, queryClient: QueryClient): void {
+  if (!isWsMessageLike(raw)) {
+    console.warn('WS: unexpected message shape', raw)
+    return
+  }
+  switch (raw.type) {
+    case 'full_sync':
+    case 'update':
+    case 'server_online':
+    case 'server_offline':
+      handleServerMetricsMessage(raw, queryClient)
+      break
+    case 'capabilities_changed':
+    case 'agent_info_updated':
+      handleCapabilityMessage(raw, queryClient)
+      break
+    case 'network_probe_update': {
+      if (
+        typeof raw.server_id !== 'string' ||
+        !Array.isArray(raw.results) ||
+        raw.results.some((r: unknown) => r == null || typeof r !== 'object')
+      ) {
+        break
+      }
+      const msg = raw as WsMessage & { type: 'network_probe_update' }
+      window.dispatchEvent(
+        new CustomEvent('network-probe-update', {
+          detail: { server_id: msg.server_id, results: msg.results }
+        })
+      )
+      break
+    }
+    case 'docker_update':
+    case 'docker_event':
+    case 'docker_availability_changed':
+      handleDockerMessage(raw, queryClient)
+      break
+    default:
+      break
+  }
+}
+
 export function useServersWs(enabled = true): React.RefObject<WsClient | null> {
   const queryClient = useQueryClient()
   const wsRef = useRef<WsClient | null>(null)
@@ -151,99 +300,7 @@ export function useServersWs(enabled = true): React.RefObject<WsClient | null> {
     const ws = new WsClient('/api/ws/servers')
     wsRef.current = ws
 
-    ws.onMessage((raw) => {
-      const msg = raw as WsMessage
-
-      switch (msg.type) {
-        case 'full_sync': {
-          queryClient.setQueryData<ServerMetrics[]>(['servers'], msg.servers)
-          break
-        }
-        case 'update': {
-          queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) => {
-            if (!prev) {
-              return msg.servers
-            }
-            return mergeServerUpdate(prev, msg.servers)
-          })
-          break
-        }
-        case 'server_online': {
-          queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) => {
-            if (!prev) {
-              return prev
-            }
-            return setServerOnlineStatus(prev, msg.server_id, true)
-          })
-          break
-        }
-        case 'server_offline': {
-          queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) => {
-            if (!prev) {
-              return prev
-            }
-            return setServerOnlineStatus(prev, msg.server_id, false)
-          })
-          break
-        }
-        case 'capabilities_changed': {
-          const { server_id, capabilities } = msg
-          queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
-            prev?.map((s) => (s.id === server_id ? { ...s, capabilities } : s))
-          )
-          queryClient.setQueryData(['servers', server_id], (prev: Record<string, unknown> | undefined) =>
-            prev ? { ...prev, capabilities } : prev
-          )
-          queryClient.invalidateQueries({ queryKey: ['servers-list'] })
-          break
-        }
-        case 'agent_info_updated': {
-          const { server_id, protocol_version } = msg
-          queryClient.setQueryData(['servers', server_id], (prev: Record<string, unknown> | undefined) =>
-            prev ? { ...prev, protocol_version } : prev
-          )
-          queryClient.invalidateQueries({ queryKey: ['servers-list'] })
-          break
-        }
-        case 'network_probe_update': {
-          window.dispatchEvent(
-            new CustomEvent('network-probe-update', {
-              detail: { server_id: msg.server_id, results: msg.results }
-            })
-          )
-          break
-        }
-        case 'docker_update': {
-          const { server_id, containers, stats } = msg
-          queryClient.setQueryData<DockerContainer[]>(['docker', 'containers', server_id], containers)
-          if (stats) {
-            queryClient.setQueryData<DockerContainerStats[]>(['docker', 'stats', server_id], stats)
-          }
-          break
-        }
-        case 'docker_event': {
-          const { server_id, event } = msg
-          queryClient.setQueryData<DockerEventInfo[]>(['docker', 'events', server_id], (prev) => {
-            const events = prev ?? []
-            const updated = [event, ...events]
-            return updated.length > MAX_DOCKER_EVENTS ? updated.slice(0, MAX_DOCKER_EVENTS) : updated
-          })
-          break
-        }
-        case 'docker_availability_changed': {
-          const { server_id, available } = msg
-          queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
-            prev ? setServerDockerAvailability(prev, server_id, available) : prev
-          )
-          queryClient.setQueryData(['servers', server_id], (prev: Record<string, unknown> | undefined) =>
-            setServerDetailDockerAvailability(prev, available)
-          )
-          break
-        }
-        default:
-          break
-      }
-    })
+    ws.onMessage((raw) => handleWsMessage(raw, queryClient))
 
     return () => {
       ws.close()

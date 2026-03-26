@@ -108,7 +108,7 @@ make server-dev                                           # 终端 1: 服务端 
 SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # 终端 2: Agent
 
 # 测试与代码质量:
-make cargo-test        # 运行全部 Rust 测试 (362)
+make cargo-test        # 运行全部 Rust 测试 (379)
 make test              # 运行前端测试 (220)
 make cargo-clippy      # Rust 代码检查
 make                   # 交互式菜单 (需要 fzf)
@@ -130,6 +130,7 @@ make                   # 交互式菜单 (需要 fzf)
 [server]
 listen = "0.0.0.0:9527"
 data_dir = "/var/lib/serverbee"
+trusted_proxies = []              # CIDR 列表，如 ["127.0.0.1/32", "10.0.0.0/8"]
 
 [database]
 path = "serverbee.db"
@@ -163,6 +164,9 @@ timezone = "UTC"               # 流量日聚合时区（如 Asia/Shanghai）
 [geoip]
 enabled = false
 mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"
+
+[upgrade]
+release_base_url = "https://github.com/ZingerLittleBee/ServerBee/releases"
 ```
 
 环境变量示例:

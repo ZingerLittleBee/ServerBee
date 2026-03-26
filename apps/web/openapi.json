@@ -832,6 +832,34 @@
         ]
       }
     },
+    "/api/brand/favicon": {
+      "get": {
+        "tags": ["brand"],
+        "operationId": "serve_favicon",
+        "responses": {
+          "200": {
+            "description": "Favicon image"
+          },
+          "404": {
+            "description": "No favicon uploaded"
+          }
+        }
+      }
+    },
+    "/api/brand/logo": {
+      "get": {
+        "tags": ["brand"],
+        "operationId": "serve_logo",
+        "responses": {
+          "200": {
+            "description": "Logo image"
+          },
+          "404": {
+            "description": "No logo uploaded"
+          }
+        }
+      }
+    },
     "/api/dashboards": {
       "get": {
         "tags": ["dashboards"],
@@ -1637,6 +1665,367 @@
           },
           "408": {
             "description": "Agent timeout"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/incidents": {
+      "get": {
+        "tags": ["incidents"],
+        "operationId": "list_incidents",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by status (investigating, identified, monitoring, resolved).",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List all incidents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Incident"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "post": {
+        "tags": ["incidents"],
+        "operationId": "create_incident",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIncident"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Incident created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Incident"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/incidents/{id}": {
+      "put": {
+        "tags": ["incidents"],
+        "operationId": "update_incident",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Incident ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateIncident"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Incident updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Incident"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["incidents"],
+        "operationId": "delete_incident",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Incident ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Incident deleted"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/incidents/{id}/updates": {
+      "post": {
+        "tags": ["incidents"],
+        "operationId": "add_incident_update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Incident ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIncidentUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Incident update added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentUpdate"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Incident not found"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/maintenances": {
+      "get": {
+        "tags": ["maintenances"],
+        "operationId": "list_maintenances",
+        "responses": {
+          "200": {
+            "description": "List all maintenance windows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Maintenance"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "post": {
+        "tags": ["maintenances"],
+        "operationId": "create_maintenance",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMaintenance"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Maintenance window created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Maintenance"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/maintenances/{id}": {
+      "put": {
+        "tags": ["maintenances"],
+        "operationId": "update_maintenance",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Maintenance ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMaintenance"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Maintenance window updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Maintenance"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["maintenances"],
+        "operationId": "delete_maintenance",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Maintenance ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Maintenance window deleted"
+          },
+          "404": {
+            "description": "Not found"
           }
         },
         "security": [
@@ -2800,6 +3189,110 @@
         ]
       }
     },
+    "/api/servers/{id}/traceroute": {
+      "post": {
+        "tags": ["traceroute"],
+        "summary": "Trigger a traceroute to a target from the specified server's agent.",
+        "operationId": "trigger_traceroute",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriggerTracerouteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Traceroute triggered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TriggerTracerouteResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server not found or offline"
+          },
+          "422": {
+            "description": "Invalid target"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/servers/{id}/traceroute/{request_id}": {
+      "get": {
+        "tags": ["traceroute"],
+        "summary": "Poll for the result of a previously triggered traceroute.",
+        "operationId": "get_traceroute_result",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "path",
+            "description": "Traceroute request ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Traceroute result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TracerouteResultResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Result not found or server mismatch"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
     "/api/servers/{id}/traffic": {
       "get": {
         "tags": ["servers"],
@@ -2863,6 +3356,60 @@
           },
           "404": {
             "description": "Server not found or not online"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/servers/{server_id}/uptime-daily": {
+      "get": {
+        "tags": ["servers"],
+        "operationId": "get_uptime_daily",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "description": "Number of days to include (default: 90, min: 1, max: 365).",
+            "required": false,
+            "schema": {
+              "type": ["integer", "null"],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Daily uptime entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_UptimeDailyEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid days parameter"
+          },
+          "404": {
+            "description": "Server not found"
           }
         },
         "security": [
@@ -3312,6 +3859,145 @@
         ]
       }
     },
+    "/api/settings/brand": {
+      "get": {
+        "tags": ["brand"],
+        "operationId": "get_brand_config",
+        "responses": {
+          "200": {
+            "description": "Brand config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandConfig"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["brand"],
+        "operationId": "update_brand_config",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrandConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Brand config updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandConfig"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/settings/brand/favicon": {
+      "post": {
+        "tags": ["brand"],
+        "operationId": "upload_favicon",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Favicon uploaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid file"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/settings/brand/logo": {
+      "post": {
+        "tags": ["brand"],
+        "operationId": "upload_logo",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Logo uploaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid file"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
     "/api/settings/restore": {
       "post": {
         "tags": ["settings"],
@@ -3360,6 +4046,191 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/status-pages": {
+      "get": {
+        "tags": ["status-pages"],
+        "operationId": "list_status_pages",
+        "responses": {
+          "200": {
+            "description": "List all status pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StatusPage"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "post": {
+        "tags": ["status-pages"],
+        "operationId": "create_status_page",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStatusPage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Status page created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusPage"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Slug conflict"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/status-pages/{id}": {
+      "put": {
+        "tags": ["status-pages"],
+        "operationId": "update_status_page",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Status page ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStatusPage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Status page updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusPage"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Slug conflict"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["status-pages"],
+        "operationId": "delete_status_page",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Status page ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Status page deleted"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/status/{slug}": {
+      "get": {
+        "tags": ["status-pages"],
+        "operationId": "get_public_status_page",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Status page URL slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public status page data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicStatusPageData"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
           }
         }
       }
@@ -4311,6 +5182,43 @@
           }
         }
       },
+      "ApiResponse_Vec_UptimeDailyEntry": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A single day's uptime data, with gap-filling for missing dates.",
+              "required": [
+                "date",
+                "total_minutes",
+                "online_minutes",
+                "downtime_incidents"
+              ],
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "downtime_incidents": {
+                  "type": "integer",
+                  "format": "int32"
+                },
+                "online_minutes": {
+                  "type": "integer",
+                  "format": "int32"
+                },
+                "total_minutes": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          }
+        }
+      },
       "AuditListResponse": {
         "type": "object",
         "required": ["entries", "total"],
@@ -4418,6 +5326,23 @@
           }
         }
       },
+      "BrandConfig": {
+        "type": "object",
+        "properties": {
+          "favicon_path": {
+            "type": ["string", "null"]
+          },
+          "footer_text": {
+            "type": ["string", "null"]
+          },
+          "logo_path": {
+            "type": ["string", "null"]
+          },
+          "site_title": {
+            "type": ["string", "null"]
+          }
+        }
+      },
       "ChangePasswordRequest": {
         "type": "object",
         "required": ["old_password", "new_password"],
@@ -4486,6 +5411,80 @@
         "required": ["name"],
         "properties": {
           "name": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateIncident": {
+        "type": "object",
+        "required": ["title"],
+        "properties": {
+          "server_ids_json": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "severity": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "status_page_ids_json": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateIncidentUpdate": {
+        "type": "object",
+        "required": ["status", "message"],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateMaintenance": {
+        "type": "object",
+        "required": ["title", "start_at", "end_at"],
+        "properties": {
+          "active": {
+            "type": ["boolean", "null"]
+          },
+          "description": {
+            "type": ["string", "null"]
+          },
+          "end_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "server_ids_json": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status_page_ids_json": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "title": {
             "type": "string"
           }
         }
@@ -4582,6 +5581,47 @@
           },
           "target": {
             "type": "string"
+          }
+        }
+      },
+      "CreateStatusPage": {
+        "type": "object",
+        "required": ["title", "slug", "server_ids_json"],
+        "properties": {
+          "custom_css": {
+            "type": ["string", "null"]
+          },
+          "description": {
+            "type": ["string", "null"]
+          },
+          "enabled": {
+            "type": ["boolean", "null"]
+          },
+          "group_by_server_group": {
+            "type": ["boolean", "null"]
+          },
+          "server_ids_json": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "show_values": {
+            "type": ["boolean", "null"]
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "uptime_red_threshold": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "uptime_yellow_threshold": {
+            "type": ["number", "null"],
+            "format": "double"
           }
         }
       },
@@ -4870,6 +5910,90 @@
           }
         }
       },
+      "Incident": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "status",
+          "severity",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string"
+          },
+          "resolved_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "server_ids_json": {
+            "type": ["string", "null"]
+          },
+          "severity": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "status_page_ids_json": {
+            "type": ["string", "null"]
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "IncidentUpdate": {
+        "type": "object",
+        "required": ["id", "incident_id", "status", "message", "created_at"],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string"
+          },
+          "incident_id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "IncidentWithUpdates": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Incident"
+          },
+          {
+            "type": "object",
+            "required": ["updates"],
+            "properties": {
+              "updates": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/IncidentUpdate"
+                }
+              }
+            }
+          }
+        ]
+      },
       "ListFilesRequest": {
         "type": "object",
         "required": ["path"],
@@ -4921,6 +6045,54 @@
           },
           "username": {
             "type": "string"
+          }
+        }
+      },
+      "Maintenance": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "start_at",
+          "end_at",
+          "active",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": ["string", "null"]
+          },
+          "end_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string"
+          },
+          "server_ids_json": {
+            "type": ["string", "null"]
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status_page_ids_json": {
+            "type": ["string", "null"]
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -5212,6 +6384,45 @@
           },
           "target": {
             "type": "string"
+          }
+        }
+      },
+      "PublicStatusPageData": {
+        "type": "object",
+        "required": [
+          "page",
+          "servers",
+          "active_incidents",
+          "planned_maintenances",
+          "recent_incidents"
+        ],
+        "properties": {
+          "active_incidents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IncidentWithUpdates"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/StatusPageInfo"
+          },
+          "planned_maintenances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Maintenance"
+            }
+          },
+          "recent_incidents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IncidentWithUpdates"
+            }
+          },
+          "servers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServerStatusInfo"
+            }
           }
         }
       },
@@ -5601,6 +6812,55 @@
           }
         }
       },
+      "ServerStatusInfo": {
+        "type": "object",
+        "required": [
+          "server_id",
+          "server_name",
+          "online",
+          "uptime_daily",
+          "in_maintenance"
+        ],
+        "properties": {
+          "country_code": {
+            "type": ["string", "null"]
+          },
+          "group_id": {
+            "type": ["string", "null"]
+          },
+          "group_name": {
+            "type": ["string", "null"]
+          },
+          "in_maintenance": {
+            "type": "boolean"
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "os": {
+            "type": ["string", "null"]
+          },
+          "region": {
+            "type": ["string", "null"]
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "server_name": {
+            "type": "string"
+          },
+          "uptime_daily": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UptimeDailyEntry"
+            }
+          },
+          "uptime_percent": {
+            "type": ["number", "null"],
+            "format": "double"
+          }
+        }
+      },
       "ServerTrafficOverview": {
         "type": "object",
         "required": [
@@ -5831,6 +7091,110 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          }
+        }
+      },
+      "StatusPage": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "slug",
+          "server_ids_json",
+          "group_by_server_group",
+          "show_values",
+          "enabled",
+          "uptime_yellow_threshold",
+          "uptime_red_threshold",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "custom_css": {
+            "type": ["string", "null"]
+          },
+          "description": {
+            "type": ["string", "null"]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "group_by_server_group": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "server_ids_json": {
+            "type": "string"
+          },
+          "show_values": {
+            "type": "boolean"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "uptime_red_threshold": {
+            "type": "number",
+            "format": "double"
+          },
+          "uptime_yellow_threshold": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "StatusPageInfo": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "slug",
+          "group_by_server_group",
+          "show_values",
+          "uptime_yellow_threshold",
+          "uptime_red_threshold"
+        ],
+        "properties": {
+          "custom_css": {
+            "type": ["string", "null"]
+          },
+          "description": {
+            "type": ["string", "null"]
+          },
+          "group_by_server_group": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "show_values": {
+            "type": "boolean"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "uptime_red_threshold": {
+            "type": "number",
+            "format": "double"
+          },
+          "uptime_yellow_threshold": {
+            "type": "number",
+            "format": "double"
           }
         }
       },
@@ -6079,6 +7443,59 @@
           }
         }
       },
+      "TracerouteHop": {
+        "type": "object",
+        "required": ["hop"],
+        "properties": {
+          "asn": {
+            "type": ["string", "null"]
+          },
+          "hop": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "hostname": {
+            "type": ["string", "null"]
+          },
+          "ip": {
+            "type": ["string", "null"]
+          },
+          "rtt1": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "rtt2": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "rtt3": {
+            "type": ["number", "null"],
+            "format": "double"
+          }
+        }
+      },
+      "TracerouteResultResponse": {
+        "type": "object",
+        "required": ["target", "hops", "completed"],
+        "properties": {
+          "completed": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": ["string", "null"]
+          },
+          "hops": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TracerouteHop"
+            }
+          },
+          "target": {
+            "type": "string"
+          }
+        }
+      },
       "TrafficPrediction": {
         "type": "object",
         "required": ["estimated_total", "estimated_percent", "will_exceed"],
@@ -6218,6 +7635,26 @@
           }
         }
       },
+      "TriggerTracerouteRequest": {
+        "type": "object",
+        "required": ["target"],
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Target host or IP (e.g. \"1.2.3.4\" or \"example.com\")"
+          }
+        }
+      },
+      "TriggerTracerouteResponse": {
+        "type": "object",
+        "required": ["request_id"],
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "description": "Unique request ID used to poll for results"
+          }
+        }
+      },
       "UpdateAlertRule": {
         "type": "object",
         "properties": {
@@ -6280,6 +7717,66 @@
           "weight": {
             "type": ["integer", "null"],
             "format": "int32"
+          }
+        }
+      },
+      "UpdateIncident": {
+        "type": "object",
+        "properties": {
+          "server_ids_json": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "severity": {
+            "type": ["string", "null"]
+          },
+          "status": {
+            "type": ["string", "null"]
+          },
+          "status_page_ids_json": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "title": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "UpdateMaintenance": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": ["boolean", "null"]
+          },
+          "description": {
+            "type": ["string", "null"]
+          },
+          "end_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "server_ids_json": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "status_page_ids_json": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "title": {
+            "type": ["string", "null"]
           }
         }
       },
@@ -6424,6 +7921,46 @@
           }
         }
       },
+      "UpdateStatusPage": {
+        "type": "object",
+        "properties": {
+          "custom_css": {
+            "type": ["string", "null"]
+          },
+          "description": {
+            "type": ["string", "null"]
+          },
+          "enabled": {
+            "type": ["boolean", "null"]
+          },
+          "group_by_server_group": {
+            "type": ["boolean", "null"]
+          },
+          "server_ids_json": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "show_values": {
+            "type": ["boolean", "null"]
+          },
+          "slug": {
+            "type": ["string", "null"]
+          },
+          "title": {
+            "type": ["string", "null"]
+          },
+          "uptime_red_threshold": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "uptime_yellow_threshold": {
+            "type": ["number", "null"],
+            "format": "double"
+          }
+        }
+      },
       "UpdateTaskRequest": {
         "type": "object",
         "properties": {
@@ -6472,15 +8009,84 @@
       },
       "UpgradeRequest": {
         "type": "object",
-        "required": ["version", "download_url"],
+        "required": ["version"],
         "properties": {
-          "download_url": {
-            "type": "string",
-            "description": "URL to download the new agent binary from"
-          },
           "version": {
             "type": "string",
-            "description": "Target version string (e.g. \"0.2.0\")"
+            "description": "Target version string (e.g. \"0.2.0\" or \"v0.2.0\")"
+          }
+        }
+      },
+      "UploadResponse": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "UptimeDaily": {
+        "type": "object",
+        "required": [
+          "id",
+          "server_id",
+          "date",
+          "total_minutes",
+          "online_minutes",
+          "downtime_incidents"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "downtime_incidents": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "online_minutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "total_minutes": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "UptimeDailyEntry": {
+        "type": "object",
+        "description": "A single day's uptime data, with gap-filling for missing dates.",
+        "required": [
+          "date",
+          "total_minutes",
+          "online_minutes",
+          "downtime_incidents"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "downtime_incidents": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "online_minutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "total_minutes": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -6612,6 +8218,10 @@
       "description": "Server group management"
     },
     {
+      "name": "brand",
+      "description": "Custom branding (logo, favicon, site title)"
+    },
+    {
       "name": "settings",
       "description": "System settings"
     },
@@ -6630,6 +8240,18 @@
     {
       "name": "status",
       "description": "Public server status page"
+    },
+    {
+      "name": "status-pages",
+      "description": "Status page management & public view"
+    },
+    {
+      "name": "incidents",
+      "description": "Incident management"
+    },
+    {
+      "name": "maintenances",
+      "description": "Maintenance window management"
     },
     {
       "name": "audit",
@@ -6656,8 +8278,16 @@
       "description": "Ping probe tasks"
     },
     {
+      "name": "traceroute",
+      "description": "Traceroute diagnostics"
+    },
+    {
       "name": "traffic",
       "description": "Traffic statistics & billing cycle overview"
+    },
+    {
+      "name": "uptime",
+      "description": "Uptime statistics"
     },
     {
       "name": "files",

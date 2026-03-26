@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2026-03-27
+
+### Changed
+
+- **Version-driven agent upgrade** -- Admin now only submits a version string to trigger agent upgrades. Server automatically resolves the download URL and SHA-256 checksum from a configurable release source (`upgrade.release_base_url`), with platform detection based on agent-reported OS/arch. Eliminates the previous arbitrary `download_url` input
+- **Agent token via Authorization header** -- Agent WebSocket authentication moved from URL query parameter (`?token=`) to `Authorization: Bearer` header, preventing token exposure in server/proxy logs. Query param still accepted with deprecation warning for backward compatibility
+- **Hourly aggregation rewrite** -- `aggregate_hourly` now truncates timestamps to hour boundaries and uses SQL `INSERT...ON CONFLICT` upsert for idempotency. Numeric column aggregation pushed to SQLite (no more full in-memory load). `UNIQUE(server_id, time)` index enforced via migration
+
+### Fixed
+
+- **CORS policy removed** -- Removed overly permissive `allow_origin(Any)` CORS configuration. SPA is served from the same origin via rust-embed, so CORS is unnecessary
+- **WebSocket message size enforced** -- `MAX_WS_MESSAGE_SIZE` (1MB) now configured on all 4 WebSocket upgrade points (agent, browser, terminal, docker_logs), preventing OOM from oversized messages
+- **Rate limit bypass via X-Forwarded-For** -- Unified `extract_client_ip` across 5 files into shared `router/utils.rs`. New `server.trusted_proxies` CIDR config controls when XFF is trusted. Removed X-Real-IP fallback to close spoofing vector. DashMap expired entries now cleaned probabilistically
+- **Agent getpwuid/getgrgid thread safety** -- Replaced non-reentrant `getpwuid`/`getgrgid` with `getpwuid_r`/`getgrgid_r` to eliminate data races in async/multi-thread file listing
+- **Mandatory SHA-256 in agent upgrade** -- Agent now requires HTTPS and mandatory SHA-256 checksum verification for upgrade downloads. Removed optional `x-checksum-sha256` header fallback. Added 10-minute download timeout
+- **Frontend WebSocket robustness** -- Terminal WS: added try/catch on JSON.parse and atob, typeof guard on data field. Main WS: replaced `as WsMessage` cast with two-layer runtime validation (structural guard + per-variant field checks including null element filtering)
+
+### Testing
+
+- 379 Rust tests: 237 unit + 39 integration + 4 Docker integration + 43 common + 56 agent
+- 220 frontend Vitest tests across 28 test files
+- 6 new `extract_client_ip` unit tests (trusted proxy, XFF parsing, spoofing prevention)
+- 3 new `map_os`/`map_arch`/`normalize_version` unit tests
+- 1 new DashMap expiry cleanup test
+- 1 new `aggregate_hourly` idempotency test (disk I/O device aggregation)
+
 ## [0.7.1] - 2026-03-25
 
 ### Fixed

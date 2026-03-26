@@ -283,6 +283,7 @@ pub enum ServerMessage {
     Upgrade {
         version: String,
         download_url: String,
+        sha256: String,
     },
     CapabilitiesSync {
         capabilities: u32,

@@ -108,7 +108,7 @@ make server-dev                                           # Terminal 1: server o
 SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # Terminal 2: agent
 
 # Testing & code quality:
-make cargo-test        # Run all Rust tests (362)
+make cargo-test        # Run all Rust tests (379)
 make test              # Run frontend tests (220)
 make cargo-clippy      # Lint Rust code
 make                   # Interactive menu (requires fzf)
@@ -130,6 +130,7 @@ All config options can be set via TOML files or environment variables with `SERV
 [server]
 listen = "0.0.0.0:9527"
 data_dir = "/var/lib/serverbee"
+trusted_proxies = []              # CIDR list, e.g. ["127.0.0.1/32", "10.0.0.0/8"]
 
 [database]
 path = "serverbee.db"
@@ -163,6 +164,9 @@ timezone = "UTC"               # Timezone for daily traffic aggregation (e.g. As
 [geoip]
 enabled = false
 mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"
+
+[upgrade]
+release_base_url = "https://github.com/ZingerLittleBee/ServerBee/releases"
 ```
 
 Environment variable examples:
