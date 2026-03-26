@@ -5,6 +5,7 @@ use std::time::Duration;
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, Query, State};
+use axum::http::HeaderMap;
 use axum::response::Response;
 use axum::routing::get;
 use futures_util::{SinkExt, StreamExt};
@@ -24,8 +25,25 @@ use serverbee_common::protocol::{AgentMessage, BrowserMessage, ServerMessage};
 use serverbee_common::types::NetworkProbeTarget as NetworkProbeTargetDto;
 
 #[derive(Debug, Deserialize)]
-pub struct WsQuery {
-    token: String,
+pub struct OptionalWsQuery {
+    token: Option<String>,
+}
+
+fn extract_agent_token(headers: &HeaderMap, query: &OptionalWsQuery) -> Option<String> {
+    // Prefer Authorization header
+    if let Some(auth) = headers.get("authorization") {
+        if let Ok(val) = auth.to_str() {
+            if let Some(token) = val.strip_prefix("Bearer ") {
+                return Some(token.to_string());
+            }
+        }
+    }
+    // Fallback to query param (deprecated)
+    if let Some(ref token) = query.token {
+        tracing::warn!("Agent using deprecated query param token — please upgrade agent");
+        return Some(token.clone());
+    }
+    None
 }
 
 pub fn router() -> Router<Arc<AppState>> {
@@ -34,12 +52,24 @@ pub fn router() -> Router<Arc<AppState>> {
 
 async fn agent_ws_handler(
     State(state): State<Arc<AppState>>,
-    Query(query): Query<WsQuery>,
+    Query(query): Query<OptionalWsQuery>,
+    headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     ws: WebSocketUpgrade,
 ) -> Response {
+    // Extract agent token from Authorization header or query param
+    let token = match extract_agent_token(&headers, &query) {
+        Some(t) => t,
+        None => {
+            return Response::builder()
+                .status(401)
+                .body("Unauthorized".into())
+                .unwrap();
+        }
+    };
+
     // Validate agent token
-    let server = match AuthService::validate_agent_token(&state.db, &query.token).await {
+    let server = match AuthService::validate_agent_token(&state.db, &token).await {
         Ok(Some(server)) => server,
         Ok(None) => {
             return Response::builder()
