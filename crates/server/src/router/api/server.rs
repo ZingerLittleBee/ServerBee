@@ -430,10 +430,36 @@ async fn get_gpu_records(
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpgradeRequest {
-    /// Target version string (e.g. "0.2.0")
+    /// Target version string (e.g. "0.2.0" or "v0.2.0")
     version: String,
-    /// URL to download the new agent binary from
-    download_url: String,
+}
+
+/// Map agent-reported OS string to release asset platform suffix.
+fn map_os(os: &str) -> Option<&'static str> {
+    let lower = os.to_lowercase();
+    if lower.contains("linux") {
+        Some("linux")
+    } else if lower.contains("mac") || lower.contains("darwin") {
+        Some("darwin")
+    } else if lower.contains("windows") {
+        Some("windows")
+    } else {
+        None
+    }
+}
+
+/// Map Rust arch string to release asset arch suffix.
+fn map_arch(arch: &str) -> Option<&'static str> {
+    match arch {
+        "x86_64" => Some("amd64"),
+        "aarch64" => Some("arm64"),
+        _ => None,
+    }
+}
+
+/// Normalize version string: strip optional 'v' prefix.
+fn normalize_version(version: &str) -> &str {
+    version.strip_prefix('v').unwrap_or(version)
 }
 
 #[utoipa::path(
@@ -453,30 +479,97 @@ async fn trigger_upgrade(
     Path(id): Path<String>,
     Json(body): Json<UpgradeRequest>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
+    use serverbee_common::constants::{CAP_UPGRADE, has_capability};
+
     let server = ServerService::get_server(&state.db, &id).await?;
-    if !serverbee_common::constants::has_capability(
-        server.capabilities as u32,
-        serverbee_common::constants::CAP_UPGRADE,
-    ) {
+    let caps = server.capabilities as u32;
+    if !has_capability(caps, CAP_UPGRADE) {
         return Err(AppError::Forbidden(
-            "Upgrade is disabled for this server".into(),
+            "Upgrade capability not enabled for this server".into(),
         ));
     }
+
+    let version = normalize_version(&body.version);
+
+    // Validate version format
+    if version.is_empty() || !version.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        return Err(AppError::BadRequest("Invalid version format".into()));
+    }
+
+    // Get agent platform info
+    let (os_raw, arch_raw) = state
+        .agent_manager
+        .get_agent_platform(&id)
+        .ok_or_else(|| {
+            AppError::NotFound("Agent not connected or platform info unavailable".into())
+        })?;
+
+    let os = map_os(&os_raw)
+        .ok_or_else(|| AppError::BadRequest(format!("Unsupported agent OS: {os_raw}")))?;
+    let arch = map_arch(&arch_raw)
+        .ok_or_else(|| AppError::BadRequest(format!("Unsupported agent arch: {arch_raw}")))?;
+
+    // Build asset name
+    let asset_name = if os == "windows" {
+        format!("serverbee-agent-{os}-{arch}.exe")
+    } else {
+        format!("serverbee-agent-{os}-{arch}")
+    };
+
+    let base_url = &state.config.upgrade.release_base_url;
+    let download_url = format!("{base_url}/download/v{version}/{asset_name}");
+
+    // Fetch checksums.txt
+    let checksums_url = format!("{base_url}/download/v{version}/checksums.txt");
+    let checksums_response = reqwest::get(&checksums_url)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to fetch checksums: {e}")))?;
+
+    if !checksums_response.status().is_success() {
+        return Err(AppError::NotFound(format!(
+            "Checksums not found for version v{version} (HTTP {})",
+            checksums_response.status()
+        )));
+    }
+
+    let checksums_body = checksums_response
+        .text()
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to read checksums: {e}")))?;
+
+    // Parse: each line is "<sha256>  <filename>" or "<sha256> <filename>"
+    let sha256 = checksums_body
+        .lines()
+        .find_map(|line| {
+            let mut parts = line.splitn(2, |c: char| c.is_whitespace());
+            let hash = parts.next()?;
+            let name = parts.next()?.trim();
+            if name == asset_name {
+                Some(hash.to_string())
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| {
+            AppError::NotFound(format!(
+                "Checksum not found for {asset_name} in v{version} release"
+            ))
+        })?;
 
     let sender = state
         .agent_manager
         .get_sender(&id)
-        .ok_or_else(|| AppError::NotFound("Server not online".to_string()))?;
+        .ok_or_else(|| AppError::NotFound("Agent not connected".into()))?;
 
     let msg = ServerMessage::Upgrade {
-        version: body.version,
-        download_url: body.download_url,
-        sha256: String::new(), // Temporary - will be properly implemented in Task 11
+        version: version.to_string(),
+        download_url,
+        sha256,
     };
     sender
         .send(msg)
         .await
-        .map_err(|_| AppError::Internal("Failed to send upgrade command".to_string()))?;
+        .map_err(|_| AppError::Internal("Failed to send upgrade command".into()))?;
 
     ok("ok")
 }
@@ -679,4 +772,32 @@ async fn set_server_network_targets(
     }
 
     ok("ok")
+}
+
+#[cfg(test)]
+mod upgrade_tests {
+    use super::*;
+
+    #[test]
+    fn test_map_os() {
+        assert_eq!(map_os("Linux 5.15.0-123-generic"), Some("linux"));
+        assert_eq!(map_os("macOS 14.1.2 23B92 arm64"), Some("darwin"));
+        assert_eq!(map_os("Mac OS X 13.0"), Some("darwin"));
+        assert_eq!(map_os("Windows 10 Pro 22H2"), Some("windows"));
+        assert_eq!(map_os("FreeBSD 13.2"), None);
+    }
+
+    #[test]
+    fn test_map_arch() {
+        assert_eq!(map_arch("x86_64"), Some("amd64"));
+        assert_eq!(map_arch("aarch64"), Some("arm64"));
+        assert_eq!(map_arch("arm"), None);
+    }
+
+    #[test]
+    fn test_normalize_version() {
+        assert_eq!(normalize_version("v0.7.1"), "0.7.1");
+        assert_eq!(normalize_version("0.7.1"), "0.7.1");
+        assert_eq!(normalize_version("v1.0.0"), "1.0.0");
+    }
 }
