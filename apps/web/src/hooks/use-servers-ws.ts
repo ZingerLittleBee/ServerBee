@@ -164,7 +164,7 @@ function handleServerMetricsMessage(raw: { type: string } & Record<string, unkno
       return
     }
     const online = raw.type === 'server_online'
-    const { server_id } = raw as { server_id: string } & Record<string, unknown>
+    const server_id = raw.server_id as string
     queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
       prev ? setServerOnlineStatus(prev, server_id, online) : prev
     )
