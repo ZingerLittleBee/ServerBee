@@ -87,7 +87,13 @@ impl Reporter {
 
         let capabilities = Arc::new(AtomicU32::new(u32::MAX));
 
-        let (ws_stream, _response) = connect_async(&ws_url).await?;
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+        let mut request = ws_url.as_str().into_client_request()?;
+        request.headers_mut().insert(
+            "Authorization",
+            format!("Bearer {}", self.config.token).parse()?,
+        );
+        let (ws_stream, _response) = connect_async(request).await?;
         tracing::info!("WebSocket connected");
 
         let (mut write, mut read) = ws_stream.split();
@@ -1323,7 +1329,7 @@ fn build_ws_url(config: &AgentConfig) -> anyhow::Result<String> {
     } else {
         format!("ws://{base}")
     };
-    Ok(format!("{ws_base}/api/agent/ws?token={}", config.token))
+    Ok(format!("{ws_base}/api/agent/ws"))
 }
 
 fn should_refresh_registration(
