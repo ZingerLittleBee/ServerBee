@@ -11,6 +11,7 @@ use futures_util::{SinkExt, StreamExt};
 use crate::service::auth::AuthService;
 use crate::service::server::ServerService;
 use crate::state::AppState;
+use serverbee_common::constants::MAX_WS_MESSAGE_SIZE;
 use serverbee_common::protocol::{BrowserClientMessage, BrowserMessage, ServerMessage};
 use serverbee_common::types::ServerStatus;
 
@@ -26,7 +27,9 @@ async fn browser_ws_handler(
     // Validate auth: try session cookie first, then API key
     let user = validate_browser_auth(&state, &headers).await;
     match user {
-        Some(_) => ws.on_upgrade(move |socket| handle_browser_ws(socket, state)),
+        Some(_) => ws
+            .max_message_size(MAX_WS_MESSAGE_SIZE)
+            .on_upgrade(move |socket| handle_browser_ws(socket, state)),
         None => axum::http::StatusCode::UNAUTHORIZED.into_response(),
     }
 }
