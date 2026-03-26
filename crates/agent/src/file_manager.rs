@@ -626,28 +626,69 @@ fn format_unix_permissions(mode: u32) -> String {
 
 #[cfg(unix)]
 fn get_username_by_uid(uid: u32) -> Option<String> {
-    // Use libc to get passwd entry
-    unsafe {
-        let pw = libc::getpwuid(uid);
-        if pw.is_null() {
-            Some(uid.to_string())
-        } else {
-            let name = std::ffi::CStr::from_ptr((*pw).pw_name);
-            Some(name.to_string_lossy().to_string())
+    let mut buf = vec![0u8; 1024];
+    let mut passwd = unsafe { std::mem::zeroed::<libc::passwd>() };
+    let mut result: *mut libc::passwd = std::ptr::null_mut();
+
+    loop {
+        let ret = unsafe {
+            libc::getpwuid_r(
+                uid,
+                &mut passwd,
+                buf.as_mut_ptr() as *mut libc::c_char,
+                buf.len(),
+                &mut result,
+            )
+        };
+
+        if ret == libc::ERANGE {
+            buf.resize(buf.len() * 2, 0);
+            if buf.len() > 65536 {
+                return Some(uid.to_string());
+            }
+            continue;
         }
+
+        if ret != 0 || result.is_null() {
+            return Some(uid.to_string());
+        }
+
+        let name = unsafe { std::ffi::CStr::from_ptr(passwd.pw_name) };
+        return Some(name.to_string_lossy().to_string());
     }
 }
 
 #[cfg(unix)]
 fn get_groupname_by_gid(gid: u32) -> Option<String> {
-    unsafe {
-        let gr = libc::getgrgid(gid);
-        if gr.is_null() {
-            Some(gid.to_string())
-        } else {
-            let name = std::ffi::CStr::from_ptr((*gr).gr_name);
-            Some(name.to_string_lossy().to_string())
+    let mut buf = vec![0u8; 1024];
+    let mut group = unsafe { std::mem::zeroed::<libc::group>() };
+    let mut result: *mut libc::group = std::ptr::null_mut();
+
+    loop {
+        let ret = unsafe {
+            libc::getgrgid_r(
+                gid,
+                &mut group,
+                buf.as_mut_ptr() as *mut libc::c_char,
+                buf.len(),
+                &mut result,
+            )
+        };
+
+        if ret == libc::ERANGE {
+            buf.resize(buf.len() * 2, 0);
+            if buf.len() > 65536 {
+                return Some(gid.to_string());
+            }
+            continue;
         }
+
+        if ret != 0 || result.is_null() {
+            return Some(gid.to_string());
+        }
+
+        let name = unsafe { std::ffi::CStr::from_ptr(group.gr_name) };
+        return Some(name.to_string_lossy().to_string());
     }
 }
 
