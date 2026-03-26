@@ -1,9 +1,12 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::{Extension, Path, Query, State};
+use axum::extract::{ConnectInfo, Extension, Path, Query, State};
 use axum::http::HeaderMap;
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
+
+use crate::router::utils::extract_client_ip;
 use chrono::{DateTime, Utc};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
@@ -221,6 +224,7 @@ async fn get_server(
 )]
 async fn update_server(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Extension(current_user): Extension<CurrentUser>,
     headers: HeaderMap,
     Path(id): Path<String>,
@@ -230,7 +234,12 @@ async fn update_server(
         CAP_DOCKER, CAP_PING_HTTP, CAP_PING_ICMP, CAP_PING_TCP, has_capability,
     };
     let user_id = &current_user.user_id;
-    let ip = extract_client_ip(&headers);
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
 
     // Capture old caps before update for diffing
     let old_caps = if input.capabilities.is_some() {
@@ -498,13 +507,19 @@ pub struct BatchCapabilitiesResponse {
 )]
 async fn batch_update_capabilities(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Extension(current_user): Extension<CurrentUser>,
     headers: HeaderMap,
     Json(input): Json<BatchCapabilitiesRequest>,
 ) -> Result<Json<ApiResponse<BatchCapabilitiesResponse>>, AppError> {
     use serverbee_common::constants::*;
     let user_id = &current_user.user_id;
-    let ip = extract_client_ip(&headers);
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
 
     // Validate bits within mask
     if input.set & !CAP_VALID_MASK != 0 || input.unset & !CAP_VALID_MASK != 0 {
@@ -610,20 +625,6 @@ async fn batch_update_capabilities(
     }
 
     ok(BatchCapabilitiesResponse { updated: count })
-}
-
-fn extract_client_ip(headers: &HeaderMap) -> String {
-    headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.split(',').next().unwrap_or("unknown").trim().to_string())
-        .or_else(|| {
-            headers
-                .get("x-real-ip")
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_else(|| "unknown".to_string())
 }
 
 // ---------------------------------------------------------------------------

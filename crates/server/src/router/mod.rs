@@ -1,5 +1,6 @@
 pub mod api;
 mod static_files;
+pub mod utils;
 pub mod ws;
 
 use std::sync::Arc;

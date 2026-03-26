@@ -1,6 +1,7 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::State;
+use axum::extract::{ConnectInfo, State};
 use axum::http::HeaderMap;
 use axum::routing::post;
 use axum::{Json, Router};
@@ -10,27 +11,13 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::error::{ok, ApiResponse, AppError};
+use crate::router::utils::extract_client_ip;
 use crate::service::auth::AuthService;
 use crate::service::config::ConfigService;
 use crate::service::network_probe::NetworkProbeService;
 use crate::state::AppState;
 
 const CONFIG_KEY_AUTO_DISCOVERY: &str = "auto_discovery_key";
-
-fn extract_client_ip(headers: &HeaderMap) -> String {
-    headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
-        .map(|s| s.trim().to_string())
-        .or_else(|| {
-            headers
-                .get("x-real-ip")
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_else(|| "unknown".to_string())
-}
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct RegisterResponse {
@@ -56,10 +43,16 @@ pub fn public_router() -> Router<Arc<AppState>> {
 )]
 async fn register(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<RegisterResponse>>, AppError> {
     // Rate limiting
-    let ip = extract_client_ip(&headers);
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
     if !state.check_register_rate(&ip) {
         return Err(AppError::TooManyRequests(
             "Too many registration attempts, please try later".to_string(),
