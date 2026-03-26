@@ -24,6 +24,7 @@ Every TOML configuration key maps directly to an environment variable. Replace d
 |---------------------|---------|-------------|
 | `SERVERBEE_SERVER__LISTEN` | `0.0.0.0:9527` | Listen address and port |
 | `SERVERBEE_SERVER__DATA_DIR` | `./data` | Data directory for database and backups |
+| `SERVERBEE_SERVER__TRUSTED_PROXIES` | `[]` | CIDR list of trusted reverse proxies (e.g. `["127.0.0.1/32", "10.0.0.0/8"]`) |
 | `SERVERBEE_DATABASE__PATH` | `serverbee.db` | SQLite database file path (relative to data_dir) |
 | `SERVERBEE_DATABASE__MAX_CONNECTIONS` | `10` | Maximum database connection pool size |
 | `SERVERBEE_AUTH__SESSION_TTL` | `86400` | Session token TTL in seconds (default 24h) |
@@ -58,6 +59,7 @@ Every TOML configuration key maps directly to an environment variable. Replace d
 | `SERVERBEE_OAUTH__OIDC__ISSUER_URL` | -- | OIDC provider issuer URL |
 | `SERVERBEE_OAUTH__OIDC__CLIENT_ID` | -- | OIDC client ID |
 | `SERVERBEE_OAUTH__OIDC__CLIENT_SECRET` | -- | OIDC client secret |
+| `SERVERBEE_UPGRADE__RELEASE_BASE_URL` | `https://github.com/ZingerLittleBee/ServerBee/releases` | Base URL for agent upgrade release assets |
 
 ### Agent Environment Variables
 
@@ -86,6 +88,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 |-----|------|---------|-------------|
 | `listen` | string | `"0.0.0.0:9527"` | IP address and port the server listens on |
 | `data_dir` | string | `"./data"` | Directory for database files and other persistent data |
+| `trusted_proxies` | string[] | `[]` | CIDR ranges of trusted reverse proxies. When set, the real client IP is extracted from `X-Forwarded-For` or `X-Real-IP` headers only for requests originating from these ranges |
 
 ### `[database]` -- Database Settings
 
@@ -187,6 +190,12 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 | `client_id` | string | -- | OIDC client ID |
 | `client_secret` | string | -- | OIDC client secret |
 | `scopes` | string[] | `["openid", "email", "profile"]` | OAuth scopes to request |
+
+### `[upgrade]` -- Agent Upgrade
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `release_base_url` | string | `"https://github.com/ZingerLittleBee/ServerBee/releases"` | Base URL for agent upgrade release assets. The server appends `/download/v{version}/` to construct the asset download URL |
 
 ---
 
