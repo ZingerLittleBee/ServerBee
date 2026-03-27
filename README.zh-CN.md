@@ -172,7 +172,7 @@ release_base_url = "https://github.com/ZingerLittleBee/ServerBee/releases"
 环境变量示例:
 ```bash
 export SERVERBEE_ADMIN__PASSWORD="my-secure-password"
-export SERVERBEE_GEOIP__ENABLED=true
+export SERVERBEE_GEOIP__MMDB_PATH="/path/to/GeoLite2-City.mmdb"
 export SERVERBEE_OAUTH__GITHUB__CLIENT_ID="..."
 ```
 

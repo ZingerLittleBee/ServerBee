@@ -160,8 +160,8 @@ export SERVERBEE_ADMIN__PASSWORD="my_password"
 # 等同于 retention.records_days = 14
 export SERVERBEE_RETENTION__RECORDS_DAYS=14
 
-# 等同于 geoip.enabled = true
-export SERVERBEE_GEOIP__ENABLED=true
+# geoip.mmdb_path（路径非空即启用 GeoIP）
+export SERVERBEE_GEOIP__MMDB_PATH="/path/to/GeoLite2-City.mmdb"
 ```
 
 环境变量的优先级高于配置文件。

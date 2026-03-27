@@ -97,8 +97,7 @@ ServerBee stores data in SQLite. Add a Railway volume mounted at `/data` to pers
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SERVERBEE_GEOIP__ENABLED` | `false` | Enable GeoIP lookup for agent IP addresses |
-| `SERVERBEE_GEOIP__MMDB_PATH` | — | Path to MaxMind GeoLite2-City.mmdb file |
+| `SERVERBEE_GEOIP__MMDB_PATH` | `""` | Path to MaxMind GeoLite2-City.mmdb file. Non-empty path enables GeoIP |
 
 ### Logging
 
