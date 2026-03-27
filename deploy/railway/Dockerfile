@@ -77,9 +77,7 @@ ENV SERVERBEE_RATE_LIMIT__REGISTER_MAX=3
 # ENV SERVERBEE_OAUTH__OIDC__CLIENT_SECRET=
 
 # ── GeoIP (Optional) ───────────────────────────────────────────
-# Enable GeoIP lookup for agent IP addresses
-# ENV SERVERBEE_GEOIP__ENABLED=false
-# Path to MaxMind GeoLite2-City.mmdb file
+# Path to MaxMind GeoLite2-City.mmdb file (non-empty path enables GeoIP)
 # ENV SERVERBEE_GEOIP__MMDB_PATH=
 
 # ── Logging ─────────────────────────────────────────────────────
