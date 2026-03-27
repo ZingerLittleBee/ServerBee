@@ -20,18 +20,50 @@ Every TOML configuration key maps directly to an environment variable. Replace d
 
 ### Server Environment Variables
 
+#### Essential
+
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
+| `SERVERBEE_ADMIN__PASSWORD` | auto-generated | Admin password. Leave empty to auto-generate and print to log |
 | `SERVERBEE_SERVER__LISTEN` | `0.0.0.0:9527` | Listen address and port |
+
+#### Common
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
 | `SERVERBEE_SERVER__DATA_DIR` | `./data` | Data directory for database and backups |
-| `SERVERBEE_SERVER__TRUSTED_PROXIES` | `[]` | CIDR list of trusted reverse proxies (e.g. `["127.0.0.1/32", "10.0.0.0/8"]`) |
-| `SERVERBEE_DATABASE__PATH` | `serverbee.db` | SQLite database file path (relative to data_dir) |
-| `SERVERBEE_DATABASE__MAX_CONNECTIONS` | `10` | Maximum database connection pool size |
-| `SERVERBEE_AUTH__SESSION_TTL` | `86400` | Session token TTL in seconds (default 24h) |
 | `SERVERBEE_AUTH__AUTO_DISCOVERY_KEY` | auto-generated | Agent discovery key. Leave empty to auto-generate on first startup |
-| `SERVERBEE_AUTH__SECURE_COOKIE` | `true` | Set Secure flag on session cookies. Set `false` for HTTP-only dev |
 | `SERVERBEE_ADMIN__USERNAME` | `admin` | Initial admin username (only used when no users exist) |
-| `SERVERBEE_ADMIN__PASSWORD` | auto-generated | Initial admin password. Leave empty to auto-generate and print to log |
+| `SERVERBEE_SERVER__TRUSTED_PROXIES` | `[]` | CIDR list of trusted reverse proxies (e.g. `["127.0.0.1/32", "10.0.0.0/8"]`) |
+| `SERVERBEE_SCHEDULER__TIMEZONE` | `UTC` | Timezone for daily traffic aggregation (e.g. `Asia/Shanghai`) |
+| `SERVERBEE_LOG__LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
+| `SERVERBEE_LOG__FILE` | `""` | Log file path. Empty means stdout only |
+
+#### OAuth (Optional)
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `SERVERBEE_OAUTH__BASE_URL` | `""` | Public server URL for constructing OAuth callback URLs |
+| `SERVERBEE_OAUTH__ALLOW_REGISTRATION` | `false` | Auto-create user accounts on first OAuth login |
+| `SERVERBEE_OAUTH__GITHUB__CLIENT_ID` | -- | GitHub OAuth App client ID |
+| `SERVERBEE_OAUTH__GITHUB__CLIENT_SECRET` | -- | GitHub OAuth App client secret |
+| `SERVERBEE_OAUTH__GOOGLE__CLIENT_ID` | -- | Google OAuth client ID |
+| `SERVERBEE_OAUTH__GOOGLE__CLIENT_SECRET` | -- | Google OAuth client secret |
+| `SERVERBEE_OAUTH__OIDC__ISSUER_URL` | -- | OIDC provider issuer URL |
+| `SERVERBEE_OAUTH__OIDC__CLIENT_ID` | -- | OIDC client ID |
+| `SERVERBEE_OAUTH__OIDC__CLIENT_SECRET` | -- | OIDC client secret |
+| `SERVERBEE_OAUTH__OIDC__SCOPES` | `["openid", "email", "profile"]` | OAuth scopes to request |
+
+#### GeoIP (Optional)
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `SERVERBEE_GEOIP__MMDB_PATH` | `""` | Path to MaxMind GeoLite2-City.mmdb file. Non-empty path enables GeoIP |
+
+#### Data Retention (Tuning)
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
 | `SERVERBEE_RETENTION__RECORDS_DAYS` | `7` | Raw metric records retention in days |
 | `SERVERBEE_RETENTION__RECORDS_HOURLY_DAYS` | `90` | Hourly aggregated records retention in days |
 | `SERVERBEE_RETENTION__GPU_RECORDS_DAYS` | `7` | GPU metric records retention in days |
@@ -43,42 +75,58 @@ Every TOML configuration key maps directly to an environment variable. Replace d
 | `SERVERBEE_RETENTION__TRAFFIC_DAILY_DAYS` | `400` | Traffic daily records retention in days |
 | `SERVERBEE_RETENTION__TASK_RESULTS_DAYS` | `7` | Task results retention in days |
 | `SERVERBEE_RETENTION__DOCKER_EVENTS_DAYS` | `7` | Docker event records retention in days |
-| `SERVERBEE_SCHEDULER__TIMEZONE` | `UTC` | Timezone for daily traffic aggregation (e.g. `Asia/Shanghai`) |
+| `SERVERBEE_RETENTION__SERVICE_MONITOR_DAYS` | `30` | Service monitor records retention in days |
+
+#### Internal
+
+> The following variables have sensible defaults and rarely need modification. Only adjust when you have a specific requirement.
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `SERVERBEE_DATABASE__PATH` | `serverbee.db` | SQLite database file path (relative to data_dir) |
+| `SERVERBEE_DATABASE__MAX_CONNECTIONS` | `10` | Maximum database connection pool size |
+| `SERVERBEE_AUTH__SESSION_TTL` | `86400` | Session token TTL in seconds (default 24h) |
+| `SERVERBEE_AUTH__SECURE_COOKIE` | `true` | Set Secure flag on session cookies. Set `false` for HTTP-only dev |
 | `SERVERBEE_RATE_LIMIT__LOGIN_MAX` | `5` | Max login attempts per IP within 15-minute window |
 | `SERVERBEE_RATE_LIMIT__REGISTER_MAX` | `3` | Max agent registrations per IP within 15-minute window |
-| `SERVERBEE_LOG__LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
-| `SERVERBEE_LOG__FILE` | `""` | Log file path. Empty means stdout only |
-| `SERVERBEE_GEOIP__ENABLED` | `false` | Enable GeoIP lookup for agent IP addresses |
-| `SERVERBEE_GEOIP__MMDB_PATH` | `""` | Path to MaxMind GeoLite2-City.mmdb file |
-| `SERVERBEE_OAUTH__BASE_URL` | `""` | Public server URL for constructing OAuth callback URLs |
-| `SERVERBEE_OAUTH__ALLOW_REGISTRATION` | `false` | Auto-create user accounts on first OAuth login |
-| `SERVERBEE_OAUTH__GITHUB__CLIENT_ID` | -- | GitHub OAuth App client ID |
-| `SERVERBEE_OAUTH__GITHUB__CLIENT_SECRET` | -- | GitHub OAuth App client secret |
-| `SERVERBEE_OAUTH__GOOGLE__CLIENT_ID` | -- | Google OAuth client ID |
-| `SERVERBEE_OAUTH__GOOGLE__CLIENT_SECRET` | -- | Google OAuth client secret |
-| `SERVERBEE_OAUTH__OIDC__ISSUER_URL` | -- | OIDC provider issuer URL |
-| `SERVERBEE_OAUTH__OIDC__CLIENT_ID` | -- | OIDC client ID |
-| `SERVERBEE_OAUTH__OIDC__CLIENT_SECRET` | -- | OIDC client secret |
 | `SERVERBEE_UPGRADE__RELEASE_BASE_URL` | `https://github.com/ZingerLittleBee/ServerBee/releases` | Base URL for agent upgrade release assets |
 
 ### Agent Environment Variables
 
 Agent top-level keys use single underscore. Nested keys use `__` (double underscore).
 
+#### Essential
+
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
 | `SERVERBEE_SERVER_URL` | -- (required) | Server HTTP base URL (e.g. `http://your-server:9527`). Agent appends API paths automatically |
-| `SERVERBEE_TOKEN` | auto-populated | Agent auth token. Auto-populated after registration, do not set manually |
 | `SERVERBEE_AUTO_DISCOVERY_KEY` | `""` | Discovery key for first-time registration. Only used when token is empty |
+
+#### Common
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
 | `SERVERBEE_COLLECTOR__INTERVAL` | `3` | Metric report interval in seconds |
 | `SERVERBEE_COLLECTOR__ENABLE_GPU` | `false` | Enable NVIDIA GPU monitoring (requires nvml) |
 | `SERVERBEE_COLLECTOR__ENABLE_TEMPERATURE` | `true` | Enable CPU temperature monitoring |
 | `SERVERBEE_FILE__ENABLED` | `false` | Enable file management on this agent |
 | `SERVERBEE_FILE__ROOT_PATHS` | `[]` | Allowed root paths (comma-separated, e.g. `/home,/var/log`). Empty rejects all file operations |
-| `SERVERBEE_FILE__MAX_FILE_SIZE` | `1073741824` | Max file size in bytes for read/download (default 1GB) |
-| `SERVERBEE_FILE__DENY_PATTERNS` | `*.key,*.pem,...` | Glob patterns for files the agent refuses to access |
+| `SERVERBEE_IP_CHANGE__ENABLED` | `true` | Enable periodic IP change detection |
+| `SERVERBEE_IP_CHANGE__CHECK_EXTERNAL_IP` | `false` | Also query an external URL to detect public/NAT IP changes |
 | `SERVERBEE_LOG__LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `SERVERBEE_LOG__FILE` | `""` | Log file path. Empty means stdout only |
+
+#### Internal
+
+> The following variables have sensible defaults and rarely need modification. Only adjust when you have a specific requirement.
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `SERVERBEE_TOKEN` | auto-populated | Agent auth token. Auto-populated after registration, do not set manually |
+| `SERVERBEE_FILE__MAX_FILE_SIZE` | `1073741824` | Max file size in bytes for read/download (default 1GB) |
+| `SERVERBEE_FILE__DENY_PATTERNS` | `*.key,*.pem,...` | Glob patterns for files the agent refuses to access |
+| `SERVERBEE_IP_CHANGE__EXTERNAL_IP_URL` | `https://api.ipify.org` | URL that returns the agent's external IP as plain text |
+| `SERVERBEE_IP_CHANGE__INTERVAL_SECS` | `300` | IP check interval in seconds (default 5 minutes) |
 
 ## Server Configuration (server.toml)
 
@@ -127,6 +175,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | `traffic_daily_days` | u32 | `400` | Days to keep daily traffic records |
 | `task_results_days` | u32 | `7` | Days to keep task execution results |
 | `docker_events_days` | u32 | `7` | Days to keep Docker event records |
+| `service_monitor_days` | u32 | `30` | Days to keep service monitor check records |
 
 <Callout type="info">
 Raw metric records are collected every 60 seconds and retained for 7 days by default. The hourly aggregator computes averages so you can keep long-term trends for 90 days without excessive storage. Adjust these values based on your disk space and monitoring needs.
@@ -158,8 +207,7 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `enabled` | bool | `false` | Whether to perform GeoIP lookups on agent IP addresses |
-| `mmdb_path` | string | `""` | Path to a MaxMind GeoLite2-City MMDB file |
+| `mmdb_path` | string | `""` | Path to a MaxMind GeoLite2-City MMDB file. Non-empty path enables GeoIP |
 
 ### `[oauth]` -- OAuth / SSO
 
@@ -226,6 +274,15 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 | `max_file_size` | u64 | `1073741824` | Maximum file size (bytes) for read and download operations (default 1 GB) |
 | `deny_patterns` | string[] | `["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]` | Glob patterns for files the agent will refuse to access |
 
+### `[ip_change]` -- IP Change Detection
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | bool | `true` | Enable periodic IP change detection. Agent enumerates NIC addresses and reports changes |
+| `check_external_ip` | bool | `false` | Also query an external URL to detect public/NAT IP changes |
+| `external_ip_url` | string | `"https://api.ipify.org"` | URL that returns the agent's external IP as plain text (used when `check_external_ip` is true) |
+| `interval_secs` | u64 | `300` | IP check interval in seconds (default 5 minutes) |
+
 ### `[log]` -- Logging
 
 | Key | Type | Default | Description |
@@ -263,7 +320,6 @@ records_days = 14
 records_hourly_days = 180
 
 [geoip]
-enabled = true
 mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"
 
 [log]
@@ -302,6 +358,10 @@ enabled = true
 root_paths = ["/home", "/var/log", "/etc"]
 max_file_size = 1073741824
 deny_patterns = ["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]
+
+[ip_change]
+enabled = true
+check_external_ip = false
 
 [log]
 level = "info"
