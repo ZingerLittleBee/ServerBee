@@ -1,40 +1,52 @@
 # Environment Variables Cleanup & Documentation Reorganization
 
 **Date:** 2026-03-28
-**Scope:** Documentation only (ENV.md, en/cn configuration.mdx). No code changes.
+**Scope:** Documentation only. No Rust code changes.
 
 ## Problem
 
-1. **Phantom variable**: `SERVERBEE_GEOIP__ENABLED` is documented in ENV.md and both configuration.mdx files but does not exist in code. `GeoIpConfig` only has `mmdb_path`; GeoIP is implicitly enabled when `mmdb_path` is non-empty.
+1. **Phantom variable**: `SERVERBEE_GEOIP__ENABLED` is documented but does not exist in code. `GeoIpConfig` only has `mmdb_path`; GeoIP is implicitly enabled when `mmdb_path` is non-empty. This phantom variable appears in **10 locations** across the repo:
+   - `ENV.md` (env var table)
+   - `apps/docs/content/docs/en/configuration.mdx` (env var table + TOML reference)
+   - `apps/docs/content/docs/cn/configuration.mdx` (env var table + TOML reference + TOML example)
+   - `apps/docs/content/docs/en/server.mdx` (env var example)
+   - `apps/docs/content/docs/cn/server.mdx` (env var example)
+   - `apps/docs/content/docs/cn/deployment.mdx` (docker-compose example)
+   - `deploy/railway/README.md` (env var table)
+   - `deploy/railway/Dockerfile` (commented-out ENV line)
+   - `README.md` (env var example)
+   - `README.zh-CN.md` (env var example)
 2. **Missing documentation** for 6 variables that exist in code:
-   - `SERVERBEE_RETENTION__SERVICE_MONITOR_DAYS` (default 30) — missing from all three docs
+   - `SERVERBEE_RETENTION__SERVICE_MONITOR_DAYS` (default 30) — missing from all docs
    - `SERVERBEE_IP_CHANGE__ENABLED` (default true) — missing from en/cn configuration.mdx
    - `SERVERBEE_IP_CHANGE__CHECK_EXTERNAL_IP` (default false) — missing from en/cn configuration.mdx
    - `SERVERBEE_IP_CHANGE__EXTERNAL_IP_URL` (default `https://api.ipify.org`) — missing from en/cn configuration.mdx
    - `SERVERBEE_IP_CHANGE__INTERVAL_SECS` (default 300) — missing from en/cn configuration.mdx
    - `SERVERBEE_OAUTH__OIDC__SCOPES` (default `["openid","email","profile"]`) — missing from ENV.md
-3. **Stale TOML example**: cn configuration.mdx line 213 references `geoip.enabled = false` which has no corresponding code.
-4. **Flat structure**: All 59 env vars are listed in a single flat table, making it hard for users to identify which ones they actually need to configure.
+3. **Flat structure**: env vars are listed in a single flat table, making it hard for users to identify which ones they actually need to configure.
 
 ## Design
 
 ### Decision: Remove `SERVERBEE_GEOIP__ENABLED`
 
-Remove from documentation only. The implicit behavior ("provide `mmdb_path` → GeoIP is enabled") is the cleanest UX. An extra boolean toggle is redundant.
+Remove from **all documentation** across the repo. The implicit behavior ("provide `mmdb_path` → GeoIP is enabled") is the cleanest UX. Update all `GEOIP__MMDB_PATH` descriptions to explicitly state "non-empty path enables GeoIP".
+
+### Decision: `IP_CHANGE__*` Classification
+
+`IP_CHANGE__ENABLED` and `IP_CHANGE__CHECK_EXTERNAL_IP` are user-facing feature toggles → classify as **Common**. `IP_CHANGE__EXTERNAL_IP_URL` and `IP_CHANGE__INTERVAL_SECS` are tuning details with sensible defaults → classify as **Internal**.
 
 ### Fix Checklist
 
 | # | Issue | Action | Files |
 |---|-------|--------|-------|
-| 1 | `GEOIP__ENABLED` phantom | Delete from env var tables; update description of `GEOIP__MMDB_PATH` to say "non-empty = enabled" | ENV.md, en/cn configuration.mdx |
+| 1 | `GEOIP__ENABLED` phantom (10 locations) | Delete all references; update `GEOIP__MMDB_PATH` description to "non-empty = enabled" | ENV.md, en/cn configuration.mdx, en/cn server.mdx, cn/deployment.mdx, deploy/railway/README.md, deploy/railway/Dockerfile, README.md, README.zh-CN.md |
 | 2 | `RETENTION__SERVICE_MONITOR_DAYS` missing | Add to retention tables (default 30) | ENV.md, en/cn configuration.mdx |
-| 3 | `IP_CHANGE__*` missing from mdx | Add 4 vars to Agent env var tables and TOML reference sections | en/cn configuration.mdx |
+| 3 | `IP_CHANGE__*` missing from mdx | Add 4 vars to Agent sections (2 as Common, 2 as Internal) and TOML reference | en/cn configuration.mdx |
 | 4 | `OAUTH__OIDC__SCOPES` missing from ENV.md | Add to OAuth table | ENV.md |
-| 5 | cn mdx TOML example has `geoip.enabled` | Delete line, keep only `mmdb_path` | cn/configuration.mdx |
 
 ### Layered Documentation Structure
 
-All three docs (ENV.md, en configuration.mdx, cn configuration.mdx) adopt the same classification:
+All three primary docs (ENV.md, en configuration.mdx, cn configuration.mdx) adopt the same classification:
 
 #### ENV.md Structure
 
@@ -95,6 +107,8 @@ All three docs (ENV.md, en configuration.mdx, cn configuration.mdx) adopt the sa
   SERVERBEE_COLLECTOR__ENABLE_TEMPERATURE
   SERVERBEE_FILE__ENABLED
   SERVERBEE_FILE__ROOT_PATHS
+  SERVERBEE_IP_CHANGE__ENABLED
+  SERVERBEE_IP_CHANGE__CHECK_EXTERNAL_IP
   SERVERBEE_LOG__LEVEL
   SERVERBEE_LOG__FILE
 
@@ -102,8 +116,6 @@ All three docs (ENV.md, en configuration.mdx, cn configuration.mdx) adopt the sa
   SERVERBEE_TOKEN
   SERVERBEE_FILE__MAX_FILE_SIZE
   SERVERBEE_FILE__DENY_PATTERNS
-  SERVERBEE_IP_CHANGE__ENABLED
-  SERVERBEE_IP_CHANGE__CHECK_EXTERNAL_IP
   SERVERBEE_IP_CHANGE__EXTERNAL_IP_URL
   SERVERBEE_IP_CHANGE__INTERVAL_SECS
 ```
@@ -116,44 +128,72 @@ Each "Internal" section is prefixed with a note:
 
 **Environment Variable Quick Reference** section: same layered tables as ENV.md above.
 
-**TOML Detailed Reference** section: keeps the existing per-`[section]` organization (`[server]`, `[database]`, `[auth]`, etc.) unchanged. No structural change here — this part is already well-organized by config section.
+**TOML Detailed Reference** section: keeps the existing per-`[section]` organization (`[server]`, `[database]`, `[auth]`, etc.) but with these fixes:
+- Remove `geoip.enabled` row from `[geoip]` tables in both en/cn
+- Add `[ip_change]` section to agent TOML reference in both en/cn
+- Add `service_monitor_days` row to `[retention]` tables in both en/cn
 
 **TOML Example** updates:
-- Add `[ip_change]` section to agent.toml examples
-- Add `retention.service_monitor_days` to server.toml examples
-- Remove `geoip.enabled` from cn server.toml example
+- Add `[ip_change]` section to agent.toml examples (en/cn)
+- Add `retention.service_monitor_days` to server.toml examples (cn)
+- Remove `geoip.enabled` lines from server.toml examples (cn)
+
+#### Other files — targeted fixes only
+
+These files get surgical `GEOIP__ENABLED` removal, no structural reorganization:
+- `apps/docs/content/docs/en/server.mdx` — delete env var example lines 125-126, replace with `GEOIP__MMDB_PATH` example
+- `apps/docs/content/docs/cn/server.mdx` — delete env var example lines 163-164, replace with `GEOIP__MMDB_PATH` example
+- `apps/docs/content/docs/cn/deployment.mdx` — remove `GEOIP__ENABLED` from docker-compose example (line 63)
+- `deploy/railway/README.md` — remove `GEOIP__ENABLED` row from env var table, update `GEOIP__MMDB_PATH` description
+- `deploy/railway/Dockerfile` — remove commented-out `GEOIP__ENABLED` line (line 81)
+- `README.md` — replace `GEOIP__ENABLED` example with `GEOIP__MMDB_PATH`
+- `README.zh-CN.md` — same as README.md
 
 ### Variable Count Summary
 
-After cleanup:
+Counting method: each unique `SERVERBEE_*` env var name, counted once per binary (server vs agent). `LOG__LEVEL` and `LOG__FILE` are counted once per binary since they are independent configs.
+
+After cleanup — **39 server + 18 agent = 57 unique env vars**:
 
 | Category | Server | Agent | Total |
 |----------|--------|-------|-------|
 | Essential | 2 | 2 | 4 |
-| Common | 7 | 7 | 14 |
+| Common | 7 | 9 | 16 |
 | OAuth (Optional) | 10 | — | 10 |
 | GeoIP (Optional) | 1 | — | 1 |
 | Retention (Tuning) | 12 | — | 12 |
-| Internal | 7 | 7 | 14 |
+| Internal | 7 | 5 | 12 |
 | **Total** | **39** | **16** | **55** |
 
-Note: Total is 55 (down from 59 documented previously) because:
-- Removed 1 phantom variable (`GEOIP__ENABLED`)
-- Added 1 missing variable (`RETENTION__SERVICE_MONITOR_DAYS`)
-- Added 1 missing variable (`OAUTH__OIDC__SCOPES`)
-- The `IP_CHANGE__*` 4 vars were already in ENV.md, just missing from configuration.mdx
-- Net: 59 - 1 + 1 + 1 = 60 actual env vars across server + agent (some like LOG__* are shared names but independent configs)
+Note: The 57 in the header counts agent LOG__LEVEL/LOG__FILE separately from server LOG__LEVEL/LOG__FILE (since they are separate binaries with separate configs). The table shows 55 unique env var *names* since those 2 names are shared. Both counts are correct; the table uses unique names.
 
-Precise count: **39 server + 16 agent = 55 unique env vars**.
+Changes vs previous state:
+- Removed 1 phantom variable (`GEOIP__ENABLED`)
+- Added 1 missing variable (`RETENTION__SERVICE_MONITOR_DAYS`) to docs
+- Added 1 missing variable (`OAUTH__OIDC__SCOPES`) to ENV.md
+- Added 4 missing variables (`IP_CHANGE__*`) to configuration.mdx
+- Moved 2 `IP_CHANGE__*` vars from Internal → Common
 
 ### Files to Modify
 
-1. `ENV.md` — restructure into layered sections, fix issues #1/#2/#4
-2. `apps/docs/content/docs/en/configuration.mdx` — restructure env var tables, fix issues #1/#2/#3, update TOML reference
-3. `apps/docs/content/docs/cn/configuration.mdx` — same as en, plus fix issue #5
+Primary (structural reorganization + fixes):
+
+1. `ENV.md` — restructure into layered sections; fix #1, #2, #4
+2. `apps/docs/content/docs/en/configuration.mdx` — restructure env var tables; fix #1, #2, #3; update TOML reference
+3. `apps/docs/content/docs/cn/configuration.mdx` — same as en; also fix TOML example
+
+Secondary (surgical `GEOIP__ENABLED` removal only):
+
+4. `apps/docs/content/docs/en/server.mdx` — replace GEOIP__ENABLED example with GEOIP__MMDB_PATH
+5. `apps/docs/content/docs/cn/server.mdx` — same as en
+6. `apps/docs/content/docs/cn/deployment.mdx` — remove from docker-compose example
+7. `deploy/railway/README.md` — remove from env var table
+8. `deploy/railway/Dockerfile` — remove commented-out ENV line
+9. `README.md` — replace example
+10. `README.zh-CN.md` — replace example
 
 ### Out of Scope
 
 - No Rust code changes (the `GeoIpConfig` implicit behavior is intentional)
-- No changes to Dockerfile or docker-compose env var examples
 - No changes to the "内部默认值（不可配置）" section in cn configuration.mdx (hardcoded constants table is already good)
+- `docs/superpowers/specs/` and `docs/superpowers/plans/` — internal design docs, not user-facing; `GEOIP__ENABLED` references in these are historical and left as-is
