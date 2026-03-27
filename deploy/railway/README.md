@@ -1,6 +1,6 @@
 # ServerBee Server — Railway Template
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/template/YOUR_TEMPLATE_ID)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/jez6Pw)
 
 Lightweight, self-hosted VPS monitoring server. Receives metrics from distributed agents over WebSocket, stores in SQLite, and serves a React dashboard.
 
