@@ -136,7 +136,7 @@ Each "Internal" section is prefixed with a note:
 **TOML Example** updates:
 - Add `[ip_change]` section to agent.toml examples (en/cn)
 - Add `retention.service_monitor_days` to server.toml examples (cn)
-- Remove `geoip.enabled` lines from server.toml examples (cn)
+- Remove `geoip.enabled` lines from server.toml examples (en and cn)
 
 #### Other files — targeted fixes only
 
@@ -151,28 +151,19 @@ These files get surgical `GEOIP__ENABLED` removal, no structural reorganization:
 
 ### Variable Count Summary
 
-Counting method: each unique `SERVERBEE_*` env var name, counted once per binary (server vs agent). `LOG__LEVEL` and `LOG__FILE` are counted once per binary since they are independent configs.
+Counting method: unique `SERVERBEE_*` env var names, per binary.
 
-After cleanup — **39 server + 18 agent = 57 unique env vars**:
+| Category | Server | Agent |
+|----------|--------|-------|
+| Essential | 2 | 2 |
+| Common | 7 | 9 |
+| OAuth (Optional) | 10 | — |
+| GeoIP (Optional) | 1 | — |
+| Retention (Tuning) | 12 | — |
+| Internal | 7 | 5 |
+| **Subtotal** | **39** | **16** |
 
-| Category | Server | Agent | Total |
-|----------|--------|-------|-------|
-| Essential | 2 | 2 | 4 |
-| Common | 7 | 9 | 16 |
-| OAuth (Optional) | 10 | — | 10 |
-| GeoIP (Optional) | 1 | — | 1 |
-| Retention (Tuning) | 12 | — | 12 |
-| Internal | 7 | 5 | 12 |
-| **Total** | **39** | **16** | **55** |
-
-Note: The 57 in the header counts agent LOG__LEVEL/LOG__FILE separately from server LOG__LEVEL/LOG__FILE (since they are separate binaries with separate configs). The table shows 55 unique env var *names* since those 2 names are shared. Both counts are correct; the table uses unique names.
-
-Changes vs previous state:
-- Removed 1 phantom variable (`GEOIP__ENABLED`)
-- Added 1 missing variable (`RETENTION__SERVICE_MONITOR_DAYS`) to docs
-- Added 1 missing variable (`OAUTH__OIDC__SCOPES`) to ENV.md
-- Added 4 missing variables (`IP_CHANGE__*`) to configuration.mdx
-- Moved 2 `IP_CHANGE__*` vars from Internal → Common
+`LOG__LEVEL` and `LOG__FILE` appear in both Server and Agent (independent configs, same env var name). Deduplicating gives **53 unique env var names** across the project.
 
 ### Files to Modify
 
