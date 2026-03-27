@@ -162,8 +162,7 @@ traffic_daily_days = 400       # 流量日记录保留天数
 timezone = "UTC"               # 流量日聚合时区（如 Asia/Shanghai）
 
 [geoip]
-enabled = false
-mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"
+mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"  # 路径非空即启用 GeoIP
 
 [upgrade]
 release_base_url = "https://github.com/ZingerLittleBee/ServerBee/releases"

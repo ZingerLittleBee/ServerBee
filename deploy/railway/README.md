@@ -65,6 +65,7 @@ ServerBee stores data in SQLite. Add a Railway volume mounted at `/data` to pers
 | `SERVERBEE_RETENTION__TRAFFIC_DAILY_DAYS` | `400` | Traffic daily records retention in days |
 | `SERVERBEE_RETENTION__TASK_RESULTS_DAYS` | `7` | Task results retention in days |
 | `SERVERBEE_RETENTION__DOCKER_EVENTS_DAYS` | `7` | Docker event records retention in days |
+| `SERVERBEE_RETENTION__SERVICE_MONITOR_DAYS` | `30` | Service monitor records retention in days |
 
 ### Scheduler
 
