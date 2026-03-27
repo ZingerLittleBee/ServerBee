@@ -162,8 +162,7 @@ traffic_daily_days = 400       # Traffic daily records retention
 timezone = "UTC"               # Timezone for daily traffic aggregation (e.g. Asia/Shanghai)
 
 [geoip]
-enabled = false
-mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"
+mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"  # Non-empty path enables GeoIP
 
 [upgrade]
 release_base_url = "https://github.com/ZingerLittleBee/ServerBee/releases"
