@@ -365,7 +365,7 @@ Agent (binary)
 Server (docker)
   Container: serverbee-server (Up 3 days)
   Version:   v0.7.3 (from install metadata)
-  Image:     ghcr.io/zingerlittlebee/serverbee-server:latest
+  Image:     ghcr.io/zingerlittlebee/serverbee-server:v0.7.3
   Port:      0.0.0.0:9527->9527
   Dashboard: http://10.0.0.1:9527
   Recent logs (last 5 lines):
@@ -401,37 +401,32 @@ serverbee.sh restart server      # 重启指定组件
 
 ### install.sh 向后兼容
 
-不再使用 shim 转发（`bash -s` 从 stdin 执行时 `BASH_SOURCE[0]` 为空，无法定位同目录文件）。
+**`deploy/install.sh` 是 `deploy/serverbee.sh` 的完整副本**，两个文件代码完全相同。
 
-方案：**`deploy/install.sh` 直接替换为 `deploy/serverbee.sh` 的完整内容**。两个文件内容相同，只是入口行为不同：
-
-- `deploy/serverbee.sh` — 主脚本，无参数进交互式菜单
-- `deploy/install.sh` — 同一份代码，但当检测到经 stdin 执行（`$0` 为 `bash`/`sh` 且无 `BASH_SOURCE`）且传入了位置参数时，自动注入 `install` 子命令
-
-具体逻辑：在参数解析前，当第一个参数不是已知子命令时，自动注入 `install`：
+主脚本（无论叫什么文件名）统一支持一个 shorthand：**第一个参数不是已知子命令时，自动注入 `install`**。这是主脚本的正式功能，不区分文件名：
 
 ```bash
 # Known subcommands
 KNOWN_COMMANDS="install uninstall upgrade status start stop restart config env"
 
-# Backward compat: if first arg is not a known command, prepend "install"
-# Covers both:
-#   curl ... | bash -s server                    (stdin, $1=server)
-#   bash deploy/install.sh server                (file, $1=server)
-#   sudo bash deploy/install.sh agent --server-url ...
+# Shorthand: if first arg is not a known command, prepend "install"
+# Examples:
+#   serverbee.sh server                          → install server
+#   serverbee.sh agent --server-url ...          → install agent --server-url ...
+#   curl ... | bash -s server                    → install server
+#   bash deploy/install.sh agent                 → install agent
 if [[ $# -gt 0 ]] && ! echo "$KNOWN_COMMANDS" | grep -qw "$1"; then
     set -- install "$@"
 fi
 ```
 
-这样所有现有命令形式都无需改动：
-- `curl ... deploy/install.sh | sudo bash -s server` → 等价于 `install server`
-- `curl ... deploy/install.sh | sudo bash -s agent --server-url ... --discovery-key ...` → 等价于 `install agent --server-url ...`
-- `sudo bash deploy/install.sh server` → 等价于 `install server`（本地执行）
-- `sudo bash deploy/install.sh agent` → 等价于 `install agent`（本地执行）
-- `serverbee.sh install agent ...` → 直接匹配 install 子命令（不触发注入）
+这意味着以下形式全部等价：
+- `serverbee.sh install server` = `serverbee.sh server`
+- `serverbee.sh install agent --server-url ...` = `serverbee.sh agent --server-url ...`
+- `curl ... deploy/install.sh | sudo bash -s server` → `install server`
+- `sudo bash deploy/install.sh agent` → `install agent`
 
-判断逻辑不再依赖 stdin/file 区分，而是统一看"第一个参数是否是已知子命令"。这同时覆盖了 stdin 和 file-executed 两种场景。
+命令总览中 `serverbee.sh <command> [component] [options]` 仍然是标准形式；shorthand 是便捷语法，不影响子命令的完整性。无参数时仍然进入交互式菜单。
 
 发布时 CI 将 `deploy/serverbee.sh` 复制为 `deploy/install.sh`（或两个文件始终保持相同内容）。
 
