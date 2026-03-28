@@ -130,7 +130,7 @@ All config options can be set via TOML files or environment variables with `SERV
 [server]
 listen = "0.0.0.0:9527"
 data_dir = "/var/lib/serverbee"
-trusted_proxies = []              # CIDR list, e.g. ["127.0.0.1/32", "10.0.0.0/8"]
+trusted_proxies = []              # Defaults to private/loopback CIDRs; set to [] to disable
 
 [database]
 path = "serverbee.db"

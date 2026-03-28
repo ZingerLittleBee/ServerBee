@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3] - 2026-03-28
+
+### Changed
+
+- **Auto-trust private/loopback proxies** -- `server.trusted_proxies` now defaults to RFC 1918 + loopback CIDRs (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `::1/128`) instead of an empty list. This means `X-Forwarded-For` is trusted automatically behind common reverse proxies (Nginx, Docker, Railway) without manual CIDR configuration. Set `trusted_proxies = []` to disable
+- **Prominent startup credentials** -- Auto-generated admin password and auto-discovery key are now grouped in a visually distinct block in the startup log, making them easy to spot on first launch
+- **Environment variable docs restructured** -- ENV.md and Fumadocs configuration pages reorganized into layered categories (Quick Start / Common / OAuth / GeoIP / Retention / Internal) for easier onboarding
+
+### Added
+
+- **Railway `.env.example`** -- New `deploy/railway/.env.example` with recommended environment variables and Chinese comments for quick Railway deployment configuration
+
 ## [0.7.2] - 2026-03-27
 
 ### Changed
