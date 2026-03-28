@@ -64,6 +64,3 @@ extension BrowserMessage: Decodable {
     }
 }
 
-struct ApiResponse<T: Decodable & Sendable>: Decodable, Sendable {
-    let data: T
-}
