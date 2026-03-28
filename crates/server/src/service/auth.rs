@@ -476,6 +476,19 @@ impl AuthService {
 mod tests {
     use super::*;
 
+    /// Helper to build LoginParams with test defaults; override only what matters.
+    fn login_params<'a>(username: &'a str, password: &'a str) -> LoginParams<'a> {
+        LoginParams {
+            username,
+            password,
+            totp_code: None,
+            ip: "127.0.0.1",
+            user_agent: "test-agent",
+            session_ttl: 3600,
+            must_change_password: false,
+        }
+    }
+
     #[test]
     fn test_hash_and_verify_password() {
         let password = "my_secret_p@ssw0rd!";
@@ -621,11 +634,7 @@ mod tests {
             .await
             .expect("create_user should succeed");
         let (session, user) =
-            AuthService::login(&db, LoginParams {
-                username: "bob", password: "secret123", totp_code: None,
-                ip: "127.0.0.1", user_agent: "test-agent", session_ttl: 3600,
-                must_change_password: false,
-            })
+            AuthService::login(&db, login_params("bob", "secret123"))
                 .await
                 .expect("login should succeed");
         assert_eq!(user.username, "bob");
@@ -639,11 +648,7 @@ mod tests {
             .await
             .expect("create_user should succeed");
         let result =
-            AuthService::login(&db, LoginParams {
-                username: "carol", password: "wrong_pass", totp_code: None,
-                ip: "127.0.0.1", user_agent: "test-agent", session_ttl: 3600,
-                must_change_password: false,
-            }).await;
+            AuthService::login(&db, login_params("carol", "wrong_pass")).await;
         assert!(result.is_err(), "wrong password should return an error");
     }
 
@@ -651,11 +656,7 @@ mod tests {
     async fn test_login_nonexistent_user() {
         let (db, _tmp) = setup_test_db().await;
         let result =
-            AuthService::login(&db, LoginParams {
-                username: "nobody", password: "pass", totp_code: None,
-                ip: "127.0.0.1", user_agent: "test-agent", session_ttl: 3600,
-                must_change_password: false,
-            }).await;
+            AuthService::login(&db, login_params("nobody", "pass")).await;
         assert!(
             result.is_err(),
             "logging in as nonexistent user should error"
@@ -669,11 +670,7 @@ mod tests {
             .await
             .expect("create_user should succeed");
         let (session, _user) =
-            AuthService::login(&db, LoginParams {
-                username: "dave", password: "pass1234", totp_code: None,
-                ip: "127.0.0.1", user_agent: "ua", session_ttl: 3600,
-                must_change_password: false,
-            })
+            AuthService::login(&db, login_params("dave", "pass1234"))
                 .await
                 .expect("login should succeed");
         let validated = AuthService::validate_session(&db, &session.token, 3600)
@@ -743,19 +740,11 @@ mod tests {
             .expect("change_password should succeed");
         // Login with new password should succeed
         let result =
-            AuthService::login(&db, LoginParams {
-                username: "grace", password: "new_pass99", totp_code: None,
-                ip: "127.0.0.1", user_agent: "ua", session_ttl: 3600,
-                must_change_password: false,
-            }).await;
+            AuthService::login(&db, login_params("grace", "new_pass99")).await;
         assert!(result.is_ok(), "login with new password should succeed");
         // Login with old password should fail
         let result2 =
-            AuthService::login(&db, LoginParams {
-                username: "grace", password: "old_pass1", totp_code: None,
-                ip: "127.0.0.1", user_agent: "ua", session_ttl: 3600,
-                must_change_password: false,
-            }).await;
+            AuthService::login(&db, login_params("grace", "old_pass1")).await;
         assert!(result2.is_err(), "login with old password should fail");
     }
 }
