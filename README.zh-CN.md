@@ -217,6 +217,14 @@ client_secret = "..."
 
 ## 部署
 
+### Railway（一键部署）
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/jez6Pw?referralCode=iUZg_8&utm_medium=integration&utm_source=template&utm_campaign=generic)
+
+1. 点击上方按钮，设置 `SERVERBEE_ADMIN__PASSWORD`，然后部署
+2. 添加 Volume 挂载到 `/data` 以持久化数据
+3. 将 Agent 配置连接到 Railway 提供的 URL
+
 ### Systemd
 
 ```bash
