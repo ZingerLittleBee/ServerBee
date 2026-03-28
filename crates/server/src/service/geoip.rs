@@ -82,27 +82,36 @@ impl GeoIpService {
             };
         }
 
-        match self.reader.lookup::<GeoCity>(ip) {
-            Ok(city) => {
-                let country_code = city.country.and_then(|c| c.iso_code);
-                let region = city
-                    .city
-                    .and_then(|c| c.names)
-                    .and_then(|n| n.get("en").cloned())
-                    .or_else(|| {
-                        city.subdivisions
-                            .and_then(|subs| subs.into_iter().next())
-                            .and_then(|s| s.names)
-                            .and_then(|n| n.get("en").cloned())
-                    });
-                GeoLookup {
-                    country_code,
-                    region,
+        match self.reader.lookup(ip) {
+            Ok(result) => match result.decode::<GeoCity>() {
+                Ok(Some(city)) => {
+                    let country_code = city.country.and_then(|c| c.iso_code);
+                    let region = city
+                        .city
+                        .and_then(|c| c.names)
+                        .and_then(|n| n.get("en").cloned())
+                        .or_else(|| {
+                            city.subdivisions
+                                .and_then(|subs| subs.into_iter().next())
+                                .and_then(|s| s.names)
+                                .and_then(|n| n.get("en").cloned())
+                        });
+                    GeoLookup {
+                        country_code,
+                        region,
+                    }
                 }
-            }
-            Err(maxminddb::MaxMindDBError::AddressNotFoundError(_)) => GeoLookup {
-                country_code: None,
-                region: None,
+                Ok(None) => GeoLookup {
+                    country_code: None,
+                    region: None,
+                },
+                Err(e) => {
+                    tracing::debug!("GeoIP decode failed for {ip}: {e}");
+                    GeoLookup {
+                        country_code: None,
+                        region: None,
+                    }
+                }
             },
             Err(e) => {
                 tracing::debug!("GeoIP lookup failed for {ip}: {e}");

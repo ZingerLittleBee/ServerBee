@@ -26,7 +26,8 @@
       "!**/wrangler.jsonc",
       "!**/.source",
       "!**/convex/_generated",
-      "!**/target"
+      "!**/target",
+      "!apps/ios"
     ]
   },
   "formatter": {
