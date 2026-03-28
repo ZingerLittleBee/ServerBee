@@ -30,6 +30,8 @@ pub struct AppConfig {
     pub scheduler: SchedulerConfig,
     #[serde(default)]
     pub upgrade: UpgradeConfig,
+    #[serde(default)]
+    pub file: FileConfig,
 }
 
 impl Default for AppConfig {
@@ -46,6 +48,7 @@ impl Default for AppConfig {
             log: LogConfig::default(),
             scheduler: SchedulerConfig::default(),
             upgrade: UpgradeConfig::default(),
+            file: FileConfig::default(),
         }
     }
 }
@@ -271,6 +274,25 @@ impl Default for UpgradeConfig {
     fn default() -> Self {
         Self {
             release_base_url: default_release_base_url(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct FileConfig {
+    /// Maximum file upload size in bytes. Default: 100 MB.
+    #[serde(default = "default_max_upload_size")]
+    pub max_upload_size: u64,
+}
+
+fn default_max_upload_size() -> u64 {
+    104_857_600 // 100 MB
+}
+
+impl Default for FileConfig {
+    fn default() -> Self {
+        Self {
+            max_upload_size: default_max_upload_size(),
         }
     }
 }

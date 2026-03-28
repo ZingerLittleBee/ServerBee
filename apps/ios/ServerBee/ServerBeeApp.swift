@@ -2,30 +2,34 @@ import SwiftUI
 
 @main
 struct ServerBeeApp: App {
-    @State private var networkMonitor = NetworkMonitor()
+    @State private var authManager = AuthManager()
+    @State private var alertsViewModel = AlertsViewModel()
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environment(networkMonitor)
-                .onAppear {
-                    networkMonitor.start()
+            RootView()
+                .environment(authManager)
+                .environment(alertsViewModel)
+                .task {
+                    await authManager.initialize()
                 }
         }
     }
 }
 
-/// Minimal root view used for build verification.
-struct ContentView: View {
-    @Environment(NetworkMonitor.self) private var networkMonitor
+/// Shows a loading spinner while auth state is restored, then either LoginView or ContentView.
+private struct RootView: View {
+    @Environment(AuthManager.self) private var authManager
 
     var body: some View {
-        VStack(spacing: 0) {
-            OfflineBannerView(isConnected: networkMonitor.isConnected)
-            Spacer()
-            Text("ServerBee")
-                .font(.title)
-            Spacer()
+        Group {
+            if authManager.isLoading {
+                ProgressView()
+            } else if authManager.isAuthenticated {
+                ContentView()
+            } else {
+                LoginView()
+            }
         }
     }
 }
