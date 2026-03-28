@@ -123,10 +123,7 @@ pub fn write_router() -> Router<Arc<AppState>> {
         .route("/files/{server_id}/mkdir", post(mkdir))
         .route("/files/{server_id}/move", post(move_file))
         .route("/files/{server_id}/download", post(start_download))
-        .route(
-            "/files/{server_id}/upload",
-            post(upload_file).layer(axum::extract::DefaultBodyLimit::max(110_100_480)), // 105 MB (100MB + 5MB multipart overhead)
-        )
+        .route("/files/{server_id}/upload", post(upload_file))
         .route("/files/transfers/{transfer_id}", delete(cancel_transfer))
 }
 
