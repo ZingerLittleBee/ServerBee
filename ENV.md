@@ -8,7 +8,7 @@ Example: TOML `admin.password` → env var `SERVERBEE_ADMIN__PASSWORD`
 
 ## Server
 
-### Essential
+### Quick Start
 
 | Environment Variable | TOML Key | Type | Default | Description |
 |---------------------|----------|------|---------|-------------|
@@ -83,7 +83,7 @@ Example: TOML `admin.password` → env var `SERVERBEE_ADMIN__PASSWORD`
 
 Agent top-level keys use single underscore. Nested keys use `__` (double underscore).
 
-### Essential
+### Quick Start
 
 | Environment Variable | TOML Key | Type | Default | Description |
 |---------------------|----------|------|---------|-------------|
