@@ -136,9 +136,21 @@ if file_size > state.config.file.max_upload_size {
 
 `/api/auth/me` (auth.rs:247-271) 每次调用对 admin 用户执行 `AuthService::verify_password("admin", &user.password_hash)`，argon2 验证耗时 ~10-50ms。
 
+注意：login handler (auth.rs:187) 已经用明文比较 `body.password == "admin" && user.username == "admin"`，不涉及 argon2。问题仅出在 `/me` handler。
+
+### Auth Path Analysis
+
+两种认证路径调用 `/me` 时的差异：
+
+- **Session 认证（浏览器）**：经过 login，login 时已知密码是否为默认值
+- **API key 认证（自动化）**：不经过 login，没有 session，无法缓存 must_change_password
+
 ### Solution
 
-在 session 表新增 `must_change_password` 字段，登录时计算一次并写入 session，`/me` 直接读 session 中的缓存值。修改密码时清除所有 admin session 的该标记。
+在 session 表新增 `must_change_password` 字段，login 时用已有的明文比较结果写入 session。`/me` 根据认证方式区分处理：
+
+- **Session 认证**：直接读 session 中的缓存值，零开销
+- **API key 认证**：返回 `false`（API key 用于自动化场景，不需要浏览器端强制改密码提示）
 
 ### Design
 
@@ -149,27 +161,33 @@ ALTER TABLE sessions ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT FA
 
 **Login flow (auth.rs login handler):**
 ```rust
-// After successful login, before creating session:
-let must_change_password = if user.username == "admin" {
-    AuthService::verify_password("admin", &user.password_hash).unwrap_or(false)
-} else {
-    false
-};
-// Store in session record
+// Line 187 already computes this via plaintext comparison:
+let must_change_password = body.password == "admin" && user.username == "admin";
+// Pass this value to create_session, which stores it in session record
 ```
+
+**Auth middleware — distinguish auth source:**
+```rust
+pub struct CurrentUser {
+    pub user_id: String,
+    pub username: String,
+    pub role: String,
+    pub must_change_password: Option<bool>,  // Some for session auth, None for API key auth
+}
+```
+
+Session 认证路径设置 `must_change_password: Some(session.must_change_password)`，API key 认证路径设置 `must_change_password: None`。
 
 **Me endpoint:**
 ```rust
-// Read from session directly, no argon2 call
-ok(MeResponse {
-    must_change_password: current_user.must_change_password,
-    ..
-})
+// Read from CurrentUser, no argon2 call
+let must_change_password = current_user.must_change_password.unwrap_or(false);
+ok(MeResponse { must_change_password, .. })
 ```
 
 **Change password:**
 ```rust
-// After password change succeeds, update all admin sessions:
+// After password change succeeds, clear flag on all user's sessions:
 // UPDATE sessions SET must_change_password = false WHERE user_id = ?
 ```
 
@@ -178,8 +196,8 @@ ok(MeResponse {
 - `crates/server/src/migration/` — 新增 migration 添加 `must_change_password` 列
 - `crates/server/src/entity/session.rs` — 新增字段
 - `crates/server/src/service/auth.rs` — create_session 接受 must_change_password 参数；validate_session 读取并传递到 CurrentUser
-- `crates/server/src/router/api/auth.rs` — login 计算 + me 读缓存 + change_password 清除标记
-- `crates/server/src/middleware/auth.rs` — CurrentUser 新增 must_change_password 字段
+- `crates/server/src/router/api/auth.rs` — login 传递值 + me 读缓存 + change_password 清除标记
+- `crates/server/src/middleware/auth.rs` — CurrentUser 新增 `must_change_password: Option<bool>` 字段
 
 ## F5: fetch_external_ip 响应大小限制
 
