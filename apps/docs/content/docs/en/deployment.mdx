@@ -8,13 +8,14 @@ This guide covers production deployment best practices for ServerBee, including 
 
 ## Railway (One-Click Deploy)
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/jez6Pw?referralCode=iUZg_8&utm_medium=integration&utm_source=template&utm_campaign=generic)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/serverbee-server)
 
 The fastest way to get ServerBee running. Click the button above and configure the environment variables:
 
 ```bash
 SERVERBEE_ADMIN__USERNAME="admin"              # Admin username (auto-generated if empty, check logs)
 SERVERBEE_ADMIN__PASSWORD=""                   # Admin password (auto-generated if empty, check logs)
+SERVERBEE_AUTH__AUTO_DISCOVERY_KEY=""           # Agent auto-registration key (auto-generated if empty, check logs)
 
 SERVERBEE_LOG__LEVEL="info"                    # Log level (trace/debug/info/warn/error)
 

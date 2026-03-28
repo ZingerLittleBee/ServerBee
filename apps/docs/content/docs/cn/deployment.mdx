@@ -8,13 +8,14 @@ icon: Cloud
 
 ## Railway（一键部署）
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/jez6Pw?referralCode=iUZg_8&utm_medium=integration&utm_source=template&utm_campaign=generic)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/serverbee-server)
 
 最快的部署方式。点击上方按钮，配置以下环境变量：
 
 ```bash
 SERVERBEE_ADMIN__USERNAME="admin"              # 管理员用户名（未填写自动生成，可在日志中查看）
 SERVERBEE_ADMIN__PASSWORD=""                   # 管理员密码（未填写自动生成，可在日志中查看）
+SERVERBEE_AUTH__AUTO_DISCOVERY_KEY=""           # Agent 自动注册密钥（未填写自动生成，可在日志中查看）
 
 SERVERBEE_LOG__LEVEL="info"                    # 日志级别（trace/debug/info/warn/error）
 

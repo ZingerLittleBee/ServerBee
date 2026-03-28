@@ -49,6 +49,8 @@ ENV SERVERBEE_RETENTION__TRAFFIC_DAILY_DAYS=400
 ENV SERVERBEE_RETENTION__TASK_RESULTS_DAYS=7
 # Docker event records
 ENV SERVERBEE_RETENTION__DOCKER_EVENTS_DAYS=7
+# Service monitor records
+ENV SERVERBEE_RETENTION__SERVICE_MONITOR_DAYS=30
 
 # ── Scheduler ───────────────────────────────────────────────────
 # Timezone for daily traffic aggregation and cron scheduling (e.g. Asia/Shanghai)
