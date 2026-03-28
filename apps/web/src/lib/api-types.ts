@@ -1824,7 +1824,6 @@ export interface components {
       username: string
     }
     LoginResponse: {
-      must_change_password: boolean
       role: string
       user_id: string
       username: string
@@ -1846,7 +1845,6 @@ export interface components {
       updated_at: string
     }
     MeResponse: {
-      must_change_password: boolean
       role: string
       user_id: string
       username: string
