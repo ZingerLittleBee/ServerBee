@@ -1,0 +1,24 @@
+name: ServerBee
+options:
+  bundleIdPrefix: com.serverbee
+  deploymentTarget:
+    iOS: "17.0"
+  xcodeVersion: "16.0"
+settings:
+  SWIFT_VERSION: "6.0"
+  SWIFT_STRICT_CONCURRENCY: complete
+targets:
+  ServerBee:
+    type: application
+    platform: iOS
+    sources:
+      - ServerBee
+    info:
+      path: ServerBee/Info.plist
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.serverbee.mobile
+      INFOPLIST_FILE: ServerBee/Info.plist
+      GENERATE_INFOPLIST_FILE: false
+      MARKETING_VERSION: "1.0.0"
+      CURRENT_PROJECT_VERSION: 1
+      SWIFT_EMIT_LOC_STRINGS: "YES"
