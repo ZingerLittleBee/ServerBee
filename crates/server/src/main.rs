@@ -61,7 +61,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Database migrations complete");
 
     // Initialize admin user (creates if users table is empty)
-    AuthService::init_admin(&db, &config.admin).await?;
+    let generated_admin_password = AuthService::init_admin(&db, &config.admin).await?;
 
     // Initialize auto-discovery key
     let auto_discovery_key = init_auto_discovery_key(&db, &config).await?;
@@ -110,8 +110,21 @@ async fn main() -> anyhow::Result<()> {
         serverbee_common::constants::VERSION
     );
     tracing::info!("Listening on {}", listener.local_addr()?);
-    tracing::info!("Auto-discovery key: {}", auto_discovery_key);
     tracing::info!("========================================");
+
+    // Print credentials block — grouped so users can spot them immediately
+    if generated_admin_password.is_some() || !auto_discovery_key.is_empty() {
+        let mut credentials = String::from("\n\n********************************************");
+        credentials.push_str("\n***       IMPORTANT: Save these now       ***");
+        credentials.push_str("\n********************************************\n");
+        if let Some(ref pwd) = generated_admin_password {
+            credentials.push_str(&format!("\n  Admin username:      {}", config.admin.username));
+            credentials.push_str(&format!("\n  Admin password:      {}", pwd));
+        }
+        credentials.push_str(&format!("\n  Auto-discovery key:  {}", auto_discovery_key));
+        credentials.push_str("\n\n********************************************\n");
+        tracing::info!("{}", credentials);
+    }
 
     axum::serve(
         listener,

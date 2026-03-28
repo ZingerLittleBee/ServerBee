@@ -34,7 +34,7 @@ Every TOML configuration key maps directly to an environment variable. Replace d
 | `SERVERBEE_SERVER__DATA_DIR` | `./data` | Data directory for database and backups |
 | `SERVERBEE_AUTH__AUTO_DISCOVERY_KEY` | auto-generated | Agent discovery key. Leave empty to auto-generate on first startup |
 | `SERVERBEE_ADMIN__USERNAME` | `admin` | Initial admin username (only used when no users exist) |
-| `SERVERBEE_SERVER__TRUSTED_PROXIES` | `[]` | CIDR list of trusted reverse proxies (e.g. `["127.0.0.1/32", "10.0.0.0/8"]`) |
+| `SERVERBEE_SERVER__TRUSTED_PROXIES` | private/loopback CIDRs | CIDR list of trusted reverse proxies. Defaults to RFC 1918 + loopback. Set to `[]` to disable |
 | `SERVERBEE_SCHEDULER__TIMEZONE` | `UTC` | Timezone for daily traffic aggregation (e.g. `Asia/Shanghai`) |
 | `SERVERBEE_LOG__LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `SERVERBEE_LOG__FILE` | `""` | Log file path. Empty means stdout only |
@@ -136,7 +136,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 |-----|------|---------|-------------|
 | `listen` | string | `"0.0.0.0:9527"` | IP address and port the server listens on |
 | `data_dir` | string | `"./data"` | Directory for database files and other persistent data |
-| `trusted_proxies` | string[] | `[]` | CIDR ranges of trusted reverse proxies. When set, the real client IP is extracted from `X-Forwarded-For` or `X-Real-IP` headers only for requests originating from these ranges |
+| `trusted_proxies` | string[] | private/loopback CIDRs | CIDR ranges of trusted reverse proxies. Defaults to RFC 1918 + loopback ranges. Set to `[]` to disable X-Forwarded-For extraction |
 
 ### `[database]` -- Database Settings
 
