@@ -1,35 +1,39 @@
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(AuthManager.self) private var authManager
+    @State private var apiClient: APIClient?
+
     var body: some View {
         TabView {
             NavigationStack {
-                Text("Servers")
-                    .navigationTitle("Servers")
+                ServersListView()
             }
             .tabItem {
                 Label("Servers", systemImage: "server.rack")
             }
 
             NavigationStack {
-                Text("Alerts")
-                    .navigationTitle("Alerts")
+                AlertsListView()
             }
             .tabItem {
                 Label("Alerts", systemImage: "bell.badge")
             }
 
-            NavigationStack {
-                Text("Settings")
-                    .navigationTitle("Settings")
-            }
-            .tabItem {
-                Label("Settings", systemImage: "gearshape")
-            }
+            SettingsView()
+                .tabItem {
+                    Label("Settings", systemImage: "gearshape")
+                }
+        }
+        .environment(\.apiClient, apiClient)
+        .task {
+            apiClient = APIClient(authManager: authManager)
         }
     }
 }
 
 #Preview {
     ContentView()
+        .environment(AuthManager())
+        .environment(AlertsViewModel())
 }

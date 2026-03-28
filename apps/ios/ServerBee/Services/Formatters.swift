@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 enum Formatters {
     static func formatBytes(_ bytes: Int64) -> String {
@@ -45,6 +46,36 @@ enum Formatters {
             return "-"
         }
         return String(format: "%.1f%%", value)
+    }
+
+    static func formatBytesRatio(used: Int64?, total: Int64?) -> String? {
+        guard let used, let total else { return nil }
+        return "\(formatBytes(used)) / \(formatBytes(total))"
+    }
+
+    /// Returns a colour representing CPU load severity.
+    static func cpuColor(for value: Double) -> Color {
+        switch value {
+        case ..<50: return .cpuColor
+        case ..<80: return .orange
+        default: return .red
+        }
+    }
+
+    /// Returns a colour representing generic usage severity (memory, disk).
+    static func usageColor(for value: Double) -> Color {
+        switch value {
+        case ..<50: return .green
+        case ..<80: return .orange
+        default: return .red
+        }
+    }
+
+    /// Short time label for chart X-axis.
+    static func formatChartTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
     }
 
     static func formatRelativeTime(_ isoString: String) -> String {
