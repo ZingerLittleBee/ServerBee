@@ -15,7 +15,7 @@ use crate::entity::session;
 use crate::error::{ok, ApiResponse, AppError};
 use crate::middleware::auth::CurrentUser;
 use crate::service::audit::AuditService;
-use crate::service::auth::AuthService;
+use crate::service::auth::{AuthService, LoginParams};
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -148,15 +148,17 @@ pub async fn login(
     // Check if the user is still using the default "admin" password
     let must_change_password = body.password == "admin" && body.username == "admin";
 
-    let (session, user) = AuthService::login_with_totp(
+    let (session, user) = AuthService::login(
         &state.db,
-        &body.username,
-        &body.password,
-        body.totp_code.as_deref(),
-        &ip,
-        &user_agent,
-        state.config.auth.session_ttl,
-        must_change_password,
+        LoginParams {
+            username: &body.username,
+            password: &body.password,
+            totp_code: body.totp_code.as_deref(),
+            ip: &ip,
+            user_agent: &user_agent,
+            session_ttl: state.config.auth.session_ttl,
+            must_change_password,
+        },
     )
     .await?;
 
