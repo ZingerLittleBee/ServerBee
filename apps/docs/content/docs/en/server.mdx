@@ -45,12 +45,13 @@ The server reads configuration from TOML files in the following order, with late
 2. `server.toml` (working directory)
 3. Environment variables with `SERVERBEE_` prefix
 
-Here is a complete `server.toml` with all available options and their defaults:
+Here is a `server.toml` showing the most common options and their defaults. See the [Configuration Reference](/en/docs/configuration) for all available options.
 
 ```toml
 [server]
 listen = "0.0.0.0:9527"       # Address and port to listen on
 data_dir = "./data"            # Directory for database and other data files
+trusted_proxies = []           # CIDR list of trusted reverse proxies
 
 [database]
 path = "serverbee.db"          # Database filename (relative to data_dir)
@@ -71,18 +72,30 @@ records_hourly_days = 90       # Hourly aggregated records retention (days)
 gpu_records_days = 7           # GPU metric records retention (days)
 ping_records_days = 7          # Ping probe records retention (days)
 audit_logs_days = 180          # Audit log retention (days)
+network_probe_days = 7         # Network probe records retention (days)
+network_probe_hourly_days = 90 # Hourly network probe aggregates retention (days)
+traffic_hourly_days = 7        # Traffic hourly records retention (days)
+traffic_daily_days = 400       # Traffic daily records retention (days)
+task_results_days = 7          # Task results retention (days)
+docker_events_days = 7         # Docker event records retention (days)
+service_monitor_days = 30      # Service monitor records retention (days)
 
 [rate_limit]
 login_max = 5                  # Max login attempts per window
 register_max = 3               # Max agent registration attempts per window
 
+[scheduler]
+timezone = "UTC"               # Timezone for daily traffic aggregation (e.g. Asia/Shanghai)
+
 [log]
 level = "info"                 # Log level: trace, debug, info, warn, error
 file = ""                      # Log file path (empty = stdout only)
 
+[upgrade]
+release_base_url = "https://github.com/ZingerLittleBee/ServerBee/releases"  # Base URL for agent upgrades
+
 [geoip]
-enabled = false                # Enable GeoIP lookups for agent IP addresses
-mmdb_path = ""                 # Path to MaxMind GeoLite2-City.mmdb file
+mmdb_path = ""                 # Path to MaxMind GeoLite2-City.mmdb (non-empty enables GeoIP)
 
 [oauth]
 base_url = ""                  # Public URL of your ServerBee instance
@@ -122,8 +135,8 @@ export SERVERBEE_RETENTION__RECORDS_DAYS=14
 # oauth.github.client_id
 export SERVERBEE_OAUTH__GITHUB__CLIENT_ID="your-github-client-id"
 
-# geoip.enabled
-export SERVERBEE_GEOIP__ENABLED=true
+# geoip.mmdb_path (non-empty path enables GeoIP)
+export SERVERBEE_GEOIP__MMDB_PATH="/path/to/GeoLite2-City.mmdb"
 ```
 
 ## Database
@@ -172,7 +185,6 @@ To enable geographic location detection for your agents:
 
 ```toml
 [geoip]
-enabled = true
 mmdb_path = "/path/to/GeoLite2-City.mmdb"
 ```
 

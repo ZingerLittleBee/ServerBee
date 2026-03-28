@@ -162,8 +162,7 @@ traffic_daily_days = 400       # Traffic daily records retention
 timezone = "UTC"               # Timezone for daily traffic aggregation (e.g. Asia/Shanghai)
 
 [geoip]
-enabled = false
-mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"
+mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"  # Non-empty path enables GeoIP
 
 [upgrade]
 release_base_url = "https://github.com/ZingerLittleBee/ServerBee/releases"
@@ -172,7 +171,7 @@ release_base_url = "https://github.com/ZingerLittleBee/ServerBee/releases"
 Environment variable examples:
 ```bash
 export SERVERBEE_ADMIN__PASSWORD="my-secure-password"
-export SERVERBEE_GEOIP__ENABLED=true
+export SERVERBEE_GEOIP__MMDB_PATH="/path/to/GeoLite2-City.mmdb"
 export SERVERBEE_OAUTH__GITHUB__CLIENT_ID="..."
 ```
 
@@ -217,6 +216,14 @@ client_secret = "..."
 Callback URL format: `https://your-domain/api/auth/oauth/{provider}/callback`
 
 ## Deployment
+
+### Railway (One-Click)
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/serverbee-server)
+
+1. Click the button above, set `SERVERBEE_ADMIN__PASSWORD`, and deploy
+2. Add a volume mounted at `/data` to persist data across deploys
+3. Configure your agents to connect to the Railway URL
 
 ### Systemd
 

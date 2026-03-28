@@ -49,6 +49,8 @@ ENV SERVERBEE_RETENTION__TRAFFIC_DAILY_DAYS=400
 ENV SERVERBEE_RETENTION__TASK_RESULTS_DAYS=7
 # Docker event records
 ENV SERVERBEE_RETENTION__DOCKER_EVENTS_DAYS=7
+# Service monitor records
+ENV SERVERBEE_RETENTION__SERVICE_MONITOR_DAYS=30
 
 # ── Scheduler ───────────────────────────────────────────────────
 # Timezone for daily traffic aggregation and cron scheduling (e.g. Asia/Shanghai)
@@ -77,9 +79,7 @@ ENV SERVERBEE_RATE_LIMIT__REGISTER_MAX=3
 # ENV SERVERBEE_OAUTH__OIDC__CLIENT_SECRET=
 
 # ── GeoIP (Optional) ───────────────────────────────────────────
-# Enable GeoIP lookup for agent IP addresses
-# ENV SERVERBEE_GEOIP__ENABLED=false
-# Path to MaxMind GeoLite2-City.mmdb file
+# Path to MaxMind GeoLite2-City.mmdb file (non-empty path enables GeoIP)
 # ENV SERVERBEE_GEOIP__MMDB_PATH=
 
 # ── Logging ─────────────────────────────────────────────────────

@@ -162,8 +162,7 @@ traffic_daily_days = 400       # 流量日记录保留天数
 timezone = "UTC"               # 流量日聚合时区（如 Asia/Shanghai）
 
 [geoip]
-enabled = false
-mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"
+mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"  # 路径非空即启用 GeoIP
 
 [upgrade]
 release_base_url = "https://github.com/ZingerLittleBee/ServerBee/releases"
@@ -172,7 +171,7 @@ release_base_url = "https://github.com/ZingerLittleBee/ServerBee/releases"
 环境变量示例:
 ```bash
 export SERVERBEE_ADMIN__PASSWORD="my-secure-password"
-export SERVERBEE_GEOIP__ENABLED=true
+export SERVERBEE_GEOIP__MMDB_PATH="/path/to/GeoLite2-City.mmdb"
 export SERVERBEE_OAUTH__GITHUB__CLIENT_ID="..."
 ```
 
@@ -217,6 +216,14 @@ client_secret = "..."
 回调 URL 格式: `https://your-domain/api/auth/oauth/{provider}/callback`
 
 ## 部署
+
+### Railway（一键部署）
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/serverbee-server)
+
+1. 点击上方按钮，设置 `SERVERBEE_ADMIN__PASSWORD`，然后部署
+2. 添加 Volume 挂载到 `/data` 以持久化数据
+3. 将 Agent 配置连接到 Railway 提供的 URL
 
 ### Systemd
 
