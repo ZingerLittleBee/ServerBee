@@ -9,6 +9,9 @@ pub mod file;
 pub mod geoip;
 pub mod incident;
 pub mod maintenance_api;
+pub mod mobile_alert;
+pub mod mobile_auth;
+pub mod mobile_device;
 pub mod network_probe;
 pub mod notification;
 pub mod oauth;
@@ -40,6 +43,8 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(status::router())
         .merge(status_page::public_router())
         .merge(brand::public_router())
+        // Mobile auth endpoints (public — login/refresh/logout are entry points)
+        .merge(mobile_auth::router())
         .merge(
             Router::new()
                 .merge(auth::protected_router())
@@ -58,6 +63,9 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 .merge(dashboard::read_router())
                 .merge(alert::alert_events_router())
                 .merge(geoip::read_router())
+                // Mobile device + alert endpoints (authenticated)
+                .merge(mobile_device::router())
+                .merge(mobile_alert::router())
                 // Admin-only routes (write operations + management)
                 .merge(
                     Router::new()
