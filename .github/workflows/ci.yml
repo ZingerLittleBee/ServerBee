@@ -7,12 +7,14 @@ on:
       - '**/*.md'
       - 'LICENSE'
       - 'docs/**'
+      - 'apps/ios/**'
   pull_request:
     branches: [main]
     paths-ignore:
       - '**/*.md'
       - 'LICENSE'
       - 'docs/**'
+      - 'apps/ios/**'
 
 env:
   CARGO_TERM_COLOR: always

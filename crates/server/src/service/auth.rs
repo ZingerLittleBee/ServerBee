@@ -440,6 +440,49 @@ impl AuthService {
         Ok(user.totp_secret.is_some())
     }
 
+    /// Validate credentials (username + password + optional TOTP) without creating a session.
+    /// Used by mobile auth to reuse credential validation.
+    pub async fn validate_credentials(
+        db: &DatabaseConnection,
+        username: &str,
+        password: &str,
+        totp_code: Option<&str>,
+    ) -> Result<user::Model, AppError> {
+        let user = user::Entity::find()
+            .filter(user::Column::Username.eq(username))
+            .one(db)
+            .await?
+            .ok_or(AppError::Unauthorized)?;
+
+        let valid = Self::verify_password(password, &user.password_hash)?;
+        if !valid {
+            return Err(AppError::Unauthorized);
+        }
+
+        // Check 2FA
+        if let Some(ref secret) = user.totp_secret {
+            match totp_code {
+                Some(code) => {
+                    if !Self::verify_totp(secret, code)? {
+                        return Err(AppError::Unauthorized);
+                    }
+                }
+                None => {
+                    return Err(AppError::Validation("2fa_required".to_string()));
+                }
+            }
+        }
+
+        Ok(user)
+    }
+
+    /// Fast SHA-256 hash for refresh tokens (not argon2 — argon2 is too slow for per-request verification).
+    pub fn hash_token(token: &str) -> String {
+        use sha2::{Digest, Sha256};
+        let hash = Sha256::digest(token.as_bytes());
+        hex::encode(hash)
+    }
+
     /// Change a user's password after verifying the old password.
     pub async fn change_password(
         db: &DatabaseConnection,

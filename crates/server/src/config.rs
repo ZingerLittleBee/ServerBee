@@ -32,6 +32,8 @@ pub struct AppConfig {
     pub upgrade: UpgradeConfig,
     #[serde(default)]
     pub file: FileConfig,
+    #[serde(default)]
+    pub mobile: MobileConfig,
 }
 
 impl Default for AppConfig {
@@ -49,6 +51,7 @@ impl Default for AppConfig {
             scheduler: SchedulerConfig::default(),
             upgrade: UpgradeConfig::default(),
             file: FileConfig::default(),
+            mobile: MobileConfig::default(),
         }
     }
 }
@@ -293,6 +296,36 @@ impl Default for FileConfig {
     fn default() -> Self {
         Self {
             max_upload_size: default_max_upload_size(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MobileConfig {
+    /// HMAC-SHA256 secret for JWT signing. Auto-generated if empty.
+    #[serde(default)]
+    pub jwt_secret: String,
+    /// Access token lifetime in seconds. Default: 900 (15 minutes).
+    #[serde(default = "default_access_ttl")]
+    pub access_token_ttl: i64,
+    /// Refresh token lifetime in seconds. Default: 2592000 (30 days).
+    #[serde(default = "default_refresh_ttl")]
+    pub refresh_token_ttl: i64,
+}
+
+fn default_access_ttl() -> i64 {
+    900
+}
+fn default_refresh_ttl() -> i64 {
+    2_592_000
+}
+
+impl Default for MobileConfig {
+    fn default() -> Self {
+        Self {
+            jwt_secret: String::new(),
+            access_token_ttl: default_access_ttl(),
+            refresh_token_ttl: default_refresh_ttl(),
         }
     }
 }

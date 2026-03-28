@@ -57,6 +57,26 @@ pub async fn auth_middleware(
         }
     };
 
+    // Try Bearer token (JWT) if API key not found
+    let current_user = match current_user {
+        Some(u) => Some(u),
+        None => {
+            if let Some(token) = extract_bearer_token(&req) {
+                state
+                    .jwt
+                    .validate_access_token(&token)
+                    .ok()
+                    .map(|claims| CurrentUser {
+                        user_id: claims.sub,
+                        username: claims.username,
+                        role: claims.role,
+                    })
+            } else {
+                None
+            }
+        }
+    };
+
     match current_user {
         Some(user) => {
             req.extensions_mut().insert(user);
@@ -100,6 +120,15 @@ fn extract_api_key(req: &Request) -> Option<String> {
         .to_str()
         .ok()
         .map(|s| s.to_string())
+}
+
+fn extract_bearer_token(req: &Request) -> Option<String> {
+    req.headers()
+        .get("authorization")?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")
+        .map(|t| t.to_string())
 }
 
 #[cfg(test)]
@@ -157,5 +186,34 @@ mod tests {
             .body(axum::body::Body::empty())
             .unwrap();
         assert_eq!(extract_api_key(&req), None);
+    }
+
+    #[test]
+    fn test_extract_bearer_token_valid() {
+        let req = HttpRequest::builder()
+            .header("authorization", "Bearer eyJhbGciOiJIUzI1NiJ9.test.sig")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(
+            extract_bearer_token(&req),
+            Some("eyJhbGciOiJIUzI1NiJ9.test.sig".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_bearer_token_missing() {
+        let req = HttpRequest::builder()
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(extract_bearer_token(&req), None);
+    }
+
+    #[test]
+    fn test_extract_bearer_token_wrong_scheme() {
+        let req = HttpRequest::builder()
+            .header("authorization", "Basic abc123")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(extract_bearer_token(&req), None);
     }
 }
