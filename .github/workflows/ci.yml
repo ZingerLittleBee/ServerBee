@@ -1,4 +1,4 @@
-name: CI Server
+name: CI
 
 on:
   push:
