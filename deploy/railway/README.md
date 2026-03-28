@@ -1,6 +1,6 @@
 # ServerBee Server — Railway Template
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/jez6Pw?referralCode=iUZg_8&utm_medium=integration&utm_source=template&utm_campaign=generic)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/serverbee-server)
 
 Lightweight, self-hosted VPS monitoring server. Receives metrics from distributed agents over WebSocket, stores in SQLite, and serves a React dashboard.
 
@@ -27,6 +27,7 @@ These are the variables you'll most likely want to configure:
 ```env
 SERVERBEE_ADMIN__USERNAME="admin"              # 管理员用户名（未填写自动生成 admin 用户，可在日志中查看）
 SERVERBEE_ADMIN__PASSWORD=""                   # 管理员密码（未填写自动生成，可在日志中查看）
+SERVERBEE_AUTH__AUTO_DISCOVERY_KEY=""           # Agent 自动注册密钥（未填写自动生成，可在日志中查看）
 
 SERVERBEE_LOG__LEVEL="info"                    # 日志级别（trace/debug/info/warn/error）
 

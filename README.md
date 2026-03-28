@@ -219,7 +219,7 @@ Callback URL format: `https://your-domain/api/auth/oauth/{provider}/callback`
 
 ### Railway (One-Click)
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/jez6Pw?referralCode=iUZg_8&utm_medium=integration&utm_source=template&utm_campaign=generic)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/serverbee-server)
 
 1. Click the button above, set `SERVERBEE_ADMIN__PASSWORD`, and deploy
 2. Add a volume mounted at `/data` to persist data across deploys
