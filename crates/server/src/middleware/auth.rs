@@ -15,6 +15,8 @@ pub struct CurrentUser {
     pub user_id: String,
     pub username: String,
     pub role: String,
+    /// `Some(value)` for session auth, `None` for API key auth.
+    pub must_change_password: Option<bool>,
 }
 
 pub async fn auth_middleware(
@@ -28,10 +30,11 @@ pub async fn auth_middleware(
             .await
             .ok()
             .flatten()
-            .map(|user| CurrentUser {
+            .map(|(user, must_change_pw)| CurrentUser {
                 user_id: user.id.clone(),
                 username: user.username.clone(),
                 role: user.role.clone(),
+                must_change_password: Some(must_change_pw),
             })
     } else {
         None
@@ -50,6 +53,7 @@ pub async fn auth_middleware(
                         user_id: user.id.clone(),
                         username: user.username.clone(),
                         role: user.role.clone(),
+                        must_change_password: None,
                     })
             } else {
                 None
