@@ -90,6 +90,7 @@ Every TOML configuration key maps directly to an environment variable. Replace d
 | `SERVERBEE_RATE_LIMIT__LOGIN_MAX` | `5` | Max login attempts per IP within 15-minute window |
 | `SERVERBEE_RATE_LIMIT__REGISTER_MAX` | `3` | Max agent registrations per IP within 15-minute window |
 | `SERVERBEE_UPGRADE__RELEASE_BASE_URL` | `https://github.com/ZingerLittleBee/ServerBee/releases` | Base URL for agent upgrade release assets |
+| `SERVERBEE_FILE__MAX_UPLOAD_SIZE` | `104857600` | Maximum file upload size in bytes (default 100 MB) |
 
 ### Agent Environment Variables
 
@@ -244,6 +245,12 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `release_base_url` | string | `"https://github.com/ZingerLittleBee/ServerBee/releases"` | Base URL for agent upgrade release assets. The server appends `/download/v{version}/` to construct the asset download URL |
+
+### `[file]` -- File Upload (Server-side)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `max_upload_size` | u64 | `104857600` | Maximum file upload size in bytes (default 100 MB) |
 
 ---
 
