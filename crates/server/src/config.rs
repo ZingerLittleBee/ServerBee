@@ -56,7 +56,7 @@ pub struct ServerConfig {
     pub listen: String,
     #[serde(default = "default_data_dir")]
     pub data_dir: String,
-    #[serde(default)]
+    #[serde(default = "default_trusted_proxies")]
     pub trusted_proxies: Vec<IpNet>,
 }
 
@@ -280,11 +280,28 @@ fn default_utc() -> String {
 }
 
 // Default functions
+fn default_trusted_proxies() -> Vec<IpNet> {
+    // Trust private/loopback IPs by default so XFF works out-of-the-box
+    // behind Docker, Nginx, Caddy, Kubernetes, etc.
+    [
+        "127.0.0.0/8",
+        "::1/128",
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "fc00::/7",
+        "fe80::/10",
+    ]
+    .iter()
+    .filter_map(|s| s.parse().ok())
+    .collect()
+}
+
 fn default_server() -> ServerConfig {
     ServerConfig {
         listen: default_listen(),
         data_dir: default_data_dir(),
-        trusted_proxies: Vec::new(),
+        trusted_proxies: default_trusted_proxies(),
     }
 }
 
@@ -350,12 +367,29 @@ fn default_400() -> u32 {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_timezone_parsing() {
         use chrono_tz::Tz;
         assert!("UTC".parse::<Tz>().is_ok());
         assert!("Asia/Shanghai".parse::<Tz>().is_ok());
         assert!("Invalid/Zone".parse::<Tz>().is_err());
+    }
+
+    #[test]
+    fn test_default_trusted_proxies_includes_private_ranges() {
+        let proxies = default_trusted_proxies();
+        assert_eq!(proxies.len(), 7);
+        // Verify Docker bridge network is covered
+        let docker_ip: std::net::IpAddr = "172.17.0.1".parse().unwrap();
+        assert!(proxies.iter().any(|net| net.contains(&docker_ip)));
+        // Verify localhost is covered
+        let localhost: std::net::IpAddr = "127.0.0.1".parse().unwrap();
+        assert!(proxies.iter().any(|net| net.contains(&localhost)));
+        // Verify public IP is NOT covered
+        let public_ip: std::net::IpAddr = "8.8.8.8".parse().unwrap();
+        assert!(!proxies.iter().any(|net| net.contains(&public_ip)));
     }
 }
 
