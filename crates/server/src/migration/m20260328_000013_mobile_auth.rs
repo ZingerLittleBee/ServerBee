@@ -1,0 +1,329 @@
+use sea_orm_migration::prelude::*;
+
+#[derive(DeriveMigrationName)]
+pub struct Migration;
+
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        // mobile_sessions: stores refresh tokens per device
+        manager
+            .create_table(
+                Table::create()
+                    .table(MobileSessions::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(MobileSessions::Id)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(MobileSessions::UserId).string().not_null())
+                    .col(
+                        ColumnDef::new(MobileSessions::InstallationId)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(MobileSessions::RefreshTokenHash)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(MobileSessions::RevokedAt)
+                            .timestamp_with_time_zone()
+                            .null(),
+                    )
+                    .col(
+                        ColumnDef::new(MobileSessions::Ip)
+                            .string()
+                            .not_null()
+                            .default(""),
+                    )
+                    .col(
+                        ColumnDef::new(MobileSessions::UserAgent)
+                            .string()
+                            .not_null()
+                            .default(""),
+                    )
+                    .col(
+                        ColumnDef::new(MobileSessions::ExpiresAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(MobileSessions::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(MobileSessions::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_mobile_sessions_user_id")
+                    .table(MobileSessions::Table)
+                    .col(MobileSessions::UserId)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_mobile_sessions_installation_id")
+                    .table(MobileSessions::Table)
+                    .col(MobileSessions::InstallationId)
+                    .to_owned(),
+            )
+            .await?;
+
+        // mobile_device_registrations: push token + notification preferences per device
+        manager
+            .create_table(
+                Table::create()
+                    .table(MobileDeviceRegistrations::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(MobileDeviceRegistrations::Id)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(MobileDeviceRegistrations::UserId)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(MobileDeviceRegistrations::InstallationId)
+                            .string()
+                            .not_null()
+                            .unique_key(),
+                    )
+                    .col(
+                        ColumnDef::new(MobileDeviceRegistrations::Platform)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(MobileDeviceRegistrations::PushToken)
+                            .string()
+                            .null(),
+                    )
+                    .col(
+                        ColumnDef::new(MobileDeviceRegistrations::Provider)
+                            .string()
+                            .not_null()
+                            .default("expo"),
+                    )
+                    .col(
+                        ColumnDef::new(MobileDeviceRegistrations::AppVersion)
+                            .string()
+                            .not_null()
+                            .default(""),
+                    )
+                    .col(
+                        ColumnDef::new(MobileDeviceRegistrations::Locale)
+                            .string()
+                            .not_null()
+                            .default("en"),
+                    )
+                    .col(
+                        ColumnDef::new(MobileDeviceRegistrations::PermissionStatus)
+                            .string()
+                            .not_null()
+                            .default("undetermined"),
+                    )
+                    .col(
+                        ColumnDef::new(MobileDeviceRegistrations::FiringAlertsPush)
+                            .boolean()
+                            .not_null()
+                            .default(true),
+                    )
+                    .col(
+                        ColumnDef::new(MobileDeviceRegistrations::ResolvedAlertsPush)
+                            .boolean()
+                            .not_null()
+                            .default(false),
+                    )
+                    .col(
+                        ColumnDef::new(MobileDeviceRegistrations::DisabledAt)
+                            .timestamp_with_time_zone()
+                            .null(),
+                    )
+                    .col(
+                        ColumnDef::new(MobileDeviceRegistrations::LastSeenAt)
+                            .timestamp_with_time_zone()
+                            .null(),
+                    )
+                    .col(
+                        ColumnDef::new(MobileDeviceRegistrations::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(MobileDeviceRegistrations::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_mobile_device_registrations_user_id")
+                    .table(MobileDeviceRegistrations::Table)
+                    .col(MobileDeviceRegistrations::UserId)
+                    .to_owned(),
+            )
+            .await?;
+
+        // mobile_push_deliveries: tracks Expo push ticket/receipt status per send
+        manager
+            .create_table(
+                Table::create()
+                    .table(MobilePushDeliveries::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(MobilePushDeliveries::Id)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(MobilePushDeliveries::DeviceRegistrationId)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(MobilePushDeliveries::TicketId)
+                            .string()
+                            .null(),
+                    )
+                    .col(
+                        ColumnDef::new(MobilePushDeliveries::TicketStatus)
+                            .string()
+                            .not_null()
+                            .default("pending"),
+                    )
+                    .col(
+                        ColumnDef::new(MobilePushDeliveries::ReceiptStatus)
+                            .string()
+                            .null(),
+                    )
+                    .col(
+                        ColumnDef::new(MobilePushDeliveries::ReceiptMessage)
+                            .string()
+                            .null(),
+                    )
+                    .col(
+                        ColumnDef::new(MobilePushDeliveries::AlertKey)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(MobilePushDeliveries::AlertStatus)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(MobilePushDeliveries::SentAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(MobilePushDeliveries::ReceiptCheckedAt)
+                            .timestamp_with_time_zone()
+                            .null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_mobile_push_deliveries_ticket_id")
+                    .table(MobilePushDeliveries::Table)
+                    .col(MobilePushDeliveries::TicketId)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_mobile_push_deliveries_receipt_status")
+                    .table(MobilePushDeliveries::Table)
+                    .col(MobilePushDeliveries::ReceiptStatus)
+                    .to_owned(),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+        Ok(())
+    }
+}
+
+#[derive(Iden)]
+enum MobileSessions {
+    Table,
+    Id,
+    UserId,
+    InstallationId,
+    RefreshTokenHash,
+    RevokedAt,
+    Ip,
+    UserAgent,
+    ExpiresAt,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(Iden)]
+enum MobileDeviceRegistrations {
+    Table,
+    Id,
+    UserId,
+    InstallationId,
+    Platform,
+    PushToken,
+    Provider,
+    AppVersion,
+    Locale,
+    PermissionStatus,
+    FiringAlertsPush,
+    ResolvedAlertsPush,
+    DisabledAt,
+    LastSeenAt,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(Iden)]
+enum MobilePushDeliveries {
+    Table,
+    Id,
+    DeviceRegistrationId,
+    TicketId,
+    TicketStatus,
+    ReceiptStatus,
+    ReceiptMessage,
+    AlertKey,
+    AlertStatus,
+    SentAt,
+    ReceiptCheckedAt,
+}

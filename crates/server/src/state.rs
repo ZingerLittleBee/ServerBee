@@ -13,7 +13,6 @@ use crate::service::alert::AlertStateManager;
 use crate::service::docker_viewer::DockerViewerTracker;
 use crate::service::file_transfer::FileTransferManager;
 use crate::service::geoip::GeoIpService;
-use crate::service::jwt::JwtService;
 use crate::service::task_scheduler::TaskScheduler;
 
 /// Pending TOTP setup data, keyed by user_id.
@@ -51,8 +50,6 @@ pub struct AppState {
     pub task_scheduler: Arc<TaskScheduler>,
     /// Shared alert state manager for dedup across poll-based and event-driven evaluation.
     pub alert_state_manager: AlertStateManager,
-    /// JWT service for mobile auth token creation/validation.
-    pub jwt: JwtService,
 }
 
 static RATE_CHECK_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -145,20 +142,6 @@ impl AppState {
         if let Err(e) = agent_manager.preload_capabilities(&db).await {
             tracing::warn!("Failed to preload capabilities: {e}");
         }
-        // Initialize JWT service for mobile auth
-        let jwt_secret = if config.mobile.jwt_secret.is_empty() {
-            use base64::Engine;
-            use rand::RngCore;
-            let mut buf = [0u8; 32];
-            rand::rngs::OsRng.fill_bytes(&mut buf);
-            let generated = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(buf);
-            tracing::warn!("Mobile JWT secret auto-generated. Set SERVERBEE_MOBILE__JWT_SECRET for production (tokens won't survive restarts).");
-            generated
-        } else {
-            config.mobile.jwt_secret.clone()
-        };
-        let jwt = JwtService::new(&jwt_secret, config.mobile.access_token_ttl);
-
         Ok(Arc::new(Self {
             db,
             agent_manager,
@@ -174,7 +157,6 @@ impl AppState {
             docker_viewers: DockerViewerTracker::new(),
             task_scheduler,
             alert_state_manager,
-            jwt,
         }))
     }
 }
