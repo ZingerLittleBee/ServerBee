@@ -1578,7 +1578,20 @@ async fn fetch_external_ip(url: &str) -> anyhow::Result<String> {
         .timeout(Duration::from_secs(10))
         .build()?;
     let resp = client.get(url).send().await?;
-    let ip = resp.text().await?.trim().to_string();
+
+    // Reject responses larger than 256 bytes to prevent memory exhaustion
+    if let Some(len) = resp.content_length() {
+        if len > 256 {
+            anyhow::bail!("External IP response too large: {len} bytes");
+        }
+    }
+
+    let bytes = resp.bytes().await?;
+    if bytes.len() > 256 {
+        anyhow::bail!("External IP response too large: {} bytes", bytes.len());
+    }
+
+    let ip = String::from_utf8_lossy(&bytes).trim().to_string();
     Ok(ip)
 }
 
