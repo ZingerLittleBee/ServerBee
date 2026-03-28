@@ -56,23 +56,33 @@ serverbee.sh <command> [component] [options]     # 有参数 → 无人值守
 - `uninstall` 移除对应组件条目
 - `upgrade` 更新 version 字段
 - 元数据文件不存在或为空 → 视为未安装任何组件
-- 兼容性：如果二进制/容器存在但元数据缺失（手动安装或旧版 install.sh 安装的），自动检测逻辑作为 fallback，但给出警告建议重新用脚本安装
+- **不兼容旧版安装**：此脚本只管理由自身安装的实例。无元数据的安装（手动安装或旧版 install.sh 安装的）不会被 fallback 接管。见下文"旧版安装处理策略"。
 
 ## 自动检测逻辑
 
-优先读取 `/etc/serverbee/.install-meta`。Fallback（元数据缺失时）：
+**严格依赖安装元数据**，不做 heuristic 探测：
 
 ```bash
 detect_installed():
-  检查 /usr/local/bin/serverbee-agent   → agent:binary
-  检查 /usr/local/bin/serverbee-server  → server:binary
-  检查 docker ps -a --filter name=serverbee-agent  → agent:docker
-  检查 docker ps -a --filter name=serverbee-server → server:docker
-  返回列表: ["agent:binary", "server:docker", ...]
-  如果使用了 fallback → warn "No install metadata found. Consider reinstalling via serverbee.sh for full management support."
+  读取 /etc/serverbee/.install-meta
+  文件存在且有对应组件条目 → 返回 [(component, method, version)]
+  文件不存在或无条目 → 返回空列表
 ```
 
 检测结果缓存在变量中，一次会话只执行一次。
+
+### 旧版安装处理策略
+
+对于没有 `.install-meta` 但实际存在二进制/容器的旧版安装：
+
+- **查询类命令**（status）：额外检测 binary/container 存在性，如果发现未纳管的实例，打印提示：
+  ```
+  [WARN] Found serverbee-agent at /usr/local/bin/serverbee-agent but it is not managed by this script.
+         To bring it under management, run: serverbee.sh install agent [options]
+         (This will write metadata only — existing binary and config will be preserved.)
+  ```
+- **变更类命令**（install/uninstall/upgrade/config set/env set/start/stop/restart）：**只操作有元数据的实例**。对未纳管的实例不做任何操作，不尝试猜测其部署方式。
+- **install 纳管**：对已存在的 binary 或配置执行 `install` 时，检测到 binary 已存在则跳过下载，检测到 config 已存在则跳过生成，只写入元数据和 systemd unit（如需要）。这提供了一条安全的"纳管"路径。
 
 ## 交互式主菜单
 
@@ -258,8 +268,9 @@ serverbee.sh config set log.level debug
 
 #### 修改逻辑
 
-1. 根据 key 查映射表确定目标 TOML 文件
-2. 检查 key 类型 — 数组类型 → 报错提示手动编辑；不可修改 key → 报错提示
+1. **先检查拒绝列表**：不可修改 key（`admin.password`、`admin.username`）→ 报错并给出定向引导
+2. **再检查数组类型**：`file.root_paths`、`file.deny_patterns`、`server.trusted_proxies`、`oauth.oidc.scopes` → 报错提示手动编辑 TOML 文件
+3. 根据 key 查映射表确定目标 TOML 文件（不在映射表中 → "Unknown config key"）
 3. 目标文件不存在 → 报错
 4. 解析 TOML section（`collector.interval` → `[collector]` section 下的 `interval`）
 5. key 已存在 → sed 替换值（仅替换 `key = value` 行，精确匹配 key 名）
@@ -361,29 +372,38 @@ serverbee.sh restart server      # 重启指定组件
 
 | 操作 | 文件 |
 |------|------|
-| 新增 | `deploy/serverbee.sh` |
-| 修改 | `deploy/install.sh` → 改为 shim，转发到 serverbee.sh（保持向后兼容） |
+| 新增 | `deploy/serverbee.sh`（主脚本） |
+| 修改 | `deploy/install.sh` → 与 serverbee.sh 相同内容（stdin 兼容，见下文） |
 | 更新 | `README.md`, `README.zh-CN.md` — 更新安装命令示例 |
 | 更新 | `apps/docs/content/docs/{en,cn}/agent.mdx` — 更新 curl 安装链接 |
 | 更新 | `apps/docs/content/docs/{en,cn}/quick-start.mdx` — 更新 curl 安装链接 |
 | 保留 | `deploy/serverbee-agent.service`（参考模板，脚本内 inline 生成） |
 | 保留 | `deploy/serverbee-server.service`（同上） |
 
-### install.sh shim
+### install.sh 向后兼容
 
-`deploy/install.sh` 保留为向后兼容 shim，内容：
+不再使用 shim 转发（`bash -s` 从 stdin 执行时 `BASH_SOURCE[0]` 为空，无法定位同目录文件）。
+
+方案：**`deploy/install.sh` 直接替换为 `deploy/serverbee.sh` 的完整内容**。两个文件内容相同，只是入口行为不同：
+
+- `deploy/serverbee.sh` — 主脚本，无参数进交互式菜单
+- `deploy/install.sh` — 同一份代码，但当检测到经 stdin 执行（`$0` 为 `bash`/`sh` 且无 `BASH_SOURCE`）且传入了位置参数时，自动注入 `install` 子命令
+
+具体逻辑：在参数解析前添加 stdin 检测：
 
 ```bash
-#!/usr/bin/env bash
-# Backward-compatible shim — redirects to serverbee.sh
-# Existing install commands continue to work:
-#   curl ... deploy/install.sh | sudo bash -s server
-#   curl ... deploy/install.sh | sudo bash -s agent
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "$SCRIPT_DIR/serverbee.sh" install "$@"
+# Backward compat: `curl ... | bash -s server` → treat as `install server`
+if [[ -z "${BASH_SOURCE[0]:-}" || "${BASH_SOURCE[0]:-}" == *bash* ]] && [[ $# -gt 0 && "$1" != install && "$1" != uninstall && "$1" != upgrade && "$1" != status && "$1" != start && "$1" != stop && "$1" != restart && "$1" != config && "$1" != env ]]; then
+    set -- install "$@"
+fi
 ```
 
-这样 `bash install.sh server` 和 `curl ... | bash -s agent` 都继续正常工作。
+这样所有现有安装链接无需改动：
+- `curl ... deploy/install.sh | sudo bash -s server` → 等价于 `install server`
+- `curl ... deploy/install.sh | sudo bash -s agent --server-url ... --discovery-key ...` → 等价于 `install agent --server-url ... --discovery-key ...`
+- `curl ... deploy/serverbee.sh | sudo bash -s install agent ...` → 直接匹配 install 子命令
+
+发布时 CI 将 `deploy/serverbee.sh` 复制为 `deploy/install.sh`（或两个文件始终保持相同内容）。
 
 ## 运行时依赖
 
