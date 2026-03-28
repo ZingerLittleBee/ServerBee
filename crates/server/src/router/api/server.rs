@@ -589,6 +589,9 @@ pub struct BatchCapabilitiesResponse {
 }
 
 /// Side effects to execute after transaction commit.
+///
+/// Collected during the DB transaction phase so that WebSocket broadcasts
+/// and audit log writes happen only after a successful commit.
 struct CapabilityChangeEffect {
     server_id: String,
     old_caps: u32,
