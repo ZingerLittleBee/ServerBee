@@ -13,8 +13,6 @@ pub struct Model {
     pub user_agent: String,
     pub expires_at: DateTimeUtc,
     pub created_at: DateTimeUtc,
-    #[sea_orm(default_value = "false")]
-    pub must_change_password: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

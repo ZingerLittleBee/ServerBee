@@ -6,12 +6,11 @@ use axum::http::header::SET_COOKIE;
 use axum::http::HeaderMap;
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::EntityTrait;
 use serde::{Deserialize, Serialize};
 
 use crate::router::utils::extract_client_ip;
 
-use crate::entity::session;
 use crate::error::{ok, ApiResponse, AppError};
 use crate::middleware::auth::CurrentUser;
 use crate::service::audit::AuditService;
@@ -30,7 +29,6 @@ pub struct LoginResponse {
     user_id: String,
     username: String,
     role: String,
-    must_change_password: bool,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -38,7 +36,6 @@ pub struct MeResponse {
     user_id: String,
     username: String,
     role: String,
-    must_change_password: bool,
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -145,9 +142,6 @@ pub async fn login(
         ));
     }
 
-    // Check if the user is still using the default "admin" password
-    let must_change_password = body.password == "admin" && body.username == "admin";
-
     let (session, user) = AuthService::login(
         &state.db,
         LoginParams {
@@ -157,7 +151,6 @@ pub async fn login(
             ip: &ip,
             user_agent: &user_agent,
             session_ttl: state.config.auth.session_ttl,
-            must_change_password,
         },
     )
     .await?;
@@ -195,7 +188,6 @@ pub async fn login(
             user_id: user.id,
             username: user.username,
             role: user.role,
-            must_change_password,
         },
     };
 
@@ -255,7 +247,6 @@ pub async fn me(
         user_id: current_user.user_id,
         username: current_user.username,
         role: current_user.role,
-        must_change_password: current_user.must_change_password.unwrap_or(false),
     })
 }
 
@@ -371,16 +362,6 @@ pub async fn change_password(
         &body.new_password,
     )
     .await?;
-
-    // Clear must_change_password flag on all sessions for this user
-    session::Entity::update_many()
-        .col_expr(
-            session::Column::MustChangePassword,
-            sea_orm::sea_query::Expr::value(false),
-        )
-        .filter(session::Column::UserId.eq(&current_user.user_id))
-        .exec(&state.db)
-        .await?;
 
     let ip = extract_client_ip(
         &ConnectInfo(addr),

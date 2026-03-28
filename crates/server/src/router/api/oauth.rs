@@ -213,7 +213,6 @@ pub async fn oauth_callback(
         user_agent: sea_orm::Set(user_agent),
         expires_at: sea_orm::Set(expires_at),
         created_at: sea_orm::Set(now),
-        must_change_password: sea_orm::Set(false),
     };
 
     crate::entity::session::Entity::insert(new_session)

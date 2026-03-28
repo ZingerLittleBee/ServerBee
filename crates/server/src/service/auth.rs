@@ -20,7 +20,6 @@ pub struct LoginParams<'a> {
     pub ip: &'a str,
     pub user_agent: &'a str,
     pub session_ttl: i64,
-    pub must_change_password: bool,
 }
 
 pub struct AuthService;
@@ -126,7 +125,6 @@ impl AuthService {
             user_agent: Set(params.user_agent.to_string()),
             expires_at: Set(expires_at),
             created_at: Set(now),
-            must_change_password: Set(params.must_change_password),
         };
 
         let session_model = new_session.insert(db).await?;
@@ -139,7 +137,7 @@ impl AuthService {
         db: &DatabaseConnection,
         token: &str,
         session_ttl: i64,
-    ) -> Result<Option<(user::Model, bool)>, AppError> {
+    ) -> Result<Option<user::Model>, AppError> {
         let session = session::Entity::find()
             .filter(session::Column::Token.eq(token))
             .one(db)
@@ -161,7 +159,6 @@ impl AuthService {
 
         // Sliding expiry: extend expires_at
         let user_id = session.user_id.clone();
-        let must_change_pw = session.must_change_password;
         let new_expires = Utc::now() + chrono::Duration::seconds(session_ttl);
         let mut active: session::ActiveModel = session.into();
         active.expires_at = Set(new_expires);
@@ -170,7 +167,7 @@ impl AuthService {
         // Fetch the user
         let user = user::Entity::find_by_id(&user_id).one(db).await?;
 
-        Ok(user.map(|u| (u, must_change_pw)))
+        Ok(user)
     }
 
     /// Delete a session by its token (logout).
@@ -485,7 +482,6 @@ mod tests {
             ip: "127.0.0.1",
             user_agent: "test-agent",
             session_ttl: 3600,
-            must_change_password: false,
         }
     }
 
@@ -677,9 +673,8 @@ mod tests {
             .await
             .expect("validate_session should not error");
         assert!(validated.is_some(), "valid token should return a user");
-        let (user, must_change_pw) = validated.unwrap();
+        let user = validated.unwrap();
         assert_eq!(user.username, "dave");
-        assert!(!must_change_pw, "must_change_password should be false for normal login");
     }
 
     #[tokio::test]
