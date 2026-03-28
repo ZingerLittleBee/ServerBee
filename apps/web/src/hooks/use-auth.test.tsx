@@ -19,8 +19,7 @@ function createWrapper() {
 const mockUser = {
   user_id: 'u-1',
   username: 'admin',
-  role: 'admin',
-  must_change_password: false
+  role: 'admin'
 }
 
 beforeEach(() => {

@@ -1,5 +1,4 @@
 import { createFileRoute, Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
-import { TriangleAlert } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AppSidebar } from '@/components/app-sidebar'
@@ -230,7 +229,6 @@ function AuthedLayout() {
               <ThemeToggle />
             </div>
           </header>
-          {user?.must_change_password && <DefaultPasswordBanner />}
           <ScrollArea className="min-h-0 flex-1 overflow-hidden">
             <main className="p-4 pt-0">
               <Outlet />
@@ -239,21 +237,5 @@ function AuthedLayout() {
         </SidebarInset>
       </SidebarProvider>
     </ServersWsContext.Provider>
-  )
-}
-
-function DefaultPasswordBanner() {
-  const { t } = useTranslation()
-  return (
-    <div className="flex items-center gap-2 border-amber-300 border-b bg-amber-50 px-6 py-2.5 text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
-      <TriangleAlert className="size-4 shrink-0" />
-      <p className="text-sm">
-        {t('default_password_warning')}{' '}
-        <Link className="font-medium underline underline-offset-2 hover:no-underline" to="/settings/security">
-          {t('change_your_password')}
-        </Link>{' '}
-        {t('to_secure_account')}
-      </p>
-    </div>
   )
 }
