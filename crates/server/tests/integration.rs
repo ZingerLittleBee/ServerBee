@@ -2622,3 +2622,33 @@ async fn test_geoip_download_requires_admin() {
         "Member should receive 403 when attempting geoip download"
     );
 }
+
+#[tokio::test]
+async fn test_security_headers_present() {
+    let (base_url, _dir) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .get(format!("{}/healthz", base_url))
+        .send()
+        .await
+        .expect("healthz request failed");
+
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers().get("x-frame-options").map(|v| v.to_str().unwrap()),
+        Some("DENY"),
+    );
+    assert_eq!(
+        resp.headers().get("x-content-type-options").map(|v| v.to_str().unwrap()),
+        Some("nosniff"),
+    );
+    assert_eq!(
+        resp.headers().get("referrer-policy").map(|v| v.to_str().unwrap()),
+        Some("strict-origin-when-cross-origin"),
+    );
+    assert_eq!(
+        resp.headers().get("x-permitted-cross-domain-policies").map(|v| v.to_str().unwrap()),
+        Some("none"),
+    );
+}

@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Generic API Response Wrapper
 
-struct ApiResponse<T: Decodable>: Decodable {
+struct ApiResponse<T: Decodable & Sendable>: Decodable, Sendable {
     let data: T
 }
 

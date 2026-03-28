@@ -1,0 +1,754 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "common_nav_servers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Servers" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "服务器" }
+        }
+      }
+    },
+    "common_nav_alerts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Alerts" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "告警" }
+        }
+      }
+    },
+    "common_nav_settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Settings" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "设置" }
+        }
+      }
+    },
+    "common_offline_message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "You are offline" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "您已离线" }
+        }
+      }
+    },
+    "login_title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Login" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "登录" }
+        }
+      }
+    },
+    "login_server_url_placeholder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Server URL (e.g. https://example.com)" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "服务器地址（如 https://example.com）" }
+        }
+      }
+    },
+    "login_username" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Username" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "用户名" }
+        }
+      }
+    },
+    "login_password" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Password" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "密码" }
+        }
+      }
+    },
+    "login_button" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Log In" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "登录" }
+        }
+      }
+    },
+    "login_invalid_credentials" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Invalid username or password" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "用户名或密码错误" }
+        }
+      }
+    },
+    "login_too_many_attempts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Too many attempts. Please try again later." }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "尝试次数过多，请稍后再试" }
+        }
+      }
+    },
+    "login_connection_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Connection failed. Please check the server URL." }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "连接失败，请检查服务器地址" }
+        }
+      }
+    },
+    "login_enter_totp_code" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Enter verification code" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "请输入验证码" }
+        }
+      }
+    },
+    "login_totp_code" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "TOTP Code" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "验证码" }
+        }
+      }
+    },
+    "login_back" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Back" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "返回" }
+        }
+      }
+    },
+    "servers_loading" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Loading servers..." }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "加载服务器中..." }
+        }
+      }
+    },
+    "servers_no_servers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "No servers connected" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "暂无连接的服务器" }
+        }
+      }
+    },
+    "servers_filter_all" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "All" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "全部" }
+        }
+      }
+    },
+    "servers_filter_online" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Online" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "在线" }
+        }
+      }
+    },
+    "servers_filter_offline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Offline" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "离线" }
+        }
+      }
+    },
+    "servers_search_placeholder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Search servers..." }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "搜索服务器..." }
+        }
+      }
+    },
+    "servers_memory" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Memory" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "内存" }
+        }
+      }
+    },
+    "servers_disk" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Disk" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "磁盘" }
+        }
+      }
+    },
+    "servers_network_in" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Network In" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "入站流量" }
+        }
+      }
+    },
+    "servers_network_out" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Network Out" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "出站流量" }
+        }
+      }
+    },
+    "servers_load" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Load" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "负载" }
+        }
+      }
+    },
+    "servers_processes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Processes" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "进程" }
+        }
+      }
+    },
+    "servers_online" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Online" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "在线" }
+        }
+      }
+    },
+    "servers_offline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Offline" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "离线" }
+        }
+      }
+    },
+    "servers_uptime" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Uptime" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "运行时间" }
+        }
+      }
+    },
+    "servers_view_history" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "View History" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "查看历史" }
+        }
+      }
+    },
+    "servers_history_charts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "History Charts" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "历史图表" }
+        }
+      }
+    },
+    "servers_live_metrics" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Live Metrics" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "实时指标" }
+        }
+      }
+    },
+    "alerts_loading" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Loading alerts..." }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "加载告警中..." }
+        }
+      }
+    },
+    "alerts_no_alerts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "No recent alerts" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "暂无最近告警" }
+        }
+      }
+    },
+    "alerts_firing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Firing" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "触发中" }
+        }
+      }
+    },
+    "alerts_resolved" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Resolved" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "已恢复" }
+        }
+      }
+    },
+    "alerts_detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Alert Detail" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "告警详情" }
+        }
+      }
+    },
+    "alerts_rule_name" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Rule Name" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "规则名称" }
+        }
+      }
+    },
+    "alerts_server" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Server" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "服务器" }
+        }
+      }
+    },
+    "alerts_trigger_count" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Trigger Count" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "触发次数" }
+        }
+      }
+    },
+    "alerts_first_triggered" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "First Triggered" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "首次触发" }
+        }
+      }
+    },
+    "alerts_resolved_at" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Resolved At" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "恢复时间" }
+        }
+      }
+    },
+    "alerts_message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Message" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "消息" }
+        }
+      }
+    },
+    "alerts_trigger_mode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Trigger Mode" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "触发模式" }
+        }
+      }
+    },
+    "alerts_rule_enabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Rule Enabled" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "规则已启用" }
+        }
+      }
+    },
+    "alerts_yes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Yes" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "是" }
+        }
+      }
+    },
+    "alerts_no" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "No" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "否" }
+        }
+      }
+    },
+    "alerts_view_server" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "View Server" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "查看服务器" }
+        }
+      }
+    },
+    "alerts_not_found" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Alert not found" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "告警未找到" }
+        }
+      }
+    },
+    "settings_title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Settings" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "设置" }
+        }
+      }
+    },
+    "settings_account" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Account" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "账户" }
+        }
+      }
+    },
+    "settings_username" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Username" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "用户名" }
+        }
+      }
+    },
+    "settings_role" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Role" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "角色" }
+        }
+      }
+    },
+    "settings_server" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Server" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "服务器" }
+        }
+      }
+    },
+    "settings_preferences" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Preferences" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "偏好设置" }
+        }
+      }
+    },
+    "settings_notifications" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Notifications" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "通知" }
+        }
+      }
+    },
+    "settings_appearance" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Appearance" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "外观" }
+        }
+      }
+    },
+    "settings_about" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "About" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "关于" }
+        }
+      }
+    },
+    "settings_version" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Version" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "版本" }
+        }
+      }
+    },
+    "settings_logout" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Log Out" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "退出登录" }
+        }
+      }
+    },
+    "settings_logout_confirm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Are you sure you want to log out?" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "确定要退出登录吗？" }
+        }
+      }
+    },
+    "settings_cancel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Cancel" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "取消" }
+        }
+      }
+    },
+    "settings_theme" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Theme" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "主题" }
+        }
+      }
+    },
+    "settings_theme_system" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "System" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "跟随系统" }
+        }
+      }
+    },
+    "settings_theme_light" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Light" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "浅色" }
+        }
+      }
+    },
+    "settings_theme_dark" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Dark" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "深色" }
+        }
+      }
+    },
+    "settings_language" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Language" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "语言" }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}
