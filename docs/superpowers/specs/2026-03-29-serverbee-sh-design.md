@@ -82,7 +82,14 @@ detect_installed():
          (This will write metadata only — existing binary and config will be preserved.)
   ```
 - **变更类命令**（install/uninstall/upgrade/config set/env set/start/stop/restart）：**只操作有元数据的实例**。对未纳管的实例不做任何操作，不尝试猜测其部署方式。
-- **install 纳管**：对已存在的 binary 或配置执行 `install` 时，检测到 binary 已存在则跳过下载，检测到 config 已存在则跳过生成，只写入元数据和 systemd unit（如需要）。这提供了一条安全的"纳管"路径。
+- **install 纳管（binary）**：对已存在的 binary 或配置执行 `install` 时，检测到 binary 已存在则跳过下载，检测到 config 已存在则跳过生成，只写入元数据和 systemd unit（如需要）。这提供了一条安全的"纳管"路径。
+- **install 纳管（docker）**：**不支持自动纳管**。如果检测到同名未纳管容器（`docker ps -a --filter name=serverbee-{component}` 存在但 `.install-meta` 无对应条目），`install --method docker` 拒绝执行并报错：
+  ```
+  [ERROR] Found existing container 'serverbee-agent' not managed by this script.
+          Please remove it first:  docker stop serverbee-agent && docker rm serverbee-agent
+          Then re-run:  serverbee.sh install agent --method docker ...
+  ```
+  这避免了新 compose 与旧 standalone 容器的端口/命名冲突。
 
 ## 交互式主菜单
 
@@ -144,11 +151,13 @@ serverbee.sh install server --method docker --password mypass -y
 Docker 统一使用 docker compose 模型，不再使用 `docker run`。
 
 1. 检查 docker + docker compose
-2. Agent：Docker 不推荐警告（同当前 install.sh）
-3. 生成 `/etc/serverbee/{component}.toml` 配置文件
-4. 生成 `/opt/serverbee/docker-compose.{component}.yml`
-5. `docker compose -f /opt/serverbee/docker-compose.{component}.yml up -d`
-6. 写入安装元数据
+2. **冲突检测**：检查是否存在同名未纳管容器 → 存在则报错并指引清理（见旧版安装处理策略）
+3. Agent：Docker 不推荐警告（同当前 install.sh）
+4. 获取 GitHub latest release tag（作为版本号来源）
+5. 生成 `/etc/serverbee/{component}.toml` 配置文件
+6. 生成 `/opt/serverbee/docker-compose.{component}.yml`（镜像 tag 使用 release tag，如 `:v0.7.3`，而非 `:latest`）
+7. `docker compose -f /opt/serverbee/docker-compose.{component}.yml up -d`
+8. 写入安装元数据（version = release tag）
 
 server 和 agent 各自独立 compose 文件，互不干扰，支持单独升级/卸载。
 
@@ -219,9 +228,19 @@ serverbee.sh upgrade -y          # 静默升级所有
 
 ### 升级流程（docker）
 
-1. `docker compose -f /opt/serverbee/docker-compose.{component}.yml pull`
-2. `docker compose -f /opt/serverbee/docker-compose.{component}.yml up -d`
-3. 更新安装元数据中的 version
+1. 获取 GitHub latest release tag
+2. 比较元数据中的 version 与 latest tag → 相同则跳过
+3. 更新 compose 文件中的镜像 tag（如 `:v0.7.3` → `:v0.8.0`）
+4. `docker compose -f /opt/serverbee/docker-compose.{component}.yml pull`
+5. `docker compose -f /opt/serverbee/docker-compose.{component}.yml up -d`
+6. 更新安装元数据中的 version
+
+### Docker 版本策略
+
+Docker 镜像统一使用**精确版本 tag**（如 `ghcr.io/zingerlittlebee/serverbee-server:v0.7.3`），不使用 `:latest`。版本号来源统一为 GitHub latest release tag（与 binary 安装共用同一个 `get_latest_version()` 函数）。这确保：
+- 安装元数据中的 version 与实际运行镜像一致
+- upgrade 能可靠比较版本
+- 不会因 Docker daemon 缓存的 `:latest` 导致版本混乱
 
 ## config 子命令
 
@@ -389,19 +408,30 @@ serverbee.sh restart server      # 重启指定组件
 - `deploy/serverbee.sh` — 主脚本，无参数进交互式菜单
 - `deploy/install.sh` — 同一份代码，但当检测到经 stdin 执行（`$0` 为 `bash`/`sh` 且无 `BASH_SOURCE`）且传入了位置参数时，自动注入 `install` 子命令
 
-具体逻辑：在参数解析前添加 stdin 检测：
+具体逻辑：在参数解析前，当第一个参数不是已知子命令时，自动注入 `install`：
 
 ```bash
-# Backward compat: `curl ... | bash -s server` → treat as `install server`
-if [[ -z "${BASH_SOURCE[0]:-}" || "${BASH_SOURCE[0]:-}" == *bash* ]] && [[ $# -gt 0 && "$1" != install && "$1" != uninstall && "$1" != upgrade && "$1" != status && "$1" != start && "$1" != stop && "$1" != restart && "$1" != config && "$1" != env ]]; then
+# Known subcommands
+KNOWN_COMMANDS="install uninstall upgrade status start stop restart config env"
+
+# Backward compat: if first arg is not a known command, prepend "install"
+# Covers both:
+#   curl ... | bash -s server                    (stdin, $1=server)
+#   bash deploy/install.sh server                (file, $1=server)
+#   sudo bash deploy/install.sh agent --server-url ...
+if [[ $# -gt 0 ]] && ! echo "$KNOWN_COMMANDS" | grep -qw "$1"; then
     set -- install "$@"
 fi
 ```
 
-这样所有现有安装链接无需改动：
+这样所有现有命令形式都无需改动：
 - `curl ... deploy/install.sh | sudo bash -s server` → 等价于 `install server`
-- `curl ... deploy/install.sh | sudo bash -s agent --server-url ... --discovery-key ...` → 等价于 `install agent --server-url ... --discovery-key ...`
-- `curl ... deploy/serverbee.sh | sudo bash -s install agent ...` → 直接匹配 install 子命令
+- `curl ... deploy/install.sh | sudo bash -s agent --server-url ... --discovery-key ...` → 等价于 `install agent --server-url ...`
+- `sudo bash deploy/install.sh server` → 等价于 `install server`（本地执行）
+- `sudo bash deploy/install.sh agent` → 等价于 `install agent`（本地执行）
+- `serverbee.sh install agent ...` → 直接匹配 install 子命令（不触发注入）
+
+判断逻辑不再依赖 stdin/file 区分，而是统一看"第一个参数是否是已知子命令"。这同时覆盖了 stdin 和 file-executed 两种场景。
 
 发布时 CI 将 `deploy/serverbee.sh` 复制为 `deploy/install.sh`（或两个文件始终保持相同内容）。
 
