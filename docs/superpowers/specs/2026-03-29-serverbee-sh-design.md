@@ -17,7 +17,7 @@ serverbee.sh <command> [component] [options]     # 有参数 → 无人值守
 | `status` | 自动检测 | 运行状态 + 最近日志 |
 | `start` / `stop` / `restart` | 自动检测 | 服务控制 |
 | `config` | 自动检测 | 查看当前配置 |
-| `config set <key> <value>` | 自动检测 | 修改配置项 |
+| `config set <key> <value>` | 自动检测 | 修改配置项（仅标量类型） |
 | `env` | 自动检测 | 列出 SERVERBEE_* 环境变量 |
 | `env set <key> <value>` | 自动检测 | 写入 systemd override |
 
@@ -31,8 +31,36 @@ serverbee.sh <command> [component] [options]     # 有参数 → 无人值守
 - **查询自动检测，变更显式指定**：status/config/env/start/stop/restart 自动检测已安装组件；uninstall/upgrade 要求指定组件（upgrade 无参数时检测所有已装的，逐个确认）
 - **单文件**：保持 `curl -fsSL ... | bash` 友好
 - **幂等**：重复执行不出错（已安装则跳过，已卸载则提示）
+- **只管理自身安装的实例**：安装时写入元数据文件，后续操作依据元数据而非现场推断
+
+## 安装元数据
+
+安装时在 `/etc/serverbee/.install-meta` 写入 JSON 元数据，所有后续命令依据此文件判断状态：
+
+```json
+{
+  "agent": {
+    "method": "binary",
+    "version": "v0.7.3",
+    "installed_at": "2026-03-29T10:00:00Z"
+  },
+  "server": {
+    "method": "docker",
+    "version": "v0.7.3",
+    "installed_at": "2026-03-29T10:00:00Z"
+  }
+}
+```
+
+- `install` 写入/更新对应组件条目
+- `uninstall` 移除对应组件条目
+- `upgrade` 更新 version 字段
+- 元数据文件不存在或为空 → 视为未安装任何组件
+- 兼容性：如果二进制/容器存在但元数据缺失（手动安装或旧版 install.sh 安装的），自动检测逻辑作为 fallback，但给出警告建议重新用脚本安装
 
 ## 自动检测逻辑
+
+优先读取 `/etc/serverbee/.install-meta`。Fallback（元数据缺失时）：
 
 ```bash
 detect_installed():
@@ -41,6 +69,7 @@ detect_installed():
   检查 docker ps -a --filter name=serverbee-agent  → agent:docker
   检查 docker ps -a --filter name=serverbee-server → server:docker
   返回列表: ["agent:binary", "server:docker", ...]
+  如果使用了 fallback → warn "No install metadata found. Consider reinstalling via serverbee.sh for full management support."
 ```
 
 检测结果缓存在变量中，一次会话只执行一次。
@@ -97,14 +126,21 @@ serverbee.sh install server --method docker --password mypass -y
 4. 生成配置文件到 `/etc/serverbee/{component}.toml`（已存在则跳过）
 5. 创建 systemd unit 文件（inline 生成，不依赖外部模板）
 6. `systemctl daemon-reload && enable`
-7. Agent：提示手动启动（先检查配置）；Server：直接启动
+7. 写入安装元数据（version、method、时间戳）
+8. Agent：提示手动启动（先检查配置）；Server：直接启动
 
 ### 安装流程（docker）
 
+Docker 统一使用 docker compose 模型，不再使用 `docker run`。
+
 1. 检查 docker + docker compose
 2. Agent：Docker 不推荐警告（同当前 install.sh）
-3. 生成配置文件 / docker-compose.yml
-4. 启动容器
+3. 生成 `/etc/serverbee/{component}.toml` 配置文件
+4. 生成 `/opt/serverbee/docker-compose.{component}.yml`
+5. `docker compose -f /opt/serverbee/docker-compose.{component}.yml up -d`
+6. 写入安装元数据
+
+server 和 agent 各自独立 compose 文件，互不干扰，支持单独升级/卸载。
 
 ### 安装参数
 
@@ -112,7 +148,7 @@ serverbee.sh install server --method docker --password mypass -y
 |------|------|------|------|
 | `--server-url <url>` | agent | 是 | Server HTTP 地址 |
 | `--discovery-key <key>` | agent | 是 | 自动注册发现密钥 |
-| `--password <pass>` | server | 否 | 管理员密码（默认自动生成） |
+| `--password <pass>` | server | 否 | 管理员初始密码（仅首次启动生效，默认自动生成） |
 | `--method binary\|docker` | 两者 | 否 | 安装方式（默认 binary） |
 | `-y` | 两者 | 否 | 跳过确认 |
 
@@ -121,7 +157,7 @@ serverbee.sh install server --method docker --password mypass -y
 ```bash
 serverbee.sh uninstall agent           # 交互确认
 serverbee.sh uninstall agent -y        # 静默
-serverbee.sh uninstall agent --purge   # 连配置一起删
+serverbee.sh uninstall agent --purge   # 连配置和数据一起删
 ```
 
 **组件必须显式指定**，不支持自动检测。
@@ -129,17 +165,19 @@ serverbee.sh uninstall agent --purge   # 连配置一起删
 ### 卸载流程（binary）
 
 1. 停止 systemd 服务
-2. disable + 删除 unit 文件
+2. disable + 删除 unit 文件 + 删除 override.conf（如有）
 3. 删除 `/usr/local/bin/serverbee-{component}`
 4. `systemctl daemon-reload`
-5. `--purge`：删除配置（agent: `/etc/serverbee/agent.toml`，server: `/etc/serverbee/server.toml` + `/var/lib/serverbee`）
-6. 无 `--purge`：保留配置文件，打印保留路径
+5. 从安装元数据中移除该组件
+6. `--purge`：删除配置（agent: `/etc/serverbee/agent.toml`，server: `/etc/serverbee/server.toml` + `/var/lib/serverbee`）
+7. 无 `--purge`：保留配置文件，打印保留路径
 
 ### 卸载流程（docker）
 
-1. `docker stop` + `docker rm` 容器
-2. `--purge`：`docker rmi` 镜像 + 删除 compose 文件 + 配置
-3. 无 `--purge`：保留镜像和配置
+1. `docker compose -f /opt/serverbee/docker-compose.{component}.yml down`
+2. 从安装元数据中移除该组件
+3. `--purge`：`docker rmi` 镜像 + `docker volume rm` 相关命名卷 + 删除 compose 文件 + 配置文件
+4. 无 `--purge`：保留镜像、卷和配置
 
 ## upgrade 子命令
 
@@ -150,21 +188,30 @@ serverbee.sh upgrade             # 自动检测，升级所有已安装组件
 serverbee.sh upgrade -y          # 静默升级所有
 ```
 
+### 版本获取策略
+
+由于二进制当前不支持 `--version` 参数，版本信息通过以下方式获取：
+
+1. **首选**：读取安装元数据中的 `version` 字段
+2. **Fallback**：跳过版本比较，直接下载最新版替换（打印 "Cannot determine current version, downloading latest..."）
+
 ### 升级流程（binary）
 
-1. 获取当前版本（`serverbee-{component} --version`）
+1. 读取安装元数据获取当前版本
 2. 获取 GitHub latest 版本
-3. 版本相同 → 打印 "Already up to date" → 跳过
+3. 版本相同 → 打印 "Already up to date (vX.Y.Z)" → 跳过
 4. 下载新二进制到 `/tmp`
 5. 停止服务
 6. 替换二进制
 7. 启动服务
-8. 打印版本变更摘要
+8. 更新安装元数据中的 version
+9. 打印版本变更摘要
 
 ### 升级流程（docker）
 
-1. `docker pull` 最新镜像
-2. 重建容器（`docker compose up -d` 或 `docker run`）
+1. `docker compose -f /opt/serverbee/docker-compose.{component}.yml pull`
+2. `docker compose -f /opt/serverbee/docker-compose.{component}.yml up -d`
+3. 更新安装元数据中的 version
 
 ## config 子命令
 
@@ -180,10 +227,11 @@ serverbee.sh config server       # 只看 server.toml
 
 ### 修改
 
+`config set` **仅支持标量类型**（string / number / bool）。数组类型的 key（如 `file.root_paths`、`server.trusted_proxies`、`oauth.oidc.scopes`、`file.deny_patterns`）不支持通过 `config set` 修改，尝试修改时提示用户直接编辑 TOML 文件。
+
 ```bash
 serverbee.sh config set server_url http://new:9527
 serverbee.sh config set collector.interval 5
-serverbee.sh config set admin.password newpass
 serverbee.sh config set log.level debug
 ```
 
@@ -191,20 +239,34 @@ serverbee.sh config set log.level debug
 
 | key 前缀 | 目标文件 |
 |----------|---------|
-| `server_url`, `auto_discovery_key`, `token`, `collector.*`, `file.*`, `ip_change.*` | agent.toml |
-| `admin.*`, `server.*`, `auth.*`, `geoip.*`, `retention.*`, `oauth.*` | server.toml |
+| `server_url`, `auto_discovery_key`, `token` | agent.toml |
+| `collector.*`, `ip_change.*` | agent.toml |
+| `file.enabled`, `file.max_file_size` (agent 端标量 key) | agent.toml |
+| `file.max_upload_size` (server 端) | server.toml |
+| `server.*`, `auth.*`, `geoip.*`, `retention.*`, `oauth.*` | server.toml |
+| `database.*`, `rate_limit.*`, `scheduler.*`, `upgrade.*` | server.toml |
 | `log.*` | 根据已安装组件判断，都装了则两个都改 |
+
+不在映射表中的 key → 报错 "Unknown config key: xxx"。
+
+#### 不可修改的 key
+
+以下 key 仅在 server 首次启动（用户表为空）时生效，运行时修改无实际效果，因此 `config set` 拒绝修改并给出引导：
+
+- `admin.password` → 提示 "Admin password can only be set during initial installation. To change password, use the Dashboard UI."
+- `admin.username` → 提示 "Admin username can only be set during initial installation."
 
 #### 修改逻辑
 
-1. 根据 key 确定目标 TOML 文件
-2. 目标文件不存在 → 报错
-3. 解析 TOML section（`collector.interval` → `[collector]` section 下的 `interval`）
-4. key 已存在 → sed 替换值
-5. key 不存在但 section 存在 → 在 section 末尾追加
-6. section 不存在 → 追加 section + key
-7. 打印变更前后对比
-8. 提示是否重启服务生效（`-y` 时自动重启）
+1. 根据 key 查映射表确定目标 TOML 文件
+2. 检查 key 类型 — 数组类型 → 报错提示手动编辑；不可修改 key → 报错提示
+3. 目标文件不存在 → 报错
+4. 解析 TOML section（`collector.interval` → `[collector]` section 下的 `interval`）
+5. key 已存在 → sed 替换值（仅替换 `key = value` 行，精确匹配 key 名）
+6. key 不存在但 section 存在 → 在 section 末尾追加
+7. section 不存在 → 追加 section + key
+8. 打印变更前后对比
+9. 提示是否重启服务生效（`-y` 时自动重启）
 
 ## env 子命令
 
@@ -232,7 +294,7 @@ Source: systemd override (serverbee-server)
 Note: env vars override TOML config values
 ```
 
-Docker 模式：从 docker-compose.yml 或 `docker inspect` 读取 environment。
+Docker 模式：从 docker-compose.yml 读取 environment 段。
 
 ### 设置
 
@@ -244,8 +306,7 @@ serverbee.sh env set SERVERBEE_COLLECTOR__INTERVAL 5  # 已有前缀则不重复
 #### 写入逻辑
 
 - **binary (systemd)**：写入 `/etc/systemd/system/serverbee-{component}.service.d/override.conf`，然后 `systemctl daemon-reload`
-- **docker (compose)**：写入 docker-compose.yml 的 `environment` 段
-- **docker (standalone)**：修改后需要重建容器，提示用户确认
+- **docker (compose)**：修改 `/opt/serverbee/docker-compose.{component}.yml` 的 `environment` 段，然后 `docker compose up -d` 重建
 
 key 到组件的映射：同 config set 的映射表。`COLLECTOR__*` → agent，`SERVER__*` → server，`ADMIN__*` → server。
 
@@ -263,7 +324,8 @@ ServerBee Status
 
 Agent (binary)
   Service:  active (running) since 2026-03-29 10:00:00
-  Binary:   /usr/local/bin/serverbee-agent v0.7.3
+  Version:  v0.7.3 (from install metadata)
+  Binary:   /usr/local/bin/serverbee-agent
   Config:   /etc/serverbee/agent.toml
   Server:   http://10.0.0.1:9527
   Recent logs (last 5 lines):
@@ -272,7 +334,8 @@ Agent (binary)
 
 Server (docker)
   Container: serverbee-server (Up 3 days)
-  Image:     ghcr.io/zingerlittlebee/serverbee-server:0.7.3
+  Version:   v0.7.3 (from install metadata)
+  Image:     ghcr.io/zingerlittlebee/serverbee-server:latest
   Port:      0.0.0.0:9527->9527
   Dashboard: http://10.0.0.1:9527
   Recent logs (last 5 lines):
@@ -291,7 +354,7 @@ serverbee.sh stop agent          # 停止指定组件
 serverbee.sh restart server      # 重启指定组件
 ```
 
-- 自动检测部署方式（binary → systemctl，docker → docker restart）
+- 根据安装元数据确定部署方式（binary → systemctl，docker → docker compose）
 - 操作后打印当前状态
 
 ## 文件结构变更
@@ -299,9 +362,41 @@ serverbee.sh restart server      # 重启指定组件
 | 操作 | 文件 |
 |------|------|
 | 新增 | `deploy/serverbee.sh` |
-| 删除 | `deploy/install.sh` |
+| 修改 | `deploy/install.sh` → 改为 shim，转发到 serverbee.sh（保持向后兼容） |
+| 更新 | `README.md`, `README.zh-CN.md` — 更新安装命令示例 |
+| 更新 | `apps/docs/content/docs/{en,cn}/agent.mdx` — 更新 curl 安装链接 |
+| 更新 | `apps/docs/content/docs/{en,cn}/quick-start.mdx` — 更新 curl 安装链接 |
 | 保留 | `deploy/serverbee-agent.service`（参考模板，脚本内 inline 生成） |
 | 保留 | `deploy/serverbee-server.service`（同上） |
+
+### install.sh shim
+
+`deploy/install.sh` 保留为向后兼容 shim，内容：
+
+```bash
+#!/usr/bin/env bash
+# Backward-compatible shim — redirects to serverbee.sh
+# Existing install commands continue to work:
+#   curl ... deploy/install.sh | sudo bash -s server
+#   curl ... deploy/install.sh | sudo bash -s agent
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$SCRIPT_DIR/serverbee.sh" install "$@"
+```
+
+这样 `bash install.sh server` 和 `curl ... | bash -s agent` 都继续正常工作。
+
+## 运行时依赖
+
+| 路径 | 用途 | 创建时机 |
+|------|------|---------|
+| `/etc/serverbee/` | 配置文件目录 | install |
+| `/etc/serverbee/.install-meta` | 安装元数据（JSON） | install |
+| `/etc/serverbee/agent.toml` | Agent 配置 | install agent |
+| `/etc/serverbee/server.toml` | Server 配置 | install server |
+| `/var/lib/serverbee/` | Server 数据目录 | install server (binary) |
+| `/opt/serverbee/` | Docker compose 文件目录 | install (docker) |
+| `/opt/serverbee/docker-compose.agent.yml` | Agent compose 定义 | install agent --method docker |
+| `/opt/serverbee/docker-compose.server.yml` | Server compose 定义 | install server --method docker |
 
 ## 错误处理
 
