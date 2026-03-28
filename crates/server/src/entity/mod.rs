@@ -35,7 +35,3 @@ pub mod traffic_hourly;
 pub mod traffic_state;
 pub mod uptime_daily;
 pub mod user;
-
-pub mod mobile_device_registration;
-pub mod mobile_push_delivery;
-pub mod mobile_session;

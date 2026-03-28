@@ -12,7 +12,6 @@ mod m20260320_000009_status_page;
 mod m20260320_000010_dashboard;
 mod m20260321_000011_status_page_uptime_thresholds;
 mod m20260327_000012_records_hourly_unique;
-mod m20260328_000013_mobile_auth;
 
 pub struct Migrator;
 
@@ -31,7 +30,6 @@ impl MigratorTrait for Migrator {
             Box::new(m20260320_000010_dashboard::Migration),
             Box::new(m20260321_000011_status_page_uptime_thresholds::Migration),
             Box::new(m20260327_000012_records_hourly_unique::Migration),
-            Box::new(m20260328_000013_mobile_auth::Migration),
         ]
     }
 }

@@ -50,23 +50,7 @@ async fn validate_browser_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Op
         return Some(user.id);
     }
 
-    // Try Bearer token (JWT)
-    if let Some(token) = extract_bearer_token(headers)
-        && let Ok(claims) = state.jwt.validate_access_token(&token)
-    {
-        return Some(claims.sub);
-    }
-
     None
-}
-
-fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get("authorization")?
-        .to_str()
-        .ok()?
-        .strip_prefix("Bearer ")
-        .map(|t| t.to_string())
 }
 
 fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
