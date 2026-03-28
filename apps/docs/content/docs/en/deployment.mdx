@@ -4,7 +4,39 @@ description: Production deployment strategies for the ServerBee server and agent
 icon: Cloud
 ---
 
-This guide covers production deployment best practices for ServerBee, including Docker, systemd, reverse proxy configuration, TLS, and backup strategies.
+This guide covers production deployment best practices for ServerBee, including Railway, Docker, systemd, reverse proxy configuration, TLS, and backup strategies.
+
+## Railway (One-Click Deploy)
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/jez6Pw?referralCode=iUZg_8&utm_medium=integration&utm_source=template&utm_campaign=generic)
+
+The fastest way to get ServerBee running. Click the button above and configure the environment variables:
+
+```bash
+SERVERBEE_ADMIN__USERNAME="admin"              # Admin username (auto-generated if empty, check logs)
+SERVERBEE_ADMIN__PASSWORD=""                   # Admin password (auto-generated if empty, check logs)
+
+SERVERBEE_LOG__LEVEL="info"                    # Log level (trace/debug/info/warn/error)
+
+SERVERBEE_RETENTION__RECORDS_DAYS="7"          # Raw metrics retention in days
+SERVERBEE_RETENTION__RECORDS_HOURLY_DAYS="90"  # Hourly aggregates retention in days
+SERVERBEE_RETENTION__AUDIT_LOGS_DAYS="180"     # Audit log retention in days
+SERVERBEE_SCHEDULER__TIMEZONE="UTC"            # Timezone for daily traffic aggregation (e.g. Asia/Shanghai)
+
+SERVERBEE_OAUTH__BASE_URL=""                   # OAuth callback URL (e.g. https://xxx.up.railway.app)
+SERVERBEE_OAUTH__GITHUB__CLIENT_ID=""          # GitHub OAuth Client ID
+SERVERBEE_OAUTH__GITHUB__CLIENT_SECRET=""      # GitHub OAuth Client Secret
+SERVERBEE_OAUTH__ALLOW_REGISTRATION="false"    # Auto-create accounts on first OAuth login (true=open, false=linked only)
+```
+
+After deploying:
+
+1. Add a **Volume** mounted at `/data` to persist data across deploys
+2. Configure your agents to connect using the Railway-provided URL
+
+<Callout type="info">
+Railway automatically assigns a port and provides HTTPS. No need to configure `SERVERBEE_SERVER__LISTEN` or TLS certificates.
+</Callout>
 
 ## Docker Compose (Recommended)
 
