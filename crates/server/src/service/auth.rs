@@ -310,31 +310,30 @@ impl AuthService {
 
     /// Initialize the admin user if the users table is empty.
     /// If the admin password is not configured, generates a random one and logs it.
+    /// Initialize the admin user if the users table is empty.
+    /// Returns `Some(generated_password)` if a new admin was created with an auto-generated password.
     pub async fn init_admin(
         db: &DatabaseConnection,
         admin_config: &AdminConfig,
-    ) -> Result<(), AppError> {
+    ) -> Result<Option<String>, AppError> {
         let user_count = user::Entity::find().count(db).await?;
 
         if user_count > 0 {
-            return Ok(());
+            return Ok(None);
         }
 
-        let password = if admin_config.password.is_empty() {
-            let generated = Self::generate_session_token();
-            tracing::info!(
-                "No admin password configured. Generated admin password: {}",
-                generated
-            );
-            generated
+        let generated = if admin_config.password.is_empty() {
+            let pwd = Self::generate_session_token();
+            Some(pwd.clone())
         } else {
-            admin_config.password.clone()
+            None
         };
 
+        let password = generated.clone().unwrap_or_else(|| admin_config.password.clone());
         Self::create_user(db, &admin_config.username, &password, "admin").await?;
         tracing::info!("Admin user '{}' created", admin_config.username);
 
-        Ok(())
+        Ok(generated)
     }
 
     /// Generate a cryptographically random session token (32 bytes, base64url encoded).

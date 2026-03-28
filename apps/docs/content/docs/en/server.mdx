@@ -51,7 +51,7 @@ Here is a `server.toml` showing the most common options and their defaults. See 
 [server]
 listen = "0.0.0.0:9527"       # Address and port to listen on
 data_dir = "./data"            # Directory for database and other data files
-trusted_proxies = []           # CIDR list of trusted reverse proxies
+trusted_proxies = []           # Defaults to private/loopback CIDRs; set to [] to disable
 
 [database]
 path = "serverbee.db"          # Database filename (relative to data_dir)
