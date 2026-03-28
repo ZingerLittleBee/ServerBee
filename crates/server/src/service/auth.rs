@@ -12,6 +12,17 @@ use crate::config::AdminConfig;
 use crate::entity::{api_key, server, session, user};
 use crate::error::AppError;
 
+/// Parameters for creating an authenticated session.
+pub struct LoginParams<'a> {
+    pub username: &'a str,
+    pub password: &'a str,
+    pub totp_code: Option<&'a str>,
+    pub ip: &'a str,
+    pub user_agent: &'a str,
+    pub session_ttl: i64,
+    pub must_change_password: bool,
+}
+
 pub struct AuthService;
 
 impl AuthService {
@@ -75,41 +86,22 @@ impl AuthService {
     /// Returns the session and user models on success.
     pub async fn login(
         db: &DatabaseConnection,
-        username: &str,
-        password: &str,
-        ip: &str,
-        user_agent: &str,
-        session_ttl: i64,
-    ) -> Result<(session::Model, user::Model), AppError> {
-        Self::login_with_totp(db, username, password, None, ip, user_agent, session_ttl, false).await
-    }
-
-    /// Login with optional TOTP code.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn login_with_totp(
-        db: &DatabaseConnection,
-        username: &str,
-        password: &str,
-        totp_code: Option<&str>,
-        ip: &str,
-        user_agent: &str,
-        session_ttl: i64,
-        must_change_password: bool,
+        params: LoginParams<'_>,
     ) -> Result<(session::Model, user::Model), AppError> {
         let user = user::Entity::find()
-            .filter(user::Column::Username.eq(username))
+            .filter(user::Column::Username.eq(params.username))
             .one(db)
             .await?
             .ok_or(AppError::Unauthorized)?;
 
-        let valid = Self::verify_password(password, &user.password_hash)?;
+        let valid = Self::verify_password(params.password, &user.password_hash)?;
         if !valid {
             return Err(AppError::Unauthorized);
         }
 
         // Check 2FA
         if let Some(ref secret) = user.totp_secret {
-            match totp_code {
+            match params.totp_code {
                 Some(code) => {
                     if !Self::verify_totp(secret, code)? {
                         return Err(AppError::Unauthorized);
@@ -124,17 +116,17 @@ impl AuthService {
 
         let token = Self::generate_session_token();
         let now = Utc::now();
-        let expires_at = now + chrono::Duration::seconds(session_ttl);
+        let expires_at = now + chrono::Duration::seconds(params.session_ttl);
 
         let new_session = session::ActiveModel {
             id: Set(Uuid::new_v4().to_string()),
             user_id: Set(user.id.clone()),
             token: Set(token),
-            ip: Set(ip.to_string()),
-            user_agent: Set(user_agent.to_string()),
+            ip: Set(params.ip.to_string()),
+            user_agent: Set(params.user_agent.to_string()),
             expires_at: Set(expires_at),
             created_at: Set(now),
-            must_change_password: Set(must_change_password),
+            must_change_password: Set(params.must_change_password),
         };
 
         let session_model = new_session.insert(db).await?;
@@ -629,7 +621,11 @@ mod tests {
             .await
             .expect("create_user should succeed");
         let (session, user) =
-            AuthService::login(&db, "bob", "secret123", "127.0.0.1", "test-agent", 3600)
+            AuthService::login(&db, LoginParams {
+                username: "bob", password: "secret123", totp_code: None,
+                ip: "127.0.0.1", user_agent: "test-agent", session_ttl: 3600,
+                must_change_password: false,
+            })
                 .await
                 .expect("login should succeed");
         assert_eq!(user.username, "bob");
@@ -643,7 +639,11 @@ mod tests {
             .await
             .expect("create_user should succeed");
         let result =
-            AuthService::login(&db, "carol", "wrong_pass", "127.0.0.1", "test-agent", 3600).await;
+            AuthService::login(&db, LoginParams {
+                username: "carol", password: "wrong_pass", totp_code: None,
+                ip: "127.0.0.1", user_agent: "test-agent", session_ttl: 3600,
+                must_change_password: false,
+            }).await;
         assert!(result.is_err(), "wrong password should return an error");
     }
 
@@ -651,7 +651,11 @@ mod tests {
     async fn test_login_nonexistent_user() {
         let (db, _tmp) = setup_test_db().await;
         let result =
-            AuthService::login(&db, "nobody", "pass", "127.0.0.1", "test-agent", 3600).await;
+            AuthService::login(&db, LoginParams {
+                username: "nobody", password: "pass", totp_code: None,
+                ip: "127.0.0.1", user_agent: "test-agent", session_ttl: 3600,
+                must_change_password: false,
+            }).await;
         assert!(
             result.is_err(),
             "logging in as nonexistent user should error"
@@ -665,7 +669,11 @@ mod tests {
             .await
             .expect("create_user should succeed");
         let (session, _user) =
-            AuthService::login(&db, "dave", "pass1234", "127.0.0.1", "ua", 3600)
+            AuthService::login(&db, LoginParams {
+                username: "dave", password: "pass1234", totp_code: None,
+                ip: "127.0.0.1", user_agent: "ua", session_ttl: 3600,
+                must_change_password: false,
+            })
                 .await
                 .expect("login should succeed");
         let validated = AuthService::validate_session(&db, &session.token, 3600)
@@ -735,11 +743,19 @@ mod tests {
             .expect("change_password should succeed");
         // Login with new password should succeed
         let result =
-            AuthService::login(&db, "grace", "new_pass99", "127.0.0.1", "ua", 3600).await;
+            AuthService::login(&db, LoginParams {
+                username: "grace", password: "new_pass99", totp_code: None,
+                ip: "127.0.0.1", user_agent: "ua", session_ttl: 3600,
+                must_change_password: false,
+            }).await;
         assert!(result.is_ok(), "login with new password should succeed");
         // Login with old password should fail
         let result2 =
-            AuthService::login(&db, "grace", "old_pass1", "127.0.0.1", "ua", 3600).await;
+            AuthService::login(&db, LoginParams {
+                username: "grace", password: "old_pass1", totp_code: None,
+                ip: "127.0.0.1", user_agent: "ua", session_ttl: 3600,
+                must_change_password: false,
+            }).await;
         assert!(result2.is_err(), "login with old password should fail");
     }
 }

@@ -65,7 +65,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                         .merge(server_group::write_router())
                         .merge(ping::write_router())
                         .merge(network_probe::write_router())
-                        .merge(file::write_router())
+                        .merge(file::write_router(state.config.file.max_upload_size as usize))
                         .merge(docker::write_router())
                         .merge(service_monitor::write_router())
                         .merge(traceroute::write_router())
