@@ -22,7 +22,6 @@ Example: TOML `admin.password` → env var `SERVERBEE_ADMIN__PASSWORD`
 | `SERVERBEE_SERVER__DATA_DIR` | `server.data_dir` | string | `./data` | Data directory for SQLite and backups |
 | `SERVERBEE_AUTH__AUTO_DISCOVERY_KEY` | `auth.auto_discovery_key` | string | `""` (auto-generated) | Key for agent auto-registration. Leave empty to auto-generate on first startup |
 | `SERVERBEE_ADMIN__USERNAME` | `admin.username` | string | `admin` | Default admin username (created on first startup if no users exist) |
-| `SERVERBEE_SERVER__TRUSTED_PROXIES` | `server.trusted_proxies` | string[] | `[]` | CIDR list of trusted reverse proxies (e.g. `["127.0.0.1/32", "10.0.0.0/8"]`) |
 | `SERVERBEE_SCHEDULER__TIMEZONE` | `scheduler.timezone` | string | `UTC` | Timezone for daily traffic aggregation and cron scheduling (e.g. `Asia/Shanghai`) |
 | `SERVERBEE_LOG__LEVEL` | `log.level` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `SERVERBEE_LOG__FILE` | `log.file` | string | `""` | Log file path. Empty means stdout only |
@@ -71,6 +70,7 @@ Example: TOML `admin.password` → env var `SERVERBEE_ADMIN__PASSWORD`
 
 | Environment Variable | TOML Key | Type | Default | Description |
 |---------------------|----------|------|---------|-------------|
+| `SERVERBEE_SERVER__TRUSTED_PROXIES` | `server.trusted_proxies` | string[] | private/loopback CIDRs | CIDR list of trusted reverse proxies for X-Forwarded-For. Defaults to RFC 1918 + loopback. Set to `[]` to disable |
 | `SERVERBEE_DATABASE__PATH` | `database.path` | string | `serverbee.db` | SQLite database file path (relative to `data_dir`) |
 | `SERVERBEE_DATABASE__MAX_CONNECTIONS` | `database.max_connections` | u32 | `10` | Maximum database connection pool size |
 | `SERVERBEE_AUTH__SESSION_TTL` | `auth.session_ttl` | i64 | `86400` | Session token TTL in seconds (default 24h) |

@@ -29,6 +29,13 @@ async fn main() -> anyhow::Result<()> {
         serverbee_common::constants::VERSION
     );
 
+    if !config.server.trusted_proxies.is_empty() {
+        tracing::info!(
+            "Trusting X-Forwarded-For from {} CIDR range(s). Set server.trusted_proxies = [] to disable.",
+            config.server.trusted_proxies.len()
+        );
+    }
+
     // Ensure data dir exists
     let data_dir = &config.server.data_dir;
     std::fs::create_dir_all(data_dir)?;
