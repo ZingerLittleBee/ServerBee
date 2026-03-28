@@ -1,6 +1,6 @@
 # ServerBee 实现进度
 
-> 最后更新: 2026-03-23
+> 最后更新: 2026-03-28
 
 ## 总览
 
@@ -40,10 +40,10 @@
 | P18 | Uptime 90 天时间线 | **已完成** | 9 commits (`0034346`..`e1e4ae9`) |
 | P19 | 跨平台磁盘 I/O (Cross-Platform Disk I/O) | **已完成** | 3 commits (`a1996e1`..`a87ace7`) |
 
-| P20 | 安全加固 Round 2 | **已完成** | 6 commits (`eb7e584`..`4933e37`) |
+| P20 | 安全加固 Round 2 | **已完成** | 14 commits (`ae06e58`..`c25790f`) |
 
 **P0~P20 全部完成。**
-**自动化测试:** Rust (common 43 + agent 56 + server unit 238 + server integration 40 + docker 4) + 186 前端 vitest = 测试全部通过。
+**自动化测试:** Rust (common 43 + agent 56 + server unit 238 + server integration 40 + docker 4) + 220 前端 vitest = **597 tests 全部通过**。
 
 ---
 
@@ -1190,19 +1190,17 @@ DELETE /api/maintenances/:id           删除维护窗口
 **分支**: `chengdu`
 **设计文档**: `docs/superpowers/specs/2026-03-28-security-hardening-round2-design.md`
 **实现计划**: `docs/superpowers/plans/2026-03-28-security-hardening-round2.md`
-**Commits**: `eb7e584`..`4933e37` (6 commits)
+**Commits**: `ae06e58`..`c25790f` (14 commits)
 
 | Task | 名称 | 状态 |
 |------|------|------|
 | F1 | batch_update_capabilities 事务保护 (两阶段: DB txn + 副作用后置) | **done** |
 | F2 | 安全响应头 (X-Frame-Options/X-Content-Type-Options/Referrer-Policy/X-Permitted-Cross-Domain-Policies) | **done** |
 | F3 | 文件上传大小限制 (FileConfig.max_upload_size 100MB + 流式检查 + DefaultBodyLimit) | **done** |
-| F4 | /api/auth/me argon2 消除 (session 缓存 must_change_password + migration + 双认证路径区分) | **done** |
-| F5 | fetch_external_ip 响应大小限制 (256 字节 content_length + bytes 检查) | **done** |
+| F4 | must_change_password 机制移除 (admin 密码已随机生成，默认密码检查不再需要) | **done** |
+| F5 | fetch_external_ip 响应大小限制 (256 字节流式读取 + content_length 检查) | **done** |
 
 **新增配置:**
 - `SERVERBEE_FILE__MAX_UPLOAD_SIZE` — 文件上传大小限制，默认 100MB
 
 **新增集成测试:** `test_security_headers_present` — 验证 4 个安全响应头存在
-
-**新增 Migration:** `m20260328_000013_session_must_change_password` — sessions 表添加 `must_change_password` 列
