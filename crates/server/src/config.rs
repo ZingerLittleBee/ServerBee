@@ -306,7 +306,7 @@ fn default_server() -> ServerConfig {
 }
 
 fn default_listen() -> String {
-    "127.0.0.1:9527".to_string()
+    "0.0.0.0:9527".to_string()
 }
 
 fn default_data_dir() -> String {

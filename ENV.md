@@ -13,7 +13,7 @@ Example: TOML `admin.password` → env var `SERVERBEE_ADMIN__PASSWORD`
 | Environment Variable | TOML Key | Type | Default | Description |
 |---------------------|----------|------|---------|-------------|
 | `SERVERBEE_ADMIN__PASSWORD` | `admin.password` | string | `""` (auto-generated) | Default admin password. Leave empty to auto-generate and print to startup log |
-| `SERVERBEE_SERVER__LISTEN` | `server.listen` | string | `127.0.0.1:9527` | Listen address and port. Docker images override to `0.0.0.0:9527` |
+| `SERVERBEE_SERVER__LISTEN` | `server.listen` | string | `0.0.0.0:9527` | Listen address and port |
 
 ### Common
 

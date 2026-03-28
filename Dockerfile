@@ -23,7 +23,6 @@ COPY --from=rust-builder /app/target/release/serverbee-agent /usr/local/bin/
 
 VOLUME /data
 ENV SERVERBEE_SERVER__DATA_DIR=/data
-ENV SERVERBEE_SERVER__LISTEN=0.0.0.0:9527
 EXPOSE 9527
 
 CMD ["serverbee-server"]
