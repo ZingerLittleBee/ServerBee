@@ -8,7 +8,7 @@ use axum::{Json, Router};
 
 use crate::router::utils::extract_client_ip;
 use chrono::{DateTime, Utc};
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 use serde::{Deserialize, Serialize};
 
 use crate::entity::server;
@@ -588,6 +588,16 @@ pub struct BatchCapabilitiesResponse {
     updated: u64,
 }
 
+/// Side effects to execute after transaction commit.
+///
+/// Collected during the DB transaction phase so that WebSocket broadcasts
+/// and audit log writes happen only after a successful commit.
+struct CapabilityChangeEffect {
+    server_id: String,
+    old_caps: u32,
+    new_caps: u32,
+}
+
 #[utoipa::path(
     put,
     path = "/api/servers/batch-capabilities",
@@ -635,6 +645,10 @@ async fn batch_update_capabilities(
         .await?;
 
     let mut count = 0u64;
+    let mut effects: Vec<CapabilityChangeEffect> = Vec::new();
+
+    // Phase 1: All DB updates in a single transaction
+    let txn = state.db.begin().await?;
     for s in &servers {
         let old_caps = s.capabilities as u32;
         let new_caps = (old_caps & !input.unset) | input.set;
@@ -645,14 +659,33 @@ async fn batch_update_capabilities(
         let mut active: server::ActiveModel = s.clone().into();
         active.capabilities = Set(new_caps as i32);
         active.updated_at = Set(chrono::Utc::now());
-        active.update(&state.db).await?;
+        active.update(&txn).await?;
         count += 1;
-        state.agent_manager.update_capabilities(&s.id, new_caps);
+
+        effects.push(CapabilityChangeEffect {
+            server_id: s.id.clone(),
+            old_caps,
+            new_caps,
+        });
+    }
+    txn.commit().await?;
+
+    // Phase 2: Side effects (fire-and-forget, all idempotent)
+    for effect in &effects {
+        let CapabilityChangeEffect {
+            server_id,
+            old_caps,
+            new_caps,
+        } = effect;
+        let new_caps = *new_caps;
+        let old_caps = *old_caps;
+
+        state.agent_manager.update_capabilities(server_id, new_caps);
 
         // Sync to agent if online and protocol v2+
-        if let Some(pv) = state.agent_manager.get_protocol_version(&s.id)
+        if let Some(pv) = state.agent_manager.get_protocol_version(server_id)
             && pv >= 2
-            && let Some(tx) = state.agent_manager.get_sender(&s.id)
+            && let Some(tx) = state.agent_manager.get_sender(server_id)
         {
             let _ = tx
                 .send(ServerMessage::CapabilitiesSync {
@@ -665,24 +698,24 @@ async fn batch_update_capabilities(
         state
             .agent_manager
             .broadcast_browser(BrowserMessage::CapabilitiesChanged {
-                server_id: s.id.clone(),
+                server_id: server_id.clone(),
                 capabilities: new_caps,
             });
 
         // Re-sync ping tasks if ping bits changed
         let ping_mask = CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP;
         if old_caps & ping_mask != new_caps & ping_mask {
-            PingService::sync_tasks_to_agent(&state.db, &state.agent_manager, &s.id).await;
+            PingService::sync_tasks_to_agent(&state.db, &state.agent_manager, server_id).await;
         }
 
         // Docker capability revoked — teardown
         if has_capability(old_caps, CAP_DOCKER) && !has_capability(new_caps, CAP_DOCKER) {
-            state.agent_manager.clear_docker_caches(&s.id);
-            state.docker_viewers.remove_all_for_server(&s.id);
+            state.agent_manager.clear_docker_caches(server_id);
+            state.docker_viewers.remove_all_for_server(server_id);
             let log_session_ids = state
                 .agent_manager
-                .remove_docker_log_sessions_for_server(&s.id);
-            if let Some(tx) = state.agent_manager.get_sender(&s.id) {
+                .remove_docker_log_sessions_for_server(server_id);
+            if let Some(tx) = state.agent_manager.get_sender(server_id) {
                 let _ = tx.send(ServerMessage::DockerStopStats).await;
                 let _ = tx.send(ServerMessage::DockerEventsStop).await;
                 for sid in &log_session_ids {
@@ -696,14 +729,14 @@ async fn batch_update_capabilities(
             state
                 .agent_manager
                 .broadcast_browser(BrowserMessage::DockerAvailabilityChanged {
-                    server_id: s.id.clone(),
+                    server_id: server_id.clone(),
                     available: false,
                 });
         }
 
         // Audit log
         let detail = serde_json::json!({
-            "server_id": s.id,
+            "server_id": server_id,
             "old": old_caps,
             "new": new_caps,
         })

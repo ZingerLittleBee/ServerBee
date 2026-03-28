@@ -6032,11 +6032,8 @@
       },
       "LoginResponse": {
         "type": "object",
-        "required": ["user_id", "username", "role", "must_change_password"],
+        "required": ["user_id", "username", "role"],
         "properties": {
-          "must_change_password": {
-            "type": "boolean"
-          },
           "role": {
             "type": "string"
           },
@@ -6098,11 +6095,8 @@
       },
       "MeResponse": {
         "type": "object",
-        "required": ["user_id", "username", "role", "must_change_password"],
+        "required": ["user_id", "username", "role"],
         "properties": {
-          "must_change_password": {
-            "type": "boolean"
-          },
           "role": {
             "type": "string"
           },

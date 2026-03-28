@@ -116,14 +116,22 @@ pub fn read_router() -> Router<Arc<AppState>> {
 }
 
 /// Write endpoints (POST/DELETE) restricted to admin users only.
-pub fn write_router() -> Router<Arc<AppState>> {
+/// `max_upload_size` sets the Axum `DefaultBodyLimit` on the upload route
+/// so that the framework accepts bodies up to this size before the handler's
+/// streaming check kicks in.
+pub fn write_router(max_upload_size: usize) -> Router<Arc<AppState>> {
+    // Add overhead for multipart metadata (boundaries, headers, path field)
+    let body_limit = max_upload_size.saturating_add(5 * 1024 * 1024); // +5 MB overhead
     Router::new()
         .route("/files/{server_id}/write", post(write_file))
         .route("/files/{server_id}/delete", post(delete_file))
         .route("/files/{server_id}/mkdir", post(mkdir))
         .route("/files/{server_id}/move", post(move_file))
         .route("/files/{server_id}/download", post(start_download))
-        .route("/files/{server_id}/upload", post(upload_file))
+        .route(
+            "/files/{server_id}/upload",
+            post(upload_file).layer(axum::extract::DefaultBodyLimit::max(body_limit)),
+        )
         .route("/files/transfers/{transfer_id}", delete(cancel_transfer))
 }
 
@@ -874,6 +882,13 @@ async fn upload_file(
                     .map_err(|e| AppError::BadRequest(format!("Failed to read file chunk: {e}")))?
                 {
                     file_size += chunk.len() as u64;
+                    if file_size > state.config.file.max_upload_size {
+                        let _ = tokio::fs::remove_file(&temp_upload).await;
+                        return Err(AppError::BadRequest(format!(
+                            "File size exceeds limit of {} bytes",
+                            state.config.file.max_upload_size
+                        )));
+                    }
                     temp_file.write_all(&chunk).await.map_err(|e| {
                         AppError::Internal(format!("Failed to write temp file: {e}"))
                     })?;

@@ -1573,12 +1573,36 @@ HOST: agent                       Loss%   Snt   Last   Avg  Best  Wrst StDev
 }
 
 /// Fetch external IP address from a remote service.
+/// Limits response to 256 bytes via streaming to prevent memory exhaustion
+/// even when the server omits Content-Length.
 async fn fetch_external_ip(url: &str) -> anyhow::Result<String> {
+    const MAX_IP_RESPONSE: usize = 256;
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()?;
-    let resp = client.get(url).send().await?;
-    let ip = resp.text().await?.trim().to_string();
+    let mut resp = client.get(url).send().await?;
+
+    // Early reject if Content-Length declares a large body
+    if let Some(len) = resp.content_length()
+        && len > MAX_IP_RESPONSE as u64
+    {
+        anyhow::bail!("External IP response too large: {len} bytes");
+    }
+
+    // Stream chunks with a hard cap to prevent OOM from chunked/streaming responses
+    let mut buf = Vec::with_capacity(MAX_IP_RESPONSE);
+    while let Some(chunk) = resp.chunk().await? {
+        if buf.len() + chunk.len() > MAX_IP_RESPONSE {
+            anyhow::bail!(
+                "External IP response too large: exceeded {} bytes",
+                MAX_IP_RESPONSE
+            );
+        }
+        buf.extend_from_slice(&chunk);
+    }
+
+    let ip = String::from_utf8_lossy(&buf).trim().to_string();
     Ok(ip)
 }
 
