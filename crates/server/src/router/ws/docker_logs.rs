@@ -63,7 +63,7 @@ async fn validate_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Option<Str
 
     // Try session cookie
     if let Some(token) = extract_session_cookie(headers)
-        && let Ok(Some(user)) =
+        && let Ok(Some((user, _))) =
             AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
     {
         return Some(user.id);
