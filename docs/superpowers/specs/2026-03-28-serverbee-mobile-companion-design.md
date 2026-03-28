@@ -129,7 +129,7 @@ Top-level navigation should be minimal and native:
 1. **Servers**
    - default landing area
    - search/filter/grouping
-   - online/offline and alert summaries
+   - online/offline and core health summaries
 2. **Alerts**
    - alert inbox
    - severity/status context
@@ -146,12 +146,14 @@ app/
   _layout.tsx
   (auth)/
     login.tsx
+    change-password.tsx
   (tabs)/
     _layout.tsx
     servers/
       index.tsx
       [serverId].tsx
-      metrics.tsx
+      [serverId]/
+        metrics.tsx
     alerts/
       index.tsx
       [alertKey].tsx
@@ -172,11 +174,12 @@ The server list in v1 is intentionally limited to:
 
 - search by server name and IP text
 - filter by online state: `all`, `online`, `offline`
-- filter by alert state: `all`, `has_active_alerts`, `no_active_alerts`
 - group by:
   - none
   - server group
   - region
+
+When grouping by server group, the mobile client uses the existing `GET /api/server-groups` endpoint to resolve `group_id` into a display label.
 
 No arbitrary custom grouping, saved views, or dashboard-like segmentation is included in v1.
 
@@ -190,6 +193,29 @@ The settings area in v1 is explicitly limited to:
 - language selection: `en`, `zh`
 
 No advanced layout customization or account-administration settings are included in v1.
+
+### Settings Ownership
+
+- account/session info
+  - server-backed display
+  - contains the logout action
+- notification preferences
+  - device-scoped and persisted through device registration
+- theme preference
+  - local-only app setting, not synced to server
+- language selection
+  - local-only app setting, not synced to server
+
+### Account Actions
+
+- logout lives on the account/session settings screen
+- `Switch account` is implemented as:
+  1. execute logout
+  2. clear local session state
+  3. route back to login
+  4. complete the next login
+  5. register the current installation for the new account
+- v1 does not include multi-account session coexistence on one device
 
 ## Recommended Technology Stack
 
@@ -220,7 +246,7 @@ apps/
 
 packages/
   mobile-api/             API client, DTO adapters, query keys, WS message parsing
-  mobile-i18n/            Shared locale resources and translation wiring for en/zh
+  i18n/                   Shared locale JSON resources and translation wiring for en/zh
 ```
 
 Existing packages such as `packages/api` may be reused where they contain genuinely shared contracts, but the mobile app should not depend on the web UI package or browser-oriented modules.
@@ -249,7 +275,18 @@ Mobile v1 ships with the same two supported locales already present in the web a
 - English (`en`)
 - Chinese (`zh`)
 
-`packages/mobile-i18n` becomes the source of truth for mobile strings. It may be seeded from the existing web locale JSON files, but mobile-only copy lives in the mobile package rather than importing browser app modules directly.
+`packages/i18n` becomes the shared source of truth for locale JSON. Both web and mobile should consume the same i18next-compatible resources instead of copying string files into app-local folders.
+
+### Existing Package Boundary Clarification
+
+The repository already contains `packages/auth`, `packages/api`, and `packages/db`, but they are part of a separate TypeScript stack built around Better Auth, oRPC, and Drizzle/Turso. They are **not** the implementation path of the current Rust server.
+
+For this mobile project:
+
+- the system of record remains the Rust backend under `crates/server`
+- database migrations for mobile auth/device registration belong under `crates/server/src/migration`
+- mobile auth for v1 does **not** reuse `packages/auth`
+- `packages/mobile-api` may reuse generated TypeScript types derived from the Rust API contract, but it should not treat `packages/api` as the source of truth for Rust-auth behavior
 
 ## Authentication Design
 
@@ -259,9 +296,27 @@ The mobile app should **not** reuse the current browser cookie-session pattern.
 
 Use:
 
-- short-lived **access token**
+- short-lived **access token** as JWT
 - refresh token
 - SecureStore persistence
+
+### Token Storage Strategy
+
+- **Access token:** stateless JWT, validated without a DB lookup on every request
+- **Refresh token:** opaque random token stored in DB for rotation and revocation
+- **Signing strategy:** HMAC-signed JWT with a server-managed secret configured specifically for mobile bearer auth
+
+This keeps REST and WebSocket request auth fast while preserving explicit device-session revocation.
+
+### Config Additions
+
+The implementation requires new server-side auth config entries for mobile bearer auth:
+
+- `auth.mobile_jwt_secret`
+- `auth.mobile_access_token_ttl_secs`
+- `auth.mobile_refresh_token_ttl_secs`
+
+When implemented, the corresponding environment-variable documentation must be updated in `ENV.md` and the configuration docs.
 
 ### Concrete v1 Contract
 
@@ -275,14 +330,30 @@ Add a mobile-specific auth namespace instead of overloading the cookie-oriented 
      - `refresh_token`
      - `refresh_expires_in_secs`
      - `token_type` = `Bearer`
-     - `user`
+     - `user` using the same shape as `MeResponse`
+   - errors:
+     - `401 invalid_credentials`
+     - `401 invalid_totp_code`
+     - `422 2fa_required`
 2. `POST /api/mobile/auth/refresh`
    - input: `refresh_token`, `installation_id`
-   - returns a **rotated** access/refresh pair
+   - returns a **rotated** access/refresh pair plus `user` using the same shape as `MeResponse`
    - invalidates the previous refresh token immediately after successful rotation
+   - errors:
+     - `401 refresh_token_invalid`
+     - `401 refresh_token_revoked`
+     - `401 refresh_token_expired`
 3. `POST /api/mobile/auth/logout`
    - input: `refresh_token`, `installation_id`
-   - revokes the current device session and unregisters its push binding
+   - atomically revokes the refresh-backed device session and clears the push binding for that installation
+4. `GET /api/auth/me`
+   - authenticated via mobile bearer token after middleware extension
+   - returns the current user/session context for cold-launch restore
+   - response reuses the existing `MeResponse` contract:
+     - `user_id`
+     - `username`
+     - `role`
+     - `must_change_password`
 
 ### 2FA Challenge Flow
 
@@ -295,7 +366,9 @@ Mobile v1 keeps the existing backend 2FA semantics and makes the UI flow explici
 3. The login screen switches into a second-step TOTP prompt
 4. The app retries `POST /api/mobile/auth/login` with the same username/password plus `totp_code`
 5. If the TOTP code is valid, the backend returns the normal mobile token response
-6. If the TOTP code is invalid, the app stays on the TOTP step and shows an authentication error without clearing the entered username
+6. If the TOTP code is invalid
+   - backend returns `401 invalid_totp_code`
+   - app stays on the TOTP step and shows an authentication error without clearing the entered username
 
 ### Token Rules
 
@@ -305,6 +378,18 @@ Mobile v1 keeps the existing backend 2FA semantics and makes the UI flow explici
 - Refresh tokens are scoped per installation/device session, not shared globally across every device
 - If refresh fails with `401`, the app clears local credentials and routes to login
 - If the backend marks the device session revoked, the app treats it the same as an expired refresh token
+- Server-side logout/revocation is **immediate for refresh-token reuse**, but access JWTs may remain valid until their 15-minute expiry
+- The app must clear local access tokens immediately on local logout; remote revocation guarantees a maximum 15-minute window unless a future denylist/versioning layer is added
+
+### Auth Middleware Extension
+
+Protected REST routes currently authenticate via cookie session or API key. Mobile support extends the auth chain to:
+
+`session cookie -> API key -> Bearer JWT -> 401`
+
+This same bearer-token check must also be added to the `/api/ws/servers` WebSocket handler, which currently only validates session cookie or API key.
+
+The same bearer-auth path must be accepted by `PUT /api/auth/password` so the forced-password-change flow works for mobile-only sessions.
 
 ### WebSocket Authentication
 
@@ -320,8 +405,31 @@ This keeps the mobile WS contract aligned with bearer auth rather than reproduci
 2. Splash/loading shell appears
 3. Read stored credentials from SecureStore
 4. Refresh token if needed
-5. Fetch current user/session context
+5. If tokens were restored from storage, call `GET /api/auth/me` to fetch current user/session context
 6. Route to authenticated app or login flow
+
+After a successful interactive login or refresh response, the returned `user` payload is sufficient; no immediate extra `me` fetch is required in that path.
+
+### Push-Tap Launch Behavior
+
+If the app is opened from a push notification:
+
+1. store the pending deep-link target in memory during app bootstrap
+2. attempt normal session restore
+3. if auth restore succeeds, navigate to the pending alert detail target
+4. if auth restore fails because the session is expired or revoked, route to login and keep the pending target
+5. after a successful login, resume the pending alert-detail navigation
+6. if the user abandons login, the pending target is discarded and the app remains on the logged-out flow
+7. if auth restore fails because of transient network failure, show the offline/retry state and keep the pending target until restore succeeds or the user abandons the launch
+
+### `must_change_password` Policy
+
+If `must_change_password` is `true` in the login, refresh, or `me` response:
+
+- the app blocks entry into the main tabs
+- routes the user to `(auth)/change-password.tsx`
+- uses the existing `PUT /api/auth/password` endpoint to complete the required change
+- only enters the main app after a successful password update and refreshed user/session check
 
 ### Why
 
@@ -362,6 +470,10 @@ Mobile v1 consumes the existing browser-style server stream and intentionally su
   - updates capability metadata in list/detail caches
 - `agent_info_updated`
   - updates protocol/version metadata in detail cache
+- `alert_event`
+  - carries `alert_key`, `rule_id`, `server_id`, `status`, `event_at`
+  - invalidates the alert list query in the foreground app
+  - invalidates the active alert detail query when the `alert_key` matches
 
 Messages that only matter for browser-heavy features, such as terminal or Docker-heavy streaming, are ignored by mobile v1 unless they directly support an in-scope screen.
 
@@ -381,7 +493,7 @@ Zustand should be limited to app UI concerns such as:
 - When the app backgrounds, the socket may close; on foreground resume, the app:
   1. verifies session validity
   2. reconnects the socket
-  3. invalidates `servers` and alert-summary queries once
+  3. relies on the WebSocket's initial `full_sync` payload to rebuild authoritative list state
   4. resumes incremental updates
 - If the socket drops unexpectedly while the app is foregrounded, the client retries with backoff
 - If reconnect fails because the access token expired, the app performs one refresh attempt before forcing login
@@ -397,9 +509,7 @@ Push notifications are a core part of the mobile value proposition.
 1. Device token registration from the app
 2. Backend storage of device notification registrations
 3. Push on alert-created and alert-resolved events
-4. Tap notification deep-links into:
-   - alert detail when the payload refers to an alert
-   - related server detail when appropriate
+4. Tap notification deep-links into alert detail
 5. User-facing notification preference controls
 
 ### Push Provider Contract
@@ -409,6 +519,8 @@ Mobile v1 uses **Expo push tokens** via `expo-notifications`.
 - `push_token` in backend contracts means an Expo push token
 - backend device registration stores `provider = expo`
 - direct APNs/FCM token handling is out of scope for v1
+- `locale` in device registration tracks the app’s effective language, not raw OS locale
+- if the user changes the app language, the next successful device-registration upsert sends the updated `locale`
 
 ### Device Registration Lifecycle
 
@@ -431,7 +543,7 @@ The lifecycle is:
 3. If the push token changes
    - the same installation record is updated in place
 4. If permission is denied or revoked
-   - backend keeps the installation record but clears the active push token
+   - backend keeps the installation record, clears the active push token, and persists the new permission state
 5. On logout
    - backend unregisters the installation’s push token and revokes the mobile session
 
@@ -451,6 +563,14 @@ v1 keeps preferences intentionally small:
 These preferences are owned **per installation/device**, not globally per user account. A user may keep different push settings on different phones or tablets.
 
 No per-rule or per-server mobile notification matrix is included in v1.
+
+Settings write path:
+
+- the Settings screen writes notification preference changes immediately via `POST /api/mobile/devices/register`
+- the request includes the current `installation_id`, current permission state, current effective locale, and updated preference values
+- on cold start or account switch, the screen first hydrates from `GET /api/mobile/devices/current?installation_id=...`
+- local UI applies an optimistic update
+- if the request fails, the toggles roll back to the last confirmed device-registration state and show retry feedback
 
 ### Notification Deep-Link Payload Schema
 
@@ -487,6 +607,56 @@ Rules:
 
 The backend can be reused heavily, but mobile introduces explicit new requirements.
 
+### Database Schema Additions
+
+The Rust backend needs three new SeaORM-backed tables and corresponding migrations:
+
+1. `mobile_sessions`
+   - `id`
+   - `user_id` (foreign key -> users.id)
+   - `installation_id`
+   - `refresh_token_hash`
+   - `issued_at`
+   - `expires_at`
+   - `revoked_at`
+   - `last_used_at`
+   - active uniqueness key: one non-revoked row per `user_id + installation_id`
+2. `mobile_device_registrations`
+   - `id`
+   - `installation_id` (unique)
+   - `user_id` (foreign key -> users.id)
+   - `platform`
+   - `push_provider`
+   - `push_token`
+   - `app_version`
+   - `locale`
+   - `permission_status`
+   - `firing_alerts_push`
+   - `resolved_alerts_push`
+   - `last_seen_at`
+   - `disabled_at`
+3. `mobile_push_deliveries`
+   - `id`
+   - `installation_id`
+   - `expo_ticket_id`
+   - `alert_key`
+   - `status`
+   - `receipt_error`
+   - `sent_at`
+   - `checked_at`
+
+`mobile_sessions` is the refresh-token/session table. `mobile_device_registrations` is the push-capable device registry keyed by installation.
+
+Lifecycle rules:
+
+- a single installation may belong to only one user at a time
+- logging into a different account on the same installation revokes the old active `mobile_sessions` row and rebinds `mobile_device_registrations.user_id`
+- `installation_id` is generated once as a UUID on first run and stored in SecureStore
+- if SecureStore survives reinstall, the app reuses the existing `installation_id`
+- if SecureStore does not contain an `installation_id`, the app generates a new one and the backend treats it as a new installation
+- stale registrations are eventually disabled by last-seen cleanup or invalid token handling
+- logout revokes the active `mobile_sessions` row for that installation/user pair and disables the push binding until the next authenticated registration
+
 ### Required Additions
 
 1. **Mobile auth endpoints or auth mode support**
@@ -495,11 +665,112 @@ The backend can be reused heavily, but mobile introduces explicit new requiremen
    - logout/revoke behavior for devices
 2. **Device registration**
    - `POST /api/mobile/devices/register` to upsert installation + Expo push token + preference state
-   - `POST /api/mobile/devices/unregister` on logout or token removal
+   - `POST /api/mobile/devices/unregister` only for in-session token removal / permission-revocation handling without logging out
+   - `GET /api/mobile/devices/current?installation_id=` to read backend-confirmed device registration state
 3. **Notification deep link payload contract**
    - stable target format for alert/server navigation
-4. **Optional mobile-optimized summary endpoints**
-   - only if current responses are too web-shaped for efficient mobile use
+4. **Mobile-optimized endpoints required in v1**
+   - existing `/api/servers` and `/api/servers/{id}` remain sufficient for server list/detail
+   - add `GET /api/mobile/alerts/{alert_key}` so the mobile app can resolve alert detail directly from the canonical `alert_key`
+
+### Push Sending Path
+
+Push delivery should hook into the existing alert evaluation flow instead of inventing a separate trigger source.
+
+The v1 path is:
+
+1. `task/alert_evaluator.rs` runs rule evaluation
+2. `AlertService` detects a triggered or resolved state change after persistence
+3. New Rust-side `MobilePushService` resolves eligible `mobile_device_registrations`
+4. `MobilePushService` sends Expo push batches via `reqwest` to `https://exp.host/--/api/v2/push/send`
+5. Expo ticket IDs are persisted in `mobile_push_deliveries`
+6. A receipt-check background job polls Expo receipts and marks stale device registrations disabled when `DeviceNotRegistered` is returned
+
+Design constraints:
+
+- batch requests within Expo API limits
+- send only to installations whose device-level preference matches the event type
+- retry transient HTTP/network failures with bounded backoff
+- record permanent invalidation outcomes by disabling stale device registrations when Expo receipts indicate `DeviceNotRegistered`
+- push send + receipt processing must be idempotent for the same `installation_id + alert_key + event_at`
+
+The first implementation can remain best-effort, but it must have explicit retry and token-invalidation behavior.
+
+### Device Registration Endpoint Shapes
+
+`POST /api/mobile/devices/register`
+
+- requires a valid mobile bearer session
+- request:
+  - `installation_id`
+  - `platform`
+  - `push_provider = expo`
+  - optional `push_token`
+  - `app_version`
+  - `locale`
+  - `permission_status`
+  - `firing_alerts_push`
+  - `resolved_alerts_push`
+- response:
+  - `device_registration_id`
+  - `installation_id`
+  - `push_provider`
+  - `registered_at`
+
+Ownership rules:
+
+- server derives `user_id` from the bearer session, never from client input
+- `installation_id` may be created for the authenticated user or rebound during an explicit account switch on the same device
+- a register request cannot attach an installation to a different user without revoking the previous installation-bound session first
+- if `push_token` is omitted, the request is treated as a permission-state update and clears any previously stored push token for that installation
+
+Account-switch handshake:
+
+1. user taps `Switch account`
+2. app calls `POST /api/mobile/auth/logout`
+3. app clears local tokens and returns to login
+4. user completes login for the new account
+5. app calls `POST /api/mobile/devices/register` for the same `installation_id`
+6. if the backend still sees the installation as actively bound elsewhere, it returns `409 installation_rebind_required`
+7. the client surfaces retry guidance and retries registration only after local logout state is clean
+
+Failure modes:
+
+- `401 invalid_bearer_session`
+- `409 installation_rebind_required` when the installation is still actively bound to another user session
+- `200` permission-state update accepted when `push_token` is omitted and `permission_status` changed
+- `200` upsert accepted when the same authenticated installation refreshes its token or metadata
+
+`POST /api/mobile/devices/unregister`
+
+- requires a valid mobile bearer session
+- request:
+  - `installation_id`
+- response:
+  - `ok`
+
+Ownership rules:
+
+- the server only unregisters the `installation_id` bound to the authenticated user
+- unregistering another user’s installation returns authorization failure
+- this endpoint does **not** revoke the mobile auth session; it only clears device-push state while the user remains signed in
+
+`GET /api/mobile/devices/current?installation_id=...`
+
+- requires a valid mobile bearer session
+- response:
+  - `installation_id`
+  - `permission_status`
+  - `firing_alerts_push`
+  - `resolved_alerts_push`
+  - `has_push_token`
+  - `locale`
+- used by the Settings screen to restore backend-confirmed notification state after auth restore or account switch
+- if no device row exists yet, returns `200` with default values:
+  - `permission_status = unknown`
+  - `firing_alerts_push = true`
+  - `resolved_alerts_push = false`
+  - `has_push_token = false`
 
 ### Quick Actions
 
@@ -509,8 +780,7 @@ The v1 set is:
 
 1. Refresh current screen data
 2. Open related server from an alert
-3. Open filtered alerts for the current server
-4. Copy server ID or primary IP
+3. Copy server ID or primary IP
 
 Anything requiring backend-side operational control, such as acknowledging alerts, silencing rules, upgrades, or remote execution, is out of scope for v1.
 
@@ -523,6 +793,127 @@ Anything requiring backend-side operational control, such as acknowledging alert
 ### Preferred Constraint
 
 Add the minimum server surface needed for mobile instead of creating a parallel backend for the app.
+
+### Main Screen API Contracts
+
+#### Server List
+
+- request:
+  - `GET /api/servers`
+  - `GET /api/server-groups` for server-group labels when grouped rendering is active
+- primary fields used in v1 list:
+  - `id`
+  - `name`
+  - `group_id`
+  - `region`
+  - `country_code`
+  - `online`
+  - `cpu`
+  - `mem_used`
+  - `mem_total`
+  - `disk_used`
+  - `disk_total`
+  - `features`
+  - `capabilities`
+- sorting:
+  - default order is `online desc`, then `name asc`
+- paging:
+  - none in v1; the full visible server set is loaded once and filtered client-side
+- empty state:
+  - show "No servers connected" with retry
+- error state:
+  - expired auth -> route to login
+  - network failure -> inline retry state
+
+#### Server Detail
+
+- requests:
+  - `GET /api/servers/{id}`
+  - `GET /api/servers/{id}/records?from&to&interval`
+- detail screen sections:
+  - overview summary
+  - live metric cards
+  - history charts
+  - related alerts entry point
+- error state:
+  - `404` -> server not found state
+  - network failure -> retry state
+
+#### Alert List
+
+- request:
+  - `GET /api/alert-events?limit=50`
+- response item fields used in v1:
+  - `rule_id`
+  - `rule_name`
+  - `server_id`
+  - `server_name`
+  - `status`
+  - `event_at`
+  - `resolved_at`
+  - `count`
+- sorting:
+  - `event_at desc`
+- paging:
+  - no cursor pagination in v1; pull-to-refresh reloads the latest 50 events
+- empty state:
+  - show "No recent alerts"
+- error state:
+  - inline retry state
+
+#### Alert Detail
+
+- request:
+  - `GET /api/mobile/alerts/{alert_key}`
+- semantic meaning:
+  - returns the **current alert context** for the `rule_id + server_id` pair represented by `alert_key`
+  - it is not a historical event replay endpoint
+  - if the alert currently has an unresolved state, the endpoint returns that active aggregate
+  - otherwise it returns the latest resolved summary for that alert key
+- response fields:
+  - `alert_key`
+  - `rule_id`
+  - `rule_name`
+  - `server_id`
+  - `server_name`
+  - `status`
+  - `event_at`
+  - `resolved_at`
+  - `count`
+  - `related_metrics_snapshot`
+  - `server_route`
+- failure modes:
+  - `404` if the alert key cannot be resolved
+  - fallback UI routes the user back to the alert list if lookup fails
+
+`related_metrics_snapshot` schema:
+
+```json
+{
+  "captured_at": "2026-03-28T10:00:00Z",
+  "cpu": 82.1,
+  "mem_used": 17179869184,
+  "mem_total": 34359738368,
+  "disk_used": 214748364800,
+  "disk_total": 536870912000,
+  "load1": 2.4,
+  "load5": 2.1,
+  "load15": 1.8,
+  "net_in_speed": 1048576,
+  "net_out_speed": 524288
+}
+```
+
+`server_route` schema:
+
+```json
+{
+  "pathname": "/servers/[serverId]",
+  "params": {
+    "serverId": "server_456"
+  }
+}
+```
 
 ## UX Boundaries
 
@@ -566,6 +957,32 @@ The `metrics` screen in v1 is limited to these time-series charts:
 - disk
 - network in / out
 
+### Historical Metrics API
+
+Mobile v1 reuses the existing server history endpoint:
+
+- `GET /api/servers/{id}/records?from=<utc>&to=<utc>&interval=<raw|hourly|auto>`
+
+The current backend behavior is already suitable for the first mobile version:
+
+- `auto`
+  - uses raw records for ranges up to 24 hours
+  - uses hourly aggregates for ranges over 24 hours
+
+The mobile metrics screen should start with fixed windows:
+
+- `1h`
+- `6h`
+- `24h`
+- `7d`
+
+Expected interval usage:
+
+- `1h`, `6h`, `24h` -> `auto` resolves to raw
+- `7d` -> `auto` resolves to hourly
+
+This keeps payload size reasonable on mobile networks without inventing a separate history API in v1.
+
 No custom widget dashboards, chart editing, or parity with the web dashboard builder is part of v1.
 
 ### Design Principles
@@ -597,9 +1014,19 @@ Target manual verification for:
 - login/logout
 - notification permission granted/denied
 - push open -> alert detail
-- push open -> server detail
+- alert detail -> related server navigation
 - background/foreground reconnection behavior
 - weak network behavior
+
+### Backend Integration Coverage
+
+The implementation plan must include backend integration tests for:
+
+- mobile login -> refresh -> logout
+- 2FA-required mobile login flow
+- device registration upsert and account-switch rebind
+- WebSocket bearer auth on `/api/ws/servers`
+- Expo push invalidation handling for stale device registrations
 
 ### High-Risk Acceptance Matrix
 
