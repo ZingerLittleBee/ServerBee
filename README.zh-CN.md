@@ -130,7 +130,7 @@ make                   # 交互式菜单 (需要 fzf)
 [server]
 listen = "0.0.0.0:9527"
 data_dir = "/var/lib/serverbee"
-trusted_proxies = []              # CIDR 列表，如 ["127.0.0.1/32", "10.0.0.0/8"]
+trusted_proxies = []              # 默认信任私有/回环 CIDR；设为 [] 禁用
 
 [database]
 path = "serverbee.db"
