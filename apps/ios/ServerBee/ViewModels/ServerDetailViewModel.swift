@@ -17,8 +17,7 @@ final class ServerDetailViewModel {
     func fetchDetail(serverId: String, apiClient: APIClient) async {
         guard server == nil else { return }
         do {
-            let response: ApiResponse<ServerStatus> = try await apiClient.get("/api/servers/\(serverId)")
-            server = response.data
+            server = try await apiClient.get("/api/servers/\(serverId)")
         } catch {
             print("[ServerDetail] Fetch failed: \(error)")
         }
@@ -29,10 +28,7 @@ final class ServerDetailViewModel {
         isLoading = true
         defer { isLoading = false }
         do {
-            let response: ApiResponse<[MetricRecord]> = try await apiClient.get(
-                "/api/servers/\(serverId)/records?range=\(range)"
-            )
-            records = response.data
+            records = try await apiClient.get("/api/servers/\(serverId)/records?range=\(range)")
         } catch {
             print("[ServerDetail] Records fetch failed: \(error)")
         }
