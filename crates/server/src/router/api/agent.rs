@@ -185,7 +185,7 @@ async fn register(
         capabilities: Set(56),
         protocol_version: Set(1),
         features: Set("[]".to_string()),
-        last_remote_addr: Set(Some(ip)),
+        last_remote_addr: Set(Some(ip.clone())),
         fingerprint: Set(fp.clone()),
         created_at: Set(now),
         updated_at: Set(now),
@@ -210,6 +210,7 @@ async fn register(
                 let mut active: server::ActiveModel = existing.into();
                 active.token_hash = Set(token_hash);
                 active.token_prefix = Set(token_prefix.to_string());
+                active.last_remote_addr = Set(Some(ip));
                 active.updated_at = Set(Utc::now());
                 active.update(&state.db).await?;
 
