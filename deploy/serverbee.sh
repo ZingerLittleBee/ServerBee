@@ -65,7 +65,7 @@ check_deps() {
     done
     if [ ${#missing[@]} -eq 0 ]; then return; fi
 
-    if [ "$YES" = true ]; then
+    if [ "$YES" = true ] || ! [ -t 0 ]; then
         install_deps "${missing[@]}"
     else
         warn "Missing required tools: ${missing[*]}"
@@ -465,7 +465,8 @@ WantedBy=multi-user.target
 UNIT
         systemctl daemon-reload
         systemctl enable serverbee-agent
-        warn "Agent service enabled but NOT started — verify config first, then run: sudo systemctl start serverbee-agent"
+        systemctl start serverbee-agent
+        info "Agent service started and enabled"
     else
         warn "systemd not found. Start manually: serverbee-agent"
     fi
@@ -575,6 +576,7 @@ services:
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
+      - /etc/machine-id:/etc/machine-id:ro
       - /etc/serverbee:/etc/serverbee
     restart: unless-stopped
 YAML
@@ -658,16 +660,23 @@ cmd_install() {
 
     # Interactive: prompt for method if not provided
     if [ -z "$METHOD" ]; then
-        echo ""
-        echo "  [1] Binary  (recommended)"
-        echo "  [2] Docker"
-        echo ""
-        read -rp "Select installation method [1/2]: " choice
-        case "$choice" in
-            1|binary) METHOD="binary" ;;
-            2|docker) METHOD="docker" ;;
-            *) error "Invalid choice: $choice" ;;
-        esac
+        if [ -t 0 ]; then
+            # Interactive terminal — show menu
+            echo ""
+            echo "  [1] Binary  (recommended)"
+            echo "  [2] Docker"
+            echo ""
+            read -rp "Select installation method [1/2]: " choice
+            case "$choice" in
+                1|binary) METHOD="binary" ;;
+                2|docker) METHOD="docker" ;;
+                *) error "Invalid choice: $choice" ;;
+            esac
+        else
+            # Non-interactive (piped) — default to binary
+            METHOD="binary"
+            info "Non-interactive mode detected, defaulting to binary installation."
+        fi
     fi
     : "${METHOD:=binary}"
     [[ "$METHOD" =~ ^(binary|docker)$ ]] || error "Invalid method: $METHOD (use 'binary' or 'docker')"

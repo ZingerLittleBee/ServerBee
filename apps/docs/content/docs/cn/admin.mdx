@@ -146,6 +146,18 @@ GET /api/audit-logs?limit=50&offset=0
 
 使用 `transfer_in_cycle` / `transfer_out_cycle` / `transfer_all_cycle` 告警类型，可以监控当前计费周期内的累计流量是否超过设定阈值。详见 [告警与通知](/cn/docs/alerts)。
 
+## Agent 注册管理
+
+管理员现在可以直接在界面里管理首次接入流程：
+
+### Discovery Key
+
+进入「设置」页面，可以显示、复制或重新生成 Auto Discovery Key。重新生成只会影响后续新的注册请求，已经连接的 Agent 仍然使用各自已保存的 token，不会被踢下线。
+
+### 清理未连接占位服务器
+
+如果失败的接入流程留下了离线的 `New Server` 占位条目，`/servers` 页面会显示 **Clean up unconnected** 操作。它只删除从未完成初始化的离线占位服务器，已经在线但尚未上报 `SystemInfo` 的节点会被保留。
+
 <Cards>
   <Card title="功能开关" href="/cn/docs/capabilities" />
   <Card title="安全设置" href="/cn/docs/security" />

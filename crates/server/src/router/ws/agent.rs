@@ -30,17 +30,16 @@ pub struct OptionalWsQuery {
 }
 
 fn extract_agent_token(headers: &HeaderMap, query: &OptionalWsQuery) -> Option<String> {
-    // Prefer Authorization header
+    // Prefer query param (reliable through reverse proxies / cloud load balancers)
+    if let Some(ref token) = query.token {
+        return Some(token.clone());
+    }
+    // Fallback to Authorization header (direct connections)
     if let Some(auth) = headers.get("authorization")
         && let Ok(val) = auth.to_str()
         && let Some(token) = val.strip_prefix("Bearer ")
     {
         return Some(token.to_string());
-    }
-    // Fallback to query param (deprecated)
-    if let Some(ref token) = query.token {
-        tracing::warn!("Agent using deprecated query param token — please upgrade agent");
-        return Some(token.clone());
     }
     None
 }
