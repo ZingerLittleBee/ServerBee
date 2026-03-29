@@ -33,6 +33,7 @@ Every TOML configuration key maps directly to an environment variable. Replace d
 |---------------------|---------|-------------|
 | `SERVERBEE_SERVER__DATA_DIR` | `./data` | Data directory for database and backups |
 | `SERVERBEE_AUTH__AUTO_DISCOVERY_KEY` | auto-generated | Agent discovery key. Leave empty to auto-generate on first startup |
+| `SERVERBEE_AUTH__MAX_SERVERS` | `0` | Maximum servers allowed via auto-discovery (0 = no limit). Best-effort soft cap |
 | `SERVERBEE_ADMIN__USERNAME` | `admin` | Initial admin username (only used when no users exist) |
 | `SERVERBEE_SERVER__TRUSTED_PROXIES` | private/loopback CIDRs | CIDR list of trusted reverse proxies. Defaults to RFC 1918 + loopback. Set to `[]` to disable |
 | `SERVERBEE_SCHEDULER__TIMEZONE` | `UTC` | Timezone for daily traffic aggregation (e.g. `Asia/Shanghai`) |
@@ -152,6 +153,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 |-----|------|---------|-------------|
 | `session_ttl` | i64 | `86400` | Session cookie lifetime in seconds (24 hours) |
 | `auto_discovery_key` | string | `""` | Fixed agent discovery key. If empty, auto-generated on first start |
+| `max_servers` | u32 | `0` | Maximum servers allowed via auto-discovery (0 = no limit). Best-effort soft cap |
 | `secure_cookie` | bool | `true` | Set the `Secure` flag on session cookies. Disable only for HTTP-only development |
 
 ### `[admin]` -- Initial Admin Account
@@ -255,6 +257,11 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 ---
 
 ## Agent Configuration (agent.toml)
+
+> **Docker Agent:** Mount the host's machine-id for correct fingerprint identification:
+> ```
+> -v /etc/machine-id:/etc/machine-id:ro
+> ```
 
 ### Top-Level Options
 
