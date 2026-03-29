@@ -29,6 +29,16 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 
 脚本会自动完成下载、安装、配置和 systemd 服务注册。
 
+安装后可使用管理命令：
+
+```bash
+sudo bash deploy/serverbee.sh status              # 查看 Agent 状态
+sudo bash deploy/serverbee.sh upgrade agent -y     # 升级 Agent
+sudo bash deploy/serverbee.sh restart agent        # 重启 Agent
+sudo bash deploy/serverbee.sh config agent         # 查看 Agent 配置
+sudo bash deploy/serverbee.sh uninstall agent      # 卸载 Agent
+```
+
 ### 二进制下载
 
 从 [GitHub Releases](https://github.com/ZingerLittleBee/ServerBee/releases) 下载对应平台的二进制文件：

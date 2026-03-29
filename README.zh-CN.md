@@ -225,7 +225,7 @@ client_secret = "..."
 2. 添加 Volume 挂载到 `/data` 以持久化数据
 3. 将 Agent 配置连接到 Railway 提供的 URL
 
-### Systemd
+### 安装脚本
 
 ```bash
 # 安装服务端
@@ -238,7 +238,28 @@ sudo bash deploy/serverbee.sh install agent --server-url http://YOUR_SERVER:9527
 sudo bash deploy/serverbee.sh
 ```
 
-完整管理命令（升级、卸载、配置、状态等）见 `deploy/serverbee.sh`。
+或通过 curl 一键安装：
+
+```bash
+# 服务端
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s server
+
+# Agent
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s agent \
+  --server-url http://YOUR_SERVER:9527 --discovery-key YOUR_KEY
+```
+
+### 管理命令
+
+```bash
+sudo bash deploy/serverbee.sh status              # 查看所有组件状态
+sudo bash deploy/serverbee.sh upgrade -y           # 升级到最新版
+sudo bash deploy/serverbee.sh restart              # 重启所有服务
+sudo bash deploy/serverbee.sh config               # 查看当前配置
+sudo bash deploy/serverbee.sh config set <key> <value>  # 修改配置
+sudo bash deploy/serverbee.sh uninstall agent -y   # 卸载 Agent
+sudo bash deploy/serverbee.sh uninstall server --purge  # 卸载服务端并清除数据
+```
 
 ### 反向代理 (Nginx)
 
