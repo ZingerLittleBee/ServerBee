@@ -39,8 +39,9 @@ install_cli() {
         tmp=$(mktemp "${target_dir}/.serverbee-cli.XXXXXX")
         trap 'rm -f "$tmp"' EXIT
 
-        if [ -f "$0" ] && [ "$0" != "$target" ]; then
+        if [ -f "$0" ] && ! [ "$0" -ef "$target" ]; then
             # Repo-local execution — $0 is a real file AND not the installed CLI
+            # -ef compares inodes, so symlinks and relative paths are handled
             cp "$0" "$tmp"
         else
             # Installed CLI or pipe execution — download from release tag
@@ -64,7 +65,7 @@ Key properties:
 - **Truly non-fatal**: the entire body runs in a subshell guarded by `if (...); then ... else ... fi`. Under `set -euo pipefail`, any step failure (`cp`, `curl`, `chmod`, `mv`) exits the subshell, hits the `else` branch, and warns — the caller continues normally.
 - **Atomic write**: temp file created in the target directory (`/usr/local/bin/.serverbee-cli.XXXXXX`) — same filesystem, so `mv` is a guaranteed atomic rename. EXIT trap cleans up on failure.
 - **Version-pinned**: download cases use the same release tag as the binaries, avoiding version skew between CLI and components.
-- **Self-update safe**: string comparison `$0 != $target` prevents the installed CLI from copying itself onto itself; it downloads the pinned version instead. No `realpath` dependency — `$0` is always `/usr/local/bin/serverbee` when invoked as the installed CLI, matching `$target` exactly.
+- **Self-update safe**: `[ "$0" -ef "$target" ]` (inode comparison) prevents the installed CLI from copying itself onto itself; it downloads the pinned version instead. Handles symlinks, relative paths, and alternate invocation paths without external dependencies — `-ef` is a bash builtin.
 
 ### 2. Call Sites
 
