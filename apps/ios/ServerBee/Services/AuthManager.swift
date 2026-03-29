@@ -7,6 +7,10 @@ import SwiftUI
 /// session, and exposes reactive state for the UI layer.
 @Observable
 final class AuthManager: @unchecked Sendable {
+    // MARK: - Private
+
+    private let refreshCoordinator = RefreshCoordinator()
+
     // MARK: - Published State
 
     var isLoading = true
@@ -82,6 +86,21 @@ final class AuthManager: @unchecked Sendable {
         isAuthenticated = false
     }
 
+    // MARK: - Token Refresh (public, coalesced)
+
+    /// Centralized token refresh. Both APIClient (on 401) and WebSocketClient
+    /// (on reconnect) call this. Concurrent calls are coalesced by RefreshCoordinator.
+    func refreshAccessToken() async throws -> String {
+        try await refreshCoordinator.refresh { [self] in
+            guard let refreshToken = KeychainService.loadString(for: KeychainService.refreshTokenKey) else {
+                throw AuthError.refreshFailed
+            }
+            let response = try await refreshTokens(refreshToken: refreshToken)
+            await handleLoginResponse(response)
+            return response.accessToken
+        }
+    }
+
     // MARK: - Token Refresh (private)
 
     /// Directly calls the refresh endpoint using URLSession.
@@ -118,6 +137,41 @@ final class AuthManager: @unchecked Sendable {
             from: data
         )
         return apiResponse.data
+    }
+}
+
+// MARK: - Refresh Coordinator
+
+private actor RefreshCoordinator {
+    private var isRefreshing = false
+    private var waiters: [CheckedContinuation<String, Error>] = []
+
+    func refresh(using refreshFn: @Sendable () async throws -> String) async throws -> String {
+        if isRefreshing {
+            return try await withCheckedThrowingContinuation { continuation in
+                waiters.append(continuation)
+            }
+        }
+
+        isRefreshing = true
+        do {
+            let newToken = try await refreshFn()
+            let pending = waiters
+            waiters = []
+            isRefreshing = false
+            for waiter in pending {
+                waiter.resume(returning: newToken)
+            }
+            return newToken
+        } catch {
+            let pending = waiters
+            waiters = []
+            isRefreshing = false
+            for waiter in pending {
+                waiter.resume(throwing: error)
+            }
+            throw error
+        }
     }
 }
 
