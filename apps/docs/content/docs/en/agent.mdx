@@ -33,7 +33,9 @@ chmod +x serverbee-agent
 Use the install script to download the binary and configure a systemd service automatically:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s agent
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s agent \
+  --server-url http://your-server-ip:9527 \
+  --discovery-key YOUR_DISCOVERY_KEY
 ```
 
 ### Build from Source
