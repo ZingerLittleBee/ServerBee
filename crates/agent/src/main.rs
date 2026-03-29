@@ -8,6 +8,7 @@ mod register;
 mod reporter;
 mod terminal;
 mod file_manager;
+mod fingerprint;
 
 use tracing_subscriber::EnvFilter;
 
@@ -34,12 +35,21 @@ async fn main() -> anyhow::Result<()> {
         serverbee_common::constants::VERSION
     );
 
+    let machine_fingerprint = fingerprint::generate();
+    if !machine_fingerprint.is_empty() {
+        tracing::info!(
+            "Machine fingerprint: {}...{}",
+            &machine_fingerprint[..8],
+            &machine_fingerprint[56..]
+        );
+    }
+
     if config.token.is_empty() {
         if config.auto_discovery_key.is_empty() {
             anyhow::bail!("No token and no auto_discovery_key. Set one in config.");
         }
         tracing::info!("No token found, registering...");
-        let (_server_id, token) = register::register_agent(&config).await?;
+        let (_server_id, token) = register::register_agent(&config, &machine_fingerprint).await?;
         tracing::info!("Registration successful");
         if let Err(e) = register::save_token(&token) {
             tracing::warn!("Failed to save token: {e}");
@@ -47,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
         config.token = token;
     }
 
-    let mut reporter = Reporter::new(config);
+    let mut reporter = Reporter::new(config, machine_fingerprint);
     reporter.run().await;
     Ok(())
 }
