@@ -1,19 +1,36 @@
 mod collector;
 mod config;
 mod docker;
+mod file_manager;
+mod fingerprint;
 mod network_prober;
 mod pinger;
 mod probe_utils;
 mod register;
 mod reporter;
 mod terminal;
-mod file_manager;
-mod fingerprint;
+
+use std::sync::OnceLock;
 
 use tracing_subscriber::EnvFilter;
 
 use crate::config::AgentConfig;
 use crate::reporter::Reporter;
+
+static RUSTLS_PROVIDER_INSTALLED: OnceLock<()> = OnceLock::new();
+
+fn install_rustls_crypto_provider() -> anyhow::Result<()> {
+    if RUSTLS_PROVIDER_INSTALLED.get().is_some() {
+        return Ok(());
+    }
+
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .map_err(|_| anyhow::anyhow!("Failed to install rustls ring CryptoProvider"))?;
+
+    let _ = RUSTLS_PROVIDER_INSTALLED.set(());
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -29,6 +46,8 @@ async fn main() -> anyhow::Result<()> {
                 .unwrap_or_else(|_| config.log.level.parse().unwrap_or_else(|_| "info".into())),
         )
         .init();
+
+    install_rustls_crypto_provider()?;
 
     tracing::info!(
         "ServerBee Agent v{} starting...",
@@ -60,4 +79,15 @@ async fn main() -> anyhow::Result<()> {
     let mut reporter = Reporter::new(config, machine_fingerprint);
     reporter.run().await;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::install_rustls_crypto_provider;
+
+    #[test]
+    fn install_rustls_crypto_provider_is_idempotent() {
+        install_rustls_crypto_provider().expect("first install should succeed");
+        install_rustls_crypto_provider().expect("second install should be a no-op");
+    }
 }
