@@ -22,7 +22,7 @@ The current agent registration endpoint (`POST /api/agent/register`) creates a n
 
 1. No deduplication — same agent re-registering always creates a new server entry
 2. No global server count limit
-3. No way to rotate discovery key without server restart
+3. Discovery key rotation API exists (`PUT /api/settings/auto-discovery-key`) but the frontend has no "Regenerate" button — users must know the API exists
 4. No bulk cleanup for orphaned server entries
 
 ## Design
@@ -33,7 +33,10 @@ The current agent registration endpoint (`POST /api/agent/register`) creates a n
 
 **Fingerprint composition:**
 - `hostname` — from `gethostname()`
-- `machine_id` — Linux: read `/etc/machine-id`; macOS: read `IOPlatformUUID` via `ioreg`
+- `machine_id` — platform-specific:
+  - Linux: read `/etc/machine-id`
+  - macOS: read `IOPlatformUUID` via `ioreg -rd1 -c IOPlatformExpertDevice`
+  - Windows: read `MachineGuid` from registry `HKLM\SOFTWARE\Microsoft\Cryptography`
 
 **Fingerprint generation:**
 ```
@@ -42,8 +45,11 @@ fingerprint = SHA-256("{hostname}:{machine_id}")  →  64-char hex string
 
 SHA-256 ensures a fixed-length, non-reversible identifier regardless of input length.
 
+**Tradeoff: hostname in fingerprint.** If a machine is renamed, the fingerprint changes and a new server entry will be created. This is an intentional tradeoff — hostname distinguishes machines behind the same NAT that might share a machine_id (e.g., cloned VMs). The old server entry can be cleaned up manually via the bulk cleanup feature.
+
 **Agent-side implementation:**
 - New module `crates/agent/src/fingerprint.rs`
+- Platform-specific machine_id reading via `#[cfg(target_os = "...")]`
 - Reads hostname + machine_id at startup
 - Returns hex-encoded SHA-256 hash
 - Graceful fallback: if machine_id is unreadable, return empty string (skip fingerprint, fall through to old path)
@@ -66,20 +72,24 @@ SHA-256 ensures a fixed-length, non-reversible identifier regardless of input le
 ```
 1. Rate limit check (existing)
 2. Discovery key validation (existing)
-3. Global server limit check (new — see section 3)
-4. If fingerprint is provided and non-empty:
+3. If fingerprint is provided and non-empty:
    a. SELECT * FROM servers WHERE fingerprint = <hash>
-   b. If found:
+   b. If found → REUSE PATH:
       - Generate new token, hash with argon2
       - UPDATE token_hash, token_prefix, updated_at
       - Return existing server_id + new plaintext token
       - Log: "Reusing server {id} for fingerprint {hash}"
-   c. If not found:
-      - Create new server with fingerprint field set
-5. If no fingerprint (old agent):
-   - Create new server (existing logic, fingerprint = NULL)
+      - (skip global limit check — not creating a new server)
+   c. If not found → NEW SERVER PATH (continue to step 4)
+4. Global server limit check (new — see section 3)
+5. Create new server:
+   - If fingerprint provided: set fingerprint field
+   - If no fingerprint (old agent): fingerprint = NULL
 6. Return { server_id, token }
 ```
+
+**Race condition handling:**
+Two simultaneous registrations from the same machine could race between the SELECT (step 3a) and INSERT (step 5). The unique index on `fingerprint` ensures only one INSERT succeeds. The loser gets a unique constraint violation, which the handler catches and retries as a reuse (SELECT + UPDATE). Implementation: wrap the SELECT-then-INSERT in a single function that catches `SqlErr::UniqueConstraintViolation` on the fingerprint column and falls back to the reuse path.
 
 **Key behaviors:**
 - Fingerprint match reuses the server even if the agent's IP changed (VPS migration, etc.)
@@ -99,25 +109,13 @@ SHA-256 ensures a fixed-length, non-reversible identifier regardless of input le
 - `SELECT COUNT(*) FROM servers`
 - If `count >= max_servers && max_servers > 0` → return `400 Bad Request` with message: "Server limit reached ({max_servers}). Delete unused servers or increase max_servers in config."
 
-### 4. Discovery Key Rotation API
+### 4. Discovery Key Rotation (Frontend Only)
 
-**Endpoint:** `POST /api/settings/rotate-discovery-key`
+The server already has `PUT /api/settings/auto-discovery-key` which generates a new random key and returns it. No new backend endpoint needed.
 
-**Auth:** Requires Admin role (existing `require_admin` middleware)
-
-**Flow:**
-1. Generate new random key (32 bytes, base64url-encoded)
-2. Write to ConfigService (`auto_discovery_key`)
-3. Return `{ data: { key: "<new_key>" } }`
-
-**Behavior:**
-- Old key is immediately invalidated
-- Already-registered agents are unaffected (they authenticate with their per-server token, not the discovery key)
-- New agents must use the new key to register
-
-**Frontend:**
+**Frontend change:**
 - On the existing discovery key settings page, add a "Regenerate" button next to the key input
-- On click: call API → display new key → prompt user to copy it
+- On click: call `PUT /api/settings/auto-discovery-key` → display new key → prompt user to copy it
 - Show warning: "This will invalidate the current key. Already connected agents are not affected."
 
 ### 5. Bulk Cleanup of Orphaned Servers
@@ -134,21 +132,35 @@ These two conditions together identify servers that were registered but never su
 
 **Flow:**
 1. Count matching servers: `SELECT COUNT(*) FROM servers WHERE name = 'New Server' AND os IS NULL`
-2. For each matched server, delete related data by `server_id` from all dependent tables:
-   - `alert_rules`, `alert_states`
+2. Collect the IDs of matched servers
+3. For each orphan server_id, clean up related data in two categories:
+
+   **Tables with `server_id` FK (delete rows WHERE server_id = ?):**
    - `records`, `record_hourlys`, `gpu_records`
-   - `ping_tasks`, `ping_records`
+   - `alert_states`
    - `network_probe_configs`, `network_probe_records`, `network_probe_record_hourlys`
    - `traffic_states`, `traffic_hourlys`, `traffic_dailys`
    - `uptime_dailys`
-   - `tasks`, `task_results`
+   - `task_results`
    - `server_tags`
    - `docker_events`
-   - `incidents`, `maintenances`, `service_monitors`
-3. Delete the matched server records themselves
-4. Return `{ data: { deleted_count: N } }`
+   - `ping_records`
 
-Note: Since these are "never connected" servers, most related tables will have no data. The cascade is for correctness.
+   **Tables with `server_ids_json` array (remove orphan ID from JSON array, do NOT delete the row):**
+   - `alert_rules` — parse `server_ids_json`, remove orphan ID, write back
+   - `ping_tasks` — same
+   - `tasks` — same
+   - `incidents` — same
+   - `maintenances` — same
+   - `service_monitors` — same
+   - `status_pages` — same
+
+   If after removal the array becomes empty, leave the row intact (the config still belongs to the user).
+
+4. Delete the matched server records themselves
+5. Return `{ data: { deleted_count: N } }`
+
+Note: Since these are "never connected" servers, most related tables will have no data. The JSON array cleanup is for correctness — shared config (alert rules, ping tasks, etc.) that references multiple servers must not be deleted when only one server is orphaned.
 
 **Frontend:**
 - Server list page toolbar: "Clean up unconnected servers" button
@@ -202,17 +214,16 @@ CREATE UNIQUE INDEX idx_servers_fingerprint ON servers(fingerprint) WHERE finger
 |------|--------|
 | `src/entity/server.rs` | Add `fingerprint: Option<String>` field |
 | `src/migration/` | New migration: add fingerprint column + unique partial index |
-| `src/router/api/agent.rs` | Fingerprint dedup logic, global limit check, store fingerprint + IP on new server |
-| `src/router/api/settings.rs` | New endpoint: `POST rotate-discovery-key` |
-| `src/router/api/server.rs` | New endpoint: `DELETE /servers/cleanup` |
+| `src/router/api/agent.rs` | Fingerprint dedup logic, global limit check, race condition retry, store fingerprint + IP on new server |
+| `src/router/api/server.rs` | New endpoint: `DELETE /servers/cleanup` (with JSON array cleanup for shared-config tables) |
 | `src/config.rs` | Add `max_servers: u32` to AuthConfig |
 
 ### Frontend (`apps/web/`)
 | File | Change |
 |------|--------|
-| Settings page (discovery key) | Add "Regenerate" button |
+| Settings page (discovery key) | Add "Regenerate" button (calls existing `PUT /api/settings/auto-discovery-key`) |
 | Server list page | Add "Clean up unconnected servers" button + confirmation dialog |
-| API client | Add `rotateDiscoveryKey()` and `cleanupServers()` calls |
+| API client | Add `cleanupServers()` call |
 
 ### Documentation
 | File | Change |
