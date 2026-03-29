@@ -1,14 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { Bell, Plus, Send, Trash2 } from 'lucide-react'
-import { type FormEvent, useState } from 'react'
+import { Bell, Plus, Send, Trash2, Upload } from 'lucide-react'
+import { type FormEvent, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api-client'
 import type { Notification, NotificationGroup } from '@/lib/api-schema'
 
@@ -16,7 +18,7 @@ export const Route = createFileRoute('/_authed/settings/notifications')({
   component: NotificationsPage
 })
 
-type NotifyType = 'bark' | 'email' | 'telegram' | 'webhook'
+type NotifyType = 'apns' | 'bark' | 'email' | 'telegram' | 'webhook'
 
 const SENSITIVE_FIELDS = new Set(['password', 'bot_token', 'device_key'])
 
@@ -29,12 +31,14 @@ function NotificationsPage() {
   const [configFields, setConfigFields] = useState<Record<string, string>>({
     url: ''
   })
+  const apnsFileInputRef = useRef<HTMLInputElement>(null)
 
   const typeLabels: Record<NotifyType, string> = {
     webhook: t('notifications.type_webhook'),
     telegram: t('notifications.type_telegram'),
     bark: t('notifications.type_bark'),
-    email: t('notifications.type_email')
+    email: t('notifications.type_email'),
+    apns: t('notifications.type_apns')
   }
 
   const { data: notifications, isLoading } = useQuery<Notification[]>({
@@ -139,9 +143,35 @@ function NotificationsPage() {
       case 'email':
         setConfigFields({ smtp_host: '', smtp_port: '587', username: '', password: '', from: '', to: '' })
         break
+      case 'apns':
+        setConfigFields({
+          key_id: '',
+          team_id: '',
+          private_key: '',
+          bundle_id: 'com.serverbee.mobile',
+          sandbox: 'true'
+        })
+        break
       default:
         setConfigFields({})
     }
+  }
+
+  const handleApnsFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) {
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const content = ev.target?.result
+      if (typeof content === 'string') {
+        setConfigFields((prev) => ({ ...prev, private_key: content.trim() }))
+      }
+    }
+    reader.readAsText(file)
+    // reset so the same file can be re-selected if needed
+    e.target.value = ''
   }
 
   const handleCreate = (e: FormEvent) => {
@@ -221,16 +251,79 @@ function NotificationsPage() {
                   ))}
                 </SelectContent>
               </Select>
-              {Object.entries(configFieldLabels[notifyType] ?? {}).map(([key, label]) => (
-                <Input
-                  key={key}
-                  onChange={(e) => setConfigFields((prev) => ({ ...prev, [key]: e.target.value }))}
-                  placeholder={label}
-                  required
-                  type={SENSITIVE_FIELDS.has(key) ? 'password' : 'text'}
-                  value={configFields[key] ?? ''}
-                />
-              ))}
+              {notifyType === 'apns' ? (
+                <>
+                  <Input
+                    maxLength={10}
+                    onChange={(e) => setConfigFields((prev) => ({ ...prev, key_id: e.target.value }))}
+                    placeholder={t('notifications.apns_key_id')}
+                    required
+                    type="text"
+                    value={configFields.key_id ?? ''}
+                  />
+                  <Input
+                    onChange={(e) => setConfigFields((prev) => ({ ...prev, team_id: e.target.value }))}
+                    placeholder={t('notifications.apns_team_id')}
+                    required
+                    type="text"
+                    value={configFields.team_id ?? ''}
+                  />
+                  <div className="space-y-1">
+                    <textarea
+                      className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                      onChange={(e) => setConfigFields((prev) => ({ ...prev, private_key: e.target.value }))}
+                      placeholder={t('notifications.apns_private_key')}
+                      required
+                      rows={4}
+                      value={configFields.private_key ?? ''}
+                    />
+                    <input
+                      accept=".p8,.pem,.key,text/plain"
+                      className="hidden"
+                      onChange={handleApnsFileUpload}
+                      ref={apnsFileInputRef}
+                      type="file"
+                    />
+                    <Button
+                      className="h-7 text-xs"
+                      onClick={() => apnsFileInputRef.current?.click()}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      <Upload className="size-3" />
+                      Upload .p8 file
+                    </Button>
+                  </div>
+                  <Input
+                    onChange={(e) => setConfigFields((prev) => ({ ...prev, bundle_id: e.target.value }))}
+                    placeholder={t('notifications.apns_bundle_id')}
+                    required
+                    type="text"
+                    value={configFields.bundle_id ?? ''}
+                  />
+                  <Label className="cursor-pointer">
+                    <Switch
+                      checked={configFields.sandbox === 'true'}
+                      onCheckedChange={(checked) =>
+                        setConfigFields((prev) => ({ ...prev, sandbox: checked ? 'true' : 'false' }))
+                      }
+                    />
+                    {t('notifications.apns_sandbox')}
+                  </Label>
+                </>
+              ) : (
+                Object.entries(configFieldLabels[notifyType] ?? {}).map(([key, label]) => (
+                  <Input
+                    key={key}
+                    onChange={(e) => setConfigFields((prev) => ({ ...prev, [key]: e.target.value }))}
+                    placeholder={label}
+                    required
+                    type={SENSITIVE_FIELDS.has(key) ? 'password' : 'text'}
+                    value={configFields[key] ?? ''}
+                  />
+                ))
+              )}
               <div className="flex gap-2">
                 <Button disabled={createMutation.isPending} size="sm" type="submit">
                   {t('common:create')}
