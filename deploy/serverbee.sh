@@ -35,6 +35,27 @@ warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 
 # ─── Dependency check ─────────────────────────────────────────────────────────
+install_deps() {
+    # Auto-install missing packages using the available package manager
+    local pkgs=("$@")
+    if command -v apt-get &>/dev/null; then
+        info "Installing missing tools via apt-get: ${pkgs[*]}"
+        apt-get update -qq >/dev/null 2>&1
+        apt-get install -y -qq "${pkgs[@]}" >/dev/null 2>&1 || error "Failed to install: ${pkgs[*]}"
+    elif command -v yum &>/dev/null; then
+        info "Installing missing tools via yum: ${pkgs[*]}"
+        yum install -y -q "${pkgs[@]}" >/dev/null 2>&1 || error "Failed to install: ${pkgs[*]}"
+    elif command -v dnf &>/dev/null; then
+        info "Installing missing tools via dnf: ${pkgs[*]}"
+        dnf install -y -q "${pkgs[@]}" >/dev/null 2>&1 || error "Failed to install: ${pkgs[*]}"
+    elif command -v apk &>/dev/null; then
+        info "Installing missing tools via apk: ${pkgs[*]}"
+        apk add --quiet "${pkgs[@]}" >/dev/null 2>&1 || error "Failed to install: ${pkgs[*]}"
+    else
+        error "Missing required tools: ${pkgs[*]}\n  No supported package manager found (apt-get/yum/dnf/apk). Install them manually."
+    fi
+}
+
 check_deps() {
     local missing=()
     for cmd in curl grep sed awk mktemp; do
@@ -42,8 +63,17 @@ check_deps() {
             missing+=("$cmd")
         fi
     done
-    if [ ${#missing[@]} -gt 0 ]; then
-        error "Missing required tools: ${missing[*]}\n  Install them first, e.g.: apt-get install -y ${missing[*]}"
+    if [ ${#missing[@]} -eq 0 ]; then return; fi
+
+    if [ "$YES" = true ]; then
+        install_deps "${missing[@]}"
+    else
+        warn "Missing required tools: ${missing[*]}"
+        read -rp "  Install them now? [y/N]: " confirm
+        case "$confirm" in
+            [yY]|[yY][eE][sS]) install_deps "${missing[@]}" ;;
+            *) error "Cannot continue without: ${missing[*]}" ;;
+        esac
     fi
 }
 
@@ -1469,6 +1499,11 @@ run_command() {
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 main() {
+    # Pre-scan for -y flag so check_deps knows whether to auto-install
+    for arg in "$@"; do
+        case "$arg" in --yes|-y) YES=true ;; esac
+    done
+
     check_deps
 
     # Shorthand: first arg not a known command → prepend "install"
