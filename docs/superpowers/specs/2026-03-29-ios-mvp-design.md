@@ -305,7 +305,7 @@ fn extract_bearer_token(req: &Request) -> Option<String> {
 }
 ```
 
-Bearer token 本质上也是 session token（存在 `session` 表里），只是 `source = "mobile"`。`validate_session` 不需要改动——它只校验 token 是否存在且未过期。
+Bearer token 本质上也是 session token（存在 `session` 表里），只是 `source = "mobile"`。`validate_session` 需要变更以支持 source-aware TTL 和条件滑动续期（见下文"滑动过期行为变更"）。
 
 ### WebSocket 认证
 
@@ -322,7 +322,9 @@ if let Some(token) = extract_bearer_token(headers)
 }
 ```
 
-iOS 的 `WebSocketClient` 已经在连接时设置了 `Authorization: Bearer <token>` header，所以 iOS 端不需要改动。
+iOS 的 `WebSocketClient` 已经在连接时设置了 `Authorization: Bearer <token>` header。但当前实现有两个问题需要修复（见 Section 5 iOS 改动）：
+1. `WebSocketClient.connect()` 缓存了 `currentAccessToken`，重连时复用同一个已过期的 token
+2. `WebSocketClient` 没有被集成到 `ContentView` 中——没有任何代码创建实例或调用 `connect()`
 
 ### Access Token TTL
 
@@ -500,15 +502,17 @@ Title 和 body 使用 `NotifyContext` 模板渲染，复用现有 `DEFAULT_TEMPL
 
 ### 5.3.1 新增：告警详情端点
 
-`AlertDetailViewModel` 调用 `/api/mobile/alerts/{alert_key}`，但服务端目前没有此端点。需要在 `router/api/mobile.rs` 中新增：
+`AlertDetailViewModel` 调用 `/api/alert-events/{alert_key}`，服务端目前没有此端点。在 `router/api/alert.rs` 的 `alert_events_router()` 中新增：
 
 | 端点 | 方法 | 认证 | 说明 |
 |---|---|---|---|
-| `/api/mobile/alerts/{alert_key}` | GET | Bearer/Session/API Key | 返回告警详情，组合 alert_state + alert_rule 数据 |
+| `/api/alert-events/{alert_key}` | GET | Session/API Key/Bearer | 返回告警详情，组合 alert_state + alert_rule 数据 |
 
-响应体对应 iOS 端 `MobileAlertDetail` 模型（包含 rule_enabled、rule_trigger_mode 等 alert_state 表没有的字段）。
+放在现有 `/api/alert-events` 路由组内（read-only，所有认证用户可访问），不使用 mobile 前缀。
 
-或者，将此路径放在现有 `/api/alert-events` 体系下（如 `/api/alert-events/{alert_key}`），与其他 read-only 路由一起，无需 mobile 前缀。
+响应体对应 iOS 端 `MobileAlertDetail` 模型（包含 rule_enabled、rule_trigger_mode 等需要 join alert_rule 表的字段）。
+
+iOS 端 `AlertDetailViewModel` 的请求路径需从 `/api/mobile/alerts/{alert_key}` 改为 `/api/alert-events/{alert_key}`。
 
 ### 5.4 Xcode 项目配置更新
 
@@ -521,17 +525,32 @@ Title 和 body 使用 `NotifyContext` 模板渲染，复用现有 `DEFAULT_TEMPL
 - 更新 `apps/ios/project.yml` 的 target settings，添加 `CODE_SIGN_ENTITLEMENTS: ServerBee/ServerBee.entitlements`
 - 在 XcodeGen target 中启用 Push Notifications capability
 
-### 5.5 无需改动的模块
+### 5.5 修正：WebSocket 集成与 Token 刷新
+
+当前 `WebSocketClient` 存在两个问题：
+
+**问题 1：未集成到 App 中。** `ContentView` 创建了 `APIClient` 但没有创建或连接 `WebSocketClient`，`ServersViewModel.handleWSMessage` 从未被调用。需要：
+- `ContentView` 中创建 `WebSocketClient` 实例
+- 认证成功后调用 `connect(serverUrl:accessToken:)`
+- 将 `onMessage` 回调连接到 `ServersViewModel.handleWSMessage` 和 `AlertsViewModel.handleWSAlertEvent`
+- logout 时调用 `close()`
+
+**问题 2：重连使用过期 token。** `WebSocketClient.establishConnection()` 使用缓存的 `currentAccessToken` 重连。服务端会在 15 分钟后关闭 mobile WS 连接，重连时旧 token 已过期，导致 401。需要：
+- `WebSocketClient` 增加一个 `tokenProvider: @Sendable () async -> String?` 闭包属性
+- 重连前通过 `tokenProvider` 从 `AuthManager` 获取当前 access token
+- 如果 token 已过期，先触发 refresh（通过 APIClient），再用新 token 重连
+- 或者更简单：重连失败（401）时发布通知，由上层触发 refresh 后重新 `connect()`
+
+### 5.6 无需改动的模块
 
 以下模块 iOS 端已实现且与服务端现有 REST/WS API 兼容（解包修正后）：
 - `ServerStatus` 模型 → `/api/servers`
 - `BrowserMessage` WebSocket 模型 → 服务端 `BrowserMessage`
-- `WebSocketClient` → 已设置 `Authorization: Bearer` header
 - Views 层 — UI 代码不需改动，数据流由 ViewModel 处理
 
 **注意**：`AlertModels` 中的 `MobileAlertEvent` 兼容现有 `/api/alert-events` 响应（`AlertEventResponse`），但 `MobileAlertDetail` 需要新增服务端端点（见 5.3.1）。
 
-### 5.6 Web 端改动
+### 5.7 Web 端改动
 
 设置页新增"移动设备管理"板块：
 - "添加设备"按钮 → 生成 QR code 弹窗（`qrcode` npm 包）
@@ -580,7 +599,8 @@ Title 和 body 使用 `NotifyContext` 模板渲染，复用现有 `DEFAULT_TEMPL
 - `crates/server/src/state.rs` — 新增 `pending_pairs` DashMap
 - `crates/server/src/config.rs` — 新增 `MobileConfig`
 - `crates/server/src/service/notification.rs` — 新增 APNs 渠道
-- `crates/server/src/service/auth.rs` — validate_session 签名变更 + source-aware TTL + 测试更新
+- `crates/server/src/service/auth.rs` — validate_session 签名变更 + source-aware TTL + 条件滑动续期 + 测试更新
+- `crates/server/src/router/api/alert.rs` — 新增 `/api/alert-events/{alert_key}` 端点
 - `crates/server/Cargo.toml` — 新增 `a2` 依赖
 
 ### iOS (Swift)
@@ -595,6 +615,7 @@ Title 和 body 使用 `NotifyContext` 模板渲染，复用现有 `DEFAULT_TEMPL
 - `apps/ios/ServerBee/ServerBeeApp.swift` — APNs 注册 + AppDelegate
 - `apps/ios/ServerBee/ContentView.swift` — deep link 导航
 - `apps/ios/ServerBee/Services/APIClient.swift` — 统一解包 ApiResponse
+- `apps/ios/ServerBee/Services/WebSocketClient.swift` — 增加 tokenProvider 重连刷新机制
 - `apps/ios/ServerBee/ViewModels/ServersViewModel.swift` — 去掉 ApiResponse 手动解包
 - `apps/ios/ServerBee/ViewModels/ServerDetailViewModel.swift` — 同上
 - `apps/ios/ServerBee/ViewModels/AlertsViewModel.swift` — 同上
