@@ -73,6 +73,7 @@ docker run -d \
   --pid=host \
   -v /proc:/host/proc:ro \
   -v /sys:/host/sys:ro \
+  -v /etc/machine-id:/etc/machine-id:ro \
   -v /etc/serverbee:/etc/serverbee \
   --restart unless-stopped \
   ghcr.io/zingerlittlebee/serverbee-agent:latest
@@ -80,6 +81,10 @@ docker run -d \
 
 <Callout type="warn">
 `/etc/serverbee` 挂载是必须的。Agent 注册成功后会将 Token 写入 `agent.toml`。如果不挂载此目录，容器重建后会重新注册并产生重复的服务器记录。
+</Callout>
+
+<Callout type="warn">
+请同时挂载宿主机的 `/etc/machine-id`，这样容器重建后 Agent 指纹才能保持稳定。
 </Callout>
 
 **Docker 部署的限制：**

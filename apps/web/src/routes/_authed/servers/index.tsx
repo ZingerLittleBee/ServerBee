@@ -33,6 +33,7 @@ import { useServer } from '@/hooks/use-api'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerGroup } from '@/lib/api-schema'
+import { countCleanupCandidates } from '@/lib/orphan-server-utils'
 import { cn, countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/servers/')({
@@ -207,7 +208,7 @@ function ServersListPage() {
   const selectedIds = table.getSelectedRowModel().rows.map((r) => r.original.id)
   const selectedCount = selectedIds.length
 
-  const orphanCount = servers.filter((s) => s.name === 'New Server' && !s.os).length
+  const orphanCount = countCleanupCandidates(servers)
 
   const cleanupMutation = useMutation({
     mutationFn: () => api.delete<{ deleted_count: number }>('/api/servers/cleanup'),

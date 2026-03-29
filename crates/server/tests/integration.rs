@@ -6,16 +6,14 @@ use sea_orm_migration::MigratorTrait;
 use serde_json::json;
 use tokio_tungstenite::tungstenite;
 
-use serverbee_server::config::{
-    AdminConfig, AppConfig, AuthConfig, DatabaseConfig, ServerConfig,
-};
+use serverbee_common::types::{DiskIo, SystemReport};
+use serverbee_server::config::{AdminConfig, AppConfig, AuthConfig, DatabaseConfig, ServerConfig};
 use serverbee_server::migration::Migrator;
 use serverbee_server::router::create_router;
 use serverbee_server::service::auth::AuthService;
 use serverbee_server::service::config::ConfigService;
 use serverbee_server::service::record::RecordService;
 use serverbee_server::state::AppState;
-use serverbee_common::types::{DiskIo, SystemReport};
 
 /// Start a test server in a temporary directory with a random port.
 /// Returns `(base_url, temp_dir)` where `temp_dir` is kept alive for the
@@ -82,7 +80,9 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
         .expect("Failed to set auto_discovery_key");
 
     // Build state and router
-    let state = AppState::new(db, config).await.expect("Failed to create AppState");
+    let state = AppState::new(db, config)
+        .await
+        .expect("Failed to create AppState");
     let app = create_router(state);
 
     // Bind to a random port
@@ -148,7 +148,11 @@ async fn test_agent_register_connect_report() {
         .await
         .expect("Register request failed");
 
-    assert_eq!(register_resp.status(), 200, "Agent registration should succeed");
+    assert_eq!(
+        register_resp.status(),
+        200,
+        "Agent registration should succeed"
+    );
     let register_body: serde_json::Value = register_resp
         .json()
         .await
@@ -192,7 +196,10 @@ async fn test_agent_register_connect_report() {
         serde_json::from_str(&welcome_text).expect("Failed to parse Welcome");
     assert_eq!(welcome["type"], "welcome");
     assert_eq!(welcome["server_id"], server_id);
-    assert_eq!(welcome["protocol_version"], serverbee_common::constants::PROTOCOL_VERSION);
+    assert_eq!(
+        welcome["protocol_version"],
+        serverbee_common::constants::PROTOCOL_VERSION
+    );
 
     // ── Step 3: Send SystemInfo ──
     let system_info = json!({
@@ -331,7 +338,11 @@ async fn test_server_records_api_returns_disk_io_json() {
         .send()
         .await
         .expect("Register request failed");
-    assert_eq!(register_resp.status(), 200, "Agent registration should succeed");
+    assert_eq!(
+        register_resp.status(),
+        200,
+        "Agent registration should succeed"
+    );
 
     let register_body: serde_json::Value = register_resp
         .json()
@@ -369,7 +380,11 @@ async fn test_server_records_api_returns_disk_io_json() {
     let to = now.to_rfc3339();
     let records_resp = client
         .get(format!("{}/api/servers/{}/records", base_url, server_id))
-        .query(&[("from", from.as_str()), ("to", to.as_str()), ("interval", "raw")])
+        .query(&[
+            ("from", from.as_str()),
+            ("to", to.as_str()),
+            ("interval", "raw"),
+        ])
         .send()
         .await
         .expect("GET /api/servers/{id}/records failed");
@@ -419,7 +434,11 @@ async fn test_backup_restore() {
         .await
         .expect("Create notification failed");
 
-    assert_eq!(create_resp.status(), 200, "Create notification should succeed");
+    assert_eq!(
+        create_resp.status(),
+        200,
+        "Create notification should succeed"
+    );
     let create_body: serde_json::Value = create_resp
         .json()
         .await
@@ -460,7 +479,10 @@ async fn test_backup_restore() {
         "Backup should return octet-stream"
     );
 
-    let backup_bytes = backup_resp.bytes().await.expect("Failed to read backup bytes");
+    let backup_bytes = backup_resp
+        .bytes()
+        .await
+        .expect("Failed to read backup bytes");
     assert!(backup_bytes.len() > 16, "Backup file should not be empty");
     assert_eq!(
         &backup_bytes[..16],
@@ -470,7 +492,10 @@ async fn test_backup_restore() {
 
     // ── Step 4: Delete the notification ──
     let delete_resp = client
-        .delete(format!("{}/api/notifications/{}", base_url, notification_id))
+        .delete(format!(
+            "{}/api/notifications/{}",
+            base_url, notification_id
+        ))
         .send()
         .await
         .expect("Delete notification failed");
@@ -535,7 +560,11 @@ async fn test_login_logout_flow() {
         .await
         .expect("GET /api/auth/me failed");
 
-    assert_eq!(me_resp.status(), 200, "auth/me should return 200 when logged in");
+    assert_eq!(
+        me_resp.status(),
+        200,
+        "auth/me should return 200 when logged in"
+    );
     let me_body: serde_json::Value = me_resp.json().await.unwrap();
     assert_eq!(me_body["data"]["username"], "admin");
     assert_eq!(me_body["data"]["role"], "admin");
@@ -584,7 +613,10 @@ async fn test_api_key_lifecycle() {
     let api_key = create_body["data"]["key"]
         .as_str()
         .expect("key field missing from API key response");
-    assert!(api_key.starts_with("serverbee_"), "API key should start with 'serverbee_'");
+    assert!(
+        api_key.starts_with("serverbee_"),
+        "API key should start with 'serverbee_'"
+    );
 
     // Use the API key (X-API-Key header) to access a protected endpoint with a fresh client
     // (no session cookies — purely API key auth)
@@ -606,10 +638,7 @@ async fn test_api_key_lifecycle() {
         "API key should grant access to /api/servers"
     );
     let servers_body: serde_json::Value = servers_resp.json().await.unwrap();
-    assert!(
-        servers_body["data"].is_array(),
-        "data should be an array"
-    );
+    assert!(servers_body["data"].is_array(), "data should be an array");
 }
 
 #[tokio::test]
@@ -631,7 +660,11 @@ async fn test_member_read_only() {
         .await
         .expect("POST /api/users failed");
 
-    assert_eq!(create_resp.status(), 200, "Admin should be able to create member");
+    assert_eq!(
+        create_resp.status(),
+        200,
+        "Admin should be able to create member"
+    );
 
     // Login as the member user in a separate client
     let member_client = http_client();
@@ -694,10 +727,20 @@ async fn test_public_status_no_auth() {
         .await
         .expect("GET /api/status failed");
 
-    assert_eq!(resp.status(), 200, "Public /api/status should be accessible without auth");
+    assert_eq!(
+        resp.status(),
+        200,
+        "Public /api/status should be accessible without auth"
+    );
     let body: serde_json::Value = resp.json().await.unwrap();
-    assert!(body["data"]["servers"].is_array(), "data.servers should be an array");
-    assert!(body["data"]["total_count"].is_number(), "data.total_count should be a number");
+    assert!(
+        body["data"]["servers"].is_array(),
+        "data.servers should be an array"
+    );
+    assert!(
+        body["data"]["total_count"].is_number(),
+        "data.total_count should be a number"
+    );
 }
 
 #[tokio::test]
@@ -715,16 +758,25 @@ async fn test_audit_log_recorded() {
         .await
         .expect("GET /api/audit-logs failed");
 
-    assert_eq!(audit_resp.status(), 200, "audit-logs endpoint should be accessible to admin");
+    assert_eq!(
+        audit_resp.status(),
+        200,
+        "audit-logs endpoint should be accessible to admin"
+    );
     let audit_body: serde_json::Value = audit_resp.json().await.unwrap();
     let entries = audit_body["data"]["entries"]
         .as_array()
         .expect("entries should be an array");
     let total = audit_body["data"]["total"].as_u64().unwrap_or(0);
 
-    assert!(total >= 1, "There should be at least one audit log entry after login");
     assert!(
-        entries.iter().any(|e| e["action"].as_str() == Some("login")),
+        total >= 1,
+        "There should be at least one audit log entry after login"
+    );
+    assert!(
+        entries
+            .iter()
+            .any(|e| e["action"].as_str() == Some("login")),
         "Audit log should contain a 'login' entry"
     );
 }
@@ -747,7 +799,9 @@ async fn test_network_probe_target_crud() {
 
     assert_eq!(list_resp.status(), 200, "list targets should succeed");
     let list_body: serde_json::Value = list_resp.json().await.unwrap();
-    let targets = list_body["data"].as_array().expect("data should be an array");
+    let targets = list_body["data"]
+        .as_array()
+        .expect("data should be an array");
     assert_eq!(targets.len(), 96, "should have 96 builtin targets");
 
     // ── Step 2: POST /api/network-probes/targets — create a custom target ──
@@ -781,7 +835,11 @@ async fn test_network_probe_target_crud() {
     assert_eq!(list_resp2.status(), 200);
     let list_body2: serde_json::Value = list_resp2.json().await.unwrap();
     let targets2 = list_body2["data"].as_array().unwrap();
-    assert_eq!(targets2.len(), 97, "should have 97 targets after creating custom one");
+    assert_eq!(
+        targets2.len(),
+        97,
+        "should have 97 targets after creating custom one"
+    );
     assert!(
         targets2.iter().any(|t| t["id"].as_str() == Some(target_id)),
         "Custom target should appear in list"
@@ -789,7 +847,10 @@ async fn test_network_probe_target_crud() {
 
     // ── Step 4: PUT /api/network-probes/targets/{id} — update the custom target ──
     let update_resp = client
-        .put(format!("{}/api/network-probes/targets/{}", base_url, target_id))
+        .put(format!(
+            "{}/api/network-probes/targets/{}",
+            base_url, target_id
+        ))
         .json(&json!({
             "name": "Updated Custom Target",
             "provider": null,
@@ -804,11 +865,17 @@ async fn test_network_probe_target_crud() {
     assert_eq!(update_resp.status(), 200, "update target should succeed");
     let update_body: serde_json::Value = update_resp.json().await.unwrap();
     assert_eq!(update_body["data"]["name"], "Updated Custom Target");
-    assert_eq!(update_body["data"]["target"], "192.168.1.1", "target address should be unchanged");
+    assert_eq!(
+        update_body["data"]["target"], "192.168.1.1",
+        "target address should be unchanged"
+    );
 
     // ── Step 5: DELETE /api/network-probes/targets/{id} — delete the custom target ──
     let delete_resp = client
-        .delete(format!("{}/api/network-probes/targets/{}", base_url, target_id))
+        .delete(format!(
+            "{}/api/network-probes/targets/{}",
+            base_url, target_id
+        ))
         .send()
         .await
         .expect("DELETE /api/network-probes/targets/{id} failed");
@@ -825,7 +892,11 @@ async fn test_network_probe_target_crud() {
     assert_eq!(list_resp3.status(), 200);
     let list_body3: serde_json::Value = list_resp3.json().await.unwrap();
     let targets3 = list_body3["data"].as_array().unwrap();
-    assert_eq!(targets3.len(), 96, "should be back to 96 builtin targets after delete");
+    assert_eq!(
+        targets3.len(),
+        96,
+        "should be back to 96 builtin targets after delete"
+    );
     assert!(
         !targets3.iter().any(|t| t["id"].as_str() == Some(target_id)),
         "Deleted target should not appear in list"
@@ -848,8 +919,14 @@ async fn test_network_probe_setting_crud() {
 
     assert_eq!(get_resp.status(), 200, "get setting should succeed");
     let get_body: serde_json::Value = get_resp.json().await.unwrap();
-    assert_eq!(get_body["data"]["interval"], 60, "default interval should be 60");
-    assert_eq!(get_body["data"]["packet_count"], 10, "default packet_count should be 10");
+    assert_eq!(
+        get_body["data"]["interval"], 60,
+        "default interval should be 60"
+    );
+    assert_eq!(
+        get_body["data"]["packet_count"], 10,
+        "default packet_count should be 10"
+    );
 
     // ── Step 2: PUT /api/network-probes/setting — update interval to 120 ──
     let update_resp = client
@@ -865,7 +942,10 @@ async fn test_network_probe_setting_crud() {
 
     assert_eq!(update_resp.status(), 200, "update setting should succeed");
     let update_body: serde_json::Value = update_resp.json().await.unwrap();
-    assert_eq!(update_body["data"]["interval"], 120, "interval should be updated to 120");
+    assert_eq!(
+        update_body["data"]["interval"], 120,
+        "interval should be updated to 120"
+    );
 
     // ── Step 3: GET /api/network-probes/setting — verify interval=120 ──
     let get_resp2 = client
@@ -876,8 +956,14 @@ async fn test_network_probe_setting_crud() {
 
     assert_eq!(get_resp2.status(), 200);
     let get_body2: serde_json::Value = get_resp2.json().await.unwrap();
-    assert_eq!(get_body2["data"]["interval"], 120, "interval should persist as 120");
-    assert_eq!(get_body2["data"]["packet_count"], 10, "packet_count should remain 10");
+    assert_eq!(
+        get_body2["data"]["interval"], 120,
+        "interval should persist as 120"
+    );
+    assert_eq!(
+        get_body2["data"]["packet_count"], 10,
+        "packet_count should remain 10"
+    );
 }
 
 #[tokio::test]
@@ -916,7 +1002,10 @@ async fn test_network_probe_server_targets() {
 
     // ── Step 3: PUT /api/servers/{id}/network-probes/targets — assign 2 targets ──
     let assign_resp = client
-        .put(format!("{}/api/servers/{}/network-probes/targets", base_url, server_id))
+        .put(format!(
+            "{}/api/servers/{}/network-probes/targets",
+            base_url, server_id
+        ))
         .json(&json!({
             "target_ids": [target_id_1, target_id_2]
         }))
@@ -924,23 +1013,41 @@ async fn test_network_probe_server_targets() {
         .await
         .expect("PUT /api/servers/{id}/network-probes/targets failed");
 
-    assert_eq!(assign_resp.status(), 200, "assigning targets should succeed");
+    assert_eq!(
+        assign_resp.status(),
+        200,
+        "assigning targets should succeed"
+    );
 
     // ── Step 4: GET /api/servers/{id}/network-probes/targets — verify 2 targets ──
     let server_targets_resp = client
-        .get(format!("{}/api/servers/{}/network-probes/targets", base_url, server_id))
+        .get(format!(
+            "{}/api/servers/{}/network-probes/targets",
+            base_url, server_id
+        ))
         .send()
         .await
         .expect("GET /api/servers/{id}/network-probes/targets failed");
 
-    assert_eq!(server_targets_resp.status(), 200, "get server targets should succeed");
+    assert_eq!(
+        server_targets_resp.status(),
+        200,
+        "get server targets should succeed"
+    );
     let server_targets_body: serde_json::Value = server_targets_resp.json().await.unwrap();
     let server_targets = server_targets_body["data"].as_array().unwrap();
-    assert_eq!(server_targets.len(), 2, "server should have 2 assigned targets");
+    assert_eq!(
+        server_targets.len(),
+        2,
+        "server should have 2 assigned targets"
+    );
 
     // ── Step 5: PUT /api/servers/{id}/network-probes/targets — assign 0 targets ──
     let clear_resp = client
-        .put(format!("{}/api/servers/{}/network-probes/targets", base_url, server_id))
+        .put(format!(
+            "{}/api/servers/{}/network-probes/targets",
+            base_url, server_id
+        ))
         .json(&json!({ "target_ids": [] }))
         .send()
         .await
@@ -950,7 +1057,10 @@ async fn test_network_probe_server_targets() {
 
     // ── Step 6: GET /api/servers/{id}/network-probes/targets — verify empty ──
     let server_targets_resp2 = client
-        .get(format!("{}/api/servers/{}/network-probes/targets", base_url, server_id))
+        .get(format!(
+            "{}/api/servers/{}/network-probes/targets",
+            base_url, server_id
+        ))
         .send()
         .await
         .expect("GET /api/servers/{id}/network-probes/targets failed");
@@ -958,7 +1068,10 @@ async fn test_network_probe_server_targets() {
     assert_eq!(server_targets_resp2.status(), 200);
     let server_targets_body2: serde_json::Value = server_targets_resp2.json().await.unwrap();
     let server_targets2 = server_targets_body2["data"].as_array().unwrap();
-    assert!(server_targets2.is_empty(), "server targets should be empty after clearing");
+    assert!(
+        server_targets2.is_empty(),
+        "server targets should be empty after clearing"
+    );
 }
 
 #[tokio::test]
@@ -972,7 +1085,10 @@ async fn test_builtin_target_cannot_be_deleted() {
     let preset_id = "cn-bj-ct";
 
     let delete_resp = client
-        .delete(format!("{}/api/network-probes/targets/{}", base_url, preset_id))
+        .delete(format!(
+            "{}/api/network-probes/targets/{}",
+            base_url, preset_id
+        ))
         .send()
         .await
         .expect("DELETE /api/network-probes/targets/{id} failed");
@@ -993,7 +1109,11 @@ async fn test_builtin_target_cannot_be_deleted() {
     assert_eq!(list_resp2.status(), 200);
     let list_body2: serde_json::Value = list_resp2.json().await.unwrap();
     let targets2 = list_body2["data"].as_array().unwrap();
-    assert_eq!(targets2.len(), 96, "preset targets should remain 96 after failed delete");
+    assert_eq!(
+        targets2.len(),
+        96,
+        "preset targets should remain 96 after failed delete"
+    );
     assert!(
         targets2.iter().any(|t| t["id"].as_str() == Some(preset_id)),
         "Preset target should still be present after failed delete"
@@ -1022,7 +1142,10 @@ async fn test_preset_target_source_field() {
     assert_eq!(preset["source_name"], "中国电信");
     assert!(preset["created_at"].is_null());
 
-    let intl = targets.iter().find(|t| t["id"] == "intl-cloudflare").unwrap();
+    let intl = targets
+        .iter()
+        .find(|t| t["id"] == "intl-cloudflare")
+        .unwrap();
     assert_eq!(intl["source"], "preset:international");
     assert_eq!(intl["source_name"], "国际节点");
 
@@ -1125,9 +1248,15 @@ async fn test_notification_and_alert_crud() {
         .await
         .expect("POST /api/notifications failed");
 
-    assert_eq!(notif_resp.status(), 200, "notification creation should succeed");
+    assert_eq!(
+        notif_resp.status(),
+        200,
+        "notification creation should succeed"
+    );
     let notif_body: serde_json::Value = notif_resp.json().await.unwrap();
-    let notif_id = notif_body["data"]["id"].as_str().expect("notification id missing");
+    let notif_id = notif_body["data"]["id"]
+        .as_str()
+        .expect("notification id missing");
 
     // ── Create notification group ──
     let group_resp = client
@@ -1140,7 +1269,11 @@ async fn test_notification_and_alert_crud() {
         .await
         .expect("POST /api/notification-groups failed");
 
-    assert_eq!(group_resp.status(), 200, "notification group creation should succeed");
+    assert_eq!(
+        group_resp.status(),
+        200,
+        "notification group creation should succeed"
+    );
     let group_body: serde_json::Value = group_resp.json().await.unwrap();
     let group_id = group_body["data"]["id"].as_str().expect("group id missing");
 
@@ -1164,7 +1297,11 @@ async fn test_notification_and_alert_crud() {
         .await
         .expect("POST /api/alert-rules failed");
 
-    assert_eq!(alert_resp.status(), 200, "alert rule creation should succeed");
+    assert_eq!(
+        alert_resp.status(),
+        200,
+        "alert rule creation should succeed"
+    );
     let alert_body: serde_json::Value = alert_resp.json().await.unwrap();
     let alert_id = alert_body["data"]["id"].as_str().expect("alert id missing");
     assert_eq!(alert_body["data"]["name"], "High CPU Alert");
@@ -1191,7 +1328,11 @@ async fn test_notification_and_alert_crud() {
         .await
         .expect("DELETE /api/alert-rules/{id} failed");
 
-    assert_eq!(delete_resp.status(), 200, "alert rule deletion should succeed");
+    assert_eq!(
+        delete_resp.status(),
+        200,
+        "alert rule deletion should succeed"
+    );
 
     // Verify it's gone
     let list_after_resp = client
@@ -1203,7 +1344,9 @@ async fn test_notification_and_alert_crud() {
     let list_after_body: serde_json::Value = list_after_resp.json().await.unwrap();
     let rules_after = list_after_body["data"].as_array().unwrap();
     assert!(
-        !rules_after.iter().any(|r| r["id"].as_str() == Some(alert_id)),
+        !rules_after
+            .iter()
+            .any(|r| r["id"].as_str() == Some(alert_id)),
         "Deleted alert rule should not appear in list"
     );
 }
@@ -1257,7 +1400,10 @@ async fn test_user_management_crud() {
 
     assert_eq!(update_resp.status(), 200, "user role update should succeed");
     let update_body: serde_json::Value = update_resp.json().await.unwrap();
-    assert_eq!(update_body["data"]["role"], "admin", "Role should be updated to admin");
+    assert_eq!(
+        update_body["data"]["role"], "admin",
+        "Role should be updated to admin"
+    );
 
     // ── Delete user ──
     let delete_resp = client
@@ -1278,7 +1424,9 @@ async fn test_user_management_crud() {
     let list_after_body: serde_json::Value = list_after_resp.json().await.unwrap();
     let users_after = list_after_body["data"].as_array().unwrap();
     assert!(
-        !users_after.iter().any(|u| u["id"].as_str() == Some(user_id)),
+        !users_after
+            .iter()
+            .any(|u| u["id"].as_str() == Some(user_id)),
         "Deleted user should not appear in user list"
     );
 }
@@ -1297,13 +1445,20 @@ async fn test_settings_auto_discovery_key() {
         .await
         .expect("GET /api/settings/auto-discovery-key failed");
 
-    assert_eq!(get_resp.status(), 200, "GET auto-discovery-key should succeed");
+    assert_eq!(
+        get_resp.status(),
+        200,
+        "GET auto-discovery-key should succeed"
+    );
     let get_body: serde_json::Value = get_resp.json().await.unwrap();
     let original_key = get_body["data"]["key"]
         .as_str()
         .expect("key field missing")
         .to_string();
-    assert!(!original_key.is_empty(), "Auto-discovery key should not be empty");
+    assert!(
+        !original_key.is_empty(),
+        "Auto-discovery key should not be empty"
+    );
 
     // ── PUT to regenerate the key ──
     let regen_resp = client
@@ -1312,18 +1467,208 @@ async fn test_settings_auto_discovery_key() {
         .await
         .expect("PUT /api/settings/auto-discovery-key failed");
 
-    assert_eq!(regen_resp.status(), 200, "Regenerate auto-discovery-key should succeed");
+    assert_eq!(
+        regen_resp.status(),
+        200,
+        "Regenerate auto-discovery-key should succeed"
+    );
     let regen_body: serde_json::Value = regen_resp.json().await.unwrap();
     let new_key = regen_body["data"]["key"]
         .as_str()
         .expect("key field missing after regeneration")
         .to_string();
 
-    assert!(!new_key.is_empty(), "New auto-discovery key should not be empty");
+    assert!(
+        !new_key.is_empty(),
+        "New auto-discovery key should not be empty"
+    );
     assert_ne!(
         original_key, new_key,
         "Regenerated key should differ from the original key"
     );
+}
+
+#[tokio::test]
+async fn test_agent_register_reuses_existing_server_for_same_fingerprint() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    let fingerprint = "a".repeat(64);
+
+    let first_resp = client
+        .post(format!("{}/api/agent/register", base_url))
+        .header("Authorization", "Bearer test-key")
+        .json(&json!({ "fingerprint": fingerprint }))
+        .send()
+        .await
+        .expect("First register request failed");
+
+    assert_eq!(
+        first_resp.status(),
+        200,
+        "First registration should succeed"
+    );
+    let first_body: serde_json::Value = first_resp.json().await.unwrap();
+    let first_server_id = first_body["data"]["server_id"]
+        .as_str()
+        .expect("server_id missing on first registration")
+        .to_string();
+    let first_token = first_body["data"]["token"]
+        .as_str()
+        .expect("token missing on first registration")
+        .to_string();
+
+    let second_resp = client
+        .post(format!("{}/api/agent/register", base_url))
+        .header("Authorization", "Bearer test-key")
+        .json(&json!({ "fingerprint": fingerprint }))
+        .send()
+        .await
+        .expect("Second register request failed");
+
+    assert_eq!(
+        second_resp.status(),
+        200,
+        "Second registration should succeed"
+    );
+    let second_body: serde_json::Value = second_resp.json().await.unwrap();
+    let second_server_id = second_body["data"]["server_id"]
+        .as_str()
+        .expect("server_id missing on second registration")
+        .to_string();
+    let second_token = second_body["data"]["token"]
+        .as_str()
+        .expect("token missing on second registration")
+        .to_string();
+
+    assert_eq!(
+        first_server_id, second_server_id,
+        "Same fingerprint should reuse the existing server row"
+    );
+    assert_ne!(
+        first_token, second_token,
+        "Re-registration should rotate the agent token"
+    );
+
+    login_admin(&client, &base_url).await;
+    let list_resp = client
+        .get(format!("{}/api/servers", base_url))
+        .send()
+        .await
+        .expect("GET /api/servers failed");
+
+    assert_eq!(list_resp.status(), 200);
+    let list_body: serde_json::Value = list_resp.json().await.unwrap();
+    let servers = list_body["data"]
+        .as_array()
+        .expect("servers should be an array");
+
+    assert_eq!(servers.len(), 1, "Only one server row should exist");
+    assert_eq!(servers[0]["id"], first_server_id);
+}
+
+#[tokio::test]
+async fn test_cleanup_orphans_skips_online_uninitialized_server() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let orphan_resp = client
+        .post(format!("{}/api/agent/register", base_url))
+        .header("Authorization", "Bearer test-key")
+        .send()
+        .await
+        .expect("Offline orphan registration failed");
+
+    assert_eq!(orphan_resp.status(), 200);
+    let orphan_body: serde_json::Value = orphan_resp.json().await.unwrap();
+    let orphan_server_id = orphan_body["data"]["server_id"]
+        .as_str()
+        .expect("orphan server_id missing")
+        .to_string();
+
+    let online_resp = client
+        .post(format!("{}/api/agent/register", base_url))
+        .header("Authorization", "Bearer test-key")
+        .send()
+        .await
+        .expect("Online placeholder registration failed");
+
+    assert_eq!(online_resp.status(), 200);
+    let online_body: serde_json::Value = online_resp.json().await.unwrap();
+    let online_server_id = online_body["data"]["server_id"]
+        .as_str()
+        .expect("online server_id missing")
+        .to_string();
+    let online_token = online_body["data"]["token"]
+        .as_str()
+        .expect("online token missing");
+
+    let ws_url = format!(
+        "{}/api/agent/ws?token={}",
+        base_url.replace("http://", "ws://"),
+        online_token
+    );
+    let (ws_stream, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .expect("WebSocket connection failed");
+    let (mut ws_sink, mut ws_reader) = ws_stream.split();
+
+    let welcome_msg = tokio::time::timeout(Duration::from_secs(5), ws_reader.next())
+        .await
+        .expect("Timeout waiting for Welcome")
+        .expect("WebSocket stream ended")
+        .expect("WebSocket read error");
+    let welcome_text = match welcome_msg {
+        tungstenite::Message::Text(t) => t.to_string(),
+        other => panic!("Expected Text message, got: {:?}", other),
+    };
+    let welcome: serde_json::Value =
+        serde_json::from_str(&welcome_text).expect("Failed to parse Welcome");
+    assert_eq!(welcome["type"], "welcome");
+    assert_eq!(welcome["server_id"], online_server_id);
+
+    let cleanup_resp = client
+        .delete(format!("{}/api/servers/cleanup", base_url))
+        .send()
+        .await
+        .expect("DELETE /api/servers/cleanup failed");
+
+    assert_eq!(cleanup_resp.status(), 200);
+    let cleanup_body: serde_json::Value = cleanup_resp.json().await.unwrap();
+    assert_eq!(
+        cleanup_body["data"]["deleted_count"].as_u64(),
+        Some(1),
+        "Cleanup should delete only the offline orphan"
+    );
+
+    let list_resp = client
+        .get(format!("{}/api/servers", base_url))
+        .send()
+        .await
+        .expect("GET /api/servers failed");
+
+    assert_eq!(list_resp.status(), 200);
+    let list_body: serde_json::Value = list_resp.json().await.unwrap();
+    let servers = list_body["data"]
+        .as_array()
+        .expect("servers should be an array");
+    let server_ids: Vec<&str> = servers.iter().filter_map(|s| s["id"].as_str()).collect();
+
+    assert_eq!(
+        servers.len(),
+        1,
+        "Only the online placeholder should remain"
+    );
+    assert!(
+        !server_ids.contains(&orphan_server_id.as_str()),
+        "Offline orphan should be removed"
+    );
+    assert!(
+        server_ids.contains(&online_server_id.as_str()),
+        "Online placeholder should not be deleted"
+    );
+
+    ws_sink.close().await.expect("Failed to close ws");
 }
 
 #[tokio::test]
@@ -1486,10 +1831,7 @@ async fn test_file_transfers_endpoint() {
 
     // DELETE /api/files/transfers/nonexistent — should return 404
     let cancel_resp = client
-        .delete(format!(
-            "{}/api/files/transfers/nonexistent-id",
-            base_url
-        ))
+        .delete(format!("{}/api/files/transfers/nonexistent-id", base_url))
         .send()
         .await
         .expect("DELETE /api/files/transfers/nonexistent failed");
@@ -1520,7 +1862,11 @@ async fn test_file_write_requires_admin() {
         .await
         .expect("POST /api/users failed");
 
-    assert_eq!(create_resp.status(), 200, "Admin should be able to create member");
+    assert_eq!(
+        create_resp.status(),
+        200,
+        "Admin should be able to create member"
+    );
 
     // Login as the member user in a separate client
     let member_client = http_client();
@@ -1686,7 +2032,11 @@ async fn test_oneshot_task_backward_compat() {
         .await
         .expect("Create task failed");
 
-    assert_eq!(task_resp.status(), 200, "One-shot task creation should still work after migration");
+    assert_eq!(
+        task_resp.status(),
+        200,
+        "One-shot task creation should still work after migration"
+    );
 }
 
 #[tokio::test]
@@ -1747,7 +2097,11 @@ async fn test_service_monitor_crud_and_check() {
         .await
         .expect("POST /api/service-monitors failed");
 
-    assert_eq!(create_resp.status(), 200, "create service monitor should succeed");
+    assert_eq!(
+        create_resp.status(),
+        200,
+        "create service monitor should succeed"
+    );
     let create_body: serde_json::Value = create_resp.json().await.unwrap();
     let monitor_id = create_body["data"]["id"]
         .as_str()
@@ -1766,13 +2120,18 @@ async fn test_service_monitor_crud_and_check() {
     let list_body: serde_json::Value = list_resp.json().await.unwrap();
     let monitors = list_body["data"].as_array().expect("data should be array");
     assert!(
-        monitors.iter().any(|m| m["id"].as_str() == Some(monitor_id)),
+        monitors
+            .iter()
+            .any(|m| m["id"].as_str() == Some(monitor_id)),
         "Created monitor should appear in list"
     );
 
     // ── Step 3: Trigger check — the test server is listening on the target port ──
     let check_resp = client
-        .post(format!("{}/api/service-monitors/{}/check", base_url, monitor_id))
+        .post(format!(
+            "{}/api/service-monitors/{}/check",
+            base_url, monitor_id
+        ))
         .send()
         .await
         .expect("POST /api/service-monitors/{id}/check failed");
@@ -1783,18 +2142,26 @@ async fn test_service_monitor_crud_and_check() {
     assert!(record["id"].is_number(), "record should have a numeric id");
     assert_eq!(record["monitor_id"], monitor_id);
     // TCP connection to our own test server should succeed
-    assert_eq!(record["success"], true, "TCP check to localhost test server should succeed");
+    assert_eq!(
+        record["success"], true,
+        "TCP check to localhost test server should succeed"
+    );
 
     // ── Step 4: Get records — verify the check created a record ──
     let records_resp = client
-        .get(format!("{}/api/service-monitors/{}/records", base_url, monitor_id))
+        .get(format!(
+            "{}/api/service-monitors/{}/records",
+            base_url, monitor_id
+        ))
         .send()
         .await
         .expect("GET /api/service-monitors/{id}/records failed");
 
     assert_eq!(records_resp.status(), 200);
     let records_body: serde_json::Value = records_resp.json().await.unwrap();
-    let records = records_body["data"].as_array().expect("data should be array");
+    let records = records_body["data"]
+        .as_array()
+        .expect("data should be array");
     assert_eq!(records.len(), 1, "should have 1 record after one check");
     assert_eq!(records[0]["success"], true);
 
@@ -1816,7 +2183,9 @@ async fn test_service_monitor_crud_and_check() {
     let list_after_body: serde_json::Value = list_after.json().await.unwrap();
     let monitors_after = list_after_body["data"].as_array().unwrap();
     assert!(
-        !monitors_after.iter().any(|m| m["id"].as_str() == Some(monitor_id)),
+        !monitors_after
+            .iter()
+            .any(|m| m["id"].as_str() == Some(monitor_id)),
         "Deleted monitor should not appear in list"
     );
 }
@@ -1834,10 +2203,19 @@ async fn test_traffic_overview_api() {
         .await
         .expect("GET /api/traffic/overview failed");
 
-    assert_eq!(overview_resp.status(), 200, "traffic overview should return 200");
+    assert_eq!(
+        overview_resp.status(),
+        200,
+        "traffic overview should return 200"
+    );
     let overview_body: serde_json::Value = overview_resp.json().await.unwrap();
-    let overview_data = overview_body["data"].as_array().expect("data should be an array");
-    assert!(overview_data.is_empty(), "overview should be empty when no servers have billing cycles");
+    let overview_data = overview_body["data"]
+        .as_array()
+        .expect("data should be an array");
+    assert!(
+        overview_data.is_empty(),
+        "overview should be empty when no servers have billing cycles"
+    );
 
     // ── Step 2: Register agent and configure billing cycle ──
     let register_resp = client
@@ -1873,7 +2251,11 @@ async fn test_traffic_overview_api() {
     assert_eq!(overview_resp2.status(), 200);
     let overview_body2: serde_json::Value = overview_resp2.json().await.unwrap();
     let overview_data2 = overview_body2["data"].as_array().unwrap();
-    assert_eq!(overview_data2.len(), 1, "overview should include 1 server after billing config");
+    assert_eq!(
+        overview_data2.len(),
+        1,
+        "overview should include 1 server after billing config"
+    );
     assert_eq!(overview_data2[0]["server_id"], server_id);
     assert_eq!(overview_data2[0]["billing_cycle"], "monthly");
     assert!(overview_data2[0]["cycle_in"].is_number());
@@ -1890,7 +2272,10 @@ async fn test_traffic_overview_api() {
 
     assert_eq!(daily_resp.status(), 200);
     let daily_body: serde_json::Value = daily_resp.json().await.unwrap();
-    assert!(daily_body["data"].is_array(), "daily overview data should be an array");
+    assert!(
+        daily_body["data"].is_array(),
+        "daily overview data should be an array"
+    );
 }
 
 #[tokio::test]
@@ -1952,7 +2337,11 @@ async fn test_dashboard_crud_cycle() {
         .await
         .expect("POST /api/dashboards failed");
 
-    assert_eq!(create_resp.status(), 200, "dashboard creation should succeed");
+    assert_eq!(
+        create_resp.status(),
+        200,
+        "dashboard creation should succeed"
+    );
     let create_body: serde_json::Value = create_resp.json().await.unwrap();
     let dash_id = create_body["data"]["id"]
         .as_str()
@@ -1972,8 +2361,13 @@ async fn test_dashboard_crud_cycle() {
     let get_body: serde_json::Value = get_resp.json().await.unwrap();
     assert_eq!(get_body["data"]["id"], dash_id);
     assert_eq!(get_body["data"]["name"], "Test Dashboard");
-    let widgets = get_body["data"]["widgets"].as_array().expect("widgets should be array");
-    assert!(widgets.is_empty(), "Newly created dashboard should have 0 widgets");
+    let widgets = get_body["data"]["widgets"]
+        .as_array()
+        .expect("widgets should be array");
+    assert!(
+        widgets.is_empty(),
+        "Newly created dashboard should have 0 widgets"
+    );
 
     // ── Step 3: PUT /api/dashboards/{id} — add 3 widgets ──
     let update1_resp = client
@@ -2005,7 +2399,11 @@ async fn test_dashboard_crud_cycle() {
     assert_eq!(update1_resp.status(), 200, "adding widgets should succeed");
     let update1_body: serde_json::Value = update1_resp.json().await.unwrap();
     let widgets1 = update1_body["data"]["widgets"].as_array().unwrap();
-    assert_eq!(widgets1.len(), 3, "should have 3 widgets after first update");
+    assert_eq!(
+        widgets1.len(),
+        3,
+        "should have 3 widgets after first update"
+    );
 
     // Collect widget ids for the diff test
     let widget_id_0 = widgets1[0]["id"].as_str().unwrap().to_string();
@@ -2047,10 +2445,18 @@ async fn test_dashboard_crud_cycle() {
         .await
         .expect("PUT /api/dashboards/{id} (widget diff) failed");
 
-    assert_eq!(update2_resp.status(), 200, "widget diff update should succeed");
+    assert_eq!(
+        update2_resp.status(),
+        200,
+        "widget diff update should succeed"
+    );
     let update2_body: serde_json::Value = update2_resp.json().await.unwrap();
     let widgets2 = update2_body["data"]["widgets"].as_array().unwrap();
-    assert_eq!(widgets2.len(), 4, "should have 4 widgets after diff update (kept 2 + added 2, deleted 1)");
+    assert_eq!(
+        widgets2.len(),
+        4,
+        "should have 4 widgets after diff update (kept 2 + added 2, deleted 1)"
+    );
 
     // ── Step 5: GET /api/dashboards/{id} — verify the final state ──
     let get_final = client
@@ -2065,21 +2471,37 @@ async fn test_dashboard_crud_cycle() {
     assert_eq!(final_widgets.len(), 4);
 
     // The updated widget should have the new title and grid_w
-    let updated_gauge = final_widgets.iter().find(|w| w["id"] == widget_id_1).unwrap();
+    let updated_gauge = final_widgets
+        .iter()
+        .find(|w| w["id"] == widget_id_1)
+        .unwrap();
     assert_eq!(updated_gauge["title"], "CPU Gauge Updated");
     assert_eq!(updated_gauge["grid_w"], 6);
 
     // The kept stat-number widget should still be present
-    assert!(final_widgets.iter().any(|w| w["id"] == widget_id_0.as_str()));
+    assert!(
+        final_widgets
+            .iter()
+            .any(|w| w["id"] == widget_id_0.as_str())
+    );
 
     // The deleted server-cards widget should be gone
     let widget_types: Vec<&str> = final_widgets
         .iter()
         .map(|w| w["widget_type"].as_str().unwrap())
         .collect();
-    assert!(!widget_types.contains(&"server-cards"), "server-cards widget should have been deleted");
-    assert!(widget_types.contains(&"alert-list"), "alert-list widget should be present");
-    assert!(widget_types.contains(&"markdown"), "markdown widget should be present");
+    assert!(
+        !widget_types.contains(&"server-cards"),
+        "server-cards widget should have been deleted"
+    );
+    assert!(
+        widget_types.contains(&"alert-list"),
+        "alert-list widget should be present"
+    );
+    assert!(
+        widget_types.contains(&"markdown"),
+        "markdown widget should be present"
+    );
 
     // ── Step 6: Create a second dashboard, then DELETE first (cannot delete default) ──
     let create2_resp = client
@@ -2100,7 +2522,11 @@ async fn test_dashboard_crud_cycle() {
         .await
         .expect("DELETE /api/dashboards (default) failed");
 
-    assert_eq!(del_default_resp.status(), 400, "Deleting default dashboard should fail with 400");
+    assert_eq!(
+        del_default_resp.status(),
+        400,
+        "Deleting default dashboard should fail with 400"
+    );
 
     // Delete the non-default second dashboard — should succeed
     let del_resp = client
@@ -2109,7 +2535,11 @@ async fn test_dashboard_crud_cycle() {
         .await
         .expect("DELETE /api/dashboards (non-default) failed");
 
-    assert_eq!(del_resp.status(), 200, "Deleting non-default dashboard should succeed");
+    assert_eq!(
+        del_resp.status(),
+        200,
+        "Deleting non-default dashboard should succeed"
+    );
 
     // Verify it's gone from the list
     let list_resp = client
@@ -2123,7 +2553,9 @@ async fn test_dashboard_crud_cycle() {
     let dashboards = list_body["data"].as_array().unwrap();
     assert_eq!(dashboards.len(), 1, "Should have 1 dashboard after delete");
     assert!(
-        !dashboards.iter().any(|d| d["id"].as_str() == Some(dash2_id)),
+        !dashboards
+            .iter()
+            .any(|d| d["id"].as_str() == Some(dash2_id)),
         "Deleted dashboard should not appear in list"
     );
 }
@@ -2147,8 +2579,14 @@ async fn test_dashboard_default_auto_creates() {
     assert_eq!(body1["data"]["is_default"], true);
     assert_eq!(body1["data"]["name"], "Dashboard");
 
-    let widgets1 = body1["data"]["widgets"].as_array().expect("widgets should be array");
-    assert_eq!(widgets1.len(), 6, "Default dashboard should have 6 preset widgets");
+    let widgets1 = body1["data"]["widgets"]
+        .as_array()
+        .expect("widgets should be array");
+    assert_eq!(
+        widgets1.len(),
+        6,
+        "Default dashboard should have 6 preset widgets"
+    );
 
     // Verify widget types match expected presets
     let types: Vec<&str> = widgets1
@@ -2208,7 +2646,11 @@ async fn test_dashboard_rbac_member_cannot_write() {
         .await
         .expect("POST /api/users failed");
 
-    assert_eq!(create_user_resp.status(), 200, "Admin should be able to create member");
+    assert_eq!(
+        create_user_resp.status(),
+        200,
+        "Admin should be able to create member"
+    );
 
     // Create a dashboard as admin to use for PUT/DELETE tests
     let dash_resp = admin_client
@@ -2243,7 +2685,11 @@ async fn test_dashboard_rbac_member_cannot_write() {
         .await
         .expect("GET /api/dashboards/{id} as member failed");
 
-    assert_eq!(get_resp.status(), 200, "Member should be able to read dashboards");
+    assert_eq!(
+        get_resp.status(),
+        200,
+        "Member should be able to read dashboards"
+    );
 
     // ── Member cannot POST /api/dashboards ──
     let post_resp = member_client
@@ -2308,7 +2754,9 @@ async fn test_alert_events_endpoint() {
 
     assert_eq!(events_resp.status(), 200, "alert-events should return 200");
     let events_body: serde_json::Value = events_resp.json().await.unwrap();
-    let events = events_body["data"].as_array().expect("data should be array");
+    let events = events_body["data"]
+        .as_array()
+        .expect("data should be array");
     assert!(events.is_empty(), "alert events should be empty initially");
 
     // ── Step 2: GET /api/alert-events without limit — should use default limit ──
@@ -2318,9 +2766,16 @@ async fn test_alert_events_endpoint() {
         .await
         .expect("GET /api/alert-events (no limit) failed");
 
-    assert_eq!(events_default_resp.status(), 200, "alert-events with default limit should return 200");
+    assert_eq!(
+        events_default_resp.status(),
+        200,
+        "alert-events with default limit should return 200"
+    );
     let events_default_body: serde_json::Value = events_default_resp.json().await.unwrap();
-    assert!(events_default_body["data"].is_array(), "data should be an array");
+    assert!(
+        events_default_body["data"].is_array(),
+        "data should be an array"
+    );
 
     // ── Step 3: Create alert infrastructure to seed events ──
     // Create notification channel
@@ -2406,7 +2861,11 @@ async fn test_uptime_daily_requires_auth() {
         .await
         .expect("GET /api/servers/{id}/uptime-daily failed");
 
-    assert_eq!(resp.status(), 401, "Unauthenticated request should return 401");
+    assert_eq!(
+        resp.status(),
+        401,
+        "Unauthenticated request should return 401"
+    );
 }
 
 #[tokio::test]
@@ -2475,7 +2934,11 @@ async fn test_uptime_daily_returns_data() {
         .send()
         .await
         .expect("GET uptime-daily (default) failed");
-    assert_eq!(resp_default.status(), 200, "Default request should return 200");
+    assert_eq!(
+        resp_default.status(),
+        200,
+        "Default request should return 200"
+    );
 
     let resp_body: serde_json::Value = resp_default.json().await.unwrap();
     let entries = resp_body["data"].as_array().expect("data should be array");
@@ -2524,8 +2987,14 @@ async fn test_geoip_status_endpoint() {
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["data"]["installed"], false);
-    assert!(body["data"]["source"].is_null(), "source should be absent when not installed");
-    assert!(body["data"]["file_size"].is_null(), "file_size should be absent when not installed");
+    assert!(
+        body["data"]["source"].is_null(),
+        "source should be absent when not installed"
+    );
+    assert!(
+        body["data"]["file_size"].is_null(),
+        "file_size should be absent when not installed"
+    );
 }
 
 #[tokio::test]
@@ -2547,7 +3016,11 @@ async fn test_geoip_status_accessible_by_member() {
         .await
         .expect("POST /api/users failed");
 
-    assert_eq!(create_resp.status(), 200, "Admin should be able to create member");
+    assert_eq!(
+        create_resp.status(),
+        200,
+        "Admin should be able to create member"
+    );
 
     // Login as the member user in a separate client
     let member_client = http_client();
@@ -2570,7 +3043,11 @@ async fn test_geoip_status_accessible_by_member() {
         .await
         .expect("GET /api/geoip/status as member failed");
 
-    assert_eq!(resp.status(), 200, "Member should be able to read geoip status");
+    assert_eq!(
+        resp.status(),
+        200,
+        "Member should be able to read geoip status"
+    );
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["data"]["installed"], false);
 }
@@ -2594,7 +3071,11 @@ async fn test_geoip_download_requires_admin() {
         .await
         .expect("POST /api/users failed");
 
-    assert_eq!(create_resp.status(), 200, "Admin should be able to create member");
+    assert_eq!(
+        create_resp.status(),
+        200,
+        "Admin should be able to create member"
+    );
 
     // Login as the member user in a separate client
     let member_client = http_client();
@@ -2637,19 +3118,27 @@ async fn test_security_headers_present() {
 
     assert_eq!(resp.status(), 200);
     assert_eq!(
-        resp.headers().get("x-frame-options").map(|v| v.to_str().unwrap()),
+        resp.headers()
+            .get("x-frame-options")
+            .map(|v| v.to_str().unwrap()),
         Some("DENY"),
     );
     assert_eq!(
-        resp.headers().get("x-content-type-options").map(|v| v.to_str().unwrap()),
+        resp.headers()
+            .get("x-content-type-options")
+            .map(|v| v.to_str().unwrap()),
         Some("nosniff"),
     );
     assert_eq!(
-        resp.headers().get("referrer-policy").map(|v| v.to_str().unwrap()),
+        resp.headers()
+            .get("referrer-policy")
+            .map(|v| v.to_str().unwrap()),
         Some("strict-origin-when-cross-origin"),
     );
     assert_eq!(
-        resp.headers().get("x-permitted-cross-domain-policies").map(|v| v.to_str().unwrap()),
+        resp.headers()
+            .get("x-permitted-cross-domain-policies")
+            .map(|v| v.to_str().unwrap()),
         Some("none"),
     );
 }
