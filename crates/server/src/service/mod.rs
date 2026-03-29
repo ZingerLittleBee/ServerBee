@@ -8,6 +8,7 @@ pub mod docker_viewer;
 pub mod file_transfer;
 pub mod auth;
 pub mod config;
+pub mod mobile_auth;
 pub mod geoip;
 pub mod incident;
 pub mod maintenance;
