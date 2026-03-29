@@ -32,6 +32,8 @@ pub struct AppConfig {
     pub upgrade: UpgradeConfig,
     #[serde(default)]
     pub file: FileConfig,
+    #[serde(default)]
+    pub mobile: MobileConfig,
 }
 
 impl Default for AppConfig {
@@ -49,6 +51,7 @@ impl Default for AppConfig {
             scheduler: SchedulerConfig::default(),
             upgrade: UpgradeConfig::default(),
             file: FileConfig::default(),
+            mobile: MobileConfig::default(),
         }
     }
 }
@@ -295,6 +298,31 @@ impl Default for FileConfig {
             max_upload_size: default_max_upload_size(),
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MobileConfig {
+    #[serde(default = "default_mobile_access_ttl")]
+    pub access_ttl: i64,
+    #[serde(default = "default_mobile_refresh_ttl")]
+    pub refresh_ttl: i64,
+}
+
+impl Default for MobileConfig {
+    fn default() -> Self {
+        Self {
+            access_ttl: default_mobile_access_ttl(),
+            refresh_ttl: default_mobile_refresh_ttl(),
+        }
+    }
+}
+
+fn default_mobile_access_ttl() -> i64 {
+    900
+}
+
+fn default_mobile_refresh_ttl() -> i64 {
+    2_592_000
 }
 
 fn default_utc() -> String {
