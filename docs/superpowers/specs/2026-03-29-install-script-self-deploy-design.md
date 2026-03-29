@@ -16,28 +16,37 @@ During installation, the script installs itself to `/usr/local/bin/serverbee` so
 
 ### 1. Self-Install Function
 
-Add an `install_cli()` function that installs the script to `/usr/local/bin/serverbee`. The source depends on context:
+Add an `install_cli()` function that installs the script to `/usr/local/bin/serverbee`. The source depends on three contexts:
 
-- **Local execution** (`bash deploy/install.sh`): `$0` is a readable file — copy it directly.
-- **Pipe execution** (`curl | bash`): `$0` is `bash`, not a file — download from GitHub, pinned to the **same release tag** used for binaries (not `main`).
+- **Repo-local execution** (`bash deploy/install.sh`): `$0` points to a file inside the repo's `deploy/` directory — copy it directly.
+- **Installed CLI execution** (`sudo serverbee upgrade`): `$0` is `/usr/local/bin/serverbee` itself — copying it would be a no-op. Must download from GitHub.
+- **Pipe execution** (`curl | bash`): `$0` is `bash`, not a file — must download from GitHub.
+
+Both download cases pin to the **same release tag** used for binaries (not `main`).
 
 ```bash
 install_cli() {
     local target="/usr/local/bin/serverbee"
+    local version="${1:-main}"
 
     # Entire body runs in a subshell so any failure (cp, curl, chmod, mv)
     # is caught by the || guard, keeping set -e from killing the caller.
     if (
+        # Create temp file on the SAME filesystem as target for atomic mv
+        local target_dir
+        target_dir=$(dirname "$target")
         local tmp
-        tmp=$(mktemp)
+        tmp=$(mktemp "${target_dir}/.serverbee-cli.XXXXXX")
         trap 'rm -f "$tmp"' EXIT
 
-        if [ -f "$0" ]; then
-            # Local execution — copy the running script
-            cp "$0" "$tmp"
+        local self_path
+        self_path=$(realpath "$0" 2>/dev/null || echo "")
+
+        if [ -n "$self_path" ] && [ -f "$self_path" ] && [ "$self_path" != "$(realpath "$target" 2>/dev/null)" ]; then
+            # Repo-local execution — $0 is a real file AND not the installed CLI
+            cp "$self_path" "$tmp"
         else
-            # Pipe execution — download from same release tag
-            local version="${1:-main}"
+            # Installed CLI or pipe execution — download from release tag
             local url="https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
             curl -fsSL -o "$tmp" "$url"
         fi
@@ -56,8 +65,9 @@ install_cli() {
 
 Key properties:
 - **Truly non-fatal**: the entire body runs in a subshell guarded by `if (...); then ... else ... fi`. Under `set -euo pipefail`, any step failure (`cp`, `curl`, `chmod`, `mv`) exits the subshell, hits the `else` branch, and warns — the caller continues normally.
-- **Atomic write**: operates on a temp file with an EXIT trap for cleanup; `mv` only on success — never clobbers a working CLI.
-- **Version-pinned**: pipe execution uses the same release tag as the binaries, avoiding version skew between CLI and components.
+- **Atomic write**: temp file created in the target directory (`/usr/local/bin/.serverbee-cli.XXXXXX`) — same filesystem, so `mv` is a guaranteed atomic rename. EXIT trap cleans up on failure.
+- **Version-pinned**: download cases use the same release tag as the binaries, avoiding version skew between CLI and components.
+- **Self-update safe**: `realpath` comparison prevents the installed CLI from copying itself onto itself; it downloads the pinned version instead.
 
 ### 2. Call Sites
 
