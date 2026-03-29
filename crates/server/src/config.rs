@@ -90,6 +90,9 @@ pub struct AuthConfig {
     /// Defaults to true. Set to false only for development without HTTPS.
     #[serde(default = "default_true")]
     pub secure_cookie: bool,
+    /// Maximum number of servers allowed (0 = no limit, best-effort soft cap).
+    #[serde(default)]
+    pub max_servers: u32,
 }
 
 impl Default for AuthConfig {
@@ -98,6 +101,7 @@ impl Default for AuthConfig {
             session_ttl: default_session_ttl(),
             auto_discovery_key: String::new(),
             secure_cookie: true,
+            max_servers: 0,
         }
     }
 }
