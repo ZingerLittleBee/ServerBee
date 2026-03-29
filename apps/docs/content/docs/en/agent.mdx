@@ -50,6 +50,10 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 
 If you cloned the repository locally, run the same commands with `sudo bash deploy/serverbee.sh ...` instead.
 
+<Callout type="info">
+Re-running `install agent` adopts an existing `/usr/local/bin/serverbee-agent` and keeps the current binary in place. When you need to replace an already-installed binary, use `upgrade agent -y` or copy the new binary over `/usr/local/bin/serverbee-agent` manually before restarting the service.
+</Callout>
+
 ### Build from Source
 
 ```bash
