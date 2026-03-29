@@ -527,19 +527,30 @@ iOS 端 `AlertDetailViewModel` 的请求路径需从 `/api/mobile/alerts/{alert_
 
 ### 5.5 修正：WebSocket 集成与 Token 刷新
 
-当前 `WebSocketClient` 存在两个问题：
+当前 `WebSocketClient` 存在三个问题：
 
-**问题 1：未集成到 App 中。** `ContentView` 创建了 `APIClient` 但没有创建或连接 `WebSocketClient`，`ServersViewModel.handleWSMessage` 从未被调用。需要：
-- `ContentView` 中创建 `WebSocketClient` 实例
-- 认证成功后调用 `connect(serverUrl:accessToken:)`
-- 将 `onMessage` 回调连接到 `ServersViewModel.handleWSMessage` 和 `AlertsViewModel.handleWSAlertEvent`
-- logout 时调用 `close()`
+**问题 1：未集成到 App 中。** `ContentView` 创建了 `APIClient` 但没有创建或连接 `WebSocketClient`，`ServersViewModel.handleWSMessage` 从未被调用。
 
-**问题 2：重连使用过期 token。** `WebSocketClient.establishConnection()` 使用缓存的 `currentAccessToken` 重连。服务端会在 15 分钟后关闭 mobile WS 连接，重连时旧 token 已过期，导致 401。需要：
+修复方案——将 `ServersViewModel` 从 `ServersListView` 的 local `@State` 提升到 `ContentView` 级别，通过 `@Environment` 注入：
+- `ContentView` 创建 `@State private var serversViewModel = ServersViewModel()`
+- `ContentView` 创建 `@State private var wsClient = WebSocketClient()`
+- 认证成功后调用 `wsClient.connect(...)`，`onMessage` 回调中分发给 `serversViewModel.handleWSMessage`
+- `ServersListView` 改为 `@Environment(ServersViewModel.self)` 接收，移除 local `@State`
+- logout 时调用 `wsClient.close()`
+
+**问题 2：重连使用过期 token。** `WebSocketClient.establishConnection()` 使用缓存的 `currentAccessToken` 重连。服务端会在 15 分钟后关闭 mobile WS 连接，重连时旧 token 已过期，导致 401。
+
+修复方案：
 - `WebSocketClient` 增加一个 `tokenProvider: @Sendable () async -> String?` 闭包属性
-- 重连前通过 `tokenProvider` 从 `AuthManager` 获取当前 access token
-- 如果 token 已过期，先触发 refresh（通过 APIClient），再用新 token 重连
-- 或者更简单：重连失败（401）时发布通知，由上层触发 refresh 后重新 `connect()`
+- `scheduleReconnect()` 中在调用 `establishConnection()` 前，通过 `tokenProvider` 获取最新 access token
+- `ContentView` 设置 `tokenProvider` 闭包，内部调用 `AuthManager.getAccessToken()`（如过期由 APIClient 的 refresh 逻辑处理）
+
+**问题 3：告警 WS 事件不存在。** iOS 端 `BrowserMessage.alertEvent` 和 `AlertsViewModel.handleWSAlertEvent` 假设服务端会广播告警事件，但 Rust 端 `BrowserMessage` 枚举没有 `alert_event` 变体，服务端也没有在告警触发时广播。
+
+MVP 决策：**不通过 WS 做告警实时刷新**。理由：告警已有 APNs 推送通知，用户收到推送打开 App 时会触发 pull-to-refresh 拉取最新告警。实现 WS 告警广播需要改动 Rust common crate + 服务端告警评估器 + 前后端协议同步，MVP 不值得。
+- iOS 端 `BrowserMessage.alertEvent` case 保留（解码时 unknown type 已被忽略），不删除
+- `ContentView` 的 `onMessage` 回调不连接 `AlertsViewModel`
+- 告警列表依赖 pull-to-refresh + APNs 推送唤醒
 
 ### 5.6 无需改动的模块
 
@@ -616,6 +627,7 @@ iOS 端 `AlertDetailViewModel` 的请求路径需从 `/api/mobile/alerts/{alert_
 - `apps/ios/ServerBee/ContentView.swift` — deep link 导航
 - `apps/ios/ServerBee/Services/APIClient.swift` — 统一解包 ApiResponse
 - `apps/ios/ServerBee/Services/WebSocketClient.swift` — 增加 tokenProvider 重连刷新机制
+- `apps/ios/ServerBee/Views/Servers/ServersListView.swift` — ServersViewModel 改为 @Environment 注入（移除 local @State）
 - `apps/ios/ServerBee/ViewModels/ServersViewModel.swift` — 去掉 ApiResponse 手动解包
 - `apps/ios/ServerBee/ViewModels/ServerDetailViewModel.swift` — 同上
 - `apps/ios/ServerBee/ViewModels/AlertsViewModel.swift` — 同上
