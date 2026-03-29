@@ -43,7 +43,9 @@ struct ContentView: View {
 
             // Connect WebSocket
             wsClient.onMessage = { [weak serversViewModel] message in
-                serversViewModel?.handleWSMessage(message)
+                Task { @MainActor in
+                    serversViewModel?.handleWSMessage(message)
+                }
             }
             if let serverUrl = authManager.serverUrl,
                let token = authManager.getAccessToken() {
