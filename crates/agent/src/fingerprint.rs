@@ -1,6 +1,6 @@
 use sha2::{Digest, Sha256};
 
-/// Generate a machine fingerprint: SHA-256 of "{hostname}:{machine_id}".
+/// Generate a machine fingerprint from stable host identity.
 /// Returns empty string if machine_id is unavailable (caller should skip fingerprint).
 pub fn generate() -> String {
     let machine_id = match read_machine_id() {
@@ -11,12 +11,11 @@ pub fn generate() -> String {
         }
     };
 
-    let hostname = gethostname::gethostname()
-        .to_string_lossy()
-        .to_string();
+    fingerprint_from_machine_id(&machine_id)
+}
 
-    let input = format!("{hostname}:{machine_id}");
-    let hash = Sha256::digest(input.as_bytes());
+fn fingerprint_from_machine_id(machine_id: &str) -> String {
+    let hash = Sha256::digest(machine_id.as_bytes());
     hex::encode(hash)
 }
 
@@ -73,6 +72,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_fingerprint_uses_machine_id_only() {
+        let machine_id = "test-machine-id-1234";
+        let expected = hex::encode(Sha256::digest(machine_id.as_bytes()));
+        assert_eq!(fingerprint_from_machine_id(machine_id), expected);
+    }
+
+    #[test]
     fn test_generate_returns_64_hex_chars_or_empty() {
         let fp = generate();
         assert!(
@@ -83,10 +89,9 @@ mod tests {
 
     #[test]
     fn test_sha256_deterministic() {
-        // Same input always produces the same hash
-        let input = "testhost:test-machine-id-1234";
-        let hash1 = hex::encode(Sha256::digest(input.as_bytes()));
-        let hash2 = hex::encode(Sha256::digest(input.as_bytes()));
+        let machine_id = "test-machine-id-1234";
+        let hash1 = fingerprint_from_machine_id(machine_id);
+        let hash2 = fingerprint_from_machine_id(machine_id);
         assert_eq!(hash1, hash2);
         assert_eq!(hash1.len(), 64);
     }

@@ -72,6 +72,7 @@ docker run -d \
   --pid=host \
   -v /proc:/host/proc:ro \
   -v /sys:/host/sys:ro \
+  -v /etc/machine-id:/etc/machine-id:ro \
   -v /etc/serverbee:/etc/serverbee \
   --restart unless-stopped \
   ghcr.io/zingerlittlebee/serverbee-agent:latest
@@ -79,6 +80,10 @@ docker run -d \
 
 <Callout type="warn">
 The `/etc/serverbee` volume mount is mandatory. Agent writes its registration token to `agent.toml` after first connection. Without this volume, container recreation causes duplicate server entries.
+</Callout>
+
+<Callout type="warn">
+Mount `/etc/machine-id` from the host to keep the agent fingerprint stable across container recreation.
 </Callout>
 
 **Limitations of Docker deployment:**

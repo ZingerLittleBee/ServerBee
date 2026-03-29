@@ -8,7 +8,9 @@ use axum::{Json, Router};
 
 use crate::router::utils::extract_client_ip;
 use chrono::{DateTime, Utc};
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter, TransactionTrait,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::entity::server;
@@ -26,6 +28,8 @@ use crate::service::server::{ServerService, UpdateServerInput};
 use crate::state::AppState;
 use serverbee_common::protocol::{BrowserMessage, ServerMessage};
 use serverbee_common::types::NetworkProbeTarget;
+
+const DEFAULT_SERVER_NAME: &str = "New Server";
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct BatchDeleteRequest {
@@ -503,12 +507,9 @@ async fn trigger_upgrade(
     }
 
     // Get agent platform info
-    let (os_raw, arch_raw) = state
-        .agent_manager
-        .get_agent_platform(&id)
-        .ok_or_else(|| {
-            AppError::NotFound("Agent not connected or platform info unavailable".into())
-        })?;
+    let (os_raw, arch_raw) = state.agent_manager.get_agent_platform(&id).ok_or_else(|| {
+        AppError::NotFound("Agent not connected or platform info unavailable".into())
+    })?;
 
     let os = map_os(&os_raw)
         .ok_or_else(|| AppError::BadRequest(format!("Unsupported agent OS: {os_raw}")))?;
@@ -827,18 +828,18 @@ async fn cleanup_orphaned_servers(
 ) -> Result<Json<ApiResponse<CleanupResponse>>, AppError> {
     use crate::entity::*;
 
-    let orphans = server::Entity::find()
+    let txn = state.db.begin().await?;
+
+    let candidates = server::Entity::find()
         .filter(server::Column::Name.eq("New Server"))
         .filter(server::Column::Os.is_null())
-        .all(&state.db)
+        .all(&txn)
         .await?;
 
-    let orphan_ids: Vec<String> = orphans.iter().map(|s| s.id.clone()).collect();
+    let orphan_ids = collect_orphan_server_ids(&candidates, |id| state.agent_manager.is_online(id));
     if orphan_ids.is_empty() {
         return ok(CleanupResponse { deleted_count: 0 });
     }
-
-    let txn = state.db.begin().await?;
 
     // Tables with server_id FK — delete rows
     record::Entity::delete_many()
@@ -1022,6 +1023,19 @@ async fn cleanup_json_array_tables(
     Ok(())
 }
 
+fn collect_orphan_server_ids<F>(servers: &[server::Model], is_online: F) -> Vec<String>
+where
+    F: Fn(&str) -> bool,
+{
+    servers
+        .iter()
+        .filter(|server| {
+            server.name == DEFAULT_SERVER_NAME && server.os.is_none() && !is_online(&server.id)
+        })
+        .map(|server| server.id.clone())
+        .collect()
+}
+
 fn remove_ids_from_json(json: &str, orphan_ids: &[String]) -> Option<String> {
     let ids: Vec<String> = serde_json::from_str(json).unwrap_or_default();
     let filtered: Vec<&String> = ids.iter().filter(|id| !orphan_ids.contains(id)).collect();
@@ -1033,7 +1047,53 @@ fn remove_ids_from_json(json: &str, orphan_ids: &[String]) -> Option<String> {
 
 #[cfg(test)]
 mod cleanup_tests {
-    use super::remove_ids_from_json;
+    use super::{DEFAULT_SERVER_NAME, collect_orphan_server_ids, remove_ids_from_json};
+    use crate::entity::server;
+    use chrono::Utc;
+    use std::collections::HashSet;
+
+    fn make_server(id: &str, name: &str, os: Option<&str>) -> server::Model {
+        let now = Utc::now();
+        server::Model {
+            id: id.to_string(),
+            token_hash: "hash".to_string(),
+            token_prefix: "prefix".to_string(),
+            name: name.to_string(),
+            cpu_name: None,
+            cpu_cores: None,
+            cpu_arch: None,
+            os: os.map(str::to_string),
+            kernel_version: None,
+            mem_total: None,
+            swap_total: None,
+            disk_total: None,
+            ipv4: None,
+            ipv6: None,
+            region: None,
+            country_code: None,
+            virtualization: None,
+            agent_version: None,
+            group_id: None,
+            weight: 0,
+            hidden: false,
+            remark: None,
+            public_remark: None,
+            price: None,
+            billing_cycle: None,
+            currency: None,
+            expired_at: None,
+            traffic_limit: None,
+            traffic_limit_type: None,
+            billing_start_day: None,
+            capabilities: 56,
+            protocol_version: 1,
+            features: "[]".to_string(),
+            last_remote_addr: None,
+            fingerprint: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
 
     #[test]
     fn test_no_match_returns_none() {
@@ -1066,6 +1126,21 @@ mod cleanup_tests {
     fn test_multiple_orphans() {
         let result = remove_ids_from_json(r#"["a","b","c","d"]"#, &["b".into(), "d".into()]);
         assert_eq!(result, Some(r#"["a","c"]"#.to_string()));
+    }
+
+    #[test]
+    fn test_collect_orphan_server_ids_skips_online_servers() {
+        let servers = vec![
+            make_server("offline-orphan", DEFAULT_SERVER_NAME, None),
+            make_server("online-orphan", DEFAULT_SERVER_NAME, None),
+            make_server("initialized", DEFAULT_SERVER_NAME, Some("Linux")),
+            make_server("renamed", "Production", None),
+        ];
+        let online_ids = HashSet::from([String::from("online-orphan")]);
+
+        let orphans = collect_orphan_server_ids(&servers, |id| online_ids.contains(id));
+
+        assert_eq!(orphans, vec![String::from("offline-orphan")]);
     }
 }
 
