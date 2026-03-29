@@ -2,8 +2,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use chrono::Utc;
-use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
+use dashmap::mapref::entry::Entry;
 use sea_orm::prelude::Expr;
 use sea_orm::*;
 use tokio::task::JoinSet;
@@ -11,16 +11,11 @@ use tokio_util::sync::CancellationToken;
 
 use crate::entity::{task, task_result};
 use crate::state::AppState;
-use serverbee_common::constants::{has_capability, CAP_EXEC};
+use serverbee_common::constants::{CAP_EXEC, has_capability};
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
 
 /// Build correlation ID: {task_id}:{run_id}:{server_id}:{attempt}
-pub fn build_correlation_id(
-    task_id: &str,
-    run_id: &str,
-    server_id: &str,
-    attempt: i32,
-) -> String {
+pub fn build_correlation_id(task_id: &str, run_id: &str, server_id: &str, attempt: i32) -> String {
     format!("{task_id}:{run_id}:{server_id}:{attempt}")
 }
 
@@ -344,7 +339,14 @@ async fn write_synthetic_result(
     output: &str,
 ) -> Result<(), DbErr> {
     write_result(
-        db, task_id, run_id, server_id, 1, Utc::now(), exit_code, output,
+        db,
+        task_id,
+        run_id,
+        server_id,
+        1,
+        Utc::now(),
+        exit_code,
+        output,
     )
     .await
 }

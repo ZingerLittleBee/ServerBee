@@ -1,11 +1,11 @@
-use std::sync::LazyLock;
 use serde::Deserialize;
+use std::sync::LazyLock;
 
 static TOML_CONTENT: &str = include_str!("targets.toml");
 
 static PRESETS: LazyLock<Vec<FlatPresetTarget>> = LazyLock::new(|| {
-    let file: PresetsFile = toml::from_str(TOML_CONTENT)
-        .expect("Failed to parse presets/targets.toml");
+    let file: PresetsFile =
+        toml::from_str(TOML_CONTENT).expect("Failed to parse presets/targets.toml");
 
     let mut targets = Vec::new();
     let mut seen_ids = std::collections::HashSet::new();
@@ -14,16 +14,24 @@ static PRESETS: LazyLock<Vec<FlatPresetTarget>> = LazyLock::new(|| {
     for group in &file.presets {
         for target in &group.targets {
             assert!(!target.id.is_empty(), "Preset target ID must not be empty");
-            assert!(!target.name.is_empty(), "Preset target name must not be empty");
-            assert!(!target.target.is_empty(), "Preset target address must not be empty");
+            assert!(
+                !target.name.is_empty(),
+                "Preset target name must not be empty"
+            );
+            assert!(
+                !target.target.is_empty(),
+                "Preset target address must not be empty"
+            );
             assert!(
                 valid_types.contains(&target.probe_type.as_str()),
                 "Invalid probe_type '{}' for preset target '{}'",
-                target.probe_type, target.id
+                target.probe_type,
+                target.id
             );
             assert!(
                 seen_ids.insert(target.id.clone()),
-                "Duplicate preset target ID: '{}'", target.id
+                "Duplicate preset target ID: '{}'",
+                target.id
             );
 
             targets.push(FlatPresetTarget {
@@ -143,7 +151,10 @@ mod tests {
     #[test]
     fn test_group_metadata_propagated() {
         let targets = PresetTargets::load();
-        let telecom: Vec<_> = targets.iter().filter(|t| t.group_id == "china-telecom").collect();
+        let telecom: Vec<_> = targets
+            .iter()
+            .filter(|t| t.group_id == "china-telecom")
+            .collect();
         assert_eq!(telecom.len(), 31);
         assert!(telecom.iter().all(|t| t.group_name == "中国电信"));
     }
@@ -152,12 +163,17 @@ mod tests {
     fn test_probe_types_valid() {
         let targets = PresetTargets::load();
         let valid_types = ["tcp", "icmp", "http"];
-        assert!(targets.iter().all(|t| valid_types.contains(&t.probe_type.as_str())));
+        assert!(
+            targets
+                .iter()
+                .all(|t| valid_types.contains(&t.probe_type.as_str()))
+        );
     }
 
     #[test]
     fn test_international_targets() {
-        let intl: Vec<_> = PresetTargets::load().iter()
+        let intl: Vec<_> = PresetTargets::load()
+            .iter()
             .filter(|t| t.group_id == "international")
             .collect();
         assert_eq!(intl.len(), 3);

@@ -131,7 +131,11 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(IncidentUpdate::IncidentId).string().not_null())
+                    .col(
+                        ColumnDef::new(IncidentUpdate::IncidentId)
+                            .string()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(IncidentUpdate::Status).string().not_null())
                     .col(ColumnDef::new(IncidentUpdate::Message).text().not_null())
                     .col(
@@ -229,9 +233,21 @@ impl MigrationTrait for Migration {
                     )
                     .col(ColumnDef::new(UptimeDaily::ServerId).string().not_null())
                     .col(ColumnDef::new(UptimeDaily::Date).date().not_null())
-                    .col(ColumnDef::new(UptimeDaily::TotalMinutes).integer().not_null())
-                    .col(ColumnDef::new(UptimeDaily::OnlineMinutes).integer().not_null())
-                    .col(ColumnDef::new(UptimeDaily::DowntimeIncidents).integer().not_null())
+                    .col(
+                        ColumnDef::new(UptimeDaily::TotalMinutes)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(UptimeDaily::OnlineMinutes)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(UptimeDaily::DowntimeIncidents)
+                            .integer()
+                            .not_null(),
+                    )
                     .to_owned(),
             )
             .await?;

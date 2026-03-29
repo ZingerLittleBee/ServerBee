@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::entity::server;
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::router::utils::extract_client_ip;
 use crate::service::auth::AuthService;
 use crate::service::config::ConfigService;
@@ -80,9 +80,7 @@ async fn register(
 
     let stored_key = ConfigService::get(&state.db, CONFIG_KEY_AUTO_DISCOVERY)
         .await?
-        .ok_or_else(|| {
-            AppError::BadRequest("Auto-discovery key not configured".to_string())
-        })?;
+        .ok_or_else(|| AppError::BadRequest("Auto-discovery key not configured".to_string()))?;
 
     if stored_key.is_empty() {
         return Err(AppError::BadRequest(
@@ -227,7 +225,9 @@ async fn register(
                     token: plaintext_token,
                 });
             }
-            return Err(AppError::Internal("Fingerprint race recovery failed".to_string()));
+            return Err(AppError::Internal(
+                "Fingerprint race recovery failed".to_string(),
+            ));
         }
         Err(e) => return Err(e.into()),
     }

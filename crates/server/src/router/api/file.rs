@@ -12,13 +12,13 @@ use axum::{Json, Router};
 use crate::router::utils::extract_client_ip;
 use serde::{Deserialize, Serialize};
 
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
 use crate::service::audit::AuditService;
 use crate::service::file_transfer::{TransferDirection, TransferInfo};
 use crate::service::server::ServerService;
 use crate::state::AppState;
-use serverbee_common::constants::{has_capability, CAP_FILE, MAX_FILE_CHUNK_SIZE};
+use serverbee_common::constants::{CAP_FILE, MAX_FILE_CHUNK_SIZE, has_capability};
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
 use serverbee_common::types::FileEntry;
 
@@ -150,10 +150,7 @@ fn agent_error(msg: String) -> AppError {
 
 /// Validate that the server exists, has CAP_FILE capability, and is online.
 /// Returns the server model on success.
-async fn validate_file_access(
-    state: &AppState,
-    server_id: &str,
-) -> Result<(), AppError> {
+async fn validate_file_access(state: &AppState, server_id: &str) -> Result<(), AppError> {
     let server = ServerService::get_server(&state.db, server_id).await?;
     let caps = server.capabilities as u32;
     if !has_capability(caps, CAP_FILE) {
@@ -208,9 +205,7 @@ async fn list_files(
         .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
 
     match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::FileListResult {
-            entries, error, ..
-        })) => {
+        Ok(Ok(AgentMessage::FileListResult { entries, error, .. })) => {
             if let Some(e) = error {
                 return Err(agent_error(e));
             }
@@ -314,9 +309,7 @@ async fn read_file(
         .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
 
     match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::FileReadResult {
-            content, error, ..
-        })) => {
+        Ok(Ok(AgentMessage::FileReadResult { content, error, .. })) => {
             if let Some(e) = error {
                 return Err(agent_error(e));
             }
@@ -468,9 +461,7 @@ async fn write_file(
         .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
 
     let result = match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::FileOpResult {
-            success, error, ..
-        })) => {
+        Ok(Ok(AgentMessage::FileOpResult { success, error, .. })) => {
             if let Some(e) = error {
                 return Err(agent_error(e));
             }
@@ -548,9 +539,7 @@ async fn delete_file(
         .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
 
     let result = match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::FileOpResult {
-            success, error, ..
-        })) => {
+        Ok(Ok(AgentMessage::FileOpResult { success, error, .. })) => {
             if let Some(e) = error {
                 return Err(agent_error(e));
             }
@@ -627,9 +616,7 @@ async fn mkdir(
         .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
 
     let result = match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::FileOpResult {
-            success, error, ..
-        })) => {
+        Ok(Ok(AgentMessage::FileOpResult { success, error, .. })) => {
             if let Some(e) = error {
                 return Err(agent_error(e));
             }
@@ -706,9 +693,7 @@ async fn move_file(
         .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
 
     let result = match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::FileOpResult {
-            success, error, ..
-        })) => {
+        Ok(Ok(AgentMessage::FileOpResult { success, error, .. })) => {
             if let Some(e) = error {
                 return Err(agent_error(e));
             }
@@ -893,9 +878,10 @@ async fn upload_file(
                         AppError::Internal(format!("Failed to write temp file: {e}"))
                     })?;
                 }
-                temp_file.flush().await.map_err(|e| {
-                    AppError::Internal(format!("Failed to flush temp file: {e}"))
-                })?;
+                temp_file
+                    .flush()
+                    .await
+                    .map_err(|e| AppError::Internal(format!("Failed to flush temp file: {e}")))?;
             }
             _ => {}
         }
@@ -919,14 +905,11 @@ async fn upload_file(
         .map_err(AppError::TooManyRequests)?;
 
     // Send FileUploadStart to agent and wait for ack before sending chunks
-    let sender = state
-        .agent_manager
-        .get_sender(&server_id)
-        .ok_or_else(|| {
-            state.file_transfers.remove(&transfer_id);
-            let _ = std::fs::remove_file(&temp_upload);
-            AppError::NotFound("Server offline".into())
-        })?;
+    let sender = state.agent_manager.get_sender(&server_id).ok_or_else(|| {
+        state.file_transfers.remove(&transfer_id);
+        let _ = std::fs::remove_file(&temp_upload);
+        AppError::NotFound("Server offline".into())
+    })?;
 
     // Register pending request for the initial ack
     let init_ack_key = format!("upload-ack-{transfer_id}");
@@ -1030,10 +1013,14 @@ async fn upload_file(
             Ok(Ok(AgentMessage::FileUploadAck {
                 offset: ack_offset, ..
             })) => {
-                state.file_transfers.update_progress(&transfer_id, ack_offset);
+                state
+                    .file_transfers
+                    .update_progress(&transfer_id, ack_offset);
             }
             Ok(Ok(AgentMessage::FileUploadError { error, .. })) => {
-                state.file_transfers.mark_failed(&transfer_id, error.clone());
+                state
+                    .file_transfers
+                    .mark_failed(&transfer_id, error.clone());
                 let _ = tokio::fs::remove_file(&temp_upload).await;
                 return Err(AppError::BadRequest(format!("Upload failed: {error}")));
             }
@@ -1045,16 +1032,16 @@ async fn upload_file(
                     .file_transfers
                     .mark_failed(&transfer_id, "Agent disconnected".into());
                 let _ = tokio::fs::remove_file(&temp_upload).await;
-                return Err(AppError::Internal("Agent disconnected during upload".into()));
+                return Err(AppError::Internal(
+                    "Agent disconnected during upload".into(),
+                ));
             }
             Err(_) => {
                 state
                     .file_transfers
                     .mark_failed(&transfer_id, "Upload timeout".into());
                 let _ = tokio::fs::remove_file(&temp_upload).await;
-                return Err(AppError::RequestTimeout(
-                    "Upload chunk ack timeout".into(),
-                ));
+                return Err(AppError::RequestTimeout("Upload chunk ack timeout".into()));
             }
         }
 
@@ -1083,7 +1070,9 @@ async fn upload_file(
             state.file_transfers.mark_ready(&transfer_id);
         }
         Ok(Ok(AgentMessage::FileUploadError { error, .. })) => {
-            state.file_transfers.mark_failed(&transfer_id, error.clone());
+            state
+                .file_transfers
+                .mark_failed(&transfer_id, error.clone());
             return Err(AppError::BadRequest(format!("Upload failed: {error}")));
         }
         Ok(Ok(_)) => {}

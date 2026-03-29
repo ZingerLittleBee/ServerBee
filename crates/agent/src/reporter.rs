@@ -104,12 +104,12 @@ impl Reporter {
     async fn connect_and_report(&self) -> anyhow::Result<()> {
         use serverbee_common::constants::*;
 
-        let ws_url = format!("{}?token={}", build_ws_url(&self.config)?, self.config.token);
         tracing::info!("Connecting to {}...", build_ws_url(&self.config)?);
 
         let capabilities = Arc::new(AtomicU32::new(u32::MAX));
 
-        let (ws_stream, _response) = connect_async(&ws_url).await?;
+        let request = build_ws_request(&self.config)?;
+        let (ws_stream, _response) = connect_async(request).await?;
         tracing::info!("WebSocket connected");
 
         let (mut write, mut read) = ws_stream.split();
@@ -1096,11 +1096,7 @@ fn is_valid_traceroute_target(target: &str) -> bool {
 }
 
 /// Execute a traceroute command and parse the output into TracerouteHop structures.
-async fn execute_traceroute(
-    request_id: &str,
-    target: &str,
-    max_hops: u8,
-) -> AgentMessage {
+async fn execute_traceroute(request_id: &str, target: &str, max_hops: u8) -> AgentMessage {
     let timeout_duration = Duration::from_secs(60);
 
     let result = tokio::time::timeout(timeout_duration, async {
@@ -1348,10 +1344,21 @@ fn build_ws_url(config: &AgentConfig) -> anyhow::Result<String> {
     Ok(format!("{ws_base}/api/agent/ws"))
 }
 
-fn should_refresh_registration(
+fn build_ws_request(
     config: &AgentConfig,
-    error: &anyhow::Error,
-) -> bool {
+) -> anyhow::Result<tokio_tungstenite::tungstenite::http::Request<()>> {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    use tokio_tungstenite::tungstenite::http::header::AUTHORIZATION;
+
+    let ws_url = format!("{}?token={}", build_ws_url(config)?, config.token);
+    let mut request = ws_url.into_client_request()?;
+    request
+        .headers_mut()
+        .insert(AUTHORIZATION, format!("Bearer {}", config.token).parse()?);
+    Ok(request)
+}
+
+fn should_refresh_registration(config: &AgentConfig, error: &anyhow::Error) -> bool {
     !config.auto_discovery_key.is_empty()
         && matches!(
             error.downcast_ref::<tokio_tungstenite::tungstenite::Error>(),
@@ -1506,6 +1513,33 @@ mod tests {
         ));
 
         assert!(!should_refresh_registration(&config, &err));
+    }
+
+    #[test]
+    fn test_build_ws_request_carries_query_token_and_authorization_header() {
+        let config = AgentConfig {
+            server_url: "https://example.com".to_string(),
+            token: "agent-token-123".to_string(),
+            auto_discovery_key: String::new(),
+            collector: CollectorConfig::default(),
+            log: LogConfig::default(),
+            file: FileConfig::default(),
+            ip_change: IpChangeConfig::default(),
+        };
+
+        let request = build_ws_request(&config).expect("request should build");
+
+        assert_eq!(
+            request.uri().to_string(),
+            "wss://example.com/api/agent/ws?token=agent-token-123"
+        );
+        assert_eq!(
+            request
+                .headers()
+                .get("authorization")
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer agent-token-123")
+        );
     }
 
     #[test]

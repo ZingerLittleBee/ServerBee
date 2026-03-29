@@ -56,14 +56,62 @@ pub struct CapabilityMeta {
 }
 
 pub const ALL_CAPABILITIES: &[CapabilityMeta] = &[
-    CapabilityMeta { bit: CAP_TERMINAL, key: "terminal", display_name: "Web Terminal", default_enabled: false, risk_level: "high" },
-    CapabilityMeta { bit: CAP_EXEC, key: "exec", display_name: "Remote Exec", default_enabled: false, risk_level: "high" },
-    CapabilityMeta { bit: CAP_UPGRADE, key: "upgrade", display_name: "Auto Upgrade", default_enabled: false, risk_level: "high" },
-    CapabilityMeta { bit: CAP_PING_ICMP, key: "ping_icmp", display_name: "ICMP Ping", default_enabled: true, risk_level: "low" },
-    CapabilityMeta { bit: CAP_PING_TCP, key: "ping_tcp", display_name: "TCP Probe", default_enabled: true, risk_level: "low" },
-    CapabilityMeta { bit: CAP_PING_HTTP, key: "ping_http", display_name: "HTTP Probe", default_enabled: true, risk_level: "low" },
-    CapabilityMeta { bit: CAP_FILE, key: "file", display_name: "File Manager", default_enabled: false, risk_level: "high" },
-    CapabilityMeta { bit: CAP_DOCKER, key: "docker", display_name: "Docker Management", default_enabled: false, risk_level: "high" },
+    CapabilityMeta {
+        bit: CAP_TERMINAL,
+        key: "terminal",
+        display_name: "Web Terminal",
+        default_enabled: false,
+        risk_level: "high",
+    },
+    CapabilityMeta {
+        bit: CAP_EXEC,
+        key: "exec",
+        display_name: "Remote Exec",
+        default_enabled: false,
+        risk_level: "high",
+    },
+    CapabilityMeta {
+        bit: CAP_UPGRADE,
+        key: "upgrade",
+        display_name: "Auto Upgrade",
+        default_enabled: false,
+        risk_level: "high",
+    },
+    CapabilityMeta {
+        bit: CAP_PING_ICMP,
+        key: "ping_icmp",
+        display_name: "ICMP Ping",
+        default_enabled: true,
+        risk_level: "low",
+    },
+    CapabilityMeta {
+        bit: CAP_PING_TCP,
+        key: "ping_tcp",
+        display_name: "TCP Probe",
+        default_enabled: true,
+        risk_level: "low",
+    },
+    CapabilityMeta {
+        bit: CAP_PING_HTTP,
+        key: "ping_http",
+        display_name: "HTTP Probe",
+        default_enabled: true,
+        risk_level: "low",
+    },
+    CapabilityMeta {
+        bit: CAP_FILE,
+        key: "file",
+        display_name: "File Manager",
+        default_enabled: false,
+        risk_level: "high",
+    },
+    CapabilityMeta {
+        bit: CAP_DOCKER,
+        key: "docker",
+        display_name: "Docker Management",
+        default_enabled: false,
+        risk_level: "high",
+    },
 ];
 
 /// Check if a specific capability bit is set.

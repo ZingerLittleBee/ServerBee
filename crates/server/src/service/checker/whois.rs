@@ -23,11 +23,7 @@ const EXPIRY_PATTERNS: &[&str] = &[
 ];
 
 /// Known WHOIS registrar field patterns.
-const REGISTRAR_PATTERNS: &[&str] = &[
-    "Registrar:",
-    "Sponsoring Registrar:",
-    "registrar:",
-];
+const REGISTRAR_PATTERNS: &[&str] = &["Registrar:", "Sponsoring Registrar:", "registrar:"];
 
 /// Check WHOIS information for a domain.
 ///
@@ -128,7 +124,9 @@ async fn query_whois(target: &str) -> Result<String, String> {
         let whois = whois_rust::WhoIs::from_string(include_str!("whois_servers.json"))
             .map_err(|e| format!("Failed to initialize WHOIS client: {e}"))?;
         whois
-            .lookup(whois_rust::WhoIsLookupOptions::from_string(&target).map_err(|e| e.to_string())?)
+            .lookup(
+                whois_rust::WhoIsLookupOptions::from_string(&target).map_err(|e| e.to_string())?,
+            )
             .map_err(|e| format!("WHOIS lookup error: {e}"))
     })
     .await
@@ -156,19 +154,16 @@ fn parse_expiry_date(text: &str) -> Option<NaiveDateTime> {
     for line in text.lines() {
         let trimmed = line.trim();
         for pattern in EXPIRY_PATTERNS {
-            if let Some(date_str) = trimmed
-                .strip_prefix(pattern)
-                .or_else(|| {
-                    // Case-insensitive match
-                    let lower = trimmed.to_lowercase();
-                    let pat_lower = pattern.to_lowercase();
-                    if lower.starts_with(&pat_lower) {
-                        Some(&trimmed[pattern.len()..])
-                    } else {
-                        None
-                    }
-                })
-            {
+            if let Some(date_str) = trimmed.strip_prefix(pattern).or_else(|| {
+                // Case-insensitive match
+                let lower = trimmed.to_lowercase();
+                let pat_lower = pattern.to_lowercase();
+                if lower.starts_with(&pat_lower) {
+                    Some(&trimmed[pattern.len()..])
+                } else {
+                    None
+                }
+            }) {
                 let date_str = date_str.trim();
                 if let Some(dt) = parse_date_string(date_str) {
                     return Some(dt);
@@ -193,19 +188,10 @@ fn parse_date_string(s: &str) -> Option<NaiveDateTime> {
         "%d.%m.%Y %H:%M:%S",
     ];
 
-    let date_formats = [
-        "%Y-%m-%d",
-        "%Y/%m/%d",
-        "%d-%b-%Y",
-        "%d.%m.%Y",
-        "%Y.%m.%d",
-    ];
+    let date_formats = ["%Y-%m-%d", "%Y/%m/%d", "%d-%b-%Y", "%d.%m.%Y", "%Y.%m.%d"];
 
     // Strip trailing timezone info like " UTC" for more flexible parsing
-    let cleaned = s
-        .trim_end_matches(" UTC")
-        .trim_end_matches(" GMT")
-        .trim();
+    let cleaned = s.trim_end_matches(" UTC").trim_end_matches(" GMT").trim();
 
     for fmt in &datetime_formats {
         if let Ok(dt) = NaiveDateTime::parse_from_str(cleaned, fmt) {

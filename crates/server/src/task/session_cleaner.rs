@@ -23,10 +23,7 @@ pub async fn run(state: Arc<AppState>) {
             .await
         {
             Ok(result) if result.rows_affected > 0 => {
-                tracing::info!(
-                    "Cleaned up {} expired sessions",
-                    result.rows_affected
-                );
+                tracing::info!("Cleaned up {} expired sessions", result.rows_affected);
             }
             Err(e) => tracing::error!("Failed to clean up expired sessions: {e}"),
             _ => {}
@@ -34,9 +31,7 @@ pub async fn run(state: Arc<AppState>) {
 
         // Clean expired pending TOTP secrets (older than 10 minutes)
         let totp_cutoff = now - chrono::Duration::minutes(10);
-        state
-            .pending_totp
-            .retain(|_, v| v.created_at > totp_cutoff);
+        state.pending_totp.retain(|_, v| v.created_at > totp_cutoff);
 
         // Clean expired login rate limit entries (older than 15 minutes)
         let rate_cutoff = now - chrono::Duration::minutes(15);

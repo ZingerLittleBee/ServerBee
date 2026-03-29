@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.5] - 2026-03-29
+
+### Fixed
+
+- **Linux agent TLS startup** -- Agent release binaries now install the `rustls` ring `CryptoProvider` explicitly during startup, preventing process panics before HTTPS registration or WebSocket TLS handshakes on some Linux builds
+- **Reverse-proxy agent WebSocket auth** -- Agent WebSocket handshakes now carry the token in both the query string and `Authorization: Bearer` header, and the server logs whether agent auth failed because the token was missing or invalid
+
+### Testing
+
+- 395 Rust tests: 245 server unit + 42 server integration + 4 Docker integration + 43 common + 61 agent
+- 222 frontend Vitest tests across 29 test files
+- 1 new agent startup unit test covering idempotent `rustls` provider installation
+- 1 new agent WebSocket handshake unit test covering query-token + `Authorization` header construction
+
 ## [0.7.4] - 2026-03-29
 
 ### Added

@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
+use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::Router;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
 use crate::state::AppState;
-use serverbee_common::constants::{has_capability, CAP_DOCKER, MAX_WS_MESSAGE_SIZE};
+use serverbee_common::constants::{CAP_DOCKER, MAX_WS_MESSAGE_SIZE, has_capability};
 use serverbee_common::protocol::ServerMessage;
 
 pub fn router() -> Router<Arc<AppState>> {
@@ -30,11 +30,7 @@ async fn docker_logs_ws_handler(
         Some(_) => {
             // Check agent is online
             if !state.agent_manager.is_online(&server_id) {
-                return (
-                    axum::http::StatusCode::BAD_REQUEST,
-                    "Agent is offline",
-                )
-                    .into_response();
+                return (axum::http::StatusCode::BAD_REQUEST, "Agent is offline").into_response();
             }
             // Check Docker capability
             match crate::service::server::ServerService::get_server(&state.db, &server_id).await {
@@ -87,9 +83,7 @@ fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
         .split(';')
         .find_map(|cookie| {
             let cookie = cookie.trim();
-            cookie
-                .strip_prefix("session_token=")
-                .map(|v| v.to_string())
+            cookie.strip_prefix("session_token=").map(|v| v.to_string())
         })
 }
 

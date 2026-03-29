@@ -45,26 +45,30 @@ For Linux hosts, the quickest binary/systemd path is the bootstrap installer:
 
 ```bash
 # Install the server
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s server
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
 
 # Install an agent
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s agent \
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
   --server-url http://your-server-ip:9527 \
   --discovery-key YOUR_DISCOVERY_KEY
 ```
 
-The bootstrap script uses the same management logic shipped in `deploy/serverbee.sh`, so ongoing operations use the same command set:
+The bootstrap script and `deploy/serverbee.sh` share the same command set. On a fresh host, keep using the bootstrap entrypoint:
 
 ```bash
-sudo bash deploy/serverbee.sh status
-sudo bash deploy/serverbee.sh upgrade -y
-sudo bash deploy/serverbee.sh restart
-sudo bash deploy/serverbee.sh config
-sudo bash deploy/serverbee.sh env
-sudo bash deploy/serverbee.sh uninstall agent -y
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- status
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- upgrade -y
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- restart
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- config
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- env
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- uninstall agent -y
 ```
 
-Use `deploy/serverbee.sh` directly when you cloned the repo, or use the curl bootstrap flow on fresh hosts that do not have the repository checked out.
+If you cloned the repository, you can run the same commands via `deploy/serverbee.sh` directly.
+
+<Callout type="info">
+`install server` / `install agent` are bootstrap commands. If the binary already exists in `/usr/local/bin`, the installer adopts it instead of overwriting it. Use `upgrade` (or replace the binary manually) when you need to roll out a refreshed release binary to an existing host.
+</Callout>
 
 ## Docker Compose (Recommended)
 

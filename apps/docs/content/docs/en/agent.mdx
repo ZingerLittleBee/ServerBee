@@ -33,20 +33,26 @@ chmod +x serverbee-agent
 Use the install script to download the binary and configure a systemd service automatically:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s agent \
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
   --server-url http://your-server-ip:9527 \
   --discovery-key YOUR_DISCOVERY_KEY
 ```
 
-After installation, manage the agent with:
+After installation, you can reuse the bootstrap script to manage the agent on a fresh host:
 
 ```bash
-sudo bash deploy/serverbee.sh status              # View agent status
-sudo bash deploy/serverbee.sh upgrade agent -y     # Upgrade agent
-sudo bash deploy/serverbee.sh restart agent        # Restart agent
-sudo bash deploy/serverbee.sh config agent         # View agent config
-sudo bash deploy/serverbee.sh uninstall agent      # Uninstall agent
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- status
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- upgrade agent -y
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- restart agent
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- config agent
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- uninstall agent -y
 ```
+
+If you cloned the repository locally, run the same commands with `sudo bash deploy/serverbee.sh ...` instead.
+
+<Callout type="info">
+Re-running `install agent` adopts an existing `/usr/local/bin/serverbee-agent` and keeps the current binary in place. When you need to replace an already-installed binary, use `upgrade agent -y` or copy the new binary over `/usr/local/bin/serverbee-agent` manually before restarting the service.
+</Callout>
 
 ### Build from Source
 

@@ -13,11 +13,13 @@ impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
         db.execute_unprepared(
-            "ALTER TABLE servers ADD COLUMN capabilities INTEGER NOT NULL DEFAULT 56"
-        ).await?;
+            "ALTER TABLE servers ADD COLUMN capabilities INTEGER NOT NULL DEFAULT 56",
+        )
+        .await?;
         db.execute_unprepared(
-            "ALTER TABLE servers ADD COLUMN protocol_version INTEGER NOT NULL DEFAULT 1"
-        ).await?;
+            "ALTER TABLE servers ADD COLUMN protocol_version INTEGER NOT NULL DEFAULT 1",
+        )
+        .await?;
         Ok(())
     }
 

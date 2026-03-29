@@ -117,11 +117,9 @@ pub async fn run(state: Arc<AppState>) {
         }
 
         // Clean up expired file transfers (idle for > 30 minutes)
-        state
-            .file_transfers
-            .cleanup_expired(Duration::from_secs(
-                serverbee_common::constants::FILE_TRANSFER_TIMEOUT_SECS,
-            ));
+        state.file_transfers.cleanup_expired(Duration::from_secs(
+            serverbee_common::constants::FILE_TRANSFER_TIMEOUT_SECS,
+        ));
     }
 }
 
@@ -133,10 +131,7 @@ async fn cleanup_ping_records(db: &DatabaseConnection, retention_days: u32) {
         .await
     {
         Ok(result) if result.rows_affected > 0 => {
-            tracing::info!(
-                "Cleaned up {} expired ping records",
-                result.rows_affected
-            );
+            tracing::info!("Cleaned up {} expired ping records", result.rows_affected);
         }
         Err(e) => tracing::error!("Failed to clean up ping records: {e}"),
         _ => {}
@@ -151,10 +146,7 @@ async fn cleanup_audit_logs(db: &DatabaseConnection, retention_days: u32) {
         .await
     {
         Ok(result) if result.rows_affected > 0 => {
-            tracing::info!(
-                "Cleaned up {} expired audit logs",
-                result.rows_affected
-            );
+            tracing::info!("Cleaned up {} expired audit logs", result.rows_affected);
         }
         Err(e) => tracing::error!("Failed to clean up audit logs: {e}"),
         _ => {}

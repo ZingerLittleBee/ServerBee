@@ -45,26 +45,30 @@ Railway 会自动分配端口并提供 HTTPS，无需配置 `SERVERBEE_SERVER__L
 
 ```bash
 # 安装服务端
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s server
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
 
 # 安装 Agent
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s agent \
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
   --server-url http://your-server-ip:9527 \
   --discovery-key YOUR_DISCOVERY_KEY
 ```
 
-该引导脚本与仓库中的 `deploy/serverbee.sh` 使用同一套管理逻辑，因此后续运维命令保持一致：
+该引导脚本与仓库中的 `deploy/serverbee.sh` 使用同一套命令集。对于未克隆仓库的全新主机，可以继续使用引导入口执行后续运维：
 
 ```bash
-sudo bash deploy/serverbee.sh status
-sudo bash deploy/serverbee.sh upgrade -y
-sudo bash deploy/serverbee.sh restart
-sudo bash deploy/serverbee.sh config
-sudo bash deploy/serverbee.sh env
-sudo bash deploy/serverbee.sh uninstall agent -y
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- status
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- upgrade -y
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- restart
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- config
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- env
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- uninstall agent -y
 ```
 
-如果你已经克隆仓库，可以直接运行 `deploy/serverbee.sh`；如果是全新主机，则使用上面的 curl 引导方式即可。
+如果你已经克隆仓库，也可以直接通过 `deploy/serverbee.sh` 执行同样的命令。
+
+<Callout type="info">
+`install server` / `install agent` 主要用于首次引导安装。如果 `/usr/local/bin` 中已经存在对应二进制，安装脚本会直接沿用现有文件而不会覆盖。向已部署主机下发新 release 时，请改用 `upgrade`，或手动替换二进制后再重启服务。
+</Callout>
 
 ## Docker Compose（推荐）
 

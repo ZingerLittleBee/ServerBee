@@ -137,7 +137,10 @@ mod tests {
     #[test]
     fn test_ip_change_config_defaults() {
         let config = IpChangeConfig::default();
-        assert!(config.enabled, "IP change detection should be enabled by default");
+        assert!(
+            config.enabled,
+            "IP change detection should be enabled by default"
+        );
         assert!(
             !config.check_external_ip,
             "external IP checking should be disabled by default"

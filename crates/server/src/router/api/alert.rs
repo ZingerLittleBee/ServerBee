@@ -5,7 +5,7 @@ use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::service::alert::{
     AlertEventResponse, AlertService, AlertStateResponse, CreateAlertRule, UpdateAlertRule,
 };

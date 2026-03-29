@@ -119,3 +119,11 @@ E2E manual verification checklists are in `tests/` directory, organized by featu
 - **OpenAPI**: Auto-generated at `/swagger-ui/` and `/api-docs/openapi.json`
 - **Architecture spec**: `docs/superpowers/specs/2026-03-12-serverbee-architecture-design.md`
 - **Progress tracking**: `docs/superpowers/plans/PROGRESS.md`
+
+## Git
+
+- **Commit messages**: Use Conventional Commits: `type(scope): imperative summary` or `type: imperative summary`
+- **Types**: Use lowercase types such as `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, and `release`
+- **Scope**: Add a scope when it clarifies the affected area, for example `agent`, `server`, `web`, `deploy`, or `register`
+- **Summary**: Keep the summary imperative, concise, lowercase when practical, and without a trailing period
+- **Examples**: `fix(deploy): handle piped install stdin`, `docs: update agent bootstrap command examples`

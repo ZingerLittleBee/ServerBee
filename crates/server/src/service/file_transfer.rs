@@ -184,7 +184,9 @@ impl FileTransferManager {
 
     /// Get a cloned `Arc<Mutex<File>>` handle for the given transfer.
     pub fn get_file_handle(&self, transfer_id: &str) -> Option<Arc<Mutex<tokio::fs::File>>> {
-        self.open_files.get(transfer_id).map(|entry| entry.value().clone())
+        self.open_files
+            .get(transfer_id)
+            .map(|entry| entry.value().clone())
     }
 
     /// Remove and drop the file handle for a transfer (closes the file).
@@ -207,7 +209,10 @@ impl FileTransferManager {
             .filter(|entry| {
                 let meta = entry.value();
                 meta.server_id == server_id
-                    && matches!(meta.status, TransferStatus::Pending | TransferStatus::InProgress)
+                    && matches!(
+                        meta.status,
+                        TransferStatus::Pending | TransferStatus::InProgress
+                    )
             })
             .count()
     }
@@ -290,7 +295,12 @@ mod tests {
     fn test_create_and_get() {
         let mgr = make_manager();
         let id = mgr
-            .create_transfer("srv1".into(), "usr1".into(), TransferDirection::Download, "/tmp/file.txt".into())
+            .create_transfer(
+                "srv1".into(),
+                "usr1".into(),
+                TransferDirection::Download,
+                "/tmp/file.txt".into(),
+            )
             .unwrap();
         let info = mgr.get(&id).unwrap();
         assert_eq!(info.server_id, "srv1");
@@ -320,13 +330,27 @@ mod tests {
         }
 
         // 4th transfer for same server should fail
-        let result = mgr.create_transfer("srv42".into(), "usr1".into(), TransferDirection::Upload, "/tmp/extra.txt".into());
+        let result = mgr.create_transfer(
+            "srv42".into(),
+            "usr1".into(),
+            TransferDirection::Upload,
+            "/tmp/extra.txt".into(),
+        );
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Too many concurrent transfers"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Too many concurrent transfers")
+        );
 
         // Different server should still work
         let id = mgr
-            .create_transfer("srv99".into(), "usr1".into(), TransferDirection::Download, "/tmp/other.txt".into())
+            .create_transfer(
+                "srv99".into(),
+                "usr1".into(),
+                TransferDirection::Download,
+                "/tmp/other.txt".into(),
+            )
             .unwrap();
         ids.push(id);
 
@@ -341,7 +365,12 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let mgr = FileTransferManager::new(tmp.path().to_path_buf());
         let id = mgr
-            .create_transfer("srv1".into(), "usr1".into(), TransferDirection::Download, "/test".into())
+            .create_transfer(
+                "srv1".into(),
+                "usr1".into(),
+                TransferDirection::Download,
+                "/test".into(),
+            )
             .unwrap();
 
         // Pending -> InProgress
@@ -362,7 +391,12 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let mgr = FileTransferManager::new(tmp.path().to_path_buf());
         let id = mgr
-            .create_transfer("srv1".into(), "usr1".into(), TransferDirection::Upload, "/test".into())
+            .create_transfer(
+                "srv1".into(),
+                "usr1".into(),
+                TransferDirection::Upload,
+                "/test".into(),
+            )
             .unwrap();
 
         mgr.mark_failed(&id, "Disk full".into());
@@ -377,7 +411,12 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let mgr = FileTransferManager::new(tmp.path().to_path_buf());
         let id = mgr
-            .create_transfer("srv1".into(), "usr1".into(), TransferDirection::Download, "/test".into())
+            .create_transfer(
+                "srv1".into(),
+                "usr1".into(),
+                TransferDirection::Download,
+                "/test".into(),
+            )
             .unwrap();
 
         mgr.update_size(&id, 1000);
@@ -394,7 +433,12 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let mgr = FileTransferManager::new(tmp.path().to_path_buf());
         let id = mgr
-            .create_transfer("srv1".into(), "usr1".into(), TransferDirection::Download, "/test".into())
+            .create_transfer(
+                "srv1".into(),
+                "usr1".into(),
+                TransferDirection::Download,
+                "/test".into(),
+            )
             .unwrap();
 
         let path = mgr.temp_file_path(&id).unwrap();
@@ -409,7 +453,12 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let mgr = FileTransferManager::new(tmp.path().to_path_buf());
         let id = mgr
-            .create_transfer("srv1".into(), "usr1".into(), TransferDirection::Download, "/test".into())
+            .create_transfer(
+                "srv1".into(),
+                "usr1".into(),
+                TransferDirection::Download,
+                "/test".into(),
+            )
             .unwrap();
 
         // Create the temp file
@@ -427,10 +476,20 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let mgr = FileTransferManager::new(tmp.path().to_path_buf());
         let id1 = mgr
-            .create_transfer("srv1".into(), "usr1".into(), TransferDirection::Download, "/a".into())
+            .create_transfer(
+                "srv1".into(),
+                "usr1".into(),
+                TransferDirection::Download,
+                "/a".into(),
+            )
             .unwrap();
         let id2 = mgr
-            .create_transfer("srv1".into(), "usr1".into(), TransferDirection::Upload, "/b".into())
+            .create_transfer(
+                "srv1".into(),
+                "usr1".into(),
+                TransferDirection::Upload,
+                "/b".into(),
+            )
             .unwrap();
 
         mgr.mark_ready(&id1);
@@ -447,7 +506,12 @@ mod tests {
     fn test_cleanup_expired() {
         let mgr = make_manager();
         let id = mgr
-            .create_transfer("srv1".into(), "usr1".into(), TransferDirection::Download, "/tmp/old.txt".into())
+            .create_transfer(
+                "srv1".into(),
+                "usr1".into(),
+                TransferDirection::Download,
+                "/tmp/old.txt".into(),
+            )
             .unwrap();
 
         // With a very large max_age, nothing should be cleaned
