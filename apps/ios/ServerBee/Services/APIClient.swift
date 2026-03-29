@@ -15,12 +15,12 @@ actor APIClient {
     // MARK: - Public API
 
     /// Perform a GET request and decode the response.
-    func get<T: Decodable>(_ path: String) async throws -> T {
+    func get<T: Decodable & Sendable>(_ path: String) async throws -> T {
         try await request(path, method: "GET")
     }
 
     /// Perform a POST request with an optional JSON body and decode the response.
-    func post<T: Decodable>(_ path: String, body: (any Encodable & Sendable)? = nil) async throws -> T {
+    func post<T: Decodable & Sendable>(_ path: String, body: (any Encodable & Sendable)? = nil) async throws -> T {
         try await request(path, method: "POST", body: body)
     }
 
@@ -49,18 +49,18 @@ actor APIClient {
     }
 
     /// Perform a PUT request with an optional JSON body and decode the response.
-    func put<T: Decodable>(_ path: String, body: (any Encodable & Sendable)? = nil) async throws -> T {
+    func put<T: Decodable & Sendable>(_ path: String, body: (any Encodable & Sendable)? = nil) async throws -> T {
         try await request(path, method: "PUT", body: body)
     }
 
     /// Perform a DELETE request and decode the response.
-    func delete<T: Decodable>(_ path: String) async throws -> T {
+    func delete<T: Decodable & Sendable>(_ path: String) async throws -> T {
         try await request(path, method: "DELETE")
     }
 
     // MARK: - Internal
 
-    private func request<T: Decodable>(
+    private func request<T: Decodable & Sendable>(
         _ path: String,
         method: String,
         body: (any Encodable & Sendable)? = nil
@@ -119,7 +119,7 @@ actor APIClient {
 
     // MARK: - 401 Handling
 
-    private func handleUnauthorized<T: Decodable>(
+    private func handleUnauthorized<T: Decodable & Sendable>(
         path: String,
         method: String,
         body: (any Encodable & Sendable)?

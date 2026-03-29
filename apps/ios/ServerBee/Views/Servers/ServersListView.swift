@@ -7,6 +7,7 @@ struct ServersListView: View {
     @Environment(\.apiClient) private var apiClient
 
     var body: some View {
+        @Bindable var viewModel = viewModel
         Group {
             if viewModel.isLoading && viewModel.servers.isEmpty {
                 loadingView
@@ -58,7 +59,7 @@ struct ServersListView: View {
             LazyVStack(spacing: 12) {
                 // Header with count and filter
                 ServerListHeaderView(
-                    filter: $viewModel.onlineFilter,
+                    filter: Bindable(viewModel).onlineFilter,
                     totalCount: viewModel.servers.count,
                     onlineCount: viewModel.onlineCount
                 )
