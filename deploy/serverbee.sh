@@ -238,8 +238,30 @@ meta_remove() {
         !skip { print }
     ' "$META_FILE" > "$tmp"
 
-    # Clean up trailing commas before }
-    sed -i.bak 's/,\([[:space:]]*\)}/\1}/' "$tmp" && rm -f "$tmp.bak"
+    # Clean up trailing commas before closing }
+    # Handle: "    }," followed by "}" on next line → remove the comma
+    local tmp2
+    tmp2=$(mktemp)
+    awk '
+        { lines[NR] = $0 }
+        END {
+            for (i = 1; i <= NR; i++) {
+                line = lines[i]
+                # If this line ends with }, and next non-blank line is just }
+                if (line ~ /,$/) {
+                    j = i + 1
+                    while (j <= NR && lines[j] ~ /^[[:space:]]*$/) j++
+                    if (j <= NR && lines[j] ~ /^[[:space:]]*}[[:space:]]*$/) {
+                        sub(/,$/, "", line)
+                    }
+                }
+                print line
+            }
+        }
+    ' "$tmp" > "$tmp2"
+    mv "$tmp2" "$tmp"
+    # Also remove blank lines before closing }
+    sed -i.bak '/^[[:space:]]*$/{ N; /\n[[:space:]]*}$/{ s/\n/\n/; }; }' "$tmp" && rm -f "$tmp.bak"
     mv "$tmp" "$META_FILE"
 }
 
