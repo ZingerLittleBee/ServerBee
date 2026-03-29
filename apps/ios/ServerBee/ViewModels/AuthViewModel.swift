@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @Observable
 final class AuthViewModel {
@@ -35,6 +36,7 @@ final class AuthViewModel {
             username: username,
             password: password,
             installationId: installationId,
+            deviceName: UIDevice.current.name,
             totpCode: step == .totp ? totpCode : nil
         )
 
