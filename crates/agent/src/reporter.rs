@@ -25,6 +25,7 @@ use crate::terminal::{TerminalEvent, TerminalManager};
 
 const MAX_BACKOFF_SECS: u64 = 30;
 const JITTER_FACTOR: f64 = 0.2;
+const MAX_REREGISTER_ATTEMPTS: u32 = 3;
 const DOCKER_RETRY_SECS: u64 = 30;
 
 pub struct Reporter {
@@ -38,33 +39,50 @@ impl Reporter {
 
     pub async fn run(&mut self) {
         let mut backoff_secs: u64 = 1;
+        let mut reregister_attempts: u32 = 0;
 
         loop {
             match self.connect_and_report().await {
                 Ok(()) => {
                     tracing::info!("Connection closed normally, reconnecting...");
                     backoff_secs = 1;
+                    reregister_attempts = 0;
                 }
                 Err(e) => {
                     if should_refresh_registration(&self.config, &e) {
-                        tracing::warn!(
-                            "Stored agent token was rejected, attempting re-registration with auto-discovery key"
-                        );
+                        if reregister_attempts >= MAX_REREGISTER_ATTEMPTS {
+                            tracing::error!(
+                                "Agent token rejected {reregister_attempts} times consecutively, \
+                                 giving up re-registration. Check server URL and reverse proxy \
+                                 configuration (Authorization header must be forwarded for WebSocket)."
+                            );
+                        } else {
+                            reregister_attempts += 1;
+                            tracing::warn!(
+                                "Stored agent token was rejected, attempting re-registration \
+                                 ({reregister_attempts}/{MAX_REREGISTER_ATTEMPTS})"
+                            );
 
-                        match register::register_agent(&self.config).await {
-                            Ok((server_id, token)) => {
-                                tracing::info!("Re-registration successful for server {server_id}");
-                                if let Err(save_err) = register::save_token(&token) {
-                                    tracing::warn!("Failed to save refreshed token: {save_err}");
+                            match register::register_agent(&self.config).await {
+                                Ok((server_id, token)) => {
+                                    tracing::info!(
+                                        "Re-registration successful for server {server_id}"
+                                    );
+                                    if let Err(save_err) = register::save_token(&token) {
+                                        tracing::warn!(
+                                            "Failed to save refreshed token: {save_err}"
+                                        );
+                                    }
+                                    self.config.token = token;
+                                    // Do NOT skip backoff — prevents tight re-registration loop
                                 }
-                                self.config.token = token;
-                                backoff_secs = 1;
-                                continue;
-                            }
-                            Err(register_err) => {
-                                tracing::error!("Re-registration failed: {register_err}");
+                                Err(register_err) => {
+                                    tracing::error!("Re-registration failed: {register_err}");
+                                }
                             }
                         }
+                    } else {
+                        reregister_attempts = 0;
                     }
 
                     tracing::error!("Connection error: {e}");
@@ -82,18 +100,12 @@ impl Reporter {
     async fn connect_and_report(&self) -> anyhow::Result<()> {
         use serverbee_common::constants::*;
 
-        let ws_url = build_ws_url(&self.config)?;
-        tracing::info!("Connecting to {ws_url}...");
+        let ws_url = format!("{}?token={}", build_ws_url(&self.config)?, self.config.token);
+        tracing::info!("Connecting to {}...", build_ws_url(&self.config)?);
 
         let capabilities = Arc::new(AtomicU32::new(u32::MAX));
 
-        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-        let mut request = ws_url.as_str().into_client_request()?;
-        request.headers_mut().insert(
-            "Authorization",
-            format!("Bearer {}", self.config.token).parse()?,
-        );
-        let (ws_stream, _response) = connect_async(request).await?;
+        let (ws_stream, _response) = connect_async(&ws_url).await?;
         tracing::info!("WebSocket connected");
 
         let (mut write, mut read) = ws_stream.split();
