@@ -21,6 +21,12 @@ pub struct PendingTotp {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// Pending mobile pairing code, keyed by code string.
+pub struct PendingPair {
+    pub user_id: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
 /// Rate limiter entry: (count, window_start).
 pub struct RateLimitEntry {
     pub count: u32,
@@ -50,6 +56,8 @@ pub struct AppState {
     pub task_scheduler: Arc<TaskScheduler>,
     /// Shared alert state manager for dedup across poll-based and event-driven evaluation.
     pub alert_state_manager: AlertStateManager,
+    /// Pending mobile pairing codes for QR login, keyed by code.
+    pub pending_pairs: DashMap<String, PendingPair>,
 }
 
 static RATE_CHECK_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -157,6 +165,7 @@ impl AppState {
             docker_viewers: DockerViewerTracker::new(),
             task_scheduler,
             alert_state_manager,
+            pending_pairs: DashMap::new(),
         }))
     }
 }
