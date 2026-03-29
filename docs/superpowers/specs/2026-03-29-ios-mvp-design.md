@@ -540,10 +540,13 @@ iOS 端 `AlertDetailViewModel` 的请求路径需从 `/api/mobile/alerts/{alert_
 
 **问题 2：重连使用过期 token。** `WebSocketClient.establishConnection()` 使用缓存的 `currentAccessToken` 重连。服务端会在 15 分钟后关闭 mobile WS 连接，重连时旧 token 已过期，导致 401。
 
-修复方案：
-- `WebSocketClient` 增加一个 `tokenProvider: @Sendable () async -> String?` 闭包属性
-- `scheduleReconnect()` 中在调用 `establishConnection()` 前，通过 `tokenProvider` 获取最新 access token
-- `ContentView` 设置 `tokenProvider` 闭包，内部调用 `AuthManager.getAccessToken()`（如过期由 APIClient 的 refresh 逻辑处理）
+修复方案——`WebSocketClient` 需要独立的 token 刷新能力，不能依赖 APIClient 的 HTTP 401 路径：
+
+- `AuthManager` 新增公开方法 `refreshAccessToken() async throws -> String`，将现有 private `refreshTokens()` 的核心逻辑暴露出来。返回刷新后的新 access token，失败时 throw 并触发 `clearAuth()`。
+- `WebSocketClient` 增加一个 `tokenRefresher: @Sendable () async -> String?` 闭包属性（不是 tokenProvider）。
+- `scheduleReconnect()` 流程改为：先调用 `tokenRefresher` 获取新 token → 用新 token 调用 `establishConnection()`。如果 `tokenRefresher` 返回 nil（refresh 失败），停止重连。
+- `ContentView` 设置 `tokenRefresher` 闭包：`{ try? await authManager.refreshAccessToken() }`。
+- `AuthManager.refreshAccessToken()` 内部复用现有 `refreshTokens()` + `handleLoginResponse()` 逻辑，返回新 access token。
 
 **问题 3：告警 WS 事件不存在。** iOS 端 `BrowserMessage.alertEvent` 和 `AlertsViewModel.handleWSAlertEvent` 假设服务端会广播告警事件，但 Rust 端 `BrowserMessage` 枚举没有 `alert_event` 变体，服务端也没有在告警触发时广播。
 
@@ -612,6 +615,8 @@ MVP 决策：**不通过 WS 做告警实时刷新**。理由：告警已有 APNs
 - `crates/server/src/service/notification.rs` — 新增 APNs 渠道
 - `crates/server/src/service/auth.rs` — validate_session 签名变更 + source-aware TTL + 条件滑动续期 + 测试更新
 - `crates/server/src/router/api/alert.rs` — 新增 `/api/alert-events/{alert_key}` 端点
+- `crates/server/src/openapi.rs` — 注册所有新端点（mobile auth、pair、push、alert-events detail）；在 security schemes 中新增 `bearer_token` 定义
+- 所有现有 `#[utoipa::path]` 的 `security` 注解需要追加 `("bearer_token" = [])`，涉及文件：`router/api/server.rs`、`router/api/alert.rs`、`router/api/auth.rs`（protected routes），以及所有其他受 `auth_middleware` 保护的端点。批量替换 `security(("session_cookie" = []), ("api_key" = []))` → `security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))`
 - `crates/server/Cargo.toml` — 新增 `a2` 依赖
 
 ### iOS (Swift)
@@ -626,7 +631,8 @@ MVP 决策：**不通过 WS 做告警实时刷新**。理由：告警已有 APNs
 - `apps/ios/ServerBee/ServerBeeApp.swift` — APNs 注册 + AppDelegate
 - `apps/ios/ServerBee/ContentView.swift` — deep link 导航
 - `apps/ios/ServerBee/Services/APIClient.swift` — 统一解包 ApiResponse
-- `apps/ios/ServerBee/Services/WebSocketClient.swift` — 增加 tokenProvider 重连刷新机制
+- `apps/ios/ServerBee/Services/AuthManager.swift` — 新增公开 refreshAccessToken() 方法
+- `apps/ios/ServerBee/Services/WebSocketClient.swift` — 增加 tokenRefresher 重连刷新机制
 - `apps/ios/ServerBee/Views/Servers/ServersListView.swift` — ServersViewModel 改为 @Environment 注入（移除 local @State）
 - `apps/ios/ServerBee/ViewModels/ServersViewModel.swift` — 去掉 ApiResponse 手动解包
 - `apps/ios/ServerBee/ViewModels/ServerDetailViewModel.swift` — 同上
