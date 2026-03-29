@@ -207,6 +207,19 @@ function ServersListPage() {
   const selectedIds = table.getSelectedRowModel().rows.map((r) => r.original.id)
   const selectedCount = selectedIds.length
 
+  const orphanCount = servers.filter((s) => s.name === 'New Server' && !s.os).length
+
+  const cleanupMutation = useMutation({
+    mutationFn: () => api.delete<{ deleted_count: number }>('/api/servers/cleanup'),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['servers'] })
+      toast.success(t('servers:cleanup_success', { count: data.deleted_count }))
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Operation failed')
+    }
+  })
+
   const batchDeleteMutation = useMutation({
     mutationFn: (ids: string[]) => api.post<{ deleted: number }>('/api/servers/batch-delete', { ids }),
     onSuccess: () => {
@@ -255,6 +268,31 @@ function ServersListPage() {
             value={search}
           />
         </div>
+        {orphanCount > 0 && (
+          <AlertDialog>
+            <AlertDialogTrigger
+              render={
+                <Button disabled={cleanupMutation.isPending} size="sm" variant="outline">
+                  {t('servers:cleanup_orphans')} ({orphanCount})
+                </Button>
+              }
+            />
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t('servers:cleanup_confirm_title')}</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {t('servers:cleanup_confirm_description', { count: orphanCount })}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                <AlertDialogAction onClick={() => cleanupMutation.mutate()} variant="destructive">
+                  {t('common:delete')}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
         {selectedCount > 0 && (
           <AlertDialog>
             <AlertDialogTrigger

@@ -15,6 +15,11 @@
   "col_group": "Group",
   "showing_servers": "Showing {{shown}} of {{total}} servers",
   "selected_count": "{{count}} selected",
+  "cleanup_orphans": "Clean up unconnected",
+  "cleanup_confirm_title": "Clean up unconnected servers?",
+  "cleanup_confirm_description": "This will delete {{count}} server(s) that registered but never connected. This cannot be undone.",
+  "cleanup_success": "Cleaned up {{count}} server(s)",
+  "cleanup_none": "No unconnected servers to clean up",
 
   "detail_back": "Back to Dashboard",
   "detail_edit": "Edit",
