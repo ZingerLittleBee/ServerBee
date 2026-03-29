@@ -30,11 +30,15 @@ const DOCKER_RETRY_SECS: u64 = 30;
 
 pub struct Reporter {
     config: AgentConfig,
+    fingerprint: String,
 }
 
 impl Reporter {
-    pub fn new(config: AgentConfig) -> Self {
-        Self { config }
+    pub fn new(config: AgentConfig, fingerprint: String) -> Self {
+        Self {
+            config,
+            fingerprint,
+        }
     }
 
     pub async fn run(&mut self) {
@@ -63,7 +67,7 @@ impl Reporter {
                                  ({reregister_attempts}/{MAX_REREGISTER_ATTEMPTS})"
                             );
 
-                            match register::register_agent(&self.config).await {
+                            match register::register_agent(&self.config, &self.fingerprint).await {
                                 Ok((server_id, token)) => {
                                     tracing::info!(
                                         "Re-registration successful for server {server_id}"
