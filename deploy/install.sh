@@ -330,8 +330,43 @@ check_unmanaged_container() {
     local component="$1"
     if ! meta_has "$component" && command -v docker &>/dev/null; then
         if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^serverbee-${component}$"; then
-            error "Found existing container 'serverbee-${component}' not managed by this script.\n  Please remove it first:  docker stop serverbee-${component} && docker rm serverbee-${component}\n  Then re-run:  serverbee.sh install ${component} --method docker ..."
+            error "Found existing container 'serverbee-${component}' not managed by this script.\n  Please remove it first:  docker stop serverbee-${component} && docker rm serverbee-${component}\n  Then re-run:  serverbee install ${component} --method docker ..."
         fi
+    fi
+}
+
+# ─── CLI self-install ────────────────────────────────────────────────────────
+
+install_cli() {
+    local target="/usr/local/bin/serverbee"
+    local version="${1:-main}"
+
+    # Entire body runs in a subshell so any failure (cp, curl, chmod, mv)
+    # is caught by the guard, keeping set -e from killing the caller.
+    if (
+        # Create temp file on the SAME filesystem as target for atomic mv
+        local target_dir
+        target_dir=$(dirname "$target")
+        local tmp
+        tmp=$(mktemp "${target_dir}/.serverbee-cli.XXXXXX")
+        trap 'rm -f "$tmp"' EXIT
+
+        if [ -f "$0" ] && ! [ "$0" -ef "$target" ]; then
+            # Repo-local execution — $0 is a real file AND not the installed CLI
+            cp "$0" "$tmp"
+        else
+            # Installed CLI or pipe execution — download from release tag
+            local url="https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
+            curl -fsSL -o "$tmp" "$url"
+        fi
+
+        chmod +x "$tmp"
+        mv "$tmp" "$target"
+        trap - EXIT
+    ); then
+        info "Management CLI installed: serverbee"
+    else
+        warn "Failed to install CLI to ${target} — component installation continues"
     fi
 }
 
@@ -404,6 +439,7 @@ UNIT
         warn "systemd not found. Start manually: serverbee-server"
     fi
 
+    install_cli "$version"
     meta_write "server" "binary" "$version"
     print_server_result
 }
@@ -471,6 +507,7 @@ UNIT
         warn "systemd not found. Start manually: serverbee-agent"
     fi
 
+    install_cli "$version"
     meta_write "agent" "binary" "$version"
     print_agent_result
 }
@@ -535,6 +572,7 @@ YAML
     docker compose -f "${DOCKER_DIR}/docker-compose.server.yml" up -d
     info "Server container started"
 
+    install_cli "$version"
     meta_write "server" "docker" "$version"
     print_server_result
 }
@@ -585,6 +623,7 @@ YAML
     docker compose -f "${DOCKER_DIR}/docker-compose.agent.yml" up -d
     info "Agent container started"
 
+    install_cli "$version"
     meta_write "agent" "docker" "$version"
     print_agent_result
 }
@@ -830,6 +869,17 @@ cmd_uninstall() {
     meta_remove "$COMPONENT"
     info "serverbee-${COMPONENT} has been uninstalled."
 
+    # Remove CLI when no managed components remain
+    if [ -f "$META_FILE" ]; then
+        local remaining
+        remaining=$(grep -c '"method"' "$META_FILE" 2>/dev/null || echo "0")
+        if [ "$remaining" -eq 0 ]; then
+            rm -f "/usr/local/bin/serverbee"
+            rm -f "$META_FILE"
+            info "All components removed. CLI uninstalled."
+        fi
+    fi
+
     if [ "$PURGE" != true ]; then
         echo ""
         echo "  Config preserved at: ${CONFIG_DIR}/${COMPONENT}.toml"
@@ -847,6 +897,8 @@ upgrade_component() {
     current_version=$(meta_read "$component" "version")
 
     if [ -n "$current_version" ] && [ "$current_version" = "$latest_version" ]; then
+        # Always ensure CLI matches the current release (repairs missing or stale)
+        install_cli "$latest_version"
         info "serverbee-${component} is already up to date (${current_version})"
         return
     fi
@@ -873,6 +925,7 @@ upgrade_component() {
     esac
 
     meta_write "$component" "$method" "$latest_version"
+    install_cli "$latest_version"
     info "serverbee-${component} upgraded to ${latest_version}"
 }
 
@@ -1020,7 +1073,7 @@ cmd_status() {
 
     if [ ${#MANAGED_COMPONENTS[@]} -eq 0 ] && [ ${#UNMANAGED_COMPONENTS[@]} -eq 0 ]; then
         echo ""
-        echo "No ServerBee components found. Run 'serverbee.sh install' to get started."
+        echo "No ServerBee components found. Run 'serverbee install' to get started."
         echo ""
         return
     fi
@@ -1042,7 +1095,7 @@ cmd_status() {
         local method="${entry##*:}"
         echo ""
         warn "Found serverbee-${comp} (${method}) but it is not managed by this script."
-        echo "    To bring it under management, run: serverbee.sh install ${comp} [options]"
+        echo "    To bring it under management, run: serverbee install ${comp} [options]"
     done
 
     echo ""
@@ -1220,8 +1273,8 @@ cmd_config() {
     if [ "$COMPONENT" = "set" ]; then
         local key="$CONFIG_KEY"
         local value="$CONFIG_VALUE"
-        [ -z "$key" ] && error "Usage: serverbee.sh config set <key> <value>"
-        [ -z "$value" ] && error "Usage: serverbee.sh config set <key> <value>"
+        [ -z "$key" ] && error "Usage: serverbee config set <key> <value>"
+        [ -z "$value" ] && error "Usage: serverbee config set <key> <value>"
 
         # 1. Check rejected keys
         if echo "$REJECTED_KEYS" | grep -qw "$key"; then
@@ -1343,8 +1396,8 @@ cmd_env() {
     if [ "$COMPONENT" = "set" ]; then
         local raw_key="$CONFIG_KEY"
         local value="$CONFIG_VALUE"
-        [ -z "$raw_key" ] && error "Usage: serverbee.sh env set <KEY> <value>"
-        [ -z "$value" ] && error "Usage: serverbee.sh env set <KEY> <value>"
+        [ -z "$raw_key" ] && error "Usage: serverbee env set <KEY> <value>"
+        [ -z "$value" ] && error "Usage: serverbee env set <KEY> <value>"
 
         # Normalize: ensure SERVERBEE_ prefix
         local env_key="$raw_key"
