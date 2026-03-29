@@ -16,21 +16,17 @@ During installation, the script installs itself to `/usr/local/bin/serverbee` so
 
 ### 1. Self-Install Function
 
-Add an `install_cli()` function that installs the script to `/usr/local/bin/serverbee`. The source depends on three contexts:
+Add an `install_cli()` function that always downloads the script from GitHub, pinned to the **same release tag** used for binaries. This ensures the CLI version always matches the installed binaries, regardless of execution context (repo-local, installed CLI, or pipe).
 
-- **Repo-local execution** (`bash deploy/install.sh`): `$0` points to a file inside the repo's `deploy/` directory — copy it directly.
-- **Installed CLI execution** (`sudo serverbee upgrade`): `$0` is `/usr/local/bin/serverbee` itself — copying it would be a no-op. Must download from GitHub.
-- **Pipe execution** (`curl | bash`): `$0` is `bash`, not a file — must download from GitHub.
-
-Both download cases pin to the **same release tag** used for binaries (not `main`).
+> **Design note:** An earlier iteration had a three-way branch that copied `$0` for repo-local execution. This was removed because running `bash deploy/install.sh` from a stale clone or feature branch would install a CLI older than the binaries just downloaded from the latest release. Always downloading eliminates this version skew.
 
 ```bash
 install_cli() {
     local target="/usr/local/bin/serverbee"
     local version="${1:-main}"
 
-    # Entire body runs in a subshell so any failure (cp, curl, chmod, mv)
-    # is caught by the || guard, keeping set -e from killing the caller.
+    # Entire body runs in a subshell so any failure (curl, chmod, mv)
+    # is caught by the guard, keeping set -e from killing the caller.
     if (
         # Create temp file on the SAME filesystem as target for atomic mv
         local target_dir
@@ -39,15 +35,10 @@ install_cli() {
         tmp=$(mktemp "${target_dir}/.serverbee-cli.XXXXXX")
         trap 'rm -f "$tmp"' EXIT
 
-        if [ -f "$0" ] && ! [ "$0" -ef "$target" ]; then
-            # Repo-local execution — $0 is a real file AND not the installed CLI
-            # -ef compares inodes, so symlinks and relative paths are handled
-            cp "$0" "$tmp"
-        else
-            # Installed CLI or pipe execution — download from release tag
-            local url="https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
-            curl -fsSL -o "$tmp" "$url"
-        fi
+        # Always download from the release tag to avoid version skew
+        # between binaries (latest release) and CLI (possibly stale checkout)
+        local url="https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
+        curl -fsSL -o "$tmp" "$url"
 
         chmod +x "$tmp"
         mv "$tmp" "$target"
@@ -62,10 +53,9 @@ install_cli() {
 ```
 
 Key properties:
-- **Truly non-fatal**: the entire body runs in a subshell guarded by `if (...); then ... else ... fi`. Under `set -euo pipefail`, any step failure (`cp`, `curl`, `chmod`, `mv`) exits the subshell, hits the `else` branch, and warns — the caller continues normally.
+- **Truly non-fatal**: the entire body runs in a subshell guarded by `if (...); then ... else ... fi`. Under `set -euo pipefail`, any failure (`curl`, `chmod`, `mv`) exits the subshell, hits the `else` branch, and warns — the caller continues normally.
 - **Atomic write**: temp file created in the target directory (`/usr/local/bin/.serverbee-cli.XXXXXX`) — same filesystem, so `mv` is a guaranteed atomic rename. EXIT trap cleans up on failure.
-- **Version-pinned**: download cases use the same release tag as the binaries, avoiding version skew between CLI and components.
-- **Self-update safe**: `[ "$0" -ef "$target" ]` (inode comparison) prevents the installed CLI from copying itself onto itself; it downloads the pinned version instead. Handles symlinks, relative paths, and alternate invocation paths without external dependencies — `-ef` is a bash builtin.
+- **Version-pinned**: always downloads from the same release tag as the binaries, eliminating version skew in all execution contexts (repo-local, installed CLI, pipe).
 
 ### 2. Call Sites
 
@@ -143,7 +133,8 @@ sudo serverbee status
 # At end of cmd_uninstall(), after meta_remove:
 if [ -f "$META_FILE" ]; then
     local remaining
-    remaining=$(grep -c '"method"' "$META_FILE" 2>/dev/null || echo "0")
+    remaining=$(grep -c '"method"' "$META_FILE" 2>/dev/null || true)
+    : "${remaining:=0}"
     if [ "$remaining" -eq 0 ]; then
         rm -f "/usr/local/bin/serverbee"
         rm -f "$META_FILE"
