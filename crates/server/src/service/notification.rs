@@ -64,6 +64,7 @@ pub struct NotifyContext {
     pub server_name: String,
     pub server_id: String,
     pub rule_name: String,
+    pub rule_id: String,
     pub event: String,
     pub message: String,
     pub time: String,
@@ -296,6 +297,7 @@ impl NotificationService {
         let ctx = NotifyContext {
             server_name: "Test Server".to_string(),
             server_id: "test-server-id".to_string(),
+            rule_id: "test-rule-id".to_string(),
             rule_name: "Test Rule".to_string(),
             event: "triggered".to_string(),
             message: "This is a test notification from ServerBee.".to_string(),
@@ -458,8 +460,15 @@ impl NotificationService {
                     bundle_id: &bundle_id,
                     sandbox,
                 };
-                crate::service::apns::ApnsService::send_push(db, &apns_config, &title, &body)
-                    .await?;
+                crate::service::apns::ApnsService::send_push(
+                    db,
+                    &apns_config,
+                    &title,
+                    &body,
+                    Some(&ctx.server_id),
+                    Some(&ctx.rule_id),
+                )
+                .await?;
             }
         }
 
@@ -504,6 +513,7 @@ mod tests {
             server_name: "web-01".to_string(),
             server_id: "srv-abc-123".to_string(),
             rule_name: "High CPU".to_string(),
+            rule_id: "rule-abc-123".to_string(),
             event: "triggered".to_string(),
             message: "CPU exceeded 90%".to_string(),
             time: "2026-03-13 12:00:00 UTC".to_string(),

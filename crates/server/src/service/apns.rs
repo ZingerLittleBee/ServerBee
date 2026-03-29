@@ -24,6 +24,8 @@ impl ApnsService {
         config: &ApnsConfig<'_>,
         title: &str,
         body: &str,
+        server_id: Option<&str>,
+        rule_id: Option<&str>,
     ) -> Result<(), AppError> {
         let tokens = device_token::Entity::find().all(db).await?;
 
@@ -55,7 +57,7 @@ impl ApnsService {
                 .set_sound("default")
                 .set_badge(1);
 
-            let payload = builder.build(
+            let mut payload = builder.build(
                 &dt.token,
                 NotificationOptions {
                     apns_topic: Some(config.bundle_id),
@@ -63,6 +65,14 @@ impl ApnsService {
                     ..Default::default()
                 },
             );
+
+            // Add custom data for deep linking on iOS
+            if let Some(sid) = server_id {
+                let _ = payload.add_custom_data("server_id", &sid);
+            }
+            if let Some(rid) = rule_id {
+                let _ = payload.add_custom_data("rule_id", &rid);
+            }
 
             match client.send(payload).await {
                 Ok(_response) => {
