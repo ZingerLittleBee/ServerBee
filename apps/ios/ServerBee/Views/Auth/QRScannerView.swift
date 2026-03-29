@@ -21,7 +21,7 @@ struct QRScannerView: UIViewControllerRepresentable {
 
 // MARK: - QR Scanner View Controller
 
-final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
+final class QRScannerViewController: UIViewController, @preconcurrency AVCaptureMetadataOutputObjectsDelegate {
     var onScanned: ((String, String) -> Void)?
     var onDismiss: (() -> Void)?
 

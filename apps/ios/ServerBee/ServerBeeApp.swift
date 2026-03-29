@@ -45,7 +45,7 @@ private struct RootView: View {
 
 // MARK: - AppDelegate
 
-class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+class AppDelegate: NSObject, UIApplicationDelegate, @preconcurrency UNUserNotificationCenterDelegate {
     var pushManager: PushNotificationManager?
 
     func application(
