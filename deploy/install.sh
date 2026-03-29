@@ -242,6 +242,18 @@ detect_unmanaged() {
     fi
 }
 
+has_systemd() {
+    # Check if systemd is actually running (not just installed)
+    command -v systemctl &>/dev/null && systemctl is-system-running &>/dev/null 2>&1
+    # is-system-running returns non-zero for "degraded" too, so also accept that
+    local rc=$?
+    if [ $rc -eq 0 ]; then return 0; fi
+    # "degraded" means systemd is running but some units failed — still usable
+    local state
+    state=$(systemctl is-system-running 2>/dev/null || echo "")
+    [ "$state" = "degraded" ] || [ "$state" = "running" ]
+}
+
 check_docker() {
     command -v docker &>/dev/null || error "Docker is not installed. Install it first: https://docs.docker.com/get-docker/"
     docker compose version &>/dev/null || error "Docker Compose V2 is not available. Install it first: https://docs.docker.com/compose/install/"
@@ -301,7 +313,7 @@ TOML
     fi
 
     # systemd service
-    if command -v systemctl &>/dev/null; then
+    if has_systemd; then
         cat > /etc/systemd/system/serverbee-server.service << 'UNIT'
 [Unit]
 Description=ServerBee Dashboard
@@ -369,7 +381,7 @@ TOML
     fi
 
     # systemd service
-    if command -v systemctl &>/dev/null; then
+    if has_systemd; then
         cat > /etc/systemd/system/serverbee-agent.service << 'UNIT'
 [Unit]
 Description=ServerBee Agent
@@ -641,7 +653,7 @@ uninstall_binary() {
     local component="$1"
     local service="serverbee-${component}"
 
-    if command -v systemctl &>/dev/null; then
+    if has_systemd; then
         systemctl stop "$service" 2>/dev/null || true
         systemctl disable "$service" 2>/dev/null || true
         rm -f "/etc/systemd/system/${service}.service"
@@ -802,11 +814,11 @@ upgrade_binary() {
     chmod +x "/tmp/serverbee-${component}"
 
     # Stop, replace, start
-    if command -v systemctl &>/dev/null; then
+    if has_systemd; then
         systemctl stop "$service" 2>/dev/null || true
     fi
     mv "/tmp/serverbee-${component}" "${INSTALL_DIR}/${service}"
-    if command -v systemctl &>/dev/null; then
+    if has_systemd; then
         systemctl start "$service"
     fi
 }
@@ -864,7 +876,7 @@ status_component() {
         echo "  Binary:   ${INSTALL_DIR}/${service}"
         echo "  Config:   ${CONFIG_DIR}/${component}.toml"
 
-        if command -v systemctl &>/dev/null; then
+        if has_systemd; then
             local status_line
             status_line=$(systemctl is-active "$service" 2>/dev/null || echo "inactive")
             if [ "$status_line" = "active" ]; then
@@ -986,7 +998,7 @@ cmd_service() {
         info "${action^}ing serverbee-${comp} (${method})..."
 
         if [ "$method" = "binary" ]; then
-            if command -v systemctl &>/dev/null; then
+            if has_systemd; then
                 systemctl "$action" "$service"
             else
                 error "systemd not available. Cannot ${action} ${service}."
@@ -1001,7 +1013,7 @@ cmd_service() {
         fi
 
         # Print brief status
-        if [ "$method" = "binary" ] && command -v systemctl &>/dev/null; then
+        if [ "$method" = "binary" ] && has_systemd; then
             local st
             st=$(systemctl is-active "$service" 2>/dev/null || echo "unknown")
             info "serverbee-${comp}: ${st}"
