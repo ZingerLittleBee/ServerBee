@@ -109,6 +109,8 @@ Two simultaneous registrations from the same machine could race between the SELE
 - `SELECT COUNT(*) FROM servers`
 - If `count >= max_servers && max_servers > 0` → return `400 Bad Request` with message: "Server limit reached ({max_servers}). Delete unused servers or increase max_servers in config."
 
+**This is a best-effort soft cap, not a hard limit.** Concurrent registrations with different fingerprints can race past the COUNT check and slightly exceed the limit. This is acceptable because: (1) the primary defense against abuse is the discovery key + rate limit, not the cap; (2) SQLite serializes writes so the overshoot is at most a few rows; (3) adding transaction-level locking for an exact hard limit adds complexity disproportionate to the threat model. The cap prevents runaway growth, not exact enforcement.
+
 ### 4. Discovery Key Rotation (Frontend Only)
 
 The server already has `PUT /api/settings/auto-discovery-key` which generates a new random key and returns it. No new backend endpoint needed.
@@ -146,21 +148,26 @@ These two conditions together identify servers that were registered but never su
    - `docker_events`
    - `ping_records`
 
-   **Tables with `server_ids_json` array (remove orphan ID from JSON array, do NOT delete the row):**
-   - `alert_rules` — parse `server_ids_json`, remove orphan ID, write back
-   - `ping_tasks` — same
-   - `tasks` — same
-   - `incidents` — same
-   - `maintenances` — same
-   - `service_monitors` — same
-   - `status_pages` — same
+   **Tables with `server_ids_json` array — per-table rules (empty array has different semantics per table):**
 
-   If after removal the array becomes empty, leave the row intact (the config still belongs to the user).
+   For each table, parse the JSON array, remove the orphan ID, then apply the table-specific rule:
+
+   | Table | If array becomes empty after removal |
+   |-------|--------------------------------------|
+   | `ping_tasks` | **Delete the row.** Empty array means "all agents" in current code — leaving it would unintentionally expand scope. |
+   | `tasks` | **Delete the row.** Task creation forbids empty `server_ids`; an empty array is invalid state. |
+   | `maintenances` | **Delete the row.** Empty array means "all servers" — leaving it would expand scope. |
+   | `alert_rules` | **Delete the row.** With `cover_type = "exclude"`, empty array means "match all servers". Safer to delete. |
+   | `service_monitors` | **Delete the row.** Empty would expand monitoring scope. Also delete related `service_monitor_records` by `monitor_id`. |
+   | `incidents` | **Keep the row.** Incidents are historical records; removing server references is fine, the incident itself should be preserved. |
+   | `status_pages` | **Keep the row.** Status pages are user-configured; empty server list just means no servers displayed. |
+
+   If the array still has remaining IDs after removal, always write back the updated array (never delete the row).
 
 4. Delete the matched server records themselves
 5. Return `{ data: { deleted_count: N } }`
 
-Note: Since these are "never connected" servers, most related tables will have no data. The JSON array cleanup is for correctness — shared config (alert rules, ping tasks, etc.) that references multiple servers must not be deleted when only one server is orphaned.
+Note: Since these are "never connected" servers, most related tables will have no data. The per-table rules above are for correctness to prevent silent semantic changes in shared configuration.
 
 **Frontend:**
 - Server list page toolbar: "Clean up unconnected servers" button
