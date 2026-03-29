@@ -351,14 +351,10 @@ install_cli() {
         tmp=$(mktemp "${target_dir}/.serverbee-cli.XXXXXX")
         trap 'rm -f "$tmp"' EXIT
 
-        if [ -f "$0" ] && ! [ "$0" -ef "$target" ]; then
-            # Repo-local execution — $0 is a real file AND not the installed CLI
-            cp "$0" "$tmp"
-        else
-            # Installed CLI or pipe execution — download from release tag
-            local url="https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
-            curl -fsSL -o "$tmp" "$url"
-        fi
+        # Always download from the release tag to avoid version skew
+        # between binaries (latest release) and CLI (possibly stale checkout)
+        local url="https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
+        curl -fsSL -o "$tmp" "$url"
 
         chmod +x "$tmp"
         mv "$tmp" "$target"
@@ -872,7 +868,8 @@ cmd_uninstall() {
     # Remove CLI when no managed components remain
     if [ -f "$META_FILE" ]; then
         local remaining
-        remaining=$(grep -c '"method"' "$META_FILE" 2>/dev/null || echo "0")
+        remaining=$(grep -c '"method"' "$META_FILE" 2>/dev/null || true)
+        : "${remaining:=0}"
         if [ "$remaining" -eq 0 ]; then
             rm -f "/usr/local/bin/serverbee"
             rm -f "$META_FILE"
