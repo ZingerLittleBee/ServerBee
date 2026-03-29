@@ -39,7 +39,7 @@ After deploying:
 Railway automatically assigns a port and provides HTTPS. No need to configure `SERVERBEE_SERVER__LISTEN` or TLS certificates.
 </Callout>
 
-## Bootstrap Installer and `serverbee.sh`
+## Bootstrap Installer
 
 For Linux hosts, the quickest binary/systemd path is the bootstrap installer:
 
@@ -118,7 +118,7 @@ docker compose logs -f serverbee-server
 For deployments without Docker, use systemd to manage both the server and agent processes.
 
 <Callout type="info">
-If you do not need hand-written unit files, prefer the bootstrap installer above. It creates the config files and systemd units for you, then `serverbee.sh` handles upgrades, restarts, and config edits.
+If you do not need hand-written unit files, prefer the bootstrap installer above. It creates the config files and systemd units for you, then the `serverbee` CLI handles upgrades, restarts, and config edits.
 </Callout>
 
 ### Server Service

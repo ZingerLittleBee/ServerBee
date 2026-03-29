@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Guided deployment manager** -- New `deploy/serverbee.sh` one-stop manager for `install`, `uninstall`, `upgrade`, `status`, `start`/`stop`/`restart`, `config`, and `env`, with interactive mode plus binary and Docker flows for both server and agent
+- **Guided deployment manager** -- New `serverbee` CLI one-stop manager for `install`, `uninstall`, `upgrade`, `status`, `start`/`stop`/`restart`, `config`, and `env`, with interactive mode plus binary and Docker flows for both server and agent
 - **Orphan server cleanup** -- New admin `DELETE /api/servers/cleanup` endpoint and `/servers` toolbar action to remove offline `New Server` placeholders that never completed initialization, while preserving online-but-uninitialized agents
 - **Discovery key rotation UI** -- Settings page now exposes a confirmed "Regenerate" action for the auto-discovery key instead of requiring a direct API call
 
