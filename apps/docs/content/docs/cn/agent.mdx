@@ -29,17 +29,15 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 
 脚本会自动完成下载、安装、配置和 systemd 服务注册。
 
-安装后，在未克隆仓库的主机上也可以继续复用引导脚本进行管理：
+安装完成后，使用 `serverbee` CLI 管理 Agent（安装时自动部署）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- status
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- upgrade agent -y
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- restart agent
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- config agent
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- uninstall agent -y
+sudo serverbee status
+sudo serverbee upgrade agent -y
+sudo serverbee restart agent
+sudo serverbee config agent
+sudo serverbee uninstall agent -y
 ```
-
-如果你已经克隆仓库，也可以改用 `sudo bash deploy/serverbee.sh ...` 执行同样的命令。
 
 <Callout type="info">
 重复执行 `install agent` 时，如果 `/usr/local/bin/serverbee-agent` 已存在，脚本会直接沿用当前二进制而不会覆盖。需要替换已安装版本时，请使用 `upgrade agent -y`，或先手动覆盖 `/usr/local/bin/serverbee-agent`，再重启服务。

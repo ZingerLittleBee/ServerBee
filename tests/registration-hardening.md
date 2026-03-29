@@ -79,7 +79,7 @@ curl -s -X POST http://localhost:9527/api/agent/register \
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| RH-6 | Docker agent compose 包含 machine-id 挂载 | 运行 `serverbee.sh install agent --method docker` 或直接检查生成的 compose 模板 | `docker-compose.agent.yml` 中包含 `- /etc/machine-id:/etc/machine-id:ro` | ✅ 模板检查通过 |
+| RH-6 | Docker agent compose 包含 machine-id 挂载 | 运行 `serverbee install agent --method docker` 或直接检查生成的 compose 模板 | `docker-compose.agent.yml` 中包含 `- /etc/machine-id:/etc/machine-id:ro` | ✅ 模板检查通过 |
 
 ---
 
