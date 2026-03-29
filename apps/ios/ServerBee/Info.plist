@@ -32,6 +32,8 @@
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>ServerBee needs camera access to scan QR codes for quick login</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

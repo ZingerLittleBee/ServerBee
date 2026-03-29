@@ -42,7 +42,7 @@ pub fn write_router() -> Router<Arc<AppState>> {
     responses(
         (status = 200, description = "List all network probe targets"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn list_targets(
     State(state): State<Arc<AppState>>,
@@ -58,7 +58,7 @@ async fn list_targets(
     responses(
         (status = 200, description = "Network probe global setting", body = NetworkProbeSetting),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_setting(
     State(state): State<Arc<AppState>>,
@@ -74,7 +74,7 @@ async fn get_setting(
     responses(
         (status = 200, description = "Network probe overview for all servers", body = Vec<ServerOverview>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_overview(
     State(state): State<Arc<AppState>>,
@@ -96,7 +96,7 @@ async fn get_overview(
         (status = 200, description = "Network probe target created"),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn create_target(
     State(state): State<Arc<AppState>>,
@@ -116,7 +116,7 @@ async fn create_target(
         (status = 200, description = "Network probe target updated"),
         (status = 404, description = "Target not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn update_target(
     State(state): State<Arc<AppState>>,
@@ -136,7 +136,7 @@ async fn update_target(
         (status = 200, description = "Network probe target deleted"),
         (status = 404, description = "Target not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn delete_target(
     State(state): State<Arc<AppState>>,
@@ -193,7 +193,7 @@ async fn delete_target(
     responses(
         (status = 200, description = "Network probe setting updated"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn update_setting(
     State(state): State<Arc<AppState>>,
@@ -254,7 +254,7 @@ pub struct NetworkProbeAnomalyQuery {
     responses(
         (status = 200, description = "Network probe targets for server"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn get_server_network_targets(
     State(state): State<Arc<AppState>>,
@@ -276,7 +276,7 @@ pub async fn get_server_network_targets(
     responses(
         (status = 200, description = "Network probe records for server"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn get_server_network_records(
     State(state): State<Arc<AppState>>,
@@ -297,7 +297,7 @@ pub async fn get_server_network_records(
     responses(
         (status = 200, description = "Network probe summary for server", body = crate::service::network_probe::ServerSummary),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn get_server_network_summary(
     State(state): State<Arc<AppState>>,
@@ -320,7 +320,7 @@ pub async fn get_server_network_summary(
     responses(
         (status = 200, description = "Network probe anomalies for server", body = Vec<NetworkProbeAnomaly>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn get_server_network_anomalies(
     State(state): State<Arc<AppState>>,

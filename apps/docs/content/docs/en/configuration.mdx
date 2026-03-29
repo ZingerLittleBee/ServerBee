@@ -78,6 +78,13 @@ Every TOML configuration key maps directly to an environment variable. Replace d
 | `SERVERBEE_RETENTION__DOCKER_EVENTS_DAYS` | `7` | Docker event records retention in days |
 | `SERVERBEE_RETENTION__SERVICE_MONITOR_DAYS` | `30` | Service monitor records retention in days |
 
+#### Mobile (Optional)
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `SERVERBEE_MOBILE__ACCESS_TTL` | `900` | Mobile access token lifetime in seconds (15 min) |
+| `SERVERBEE_MOBILE__REFRESH_TTL` | `2592000` | Mobile refresh token lifetime in seconds (30 days) |
+
 #### Internal
 
 > The following variables have sensible defaults and rarely need modification. Only adjust when you have a specific requirement.
@@ -253,6 +260,13 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `max_upload_size` | u64 | `104857600` | Maximum file upload size in bytes (default 100 MB) |
+
+### `[mobile]` -- Mobile Authentication
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `access_ttl` | i64 | `900` | Mobile access token lifetime in seconds (default 15 minutes) |
+| `refresh_ttl` | i64 | `2592000` | Mobile refresh token lifetime in seconds (default 30 days) |
 
 ---
 

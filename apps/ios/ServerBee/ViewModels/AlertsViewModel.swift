@@ -11,8 +11,7 @@ final class AlertsViewModel {
         isLoading = true
         defer { isLoading = false }
         do {
-            let response: ApiResponse<[MobileAlertEvent]> = try await apiClient.get("/api/alert-events?limit=\(limit)")
-            events = response.data
+            events = try await apiClient.get("/api/alert-events?limit=\(limit)")
         } catch {
             print("[Alerts] Fetch failed: \(error)")
         }

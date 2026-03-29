@@ -208,6 +208,8 @@ pub async fn oauth_callback(
         user_agent: sea_orm::Set(user_agent),
         expires_at: sea_orm::Set(expires_at),
         created_at: sea_orm::Set(now),
+        source: sea_orm::Set("web".to_string()),
+        mobile_session_id: sea_orm::Set(None),
     };
 
     crate::entity::session::Entity::insert(new_session)
