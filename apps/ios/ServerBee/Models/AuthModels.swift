@@ -4,12 +4,14 @@ struct MobileLoginRequest: Codable, Sendable {
     let username: String
     let password: String
     let installationId: String
+    let deviceName: String
     var totpCode: String?
 
     enum CodingKeys: String, CodingKey {
         case username
         case password
         case installationId = "installation_id"
+        case deviceName = "device_name"
         case totpCode = "totp_code"
     }
 }
@@ -47,5 +49,3 @@ struct MobileRefreshRequest: Codable, Sendable {
         case installationId = "installation_id"
     }
 }
-
-typealias MobileLogoutRequest = MobileRefreshRequest
