@@ -26,7 +26,26 @@ actor APIClient {
 
     /// Perform a POST request for endpoints that return null/empty data.
     func postVoid(_ path: String, body: (any Encodable & Sendable)? = nil) async throws {
-        let _: ApiResponse<Empty?> = try await request(path, method: "POST", body: body)
+        let (_, httpResponse) = try await performRequest(path, method: "POST", body: body)
+
+        if httpResponse.statusCode == 401 {
+            do {
+                _ = try await authManager.refreshAccessToken()
+            } catch {
+                await authManager.clearAuth()
+                throw APIError.unauthorized
+            }
+            let (_, retryResponse) = try await performRequest(path, method: "POST", body: body)
+            guard (200...299).contains(retryResponse.statusCode) else {
+                await authManager.clearAuth()
+                throw APIError.httpError(statusCode: retryResponse.statusCode, data: Data())
+            }
+            return
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: httpResponse.statusCode, data: Data())
+        }
     }
 
     /// Perform a PUT request with an optional JSON body and decode the response.

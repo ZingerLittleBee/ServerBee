@@ -293,10 +293,12 @@ pub async fn generate_pair_code(
     State(state): State<Arc<AppState>>,
     Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<ApiResponse<MobilePairCodeResponse>>, AppError> {
-    // Remove any existing codes for this user
-    state
-        .pending_pairs
-        .retain(|_, v| v.user_id != current_user.user_id);
+    // Clean up expired codes (5 min TTL) and existing codes for this user
+    let now = chrono::Utc::now();
+    state.pending_pairs.retain(|_, v| {
+        v.user_id != current_user.user_id
+            && (now - v.created_at) < chrono::Duration::minutes(5)
+    });
 
     // Generate a 32-byte random base64url code with sb_pair_ prefix
     let mut bytes = [0u8; 32];

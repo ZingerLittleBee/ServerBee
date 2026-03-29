@@ -9,7 +9,9 @@ use sea_orm::*;
 use uuid::Uuid;
 
 use crate::config::AdminConfig;
-use crate::entity::{api_key, server, session, user};
+use sea_orm::sea_query::Expr;
+
+use crate::entity::{api_key, mobile_session, server, session, user};
 use crate::error::AppError;
 
 /// Parameters for creating an authenticated session.
@@ -133,13 +135,14 @@ impl AuthService {
         Ok((session_model, user))
     }
 
-    /// Validate a session token. If valid and not expired, extends the
-    /// expiration (sliding expiry) and returns the associated user.
+    /// Validate a session token. If valid and not expired, returns the
+    /// associated user and session. Only performs sliding expiry for
+    /// `source == "web"` sessions; mobile sessions keep their original TTL.
     pub async fn validate_session(
         db: &DatabaseConnection,
         token: &str,
-        session_ttl: i64,
-    ) -> Result<Option<user::Model>, AppError> {
+        web_session_ttl: i64,
+    ) -> Result<Option<(user::Model, session::Model)>, AppError> {
         let session = session::Entity::find()
             .filter(session::Column::Token.eq(token))
             .one(db)
@@ -159,17 +162,40 @@ impl AuthService {
             return Ok(None);
         }
 
-        // Sliding expiry: extend expires_at
-        let user_id = session.user_id.clone();
-        let new_expires = Utc::now() + chrono::Duration::seconds(session_ttl);
-        let mut active: session::ActiveModel = session.into();
-        active.expires_at = Set(new_expires);
-        active.update(db).await?;
+        // Sliding expiry: only extend for web sessions
+        let session = if session.source == "web" {
+            let new_expires = Utc::now() + chrono::Duration::seconds(web_session_ttl);
+            let mut active: session::ActiveModel = session.into();
+            active.expires_at = Set(new_expires);
+            active.update(db).await?
+        } else {
+            // Update mobile_session.last_used_at (fire-and-forget for latency)
+            if let Some(ref ms_id) = session.mobile_session_id {
+                let ms_id = ms_id.clone();
+                let db = db.clone();
+                tokio::spawn(async move {
+                    let _ = mobile_session::Entity::update_many()
+                        .col_expr(
+                            mobile_session::Column::LastUsedAt,
+                            Expr::value(Utc::now()),
+                        )
+                        .filter(mobile_session::Column::Id.eq(&ms_id))
+                        .exec(&db)
+                        .await;
+                });
+            }
+            session
+        };
 
         // Fetch the user
-        let user = user::Entity::find_by_id(&user_id).one(db).await?;
+        let user = user::Entity::find_by_id(&session.user_id)
+            .one(db)
+            .await?;
 
-        Ok(user)
+        match user {
+            Some(u) => Ok(Some((u, session))),
+            None => Ok(None),
+        }
     }
 
     /// Delete a session by its token (logout).
@@ -675,8 +701,9 @@ mod tests {
             .await
             .expect("validate_session should not error");
         assert!(validated.is_some(), "valid token should return a user");
-        let user = validated.unwrap();
+        let (user, sess) = validated.unwrap();
         assert_eq!(user.username, "dave");
+        assert_eq!(sess.source, "web");
     }
 
     #[tokio::test]
