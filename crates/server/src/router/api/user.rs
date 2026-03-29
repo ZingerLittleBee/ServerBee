@@ -25,7 +25,7 @@ pub fn router() -> Router<Arc<AppState>> {
         (status = 200, description = "List all users", body = Vec<UserResponse>),
         (status = 403, description = "Forbidden — admin only"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn list_users(
     State(state): State<Arc<AppState>>,
@@ -45,7 +45,7 @@ pub async fn list_users(
         (status = 403, description = "Forbidden — admin only"),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn get_user(
     State(state): State<Arc<AppState>>,
@@ -66,7 +66,7 @@ pub async fn get_user(
         (status = 409, description = "Username already exists"),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn create_user(
     State(state): State<Arc<AppState>>,
@@ -88,7 +88,7 @@ pub async fn create_user(
         (status = 403, description = "Forbidden — admin only"),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn update_user(
     State(state): State<Arc<AppState>>,
@@ -110,7 +110,7 @@ pub async fn update_user(
         (status = 403, description = "Forbidden — admin only"),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn delete_user(
     State(state): State<Arc<AppState>>,

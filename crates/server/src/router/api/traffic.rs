@@ -145,7 +145,7 @@ async fn get_traffic(
          body = ApiResponse<Vec<ServerTrafficOverview>>),
     ),
     tag = "traffic",
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn get_traffic_overview(
     State(state): State<Arc<AppState>>,
@@ -163,7 +163,7 @@ pub async fn get_traffic_overview(
          body = ApiResponse<Vec<DailyTraffic>>),
     ),
     tag = "traffic",
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn get_traffic_overview_daily(
     State(state): State<Arc<AppState>>,
@@ -187,7 +187,7 @@ pub async fn get_traffic_overview_daily(
         (status = 404, description = "Server not found"),
     ),
     tag = "traffic",
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn get_traffic_cycle(
     State(state): State<Arc<AppState>>,

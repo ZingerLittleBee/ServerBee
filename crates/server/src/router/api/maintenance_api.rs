@@ -25,7 +25,7 @@ pub fn router() -> Router<Arc<AppState>> {
     responses(
         (status = 200, description = "List all maintenance windows", body = Vec<maintenance::Model>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn list_maintenances(
     State(state): State<Arc<AppState>>,
@@ -44,7 +44,7 @@ pub async fn list_maintenances(
         (status = 200, description = "Maintenance window created", body = maintenance::Model),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn create_maintenance(
     State(state): State<Arc<AppState>>,
@@ -65,7 +65,7 @@ pub async fn create_maintenance(
         (status = 200, description = "Maintenance window updated", body = maintenance::Model),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn update_maintenance(
     State(state): State<Arc<AppState>>,
@@ -86,7 +86,7 @@ pub async fn update_maintenance(
         (status = 200, description = "Maintenance window deleted"),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn delete_maintenance(
     State(state): State<Arc<AppState>>,

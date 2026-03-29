@@ -51,7 +51,7 @@ pub fn router() -> Router<Arc<AppState>> {
         (status = 200, description = "Audit log entries", body = AuditListResponse),
         (status = 403, description = "Forbidden — admin only"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn list_audit_logs(
     State(state): State<Arc<AppState>>,

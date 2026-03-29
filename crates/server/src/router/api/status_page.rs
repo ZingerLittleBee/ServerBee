@@ -261,7 +261,7 @@ pub async fn get_public_status_page(
     responses(
         (status = 200, description = "List all status pages", body = Vec<status_page::Model>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn list_status_pages(
     State(state): State<Arc<AppState>>,
@@ -281,7 +281,7 @@ pub async fn list_status_pages(
         (status = 409, description = "Slug conflict"),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn create_status_page(
     State(state): State<Arc<AppState>>,
@@ -303,7 +303,7 @@ pub async fn create_status_page(
         (status = 404, description = "Not found"),
         (status = 409, description = "Slug conflict"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn update_status_page(
     State(state): State<Arc<AppState>>,
@@ -324,7 +324,7 @@ pub async fn update_status_page(
         (status = 200, description = "Status page deleted"),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn delete_status_page(
     State(state): State<Arc<AppState>>,

@@ -28,7 +28,7 @@ pub fn router() -> Router<Arc<AppState>> {
     responses(
         (status = 200, description = "List all alert rules", body = Vec<crate::entity::alert_rule::Model>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn list_rules(
     State(state): State<Arc<AppState>>,
@@ -46,7 +46,7 @@ async fn list_rules(
         (status = 200, description = "Alert rule details", body = crate::entity::alert_rule::Model),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_rule(
     State(state): State<Arc<AppState>>,
@@ -65,7 +65,7 @@ async fn get_rule(
         (status = 200, description = "Alert rule created", body = crate::entity::alert_rule::Model),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn create_rule(
     State(state): State<Arc<AppState>>,
@@ -85,7 +85,7 @@ async fn create_rule(
         (status = 200, description = "Alert rule updated", body = crate::entity::alert_rule::Model),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn update_rule(
     State(state): State<Arc<AppState>>,
@@ -105,7 +105,7 @@ async fn update_rule(
         (status = 200, description = "Alert rule deleted"),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn delete_rule(
     State(state): State<Arc<AppState>>,
@@ -123,7 +123,7 @@ async fn delete_rule(
     responses(
         (status = 200, description = "Alert states for this rule", body = Vec<AlertStateResponse>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn list_states(
     State(state): State<Arc<AppState>>,
@@ -158,7 +158,7 @@ fn default_events_limit() -> u64 {
     responses(
         (status = 200, description = "Recent alert events", body = Vec<AlertEventResponse>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn list_alert_events(
     State(state): State<Arc<AppState>>,
