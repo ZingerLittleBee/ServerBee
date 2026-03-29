@@ -39,12 +39,9 @@ install_cli() {
         tmp=$(mktemp "${target_dir}/.serverbee-cli.XXXXXX")
         trap 'rm -f "$tmp"' EXIT
 
-        local self_path
-        self_path=$(realpath "$0" 2>/dev/null || echo "")
-
-        if [ -n "$self_path" ] && [ -f "$self_path" ] && [ "$self_path" != "$(realpath "$target" 2>/dev/null)" ]; then
+        if [ -f "$0" ] && [ "$0" != "$target" ]; then
             # Repo-local execution — $0 is a real file AND not the installed CLI
-            cp "$self_path" "$tmp"
+            cp "$0" "$tmp"
         else
             # Installed CLI or pipe execution — download from release tag
             local url="https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
@@ -67,7 +64,7 @@ Key properties:
 - **Truly non-fatal**: the entire body runs in a subshell guarded by `if (...); then ... else ... fi`. Under `set -euo pipefail`, any step failure (`cp`, `curl`, `chmod`, `mv`) exits the subshell, hits the `else` branch, and warns — the caller continues normally.
 - **Atomic write**: temp file created in the target directory (`/usr/local/bin/.serverbee-cli.XXXXXX`) — same filesystem, so `mv` is a guaranteed atomic rename. EXIT trap cleans up on failure.
 - **Version-pinned**: download cases use the same release tag as the binaries, avoiding version skew between CLI and components.
-- **Self-update safe**: `realpath` comparison prevents the installed CLI from copying itself onto itself; it downloads the pinned version instead.
+- **Self-update safe**: string comparison `$0 != $target` prevents the installed CLI from copying itself onto itself; it downloads the pinned version instead. No `realpath` dependency — `$0` is always `/usr/local/bin/serverbee` when invoked as the installed CLI, matching `$target` exactly.
 
 ### 2. Call Sites
 
@@ -85,15 +82,13 @@ Each call happens right before `meta_write()`. The release version is passed as 
 In `upgrade_component()`, call `install_cli "$latest_version"` to update the management script. Two call sites:
 
 1. **After successful upgrade** — after `meta_write()` at the end of `upgrade_component()`.
-2. **On version-equal early return** — before the "already up to date" return, check if `/usr/local/bin/serverbee` exists. If missing or differs, call `install_cli "$latest_version"` to repair a missing/stale CLI (covers prior warning-only failures or manual deletion).
+2. **On version-equal early return** — unconditionally call `install_cli "$latest_version"` before the return. This repairs both missing CLIs and stale CLIs in a single path. The function is non-fatal and idempotent, so calling it when the CLI is already current has no harmful effect.
 
 ```bash
 # In upgrade_component(), at the early return:
 if [ -n "$current_version" ] && [ "$current_version" = "$latest_version" ]; then
-    # Repair CLI if missing or stale even though component is current
-    if [ ! -x "/usr/local/bin/serverbee" ]; then
-        install_cli "$latest_version"
-    fi
+    # Always ensure CLI matches the current release (repairs missing or stale)
+    install_cli "$latest_version"
     info "serverbee-${component} is already up to date (${current_version})"
     return
 fi
