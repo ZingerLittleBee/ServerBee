@@ -952,61 +952,61 @@ async fn cleanup_json_array_tables(
 
     // alert_rules: delete if empty (+ related alert_states)
     for rule in alert_rule::Entity::find().all(txn).await? {
-        if let Some(ref json) = rule.server_ids_json {
-            if let Some(new_json) = remove_ids_from_json(json, orphan_ids) {
-                if new_json == "[]" {
-                    alert_state::Entity::delete_many()
-                        .filter(alert_state::Column::RuleId.eq(&rule.id))
-                        .exec(txn)
-                        .await?;
-                    alert_rule::Entity::delete_by_id(&rule.id).exec(txn).await?;
-                } else {
-                    let mut active: alert_rule::ActiveModel = rule.into();
-                    active.server_ids_json = Set(Some(new_json));
-                    active.update(txn).await?;
-                }
+        if let Some(ref json) = rule.server_ids_json
+            && let Some(new_json) = remove_ids_from_json(json, orphan_ids)
+        {
+            if new_json == "[]" {
+                alert_state::Entity::delete_many()
+                    .filter(alert_state::Column::RuleId.eq(&rule.id))
+                    .exec(txn)
+                    .await?;
+                alert_rule::Entity::delete_by_id(&rule.id).exec(txn).await?;
+            } else {
+                let mut active: alert_rule::ActiveModel = rule.into();
+                active.server_ids_json = Set(Some(new_json));
+                active.update(txn).await?;
             }
         }
     }
 
     // maintenances: delete if empty
     for m in maintenance::Entity::find().all(txn).await? {
-        if let Some(ref json) = m.server_ids_json {
-            if let Some(new_json) = remove_ids_from_json(json, orphan_ids) {
-                if new_json == "[]" {
-                    maintenance::Entity::delete_by_id(&m.id).exec(txn).await?;
-                } else {
-                    let mut active: maintenance::ActiveModel = m.into();
-                    active.server_ids_json = Set(Some(new_json));
-                    active.update(txn).await?;
-                }
+        if let Some(ref json) = m.server_ids_json
+            && let Some(new_json) = remove_ids_from_json(json, orphan_ids)
+        {
+            if new_json == "[]" {
+                maintenance::Entity::delete_by_id(&m.id).exec(txn).await?;
+            } else {
+                let mut active: maintenance::ActiveModel = m.into();
+                active.server_ids_json = Set(Some(new_json));
+                active.update(txn).await?;
             }
         }
     }
 
     // service_monitors: set to NULL if empty (preserve monitor + history)
     for monitor in service_monitor::Entity::find().all(txn).await? {
-        if let Some(ref json) = monitor.server_ids_json {
-            if let Some(new_json) = remove_ids_from_json(json, orphan_ids) {
-                let mut active: service_monitor::ActiveModel = monitor.into();
-                if new_json == "[]" {
-                    active.server_ids_json = Set(None);
-                } else {
-                    active.server_ids_json = Set(Some(new_json));
-                }
-                active.update(txn).await?;
+        if let Some(ref json) = monitor.server_ids_json
+            && let Some(new_json) = remove_ids_from_json(json, orphan_ids)
+        {
+            let mut active: service_monitor::ActiveModel = monitor.into();
+            if new_json == "[]" {
+                active.server_ids_json = Set(None);
+            } else {
+                active.server_ids_json = Set(Some(new_json));
             }
+            active.update(txn).await?;
         }
     }
 
     // incidents: keep row, just update array
     for inc in incident::Entity::find().all(txn).await? {
-        if let Some(ref json) = inc.server_ids_json {
-            if let Some(new_json) = remove_ids_from_json(json, orphan_ids) {
-                let mut active: incident::ActiveModel = inc.into();
-                active.server_ids_json = Set(Some(new_json));
-                active.update(txn).await?;
-            }
+        if let Some(ref json) = inc.server_ids_json
+            && let Some(new_json) = remove_ids_from_json(json, orphan_ids)
+        {
+            let mut active: incident::ActiveModel = inc.into();
+            active.server_ids_json = Set(Some(new_json));
+            active.update(txn).await?;
         }
     }
 
