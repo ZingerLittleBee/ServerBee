@@ -109,31 +109,30 @@ async fn register(
     }
 
     // 3. Fingerprint dedup: try to reuse existing server
-    if !fingerprint.is_empty() {
-        if let Some(existing) = server::Entity::find()
+    if !fingerprint.is_empty()
+        && let Some(existing) = server::Entity::find()
             .filter(server::Column::Fingerprint.eq(&fingerprint))
             .one(&state.db)
             .await?
-        {
-            let server_id = existing.id.clone();
-            tracing::info!("Reusing server {server_id} for fingerprint {fingerprint}");
+    {
+        let server_id = existing.id.clone();
+        tracing::info!("Reusing server {server_id} for fingerprint {fingerprint}");
 
-            let plaintext_token = AuthService::generate_session_token();
-            let token_hash = AuthService::hash_password(&plaintext_token)?;
-            let token_prefix = &plaintext_token[..8.min(plaintext_token.len())];
+        let plaintext_token = AuthService::generate_session_token();
+        let token_hash = AuthService::hash_password(&plaintext_token)?;
+        let token_prefix = &plaintext_token[..8.min(plaintext_token.len())];
 
-            let mut active: server::ActiveModel = existing.into();
-            active.token_hash = Set(token_hash);
-            active.token_prefix = Set(token_prefix.to_string());
-            active.last_remote_addr = Set(Some(ip));
-            active.updated_at = Set(Utc::now());
-            active.update(&state.db).await?;
+        let mut active: server::ActiveModel = existing.into();
+        active.token_hash = Set(token_hash);
+        active.token_prefix = Set(token_prefix.to_string());
+        active.last_remote_addr = Set(Some(ip));
+        active.updated_at = Set(Utc::now());
+        active.update(&state.db).await?;
 
-            return ok(RegisterResponse {
-                server_id,
-                token: plaintext_token,
-            });
-        }
+        return ok(RegisterResponse {
+            server_id,
+            token: plaintext_token,
+        });
     }
 
     // 4. Global server limit check (soft cap, only for new servers)
