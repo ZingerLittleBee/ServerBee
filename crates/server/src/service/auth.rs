@@ -125,6 +125,8 @@ impl AuthService {
             user_agent: Set(params.user_agent.to_string()),
             expires_at: Set(expires_at),
             created_at: Set(now),
+            source: Set("web".to_string()),
+            mobile_session_id: Set(None),
         };
 
         let session_model = new_session.insert(db).await?;
