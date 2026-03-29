@@ -55,6 +55,11 @@ pub struct BatchDeleteResponse {
     deleted: u64,
 }
 
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct CleanupResponse {
+    deleted_count: u64,
+}
+
 /// Server response DTO — excludes sensitive fields (token_hash, token_prefix).
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ServerResponse {
@@ -164,6 +169,7 @@ pub fn write_router() -> Router<Arc<AppState>> {
         .route("/servers/{id}", put(update_server))
         .route("/servers/{id}", delete(delete_server))
         .route("/servers/batch-delete", post(batch_delete))
+        .route("/servers/cleanup", delete(cleanup_orphaned_servers))
         .route(
             "/servers/batch-capabilities",
             put(batch_update_capabilities),
@@ -805,6 +811,224 @@ async fn set_server_network_targets(
     }
 
     ok("ok")
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/servers/cleanup",
+    tag = "servers",
+    responses(
+        (status = 200, description = "Orphaned servers cleaned up", body = CleanupResponse),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+async fn cleanup_orphaned_servers(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ApiResponse<CleanupResponse>>, AppError> {
+    use crate::entity::*;
+
+    let orphans = server::Entity::find()
+        .filter(server::Column::Name.eq("New Server"))
+        .filter(server::Column::Os.is_null())
+        .all(&state.db)
+        .await?;
+
+    let orphan_ids: Vec<String> = orphans.iter().map(|s| s.id.clone()).collect();
+    if orphan_ids.is_empty() {
+        return ok(CleanupResponse { deleted_count: 0 });
+    }
+
+    let txn = state.db.begin().await?;
+
+    // Tables with server_id FK — delete rows
+    record::Entity::delete_many()
+        .filter(record::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    record_hourly::Entity::delete_many()
+        .filter(record_hourly::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    gpu_record::Entity::delete_many()
+        .filter(gpu_record::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    alert_state::Entity::delete_many()
+        .filter(alert_state::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    network_probe_config::Entity::delete_many()
+        .filter(network_probe_config::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    network_probe_record::Entity::delete_many()
+        .filter(network_probe_record::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    network_probe_record_hourly::Entity::delete_many()
+        .filter(network_probe_record_hourly::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    traffic_state::Entity::delete_many()
+        .filter(traffic_state::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    traffic_hourly::Entity::delete_many()
+        .filter(traffic_hourly::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    traffic_daily::Entity::delete_many()
+        .filter(traffic_daily::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    uptime_daily::Entity::delete_many()
+        .filter(uptime_daily::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    task_result::Entity::delete_many()
+        .filter(task_result::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    server_tag::Entity::delete_many()
+        .filter(server_tag::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    docker_event::Entity::delete_many()
+        .filter(docker_event::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    ping_record::Entity::delete_many()
+        .filter(ping_record::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+
+    // Tables with server_ids_json — per-table rules
+    cleanup_json_array_tables(&txn, &orphan_ids).await?;
+
+    let deleted = server::Entity::delete_many()
+        .filter(server::Column::Id.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+
+    txn.commit().await?;
+
+    tracing::info!("Cleaned up {} orphaned servers", deleted.rows_affected);
+    ok(CleanupResponse {
+        deleted_count: deleted.rows_affected,
+    })
+}
+
+async fn cleanup_json_array_tables(
+    txn: &sea_orm::DatabaseTransaction,
+    orphan_ids: &[String],
+) -> Result<(), AppError> {
+    use crate::entity::*;
+
+    // ping_tasks: delete if empty
+    for task in ping_task::Entity::find().all(txn).await? {
+        if let Some(new_json) = remove_ids_from_json(&task.server_ids_json, orphan_ids) {
+            if new_json == "[]" {
+                ping_task::Entity::delete_by_id(&task.id).exec(txn).await?;
+            } else {
+                let mut active: ping_task::ActiveModel = task.into();
+                active.server_ids_json = Set(new_json);
+                active.update(txn).await?;
+            }
+        }
+    }
+
+    // tasks: delete if empty
+    for t in task::Entity::find().all(txn).await? {
+        if let Some(new_json) = remove_ids_from_json(&t.server_ids_json, orphan_ids) {
+            if new_json == "[]" {
+                task::Entity::delete_by_id(&t.id).exec(txn).await?;
+            } else {
+                let mut active: task::ActiveModel = t.into();
+                active.server_ids_json = Set(new_json);
+                active.update(txn).await?;
+            }
+        }
+    }
+
+    // alert_rules: delete if empty (+ related alert_states)
+    for rule in alert_rule::Entity::find().all(txn).await? {
+        if let Some(ref json) = rule.server_ids_json {
+            if let Some(new_json) = remove_ids_from_json(json, orphan_ids) {
+                if new_json == "[]" {
+                    alert_state::Entity::delete_many()
+                        .filter(alert_state::Column::RuleId.eq(&rule.id))
+                        .exec(txn)
+                        .await?;
+                    alert_rule::Entity::delete_by_id(&rule.id).exec(txn).await?;
+                } else {
+                    let mut active: alert_rule::ActiveModel = rule.into();
+                    active.server_ids_json = Set(Some(new_json));
+                    active.update(txn).await?;
+                }
+            }
+        }
+    }
+
+    // maintenances: delete if empty
+    for m in maintenance::Entity::find().all(txn).await? {
+        if let Some(ref json) = m.server_ids_json {
+            if let Some(new_json) = remove_ids_from_json(json, orphan_ids) {
+                if new_json == "[]" {
+                    maintenance::Entity::delete_by_id(&m.id).exec(txn).await?;
+                } else {
+                    let mut active: maintenance::ActiveModel = m.into();
+                    active.server_ids_json = Set(Some(new_json));
+                    active.update(txn).await?;
+                }
+            }
+        }
+    }
+
+    // service_monitors: set to NULL if empty (preserve monitor + history)
+    for monitor in service_monitor::Entity::find().all(txn).await? {
+        if let Some(ref json) = monitor.server_ids_json {
+            if let Some(new_json) = remove_ids_from_json(json, orphan_ids) {
+                let mut active: service_monitor::ActiveModel = monitor.into();
+                if new_json == "[]" {
+                    active.server_ids_json = Set(None);
+                } else {
+                    active.server_ids_json = Set(Some(new_json));
+                }
+                active.update(txn).await?;
+            }
+        }
+    }
+
+    // incidents: keep row, just update array
+    for inc in incident::Entity::find().all(txn).await? {
+        if let Some(ref json) = inc.server_ids_json {
+            if let Some(new_json) = remove_ids_from_json(json, orphan_ids) {
+                let mut active: incident::ActiveModel = inc.into();
+                active.server_ids_json = Set(Some(new_json));
+                active.update(txn).await?;
+            }
+        }
+    }
+
+    // status_pages: keep row, just update array
+    for page in status_page::Entity::find().all(txn).await? {
+        if let Some(new_json) = remove_ids_from_json(&page.server_ids_json, orphan_ids) {
+            let mut active: status_page::ActiveModel = page.into();
+            active.server_ids_json = Set(new_json);
+            active.update(txn).await?;
+        }
+    }
+
+    Ok(())
+}
+
+fn remove_ids_from_json(json: &str, orphan_ids: &[String]) -> Option<String> {
+    let ids: Vec<String> = serde_json::from_str(json).unwrap_or_default();
+    let filtered: Vec<&String> = ids.iter().filter(|id| !orphan_ids.contains(id)).collect();
+    if filtered.len() == ids.len() {
+        return None;
+    }
+    Some(serde_json::to_string(&filtered).unwrap_or_else(|_| "[]".to_string()))
 }
 
 #[cfg(test)]
