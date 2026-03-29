@@ -24,30 +24,51 @@ async fn browser_ws_handler(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Response {
-    // Validate auth: try session cookie first, then API key
-    let user = validate_browser_auth(&state, &headers).await;
-    match user {
-        Some(_) => ws
+    // Validate auth: try session cookie first, then API key, then Bearer token
+    let auth = validate_browser_auth(&state, &headers).await;
+    match auth {
+        Some((_user_id, mobile_expires)) => ws
             .max_message_size(MAX_WS_MESSAGE_SIZE)
-            .on_upgrade(move |socket| handle_browser_ws(socket, state)),
+            .on_upgrade(move |socket| handle_browser_ws(socket, state, mobile_expires)),
         None => axum::http::StatusCode::UNAUTHORIZED.into_response(),
     }
 }
 
-async fn validate_browser_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Option<String> {
-    // Try session cookie
+/// Returns `Some((user_id, mobile_expires))` on success.
+/// `mobile_expires` is `Some(expires_at)` when authenticated via a non-web session
+/// (Bearer token from mobile), so the WS connection can be auto-closed on expiry.
+/// For web sessions and API keys, `mobile_expires` is `None` (they use sliding expiry
+/// or never expire respectively).
+async fn validate_browser_auth(
+    state: &Arc<AppState>,
+    headers: &HeaderMap,
+) -> Option<(String, Option<chrono::DateTime<chrono::Utc>>)> {
+    // Try session cookie (always web source → no mobile expiry)
     if let Some(token) = extract_session_cookie(headers)
-        && let Ok(Some(user)) =
+        && let Ok(Some((user, _session))) =
             AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
     {
-        return Some(user.id);
+        return Some((user.id, None));
     }
 
-    // Try API key header
+    // Try API key header (no expiry)
     if let Some(key) = extract_api_key(headers)
         && let Ok(Some(user)) = AuthService::validate_api_key(&state.db, &key).await
     {
-        return Some(user.id);
+        return Some((user.id, None));
+    }
+
+    // Try Bearer token (may be a mobile session with a fixed expiry)
+    if let Some(token) = extract_bearer_token(headers)
+        && let Ok(Some((user, session))) =
+            AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
+    {
+        let mobile_expires = if session.source != "web" {
+            Some(session.expires_at)
+        } else {
+            None
+        };
+        return Some((user.id, mobile_expires));
     }
 
     None
@@ -73,7 +94,20 @@ fn extract_api_key(headers: &HeaderMap) -> Option<String> {
         .map(|s| s.to_string())
 }
 
-async fn handle_browser_ws(socket: WebSocket, state: Arc<AppState>) {
+fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("authorization")?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")
+        .map(|s| s.to_string())
+}
+
+async fn handle_browser_ws(
+    socket: WebSocket,
+    state: Arc<AppState>,
+    mobile_expires: Option<chrono::DateTime<chrono::Utc>>,
+) {
     let (mut ws_sink, mut ws_stream) = socket.split();
 
     let connection_id = uuid::Uuid::new_v4().to_string();
@@ -137,6 +171,22 @@ async fn handle_browser_ws(socket: WebSocket, state: Arc<AppState>) {
                         break;
                     }
                 }
+            }
+            // Mobile token expiry: auto-close when the token expires
+            _ = async {
+                if let Some(exp) = mobile_expires {
+                    let dur = (exp - chrono::Utc::now()).to_std().unwrap_or_default();
+                    tokio::time::sleep(dur).await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            } => {
+                tracing::debug!("Mobile WS token expired, closing connection");
+                let _ = ws_sink.send(Message::Close(Some(axum::extract::ws::CloseFrame {
+                    code: 4001,
+                    reason: "token expired".into(),
+                }))).await;
+                break;
             }
         }
     }
