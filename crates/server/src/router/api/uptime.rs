@@ -5,7 +5,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::service::server::ServerService;
 use crate::service::uptime::{UptimeDailyEntry, UptimeService};
 use crate::state::AppState;

@@ -5,9 +5,9 @@ use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::service::network_probe::{
-    CreateNetworkProbeTarget, NetworkProbeAnomaly, NetworkProbeSetting, NetworkProbeService,
+    CreateNetworkProbeTarget, NetworkProbeAnomaly, NetworkProbeService, NetworkProbeSetting,
     ServerOverview, TargetDto, UpdateNetworkProbeTarget,
 };
 use crate::state::AppState;
@@ -144,9 +144,9 @@ async fn delete_target(
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     // Find which servers have this target configured, before deletion
     use crate::entity::network_probe_config;
+    use sea_orm::ColumnTrait;
     use sea_orm::EntityTrait;
     use sea_orm::QueryFilter;
-    use sea_orm::ColumnTrait;
 
     let affected_configs = network_probe_config::Entity::find()
         .filter(network_probe_config::Column::TargetId.eq(id.as_str()))

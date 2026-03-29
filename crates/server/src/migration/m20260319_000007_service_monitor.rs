@@ -19,7 +19,11 @@ impl MigrationTrait for Migration {
                             .primary_key(),
                     )
                     .col(ColumnDef::new(ServiceMonitor::Name).string().not_null())
-                    .col(ColumnDef::new(ServiceMonitor::MonitorType).string().not_null())
+                    .col(
+                        ColumnDef::new(ServiceMonitor::MonitorType)
+                            .string()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(ServiceMonitor::Target).string().not_null())
                     .col(
                         ColumnDef::new(ServiceMonitor::Interval)
@@ -33,7 +37,11 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .default("{}"),
                     )
-                    .col(ColumnDef::new(ServiceMonitor::NotificationGroupId).string().null())
+                    .col(
+                        ColumnDef::new(ServiceMonitor::NotificationGroupId)
+                            .string()
+                            .null(),
+                    )
                     .col(
                         ColumnDef::new(ServiceMonitor::RetryCount)
                             .integer()
@@ -54,7 +62,11 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .default(0),
                     )
-                    .col(ColumnDef::new(ServiceMonitor::LastCheckedAt).timestamp().null())
+                    .col(
+                        ColumnDef::new(ServiceMonitor::LastCheckedAt)
+                            .timestamp()
+                            .null(),
+                    )
                     .col(
                         ColumnDef::new(ServiceMonitor::CreatedAt)
                             .timestamp()
@@ -95,9 +107,21 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(ServiceMonitorRecord::MonitorId).string().not_null())
-                    .col(ColumnDef::new(ServiceMonitorRecord::Success).boolean().not_null())
-                    .col(ColumnDef::new(ServiceMonitorRecord::Latency).double().null())
+                    .col(
+                        ColumnDef::new(ServiceMonitorRecord::MonitorId)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(ServiceMonitorRecord::Success)
+                            .boolean()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(ServiceMonitorRecord::Latency)
+                            .double()
+                            .null(),
+                    )
                     .col(
                         ColumnDef::new(ServiceMonitorRecord::DetailJson)
                             .text()

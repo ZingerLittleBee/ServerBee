@@ -7,7 +7,7 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::service::auth::AuthService;
 use crate::service::config::ConfigService;
 use crate::state::AppState;

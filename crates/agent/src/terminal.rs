@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
-use serverbee_common::constants::{has_capability, CAP_TERMINAL, MAX_TERMINAL_SESSIONS};
+use serverbee_common::constants::{CAP_TERMINAL, MAX_TERMINAL_SESSIONS, has_capability};
 use tokio::sync::mpsc;
 
 /// Message sent from terminal sessions back to the reporter.

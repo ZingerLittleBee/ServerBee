@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
+use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::Router;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc;
@@ -35,11 +35,7 @@ async fn terminal_ws_handler(
             }
             // Check agent is online
             if !state.agent_manager.is_online(&server_id) {
-                return (
-                    axum::http::StatusCode::BAD_REQUEST,
-                    "Agent is offline",
-                )
-                    .into_response();
+                return (axum::http::StatusCode::BAD_REQUEST, "Agent is offline").into_response();
             }
             // Check terminal capability
             match crate::service::server::ServerService::get_server(&state.db, &server_id).await {
@@ -103,9 +99,7 @@ fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
         .split(';')
         .find_map(|cookie| {
             let cookie = cookie.trim();
-            cookie
-                .strip_prefix("session_token=")
-                .map(|v| v.to_string())
+            cookie.strip_prefix("session_token=").map(|v| v.to_string())
         })
 }
 
@@ -155,9 +149,7 @@ async fn handle_terminal_ws(socket: WebSocket, state: Arc<AppState>, server_id: 
         Some(tx) => tx,
         None => {
             tracing::error!("Agent {server_id} not connected for terminal");
-            state
-                .agent_manager
-                .unregister_terminal_session(&session_id);
+            state.agent_manager.unregister_terminal_session(&session_id);
             let _ = ws_sink
                 .send(Message::Text(
                     serde_json::json!({"type": "error", "error": "Agent disconnected"})
@@ -271,9 +263,7 @@ async fn handle_terminal_ws(socket: WebSocket, state: Arc<AppState>, server_id: 
             session_id: session_id.clone(),
         })
         .await;
-    state
-        .agent_manager
-        .unregister_terminal_session(&session_id);
+    state.agent_manager.unregister_terminal_session(&session_id);
 
     tracing::info!("Terminal WS closed: session={session_id}");
 }

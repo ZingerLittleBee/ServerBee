@@ -4,7 +4,7 @@ pub struct Migration;
 
 impl MigrationName for Migration {
     fn name(&self) -> &str {
-        "m20260314_000003_add_capabilities"
+        "m20260329_000015_add_session_source"
     }
 }
 
@@ -13,19 +13,17 @@ impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
         db.execute_unprepared(
-            "ALTER TABLE servers ADD COLUMN capabilities INTEGER NOT NULL DEFAULT 56",
+            "ALTER TABLE sessions ADD COLUMN source TEXT NOT NULL DEFAULT 'web'",
         )
         .await?;
         db.execute_unprepared(
-            "ALTER TABLE servers ADD COLUMN protocol_version INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE sessions ADD COLUMN mobile_session_id TEXT REFERENCES mobile_sessions(id)",
         )
         .await?;
         Ok(())
     }
 
     async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
-        // SQLite does not support DROP COLUMN in older versions;
-        // for simplicity, this migration is not reversible.
         Ok(())
     }
 }

@@ -1,12 +1,12 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use axum::Router;
 use axum::extract::{ConnectInfo, Path, Query, State};
-use axum::http::header::SET_COOKIE;
 use axum::http::HeaderMap;
+use axum::http::header::SET_COOKIE;
 use axum::response::Redirect;
 use axum::routing::get;
-use axum::Router;
 
 use crate::router::utils::extract_client_ip;
 use chrono::Utc;
@@ -104,10 +104,9 @@ pub async fn oauth_authorize(
     let (auth_url, csrf_token) = auth_request.url();
 
     // Store CSRF state → provider mapping with 10-minute TTL
-    state.oauth_states.insert(
-        csrf_token.secret().clone(),
-        (provider, Utc::now()),
-    );
+    state
+        .oauth_states
+        .insert(csrf_token.secret().clone(), (provider, Utc::now()));
 
     // Evict expired states (older than 10 minutes) to prevent memory leak
     let cutoff = Utc::now() - chrono::Duration::minutes(10);
@@ -146,15 +145,11 @@ pub async fn oauth_callback(
         Some((_, (stored_provider, created_at))) => {
             // Check provider matches
             if stored_provider != provider {
-                return Err(AppError::BadRequest(
-                    "OAuth state mismatch".to_string(),
-                ));
+                return Err(AppError::BadRequest("OAuth state mismatch".to_string()));
             }
             // Check not expired (10 minute window)
             if Utc::now() - created_at > chrono::Duration::minutes(10) {
-                return Err(AppError::BadRequest(
-                    "OAuth state expired".to_string(),
-                ));
+                return Err(AppError::BadRequest("OAuth state expired".to_string()));
             }
         }
         None => {

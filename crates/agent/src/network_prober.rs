@@ -1,11 +1,11 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use chrono::Utc;
 use rand::Rng;
-use serverbee_common::constants::{has_capability, CAP_PING_HTTP, CAP_PING_ICMP, CAP_PING_TCP};
+use serverbee_common::constants::{CAP_PING_HTTP, CAP_PING_ICMP, CAP_PING_TCP, has_capability};
 use serverbee_common::types::{NetworkProbeResultData, NetworkProbeTarget};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -104,8 +104,7 @@ impl NetworkProber {
 
                 let tx = self.tx.clone();
                 let target_clone = target.clone();
-                let handle =
-                    tokio::spawn(run_probe_task(target_clone, interval, packet_count, tx));
+                let handle = tokio::spawn(run_probe_task(target_clone, interval, packet_count, tx));
 
                 let target_id = target.target_id.clone();
                 self.tasks.insert(
@@ -231,7 +230,11 @@ async fn run_multi_probe(target: &NetworkProbeTarget, count: u32) -> NetworkProb
             aggregate_results(&target.target_id, count, successes, latencies)
         }
         other => {
-            tracing::warn!("Unknown probe type '{}' for target {}", other, target.target_id);
+            tracing::warn!(
+                "Unknown probe type '{}' for target {}",
+                other,
+                target.target_id
+            );
             NetworkProbeResultData {
                 target_id: target.target_id.clone(),
                 avg_latency: None,
@@ -373,9 +376,7 @@ mod tests {
     #[tokio::test]
     async fn test_network_prober_sync_stops_removed_tasks() {
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(
-            CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP,
-        ));
+        let caps = Arc::new(AtomicU32::new(CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP));
         let mut prober = NetworkProber::new(tx, caps);
 
         let targets = vec![NetworkProbeTarget {

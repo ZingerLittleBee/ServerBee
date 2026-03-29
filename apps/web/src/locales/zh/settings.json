@@ -5,6 +5,10 @@
   "show_key": "显示密钥",
   "hide_key": "隐藏密钥",
   "copy_key": "复制密钥",
+  "regenerate_key": "重新生成",
+  "regenerate_confirm_title": "重新生成发现密钥？",
+  "regenerate_confirm_description": "这将使当前密钥失效。已连接的 Agent 不受影响。新 Agent 必须使用新密钥。",
+  "regenerate_success": "发现密钥已重新生成",
   "copied": "已复制",
 
   "security.title": "安全",

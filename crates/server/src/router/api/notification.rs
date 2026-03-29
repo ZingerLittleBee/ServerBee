@@ -4,7 +4,7 @@ use axum::extract::{Path, State};
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::service::notification::{
     CreateNotification, CreateNotificationGroup, NotificationService, UpdateNotification,
     UpdateNotificationGroup,

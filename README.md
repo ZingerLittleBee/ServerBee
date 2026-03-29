@@ -13,6 +13,7 @@ A lightweight, self-hosted VPS monitoring system built with Rust and React.
 - **Notifications** -- Webhook, Telegram, Bark, Email (SMTP) channels with notification groups
 - **Network Quality Monitoring** -- Multi-target network probing (96 preset China 3-ISP + international nodes), real-time/historical latency charts, anomaly detection, per-server target assignment
 - **Ping Monitoring** -- ICMP, TCP, HTTP probes with latency charts and success rate
+- **Safer Agent Registration** -- Stable machine fingerprints reuse existing server records, `auth.max_servers` soft-caps auto-discovery growth, discovery keys can be regenerated from Settings, and unconnected placeholders can be cleaned up
 - **Web Terminal** -- Browser-based PTY terminal via WebSocket proxy
 - **GPU Monitoring** -- NVIDIA GPU usage/temperature/memory (via nvml-wrapper, feature-gated)
 - **Disk I/O Monitoring** -- Per-disk read/write throughput charts with merged and per-disk views. Linux via `/proc/diskstats`, macOS/Windows via sysinfo
@@ -29,6 +30,7 @@ A lightweight, self-hosted VPS monitoring system built with Rust and React.
 - **Billing Tracking** -- Price, billing cycle, expiration alerts, traffic limits per server
 - **Backup & Restore** -- SQLite database backup/restore via admin API
 - **Agent Auto-update** -- Remote binary upgrade with SHA-256 verification
+- **Guided Deployment Management** -- `deploy/serverbee.sh` installs, upgrades, inspects, reconfigures, and uninstalls server and agent deployments in interactive or unattended mode
 - **OpenAPI Documentation** -- Swagger UI at `/swagger-ui` with 50+ documented endpoints
 
 ## Tech Stack
@@ -108,15 +110,15 @@ make server-dev                                           # Terminal 1: server o
 SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # Terminal 2: agent
 
 # Testing & code quality:
-make cargo-test        # Run all Rust tests (379)
-make test              # Run frontend tests (220)
+make cargo-test        # Run all Rust tests (395)
+make test              # Run frontend tests (222)
 make cargo-clippy      # Lint Rust code
 make                   # Interactive menu (requires fzf)
 ```
 
 Manual browser verification checklists are indexed in `tests/README.md`.
 
-The server prints the full auto-discovery key on startup. Copy it to start the agent.
+The server prints the full auto-discovery key on startup. Copy it to start the agent, or regenerate it later from Settings if needed.
 
 > **Note**: `make dev-full` starts a Vite dev server with HMR at `http://localhost:5173` (proxies `/api/*` to the Rust server at `:9527`). For production builds, use `make build` then `make server-run`.
 
@@ -140,6 +142,7 @@ max_connections = 10
 session_ttl = 86400           # 24 hours
 secure_cookie = true          # Set false for HTTP-only dev
 auto_discovery_key = ""       # Leave empty to auto-generate
+max_servers = 0               # Soft limit for new auto-registered servers
 
 [admin]
 username = "admin"
@@ -171,6 +174,7 @@ release_base_url = "https://github.com/ZingerLittleBee/ServerBee/releases"
 Environment variable examples:
 ```bash
 export SERVERBEE_ADMIN__PASSWORD="my-secure-password"
+export SERVERBEE_AUTH__MAX_SERVERS="50"
 export SERVERBEE_GEOIP__MMDB_PATH="/path/to/GeoLite2-City.mmdb"
 export SERVERBEE_OAUTH__GITHUB__CLIENT_ID="..."
 ```
@@ -242,12 +246,14 @@ Or install via curl (one-liner):
 
 ```bash
 # Server
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s server
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
 
 # Agent
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s agent \
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
   --server-url http://YOUR_SERVER:9527 --discovery-key YOUR_KEY
 ```
+
+> **Note**: Re-running `install agent` adopts an existing `/usr/local/bin/serverbee-agent` instead of replacing it. Use `sudo bash deploy/serverbee.sh upgrade agent -y` (or replace the binary manually) when you need to refresh an existing installation.
 
 ### Management
 

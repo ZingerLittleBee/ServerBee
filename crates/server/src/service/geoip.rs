@@ -69,7 +69,10 @@ impl GeoIpService {
     /// Load from in-memory bytes (used after download + decompress).
     pub fn load_from_bytes(bytes: Vec<u8>, source_path: String) -> Result<Self, String> {
         Reader::from_source(bytes)
-            .map(|reader| Self { reader, source_path })
+            .map(|reader| Self {
+                reader,
+                source_path,
+            })
             .map_err(|e| format!("Invalid MMDB data: {e}"))
     }
 
@@ -139,7 +142,10 @@ pub async fn download_dbip(data_dir: &str) -> Result<GeoIpService, String> {
         .map_err(|e| format!("Failed to download: {e}"))?;
 
     if !resp.status().is_success() {
-        return Err(format!("Failed to download: server returned {}", resp.status()));
+        return Err(format!(
+            "Failed to download: server returned {}",
+            resp.status()
+        ));
     }
 
     let compressed = resp
@@ -156,7 +162,8 @@ pub async fn download_dbip(data_dir: &str) -> Result<GeoIpService, String> {
 
     // Validate it's a valid MMDB before writing to disk
     let final_path = Path::new(data_dir).join(DBIP_FILENAME);
-    let service = GeoIpService::load_from_bytes(decompressed.clone(), final_path.display().to_string())?;
+    let service =
+        GeoIpService::load_from_bytes(decompressed.clone(), final_path.display().to_string())?;
 
     // Atomic write: tmp file then rename
     std::fs::create_dir_all(data_dir)
@@ -164,8 +171,7 @@ pub async fn download_dbip(data_dir: &str) -> Result<GeoIpService, String> {
     let tmp_path = Path::new(data_dir).join(format!("{DBIP_FILENAME}.tmp"));
     std::fs::write(&tmp_path, &decompressed)
         .map_err(|e| format!("Failed to write database: {e}"))?;
-    std::fs::rename(&tmp_path, &final_path)
-        .map_err(|e| format!("Failed to save database: {e}"))?;
+    std::fs::rename(&tmp_path, &final_path).map_err(|e| format!("Failed to save database: {e}"))?;
 
     tracing::info!("GeoIP database saved to {}", final_path.display());
     Ok(service)

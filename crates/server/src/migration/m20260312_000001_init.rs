@@ -301,11 +301,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Records::MemUsed).big_integer().not_null())
                     .col(ColumnDef::new(Records::SwapUsed).big_integer().not_null())
                     .col(ColumnDef::new(Records::DiskUsed).big_integer().not_null())
-                    .col(
-                        ColumnDef::new(Records::NetInSpeed)
-                            .big_integer()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(Records::NetInSpeed).big_integer().not_null())
                     .col(
                         ColumnDef::new(Records::NetOutSpeed)
                             .big_integer()
@@ -357,11 +353,7 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(
-                        ColumnDef::new(RecordsHourly::ServerId)
-                            .string()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(RecordsHourly::ServerId).string().not_null())
                     .col(
                         ColumnDef::new(RecordsHourly::Time)
                             .timestamp_with_time_zone()
@@ -406,16 +398,8 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(RecordsHourly::Load1).double().not_null())
                     .col(ColumnDef::new(RecordsHourly::Load5).double().not_null())
                     .col(ColumnDef::new(RecordsHourly::Load15).double().not_null())
-                    .col(
-                        ColumnDef::new(RecordsHourly::TcpConn)
-                            .integer()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(RecordsHourly::UdpConn)
-                            .integer()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(RecordsHourly::TcpConn).integer().not_null())
+                    .col(ColumnDef::new(RecordsHourly::UdpConn).integer().not_null())
                     .col(
                         ColumnDef::new(RecordsHourly::ProcessCount)
                             .integer()
@@ -457,22 +441,14 @@ impl MigrationTrait for Migration {
                             .timestamp_with_time_zone()
                             .not_null(),
                     )
-                    .col(
-                        ColumnDef::new(GpuRecords::DeviceIndex)
-                            .integer()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(GpuRecords::DeviceIndex).integer().not_null())
                     .col(ColumnDef::new(GpuRecords::DeviceName).string().not_null())
                     .col(
                         ColumnDef::new(GpuRecords::MemTotal)
                             .big_integer()
                             .not_null(),
                     )
-                    .col(
-                        ColumnDef::new(GpuRecords::MemUsed)
-                            .big_integer()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(GpuRecords::MemUsed).big_integer().not_null())
                     .col(ColumnDef::new(GpuRecords::Utilization).double().not_null())
                     .col(ColumnDef::new(GpuRecords::Temperature).double().not_null())
                     .to_owned(),
@@ -663,11 +639,7 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .primary_key(),
                     )
-                    .col(
-                        ColumnDef::new(NotificationGroups::Name)
-                            .string()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(NotificationGroups::Name).string().not_null())
                     .col(
                         ColumnDef::new(NotificationGroups::NotificationIdsJson)
                             .string()
@@ -698,11 +670,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(PingTasks::ProbeType).string().not_null())
                     .col(ColumnDef::new(PingTasks::Target).string().not_null())
                     .col(ColumnDef::new(PingTasks::Interval).integer().not_null())
-                    .col(
-                        ColumnDef::new(PingTasks::ServerIdsJson)
-                            .string()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(PingTasks::ServerIdsJson).string().not_null())
                     .col(
                         ColumnDef::new(PingTasks::Enabled)
                             .boolean()

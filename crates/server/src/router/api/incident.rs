@@ -6,7 +6,7 @@ use axum::{Json, Router};
 use serde::Deserialize;
 
 use crate::entity::{incident, incident_update};
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::service::incident::{
     CreateIncident, CreateIncidentUpdate, IncidentService, UpdateIncident,
 };

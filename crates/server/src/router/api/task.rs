@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::entity::{server, task, task_result};
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::state::AppState;
-use serverbee_common::constants::{has_capability, CAP_EXEC};
+use serverbee_common::constants::{CAP_EXEC, has_capability};
 use serverbee_common::protocol::ServerMessage;
 
 pub fn router() -> Router<Arc<AppState>> {
@@ -86,8 +86,7 @@ pub struct TaskResponse {
 
 impl From<task::Model> for TaskResponse {
     fn from(t: task::Model) -> Self {
-        let server_ids: Vec<String> =
-            serde_json::from_str(&t.server_ids_json).unwrap_or_default();
+        let server_ids: Vec<String> = serde_json::from_str(&t.server_ids_json).unwrap_or_default();
         Self {
             id: t.id,
             command: t.command,
@@ -161,12 +160,9 @@ pub async fn create_task(
     let is_scheduled = input.task_type == "scheduled";
 
     if is_scheduled {
-        let cron = input
-            .cron_expression
-            .as_deref()
-            .ok_or_else(|| {
-                AppError::Validation("cron_expression is required for scheduled tasks".into())
-            })?;
+        let cron = input.cron_expression.as_deref().ok_or_else(|| {
+            AppError::Validation("cron_expression is required for scheduled tasks".into())
+        })?;
         // Validate cron expression
         cron::Schedule::from_str(cron)
             .map_err(|e| AppError::Validation(format!("Invalid cron expression: {e}")))?;
@@ -229,16 +225,20 @@ pub async fn create_task(
             .add_job(&task_model, state.clone())
             .await
         {
-            let _ = task::Entity::delete_by_id(&task_id)
-                .exec(&state.db)
-                .await;
+            let _ = task::Entity::delete_by_id(&task_id).exec(&state.db).await;
             return Err(e);
         }
         tracing::info!("Scheduled task {} registered", task_id);
     } else {
         // One-shot: dispatch immediately
-        dispatch_oneshot(&state, &task_id, &input.command, &input.server_ids, input.timeout)
-            .await?;
+        dispatch_oneshot(
+            &state,
+            &task_id,
+            &input.command,
+            &input.server_ids,
+            input.timeout,
+        )
+        .await?;
     }
 
     ok(task_model.into())
@@ -429,8 +429,7 @@ pub async fn run_task(
         ));
     }
 
-    let started =
-        crate::task::task_scheduler::execute_scheduled_task(&state, &id, true).await;
+    let started = crate::task::task_scheduler::execute_scheduled_task(&state, &id, true).await;
     if !started {
         return Err(AppError::Conflict(
             "Task is currently running, try again later".into(),

@@ -42,10 +42,7 @@ impl MaintenanceService {
             .await?)
     }
 
-    pub async fn get(
-        db: &DatabaseConnection,
-        id: &str,
-    ) -> Result<maintenance::Model, AppError> {
+    pub async fn get(db: &DatabaseConnection, id: &str) -> Result<maintenance::Model, AppError> {
         maintenance::Entity::find_by_id(id)
             .one(db)
             .await?
@@ -74,9 +71,7 @@ impl MaintenanceService {
             .status_page_ids_json
             .map(|ids| {
                 serde_json::to_string(&ids)
-                    .map_err(|e| {
-                        AppError::Validation(format!("Invalid status_page_ids_json: {e}"))
-                    })
+                    .map_err(|e| AppError::Validation(format!("Invalid status_page_ids_json: {e}")))
             })
             .transpose()?;
 
@@ -129,10 +124,9 @@ impl MaintenanceService {
         if let Some(page_ids) = input.status_page_ids_json {
             let json = page_ids
                 .map(|ids| {
-                    serde_json::to_string(&ids)
-                        .map_err(|e| {
-                            AppError::Validation(format!("Invalid status_page_ids_json: {e}"))
-                        })
+                    serde_json::to_string(&ids).map_err(|e| {
+                        AppError::Validation(format!("Invalid status_page_ids_json: {e}"))
+                    })
                 })
                 .transpose()?;
             model.status_page_ids_json = Set(json);

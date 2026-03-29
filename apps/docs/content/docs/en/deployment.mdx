@@ -39,6 +39,37 @@ After deploying:
 Railway automatically assigns a port and provides HTTPS. No need to configure `SERVERBEE_SERVER__LISTEN` or TLS certificates.
 </Callout>
 
+## Bootstrap Installer and `serverbee.sh`
+
+For Linux hosts, the quickest binary/systemd path is the bootstrap installer:
+
+```bash
+# Install the server
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
+
+# Install an agent
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
+  --server-url http://your-server-ip:9527 \
+  --discovery-key YOUR_DISCOVERY_KEY
+```
+
+The bootstrap script and `deploy/serverbee.sh` share the same command set. On a fresh host, keep using the bootstrap entrypoint:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- status
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- upgrade -y
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- restart
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- config
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- env
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- uninstall agent -y
+```
+
+If you cloned the repository, you can run the same commands via `deploy/serverbee.sh` directly.
+
+<Callout type="info">
+`install server` / `install agent` are bootstrap commands. If the binary already exists in `/usr/local/bin`, the installer adopts it instead of overwriting it. Use `upgrade` (or replace the binary manually) when you need to roll out a refreshed release binary to an existing host.
+</Callout>
+
 ## Docker Compose (Recommended)
 
 Docker Compose is the simplest way to deploy ServerBee in production. Create a `docker-compose.yml`:
@@ -87,6 +118,10 @@ docker compose logs -f serverbee-server
 ## Systemd Services
 
 For deployments without Docker, use systemd to manage both the server and agent processes.
+
+<Callout type="info">
+If you do not need hand-written unit files, prefer the bootstrap installer above. It creates the config files and systemd units for you, then `serverbee.sh` handles upgrades, restarts, and config edits.
+</Callout>
 
 ### Server Service
 

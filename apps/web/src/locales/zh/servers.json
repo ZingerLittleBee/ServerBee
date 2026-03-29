@@ -15,6 +15,11 @@
   "col_group": "分组",
   "showing_servers": "显示 {{shown}}/{{total}} 台服务器",
   "selected_count": "已选 {{count}} 项",
+  "cleanup_orphans": "清理未连接",
+  "cleanup_confirm_title": "清理未连接的服务器？",
+  "cleanup_confirm_description": "将删除 {{count}} 台注册后从未连接的服务器，此操作不可撤销。",
+  "cleanup_success": "已清理 {{count}} 台服务器",
+  "cleanup_none": "没有需要清理的未连接服务器",
 
   "detail_back": "返回仪表盘",
   "detail_edit": "编辑",
