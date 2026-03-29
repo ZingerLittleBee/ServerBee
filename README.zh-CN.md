@@ -229,15 +229,16 @@ client_secret = "..."
 
 ```bash
 # 安装服务端
-sudo bash deploy/install.sh server
+sudo bash deploy/serverbee.sh install server
 
-# 安装 Agent
-sudo bash deploy/install.sh agent
+# 安装 Agent（替换为你的服务端地址和发现密钥）
+sudo bash deploy/serverbee.sh install agent --server-url http://YOUR_SERVER:9527 --discovery-key YOUR_KEY
+
+# 交互式模式 — 引导完成所有配置
+sudo bash deploy/serverbee.sh
 ```
 
-Service 文件位于 `deploy/` 目录:
-- `serverbee-server.service`
-- `serverbee-agent.service`
+完整管理命令（升级、卸载、配置、状态等）见 `deploy/serverbee.sh`。
 
 ### 反向代理 (Nginx)
 
