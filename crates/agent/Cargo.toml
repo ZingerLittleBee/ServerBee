@@ -31,6 +31,7 @@ hex = "0.4"
 gethostname = "0.5"
 dashmap = "6"
 libc = "0.2"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 nvml-wrapper = { version = "0.10", optional = true }
 bollard = "0.18"
 
