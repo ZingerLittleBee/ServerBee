@@ -65,7 +65,7 @@ check_deps() {
     done
     if [ ${#missing[@]} -eq 0 ]; then return; fi
 
-    if [ "$YES" = true ]; then
+    if [ "$YES" = true ] || ! [ -t 0 ]; then
         install_deps "${missing[@]}"
     else
         warn "Missing required tools: ${missing[*]}"
@@ -658,16 +658,23 @@ cmd_install() {
 
     # Interactive: prompt for method if not provided
     if [ -z "$METHOD" ]; then
-        echo ""
-        echo "  [1] Binary  (recommended)"
-        echo "  [2] Docker"
-        echo ""
-        read -rp "Select installation method [1/2]: " choice
-        case "$choice" in
-            1|binary) METHOD="binary" ;;
-            2|docker) METHOD="docker" ;;
-            *) error "Invalid choice: $choice" ;;
-        esac
+        if [ -t 0 ]; then
+            # Interactive terminal — show menu
+            echo ""
+            echo "  [1] Binary  (recommended)"
+            echo "  [2] Docker"
+            echo ""
+            read -rp "Select installation method [1/2]: " choice
+            case "$choice" in
+                1|binary) METHOD="binary" ;;
+                2|docker) METHOD="docker" ;;
+                *) error "Invalid choice: $choice" ;;
+            esac
+        else
+            # Non-interactive (piped) — default to binary
+            METHOD="binary"
+            info "Non-interactive mode detected, defaulting to binary installation."
+        fi
     fi
     : "${METHOD:=binary}"
     [[ "$METHOD" =~ ^(binary|docker)$ ]] || error "Invalid method: $METHOD (use 'binary' or 'docker')"
