@@ -214,8 +214,8 @@ JSONBLOCK
         sed '$ d' "$META_FILE" > "$tmp"
         # Add comma after previous block if needed
         if grep -q "}" "$tmp" 2>/dev/null; then
-            # There are other components — ensure trailing comma
-            sed -i.bak 's/}$/},/' "$tmp" && rm -f "$tmp.bak"
+            # There are other components — ensure trailing comma (only indented closing braces)
+            sed -i.bak '/^[[:space:]].*}$/s/}$/},/' "$tmp" && rm -f "$tmp.bak"
         fi
         echo "$block" >> "$tmp"
         echo "}" >> "$tmp"
@@ -575,10 +575,12 @@ print_server_result() {
     echo "  Username:   admin"
     if [ -n "$PASSWORD" ]; then
         echo "  Password:   ${PASSWORD}"
-    elif [ "$METHOD" = "binary" ]; then
+    elif [ "$METHOD" = "docker" ]; then
+        echo "  Password:   (auto-generated, check: docker compose -f ${DOCKER_DIR}/docker-compose.server.yml logs | grep 'Generated admin password')"
+    elif has_systemd; then
         echo "  Password:   (auto-generated, check: sudo journalctl -u serverbee-server | grep 'Generated admin password')"
     else
-        echo "  Password:   (auto-generated, check: docker compose -f ${DOCKER_DIR}/docker-compose.server.yml logs | grep 'Generated admin password')"
+        echo "  Password:   (auto-generated, check process output for 'Generated admin password')"
     fi
     echo ""
     echo "  Docs: ${DOCS_URL}/en/docs/configuration"
@@ -590,11 +592,13 @@ print_agent_result() {
     echo -e "${GREEN}ServerBee Agent installed successfully!${NC}"
     echo ""
     echo "  Server URL: ${SERVER_URL}"
-    if [ "$METHOD" = "binary" ]; then
+    if [ "$METHOD" = "docker" ]; then
+        echo "  Logs:   docker compose -f ${DOCKER_DIR}/docker-compose.agent.yml logs -f"
+    elif has_systemd; then
         echo "  Start:  sudo systemctl start serverbee-agent"
         echo "  Logs:   sudo journalctl -u serverbee-agent -f"
     else
-        echo "  Logs:   docker compose -f ${DOCKER_DIR}/docker-compose.agent.yml logs -f"
+        echo "  Start:  ${INSTALL_DIR}/serverbee-agent &"
     fi
     echo ""
     echo "  Config: ${CONFIG_DIR}/agent.toml"
@@ -806,11 +810,10 @@ cmd_uninstall() {
 # ─── Upgrade command ──────────────────────────────────────────────────────────
 
 upgrade_component() {
-    local component="$1"
-    local method current_version latest_version
+    local component="$1" latest_version="$2"
+    local method current_version
     method=$(meta_read "$component" "method")
     current_version=$(meta_read "$component" "version")
-    latest_version=$(get_latest_version)
 
     if [ -n "$current_version" ] && [ "$current_version" = "$latest_version" ]; then
         info "serverbee-${component} is already up to date (${current_version})"
@@ -885,13 +888,16 @@ upgrade_docker() {
 cmd_upgrade() {
     detect_installed
 
+    local latest_version
+    latest_version=$(get_latest_version)
+
     if [ -n "$COMPONENT" ]; then
         # Upgrade specific component
         [[ "$COMPONENT" =~ ^(server|agent)$ ]] || error "Invalid component: $COMPONENT"
         if ! meta_has "$COMPONENT"; then
             error "serverbee-${COMPONENT} is not installed"
         fi
-        upgrade_component "$COMPONENT"
+        upgrade_component "$COMPONENT" "$latest_version"
     else
         # Upgrade all managed components
         if [ ${#MANAGED_COMPONENTS[@]} -eq 0 ]; then
@@ -899,7 +905,7 @@ cmd_upgrade() {
         fi
         for entry in "${MANAGED_COMPONENTS[@]}"; do
             local comp="${entry%%:*}"
-            upgrade_component "$comp"
+            upgrade_component "$comp" "$latest_version"
         done
     fi
 }
@@ -1074,7 +1080,7 @@ cmd_service() {
 REJECTED_KEYS="admin.password admin.username"
 ARRAY_KEYS="file.root_paths file.deny_patterns server.trusted_proxies oauth.oidc.scopes"
 AGENT_KEYS="server_url auto_discovery_key token collector.interval collector.enable_gpu collector.enable_temperature file.enabled file.max_file_size ip_change.enabled ip_change.check_external_ip ip_change.external_ip_url ip_change.interval_secs"
-SERVER_KEYS="file.max_upload_size server.listen server.data_dir server.trusted_proxies auth.auto_discovery_key auth.session_ttl auth.secure_cookie geoip.mmdb_path retention.records_days retention.records_hourly_days retention.gpu_records_days retention.ping_records_days retention.network_probe_days retention.network_probe_hourly_days retention.audit_logs_days retention.traffic_hourly_days retention.traffic_daily_days retention.task_results_days retention.docker_events_days retention.service_monitor_days database.path database.max_connections rate_limit.login_max rate_limit.register_max scheduler.timezone upgrade.release_base_url oauth.base_url oauth.allow_registration oauth.github.client_id oauth.github.client_secret oauth.google.client_id oauth.google.client_secret oauth.oidc.issuer_url oauth.oidc.client_id oauth.oidc.client_secret"
+SERVER_KEYS="file.max_upload_size server.listen server.data_dir auth.auto_discovery_key auth.session_ttl auth.secure_cookie geoip.mmdb_path retention.records_days retention.records_hourly_days retention.gpu_records_days retention.ping_records_days retention.network_probe_days retention.network_probe_hourly_days retention.audit_logs_days retention.traffic_hourly_days retention.traffic_daily_days retention.task_results_days retention.docker_events_days retention.service_monitor_days database.path database.max_connections rate_limit.login_max rate_limit.register_max scheduler.timezone upgrade.release_base_url oauth.base_url oauth.allow_registration oauth.github.client_id oauth.github.client_secret oauth.google.client_id oauth.google.client_secret oauth.oidc.issuer_url oauth.oidc.client_id oauth.oidc.client_secret"
 LOG_KEYS="log.level log.file"
 
 config_key_to_file() {
