@@ -540,13 +540,24 @@ iOS 端 `AlertDetailViewModel` 的请求路径需从 `/api/mobile/alerts/{alert_
 
 **问题 2：重连使用过期 token。** `WebSocketClient.establishConnection()` 使用缓存的 `currentAccessToken` 重连。服务端会在 15 分钟后关闭 mobile WS 连接，重连时旧 token 已过期，导致 401。
 
-修复方案——`WebSocketClient` 需要独立的 token 刷新能力，不能依赖 APIClient 的 HTTP 401 路径：
+修复方案——将 token 刷新集中到 `AuthManager` 作为唯一所有者，HTTP 和 WS 都通过它刷新：
 
-- `AuthManager` 新增公开方法 `refreshAccessToken() async throws -> String`，将现有 private `refreshTokens()` 的核心逻辑暴露出来。返回刷新后的新 access token，失败时 throw 并触发 `clearAuth()`。
-- `WebSocketClient` 增加一个 `tokenRefresher: @Sendable () async -> String?` 闭包属性（不是 tokenProvider）。
-- `scheduleReconnect()` 流程改为：先调用 `tokenRefresher` 获取新 token → 用新 token 调用 `establishConnection()`。如果 `tokenRefresher` 返回 nil（refresh 失败），停止重连。
-- `ContentView` 设置 `tokenRefresher` 闭包：`{ try? await authManager.refreshAccessToken() }`。
-- `AuthManager.refreshAccessToken()` 内部复用现有 `refreshTokens()` + `handleLoginResponse()` 逻辑，返回新 access token。
+**AuthManager 成为 refresh 的唯一入口**：
+- `AuthManager` 新增公开方法 `refreshAccessToken() async throws -> String`
+- 内部实现带并发合并（coalescing）：用一个 `isRefreshing` flag + continuations 数组，确保并发调用只触发一次实际 refresh 请求，所有调用方等待同一个结果
+- 这与当前 `APIClient.performTokenRefresh()` 的 coalescing 模式相同，但移到 `AuthManager` 层
+
+**APIClient 改为委托给 AuthManager**：
+- 删除 `APIClient.performTokenRefresh()` 和 `callRefreshEndpoint()` 中的 refresh 逻辑
+- `handleUnauthorized()` 改为调用 `authManager.refreshAccessToken()`
+- `APIClient` 不再直接调用 refresh endpoint，也不再持有 coalescing state
+
+**WebSocketClient 使用同一入口**：
+- `WebSocketClient` 增加 `tokenRefresher: @Sendable () async -> String?` 闭包属性
+- `scheduleReconnect()` 流程：先调用 `tokenRefresher` 获取新 token → 用新 token 调用 `establishConnection()`。返回 nil 时停止重连。
+- `ContentView` 设置 `tokenRefresher` 闭包：`{ try? await authManager.refreshAccessToken() }`
+
+**消除竞态**：因为 `AuthManager.refreshAccessToken()` 内部 coalescing，无论 HTTP 401 和 WS reconnect 是否同时触发 refresh，都只会发出一次 refresh 请求，第二个调用方等待并复用第一个的结果。Refresh token rotation 不会产生两个并发的 rotate 请求。
 
 **问题 3：告警 WS 事件不存在。** iOS 端 `BrowserMessage.alertEvent` 和 `AlertsViewModel.handleWSAlertEvent` 假设服务端会广播告警事件，但 Rust 端 `BrowserMessage` 枚举没有 `alert_event` 变体，服务端也没有在告警触发时广播。
 
@@ -596,7 +607,7 @@ MVP 决策：**不通过 WS 做告警实时刷新**。理由：告警已有 APNs
 - `crates/server/src/migration/m20260329_000003_create_device_token.rs`
 - `crates/server/src/entity/mobile_session.rs`
 - `crates/server/src/entity/device_token.rs`
-- `crates/server/src/router/api/mobile.rs` — mobile auth + push + pair 端点
+- `crates/server/src/router/api/mobile.rs` — mobile auth + push + pair 端点。所有端点必须有 `#[utoipa::path]` 注解，所有请求/响应 DTO 必须 `#[derive(ToSchema)]`（项目惯例）。新增 DTO 包括：`MobileLoginRequest`, `MobileTokenResponse`, `MobileRefreshRequest`, `MobilePairRequest`, `MobilePairCodeResponse`, `PushRegisterRequest`, `MobileDeviceResponse`, `AlertEventDetailResponse`
 - `crates/server/src/service/mobile_auth.rs` — token 签发/验证/刷新逻辑
 - `crates/server/src/service/apns.rs` — APNs 推送发送
 
@@ -615,7 +626,7 @@ MVP 决策：**不通过 WS 做告警实时刷新**。理由：告警已有 APNs
 - `crates/server/src/service/notification.rs` — 新增 APNs 渠道
 - `crates/server/src/service/auth.rs` — validate_session 签名变更 + source-aware TTL + 条件滑动续期 + 测试更新
 - `crates/server/src/router/api/alert.rs` — 新增 `/api/alert-events/{alert_key}` 端点
-- `crates/server/src/openapi.rs` — 注册所有新端点（mobile auth、pair、push、alert-events detail）；在 security schemes 中新增 `bearer_token` 定义
+- `crates/server/src/openapi.rs` — 注册所有新端点（mobile auth、pair、push、alert-events detail）；在 security schemes 中新增 `bearer_token` 定义；在 `components(schemas(...))` 中注册所有新 DTO
 - 所有现有 `#[utoipa::path]` 的 `security` 注解需要追加 `("bearer_token" = [])`，涉及文件：`router/api/server.rs`、`router/api/alert.rs`、`router/api/auth.rs`（protected routes），以及所有其他受 `auth_middleware` 保护的端点。批量替换 `security(("session_cookie" = []), ("api_key" = []))` → `security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))`
 - `crates/server/Cargo.toml` — 新增 `a2` 依赖
 
