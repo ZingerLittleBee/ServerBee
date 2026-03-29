@@ -34,6 +34,19 @@ info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 
+# ─── Dependency check ─────────────────────────────────────────────────────────
+check_deps() {
+    local missing=()
+    for cmd in curl grep sed awk mktemp; do
+        if ! command -v "$cmd" &>/dev/null; then
+            missing+=("$cmd")
+        fi
+    done
+    if [ ${#missing[@]} -gt 0 ]; then
+        error "Missing required tools: ${missing[*]}\n  Install them first, e.g.: apt-get install -y ${missing[*]}"
+    fi
+}
+
 # ─── Root check ───────────────────────────────────────────────────────────────
 require_root() {
     if [ "$(id -u)" -ne 0 ]; then
@@ -1456,6 +1469,8 @@ run_command() {
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 main() {
+    check_deps
+
     # Shorthand: first arg not a known command → prepend "install"
     if [[ $# -gt 0 ]] && ! echo "$KNOWN_COMMANDS" | grep -qw "$1"; then
         set -- install "$@"
