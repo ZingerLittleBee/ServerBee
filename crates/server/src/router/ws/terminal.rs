@@ -71,7 +71,7 @@ async fn validate_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Option<(St
 
     // Try session cookie
     if let Some(token) = extract_session_cookie(headers)
-        && let Ok(Some(user)) =
+        && let Ok(Some((user, _session))) =
             AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
     {
         return Some((user.id, user.role));
@@ -80,6 +80,14 @@ async fn validate_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Option<(St
     // Try API key header
     if let Some(key) = extract_api_key(headers)
         && let Ok(Some(user)) = AuthService::validate_api_key(&state.db, &key).await
+    {
+        return Some((user.id, user.role));
+    }
+
+    // Try Bearer token
+    if let Some(token) = extract_bearer_token(headers)
+        && let Ok(Some((user, _session))) =
+            AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
     {
         return Some((user.id, user.role));
     }
@@ -106,6 +114,15 @@ fn extract_api_key(headers: &HeaderMap) -> Option<String> {
         .get("x-api-key")?
         .to_str()
         .ok()
+        .map(|s| s.to_string())
+}
+
+fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("authorization")?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")
         .map(|s| s.to_string())
 }
 

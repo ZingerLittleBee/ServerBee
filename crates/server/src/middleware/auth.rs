@@ -28,7 +28,7 @@ pub async fn auth_middleware(
             .await
             .ok()
             .flatten()
-            .map(|user| CurrentUser {
+            .map(|(user, _session)| CurrentUser {
                 user_id: user.id.clone(),
                 username: user.username.clone(),
                 role: user.role.clone(),
@@ -47,6 +47,26 @@ pub async fn auth_middleware(
                     .ok()
                     .flatten()
                     .map(|user| CurrentUser {
+                        user_id: user.id.clone(),
+                        username: user.username.clone(),
+                        role: user.role.clone(),
+                    })
+            } else {
+                None
+            }
+        }
+    };
+
+    // Try Bearer token if still not authenticated
+    let current_user = match current_user {
+        Some(u) => Some(u),
+        None => {
+            if let Some(token) = extract_bearer_token(&req) {
+                AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl)
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|(user, _session)| CurrentUser {
                         user_id: user.id.clone(),
                         username: user.username.clone(),
                         role: user.role.clone(),
@@ -99,6 +119,15 @@ fn extract_api_key(req: &Request) -> Option<String> {
         .get("x-api-key")?
         .to_str()
         .ok()
+        .map(|s| s.to_string())
+}
+
+fn extract_bearer_token(req: &Request) -> Option<String> {
+    req.headers()
+        .get("authorization")?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")
         .map(|s| s.to_string())
 }
 
@@ -157,5 +186,34 @@ mod tests {
             .body(axum::body::Body::empty())
             .unwrap();
         assert_eq!(extract_api_key(&req), None);
+    }
+
+    #[test]
+    fn test_extract_bearer_token_valid() {
+        let req = HttpRequest::builder()
+            .header("authorization", "Bearer my_token_123")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(
+            extract_bearer_token(&req),
+            Some("my_token_123".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_bearer_token_missing() {
+        let req = HttpRequest::builder()
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(extract_bearer_token(&req), None);
+    }
+
+    #[test]
+    fn test_extract_bearer_token_wrong_scheme() {
+        let req = HttpRequest::builder()
+            .header("authorization", "Basic dXNlcjpwYXNz")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(extract_bearer_token(&req), None);
     }
 }
