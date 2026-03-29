@@ -25,10 +25,7 @@ pub struct OAuthService;
 
 impl OAuthService {
     /// Build an oauth2 BasicClient for the given provider.
-    pub fn build_client(
-        provider: &str,
-        config: &OAuthConfig,
-    ) -> Result<BasicClient, AppError> {
+    pub fn build_client(provider: &str, config: &OAuthConfig) -> Result<BasicClient, AppError> {
         let base_url = config.base_url.trim_end_matches('/');
         let redirect_url = format!("{base_url}/api/auth/oauth/{provider}/callback");
 
@@ -56,9 +53,10 @@ impl OAuthService {
                 )?)
             }
             PROVIDER_OIDC => {
-                let p = config.oidc.as_ref().ok_or_else(|| {
-                    AppError::BadRequest("OIDC OAuth not configured".to_string())
-                })?;
+                let p = config
+                    .oidc
+                    .as_ref()
+                    .ok_or_else(|| AppError::BadRequest("OIDC OAuth not configured".to_string()))?;
                 let auth_url = format!("{}/authorize", p.issuer_url.trim_end_matches('/'));
                 let token_url = format!("{}/oauth/token", p.issuer_url.trim_end_matches('/'));
                 Ok(build_basic_client_raw(
@@ -141,10 +139,7 @@ impl OAuthService {
                     .map_err(|e| AppError::Internal(format!("Google API parse error: {e}")))?;
 
                 Ok(OAuthUserInfo {
-                    provider_user_id: resp["sub"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_string(),
+                    provider_user_id: resp["sub"].as_str().unwrap_or_default().to_string(),
                     email: resp["email"].as_str().map(|s| s.to_string()),
                     display_name: resp["name"].as_str().map(|s| s.to_string()),
                 })
@@ -185,9 +180,7 @@ impl OAuthService {
             let user = user::Entity::find_by_id(&account.user_id)
                 .one(db)
                 .await?
-                .ok_or_else(|| {
-                    AppError::Internal("OAuth-linked user not found".to_string())
-                })?;
+                .ok_or_else(|| AppError::Internal("OAuth-linked user not found".to_string()))?;
             return Ok(user);
         }
 
@@ -201,8 +194,7 @@ impl OAuthService {
         // Create a new user
         let username = generate_oauth_username(db, provider, info).await;
         let random_password = AuthService::generate_session_token();
-        let user =
-            AuthService::create_user(db, &username, &random_password, "member").await?;
+        let user = AuthService::create_user(db, &username, &random_password, "member").await?;
 
         // Link OAuth account
         let now = Utc::now();
@@ -279,9 +271,7 @@ impl OAuthService {
             .exec(db)
             .await?;
         if result.rows_affected == 0 {
-            return Err(AppError::NotFound(
-                "OAuth account not found".to_string(),
-            ));
+            return Err(AppError::NotFound("OAuth account not found".to_string()));
         }
         Ok(())
     }
@@ -335,7 +325,10 @@ async fn generate_oauth_username(
     let base = info
         .display_name
         .as_deref()
-        .or(info.email.as_deref().map(|e| e.split('@').next().unwrap_or("user")))
+        .or(info
+            .email
+            .as_deref()
+            .map(|e| e.split('@').next().unwrap_or("user")))
         .unwrap_or("user");
 
     let candidate = format!("{provider}_{base}");

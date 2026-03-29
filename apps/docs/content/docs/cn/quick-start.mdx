@@ -57,7 +57,7 @@ docker compose up -d
 **安装 Server：**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s server
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
 ```
 
 安装脚本会自动完成以下操作：
@@ -74,23 +74,23 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 在需要监控的每台服务器上执行：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s agent \
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
   --server-url http://your-server-ip:9527 \
   --discovery-key YOUR_DISCOVERY_KEY
 ```
 
 **管理命令：**
 
-安装完成后，使用管理脚本进行日常运维：
+安装完成后，可继续复用引导脚本进行日常运维：
 
 ```bash
-sudo bash deploy/serverbee.sh status              # 查看所有组件状态
-sudo bash deploy/serverbee.sh upgrade -y           # 升级到最新版
-sudo bash deploy/serverbee.sh restart              # 重启所有服务
-sudo bash deploy/serverbee.sh config               # 查看当前配置
-sudo bash deploy/serverbee.sh config set <key> <value>  # 修改配置
-sudo bash deploy/serverbee.sh uninstall agent      # 卸载 Agent
-sudo bash deploy/serverbee.sh uninstall server --purge   # 卸载服务端并清除数据
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- status              # 查看所有组件状态
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- upgrade -y           # 升级到最新版
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- restart              # 重启所有服务
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- config               # 查看当前配置
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- config set <key> <value>  # 修改配置
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- uninstall agent      # 卸载 Agent
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- uninstall server --purge   # 卸载服务端并清除数据
 ```
 
 ## 方式三：源码编译

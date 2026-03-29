@@ -55,10 +55,16 @@ async fn agent_ws_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     ws: WebSocketUpgrade,
 ) -> Response {
+    let query_present = query.token.as_ref().is_some_and(|token| !token.is_empty());
+    let auth_present = headers.get("authorization").is_some();
+
     // Extract agent token from Authorization header or query param
     let token = match extract_agent_token(&headers, &query) {
         Some(t) => t,
         None => {
+            tracing::warn!(
+                "Agent WS unauthorized from {addr}: missing token (query_present={query_present}, authorization_present={auth_present})"
+            );
             return Response::builder()
                 .status(401)
                 .body("Unauthorized".into())
@@ -70,6 +76,15 @@ async fn agent_ws_handler(
     let server = match AuthService::validate_agent_token(&state.db, &token).await {
         Ok(Some(server)) => server,
         Ok(None) => {
+            tracing::warn!(
+                "Agent WS unauthorized from {addr}: invalid token (source={}, prefix={})",
+                if query.token.as_deref() == Some(token.as_str()) {
+                    "query"
+                } else {
+                    "authorization"
+                },
+                &token[..8.min(token.len())]
+            );
             return Response::builder()
                 .status(401)
                 .body("Unauthorized".into())
@@ -351,9 +366,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 if let Some(ref addr) = current_remote_addr
                     && let Err(e) = update_last_remote_addr(&state.db, server_id, addr).await
                 {
-                    tracing::error!(
-                        "Failed to update last_remote_addr for {server_id}: {e}"
-                    );
+                    tracing::error!("Failed to update last_remote_addr for {server_id}: {e}");
                 }
             }
 
@@ -801,8 +814,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
 
                     if ipv4_changed || ipv6_changed {
                         // Update ipv4/ipv6 in DB
-                        if let Err(e) =
-                            update_server_ips(&state.db, server_id, &ipv4, &ipv6).await
+                        if let Err(e) = update_server_ips(&state.db, server_id, &ipv4, &ipv6).await
                         {
                             tracing::error!("Failed to update IPs for {server_id}: {e}");
                         }
@@ -826,9 +838,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                                 )
                                 .await
                             {
-                                tracing::error!(
-                                    "Failed to update GeoIP for {server_id}: {e}"
-                                );
+                                tracing::error!("Failed to update GeoIP for {server_id}: {e}");
                             }
                         }
 

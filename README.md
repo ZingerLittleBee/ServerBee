@@ -110,7 +110,7 @@ make server-dev                                           # Terminal 1: server o
 SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # Terminal 2: agent
 
 # Testing & code quality:
-make cargo-test        # Run all Rust tests (393)
+make cargo-test        # Run all Rust tests (395)
 make test              # Run frontend tests (222)
 make cargo-clippy      # Lint Rust code
 make                   # Interactive menu (requires fzf)
@@ -246,12 +246,14 @@ Or install via curl (one-liner):
 
 ```bash
 # Server
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s server
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
 
 # Agent
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s agent \
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
   --server-url http://YOUR_SERVER:9527 --discovery-key YOUR_KEY
 ```
+
+> **Note**: Re-running `install agent` adopts an existing `/usr/local/bin/serverbee-agent` instead of replacing it. Use `sudo bash deploy/serverbee.sh upgrade agent -y` (or replace the binary manually) when you need to refresh an existing installation.
 
 ### Management
 

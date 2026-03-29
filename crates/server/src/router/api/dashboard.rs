@@ -5,7 +5,7 @@ use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 
 use crate::entity::dashboard;
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::service::dashboard::{
     CreateDashboardInput, DashboardService, DashboardWithWidgets, UpdateDashboardInput,
 };

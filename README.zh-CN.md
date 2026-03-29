@@ -110,7 +110,7 @@ make server-dev                                           # 终端 1: 服务端 
 SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # 终端 2: Agent
 
 # 测试与代码质量:
-make cargo-test        # 运行全部 Rust 测试 (393)
+make cargo-test        # 运行全部 Rust 测试 (395)
 make test              # 运行前端测试 (222)
 make cargo-clippy      # Rust 代码检查
 make                   # 交互式菜单 (需要 fzf)
@@ -246,12 +246,14 @@ sudo bash deploy/serverbee.sh
 
 ```bash
 # 服务端
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s server
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
 
 # Agent
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s agent \
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
   --server-url http://YOUR_SERVER:9527 --discovery-key YOUR_KEY
 ```
+
+> **说明**：重复执行 `install agent` 时，如果 `/usr/local/bin/serverbee-agent` 已存在，脚本会直接沿用现有二进制而不会覆盖。需要刷新已安装版本时，请使用 `sudo bash deploy/serverbee.sh upgrade agent -y`，或手动替换该二进制文件。
 
 ### 管理命令
 

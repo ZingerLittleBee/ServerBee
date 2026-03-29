@@ -40,10 +40,7 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
         })
         .unwrap_or_else(|| vec![200]);
 
-    let timeout_secs = config
-        .get("timeout")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(10);
+    let timeout_secs = config.get("timeout").and_then(|v| v.as_u64()).unwrap_or(10);
 
     let body_str = config.get("body").and_then(|v| v.as_str());
 

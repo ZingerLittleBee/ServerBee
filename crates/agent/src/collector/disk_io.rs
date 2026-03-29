@@ -14,7 +14,10 @@ pub(crate) struct DiskCounters {
     pub(crate) write_bytes: u64,
 }
 
-pub fn collect(elapsed_secs: f64, previous: &mut HashMap<String, DiskCounters>) -> Option<Vec<DiskIo>> {
+pub fn collect(
+    elapsed_secs: f64,
+    previous: &mut HashMap<String, DiskCounters>,
+) -> Option<Vec<DiskIo>> {
     let current = read_disk_counters()?;
 
     if previous.is_empty() {
@@ -91,7 +94,10 @@ fn read_linux_physical_devices() -> Option<HashSet<String>> {
 }
 
 #[cfg(target_os = "linux")]
-fn parse_linux_diskstats(content: &str, physical_devices: &HashSet<String>) -> HashMap<String, DiskCounters> {
+fn parse_linux_diskstats(
+    content: &str,
+    physical_devices: &HashSet<String>,
+) -> HashMap<String, DiskCounters> {
     let mut counters = HashMap::new();
 
     for line in content.lines() {
@@ -138,11 +144,13 @@ fn compute_disk_io(
                 name: name.clone(),
                 read_bytes_per_sec: ((current_counters
                     .read_bytes
-                    .saturating_sub(previous_counters.read_bytes) as f64)
+                    .saturating_sub(previous_counters.read_bytes)
+                    as f64)
                     / elapsed_secs) as u64,
                 write_bytes_per_sec: ((current_counters
                     .write_bytes
-                    .saturating_sub(previous_counters.write_bytes) as f64)
+                    .saturating_sub(previous_counters.write_bytes)
+                    as f64)
                     / elapsed_secs) as u64,
             }
         })
@@ -169,7 +177,7 @@ fn is_virtual_device(name: &str) -> bool {
 mod tests {
     use std::collections::{HashMap, HashSet};
 
-    use super::{compute_disk_io, should_track_device, DiskCounters};
+    use super::{DiskCounters, compute_disk_io, should_track_device};
     use serverbee_common::types::DiskIo;
 
     #[test]

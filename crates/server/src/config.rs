@@ -222,7 +222,11 @@ pub struct OIDCProviderConfig {
 }
 
 fn default_oidc_scopes() -> Vec<String> {
-    vec!["openid".to_string(), "email".to_string(), "profile".to_string()]
+    vec![
+        "openid".to_string(),
+        "email".to_string(),
+        "profile".to_string(),
+    ]
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

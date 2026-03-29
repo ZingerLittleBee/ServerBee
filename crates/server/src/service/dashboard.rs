@@ -337,7 +337,9 @@ mod tests {
     /// Enable foreign keys for test DB (needed for CASCADE behavior).
     async fn setup_db_with_fk() -> (DatabaseConnection, tempfile::TempDir) {
         let (db, tmp) = setup_test_db().await;
-        db.execute_unprepared("PRAGMA foreign_keys=ON").await.unwrap();
+        db.execute_unprepared("PRAGMA foreign_keys=ON")
+            .await
+            .unwrap();
         (db, tmp)
     }
 

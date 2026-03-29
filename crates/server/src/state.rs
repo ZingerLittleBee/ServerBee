@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use dashmap::DashMap;
 use sea_orm::DatabaseConnection;
@@ -95,11 +95,7 @@ impl AppState {
     /// Check if an IP has exceeded the login rate limit.
     /// Returns true if allowed, false if rate-limited.
     pub fn check_login_rate(&self, ip: &str) -> bool {
-        Self::check_rate(
-            &self.login_rate_limit,
-            ip,
-            self.config.rate_limit.login_max,
-        )
+        Self::check_rate(&self.login_rate_limit, ip, self.config.rate_limit.login_max)
     }
 
     /// Check if an IP has exceeded the registration rate limit.
@@ -125,7 +121,9 @@ impl AppState {
         if geoip.is_some() {
             tracing::info!("GeoIP database loaded");
         } else {
-            tracing::info!("GeoIP database not available — download via Settings or Server Map widget");
+            tracing::info!(
+                "GeoIP database not available — download via Settings or Server Map widget"
+            );
         }
         let file_transfers = Arc::new(FileTransferManager::new(
             std::env::temp_dir().join("serverbee-transfers"),

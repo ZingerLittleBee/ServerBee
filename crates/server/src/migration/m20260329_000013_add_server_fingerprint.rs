@@ -12,10 +12,8 @@ impl MigrationName for Migration {
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
-        db.execute_unprepared(
-            "ALTER TABLE servers ADD COLUMN fingerprint VARCHAR NULL",
-        )
-        .await?;
+        db.execute_unprepared("ALTER TABLE servers ADD COLUMN fingerprint VARCHAR NULL")
+            .await?;
         db.execute_unprepared(
             "CREATE UNIQUE INDEX idx_servers_fingerprint ON servers(fingerprint) WHERE fingerprint IS NOT NULL",
         )

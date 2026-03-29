@@ -1,6 +1,6 @@
 use std::path::PathBuf;
-use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU32;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -48,9 +48,7 @@ impl From<FileEvent> for AgentMessage {
                 offset,
                 data,
             },
-            FileEvent::DownloadEnd { transfer_id } => {
-                AgentMessage::FileDownloadEnd { transfer_id }
-            }
+            FileEvent::DownloadEnd { transfer_id } => AgentMessage::FileDownloadEnd { transfer_id },
             FileEvent::DownloadError { transfer_id, error } => {
                 AgentMessage::FileDownloadError { transfer_id, error }
             }
@@ -125,11 +123,7 @@ impl FileManager {
         if let Some(filename) = canonical.file_name().and_then(|f| f.to_str()) {
             for pattern in &self.config.deny_patterns {
                 if matches_deny_pattern(filename, pattern) {
-                    anyhow::bail!(
-                        "Path '{}' matches deny pattern '{}'",
-                        path,
-                        pattern
-                    );
+                    anyhow::bail!("Path '{}' matches deny pattern '{}'", path, pattern);
                 }
             }
         }
@@ -199,8 +193,10 @@ impl FileManager {
     }
 
     /// Internal: list actual directory entries from the filesystem.
-    async fn list_dir_entries(&self, canonical: &std::path::Path) -> anyhow::Result<Vec<FileEntry>> {
-
+    async fn list_dir_entries(
+        &self,
+        canonical: &std::path::Path,
+    ) -> anyhow::Result<Vec<FileEntry>> {
         let mut entries = Vec::new();
         let mut read_dir = tokio::fs::read_dir(&canonical).await?;
 
@@ -294,11 +290,7 @@ impl FileManager {
         let metadata = tokio::fs::metadata(&canonical).await?;
 
         if metadata.len() > max_size {
-            anyhow::bail!(
-                "File size {} exceeds max_size {}",
-                metadata.len(),
-                max_size
-            );
+            anyhow::bail!("File size {} exceeds max_size {}", metadata.len(), max_size);
         }
 
         let content = tokio::fs::read(&canonical).await?;
@@ -390,19 +382,19 @@ impl FileManager {
     }
 
     /// Start a background download task that streams file chunks.
-    pub fn start_download(
-        &self,
-        transfer_id: String,
-        path: String,
-        tx: mpsc::Sender<FileEvent>,
-    ) {
+    pub fn start_download(&self, transfer_id: String, path: String, tx: mpsc::Sender<FileEvent>) {
         let validated = match self.validate_path(&path) {
             Ok(p) => p,
             Err(e) => {
                 let tid = transfer_id.clone();
                 let error = e.to_string();
                 tokio::spawn(async move {
-                    let _ = tx.send(FileEvent::DownloadError { transfer_id: tid, error }).await;
+                    let _ = tx
+                        .send(FileEvent::DownloadError {
+                            transfer_id: tid,
+                            error,
+                        })
+                        .await;
                 });
                 return;
             }
@@ -420,10 +412,8 @@ impl FileManager {
             }
         });
 
-        self.active_downloads.insert(
-            transfer_id,
-            DownloadState { handle },
-        );
+        self.active_downloads
+            .insert(transfer_id, DownloadState { handle });
     }
 
     /// Cancel a single download transfer.
@@ -465,11 +455,7 @@ impl FileManager {
         if let Some(filename) = target.file_name().and_then(|f| f.to_str()) {
             for pattern in &self.config.deny_patterns {
                 if matches_deny_pattern(filename, pattern) {
-                    anyhow::bail!(
-                        "Filename '{}' matches deny pattern '{}'",
-                        filename,
-                        pattern
-                    );
+                    anyhow::bail!("Filename '{}' matches deny pattern '{}'", filename, pattern);
                 }
             }
         }
@@ -800,7 +786,12 @@ mod tests {
 
         let result = mgr.validate_path(outside.to_str().unwrap());
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("outside allowed root"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("outside allowed root")
+        );
     }
 
     #[test]
@@ -816,7 +807,11 @@ mod tests {
         let outside = tmp.path().join("outside.txt");
         std::fs::write(&outside, "content").unwrap();
 
-        let traversal = format!("{}/../../{}", allowed.display(), outside.file_name().unwrap().to_str().unwrap());
+        let traversal = format!(
+            "{}/../../{}",
+            allowed.display(),
+            outside.file_name().unwrap().to_str().unwrap()
+        );
         // This will fail either because canonicalize resolves the traversal outside root,
         // or because the path doesn't exist
         let result = mgr.validate_path(&traversal);
@@ -881,7 +876,12 @@ mod tests {
 
         let result = mgr.validate_path("/tmp/anything");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No root paths configured"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No root paths configured")
+        );
     }
 
     #[tokio::test]
@@ -986,7 +986,9 @@ mod tests {
         std::fs::write(&file_path, "gone").unwrap();
         assert!(file_path.exists());
 
-        mgr.delete(file_path.to_str().unwrap(), false).await.unwrap();
+        mgr.delete(file_path.to_str().unwrap(), false)
+            .await
+            .unwrap();
         assert!(!file_path.exists());
     }
 
