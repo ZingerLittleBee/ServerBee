@@ -38,6 +38,16 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
   --discovery-key YOUR_DISCOVERY_KEY
 ```
 
+After installation, manage the agent with:
+
+```bash
+sudo bash deploy/serverbee.sh status              # View agent status
+sudo bash deploy/serverbee.sh upgrade agent -y     # Upgrade agent
+sudo bash deploy/serverbee.sh restart agent        # Restart agent
+sudo bash deploy/serverbee.sh config agent         # View agent config
+sudo bash deploy/serverbee.sh uninstall agent      # Uninstall agent
+```
+
 ### Build from Source
 
 ```bash

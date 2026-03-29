@@ -54,6 +54,17 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 
 This will download the appropriate binary for your platform, create a systemd service, and start ServerBee automatically.
 
+After installation, you can manage ServerBee with:
+
+```bash
+sudo bash deploy/serverbee.sh status              # View status
+sudo bash deploy/serverbee.sh upgrade -y           # Upgrade to latest
+sudo bash deploy/serverbee.sh restart              # Restart services
+sudo bash deploy/serverbee.sh config               # View config
+sudo bash deploy/serverbee.sh config set <key> <value>  # Update config
+sudo bash deploy/serverbee.sh uninstall server --purge   # Uninstall + remove data
+```
+
 ## Option 3: Build from Source
 
 Clone the repository and build both the server and frontend:
