@@ -465,7 +465,8 @@ WantedBy=multi-user.target
 UNIT
         systemctl daemon-reload
         systemctl enable serverbee-agent
-        warn "Agent service enabled but NOT started — verify config first, then run: sudo systemctl start serverbee-agent"
+        systemctl start serverbee-agent
+        info "Agent service started and enabled"
     else
         warn "systemd not found. Start manually: serverbee-agent"
     fi
