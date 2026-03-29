@@ -1,6 +1,6 @@
 # ServerBee 实现进度
 
-> 最后更新: 2026-03-28
+> 最后更新: 2026-03-29
 
 ## 总览
 
@@ -41,9 +41,11 @@
 | P19 | 跨平台磁盘 I/O (Cross-Platform Disk I/O) | **已完成** | 3 commits (`a1996e1`..`a87ace7`) |
 
 | P20 | 安全加固 Round 2 | **已完成** | 14 commits (`ae06e58`..`c25790f`) |
+| P21 | 注册加固 (fingerprint 复用 + orphan cleanup + discovery key) | **已完成** | 当前分支 `macau-v1` |
 
-**P0~P20 全部完成。**
-**自动化测试:** Rust (common 43 + agent 56 + server unit 238 + server integration 40 + docker 4) + 220 前端 vitest = **597 tests 全部通过**。
+**P0~P21 全部完成。**
+**自动化测试:** Rust (common 43 + agent 59 + server unit 245 + server integration 42 + docker 4) + 222 前端 vitest = **615 tests 全部通过**。
+**浏览器验证:** `agent-browser` 已完成 `/servers` cleanup 计数与删除保护、`/settings` discovery key regenerate 的端到端验证。
 
 ---
 

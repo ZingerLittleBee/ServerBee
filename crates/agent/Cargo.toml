@@ -27,6 +27,8 @@ rand = "0.8"
 portable-pty = "0.8"
 base64 = "0.22"
 sha2 = "0.10"
+hex = "0.4"
+gethostname = "0.5"
 dashmap = "6"
 libc = "0.2"
 nvml-wrapper = { version = "0.10", optional = true }

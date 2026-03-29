@@ -39,6 +39,33 @@ After deploying:
 Railway automatically assigns a port and provides HTTPS. No need to configure `SERVERBEE_SERVER__LISTEN` or TLS certificates.
 </Callout>
 
+## Bootstrap Installer and `serverbee.sh`
+
+For Linux hosts, the quickest binary/systemd path is the bootstrap installer:
+
+```bash
+# Install the server
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s server
+
+# Install an agent
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s agent \
+  --server-url http://your-server-ip:9527 \
+  --discovery-key YOUR_DISCOVERY_KEY
+```
+
+The bootstrap script uses the same management logic shipped in `deploy/serverbee.sh`, so ongoing operations use the same command set:
+
+```bash
+sudo bash deploy/serverbee.sh status
+sudo bash deploy/serverbee.sh upgrade -y
+sudo bash deploy/serverbee.sh restart
+sudo bash deploy/serverbee.sh config
+sudo bash deploy/serverbee.sh env
+sudo bash deploy/serverbee.sh uninstall agent -y
+```
+
+Use `deploy/serverbee.sh` directly when you cloned the repo, or use the curl bootstrap flow on fresh hosts that do not have the repository checked out.
+
 ## Docker Compose (Recommended)
 
 Docker Compose is the simplest way to deploy ServerBee in production. Create a `docker-compose.yml`:
@@ -87,6 +114,10 @@ docker compose logs -f serverbee-server
 ## Systemd Services
 
 For deployments without Docker, use systemd to manage both the server and agent processes.
+
+<Callout type="info">
+If you do not need hand-written unit files, prefer the bootstrap installer above. It creates the config files and systemd units for you, then `serverbee.sh` handles upgrades, restarts, and config edits.
+</Callout>
 
 ### Server Service
 

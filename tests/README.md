@@ -36,6 +36,7 @@ docker compose up -d
 | [auth-users.md](auth-users.md) | 认证、用户与安全 | `/login`, `/settings/users`, `/settings/api-keys` |
 | [dashboard.md](dashboard.md) | 自定义仪表盘 | `/` |
 | [server-detail.md](server-detail.md) | 服务器列表与详情 | `/servers`, `/servers/:id` |
+| [registration-hardening.md](registration-hardening.md) | 自动注册加固、cleanup 与 discovery key | `/servers`, `/settings`, Docker agent install |
 | [ping-tasks.md](ping-tasks.md) | Ping 探测任务管理 | `/settings/ping-tasks` |
 | [network-quality.md](network-quality.md) | 网络质量监控 | `/network`, `/network/:id`, `/settings/network-probes` |
 | [docker.md](docker.md) | Docker 容器监控 | `/servers/:id/docker` |

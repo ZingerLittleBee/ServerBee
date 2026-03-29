@@ -25,6 +25,7 @@
 | GS-6 | 隐藏 Key | 再次点击（"Hide key"） | Key 恢复掩码，按钮变为 "Show key" | ✅ |
 | GS-7 | 复制 Key | 点击复制按钮 | toast 显示 "Copied to clipboard" | ⏭️ headless clipboard 受限 |
 | GS-8 | Key 格式 | 显示 Key 后查看 | Key 为非空字符串（43 字符），等宽字体显示 | ✅ |
+| GS-9 | UI 重新生成 Key | 点击 "Regenerate" 并确认，再次显示 key | 新 key 与旧 key 不同；本轮验证从 `test-key` 变为 `Su6GKY9teQFy9psueUb5j371uNWpo8xefFTV_EZ3VJY` | ✅ agent-browser 实测 |
 
 ---
 
@@ -32,7 +33,7 @@
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| GS-9 | GeoIP 状态显示 | 查看 GeoIP 卡片 | 显示 "Not Installed" + Download 按钮 + DB-IP 归属 | ✅ |
+| GS-10 | GeoIP 状态显示 | 查看 GeoIP 卡片 | 显示 "Not Installed" + Download 按钮 + DB-IP 归属 | ✅ |
 
 ---
 
@@ -65,11 +66,11 @@
 | 模块 | 用例数 | ✅ | ⏭️ | — |
 |------|--------|-----|------|-----|
 | 页面加载与渲染 | 3 | 3 | 0 | 0 |
-| Auto-Discovery Key | 5 | 4 | 1 | 0 |
+| Auto-Discovery Key | 6 | 5 | 1 | 0 |
 | GeoIP 卡片 | 1 | 1 | 0 | 0 |
 | API 端点验证 | 8 | 8 | 0 | 0 |
 | i18n | 2 | 2 | 0 | 0 |
-| **合计** | **19** | **18** | **1** | **0** |
+| **合计** | **20** | **19** | **1** | **0** |
 
-- ✅ 通过：18 (94.7%)
-- ⏭️ 跳过（clipboard API 在 headless 环境受限）：1 (5.3%)
+- ✅ 通过：19 (95%)
+- ⏭️ 跳过（clipboard API 在 headless 环境受限）：1 (5%)
