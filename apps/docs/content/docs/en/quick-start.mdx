@@ -111,13 +111,11 @@ If you are using the default password, the server will display a prominent warni
 
 ## Adding Your First Agent
 
-When the server starts, it generates an **auto-discovery key** and prints it to the logs:
+### Step 1: Get the discovery key
 
-```
-INFO  ServerBee v0.2.0 is ready
-INFO  Listening on 0.0.0.0:9527
-INFO  Auto-discovery key: aB3dEfGh...
-```
+Open the web UI, go to **Settings**, and copy the **Auto Discovery Key**. The full key is also printed on first startup, and you can regenerate it later from the same page if needed.
+
+### Step 2: Configure and start the agent
 
 On the VPS you want to monitor, create an agent configuration file at `/etc/serverbee/agent.toml` (or `agent.toml` in the working directory):
 
@@ -140,6 +138,10 @@ The agent will:
 4. Begin reporting system metrics immediately
 
 You should see the new server appear in your dashboard within a few seconds.
+
+<Callout type="info">
+When the agent can read a stable machine identifier, repeated auto-registration from the same host reuses the existing server entry instead of creating duplicate placeholders.
+</Callout>
 
 ## What Next?
 

@@ -13,6 +13,7 @@
 - **通知渠道** -- Webhook、Telegram、Bark、Email (SMTP)，支持通知组
 - **网络质量监控** -- 多目标网络探测 (96 个预设中国三网 + 国际节点)，实时/历史延迟图表，异常检测，每服务器独立目标配置
 - **Ping 探测** -- ICMP、TCP、HTTP 探测，延迟图表和成功率统计
+- **自动注册加固** -- 基于稳定机器指纹复用既有服务器记录，`auth.max_servers` 软限制自动注册规模，支持在设置页重新生成 discovery key，并清理未连接占位服务器
 - **Web 终端** -- 基于 WebSocket 代理的浏览器 PTY 终端
 - **GPU 监控** -- NVIDIA GPU 使用率/温度/显存 (nvml-wrapper，可选功能)
 - **磁盘 I/O 监控** -- 每块磁盘读写吞吐量图表，支持合并和分盘视图。Linux 通过 `/proc/diskstats`，macOS/Windows 通过 sysinfo
@@ -29,6 +30,7 @@
 - **计费追踪** -- 价格、计费周期、到期提醒、流量限制
 - **备份恢复** -- SQLite 数据库备份/恢复 API
 - **Agent 自动更新** -- 远程二进制升级，SHA-256 校验
+- **一体化部署管理** -- `deploy/serverbee.sh` 支持以交互式或无人值守方式安装、升级、查看状态、修改配置和卸载 Server/Agent
 - **OpenAPI 文档** -- Swagger UI (`/swagger-ui`)，50+ 完整注释端点
 
 ## 技术栈
@@ -108,15 +110,15 @@ make server-dev                                           # 终端 1: 服务端 
 SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # 终端 2: Agent
 
 # 测试与代码质量:
-make cargo-test        # 运行全部 Rust 测试 (379)
-make test              # 运行前端测试 (220)
+make cargo-test        # 运行全部 Rust 测试 (393)
+make test              # 运行前端测试 (222)
 make cargo-clippy      # Rust 代码检查
 make                   # 交互式菜单 (需要 fzf)
 ```
 
 手动浏览器验证清单索引见 `tests/README.md`。
 
-服务端启动时会打印完整的 auto-discovery key，复制后启动 Agent。
+服务端启动时会打印完整的 auto-discovery key，复制后即可启动 Agent；如需轮换，也可以在设置页重新生成。
 
 > **说明**: `make dev-full` 启动带 HMR 的 Vite 开发服务器 (`http://localhost:5173`)，自动代理 `/api/*` 到 Rust 服务端 (`:9527`)。生产构建请使用 `make build` 然后 `make server-run`。
 
@@ -140,6 +142,7 @@ max_connections = 10
 session_ttl = 86400           # 24 小时
 secure_cookie = true          # 开发环境设为 false
 auto_discovery_key = ""       # 留空自动生成
+max_servers = 0               # 自动注册新服务器的软上限
 
 [admin]
 username = "admin"
@@ -171,6 +174,7 @@ release_base_url = "https://github.com/ZingerLittleBee/ServerBee/releases"
 环境变量示例:
 ```bash
 export SERVERBEE_ADMIN__PASSWORD="my-secure-password"
+export SERVERBEE_AUTH__MAX_SERVERS="50"
 export SERVERBEE_GEOIP__MMDB_PATH="/path/to/GeoLite2-City.mmdb"
 export SERVERBEE_OAUTH__GITHUB__CLIENT_ID="..."
 ```
