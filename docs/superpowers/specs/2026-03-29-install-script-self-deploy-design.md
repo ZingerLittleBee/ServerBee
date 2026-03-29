@@ -24,33 +24,40 @@ Add an `install_cli()` function that installs the script to `/usr/local/bin/serv
 ```bash
 install_cli() {
     local target="/usr/local/bin/serverbee"
-    local tmp
-    tmp=$(mktemp)
 
-    if [ -f "$0" ]; then
-        # Local execution — copy the running script
-        cp "$0" "$tmp"
-    else
-        # Pipe execution — download from same release tag
-        local version="${1:-main}"
-        local url="https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
-        if ! curl -fsSL -o "$tmp" "$url"; then
-            rm -f "$tmp"
-            warn "Failed to install CLI to ${target}"
-            return 0
+    # Entire body runs in a subshell so any failure (cp, curl, chmod, mv)
+    # is caught by the || guard, keeping set -e from killing the caller.
+    if (
+        local tmp
+        tmp=$(mktemp)
+        trap 'rm -f "$tmp"' EXIT
+
+        if [ -f "$0" ]; then
+            # Local execution — copy the running script
+            cp "$0" "$tmp"
+        else
+            # Pipe execution — download from same release tag
+            local version="${1:-main}"
+            local url="https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
+            curl -fsSL -o "$tmp" "$url"
         fi
-    fi
 
-    chmod +x "$tmp"
-    mv "$tmp" "$target"
-    info "Management CLI installed: serverbee"
+        chmod +x "$tmp"
+        mv "$tmp" "$target"
+        # Disable EXIT trap — mv succeeded, tmp no longer exists
+        trap - EXIT
+    ); then
+        info "Management CLI installed: serverbee"
+    else
+        warn "Failed to install CLI to ${target} — component installation continues"
+    fi
 }
 ```
 
 Key properties:
-- **Atomic write**: downloads to temp file first, `mv` only on success — never clobbers a working CLI on failure.
+- **Truly non-fatal**: the entire body runs in a subshell guarded by `if (...); then ... else ... fi`. Under `set -euo pipefail`, any step failure (`cp`, `curl`, `chmod`, `mv`) exits the subshell, hits the `else` branch, and warns — the caller continues normally.
+- **Atomic write**: operates on a temp file with an EXIT trap for cleanup; `mv` only on success — never clobbers a working CLI.
 - **Version-pinned**: pipe execution uses the same release tag as the binaries, avoiding version skew between CLI and components.
-- **Non-fatal**: on failure, warns and returns 0 — component installation still succeeds. No `chmod` runs after a failed download.
 
 ### 2. Call Sites
 
@@ -65,7 +72,22 @@ Each call happens right before `meta_write()`. The release version is passed as 
 
 ### 3. Upgrade Self-Update
 
-In `upgrade_component()`, after upgrading the component binary/container and writing metadata, call `install_cli "$latest_version"` to update the management script to the matching release version.
+In `upgrade_component()`, call `install_cli "$latest_version"` to update the management script. Two call sites:
+
+1. **After successful upgrade** — after `meta_write()` at the end of `upgrade_component()`.
+2. **On version-equal early return** — before the "already up to date" return, check if `/usr/local/bin/serverbee` exists. If missing or differs, call `install_cli "$latest_version"` to repair a missing/stale CLI (covers prior warning-only failures or manual deletion).
+
+```bash
+# In upgrade_component(), at the early return:
+if [ -n "$current_version" ] && [ "$current_version" = "$latest_version" ]; then
+    # Repair CLI if missing or stale even though component is current
+    if [ ! -x "/usr/local/bin/serverbee" ]; then
+        install_cli "$latest_version"
+    fi
+    info "serverbee-${component} is already up to date (${current_version})"
+    return
+fi
+```
 
 ### 4. File Cleanup
 
