@@ -21,6 +21,7 @@ Example: TOML `admin.password` → env var `SERVERBEE_ADMIN__PASSWORD`
 |---------------------|----------|------|---------|-------------|
 | `SERVERBEE_SERVER__DATA_DIR` | `server.data_dir` | string | `./data` | Data directory for SQLite and backups |
 | `SERVERBEE_AUTH__AUTO_DISCOVERY_KEY` | `auth.auto_discovery_key` | string | `""` (auto-generated) | Key for agent auto-registration. Leave empty to auto-generate on first startup |
+| `SERVERBEE_AUTH__MAX_SERVERS` | `auth.max_servers` | u32 | `0` | Maximum servers allowed via auto-discovery (0 = no limit). Best-effort soft cap |
 | `SERVERBEE_ADMIN__USERNAME` | `admin.username` | string | `admin` | Default admin username (created on first startup if no users exist) |
 | `SERVERBEE_SCHEDULER__TIMEZONE` | `scheduler.timezone` | string | `UTC` | Timezone for daily traffic aggregation and cron scheduling (e.g. `Asia/Shanghai`) |
 | `SERVERBEE_LOG__LEVEL` | `log.level` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
