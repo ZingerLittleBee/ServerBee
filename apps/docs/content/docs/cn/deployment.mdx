@@ -53,18 +53,16 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
   --discovery-key YOUR_DISCOVERY_KEY
 ```
 
-该引导脚本与仓库中的 `deploy/serverbee.sh` 使用同一套命令集。对于未克隆仓库的全新主机，可以继续使用引导入口执行后续运维：
+安装完成后，使用 `serverbee` CLI 管理你的部署（安装时自动部署到 `/usr/local/bin/serverbee`）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- status
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- upgrade -y
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- restart
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- config
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- env
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- uninstall agent -y
+sudo serverbee status
+sudo serverbee upgrade -y
+sudo serverbee restart
+sudo serverbee config
+sudo serverbee env
+sudo serverbee uninstall agent -y
 ```
-
-如果你已经克隆仓库，也可以直接通过 `deploy/serverbee.sh` 执行同样的命令。
 
 <Callout type="info">
 `install server` / `install agent` 主要用于首次引导安装。如果 `/usr/local/bin` 中已经存在对应二进制，安装脚本会直接沿用现有文件而不会覆盖。向已部署主机下发新 release 时，请改用 `upgrade`，或手动替换二进制后再重启服务。
