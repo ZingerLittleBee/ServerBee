@@ -3,9 +3,8 @@ import SwiftUI
 /// The main servers list view, displayed in the Servers tab.
 /// Features search, online/offline filter, pull-to-refresh, and navigation to detail.
 struct ServersListView: View {
-    @Environment(AuthManager.self) private var authManager
-    @State private var viewModel = ServersViewModel()
-    @State private var apiClient: APIClient?
+    @Environment(ServersViewModel.self) private var viewModel
+    @Environment(\.apiClient) private var apiClient
 
     var body: some View {
         Group {
@@ -23,13 +22,14 @@ struct ServersListView: View {
             prompt: String(localized: "Search servers...")
         )
         .refreshable {
-            guard let apiClient else { return }
-            await viewModel.refresh(apiClient: apiClient)
+            if let apiClient {
+                await viewModel.refresh(apiClient: apiClient)
+            }
         }
         .task {
-            let client = APIClient(authManager: authManager)
-            apiClient = client
-            await viewModel.fetchServers(apiClient: client)
+            if viewModel.servers.isEmpty, let apiClient {
+                await viewModel.fetchServers(apiClient: apiClient)
+            }
         }
     }
 
@@ -106,4 +106,5 @@ struct ServersListView: View {
         ServersListView()
     }
     .environment(AuthManager())
+    .environment(ServersViewModel())
 }
