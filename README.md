@@ -225,7 +225,7 @@ Callback URL format: `https://your-domain/api/auth/oauth/{provider}/callback`
 2. Add a volume mounted at `/data` to persist data across deploys
 3. Configure your agents to connect to the Railway URL
 
-### Systemd
+### Install Script
 
 ```bash
 # Install server
@@ -238,7 +238,28 @@ sudo bash deploy/serverbee.sh install agent --server-url http://YOUR_SERVER:9527
 sudo bash deploy/serverbee.sh
 ```
 
-See `deploy/serverbee.sh` for full management commands (upgrade, uninstall, config, status, etc.).
+Or install via curl (one-liner):
+
+```bash
+# Server
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s server
+
+# Agent
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s agent \
+  --server-url http://YOUR_SERVER:9527 --discovery-key YOUR_KEY
+```
+
+### Management
+
+```bash
+sudo bash deploy/serverbee.sh status              # View status of all components
+sudo bash deploy/serverbee.sh upgrade -y           # Upgrade all to latest version
+sudo bash deploy/serverbee.sh restart              # Restart all services
+sudo bash deploy/serverbee.sh config               # View current config
+sudo bash deploy/serverbee.sh config set <key> <value>  # Update config
+sudo bash deploy/serverbee.sh uninstall agent -y   # Uninstall agent
+sudo bash deploy/serverbee.sh uninstall server --purge  # Uninstall server + remove data
+```
 
 ### Reverse Proxy (Nginx)
 
