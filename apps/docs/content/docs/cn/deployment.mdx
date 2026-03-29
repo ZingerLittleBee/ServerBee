@@ -66,6 +66,10 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 
 如果你已经克隆仓库，也可以直接通过 `deploy/serverbee.sh` 执行同样的命令。
 
+<Callout type="info">
+`install server` / `install agent` 主要用于首次引导安装。如果 `/usr/local/bin` 中已经存在对应二进制，安装脚本会直接沿用现有文件而不会覆盖。向已部署主机下发新 release 时，请改用 `upgrade`，或手动替换二进制后再重启服务。
+</Callout>
+
 ## Docker Compose（推荐）
 
 Docker Compose 是推荐的生产部署方式，简单且易于维护。

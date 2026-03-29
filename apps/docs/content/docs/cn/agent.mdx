@@ -41,6 +41,10 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 
 如果你已经克隆仓库，也可以改用 `sudo bash deploy/serverbee.sh ...` 执行同样的命令。
 
+<Callout type="info">
+重复执行 `install agent` 时，如果 `/usr/local/bin/serverbee-agent` 已存在，脚本会直接沿用当前二进制而不会覆盖。需要替换已安装版本时，请使用 `upgrade agent -y`，或先手动覆盖 `/usr/local/bin/serverbee-agent`，再重启服务。
+</Callout>
+
 ### 二进制下载
 
 从 [GitHub Releases](https://github.com/ZingerLittleBee/ServerBee/releases) 下载对应平台的二进制文件：

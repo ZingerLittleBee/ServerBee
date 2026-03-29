@@ -66,6 +66,10 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 
 If you cloned the repository, you can run the same commands via `deploy/serverbee.sh` directly.
 
+<Callout type="info">
+`install server` / `install agent` are bootstrap commands. If the binary already exists in `/usr/local/bin`, the installer adopts it instead of overwriting it. Use `upgrade` (or replace the binary manually) when you need to roll out a refreshed release binary to an existing host.
+</Callout>
+
 ## Docker Compose (Recommended)
 
 Docker Compose is the simplest way to deploy ServerBee in production. Create a `docker-compose.yml`:
