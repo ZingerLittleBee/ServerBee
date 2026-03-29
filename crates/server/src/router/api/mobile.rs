@@ -8,8 +8,10 @@ use axum::{Json, Router};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use rand::RngCore;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use chrono::Utc;
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::error::{ok, ApiResponse, AppError};
 use crate::middleware::auth::CurrentUser;
@@ -47,6 +49,12 @@ pub struct MobilePairCodeResponse {
     expires_in_secs: i64,
 }
 
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct PushRegisterRequest {
+    /// The APNs device token obtained from the iOS device.
+    pub device_token: String,
+}
+
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct MobileDeviceResponse {
     id: String,
@@ -73,6 +81,8 @@ pub fn protected_router() -> Router<Arc<AppState>> {
         .route("/mobile/auth/devices", get(list_devices))
         .route("/mobile/auth/devices/{id}", delete(revoke_device))
         .route("/mobile/pair", post(generate_pair_code))
+        .route("/mobile/push/register", post(push_register))
+        .route("/mobile/push/unregister", post(push_unregister))
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -369,6 +379,127 @@ pub async fn mobile_pair_redeem(
     .await?;
 
     ok(response)
+}
+
+// ── Push token management ────────────────────────────────────────────────────
+
+#[utoipa::path(
+    post,
+    path = "/api/mobile/push/register",
+    tag = "mobile-auth",
+    request_body = PushRegisterRequest,
+    responses(
+        (status = 200, description = "Device token registered"),
+        (status = 401, description = "Unauthorized"),
+        (status = 422, description = "Validation error"),
+    ),
+    security(("bearer_token" = []))
+)]
+pub async fn push_register(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<PushRegisterRequest>,
+) -> Result<Json<ApiResponse<&'static str>>, AppError> {
+    if body.device_token.is_empty() {
+        return Err(AppError::Validation(
+            "device_token is required".to_string(),
+        ));
+    }
+
+    let token = extract_bearer(&headers).ok_or(AppError::Unauthorized)?;
+
+    // Find the session by bearer token
+    let session = crate::entity::session::Entity::find()
+        .filter(crate::entity::session::Column::Token.eq(&token))
+        .one(&state.db)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+
+    let mobile_session_id = session.mobile_session_id.as_deref().ok_or_else(|| {
+        AppError::BadRequest("This session is not a mobile session".to_string())
+    })?;
+
+    // Look up the mobile session to get installation_id
+    let mobile_session = crate::entity::mobile_session::Entity::find_by_id(mobile_session_id)
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("Mobile session not found".to_string()))?;
+
+    // Upsert: find by installation_id, update if exists, insert if not
+    let existing = crate::entity::device_token::Entity::find()
+        .filter(
+            crate::entity::device_token::Column::InstallationId
+                .eq(&mobile_session.installation_id),
+        )
+        .one(&state.db)
+        .await?;
+
+    let now = Utc::now();
+
+    if let Some(existing) = existing {
+        let mut model: crate::entity::device_token::ActiveModel = existing.into();
+        model.token = Set(body.device_token);
+        model.user_id = Set(session.user_id.clone());
+        model.mobile_session_id = Set(mobile_session_id.to_string());
+        model.updated_at = Set(now);
+        model.update(&state.db).await?;
+    } else {
+        let model = crate::entity::device_token::ActiveModel {
+            id: Set(Uuid::new_v4().to_string()),
+            user_id: Set(session.user_id.clone()),
+            mobile_session_id: Set(mobile_session_id.to_string()),
+            installation_id: Set(mobile_session.installation_id.clone()),
+            token: Set(body.device_token),
+            created_at: Set(now),
+            updated_at: Set(now),
+        };
+        model.insert(&state.db).await?;
+    }
+
+    ok("ok")
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/mobile/push/unregister",
+    tag = "mobile-auth",
+    responses(
+        (status = 200, description = "Device token unregistered"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("bearer_token" = []))
+)]
+pub async fn push_unregister(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<ApiResponse<&'static str>>, AppError> {
+    let token = extract_bearer(&headers).ok_or(AppError::Unauthorized)?;
+
+    let session = crate::entity::session::Entity::find()
+        .filter(crate::entity::session::Column::Token.eq(&token))
+        .one(&state.db)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+
+    let mobile_session_id = session.mobile_session_id.as_deref().ok_or_else(|| {
+        AppError::BadRequest("This session is not a mobile session".to_string())
+    })?;
+
+    let mobile_session = crate::entity::mobile_session::Entity::find_by_id(mobile_session_id)
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("Mobile session not found".to_string()))?;
+
+    // Delete the device token for this installation
+    crate::entity::device_token::Entity::delete_many()
+        .filter(
+            crate::entity::device_token::Column::InstallationId
+                .eq(&mobile_session.installation_id),
+        )
+        .exec(&state.db)
+        .await?;
+
+    ok("ok")
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
