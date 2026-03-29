@@ -30,7 +30,7 @@ A lightweight, self-hosted VPS monitoring system built with Rust and React.
 - **Billing Tracking** -- Price, billing cycle, expiration alerts, traffic limits per server
 - **Backup & Restore** -- SQLite database backup/restore via admin API
 - **Agent Auto-update** -- Remote binary upgrade with SHA-256 verification
-- **Guided Deployment Management** -- `deploy/serverbee.sh` installs, upgrades, inspects, reconfigures, and uninstalls server and agent deployments in interactive or unattended mode
+- **Guided Deployment Management** -- `serverbee` CLI installs, upgrades, inspects, reconfigures, and uninstalls server and agent deployments in interactive or unattended mode
 - **OpenAPI Documentation** -- Swagger UI at `/swagger-ui` with 50+ documented endpoints
 
 ## Tech Stack
@@ -231,40 +231,31 @@ Callback URL format: `https://your-domain/api/auth/oauth/{provider}/callback`
 
 ### Install Script
 
-```bash
-# Install server
-sudo bash deploy/serverbee.sh install server
-
-# Install agent (replace with your server URL and discovery key)
-sudo bash deploy/serverbee.sh install agent --server-url http://YOUR_SERVER:9527 --discovery-key YOUR_KEY
-
-# Interactive mode — guides you through all options
-sudo bash deploy/serverbee.sh
-```
-
-Or install via curl (one-liner):
+Install via curl (one-liner):
 
 ```bash
 # Server
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
 
-# Agent
+# Agent (replace with your server URL and discovery key)
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
   --server-url http://YOUR_SERVER:9527 --discovery-key YOUR_KEY
 ```
 
-> **Note**: Re-running `install agent` adopts an existing `/usr/local/bin/serverbee-agent` instead of replacing it. Use `sudo bash deploy/serverbee.sh upgrade agent -y` (or replace the binary manually) when you need to refresh an existing installation.
+The installer automatically places a `serverbee` management CLI at `/usr/local/bin/serverbee`.
+
+> **Note**: Re-running `install agent` adopts an existing `/usr/local/bin/serverbee-agent` instead of replacing it. Use `sudo serverbee upgrade agent -y` (or replace the binary manually) when you need to refresh an existing installation.
 
 ### Management
 
 ```bash
-sudo bash deploy/serverbee.sh status              # View status of all components
-sudo bash deploy/serverbee.sh upgrade -y           # Upgrade all to latest version
-sudo bash deploy/serverbee.sh restart              # Restart all services
-sudo bash deploy/serverbee.sh config               # View current config
-sudo bash deploy/serverbee.sh config set <key> <value>  # Update config
-sudo bash deploy/serverbee.sh uninstall agent -y   # Uninstall agent
-sudo bash deploy/serverbee.sh uninstall server --purge  # Uninstall server + remove data
+sudo serverbee status              # View status of all components
+sudo serverbee upgrade -y           # Upgrade all to latest version
+sudo serverbee restart              # Restart all services
+sudo serverbee config               # View current config
+sudo serverbee config set <key> <value>  # Update config
+sudo serverbee uninstall agent -y   # Uninstall agent
+sudo serverbee uninstall server --purge  # Uninstall server + remove data
 ```
 
 ### Reverse Proxy (Nginx)

@@ -39,7 +39,7 @@ After deploying:
 Railway automatically assigns a port and provides HTTPS. No need to configure `SERVERBEE_SERVER__LISTEN` or TLS certificates.
 </Callout>
 
-## Bootstrap Installer and `serverbee.sh`
+## Bootstrap Installer
 
 For Linux hosts, the quickest binary/systemd path is the bootstrap installer:
 
@@ -53,18 +53,16 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
   --discovery-key YOUR_DISCOVERY_KEY
 ```
 
-The bootstrap script and `deploy/serverbee.sh` share the same command set. On a fresh host, keep using the bootstrap entrypoint:
+After installation, manage your deployment with the `serverbee` CLI (automatically installed to `/usr/local/bin/serverbee`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- status
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- upgrade -y
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- restart
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- config
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- env
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- uninstall agent -y
+sudo serverbee status
+sudo serverbee upgrade -y
+sudo serverbee restart
+sudo serverbee config
+sudo serverbee env
+sudo serverbee uninstall agent -y
 ```
-
-If you cloned the repository, you can run the same commands via `deploy/serverbee.sh` directly.
 
 <Callout type="info">
 `install server` / `install agent` are bootstrap commands. If the binary already exists in `/usr/local/bin`, the installer adopts it instead of overwriting it. Use `upgrade` (or replace the binary manually) when you need to roll out a refreshed release binary to an existing host.
@@ -120,7 +118,7 @@ docker compose logs -f serverbee-server
 For deployments without Docker, use systemd to manage both the server and agent processes.
 
 <Callout type="info">
-If you do not need hand-written unit files, prefer the bootstrap installer above. It creates the config files and systemd units for you, then `serverbee.sh` handles upgrades, restarts, and config edits.
+If you do not need hand-written unit files, prefer the bootstrap installer above. It creates the config files and systemd units for you, then the `serverbee` CLI handles upgrades, restarts, and config edits.
 </Callout>
 
 ### Server Service

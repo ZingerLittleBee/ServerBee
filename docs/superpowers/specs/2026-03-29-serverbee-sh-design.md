@@ -1,6 +1,8 @@
 # serverbee.sh — 交互式管理脚本设计
 
-> 替换 `deploy/install.sh`，提供安装、卸载、升级、配置管理、环境变量管理、服务控制的一站式管理工具。
+> **SUPERSEDED** by `2026-03-29-install-script-self-deploy-design.md`. This document's approach (serverbee.sh as primary, install.sh as copy) has been replaced: `install.sh` is now the sole source file and self-installs to `/usr/local/bin/serverbee`. The command interface defined below is still implemented — only the file organization and deployment mechanism changed.
+
+> ~~替换 `deploy/install.sh`，提供安装、卸载、升级、配置管理、环境变量管理、服务控制的一站式管理工具。~~
 
 ## 命令总览
 

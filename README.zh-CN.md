@@ -30,7 +30,7 @@
 - **计费追踪** -- 价格、计费周期、到期提醒、流量限制
 - **备份恢复** -- SQLite 数据库备份/恢复 API
 - **Agent 自动更新** -- 远程二进制升级，SHA-256 校验
-- **一体化部署管理** -- `deploy/serverbee.sh` 支持以交互式或无人值守方式安装、升级、查看状态、修改配置和卸载 Server/Agent
+- **一体化部署管理** -- `serverbee` CLI 支持以交互式或无人值守方式安装、升级、查看状态、修改配置和卸载 Server/Agent
 - **OpenAPI 文档** -- Swagger UI (`/swagger-ui`)，50+ 完整注释端点
 
 ## 技术栈
@@ -231,40 +231,31 @@ client_secret = "..."
 
 ### 安装脚本
 
-```bash
-# 安装服务端
-sudo bash deploy/serverbee.sh install server
-
-# 安装 Agent（替换为你的服务端地址和发现密钥）
-sudo bash deploy/serverbee.sh install agent --server-url http://YOUR_SERVER:9527 --discovery-key YOUR_KEY
-
-# 交互式模式 — 引导完成所有配置
-sudo bash deploy/serverbee.sh
-```
-
-或通过 curl 一键安装：
+通过 curl 一键安装：
 
 ```bash
 # 服务端
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
 
-# Agent
+# Agent（替换为你的服务端地址和发现密钥）
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
   --server-url http://YOUR_SERVER:9527 --discovery-key YOUR_KEY
 ```
 
-> **说明**：重复执行 `install agent` 时，如果 `/usr/local/bin/serverbee-agent` 已存在，脚本会直接沿用现有二进制而不会覆盖。需要刷新已安装版本时，请使用 `sudo bash deploy/serverbee.sh upgrade agent -y`，或手动替换该二进制文件。
+安装脚本会自动将 `serverbee` 管理 CLI 安装到 `/usr/local/bin/serverbee`。
+
+> **说明**：重复执行 `install agent` 时，如果 `/usr/local/bin/serverbee-agent` 已存在，脚本会直接沿用现有二进制而不会覆盖。需要刷新已安装版本时，请使用 `sudo serverbee upgrade agent -y`，或手动替换该二进制文件。
 
 ### 管理命令
 
 ```bash
-sudo bash deploy/serverbee.sh status              # 查看所有组件状态
-sudo bash deploy/serverbee.sh upgrade -y           # 升级到最新版
-sudo bash deploy/serverbee.sh restart              # 重启所有服务
-sudo bash deploy/serverbee.sh config               # 查看当前配置
-sudo bash deploy/serverbee.sh config set <key> <value>  # 修改配置
-sudo bash deploy/serverbee.sh uninstall agent -y   # 卸载 Agent
-sudo bash deploy/serverbee.sh uninstall server --purge  # 卸载服务端并清除数据
+sudo serverbee status              # 查看所有组件状态
+sudo serverbee upgrade -y           # 升级到最新版
+sudo serverbee restart              # 重启所有服务
+sudo serverbee config               # 查看当前配置
+sudo serverbee config set <key> <value>  # 修改配置
+sudo serverbee uninstall agent -y   # 卸载 Agent
+sudo serverbee uninstall server --purge  # 卸载服务端并清除数据
 ```
 
 ### 反向代理 (Nginx)
