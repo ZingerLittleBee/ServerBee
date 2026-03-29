@@ -76,7 +76,7 @@ pub async fn get_brand_config(
         (status = 200, description = "Brand config updated", body = BrandConfig),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn update_brand_config(
     State(state): State<Arc<AppState>>,
@@ -112,7 +112,7 @@ pub async fn update_brand_config(
         (status = 400, description = "Invalid file"),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn upload_logo(
     State(state): State<Arc<AppState>>,
@@ -155,7 +155,7 @@ pub async fn upload_logo(
         (status = 400, description = "Invalid file"),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn upload_favicon(
     State(state): State<Arc<AppState>>,

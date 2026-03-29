@@ -60,7 +60,7 @@ pub fn write_router() -> Router<Arc<AppState>> {
         (status = 404, description = "Server not found or offline"),
         (status = 422, description = "Invalid target"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn trigger_traceroute(
     State(state): State<Arc<AppState>>,
@@ -120,7 +120,7 @@ pub async fn trigger_traceroute(
         (status = 200, description = "Traceroute result", body = TracerouteResultResponse),
         (status = 404, description = "Result not found or server mismatch"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn get_traceroute_result(
     State(state): State<Arc<AppState>>,

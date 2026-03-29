@@ -35,7 +35,7 @@ pub fn write_router() -> Router<Arc<AppState>> {
     responses(
         (status = 200, description = "List all ping tasks", body = Vec<ping_task::Model>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn list_tasks(
     State(state): State<Arc<AppState>>,
@@ -54,7 +54,7 @@ async fn list_tasks(
         (status = 200, description = "Ping task details", body = ping_task::Model),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_task(
     State(state): State<Arc<AppState>>,
@@ -74,7 +74,7 @@ async fn get_task(
         (status = 200, description = "Ping task created", body = ping_task::Model),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn create_task(
     State(state): State<Arc<AppState>>,
@@ -95,7 +95,7 @@ async fn create_task(
         (status = 200, description = "Ping task updated", body = ping_task::Model),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn update_task(
     State(state): State<Arc<AppState>>,
@@ -116,7 +116,7 @@ async fn update_task(
         (status = 200, description = "Ping task deleted"),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn delete_task(
     State(state): State<Arc<AppState>>,
@@ -145,7 +145,7 @@ pub struct RecordsQuery {
     responses(
         (status = 200, description = "Ping records", body = Vec<ping_record::Model>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_records(
     State(state): State<Arc<AppState>>,

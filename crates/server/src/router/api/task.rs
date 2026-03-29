@@ -116,7 +116,7 @@ impl From<task::Model> for TaskResponse {
     responses(
         (status = 200, description = "List tasks", body = Vec<TaskResponse>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn list_tasks(
     State(state): State<Arc<AppState>>,
@@ -143,7 +143,7 @@ pub async fn list_tasks(
         (status = 200, description = "Task created", body = TaskResponse),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn create_task(
     State(state): State<Arc<AppState>>,
@@ -253,7 +253,7 @@ pub async fn create_task(
         (status = 200, description = "Task details", body = TaskResponse),
         (status = 404, description = "Task not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn get_task(
     State(state): State<Arc<AppState>>,
@@ -276,7 +276,7 @@ pub async fn get_task(
         (status = 200, description = "Task updated", body = TaskResponse),
         (status = 404, description = "Task not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn update_task(
     State(state): State<Arc<AppState>>,
@@ -384,7 +384,7 @@ pub async fn update_task(
     responses(
         (status = 200, description = "Task deleted"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn delete_task(
     State(state): State<Arc<AppState>>,
@@ -411,7 +411,7 @@ pub async fn delete_task(
         (status = 200, description = "Task triggered", body = TaskResponse),
         (status = 409, description = "Task already running"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn run_task(
     State(state): State<Arc<AppState>>,
@@ -452,7 +452,7 @@ pub async fn run_task(
     responses(
         (status = 200, description = "Task results", body = Vec<task_result::Model>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn get_task_results(
     State(state): State<Arc<AppState>>,

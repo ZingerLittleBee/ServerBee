@@ -134,7 +134,7 @@ async fn require_docker(state: &AppState, server_id: &str) -> Result<(), AppErro
         (status = 403, description = "Docker capability disabled"),
         (status = 404, description = "Server not found or offline"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_containers(
     State(state): State<Arc<AppState>>,
@@ -159,7 +159,7 @@ async fn get_containers(
         (status = 403, description = "Docker capability disabled"),
         (status = 404, description = "Server not found or offline"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_stats(
     State(state): State<Arc<AppState>>,
@@ -184,7 +184,7 @@ async fn get_stats(
         (status = 403, description = "Docker capability disabled"),
         (status = 404, description = "Server not found or no info cached"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_info(
     State(state): State<Arc<AppState>>,
@@ -241,7 +241,7 @@ async fn get_info(
         (status = 403, description = "Docker capability disabled"),
         (status = 404, description = "Server not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_events(
     State(state): State<Arc<AppState>>,
@@ -275,7 +275,7 @@ async fn get_events(
         (status = 404, description = "Server not found or offline"),
         (status = 408, description = "Agent timeout"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_networks(
     State(state): State<Arc<AppState>>,
@@ -319,7 +319,7 @@ async fn get_networks(
         (status = 404, description = "Server not found or offline"),
         (status = 408, description = "Agent timeout"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_volumes(
     State(state): State<Arc<AppState>>,
@@ -371,7 +371,7 @@ async fn get_volumes(
         (status = 404, description = "Server not found or offline"),
         (status = 408, description = "Agent timeout"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn container_action(
     State(state): State<Arc<AppState>>,

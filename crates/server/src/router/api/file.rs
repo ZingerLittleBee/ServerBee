@@ -183,7 +183,7 @@ async fn validate_file_access(
         (status = 404, description = "Server not found or offline"),
         (status = 408, description = "Agent timeout"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn list_files(
     State(state): State<Arc<AppState>>,
@@ -236,7 +236,7 @@ async fn list_files(
         (status = 404, description = "Server not found or offline"),
         (status = 408, description = "Agent timeout"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn stat_file(
     State(state): State<Arc<AppState>>,
@@ -288,7 +288,7 @@ async fn stat_file(
         (status = 404, description = "Server not found or offline"),
         (status = 408, description = "Agent timeout"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn read_file(
     State(state): State<Arc<AppState>>,
@@ -340,7 +340,7 @@ async fn read_file(
         (status = 200, description = "File download stream"),
         (status = 404, description = "Transfer not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn download_file(
     State(state): State<Arc<AppState>>,
@@ -413,7 +413,7 @@ async fn download_file(
     responses(
         (status = 200, description = "Active file transfers", body = TransfersResponse),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn list_transfers(
     State(state): State<Arc<AppState>>,
@@ -439,7 +439,7 @@ async fn list_transfers(
         (status = 404, description = "Server not found or offline"),
         (status = 408, description = "Agent timeout"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn write_file(
     State(state): State<Arc<AppState>>,
@@ -519,7 +519,7 @@ async fn write_file(
         (status = 404, description = "Server not found or offline"),
         (status = 408, description = "Agent timeout"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn delete_file(
     State(state): State<Arc<AppState>>,
@@ -599,7 +599,7 @@ async fn delete_file(
         (status = 404, description = "Server not found or offline"),
         (status = 408, description = "Agent timeout"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn mkdir(
     State(state): State<Arc<AppState>>,
@@ -677,7 +677,7 @@ async fn mkdir(
         (status = 404, description = "Server not found or offline"),
         (status = 408, description = "Agent timeout"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn move_file(
     State(state): State<Arc<AppState>>,
@@ -757,7 +757,7 @@ async fn move_file(
         (status = 404, description = "Server not found or offline"),
         (status = 429, description = "Too many concurrent transfers"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn start_download(
     State(state): State<Arc<AppState>>,
@@ -835,7 +835,7 @@ async fn start_download(
         (status = 404, description = "Server not found or offline"),
         (status = 429, description = "Too many concurrent transfers"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn upload_file(
     State(state): State<Arc<AppState>>,
@@ -1135,7 +1135,7 @@ async fn upload_file(
         (status = 200, description = "Transfer cancelled", body = SuccessResponse),
         (status = 404, description = "Transfer not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn cancel_transfer(
     State(state): State<Arc<AppState>>,

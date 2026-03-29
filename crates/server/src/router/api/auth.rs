@@ -238,7 +238,7 @@ pub async fn logout(
         (status = 200, description = "Current user info", body = MeResponse),
         (status = 401, description = "Unauthorized"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn me(
     Extension(current_user): Extension<CurrentUser>,
@@ -259,7 +259,7 @@ pub async fn me(
         (status = 200, description = "API key created", body = ApiKeyResponse),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn create_api_key(
     State(state): State<Arc<AppState>>,
@@ -289,7 +289,7 @@ pub async fn create_api_key(
     responses(
         (status = 200, description = "List of API keys", body = Vec<ApiKeyResponse>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn list_api_keys(
     State(state): State<Arc<AppState>>,
@@ -320,7 +320,7 @@ pub async fn list_api_keys(
         (status = 200, description = "API key deleted"),
         (status = 404, description = "API key not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn delete_api_key(
     State(state): State<Arc<AppState>>,
@@ -340,7 +340,7 @@ pub async fn delete_api_key(
         (status = 200, description = "Password changed"),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn change_password(
     State(state): State<Arc<AppState>>,
@@ -390,7 +390,7 @@ pub async fn change_password(
     responses(
         (status = 200, description = "TOTP setup data", body = TotpSetupResponse),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn totp_setup(
     State(state): State<Arc<AppState>>,
@@ -423,7 +423,7 @@ pub async fn totp_setup(
         (status = 200, description = "2FA enabled"),
         (status = 401, description = "Invalid TOTP code"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn totp_enable(
     State(state): State<Arc<AppState>>,
@@ -491,7 +491,7 @@ pub async fn totp_enable(
         (status = 200, description = "2FA disabled"),
         (status = 400, description = "Invalid password"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn totp_disable(
     State(state): State<Arc<AppState>>,
@@ -539,7 +539,7 @@ pub async fn totp_disable(
     responses(
         (status = 200, description = "2FA status", body = TotpStatusResponse),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn totp_status(
     State(state): State<Arc<AppState>>,
@@ -558,7 +558,7 @@ pub async fn totp_status(
     responses(
         (status = 200, description = "List linked OAuth accounts", body = Vec<crate::entity::oauth_account::Model>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn list_oauth_accounts(
     State(state): State<Arc<AppState>>,
@@ -579,7 +579,7 @@ pub async fn list_oauth_accounts(
         (status = 200, description = "OAuth account unlinked"),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn unlink_oauth_account(
     State(state): State<Arc<AppState>>,

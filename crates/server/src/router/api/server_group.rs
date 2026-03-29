@@ -45,7 +45,7 @@ pub fn write_router() -> Router<Arc<AppState>> {
     responses(
         (status = 200, description = "List all server groups", body = Vec<server_group::Model>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn list_groups(
     State(state): State<Arc<AppState>>,
@@ -69,7 +69,7 @@ async fn list_groups(
         (status = 409, description = "Group name already exists"),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn create_group(
     State(state): State<Arc<AppState>>,
@@ -115,7 +115,7 @@ async fn create_group(
         (status = 404, description = "Group not found"),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn update_group(
     State(state): State<Arc<AppState>>,
@@ -153,7 +153,7 @@ async fn update_group(
         (status = 200, description = "Group deleted"),
         (status = 404, description = "Group not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn delete_group(
     State(state): State<Arc<AppState>>,
