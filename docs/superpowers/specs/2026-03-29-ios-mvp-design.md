@@ -544,8 +544,8 @@ iOS 端 `AlertDetailViewModel` 的请求路径需从 `/api/mobile/alerts/{alert_
 
 **AuthManager 成为 refresh 的唯一入口**：
 - `AuthManager` 新增公开方法 `refreshAccessToken() async throws -> String`
-- 内部实现带并发合并（coalescing）：用一个 `isRefreshing` flag + continuations 数组，确保并发调用只触发一次实际 refresh 请求，所有调用方等待同一个结果
-- 这与当前 `APIClient.performTokenRefresh()` 的 coalescing 模式相同，但移到 `AuthManager` 层
+- 并发合并（coalescing）逻辑需要线程安全的序列化边界。当前 `AuthManager` 是 `@Observable final class: @unchecked Sendable`，不是 actor，无法安全地持有 `isRefreshing` + continuations 等可变状态。解决方案：将 refresh coalescing 封装在一个内部 private actor 中（如 `RefreshCoordinator`），`AuthManager.refreshAccessToken()` 委托给它。这保持 `AuthManager` 作为 `@Observable` 驱动 UI 的现有角色不变，同时 refresh 路径是 actor-isolated 的
+- `RefreshCoordinator` 内部持有 `isRefreshing: Bool` + `waiters: [CheckedContinuation<String, Error>]`，逻辑与当前 `APIClient.performTokenRefresh()` 相同
 
 **APIClient 改为委托给 AuthManager**：
 - 删除 `APIClient.performTokenRefresh()` 和 `callRefreshEndpoint()` 中的 refresh 逻辑
