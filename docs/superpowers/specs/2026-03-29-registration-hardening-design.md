@@ -158,7 +158,7 @@ These two conditions together identify servers that were registered but never su
    | `tasks` | **Delete the row.** Task creation forbids empty `server_ids`; an empty array is invalid state. |
    | `maintenances` | **Delete the row.** Empty array means "all servers" — leaving it would expand scope. |
    | `alert_rules` | **Delete the row.** With `cover_type = "exclude"`, empty array means "match all servers". Safer to delete. |
-   | `service_monitors` | **Delete the row.** Empty would expand monitoring scope. Also delete related `service_monitor_records` by `monitor_id`. |
+   | `service_monitors` | **Set `server_ids_json` to NULL.** This field is optional and only used for maintenance suppression linkage, not dispatch scope. Deleting the row would destroy monitor config and historical records. |
    | `incidents` | **Keep the row.** Incidents are historical records; removing server references is fine, the incident itself should be preserved. |
    | `status_pages` | **Keep the row.** Status pages are user-configured; empty server list just means no servers displayed. |
 
