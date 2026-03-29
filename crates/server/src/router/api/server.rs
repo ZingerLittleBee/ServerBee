@@ -1032,6 +1032,44 @@ fn remove_ids_from_json(json: &str, orphan_ids: &[String]) -> Option<String> {
 }
 
 #[cfg(test)]
+mod cleanup_tests {
+    use super::remove_ids_from_json;
+
+    #[test]
+    fn test_no_match_returns_none() {
+        assert_eq!(remove_ids_from_json(r#"["a","b"]"#, &["c".into()]), None);
+    }
+
+    #[test]
+    fn test_partial_removal() {
+        let result = remove_ids_from_json(r#"["a","b","c"]"#, &["b".into()]);
+        assert_eq!(result, Some(r#"["a","c"]"#.to_string()));
+    }
+
+    #[test]
+    fn test_remove_all() {
+        let result = remove_ids_from_json(r#"["a"]"#, &["a".into()]);
+        assert_eq!(result, Some("[]".to_string()));
+    }
+
+    #[test]
+    fn test_empty_array() {
+        assert_eq!(remove_ids_from_json("[]", &["a".into()]), None);
+    }
+
+    #[test]
+    fn test_invalid_json() {
+        assert_eq!(remove_ids_from_json("not json", &["a".into()]), None);
+    }
+
+    #[test]
+    fn test_multiple_orphans() {
+        let result = remove_ids_from_json(r#"["a","b","c","d"]"#, &["b".into(), "d".into()]);
+        assert_eq!(result, Some(r#"["a","c"]"#.to_string()));
+    }
+}
+
+#[cfg(test)]
 mod upgrade_tests {
     use super::*;
 
