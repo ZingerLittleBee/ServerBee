@@ -40,6 +40,14 @@ pub enum ChannelConfig {
         from: String,
         to: String,
     },
+    Apns {
+        key_id: String,
+        team_id: String,
+        private_key: String,
+        bundle_id: String,
+        #[serde(default)]
+        sandbox: bool,
+    },
 }
 
 fn default_method() -> String {
@@ -265,7 +273,7 @@ impl NotificationService {
         for nid in ids {
             match Self::get(db, &nid).await {
                 Ok(n) if n.enabled => {
-                    if let Err(e) = Self::dispatch(&n, ctx).await {
+                    if let Err(e) = Self::dispatch(db, &n, ctx).await {
                         tracing::error!(
                             "Failed to send notification {} ({}): {e}",
                             n.name,
@@ -295,10 +303,11 @@ impl NotificationService {
             cpu: "50.0%".to_string(),
             memory: "60.0%".to_string(),
         };
-        Self::dispatch(&n, &ctx).await
+        Self::dispatch(db, &n, &ctx).await
     }
 
     async fn dispatch(
+        db: &DatabaseConnection,
         n: &notification::Model,
         ctx: &NotifyContext,
     ) -> Result<(), AppError> {
@@ -431,6 +440,26 @@ impl NotificationService {
                 mailer.send(email).await.map_err(|e| {
                     AppError::Internal(format!("Failed to send email: {e}"))
                 })?;
+            }
+            ChannelConfig::Apns {
+                key_id,
+                team_id,
+                private_key,
+                bundle_id,
+                sandbox,
+            } => {
+                let title = format!("[ServerBee] {} {}", ctx.server_name, ctx.event);
+                let body = ctx.render("{{message}}\nTime: {{time}}");
+
+                let apns_config = crate::service::apns::ApnsConfig {
+                    key_id: &key_id,
+                    team_id: &team_id,
+                    private_key: &private_key,
+                    bundle_id: &bundle_id,
+                    sandbox,
+                };
+                crate::service::apns::ApnsService::send_push(db, &apns_config, &title, &body)
+                    .await?;
             }
         }
 
@@ -656,6 +685,54 @@ mod tests {
                 assert_eq!(smtp_port, 587, "default SMTP port should be 587");
             }
             _ => panic!("expected Email variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_config_apns() {
+        let config_json = r#"{
+            "key_id": "ABC123DEFG",
+            "team_id": "TEAM999888",
+            "private_key": "-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----",
+            "bundle_id": "com.example.serverbee",
+            "sandbox": true
+        }"#;
+        let config =
+            NotificationService::parse_config("apns", config_json).expect("should parse");
+
+        match config {
+            ChannelConfig::Apns {
+                key_id,
+                team_id,
+                bundle_id,
+                sandbox,
+                ..
+            } => {
+                assert_eq!(key_id, "ABC123DEFG");
+                assert_eq!(team_id, "TEAM999888");
+                assert_eq!(bundle_id, "com.example.serverbee");
+                assert!(sandbox);
+            }
+            _ => panic!("expected Apns variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_config_apns_default_sandbox() {
+        let config_json = r#"{
+            "key_id": "K",
+            "team_id": "T",
+            "private_key": "pk",
+            "bundle_id": "com.example.app"
+        }"#;
+        let config =
+            NotificationService::parse_config("apns", config_json).expect("should parse");
+
+        match config {
+            ChannelConfig::Apns { sandbox, .. } => {
+                assert!(!sandbox, "sandbox should default to false");
+            }
+            _ => panic!("expected Apns variant"),
         }
     }
 
