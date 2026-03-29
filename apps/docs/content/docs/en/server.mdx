@@ -60,6 +60,7 @@ max_connections = 10           # Maximum SQLite connection pool size
 [auth]
 session_ttl = 86400            # Session lifetime in seconds (default: 24 hours)
 auto_discovery_key = ""        # Fixed agent discovery key (auto-generated if empty)
+max_servers = 0                # Soft limit for newly auto-registered servers
 secure_cookie = true           # Set Secure flag on session cookies (disable for HTTP-only dev)
 
 [admin]
@@ -173,7 +174,9 @@ The auto-discovery key allows agents to register themselves without manual token
 2. If a key already exists in the database (from a previous run), it is reused
 3. Otherwise, a random 32-byte base64url key is generated and persisted
 
-The key is printed to the logs at startup (first 8 characters shown). Copy it to your agent configuration to enable automatic registration.
+The full key is printed to the logs on first startup and can also be viewed or regenerated later from **Settings** in the web UI. Regeneration affects only future registrations. Already connected agents keep using their stored tokens.
+
+To reduce duplicate placeholder servers, agents reuse the existing server row when they re-register with the same machine fingerprint. You can also set `auth.max_servers` to soft-cap new auto-registered servers, and use **Clean up unconnected** on the Servers page to remove offline placeholders that never finished initialization.
 
 ## GeoIP Setup
 

@@ -110,7 +110,7 @@ Agent 首次连接 Server 需要通过 Auto Discovery Key 进行注册。
 
 ### 第一步：获取 Discovery Key
 
-在 Server 管理面板的「设置」页面中找到 Auto Discovery Key。Server 首次启动时会自动生成此密钥并打印到日志中。
+在 Server 管理面板的「设置」页面中找到 Auto Discovery Key。Server 首次启动时会自动生成完整密钥并打印到日志中，后续也可以在设置页重新生成。
 
 ### 第二步：首次启动注册
 
@@ -149,6 +149,8 @@ SERVERBEE_AUTO_DISCOVERY_KEY=YOUR_KEY serverbee-agent
   2. 发送静态系统信息
   3. 按配置的间隔周期上报指标
 ```
+
+当 Agent 能读取稳定的机器标识时，还会在注册请求中携带指纹。相同机器重复注册时会复用原有服务器记录并轮换 token，而不是继续创建新的占位条目。
 
 ## 配置文件
 

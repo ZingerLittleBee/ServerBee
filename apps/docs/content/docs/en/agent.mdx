@@ -98,7 +98,7 @@ Agents authenticate with the server using a **token**. There are two ways to obt
 
 ### Automatic Registration (Recommended)
 
-1. Get the **auto-discovery key** from the server startup logs
+1. Get the **auto-discovery key** from **Settings** in the web UI, or copy it from the server startup logs
 2. Configure the agent with the key:
 
 ```toml
@@ -111,6 +111,8 @@ auto_discovery_key = "your-auto-discovery-key"
    - Receive a `server_id` and `token` from the server
    - Save the token to the config file automatically
    - Connect via WebSocket using the token for all future sessions
+
+When the agent can read a stable machine identifier, it also sends a fingerprint during registration. Repeated registration from the same machine reuses the existing server row and rotates the token instead of creating duplicate placeholders.
 
 ### Manual Token
 

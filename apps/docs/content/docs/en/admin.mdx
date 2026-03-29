@@ -146,6 +146,18 @@ Create an `expiration` alert rule to receive notifications before a server expir
 
 Use `transfer_in_cycle` / `transfer_out_cycle` / `transfer_all_cycle` alert types to monitor cumulative traffic within the current billing cycle. See [Alerts](/en/docs/alerts) for details.
 
+## Agent Registration Management
+
+Admins can manage first-time agent onboarding directly from the UI:
+
+### Discovery Key
+
+Go to **Settings** to show, copy, or regenerate the auto-discovery key. Regenerating the key invalidates the previous key for future registrations, but already connected agents keep working because they use their own stored tokens.
+
+### Clean Up Unconnected Placeholders
+
+When failed onboarding leaves behind offline `New Server` placeholders, the Servers page shows a **Clean up unconnected** action. It removes only never-initialized offline placeholders and deliberately keeps online-but-uninitialized agents.
+
 <Cards>
   <Card title="Capabilities" href="/en/docs/capabilities" />
   <Card title="Security" href="/en/docs/security" />
