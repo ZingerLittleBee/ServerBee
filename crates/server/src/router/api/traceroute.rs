@@ -6,7 +6,7 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::state::AppState;
 use serverbee_common::protocol::ServerMessage;
 use serverbee_common::types::TracerouteHop;
@@ -100,9 +100,9 @@ pub async fn trigger_traceroute(
         target: input.target,
         max_hops: 30,
     };
-    tx.send(msg)
-        .await
-        .map_err(|_| AppError::Internal("Failed to send traceroute command to agent".to_string()))?;
+    tx.send(msg).await.map_err(|_| {
+        AppError::Internal("Failed to send traceroute command to agent".to_string())
+    })?;
 
     ok(TriggerTracerouteResponse { request_id })
 }

@@ -4,7 +4,7 @@ pub struct Migration;
 
 impl MigrationName for Migration {
     fn name(&self) -> &str {
-        "m20260329_000014_add_session_source"
+        "m20260329_000013_add_server_fingerprint"
     }
 }
 
@@ -12,12 +12,10 @@ impl MigrationName for Migration {
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
+        db.execute_unprepared("ALTER TABLE servers ADD COLUMN fingerprint VARCHAR NULL")
+            .await?;
         db.execute_unprepared(
-            "ALTER TABLE sessions ADD COLUMN source TEXT NOT NULL DEFAULT 'web'",
-        )
-        .await?;
-        db.execute_unprepared(
-            "ALTER TABLE sessions ADD COLUMN mobile_session_id TEXT REFERENCES mobile_sessions(id)",
+            "CREATE UNIQUE INDEX idx_servers_fingerprint ON servers(fingerprint) WHERE fingerprint IS NOT NULL",
         )
         .await?;
         Ok(())

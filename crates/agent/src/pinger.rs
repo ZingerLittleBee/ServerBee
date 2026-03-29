@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use chrono::Utc;
@@ -144,7 +144,10 @@ async fn run_ping_task(config: PingTaskConfig, tx: mpsc::Sender<PingResult>) {
         };
 
         if tx.send(result).await.is_err() {
-            tracing::debug!("Ping result channel closed, stopping task {}", config.task_id);
+            tracing::debug!(
+                "Ping result channel closed, stopping task {}",
+                config.task_id
+            );
             return;
         }
     }

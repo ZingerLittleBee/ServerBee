@@ -7,7 +7,7 @@ use sea_orm::*;
 use serde::Serialize;
 
 use crate::entity::{server, server_group};
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::state::AppState;
 
 /// Public status info for a single server.

@@ -25,46 +25,68 @@ use crate::terminal::{TerminalEvent, TerminalManager};
 
 const MAX_BACKOFF_SECS: u64 = 30;
 const JITTER_FACTOR: f64 = 0.2;
+const MAX_REREGISTER_ATTEMPTS: u32 = 3;
 const DOCKER_RETRY_SECS: u64 = 30;
 
 pub struct Reporter {
     config: AgentConfig,
+    fingerprint: String,
 }
 
 impl Reporter {
-    pub fn new(config: AgentConfig) -> Self {
-        Self { config }
+    pub fn new(config: AgentConfig, fingerprint: String) -> Self {
+        Self {
+            config,
+            fingerprint,
+        }
     }
 
     pub async fn run(&mut self) {
         let mut backoff_secs: u64 = 1;
+        let mut reregister_attempts: u32 = 0;
 
         loop {
             match self.connect_and_report().await {
                 Ok(()) => {
                     tracing::info!("Connection closed normally, reconnecting...");
                     backoff_secs = 1;
+                    reregister_attempts = 0;
                 }
                 Err(e) => {
                     if should_refresh_registration(&self.config, &e) {
-                        tracing::warn!(
-                            "Stored agent token was rejected, attempting re-registration with auto-discovery key"
-                        );
+                        if reregister_attempts >= MAX_REREGISTER_ATTEMPTS {
+                            tracing::error!(
+                                "Agent token rejected {reregister_attempts} times consecutively, \
+                                 giving up re-registration. Check server URL and ensure the WebSocket \
+                                 endpoint is accessible (token is sent via query parameter)."
+                            );
+                        } else {
+                            reregister_attempts += 1;
+                            tracing::warn!(
+                                "Stored agent token was rejected, attempting re-registration \
+                                 ({reregister_attempts}/{MAX_REREGISTER_ATTEMPTS})"
+                            );
 
-                        match register::register_agent(&self.config).await {
-                            Ok((server_id, token)) => {
-                                tracing::info!("Re-registration successful for server {server_id}");
-                                if let Err(save_err) = register::save_token(&token) {
-                                    tracing::warn!("Failed to save refreshed token: {save_err}");
+                            match register::register_agent(&self.config, &self.fingerprint).await {
+                                Ok((server_id, token)) => {
+                                    tracing::info!(
+                                        "Re-registration successful for server {server_id}"
+                                    );
+                                    if let Err(save_err) = register::save_token(&token) {
+                                        tracing::warn!(
+                                            "Failed to save refreshed token: {save_err}"
+                                        );
+                                    }
+                                    self.config.token = token;
+                                    // Do NOT skip backoff — prevents tight re-registration loop
                                 }
-                                self.config.token = token;
-                                backoff_secs = 1;
-                                continue;
-                            }
-                            Err(register_err) => {
-                                tracing::error!("Re-registration failed: {register_err}");
+                                Err(register_err) => {
+                                    tracing::error!("Re-registration failed: {register_err}");
+                                }
                             }
                         }
+                    } else {
+                        reregister_attempts = 0;
                     }
 
                     tracing::error!("Connection error: {e}");
@@ -82,17 +104,11 @@ impl Reporter {
     async fn connect_and_report(&self) -> anyhow::Result<()> {
         use serverbee_common::constants::*;
 
-        let ws_url = build_ws_url(&self.config)?;
-        tracing::info!("Connecting to {ws_url}...");
+        tracing::info!("Connecting to {}...", build_ws_url(&self.config)?);
 
         let capabilities = Arc::new(AtomicU32::new(u32::MAX));
 
-        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-        let mut request = ws_url.as_str().into_client_request()?;
-        request.headers_mut().insert(
-            "Authorization",
-            format!("Bearer {}", self.config.token).parse()?,
-        );
+        let request = build_ws_request(&self.config)?;
         let (ws_stream, _response) = connect_async(request).await?;
         tracing::info!("WebSocket connected");
 
@@ -1080,11 +1096,7 @@ fn is_valid_traceroute_target(target: &str) -> bool {
 }
 
 /// Execute a traceroute command and parse the output into TracerouteHop structures.
-async fn execute_traceroute(
-    request_id: &str,
-    target: &str,
-    max_hops: u8,
-) -> AgentMessage {
+async fn execute_traceroute(request_id: &str, target: &str, max_hops: u8) -> AgentMessage {
     let timeout_duration = Duration::from_secs(60);
 
     let result = tokio::time::timeout(timeout_duration, async {
@@ -1332,10 +1344,21 @@ fn build_ws_url(config: &AgentConfig) -> anyhow::Result<String> {
     Ok(format!("{ws_base}/api/agent/ws"))
 }
 
-fn should_refresh_registration(
+fn build_ws_request(
     config: &AgentConfig,
-    error: &anyhow::Error,
-) -> bool {
+) -> anyhow::Result<tokio_tungstenite::tungstenite::http::Request<()>> {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    use tokio_tungstenite::tungstenite::http::header::AUTHORIZATION;
+
+    let ws_url = format!("{}?token={}", build_ws_url(config)?, config.token);
+    let mut request = ws_url.into_client_request()?;
+    request
+        .headers_mut()
+        .insert(AUTHORIZATION, format!("Bearer {}", config.token).parse()?);
+    Ok(request)
+}
+
+fn should_refresh_registration(config: &AgentConfig, error: &anyhow::Error) -> bool {
     !config.auto_discovery_key.is_empty()
         && matches!(
             error.downcast_ref::<tokio_tungstenite::tungstenite::Error>(),
@@ -1490,6 +1513,33 @@ mod tests {
         ));
 
         assert!(!should_refresh_registration(&config, &err));
+    }
+
+    #[test]
+    fn test_build_ws_request_carries_query_token_and_authorization_header() {
+        let config = AgentConfig {
+            server_url: "https://example.com".to_string(),
+            token: "agent-token-123".to_string(),
+            auto_discovery_key: String::new(),
+            collector: CollectorConfig::default(),
+            log: LogConfig::default(),
+            file: FileConfig::default(),
+            ip_change: IpChangeConfig::default(),
+        };
+
+        let request = build_ws_request(&config).expect("request should build");
+
+        assert_eq!(
+            request.uri().to_string(),
+            "wss://example.com/api/agent/ws?token=agent-token-123"
+        );
+        assert_eq!(
+            request
+                .headers()
+                .get("authorization")
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer agent-token-123")
+        );
     }
 
     #[test]

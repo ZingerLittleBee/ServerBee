@@ -5,6 +5,10 @@
   "show_key": "Show key",
   "hide_key": "Hide key",
   "copy_key": "Copy key",
+  "regenerate_key": "Regenerate",
+  "regenerate_confirm_title": "Regenerate Discovery Key?",
+  "regenerate_confirm_description": "This will invalidate the current key. Already connected agents are not affected. New agents must use the new key.",
+  "regenerate_success": "Discovery key regenerated",
   "copied": "Copied",
 
   "security.title": "Security",

@@ -1,5 +1,5 @@
-use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::SaltString;
+use argon2::password_hash::rand_core::OsRng;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -156,9 +156,7 @@ impl AuthService {
         // Check expiration
         if session.expires_at < Utc::now() {
             // Clean up expired session
-            session::Entity::delete_by_id(&session.id)
-                .exec(db)
-                .await?;
+            session::Entity::delete_by_id(&session.id).exec(db).await?;
             return Ok(None);
         }
 
@@ -293,9 +291,7 @@ impl AuthService {
                 active.update(db).await?;
 
                 // Fetch user
-                let user = user::Entity::find_by_id(&candidate_user_id)
-                    .one(db)
-                    .await?;
+                let user = user::Entity::find_by_id(&candidate_user_id).one(db).await?;
                 return Ok(user);
             }
         }
@@ -350,7 +346,9 @@ impl AuthService {
             None
         };
 
-        let password = generated.clone().unwrap_or_else(|| admin_config.password.clone());
+        let password = generated
+            .clone()
+            .unwrap_or_else(|| admin_config.password.clone());
         Self::create_user(db, &admin_config.username, &password, "admin").await?;
         tracing::info!("Admin user '{}' created", admin_config.username);
 
@@ -394,9 +392,7 @@ impl AuthService {
     }
 
     /// Generate a new TOTP secret and return (secret_base32, otpauth_url, qr_code_base64).
-    pub fn generate_totp_secret(
-        username: &str,
-    ) -> Result<(String, String, String), AppError> {
+    pub fn generate_totp_secret(username: &str) -> Result<(String, String, String), AppError> {
         use totp_rs::{Algorithm, Secret, TOTP};
 
         let secret = Secret::generate_secret();
@@ -443,10 +439,7 @@ impl AuthService {
     }
 
     /// Disable 2FA for a user.
-    pub async fn disable_2fa(
-        db: &DatabaseConnection,
-        user_id: &str,
-    ) -> Result<(), AppError> {
+    pub async fn disable_2fa(db: &DatabaseConnection, user_id: &str) -> Result<(), AppError> {
         let user = user::Entity::find_by_id(user_id)
             .one(db)
             .await?
@@ -657,10 +650,9 @@ mod tests {
         AuthService::create_user(&db, "bob", "secret123", "member")
             .await
             .expect("create_user should succeed");
-        let (session, user) =
-            AuthService::login(&db, login_params("bob", "secret123"))
-                .await
-                .expect("login should succeed");
+        let (session, user) = AuthService::login(&db, login_params("bob", "secret123"))
+            .await
+            .expect("login should succeed");
         assert_eq!(user.username, "bob");
         assert!(!session.token.is_empty());
     }
@@ -671,16 +663,14 @@ mod tests {
         AuthService::create_user(&db, "carol", "correct_pass", "member")
             .await
             .expect("create_user should succeed");
-        let result =
-            AuthService::login(&db, login_params("carol", "wrong_pass")).await;
+        let result = AuthService::login(&db, login_params("carol", "wrong_pass")).await;
         assert!(result.is_err(), "wrong password should return an error");
     }
 
     #[tokio::test]
     async fn test_login_nonexistent_user() {
         let (db, _tmp) = setup_test_db().await;
-        let result =
-            AuthService::login(&db, login_params("nobody", "pass")).await;
+        let result = AuthService::login(&db, login_params("nobody", "pass")).await;
         assert!(
             result.is_err(),
             "logging in as nonexistent user should error"
@@ -693,10 +683,9 @@ mod tests {
         AuthService::create_user(&db, "dave", "pass1234", "member")
             .await
             .expect("create_user should succeed");
-        let (session, _user) =
-            AuthService::login(&db, login_params("dave", "pass1234"))
-                .await
-                .expect("login should succeed");
+        let (session, _user) = AuthService::login(&db, login_params("dave", "pass1234"))
+            .await
+            .expect("login should succeed");
         let validated = AuthService::validate_session(&db, &session.token, 3600)
             .await
             .expect("validate_session should not error");
@@ -724,7 +713,10 @@ mod tests {
         let (_model, raw_key) = AuthService::create_api_key(&db, &user.id, "my-key")
             .await
             .expect("create_api_key should succeed");
-        assert!(raw_key.starts_with("serverbee_"), "raw key should start with serverbee_");
+        assert!(
+            raw_key.starts_with("serverbee_"),
+            "raw key should start with serverbee_"
+        );
 
         let validated = AuthService::validate_api_key(&db, &raw_key)
             .await
@@ -763,12 +755,10 @@ mod tests {
             .await
             .expect("change_password should succeed");
         // Login with new password should succeed
-        let result =
-            AuthService::login(&db, login_params("grace", "new_pass99")).await;
+        let result = AuthService::login(&db, login_params("grace", "new_pass99")).await;
         assert!(result.is_ok(), "login with new password should succeed");
         // Login with old password should fail
-        let result2 =
-            AuthService::login(&db, login_params("grace", "old_pass1")).await;
+        let result2 = AuthService::login(&db, login_params("grace", "old_pass1")).await;
         assert!(result2.is_err(), "login with old password should fail");
     }
 }

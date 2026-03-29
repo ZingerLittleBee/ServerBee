@@ -154,7 +154,10 @@ impl AlertStateManager {
 
             // Update DB
             alert_state::Entity::update_many()
-                .col_expr(alert_state::Column::Count, Expr::col(alert_state::Column::Count).add(1))
+                .col_expr(
+                    alert_state::Column::Count,
+                    Expr::col(alert_state::Column::Count).add(1),
+                )
                 .col_expr(alert_state::Column::LastNotifiedAt, Expr::value(now))
                 .col_expr(alert_state::Column::UpdatedAt, Expr::value(now))
                 .filter(alert_state::Column::RuleId.eq(rule_id))
@@ -238,10 +241,7 @@ impl AlertService {
         Ok(alert_rule::Entity::find().all(db).await?)
     }
 
-    pub async fn get(
-        db: &DatabaseConnection,
-        id: &str,
-    ) -> Result<alert_rule::Model, AppError> {
+    pub async fn get(db: &DatabaseConnection, id: &str) -> Result<alert_rule::Model, AppError> {
         alert_rule::Entity::find_by_id(id)
             .one(db)
             .await?
@@ -255,9 +255,9 @@ impl AlertService {
         validate_cover_type(&input.cover_type)?;
         let rules_json = serde_json::to_string(&input.rules)
             .map_err(|e| AppError::Validation(format!("Invalid rules: {e}")))?;
-        let server_ids_json = input.server_ids.map(|ids| {
-            serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string())
-        });
+        let server_ids_json = input
+            .server_ids
+            .map(|ids| serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string()));
         let now = Utc::now();
 
         let model = alert_rule::ActiveModel {
@@ -304,9 +304,8 @@ impl AlertService {
             model.cover_type = Set(cover_type);
         }
         if let Some(server_ids) = input.server_ids {
-            let json = server_ids.map(|ids| {
-                serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string())
-            });
+            let json = server_ids
+                .map(|ids| serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string()));
             model.server_ids_json = Set(json);
         }
         if let Some(enabled) = input.enabled {
@@ -470,8 +469,7 @@ impl AlertService {
         state_manager: &AlertStateManager,
         rule: &alert_rule::Model,
     ) -> Result<(), AppError> {
-        let items: Vec<AlertRuleItem> = serde_json::from_str(&rule.rules_json)
-            .unwrap_or_default();
+        let items: Vec<AlertRuleItem> = serde_json::from_str(&rule.rules_json).unwrap_or_default();
         if items.is_empty() {
             return Ok(());
         }
@@ -498,11 +496,7 @@ impl AlertService {
             } else if state_manager.is_triggered(&rule.id, &srv.id) {
                 // Recovered
                 state_manager.mark_resolved(db, &rule.id, &srv.id).await?;
-                tracing::info!(
-                    "Alert '{}' resolved for server '{}'",
-                    rule.name,
-                    srv.name
-                );
+                tracing::info!("Alert '{}' resolved for server '{}'", rule.name, srv.name);
             }
         }
 
@@ -523,8 +517,7 @@ impl AlertService {
                         // Check how long the server has been offline by looking at last record
                         match get_last_record_time(db, server_id).await {
                             Some(last) => {
-                                let elapsed =
-                                    (Utc::now() - last).num_seconds().max(0) as u64;
+                                let elapsed = (Utc::now() - last).num_seconds().max(0) as u64;
                                 elapsed >= duration
                             }
                             None => true,
@@ -538,12 +531,8 @@ impl AlertService {
                     // Check if server's expired_at is within N days (default 7)
                     check_expiration(db, server_id, item).await
                 }
-                "network_latency" => {
-                    check_network_latency(db, server_id, item).await
-                }
-                "network_packet_loss" => {
-                    check_network_packet_loss(db, server_id, item).await
-                }
+                "network_latency" => check_network_latency(db, server_id, item).await,
+                "network_packet_loss" => check_network_packet_loss(db, server_id, item).await,
                 _ => {
                     // Resource threshold type: check recent records
                     check_threshold(db, server_id, item).await
@@ -578,11 +567,11 @@ impl AlertService {
             }
         };
 
-        state_manager.mark_triggered(db, &rule.id, server_id).await?;
+        state_manager
+            .mark_triggered(db, &rule.id, server_id)
+            .await?;
 
-        if should_notify
-            && let Some(ref group_id) = rule.notification_group_id
-        {
+        if should_notify && let Some(ref group_id) = rule.notification_group_id {
             let ctx = NotifyContext {
                 server_name: server_name.to_string(),
                 server_id: server_id.to_string(),
@@ -634,9 +623,7 @@ impl AlertService {
                 .await
                 .unwrap_or(false)
             {
-                tracing::debug!(
-                    "Skipping event alert for server {server_id}: in maintenance"
-                );
+                tracing::debug!("Skipping event alert for server {server_id}: in maintenance");
                 continue;
             }
 
@@ -742,11 +729,7 @@ async fn get_last_record_time(
         .map(|r| r.time)
 }
 
-async fn check_threshold(
-    db: &DatabaseConnection,
-    server_id: &str,
-    item: &AlertRuleItem,
-) -> bool {
+async fn check_threshold(db: &DatabaseConnection, server_id: &str, item: &AlertRuleItem) -> bool {
     let ten_min_ago = Utc::now() - Duration::minutes(10);
 
     let records = match record::Entity::find()
@@ -865,11 +848,7 @@ async fn check_transfer_cycle(
 /// Check if a server's `expired_at` is within N days of now (or already expired).
 /// `item.duration` = days threshold (default 7). Triggers if expired_at is set and
 /// expires within that many days.
-async fn check_expiration(
-    db: &DatabaseConnection,
-    server_id: &str,
-    item: &AlertRuleItem,
-) -> bool {
+async fn check_expiration(db: &DatabaseConnection, server_id: &str, item: &AlertRuleItem) -> bool {
     let srv = server::Entity::find_by_id(server_id)
         .one(db)
         .await
@@ -905,10 +884,7 @@ async fn check_network_latency(
         Err(_) => return false,
     };
 
-    let latencies: Vec<f64> = records
-        .iter()
-        .filter_map(|r| r.avg_latency)
-        .collect();
+    let latencies: Vec<f64> = records.iter().filter_map(|r| r.avg_latency).collect();
 
     if latencies.is_empty() {
         return false;
@@ -1116,22 +1092,13 @@ mod tests {
 
     #[test]
     fn test_majority_exceeded() {
-        assert!(
-            majority_exceeded(7, 10),
-            "7/10 = 70% should meet threshold"
-        );
-        assert!(
-            majority_exceeded(8, 10),
-            "8/10 = 80% should meet threshold"
-        );
+        assert!(majority_exceeded(7, 10), "7/10 = 70% should meet threshold");
+        assert!(majority_exceeded(8, 10), "8/10 = 80% should meet threshold");
         assert!(
             !majority_exceeded(6, 10),
             "6/10 = 60% should NOT meet threshold"
         );
-        assert!(
-            !majority_exceeded(0, 10),
-            "0/10 should NOT meet threshold"
-        );
+        assert!(!majority_exceeded(0, 10), "0/10 should NOT meet threshold");
         assert!(
             !majority_exceeded(0, 0),
             "0/0 (no samples) should NOT meet threshold"
@@ -1237,7 +1204,11 @@ mod tests {
         assert!(rule_covers_server("include", &ids, "srv-2"));
         assert!(!rule_covers_server("include", &ids, "srv-3"));
         // Empty include list covers nothing
-        assert!(!rule_covers_server("include", &Some("[]".to_string()), "srv-1"));
+        assert!(!rule_covers_server(
+            "include",
+            &Some("[]".to_string()),
+            "srv-1"
+        ));
     }
 
     #[test]
@@ -1246,7 +1217,11 @@ mod tests {
         assert!(!rule_covers_server("exclude", &ids, "srv-1"));
         assert!(rule_covers_server("exclude", &ids, "srv-2"));
         // Empty exclude list covers everything
-        assert!(rule_covers_server("exclude", &Some("[]".to_string()), "srv-1"));
+        assert!(rule_covers_server(
+            "exclude",
+            &Some("[]".to_string()),
+            "srv-1"
+        ));
     }
 
     // ── event-driven rule type detection ──
@@ -1369,7 +1344,11 @@ mod tests {
         assert_eq!(events[0].count, 3);
         assert!(events[0].resolved_at.is_none());
         // event_at should be first_triggered_at for firing
-        assert!(events[0].event_at.contains(&earlier.format("%Y").to_string()));
+        assert!(
+            events[0]
+                .event_at
+                .contains(&earlier.format("%Y").to_string())
+        );
 
         assert_eq!(events[1].status, "resolved");
         assert_eq!(events[1].rule_name, "Memory Alert");
@@ -1393,8 +1372,16 @@ mod tests {
         // Insert 5 states, each with a different (rule_id, server_id) pair
         for i in 0..5 {
             let t = now - Duration::minutes(i as i64);
-            insert_test_state(&db, &format!("rule-{i}"), &format!("srv-{i}"), false, t, None, 1)
-                .await;
+            insert_test_state(
+                &db,
+                &format!("rule-{i}"),
+                &format!("srv-{i}"),
+                false,
+                t,
+                None,
+                1,
+            )
+            .await;
         }
 
         // Request only 3

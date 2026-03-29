@@ -12,11 +12,31 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(TrafficHourly::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(TrafficHourly::Id).big_integer().not_null().auto_increment().primary_key())
+                    .col(
+                        ColumnDef::new(TrafficHourly::Id)
+                            .big_integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
                     .col(ColumnDef::new(TrafficHourly::ServerId).string().not_null())
-                    .col(ColumnDef::new(TrafficHourly::Hour).timestamp_with_time_zone().not_null())
-                    .col(ColumnDef::new(TrafficHourly::BytesIn).big_integer().not_null().default(0))
-                    .col(ColumnDef::new(TrafficHourly::BytesOut).big_integer().not_null().default(0))
+                    .col(
+                        ColumnDef::new(TrafficHourly::Hour)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TrafficHourly::BytesIn)
+                            .big_integer()
+                            .not_null()
+                            .default(0),
+                    )
+                    .col(
+                        ColumnDef::new(TrafficHourly::BytesOut)
+                            .big_integer()
+                            .not_null()
+                            .default(0),
+                    )
                     .foreign_key(
                         ForeignKey::create()
                             .from(TrafficHourly::Table, TrafficHourly::ServerId)
@@ -45,11 +65,27 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(TrafficDaily::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(TrafficDaily::Id).big_integer().not_null().auto_increment().primary_key())
+                    .col(
+                        ColumnDef::new(TrafficDaily::Id)
+                            .big_integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
                     .col(ColumnDef::new(TrafficDaily::ServerId).string().not_null())
                     .col(ColumnDef::new(TrafficDaily::Date).date().not_null())
-                    .col(ColumnDef::new(TrafficDaily::BytesIn).big_integer().not_null().default(0))
-                    .col(ColumnDef::new(TrafficDaily::BytesOut).big_integer().not_null().default(0))
+                    .col(
+                        ColumnDef::new(TrafficDaily::BytesIn)
+                            .big_integer()
+                            .not_null()
+                            .default(0),
+                    )
+                    .col(
+                        ColumnDef::new(TrafficDaily::BytesOut)
+                            .big_integer()
+                            .not_null()
+                            .default(0),
+                    )
                     .foreign_key(
                         ForeignKey::create()
                             .from(TrafficDaily::Table, TrafficDaily::ServerId)
@@ -78,10 +114,29 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(TrafficState::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(TrafficState::ServerId).string().not_null().primary_key())
-                    .col(ColumnDef::new(TrafficState::LastIn).big_integer().not_null().default(0))
-                    .col(ColumnDef::new(TrafficState::LastOut).big_integer().not_null().default(0))
-                    .col(ColumnDef::new(TrafficState::UpdatedAt).timestamp_with_time_zone().not_null())
+                    .col(
+                        ColumnDef::new(TrafficState::ServerId)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(TrafficState::LastIn)
+                            .big_integer()
+                            .not_null()
+                            .default(0),
+                    )
+                    .col(
+                        ColumnDef::new(TrafficState::LastOut)
+                            .big_integer()
+                            .not_null()
+                            .default(0),
+                    )
+                    .col(
+                        ColumnDef::new(TrafficState::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
                     .foreign_key(
                         ForeignKey::create()
                             .from(TrafficState::Table, TrafficState::ServerId)
@@ -129,7 +184,12 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(Tasks::Table)
-                    .add_column(ColumnDef::new(Tasks::TaskType).string().not_null().default("oneshot"))
+                    .add_column(
+                        ColumnDef::new(Tasks::TaskType)
+                            .string()
+                            .not_null()
+                            .default("oneshot"),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -153,7 +213,12 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(Tasks::Table)
-                    .add_column(ColumnDef::new(Tasks::Enabled).boolean().not_null().default(true))
+                    .add_column(
+                        ColumnDef::new(Tasks::Enabled)
+                            .boolean()
+                            .not_null()
+                            .default(true),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -169,7 +234,12 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(Tasks::Table)
-                    .add_column(ColumnDef::new(Tasks::RetryCount).integer().not_null().default(0))
+                    .add_column(
+                        ColumnDef::new(Tasks::RetryCount)
+                            .integer()
+                            .not_null()
+                            .default(0),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -177,7 +247,12 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(Tasks::Table)
-                    .add_column(ColumnDef::new(Tasks::RetryInterval).integer().not_null().default(60))
+                    .add_column(
+                        ColumnDef::new(Tasks::RetryInterval)
+                            .integer()
+                            .not_null()
+                            .default(60),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -185,7 +260,11 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(Tasks::Table)
-                    .add_column(ColumnDef::new(Tasks::LastRunAt).timestamp_with_time_zone().null())
+                    .add_column(
+                        ColumnDef::new(Tasks::LastRunAt)
+                            .timestamp_with_time_zone()
+                            .null(),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -193,7 +272,11 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(Tasks::Table)
-                    .add_column(ColumnDef::new(Tasks::NextRunAt).timestamp_with_time_zone().null())
+                    .add_column(
+                        ColumnDef::new(Tasks::NextRunAt)
+                            .timestamp_with_time_zone()
+                            .null(),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -211,7 +294,12 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(TaskResults::Table)
-                    .add_column(ColumnDef::new(TaskResults::Attempt).integer().not_null().default(1))
+                    .add_column(
+                        ColumnDef::new(TaskResults::Attempt)
+                            .integer()
+                            .not_null()
+                            .default(1),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -219,7 +307,11 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(TaskResults::Table)
-                    .add_column(ColumnDef::new(TaskResults::StartedAt).timestamp_with_time_zone().null())
+                    .add_column(
+                        ColumnDef::new(TaskResults::StartedAt)
+                            .timestamp_with_time_zone()
+                            .null(),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -228,9 +320,15 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager.drop_table(Table::drop().table(TrafficHourly::Table).to_owned()).await?;
-        manager.drop_table(Table::drop().table(TrafficDaily::Table).to_owned()).await?;
-        manager.drop_table(Table::drop().table(TrafficState::Table).to_owned()).await?;
+        manager
+            .drop_table(Table::drop().table(TrafficHourly::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(TrafficDaily::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(TrafficState::Table).to_owned())
+            .await?;
         // Note: SQLite does not support DROP COLUMN; reverting column additions requires table rebuild.
         // For development, dropping and recreating the DB is acceptable.
         Ok(())

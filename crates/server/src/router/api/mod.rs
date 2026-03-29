@@ -14,9 +14,9 @@ pub mod network_probe;
 pub mod notification;
 pub mod oauth;
 pub mod ping;
-pub mod service_monitor;
 pub mod server;
 pub mod server_group;
+pub mod service_monitor;
 pub mod setting;
 pub mod status;
 pub mod status_page;
@@ -68,7 +68,14 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                         .merge(server_group::write_router())
                         .merge(ping::write_router())
                         .merge(network_probe::write_router())
-                        .merge(file::write_router(state.config.file.max_upload_size.try_into().unwrap_or(usize::MAX)))
+                        .merge(file::write_router(
+                            state
+                                .config
+                                .file
+                                .max_upload_size
+                                .try_into()
+                                .unwrap_or(usize::MAX),
+                        ))
                         .merge(docker::write_router())
                         .merge(service_monitor::write_router())
                         .merge(traceroute::write_router())

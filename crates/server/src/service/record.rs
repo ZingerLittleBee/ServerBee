@@ -69,10 +69,9 @@ fn aggregate_disk_io(records: &[&record::Model]) -> Result<Option<String>, AppEr
         .collect::<Vec<_>>();
     aggregated.sort_by(|left, right| left.name.cmp(&right.name));
 
-    Ok(Some(
-        serde_json::to_string(&aggregated)
-            .map_err(|e| AppError::Internal(format!("Disk I/O serialization error: {e}")))?,
-    ))
+    Ok(Some(serde_json::to_string(&aggregated).map_err(|e| {
+        AppError::Internal(format!("Disk I/O serialization error: {e}"))
+    })?))
 }
 
 impl RecordService {
@@ -297,7 +296,11 @@ impl RecordService {
             db.execute(Statement::from_sql_and_values(
                 db.get_database_backend(),
                 "UPDATE records_hourly SET disk_io_json = ? WHERE server_id = ? AND time = ?",
-                [json_value, server_id.clone().into(), hour_start_str.clone().into()],
+                [
+                    json_value,
+                    server_id.clone().into(),
+                    hour_start_str.clone().into(),
+                ],
             ))
             .await?;
         }
@@ -334,9 +337,7 @@ impl RecordService {
                     .await?
             }
             _ => {
-                return Err(AppError::BadRequest(format!(
-                    "Unknown table: {table}"
-                )));
+                return Err(AppError::BadRequest(format!("Unknown table: {table}")));
             }
         };
 
@@ -406,7 +407,10 @@ mod tests {
         match result {
             QueryHistoryResult::Raw(records) => {
                 assert_eq!(records.len(), 1, "Should find exactly one record");
-                assert!((records[0].cpu - 42.5).abs() < f64::EPSILON, "CPU value should match");
+                assert!(
+                    (records[0].cpu - 42.5).abs() < f64::EPSILON,
+                    "CPU value should match"
+                );
                 assert_eq!(records[0].mem_used, 1024, "mem_used should match");
                 assert_eq!(records[0].server_id, "srv-rec-1", "server_id should match");
             }
@@ -431,7 +435,9 @@ mod tests {
             .await
             .expect("query_history should succeed");
         match &before {
-            QueryHistoryResult::Raw(records) => assert_eq!(records.len(), 1, "Record should exist before cleanup"),
+            QueryHistoryResult::Raw(records) => {
+                assert_eq!(records.len(), 1, "Record should exist before cleanup")
+            }
             _ => panic!("Expected Raw result"),
         }
 
@@ -448,7 +454,9 @@ mod tests {
             .await
             .expect("query_history should succeed");
         match after {
-            QueryHistoryResult::Raw(records) => assert_eq!(records.len(), 0, "Record should be deleted"),
+            QueryHistoryResult::Raw(records) => {
+                assert_eq!(records.len(), 0, "Record should be deleted")
+            }
             _ => panic!("Expected Raw result"),
         }
     }
@@ -479,7 +487,8 @@ mod tests {
 
         match result {
             QueryHistoryResult::Raw(records) => {
-                let disk_io: Vec<DiskIo> = serde_json::from_str(records[0].disk_io_json.as_deref().unwrap()).unwrap();
+                let disk_io: Vec<DiskIo> =
+                    serde_json::from_str(records[0].disk_io_json.as_deref().unwrap()).unwrap();
                 assert_eq!(disk_io[0].name, "sda");
                 assert_eq!(disk_io[0].read_bytes_per_sec, 1024);
                 assert_eq!(disk_io[0].write_bytes_per_sec, 2048);
@@ -594,7 +603,8 @@ mod tests {
         match result {
             QueryHistoryResult::Hourly(records) => {
                 assert_eq!(records.len(), 1);
-                let disk_io: Vec<DiskIo> = serde_json::from_str(records[0].disk_io_json.as_deref().unwrap()).unwrap();
+                let disk_io: Vec<DiskIo> =
+                    serde_json::from_str(records[0].disk_io_json.as_deref().unwrap()).unwrap();
                 assert_eq!(
                     disk_io,
                     vec![
@@ -649,7 +659,10 @@ mod tests {
         let from_exact = now - Duration::hours(24);
         let duration_exact = now - from_exact;
         let use_hourly_exact = duration_exact > Duration::hours(24);
-        assert!(!use_hourly_exact, "24h range should select raw (not strictly greater)");
+        assert!(
+            !use_hourly_exact,
+            "24h range should select raw (not strictly greater)"
+        );
 
         // More than 24 hours => should use hourly
         let from_old = now - Duration::hours(48);
@@ -686,11 +699,17 @@ mod tests {
 
         // A record from 31 days ago should be before the cutoff (eligible for cleanup)
         let old_time = now - Duration::days(31);
-        assert!(old_time < cutoff, "31-day-old record should be before cutoff");
+        assert!(
+            old_time < cutoff,
+            "31-day-old record should be before cutoff"
+        );
 
         // A record from 29 days ago should be after the cutoff (retained)
         let recent_time = now - Duration::days(29);
-        assert!(recent_time > cutoff, "29-day-old record should be after cutoff");
+        assert!(
+            recent_time > cutoff,
+            "29-day-old record should be after cutoff"
+        );
     }
 
     /// Verify the hourly aggregation averaging logic (extracted computation).
@@ -709,7 +728,10 @@ mod tests {
         let mem_values: Vec<i64> = vec![1000, 2000, 3000];
         let mem_count = mem_values.len() as f64;
         let avg_mem = (mem_values.iter().sum::<i64>() as f64 / mem_count) as i64;
-        assert_eq!(avg_mem, 2000, "average of [1000, 2000, 3000] should be 2000");
+        assert_eq!(
+            avg_mem, 2000,
+            "average of [1000, 2000, 3000] should be 2000"
+        );
 
         // Optional field averaging (temperature style)
         let temp_values: Vec<Option<f64>> = vec![Some(50.0), None, Some(60.0), None];
@@ -719,7 +741,11 @@ mod tests {
         } else {
             Some(temps.iter().sum::<f64>() / temps.len() as f64)
         };
-        assert_eq!(avg_temp, Some(55.0), "average of [50, 60] (skipping None) should be 55");
+        assert_eq!(
+            avg_temp,
+            Some(55.0),
+            "average of [50, 60] (skipping None) should be 55"
+        );
 
         // All None case
         let no_temps: Vec<Option<f64>> = vec![None, None, None];
@@ -731,5 +757,4 @@ mod tests {
         };
         assert_eq!(avg_no_temp, None, "all-None should produce None average");
     }
-
 }

@@ -44,8 +44,9 @@ impl ConfigService {
         let value = Self::get(db, key).await?;
         match value {
             Some(v) => {
-                let parsed: T = serde_json::from_str(&v)
-                    .map_err(|e| AppError::Internal(format!("Failed to deserialize config: {e}")))?;
+                let parsed: T = serde_json::from_str(&v).map_err(|e| {
+                    AppError::Internal(format!("Failed to deserialize config: {e}"))
+                })?;
                 Ok(Some(parsed))
             }
             None => Ok(None),
@@ -83,7 +84,11 @@ mod tests {
             .await
             .expect("get should succeed");
 
-        assert_eq!(value, Some("test_value".to_string()), "Retrieved value should match what was set");
+        assert_eq!(
+            value,
+            Some("test_value".to_string()),
+            "Retrieved value should match what was set"
+        );
     }
 
     #[tokio::test]
@@ -116,7 +121,11 @@ mod tests {
             .await
             .expect("get after upsert should succeed");
 
-        assert_eq!(value, Some("updated".to_string()), "Value should be updated after upsert");
+        assert_eq!(
+            value,
+            Some("updated".to_string()),
+            "Value should be updated after upsert"
+        );
     }
 
     #[tokio::test]
@@ -134,7 +143,11 @@ mod tests {
             .await
             .expect("get_typed should succeed");
 
-        assert_eq!(retrieved, Some(vec![1, 2, 3]), "Typed value should round-trip correctly");
+        assert_eq!(
+            retrieved,
+            Some(vec![1, 2, 3]),
+            "Typed value should round-trip correctly"
+        );
     }
 
     #[tokio::test]

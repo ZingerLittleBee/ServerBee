@@ -254,10 +254,7 @@ impl ServiceMonitorService {
                 service_monitor::Column::LastCheckedAt,
                 Expr::value(Utc::now()),
             )
-            .col_expr(
-                service_monitor::Column::UpdatedAt,
-                Expr::value(Utc::now()),
-            )
+            .col_expr(service_monitor::Column::UpdatedAt, Expr::value(Utc::now()))
             .filter(service_monitor::Column::Id.eq(id))
             .exec(db)
             .await?;
@@ -572,7 +569,9 @@ mod tests {
 
         // Cleanup with 0 days should delete all records older than now
         // (records just inserted are at "now", so 0-day cutoff = now, nothing older)
-        let deleted = ServiceMonitorService::cleanup_records(&db, 365).await.unwrap();
+        let deleted = ServiceMonitorService::cleanup_records(&db, 365)
+            .await
+            .unwrap();
         assert_eq!(deleted, 0);
 
         // Verify record still exists
@@ -606,10 +605,9 @@ mod tests {
             .unwrap();
 
         // Records should be gone too
-        let records =
-            ServiceMonitorService::get_records(&db, &created.id, None, None, None)
-                .await
-                .unwrap();
+        let records = ServiceMonitorService::get_records(&db, &created.id, None, None, None)
+            .await
+            .unwrap();
         assert!(records.is_empty());
     }
 

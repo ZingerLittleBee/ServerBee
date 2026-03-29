@@ -1,18 +1,36 @@
 mod collector;
 mod config;
 mod docker;
+mod file_manager;
+mod fingerprint;
 mod network_prober;
 mod pinger;
 mod probe_utils;
 mod register;
 mod reporter;
 mod terminal;
-mod file_manager;
+
+use std::sync::OnceLock;
 
 use tracing_subscriber::EnvFilter;
 
 use crate::config::AgentConfig;
 use crate::reporter::Reporter;
+
+static RUSTLS_PROVIDER_INSTALLED: OnceLock<()> = OnceLock::new();
+
+fn install_rustls_crypto_provider() -> anyhow::Result<()> {
+    if RUSTLS_PROVIDER_INSTALLED.get().is_some() {
+        return Ok(());
+    }
+
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .map_err(|_| anyhow::anyhow!("Failed to install rustls ring CryptoProvider"))?;
+
+    let _ = RUSTLS_PROVIDER_INSTALLED.set(());
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -29,17 +47,28 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
+    install_rustls_crypto_provider()?;
+
     tracing::info!(
         "ServerBee Agent v{} starting...",
         serverbee_common::constants::VERSION
     );
+
+    let machine_fingerprint = fingerprint::generate();
+    if !machine_fingerprint.is_empty() {
+        tracing::info!(
+            "Machine fingerprint: {}...{}",
+            &machine_fingerprint[..8],
+            &machine_fingerprint[56..]
+        );
+    }
 
     if config.token.is_empty() {
         if config.auto_discovery_key.is_empty() {
             anyhow::bail!("No token and no auto_discovery_key. Set one in config.");
         }
         tracing::info!("No token found, registering...");
-        let (_server_id, token) = register::register_agent(&config).await?;
+        let (_server_id, token) = register::register_agent(&config, &machine_fingerprint).await?;
         tracing::info!("Registration successful");
         if let Err(e) = register::save_token(&token) {
             tracing::warn!("Failed to save token: {e}");
@@ -47,7 +76,18 @@ async fn main() -> anyhow::Result<()> {
         config.token = token;
     }
 
-    let mut reporter = Reporter::new(config);
+    let mut reporter = Reporter::new(config, machine_fingerprint);
     reporter.run().await;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::install_rustls_crypto_provider;
+
+    #[test]
+    fn install_rustls_crypto_provider_is_idempotent() {
+        install_rustls_crypto_provider().expect("first install should succeed");
+        install_rustls_crypto_provider().expect("second install should be a no-op");
+    }
 }

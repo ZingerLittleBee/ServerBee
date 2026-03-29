@@ -2,10 +2,10 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::Instant;
 
+use hickory_resolver::TokioResolver;
 use hickory_resolver::config::{NameServerConfig, ResolverConfig};
 use hickory_resolver::proto::rr::RecordType;
 use hickory_resolver::proto::xfer::Protocol;
-use hickory_resolver::TokioResolver;
 use serde_json::{Value, json};
 
 use super::CheckResult;
@@ -116,11 +116,7 @@ fn build_resolver(nameserver: Option<&str>) -> Result<TokioResolver, String> {
         let ns_config = NameServerConfig::new(SocketAddr::new(ip, 53), Protocol::Udp);
         let mut resolver_config = ResolverConfig::new();
         resolver_config.add_name_server(ns_config);
-        Ok(TokioResolver::builder_with_config(
-            resolver_config,
-            Default::default(),
-        )
-        .build())
+        Ok(TokioResolver::builder_with_config(resolver_config, Default::default()).build())
     } else {
         TokioResolver::builder_tokio()
             .map(|builder| builder.build())

@@ -6,7 +6,7 @@ use axum::{Json, Router};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::service::server::ServerService;
 use crate::service::traffic::{
     CycleTraffic, DailyTraffic, HourlyTraffic, ServerTrafficOverview, TrafficPrediction,
@@ -75,8 +75,7 @@ async fn get_traffic(
 
     let billing_cycle = server.billing_cycle.as_deref().unwrap_or("monthly");
     let today = Utc::now().date_naive();
-    let (cycle_start, cycle_end) =
-        get_cycle_range(billing_cycle, server.billing_start_day, today);
+    let (cycle_start, cycle_end) = get_cycle_range(billing_cycle, server.billing_start_day, today);
 
     // Get total traffic for the cycle
     let (bytes_in, bytes_out) =
@@ -199,8 +198,7 @@ pub async fn get_traffic_cycle(
     let today = Utc::now().date_naive();
 
     // Current cycle
-    let (cycle_start, cycle_end) =
-        get_cycle_range(billing_cycle, server.billing_start_day, today);
+    let (cycle_start, cycle_end) = get_cycle_range(billing_cycle, server.billing_start_day, today);
     let (bytes_in, bytes_out) =
         TrafficService::query_cycle_traffic(&state.db, &server_id, cycle_start, cycle_end).await?;
 

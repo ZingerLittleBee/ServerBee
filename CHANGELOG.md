@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.5] - 2026-03-29
+
+### Fixed
+
+- **Linux agent TLS startup** -- Agent release binaries now install the `rustls` ring `CryptoProvider` explicitly during startup, preventing process panics before HTTPS registration or WebSocket TLS handshakes on some Linux builds
+- **Reverse-proxy agent WebSocket auth** -- Agent WebSocket handshakes now carry the token in both the query string and `Authorization: Bearer` header, and the server logs whether agent auth failed because the token was missing or invalid
+
+### Testing
+
+- 395 Rust tests: 245 server unit + 42 server integration + 4 Docker integration + 43 common + 61 agent
+- 222 frontend Vitest tests across 29 test files
+- 1 new agent startup unit test covering idempotent `rustls` provider installation
+- 1 new agent WebSocket handshake unit test covering query-token + `Authorization` header construction
+
+## [0.7.4] - 2026-03-29
+
+### Added
+
+- **Guided deployment manager** -- New `deploy/serverbee.sh` one-stop manager for `install`, `uninstall`, `upgrade`, `status`, `start`/`stop`/`restart`, `config`, and `env`, with interactive mode plus binary and Docker flows for both server and agent
+- **Orphan server cleanup** -- New admin `DELETE /api/servers/cleanup` endpoint and `/servers` toolbar action to remove offline `New Server` placeholders that never completed initialization, while preserving online-but-uninitialized agents
+- **Discovery key rotation UI** -- Settings page now exposes a confirmed "Regenerate" action for the auto-discovery key instead of requiring a direct API call
+
+### Changed
+
+- **Fingerprint-based agent re-registration** -- Agents now send a stable machine fingerprint during `POST /api/agent/register`, so repeated registration from the same host reuses the existing `server_id` and rotates its token instead of creating duplicate rows
+- **Auto-discovery soft cap** -- New `auth.max_servers` / `SERVERBEE_AUTH__MAX_SERVERS` setting limits how many new servers auto-discovery can create. Fingerprint reuse does not count against the cap
+- **Docker agent fingerprint stability** -- Agent Docker install docs and compose output now mount `/etc/machine-id` so container recreation keeps the same fingerprint and reconnects to the existing server record
+
+### Fixed
+
+- **Registration race recovery** -- Concurrent same-fingerprint registrations now recover from unique-index races by falling back to token rotation on the existing server row and refreshing `last_remote_addr`
+- **Installer robustness** -- `deploy/install.sh` now handles piped/non-interactive stdin, auto-installs missing dependencies in unattended mode, starts the agent service after install, and keeps agent WebSocket auth working behind reverse proxies
+- **Cleanup online protection** -- Cleanup candidate logic now excludes placeholder agents that are already online but have not yet sent `SystemInfo`, preventing accidental deletion during slow or partial initialization
+
+### Testing
+
+- 393 Rust tests: 245 server unit + 42 server integration + 4 Docker integration + 43 common + 59 agent
+- 222 frontend Vitest tests across 29 test files
+- 3 new agent fingerprint unit tests (`machine-id` hashing, deterministic output, 64-char validation)
+- 7 new orphan-cleanup helper unit tests (`remove_ids_from_json`, online placeholder filtering)
+- 2 new server integration tests (`POST /api/agent/register` fingerprint reuse, `DELETE /api/servers/cleanup` online placeholder protection)
+- 2 new frontend utility tests for cleanup candidate counting on the Servers page
+- New `tests/registration-hardening.md` checklist plus updated `/servers` and `/settings` manual verification coverage
+
 ## [0.7.3] - 2026-03-28
 
 ### Changed

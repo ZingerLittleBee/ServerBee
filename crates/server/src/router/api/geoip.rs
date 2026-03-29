@@ -1,12 +1,12 @@
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use axum::extract::State;
 use axum::routing;
 use axum::{Json, Router};
 use serde::Serialize;
 
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::service::geoip;
 use crate::state::AppState;
 

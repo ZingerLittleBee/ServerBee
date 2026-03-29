@@ -4,7 +4,10 @@ use serde::{Deserialize, Serialize};
 use crate::config::AgentConfig;
 
 #[derive(Serialize)]
-struct RegisterRequest {}
+struct RegisterRequest {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    fingerprint: String,
+}
 
 #[derive(Deserialize)]
 struct RegisterResponse {
@@ -17,7 +20,7 @@ struct RegisterData {
     token: String,
 }
 
-pub async fn register_agent(config: &AgentConfig) -> Result<(String, String)> {
+pub async fn register_agent(config: &AgentConfig, fingerprint: &str) -> Result<(String, String)> {
     let url = format!(
         "{}/api/agent/register",
         config.server_url.trim_end_matches('/')
@@ -26,7 +29,9 @@ pub async fn register_agent(config: &AgentConfig) -> Result<(String, String)> {
     let resp = client
         .post(&url)
         .bearer_auth(&config.auto_discovery_key)
-        .json(&RegisterRequest {})
+        .json(&RegisterRequest {
+            fingerprint: fingerprint.to_string(),
+        })
         .send()
         .await?;
     if !resp.status().is_success() {

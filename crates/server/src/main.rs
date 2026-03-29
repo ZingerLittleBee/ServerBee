@@ -110,7 +110,10 @@ async fn main() -> anyhow::Result<()> {
         credentials.push_str("\n***       IMPORTANT: Save these now       ***");
         credentials.push_str("\n********************************************\n");
         if let Some(ref pwd) = generated_admin_password {
-            credentials.push_str(&format!("\n  Admin username:      {}", config.admin.username));
+            credentials.push_str(&format!(
+                "\n  Admin username:      {}",
+                config.admin.username
+            ));
             credentials.push_str(&format!("\n  Admin password:      {}", pwd));
         }
         credentials.push_str(&format!("\n  Auto-discovery key:  {}", auto_discovery_key));

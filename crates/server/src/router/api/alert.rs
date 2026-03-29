@@ -6,7 +6,7 @@ use axum::{Json, Router};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::service::alert::{
     AlertEventResponse, AlertService, AlertStateResponse, CreateAlertRule, UpdateAlertRule,
 };

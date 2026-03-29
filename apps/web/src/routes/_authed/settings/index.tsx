@@ -1,10 +1,21 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { Copy, Eye, EyeOff } from 'lucide-react'
+import { Copy, Eye, EyeOff, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { GeoIpCard } from '@/components/settings/geoip-card'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
@@ -16,11 +27,21 @@ export const Route = createFileRoute('/_authed/settings/')({
 
 function SettingsPage() {
   const { t } = useTranslation('settings')
+  const queryClient = useQueryClient()
   const [showKey, setShowKey] = useState(false)
 
   const { data: config } = useQuery<AutoDiscoveryKeyResponse>({
     queryKey: ['settings', 'discovery'],
     queryFn: () => api.get<AutoDiscoveryKeyResponse>('/api/settings/auto-discovery-key')
+  })
+
+  const regenerateMutation = useMutation({
+    mutationFn: () => api.put<AutoDiscoveryKeyResponse>('/api/settings/auto-discovery-key'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'discovery'] })
+      setShowKey(true)
+      toast.success(t('regenerate_success'))
+    }
   })
 
   const handleCopy = async () => {
@@ -29,7 +50,7 @@ function SettingsPage() {
     }
     try {
       await navigator.clipboard.writeText(config.key)
-      toast.success('Copied to clipboard')
+      toast.success(t('copied'))
     } catch {
       // Clipboard access denied
     }
@@ -60,6 +81,32 @@ function SettingsPage() {
               <Button aria-label={t('copy_key')} onClick={handleCopy} size="icon" variant="outline">
                 <Copy className="size-4" />
               </Button>
+              <AlertDialog>
+                <AlertDialogTrigger
+                  render={
+                    <Button
+                      aria-label={t('regenerate_key')}
+                      disabled={regenerateMutation.isPending}
+                      size="icon"
+                      variant="outline"
+                    >
+                      <RefreshCw className={`size-4 ${regenerateMutation.isPending ? 'animate-spin' : ''}`} />
+                    </Button>
+                  }
+                />
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{t('regenerate_confirm_title')}</AlertDialogTitle>
+                    <AlertDialogDescription>{t('regenerate_confirm_description')}</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => regenerateMutation.mutate()} variant="destructive">
+                      {t('regenerate_key')}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           ) : (
             <Skeleton className="h-10 rounded-md" />

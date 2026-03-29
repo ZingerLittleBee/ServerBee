@@ -2,8 +2,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::extract::{ConnectInfo, Extension, Path, State};
-use axum::http::header::SET_COOKIE;
 use axum::http::HeaderMap;
+use axum::http::header::SET_COOKIE;
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use sea_orm::EntityTrait;
@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::router::utils::extract_client_ip;
 
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
 use crate::service::audit::AuditService;
 use crate::service::auth::{AuthService, LoginParams};
@@ -174,14 +174,7 @@ pub async fn login(
     );
 
     // Audit log (best-effort, don't fail login on audit error)
-    let _ = AuditService::log(
-        &state.db,
-        &user.id,
-        "login",
-        None,
-        &ip,
-    )
-    .await;
+    let _ = AuditService::log(&state.db, &user.id, "login", None, &ip).await;
 
     let response = ApiResponse {
         data: LoginResponse {
@@ -350,9 +343,7 @@ pub async fn change_password(
     Json(body): Json<ChangePasswordRequest>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     if body.new_password.is_empty() {
-        return Err(AppError::Validation(
-            "New password is required".to_string(),
-        ));
+        return Err(AppError::Validation("New password is required".to_string()));
     }
 
     AuthService::change_password(
@@ -437,7 +428,9 @@ pub async fn totp_enable(
         .pending_totp
         .remove(&current_user.user_id)
         .ok_or_else(|| {
-            AppError::BadRequest("No pending 2FA setup. Call /api/auth/2fa/setup first.".to_string())
+            AppError::BadRequest(
+                "No pending 2FA setup. Call /api/auth/2fa/setup first.".to_string(),
+            )
         })?;
 
     let (_, pending_totp) = pending;
@@ -470,14 +463,7 @@ pub async fn totp_enable(
         &state.config.server.trusted_proxies,
     )
     .to_string();
-    let _ = AuditService::log(
-        &state.db,
-        &current_user.user_id,
-        "2fa_enable",
-        None,
-        &ip,
-    )
-    .await;
+    let _ = AuditService::log(&state.db, &current_user.user_id, "2fa_enable", None, &ip).await;
 
     ok("ok")
 }
@@ -507,9 +493,7 @@ pub async fn totp_disable(
         .ok_or(AppError::NotFound("User not found".to_string()))?;
 
     if !AuthService::verify_password(&body.password, &user.password_hash)? {
-        return Err(AppError::BadRequest(
-            "Password is incorrect".to_string(),
-        ));
+        return Err(AppError::BadRequest("Password is incorrect".to_string()));
     }
 
     AuthService::disable_2fa(&state.db, &current_user.user_id).await?;
@@ -520,14 +504,7 @@ pub async fn totp_disable(
         &state.config.server.trusted_proxies,
     )
     .to_string();
-    let _ = AuditService::log(
-        &state.db,
-        &current_user.user_id,
-        "2fa_disable",
-        None,
-        &ip,
-    )
-    .await;
+    let _ = AuditService::log(&state.db, &current_user.user_id, "2fa_disable", None, &ip).await;
 
     ok("ok")
 }
@@ -586,12 +563,8 @@ pub async fn unlink_oauth_account(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
-    crate::service::oauth::OAuthService::unlink_account(
-        &state.db,
-        &id,
-        &current_user.user_id,
-    )
-    .await?;
+    crate::service::oauth::OAuthService::unlink_account(&state.db, &id, &current_user.user_id)
+        .await?;
     ok("ok")
 }
 

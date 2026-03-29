@@ -26,8 +26,7 @@ pub async fn static_handler(uri: Uri) -> Response {
 fn serve_file(path: &str, file: &rust_embed::EmbeddedFile) -> Response {
     let mime = mime_guess::from_path(path).first_or_octet_stream();
 
-    let mut builder = Response::builder()
-        .header(header::CONTENT_TYPE, mime.as_ref());
+    let mut builder = Response::builder().header(header::CONTENT_TYPE, mime.as_ref());
 
     // Cache immutable hashed assets aggressively, everything else briefly
     if path.starts_with("assets/") {

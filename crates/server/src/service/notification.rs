@@ -86,8 +86,7 @@ impl NotifyContext {
     }
 }
 
-const DEFAULT_TEMPLATE: &str =
-    "[ServerBee] {{server_name}} {{event}}\n{{message}}\n时间: {{time}}";
+const DEFAULT_TEMPLATE: &str = "[ServerBee] {{server_name}} {{event}}\n{{message}}\n时间: {{time}}";
 
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateNotification {
@@ -129,10 +128,7 @@ impl NotificationService {
         Ok(notification::Entity::find().all(db).await?)
     }
 
-    pub async fn get(
-        db: &DatabaseConnection,
-        id: &str,
-    ) -> Result<notification::Model, AppError> {
+    pub async fn get(db: &DatabaseConnection, id: &str) -> Result<notification::Model, AppError> {
         notification::Entity::find_by_id(id)
             .one(db)
             .await?
@@ -268,8 +264,8 @@ impl NotificationService {
         ctx: &NotifyContext,
     ) -> Result<(), AppError> {
         let group = Self::get_group(db, group_id).await?;
-        let ids: Vec<String> = serde_json::from_str(&group.notification_ids_json)
-            .unwrap_or_default();
+        let ids: Vec<String> =
+            serde_json::from_str(&group.notification_ids_json).unwrap_or_default();
 
         for nid in ids {
             match Self::get(db, &nid).await {
@@ -289,10 +285,7 @@ impl NotificationService {
     }
 
     /// Send a single notification (used for testing).
-    pub async fn test_notification(
-        db: &DatabaseConnection,
-        id: &str,
-    ) -> Result<(), AppError> {
+    pub async fn test_notification(db: &DatabaseConnection, id: &str) -> Result<(), AppError> {
         let n = Self::get(db, id).await?;
         let ctx = NotifyContext {
             server_name: "Test Server".to_string(),
@@ -340,13 +333,18 @@ impl NotificationService {
                 }
 
                 // If no content-type header, default to application/json
-                if !headers.keys().any(|k| k.eq_ignore_ascii_case("content-type")) {
+                if !headers
+                    .keys()
+                    .any(|k| k.eq_ignore_ascii_case("content-type"))
+                {
                     req = req.header("Content-Type", "application/json");
                 }
 
-                let resp = req.body(body).send().await.map_err(|e| {
-                    AppError::Internal(format!("Webhook request failed: {e}"))
-                })?;
+                let resp = req
+                    .body(body)
+                    .send()
+                    .await
+                    .map_err(|e| AppError::Internal(format!("Webhook request failed: {e}")))?;
 
                 if !resp.status().is_success() {
                     let status = resp.status();
@@ -358,9 +356,7 @@ impl NotificationService {
             }
             ChannelConfig::Telegram { bot_token, chat_id } => {
                 let text = ctx.render(DEFAULT_TEMPLATE);
-                let url = format!(
-                    "https://api.telegram.org/bot{bot_token}/sendMessage"
-                );
+                let url = format!("https://api.telegram.org/bot{bot_token}/sendMessage");
                 let resp = client
                     .post(&url)
                     .json(&serde_json::json!({
@@ -374,9 +370,7 @@ impl NotificationService {
 
                 if !resp.status().is_success() {
                     let text = resp.text().await.unwrap_or_default();
-                    return Err(AppError::Internal(format!(
-                        "Telegram API error: {text}"
-                    )));
+                    return Err(AppError::Internal(format!("Telegram API error: {text}")));
                 }
             }
             ChannelConfig::Bark {
@@ -392,9 +386,11 @@ impl NotificationService {
                     urlencoding(&title),
                     urlencoding(&body),
                 );
-                let resp = client.get(&url).send().await.map_err(|e| {
-                    AppError::Internal(format!("Bark request failed: {e}"))
-                })?;
+                let resp = client
+                    .get(&url)
+                    .send()
+                    .await
+                    .map_err(|e| AppError::Internal(format!("Bark request failed: {e}")))?;
 
                 if !resp.status().is_success() {
                     let text = resp.text().await.unwrap_or_default();
@@ -416,32 +412,31 @@ impl NotificationService {
                 let subject = format!("[ServerBee] {} {}", ctx.server_name, ctx.event);
                 let body = ctx.render(DEFAULT_TEMPLATE);
 
-                let email = Message::builder()
-                    .from(from.parse().map_err(|e| {
-                        AppError::Validation(format!("Invalid from address: {e}"))
-                    })?)
-                    .to(to.parse().map_err(|e| {
-                        AppError::Validation(format!("Invalid to address: {e}"))
-                    })?)
-                    .subject(subject)
-                    .header(ContentType::TEXT_PLAIN)
-                    .body(body)
-                    .map_err(|e| AppError::Internal(format!("Failed to build email: {e}")))?;
+                let email =
+                    Message::builder()
+                        .from(from.parse().map_err(|e| {
+                            AppError::Validation(format!("Invalid from address: {e}"))
+                        })?)
+                        .to(to.parse().map_err(|e| {
+                            AppError::Validation(format!("Invalid to address: {e}"))
+                        })?)
+                        .subject(subject)
+                        .header(ContentType::TEXT_PLAIN)
+                        .body(body)
+                        .map_err(|e| AppError::Internal(format!("Failed to build email: {e}")))?;
 
                 let creds = Credentials::new(username, password);
 
-                let mailer =
-                    AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&smtp_host)
-                        .map_err(|e| {
-                            AppError::Internal(format!("SMTP connection error: {e}"))
-                        })?
-                        .port(smtp_port)
-                        .credentials(creds)
-                        .build();
+                let mailer = AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&smtp_host)
+                    .map_err(|e| AppError::Internal(format!("SMTP connection error: {e}")))?
+                    .port(smtp_port)
+                    .credentials(creds)
+                    .build();
 
-                mailer.send(email).await.map_err(|e| {
-                    AppError::Internal(format!("Failed to send email: {e}"))
-                })?;
+                mailer
+                    .send(email)
+                    .await
+                    .map_err(|e| AppError::Internal(format!("Failed to send email: {e}")))?;
             }
             ChannelConfig::Apns {
                 key_id,
@@ -482,7 +477,10 @@ impl NotificationService {
             .map_err(|e| AppError::Validation(format!("Invalid config JSON: {e}")))?;
 
         if let Some(obj) = val.as_object_mut() {
-            obj.insert("type".to_string(), serde_json::Value::String(notify_type.to_string()));
+            obj.insert(
+                "type".to_string(),
+                serde_json::Value::String(notify_type.to_string()),
+            );
         }
 
         serde_json::from_value(val)
@@ -633,8 +631,7 @@ mod tests {
     #[test]
     fn test_parse_config_bark() {
         let config_json = r#"{"server_url": "https://bark.example.com", "device_key": "mykey"}"#;
-        let config =
-            NotificationService::parse_config("bark", config_json).expect("should parse");
+        let config = NotificationService::parse_config("bark", config_json).expect("should parse");
 
         match config {
             ChannelConfig::Bark {
@@ -658,8 +655,7 @@ mod tests {
             "from": "user@gmail.com",
             "to": "admin@example.com"
         }"#;
-        let config =
-            NotificationService::parse_config("email", config_json).expect("should parse");
+        let config = NotificationService::parse_config("email", config_json).expect("should parse");
 
         match config {
             ChannelConfig::Email {
@@ -687,8 +683,7 @@ mod tests {
             "from": "a@b.com",
             "to": "c@d.com"
         }"#;
-        let config =
-            NotificationService::parse_config("email", config_json).expect("should parse");
+        let config = NotificationService::parse_config("email", config_json).expect("should parse");
 
         match config {
             ChannelConfig::Email { smtp_port, .. } => {
@@ -797,7 +792,12 @@ mod tests {
         let parsed: ChannelConfig = serde_json::from_str(&json).expect("deserialize");
 
         match parsed {
-            ChannelConfig::Webhook { url, method, headers, body_template } => {
+            ChannelConfig::Webhook {
+                url,
+                method,
+                headers,
+                body_template,
+            } => {
                 assert_eq!(url, "https://example.com");
                 assert_eq!(method, "POST");
                 assert_eq!(headers.get("Authorization").unwrap(), "Bearer token");

@@ -60,6 +60,7 @@ max_connections = 10
 [auth]
 session_ttl = 86400
 auto_discovery_key = ""
+max_servers = 0
 
 [admin]
 username = "admin"
@@ -106,6 +107,7 @@ file = ""
 |--------|------|--------|------|
 | `session_ttl` | int | `86400` | Session 过期时间，单位秒（默认 24 小时） |
 | `auto_discovery_key` | string | `""` | Agent 自动注册密钥，留空则自动生成 |
+| `max_servers` | int | `0` | 自动注册允许创建的新服务器软上限（0 表示不限制） |
 
 #### `[admin]` 初始管理员
 
@@ -203,6 +205,18 @@ mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"
 ```
 
 启用后，Agent 连接时 Server 会自动查询其 IP 对应的地理位置，并在服务器信息中显示所在地区和国家。
+
+## Auto Discovery Key
+
+Auto Discovery Key 用于 Agent 首次自动注册，优先级如下：
+
+1. 如果在配置文件里显式设置了 `auth.auto_discovery_key`，则优先使用该值
+2. 如果数据库中已经保存过 key，则继续复用
+3. 否则首次启动时自动生成随机 key 并持久化
+
+首次启动时，Server 会把完整 key 打印到日志中；之后也可以在 Web 管理面板的「设置」页面查看、复制或重新生成。重新生成只影响后续新注册的 Agent，已连接节点仍然使用自己的 token。
+
+为减少重复的占位服务器，Agent 在可读取稳定机器标识时会携带指纹，相同机器重复注册会复用原有服务器记录。你还可以通过 `auth.max_servers` 软限制自动注册创建的新服务器数量；如果历史失败注册留下了离线占位条目，可在 `/servers` 页面使用 **Clean up unconnected** 清理。
 
 ## OAuth 设置
 

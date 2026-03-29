@@ -23,8 +23,9 @@ impl MigrationTrait for Migration {
                 probe_type TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-            )"
-        ).await?;
+            )",
+        )
+        .await?;
 
         db.execute_unprepared(
             "CREATE TABLE network_probe_config (
@@ -33,8 +34,9 @@ impl MigrationTrait for Migration {
                 target_id TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 UNIQUE(server_id, target_id)
-            )"
-        ).await?;
+            )",
+        )
+        .await?;
 
         db.execute_unprepared(
             "CREATE TABLE network_probe_record (
@@ -48,8 +50,9 @@ impl MigrationTrait for Migration {
                 packet_sent INTEGER NOT NULL,
                 packet_received INTEGER NOT NULL,
                 timestamp TEXT NOT NULL
-            )"
-        ).await?;
+            )",
+        )
+        .await?;
 
         db.execute_unprepared(
             "CREATE INDEX idx_network_probe_record_lookup ON network_probe_record (server_id, target_id, timestamp)"
@@ -67,18 +70,23 @@ impl MigrationTrait for Migration {
                 sample_count INTEGER NOT NULL,
                 hour TEXT NOT NULL,
                 UNIQUE(server_id, target_id, hour)
-            )"
-        ).await?;
+            )",
+        )
+        .await?;
 
         Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
-        db.execute_unprepared("DROP TABLE IF EXISTS network_probe_record_hourly").await?;
-        db.execute_unprepared("DROP TABLE IF EXISTS network_probe_record").await?;
-        db.execute_unprepared("DROP TABLE IF EXISTS network_probe_config").await?;
-        db.execute_unprepared("DROP TABLE IF EXISTS network_probe_target").await?;
+        db.execute_unprepared("DROP TABLE IF EXISTS network_probe_record_hourly")
+            .await?;
+        db.execute_unprepared("DROP TABLE IF EXISTS network_probe_record")
+            .await?;
+        db.execute_unprepared("DROP TABLE IF EXISTS network_probe_config")
+            .await?;
+        db.execute_unprepared("DROP TABLE IF EXISTS network_probe_target")
+            .await?;
         Ok(())
     }
 }

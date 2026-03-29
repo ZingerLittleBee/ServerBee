@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::entity::{ping_record, ping_task, server};
 use crate::error::AppError;
 use crate::service::agent_manager::AgentManager;
-use serverbee_common::constants::{has_capability, probe_type_to_cap, CAP_DEFAULT};
+use serverbee_common::constants::{CAP_DEFAULT, has_capability, probe_type_to_cap};
 use serverbee_common::protocol::ServerMessage;
 use serverbee_common::types::PingTaskConfig;
 
@@ -172,7 +172,11 @@ impl PingService {
     }
 
     /// Send current ping tasks to a specific agent (e.g., on new connection).
-    pub async fn sync_tasks_to_agent(db: &DatabaseConnection, agent_manager: &AgentManager, server_id: &str) {
+    pub async fn sync_tasks_to_agent(
+        db: &DatabaseConnection,
+        agent_manager: &AgentManager,
+        server_id: &str,
+    ) {
         let tasks = match ping_task::Entity::find()
             .filter(ping_task::Column::Enabled.eq(true))
             .all(db)
@@ -217,7 +221,9 @@ impl PingService {
 
         // Always send PingTasksSync (even if empty — tells Agent to stop all probes)
         if let Some(tx) = agent_manager.get_sender(server_id) {
-            let msg = ServerMessage::PingTasksSync { tasks: task_configs };
+            let msg = ServerMessage::PingTasksSync {
+                tasks: task_configs,
+            };
             let _ = tx.send(msg).await;
         }
     }
@@ -238,24 +244,23 @@ impl PingService {
 
         // Fetch capabilities for all connected agents
         let connected_ids = agent_manager.connected_server_ids();
-        let server_caps_map: std::collections::HashMap<String, u32> =
-            match server::Entity::find()
-                .filter(server::Column::Id.is_in(connected_ids.iter().cloned()))
-                .all(db)
-                .await
-            {
-                Ok(servers) => servers
-                    .into_iter()
-                    .map(|s| {
-                        let caps = s.capabilities as u32;
-                        (s.id, caps)
-                    })
-                    .collect(),
-                Err(e) => {
-                    tracing::error!("Failed to load server caps for ping sync: {e}");
-                    return;
-                }
-            };
+        let server_caps_map: std::collections::HashMap<String, u32> = match server::Entity::find()
+            .filter(server::Column::Id.is_in(connected_ids.iter().cloned()))
+            .all(db)
+            .await
+        {
+            Ok(servers) => servers
+                .into_iter()
+                .map(|s| {
+                    let caps = s.capabilities as u32;
+                    (s.id, caps)
+                })
+                .collect(),
+            Err(e) => {
+                tracing::error!("Failed to load server caps for ping sync: {e}");
+                return;
+            }
+        };
 
         // Build per-agent task lists filtered by capability
         let mut agent_tasks: std::collections::HashMap<String, Vec<PingTaskConfig>> =
@@ -331,7 +336,9 @@ mod tests {
         let agent_manager = test_agent_manager();
 
         let input = sample_create_ping_task();
-        let created = PingService::create(&db, &agent_manager, input).await.unwrap();
+        let created = PingService::create(&db, &agent_manager, input)
+            .await
+            .unwrap();
 
         let list = PingService::list(&db).await.unwrap();
         assert_eq!(list.len(), 1);
@@ -346,9 +353,13 @@ mod tests {
         let agent_manager = test_agent_manager();
 
         let input = sample_create_ping_task();
-        let created = PingService::create(&db, &agent_manager, input).await.unwrap();
+        let created = PingService::create(&db, &agent_manager, input)
+            .await
+            .unwrap();
 
-        PingService::delete(&db, &agent_manager, &created.id).await.unwrap();
+        PingService::delete(&db, &agent_manager, &created.id)
+            .await
+            .unwrap();
 
         let list = PingService::list(&db).await.unwrap();
         assert!(list.is_empty());
@@ -360,7 +371,9 @@ mod tests {
         let agent_manager = test_agent_manager();
 
         let input = sample_create_ping_task();
-        let created = PingService::create(&db, &agent_manager, input).await.unwrap();
+        let created = PingService::create(&db, &agent_manager, input)
+            .await
+            .unwrap();
 
         let fetched = PingService::get(&db, &created.id).await.unwrap();
         assert_eq!(fetched.id, created.id);

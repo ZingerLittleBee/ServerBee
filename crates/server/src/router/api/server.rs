@@ -8,7 +8,9 @@ use axum::{Json, Router};
 
 use crate::router::utils::extract_client_ip;
 use chrono::{DateTime, Utc};
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter, TransactionTrait,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::entity::server;
@@ -26,6 +28,8 @@ use crate::service::server::{ServerService, UpdateServerInput};
 use crate::state::AppState;
 use serverbee_common::protocol::{BrowserMessage, ServerMessage};
 use serverbee_common::types::NetworkProbeTarget;
+
+const DEFAULT_SERVER_NAME: &str = "New Server";
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct BatchDeleteRequest {
@@ -53,6 +57,11 @@ pub struct GpuRecordQueryParams {
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct BatchDeleteResponse {
     deleted: u64,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct CleanupResponse {
+    deleted_count: u64,
 }
 
 /// Server response DTO — excludes sensitive fields (token_hash, token_prefix).
@@ -164,6 +173,7 @@ pub fn write_router() -> Router<Arc<AppState>> {
         .route("/servers/{id}", put(update_server))
         .route("/servers/{id}", delete(delete_server))
         .route("/servers/batch-delete", post(batch_delete))
+        .route("/servers/cleanup", delete(cleanup_orphaned_servers))
         .route(
             "/servers/batch-capabilities",
             put(batch_update_capabilities),
@@ -497,12 +507,9 @@ async fn trigger_upgrade(
     }
 
     // Get agent platform info
-    let (os_raw, arch_raw) = state
-        .agent_manager
-        .get_agent_platform(&id)
-        .ok_or_else(|| {
-            AppError::NotFound("Agent not connected or platform info unavailable".into())
-        })?;
+    let (os_raw, arch_raw) = state.agent_manager.get_agent_platform(&id).ok_or_else(|| {
+        AppError::NotFound("Agent not connected or platform info unavailable".into())
+    })?;
 
     let os = map_os(&os_raw)
         .ok_or_else(|| AppError::BadRequest(format!("Unsupported agent OS: {os_raw}")))?;
@@ -805,6 +812,336 @@ async fn set_server_network_targets(
     }
 
     ok("ok")
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/servers/cleanup",
+    tag = "servers",
+    responses(
+        (status = 200, description = "Orphaned servers cleaned up", body = CleanupResponse),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+async fn cleanup_orphaned_servers(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ApiResponse<CleanupResponse>>, AppError> {
+    use crate::entity::*;
+
+    let txn = state.db.begin().await?;
+
+    let candidates = server::Entity::find()
+        .filter(server::Column::Name.eq("New Server"))
+        .filter(server::Column::Os.is_null())
+        .all(&txn)
+        .await?;
+
+    let orphan_ids = collect_orphan_server_ids(&candidates, |id| state.agent_manager.is_online(id));
+    if orphan_ids.is_empty() {
+        return ok(CleanupResponse { deleted_count: 0 });
+    }
+
+    // Tables with server_id FK — delete rows
+    record::Entity::delete_many()
+        .filter(record::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    record_hourly::Entity::delete_many()
+        .filter(record_hourly::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    gpu_record::Entity::delete_many()
+        .filter(gpu_record::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    alert_state::Entity::delete_many()
+        .filter(alert_state::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    network_probe_config::Entity::delete_many()
+        .filter(network_probe_config::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    network_probe_record::Entity::delete_many()
+        .filter(network_probe_record::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    network_probe_record_hourly::Entity::delete_many()
+        .filter(network_probe_record_hourly::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    traffic_state::Entity::delete_many()
+        .filter(traffic_state::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    traffic_hourly::Entity::delete_many()
+        .filter(traffic_hourly::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    traffic_daily::Entity::delete_many()
+        .filter(traffic_daily::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    uptime_daily::Entity::delete_many()
+        .filter(uptime_daily::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    task_result::Entity::delete_many()
+        .filter(task_result::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    server_tag::Entity::delete_many()
+        .filter(server_tag::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    docker_event::Entity::delete_many()
+        .filter(docker_event::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+    ping_record::Entity::delete_many()
+        .filter(ping_record::Column::ServerId.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+
+    // Tables with server_ids_json — per-table rules
+    cleanup_json_array_tables(&txn, &orphan_ids).await?;
+
+    let deleted = server::Entity::delete_many()
+        .filter(server::Column::Id.is_in(&orphan_ids))
+        .exec(&txn)
+        .await?;
+
+    txn.commit().await?;
+
+    tracing::info!("Cleaned up {} orphaned servers", deleted.rows_affected);
+    ok(CleanupResponse {
+        deleted_count: deleted.rows_affected,
+    })
+}
+
+async fn cleanup_json_array_tables(
+    txn: &sea_orm::DatabaseTransaction,
+    orphan_ids: &[String],
+) -> Result<(), AppError> {
+    use crate::entity::*;
+
+    // ping_tasks: delete if empty
+    for task in ping_task::Entity::find().all(txn).await? {
+        if let Some(new_json) = remove_ids_from_json(&task.server_ids_json, orphan_ids) {
+            if new_json == "[]" {
+                ping_task::Entity::delete_by_id(&task.id).exec(txn).await?;
+            } else {
+                let mut active: ping_task::ActiveModel = task.into();
+                active.server_ids_json = Set(new_json);
+                active.update(txn).await?;
+            }
+        }
+    }
+
+    // tasks: delete if empty
+    for t in task::Entity::find().all(txn).await? {
+        if let Some(new_json) = remove_ids_from_json(&t.server_ids_json, orphan_ids) {
+            if new_json == "[]" {
+                task::Entity::delete_by_id(&t.id).exec(txn).await?;
+            } else {
+                let mut active: task::ActiveModel = t.into();
+                active.server_ids_json = Set(new_json);
+                active.update(txn).await?;
+            }
+        }
+    }
+
+    // alert_rules: delete if empty (+ related alert_states)
+    for rule in alert_rule::Entity::find().all(txn).await? {
+        if let Some(ref json) = rule.server_ids_json
+            && let Some(new_json) = remove_ids_from_json(json, orphan_ids)
+        {
+            if new_json == "[]" {
+                alert_state::Entity::delete_many()
+                    .filter(alert_state::Column::RuleId.eq(&rule.id))
+                    .exec(txn)
+                    .await?;
+                alert_rule::Entity::delete_by_id(&rule.id).exec(txn).await?;
+            } else {
+                let mut active: alert_rule::ActiveModel = rule.into();
+                active.server_ids_json = Set(Some(new_json));
+                active.update(txn).await?;
+            }
+        }
+    }
+
+    // maintenances: delete if empty
+    for m in maintenance::Entity::find().all(txn).await? {
+        if let Some(ref json) = m.server_ids_json
+            && let Some(new_json) = remove_ids_from_json(json, orphan_ids)
+        {
+            if new_json == "[]" {
+                maintenance::Entity::delete_by_id(&m.id).exec(txn).await?;
+            } else {
+                let mut active: maintenance::ActiveModel = m.into();
+                active.server_ids_json = Set(Some(new_json));
+                active.update(txn).await?;
+            }
+        }
+    }
+
+    // service_monitors: set to NULL if empty (preserve monitor + history)
+    for monitor in service_monitor::Entity::find().all(txn).await? {
+        if let Some(ref json) = monitor.server_ids_json
+            && let Some(new_json) = remove_ids_from_json(json, orphan_ids)
+        {
+            let mut active: service_monitor::ActiveModel = monitor.into();
+            if new_json == "[]" {
+                active.server_ids_json = Set(None);
+            } else {
+                active.server_ids_json = Set(Some(new_json));
+            }
+            active.update(txn).await?;
+        }
+    }
+
+    // incidents: keep row, just update array
+    for inc in incident::Entity::find().all(txn).await? {
+        if let Some(ref json) = inc.server_ids_json
+            && let Some(new_json) = remove_ids_from_json(json, orphan_ids)
+        {
+            let mut active: incident::ActiveModel = inc.into();
+            active.server_ids_json = Set(Some(new_json));
+            active.update(txn).await?;
+        }
+    }
+
+    // status_pages: keep row, just update array
+    for page in status_page::Entity::find().all(txn).await? {
+        if let Some(new_json) = remove_ids_from_json(&page.server_ids_json, orphan_ids) {
+            let mut active: status_page::ActiveModel = page.into();
+            active.server_ids_json = Set(new_json);
+            active.update(txn).await?;
+        }
+    }
+
+    Ok(())
+}
+
+fn collect_orphan_server_ids<F>(servers: &[server::Model], is_online: F) -> Vec<String>
+where
+    F: Fn(&str) -> bool,
+{
+    servers
+        .iter()
+        .filter(|server| {
+            server.name == DEFAULT_SERVER_NAME && server.os.is_none() && !is_online(&server.id)
+        })
+        .map(|server| server.id.clone())
+        .collect()
+}
+
+fn remove_ids_from_json(json: &str, orphan_ids: &[String]) -> Option<String> {
+    let ids: Vec<String> = serde_json::from_str(json).unwrap_or_default();
+    let filtered: Vec<&String> = ids.iter().filter(|id| !orphan_ids.contains(id)).collect();
+    if filtered.len() == ids.len() {
+        return None;
+    }
+    Some(serde_json::to_string(&filtered).unwrap_or_else(|_| "[]".to_string()))
+}
+
+#[cfg(test)]
+mod cleanup_tests {
+    use super::{DEFAULT_SERVER_NAME, collect_orphan_server_ids, remove_ids_from_json};
+    use crate::entity::server;
+    use chrono::Utc;
+    use std::collections::HashSet;
+
+    fn make_server(id: &str, name: &str, os: Option<&str>) -> server::Model {
+        let now = Utc::now();
+        server::Model {
+            id: id.to_string(),
+            token_hash: "hash".to_string(),
+            token_prefix: "prefix".to_string(),
+            name: name.to_string(),
+            cpu_name: None,
+            cpu_cores: None,
+            cpu_arch: None,
+            os: os.map(str::to_string),
+            kernel_version: None,
+            mem_total: None,
+            swap_total: None,
+            disk_total: None,
+            ipv4: None,
+            ipv6: None,
+            region: None,
+            country_code: None,
+            virtualization: None,
+            agent_version: None,
+            group_id: None,
+            weight: 0,
+            hidden: false,
+            remark: None,
+            public_remark: None,
+            price: None,
+            billing_cycle: None,
+            currency: None,
+            expired_at: None,
+            traffic_limit: None,
+            traffic_limit_type: None,
+            billing_start_day: None,
+            capabilities: 56,
+            protocol_version: 1,
+            features: "[]".to_string(),
+            last_remote_addr: None,
+            fingerprint: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn test_no_match_returns_none() {
+        assert_eq!(remove_ids_from_json(r#"["a","b"]"#, &["c".into()]), None);
+    }
+
+    #[test]
+    fn test_partial_removal() {
+        let result = remove_ids_from_json(r#"["a","b","c"]"#, &["b".into()]);
+        assert_eq!(result, Some(r#"["a","c"]"#.to_string()));
+    }
+
+    #[test]
+    fn test_remove_all() {
+        let result = remove_ids_from_json(r#"["a"]"#, &["a".into()]);
+        assert_eq!(result, Some("[]".to_string()));
+    }
+
+    #[test]
+    fn test_empty_array() {
+        assert_eq!(remove_ids_from_json("[]", &["a".into()]), None);
+    }
+
+    #[test]
+    fn test_invalid_json() {
+        assert_eq!(remove_ids_from_json("not json", &["a".into()]), None);
+    }
+
+    #[test]
+    fn test_multiple_orphans() {
+        let result = remove_ids_from_json(r#"["a","b","c","d"]"#, &["b".into(), "d".into()]);
+        assert_eq!(result, Some(r#"["a","c"]"#.to_string()));
+    }
+
+    #[test]
+    fn test_collect_orphan_server_ids_skips_online_servers() {
+        let servers = vec![
+            make_server("offline-orphan", DEFAULT_SERVER_NAME, None),
+            make_server("online-orphan", DEFAULT_SERVER_NAME, None),
+            make_server("initialized", DEFAULT_SERVER_NAME, Some("Linux")),
+            make_server("renamed", "Production", None),
+        ];
+        let online_ids = HashSet::from([String::from("online-orphan")]);
+
+        let orphans = collect_orphan_server_ids(&servers, |id| online_ids.contains(id));
+
+        assert_eq!(orphans, vec![String::from("offline-orphan")]);
+    }
 }
 
 #[cfg(test)]

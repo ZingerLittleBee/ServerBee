@@ -8,7 +8,7 @@ use sea_orm::*;
 use serde::Serialize;
 
 use crate::entity::{incident, incident_update, maintenance, server, server_group, status_page};
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::service::incident::IncidentService;
 use crate::service::maintenance::MaintenanceService;
 use crate::service::status_page::{CreateStatusPage, StatusPageService, UpdateStatusPage};
@@ -118,8 +118,7 @@ pub async fn get_public_status_page(
     let page_id = page.id.clone();
 
     // Parse server IDs from the page
-    let server_ids: Vec<String> =
-        serde_json::from_str(&page.server_ids_json).unwrap_or_default();
+    let server_ids: Vec<String> = serde_json::from_str(&page.server_ids_json).unwrap_or_default();
 
     // Fetch servers
     let servers = if server_ids.is_empty() {
@@ -134,12 +133,9 @@ pub async fn get_public_status_page(
     };
 
     // Fetch groups for labeling
-    let groups: Vec<server_group::Model> =
-        server_group::Entity::find().all(&state.db).await?;
-    let group_map: std::collections::HashMap<String, String> = groups
-        .into_iter()
-        .map(|g| (g.id, g.name))
-        .collect();
+    let groups: Vec<server_group::Model> = server_group::Entity::find().all(&state.db).await?;
+    let group_map: std::collections::HashMap<String, String> =
+        groups.into_iter().map(|g| (g.id, g.name)).collect();
 
     // Build server status info
     let mut server_infos = Vec::new();
@@ -167,7 +163,10 @@ pub async fn get_public_status_page(
             country_code: s.country_code.clone(),
             os: s.os.clone(),
             group_id: s.group_id.clone(),
-            group_name: s.group_id.as_ref().and_then(|gid| group_map.get(gid).cloned()),
+            group_name: s
+                .group_id
+                .as_ref()
+                .and_then(|gid| group_map.get(gid).cloned()),
             online,
             uptime_percentage,
             uptime_daily: daily,
@@ -197,7 +196,9 @@ pub async fn get_public_status_page(
             continue;
         }
 
-        let updates = IncidentService::list_updates(&state.db, &inc.id).await.unwrap_or_default();
+        let updates = IncidentService::list_updates(&state.db, &inc.id)
+            .await
+            .unwrap_or_default();
 
         if inc.status != "resolved" {
             active_incidents.push(IncidentWithUpdates {
