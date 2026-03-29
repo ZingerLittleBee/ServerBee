@@ -34,6 +34,7 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
             session_ttl: 86400,
             auto_discovery_key: "test-key".to_string(),
             secure_cookie: false,
+            max_servers: 0,
         },
         admin: AdminConfig {
             username: "admin".to_string(),
