@@ -117,13 +117,8 @@ impl UptimeService {
             };
 
             // Count downtime incidents: gaps > 2 minutes between consecutive records
-            let downtime_incidents = Self::count_downtime_incidents(
-                db,
-                &srv.id,
-                &day_start,
-                &day_end,
-            )
-            .await?;
+            let downtime_incidents =
+                Self::count_downtime_incidents(db, &srv.id, &day_start, &day_end).await?;
 
             // Upsert into uptime_daily
             db.execute(Statement::from_sql_and_values(
@@ -174,9 +169,9 @@ impl UptimeService {
         let mut prev_time: Option<chrono::DateTime<Utc>> = None;
 
         for row in &rows {
-            let time: chrono::DateTime<Utc> = row.try_get_by_index(0).map_err(|e| {
-                AppError::Internal(format!("Failed to read record time: {e}"))
-            })?;
+            let time: chrono::DateTime<Utc> = row
+                .try_get_by_index(0)
+                .map_err(|e| AppError::Internal(format!("Failed to read record time: {e}")))?;
 
             if let Some(prev) = prev_time {
                 let gap = (time - prev).num_seconds();

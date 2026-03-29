@@ -77,10 +77,7 @@ impl TrafficService {
     }
 
     /// Aggregate hourly traffic into daily buckets using the given timezone.
-    pub async fn aggregate_daily(
-        db: &DatabaseConnection,
-        timezone: &str,
-    ) -> Result<u64, AppError> {
+    pub async fn aggregate_daily(db: &DatabaseConnection, timezone: &str) -> Result<u64, AppError> {
         use chrono_tz::Tz;
         let tz: Tz = timezone
             .parse()
@@ -178,10 +175,7 @@ impl TrafficService {
     }
 
     /// Clean up task_results older than the given number of days.
-    pub async fn cleanup_task_results(
-        db: &DatabaseConnection,
-        days: u32,
-    ) -> Result<u64, AppError> {
+    pub async fn cleanup_task_results(db: &DatabaseConnection, days: u32) -> Result<u64, AppError> {
         let cutoff = (Utc::now() - Duration::days(days as i64))
             .format("%Y-%m-%d %H:%M:%S")
             .to_string();
@@ -419,11 +413,7 @@ impl TrafficService {
                 Self::query_cycle_traffic(db, server_id, start, end).await?;
 
             result.push(CycleTraffic {
-                period: format!(
-                    "{} ~ {}",
-                    start.format("%Y-%m-%d"),
-                    end.format("%Y-%m-%d")
-                ),
+                period: format!("{} ~ {}", start.format("%Y-%m-%d"), end.format("%Y-%m-%d")),
                 start: start.format("%Y-%m-%d").to_string(),
                 end: end.format("%Y-%m-%d").to_string(),
                 bytes_in,
@@ -551,8 +541,8 @@ fn get_quarterly_range(anchor: i32, today: NaiveDate) -> (NaiveDate, NaiveDate) 
             break;
         }
     }
-    let cycle_start = cycle_start
-        .unwrap_or_else(|| NaiveDate::from_ymd_opt(y - 1, 10, anchor as u32).unwrap());
+    let cycle_start =
+        cycle_start.unwrap_or_else(|| NaiveDate::from_ymd_opt(y - 1, 10, anchor as u32).unwrap());
 
     let end = add_months(cycle_start, 3) - Duration::days(1);
     (cycle_start, end)
@@ -841,7 +831,10 @@ mod tests {
         let (db, _tmp) = crate::test_utils::setup_test_db().await;
         // No servers at all → overview returns empty vec
         let result = TrafficService::overview(&db).await.unwrap();
-        assert!(result.is_empty(), "overview with no servers should return empty vec");
+        assert!(
+            result.is_empty(),
+            "overview with no servers should return empty vec"
+        );
     }
 
     #[tokio::test]
@@ -861,7 +854,11 @@ mod tests {
         let history = TrafficService::cycle_history(&db, "srv-no-cycle", "monthly", None, 3)
             .await
             .unwrap();
-        assert_eq!(history.len(), 3, "cycle_history should return requested count");
+        assert_eq!(
+            history.len(),
+            3,
+            "cycle_history should return requested count"
+        );
         for cycle in &history {
             assert_eq!(cycle.bytes_in, 0, "empty server should have 0 bytes_in");
             assert_eq!(cycle.bytes_out, 0, "empty server should have 0 bytes_out");

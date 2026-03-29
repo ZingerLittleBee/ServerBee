@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use crate::entity::{ping_record, ping_task};
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::service::ping::{CreatePingTask, PingService, UpdatePingTask};
 use crate::state::AppState;
 
@@ -153,7 +153,6 @@ async fn get_records(
     Query(q): Query<RecordsQuery>,
 ) -> Result<Json<ApiResponse<Vec<ping_record::Model>>>, AppError> {
     let records =
-        PingService::get_records(&state.db, &task_id, q.from, q.to, q.server_id.as_deref())
-            .await?;
+        PingService::get_records(&state.db, &task_id, q.from, q.to, q.server_id.as_deref()).await?;
     ok(records)
 }

@@ -10,10 +10,7 @@ use super::CheckResult;
 /// Config options:
 /// - `timeout`: connection timeout in seconds (default 10)
 pub async fn check(target: &str, config: &Value) -> CheckResult {
-    let timeout_secs = config
-        .get("timeout")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(10);
+    let timeout_secs = config.get("timeout").and_then(|v| v.as_u64()).unwrap_or(10);
     let timeout = Duration::from_secs(timeout_secs);
 
     let start = Instant::now();

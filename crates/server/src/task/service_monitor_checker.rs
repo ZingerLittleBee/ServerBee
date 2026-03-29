@@ -114,10 +114,7 @@ pub async fn run(state: Arc<AppState>) {
 
 /// Execute a single monitor check: run the checker, insert the record, update state,
 /// and send notifications if needed.
-async fn execute_check(
-    state: &AppState,
-    monitor: &crate::entity::service_monitor::Model,
-) {
+async fn execute_check(state: &AppState, monitor: &crate::entity::service_monitor::Model) {
     let config: serde_json::Value = serde_json::from_str(&monitor.config_json).unwrap_or_default();
 
     let result = checker::run_check(&monitor.monitor_type, &monitor.target, &config).await;
@@ -156,10 +153,7 @@ async fn execute_check(
     )
     .await
     {
-        tracing::error!(
-            "Failed to update check state for {}: {e}",
-            monitor.id
-        );
+        tracing::error!("Failed to update check state for {}: {e}", monitor.id);
         return;
     }
 
@@ -168,8 +162,7 @@ async fn execute_check(
 
     // Skip notifications if any associated server is in maintenance
     let in_maintenance = if let Some(ref server_ids_json) = monitor.server_ids_json {
-        let server_ids: Vec<String> =
-            serde_json::from_str(server_ids_json).unwrap_or_default();
+        let server_ids: Vec<String> = serde_json::from_str(server_ids_json).unwrap_or_default();
         let mut any_in_maintenance = false;
         for sid in &server_ids {
             if MaintenanceService::is_in_maintenance(&state.db, sid)

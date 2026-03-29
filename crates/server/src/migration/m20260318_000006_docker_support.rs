@@ -20,7 +20,11 @@ impl MigrationTrait for Migration {
                             .primary_key(),
                     )
                     .col(ColumnDef::new(DockerEvent::ServerId).string().not_null())
-                    .col(ColumnDef::new(DockerEvent::Timestamp).big_integer().not_null())
+                    .col(
+                        ColumnDef::new(DockerEvent::Timestamp)
+                            .big_integer()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(DockerEvent::EventType).string().not_null())
                     .col(ColumnDef::new(DockerEvent::Action).string().not_null())
                     .col(ColumnDef::new(DockerEvent::ActorId).string().not_null())

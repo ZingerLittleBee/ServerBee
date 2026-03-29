@@ -59,20 +59,19 @@ pub async fn run(state: Arc<AppState>) {
                 continue;
             }
 
-            let (delta_in, delta_out) = if let Some(&(prev_in, prev_out)) =
-                transfer_cache.get(server_id)
-            {
-                compute_delta(prev_in, prev_out, curr_in, curr_out)
-            } else {
-                // First observation: no previous state, skip delta (just record state)
-                transfer_cache.insert(server_id.clone(), (curr_in, curr_out));
-                if let Err(e) =
-                    TrafficService::upsert_state(&state.db, server_id, curr_in, curr_out).await
-                {
-                    tracing::error!("Failed to upsert traffic state for {server_id}: {e}");
-                }
-                continue;
-            };
+            let (delta_in, delta_out) =
+                if let Some(&(prev_in, prev_out)) = transfer_cache.get(server_id) {
+                    compute_delta(prev_in, prev_out, curr_in, curr_out)
+                } else {
+                    // First observation: no previous state, skip delta (just record state)
+                    transfer_cache.insert(server_id.clone(), (curr_in, curr_out));
+                    if let Err(e) =
+                        TrafficService::upsert_state(&state.db, server_id, curr_in, curr_out).await
+                    {
+                        tracing::error!("Failed to upsert traffic state for {server_id}: {e}");
+                    }
+                    continue;
+                };
 
             // Update cache
             transfer_cache.insert(server_id.clone(), (curr_in, curr_out));

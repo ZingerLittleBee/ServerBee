@@ -39,7 +39,14 @@ pub struct AgentManager {
     /// Maps session_id -> terminal output channel (for routing agent output to browser WS)
     terminal_sessions: DashMap<String, TerminalOutputTx>,
     /// Maps msg_id -> (oneshot sender, creation time, TTL) for HTTP→WS relay
-    pending_requests: DashMap<String, (oneshot::Sender<AgentMessage>, std::time::Instant, std::time::Duration)>,
+    pending_requests: DashMap<
+        String,
+        (
+            oneshot::Sender<AgentMessage>,
+            std::time::Instant,
+            std::time::Duration,
+        ),
+    >,
     // Docker caches
     docker_containers: DashMap<String, Vec<DockerContainer>>,
     docker_stats: DashMap<String, Vec<DockerContainerStats>>,
@@ -290,7 +297,9 @@ impl AgentManager {
     }
 
     pub fn get_agent_platform(&self, server_id: &str) -> Option<(String, String)> {
-        self.connections.get(server_id).map(|c| (c.os.clone(), c.arch.clone()))
+        self.connections
+            .get(server_id)
+            .map(|c| (c.os.clone(), c.arch.clone()))
     }
 
     pub fn broadcast_browser(&self, msg: BrowserMessage) {
@@ -305,7 +314,8 @@ impl AgentManager {
         ttl: std::time::Duration,
     ) -> oneshot::Receiver<AgentMessage> {
         let (tx, rx) = oneshot::channel();
-        self.pending_requests.insert(msg_id, (tx, std::time::Instant::now(), ttl));
+        self.pending_requests
+            .insert(msg_id, (tx, std::time::Instant::now(), ttl));
         rx
     }
 
@@ -461,9 +471,8 @@ impl AgentManager {
     /// Remove pending requests that have exceeded their per-entry TTL.
     pub fn cleanup_expired_requests(&self) {
         let now = std::time::Instant::now();
-        self.pending_requests.retain(|_, (_, created_at, ttl)| {
-            now.duration_since(*created_at) < *ttl
-        });
+        self.pending_requests
+            .retain(|_, (_, created_at, ttl)| now.duration_since(*created_at) < *ttl);
     }
 
     // --- Traceroute result cache ---
@@ -493,7 +502,10 @@ impl AgentManager {
     }
 
     /// Get a traceroute result by request_id. Returns (server_id, result) clone.
-    pub fn get_traceroute_result(&self, request_id: &str) -> Option<(String, TracerouteResultData)> {
+    pub fn get_traceroute_result(
+        &self,
+        request_id: &str,
+    ) -> Option<(String, TracerouteResultData)> {
         self.traceroute_results.get(request_id).map(|entry| {
             (
                 entry.server_id.clone(),
@@ -657,7 +669,8 @@ mod tests {
     #[test]
     fn test_cleanup_expired_requests() {
         let (mgr, _rx) = make_manager();
-        let _rx1 = mgr.register_pending_request_with_ttl("old".into(), std::time::Duration::from_millis(1));
+        let _rx1 = mgr
+            .register_pending_request_with_ttl("old".into(), std::time::Duration::from_millis(1));
         std::thread::sleep(std::time::Duration::from_millis(10));
         mgr.cleanup_expired_requests();
         let dispatched = mgr.dispatch_pending_response(
@@ -701,8 +714,12 @@ mod tests {
     #[test]
     fn test_cleanup_expired_requests_per_entry_ttl() {
         let (mgr, _rx) = make_manager();
-        let _rx1 = mgr.register_pending_request_with_ttl("short".into(), std::time::Duration::from_millis(10));
-        let _rx2 = mgr.register_pending_request_with_ttl("long".into(), std::time::Duration::from_secs(300));
+        let _rx1 = mgr.register_pending_request_with_ttl(
+            "short".into(),
+            std::time::Duration::from_millis(10),
+        );
+        let _rx2 = mgr
+            .register_pending_request_with_ttl("long".into(), std::time::Duration::from_secs(300));
         std::thread::sleep(std::time::Duration::from_millis(50));
         mgr.cleanup_expired_requests();
         assert!(!mgr.has_pending_request("short"));

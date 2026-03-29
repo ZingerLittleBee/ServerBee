@@ -1,7 +1,7 @@
-use sea_orm::{Database, DatabaseConnection};
-use tempfile::TempDir;
 use crate::migration::Migrator;
+use sea_orm::{Database, DatabaseConnection};
 use sea_orm_migration::MigratorTrait;
+use tempfile::TempDir;
 
 pub async fn setup_test_db() -> (DatabaseConnection, TempDir) {
     let tmp = TempDir::new().unwrap();
