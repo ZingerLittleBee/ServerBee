@@ -79,6 +79,20 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
   --discovery-key YOUR_DISCOVERY_KEY
 ```
 
+**管理命令：**
+
+安装完成后，使用管理脚本进行日常运维：
+
+```bash
+sudo bash deploy/serverbee.sh status              # 查看所有组件状态
+sudo bash deploy/serverbee.sh upgrade -y           # 升级到最新版
+sudo bash deploy/serverbee.sh restart              # 重启所有服务
+sudo bash deploy/serverbee.sh config               # 查看当前配置
+sudo bash deploy/serverbee.sh config set <key> <value>  # 修改配置
+sudo bash deploy/serverbee.sh uninstall agent      # 卸载 Agent
+sudo bash deploy/serverbee.sh uninstall server --purge   # 卸载服务端并清除数据
+```
+
 ## 方式三：源码编译
 
 适合开发者或有定制需求的用户。
