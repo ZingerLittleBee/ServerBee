@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(AuthManager.self) private var authManager
+    @Environment(PushNotificationManager.self) private var pushManager
     @State private var apiClient: APIClient?
     @State private var serversViewModel = ServersViewModel()
     @State private var wsClient = WebSocketClient()
@@ -32,6 +33,7 @@ struct ContentView: View {
         .task {
             let client = APIClient(authManager: authManager)
             apiClient = client
+            pushManager.configure(apiClient: client)
 
             // Configure WS token refresher
             wsClient.tokenRefresher = { [weak authManager] in
@@ -58,4 +60,5 @@ struct ContentView: View {
     ContentView()
         .environment(AuthManager())
         .environment(AlertsViewModel())
+        .environment(PushNotificationManager())
 }
