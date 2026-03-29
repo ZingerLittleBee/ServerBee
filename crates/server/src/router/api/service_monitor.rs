@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::entity::{service_monitor, service_monitor_record};
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::service::checker;
 use crate::service::service_monitor::{
     CreateServiceMonitor, ServiceMonitorService, UpdateServiceMonitor,
@@ -81,8 +81,7 @@ async fn list_monitors(
     State(state): State<Arc<AppState>>,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<ApiResponse<Vec<service_monitor::Model>>>, AppError> {
-    let monitors =
-        ServiceMonitorService::list(&state.db, q.monitor_type.as_deref()).await?;
+    let monitors = ServiceMonitorService::list(&state.db, q.monitor_type.as_deref()).await?;
     ok(monitors)
 }
 
@@ -214,8 +213,7 @@ async fn trigger_check(
 ) -> Result<Json<ApiResponse<service_monitor_record::Model>>, AppError> {
     let monitor = ServiceMonitorService::get(&state.db, &id).await?;
 
-    let config: serde_json::Value =
-        serde_json::from_str(&monitor.config_json).unwrap_or_default();
+    let config: serde_json::Value = serde_json::from_str(&monitor.config_json).unwrap_or_default();
 
     let result = checker::run_check(&monitor.monitor_type, &monitor.target, &config).await;
 

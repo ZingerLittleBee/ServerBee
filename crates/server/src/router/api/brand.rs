@@ -8,7 +8,7 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::service::config::ConfigService;
 use crate::state::AppState;
 
@@ -197,9 +197,7 @@ pub async fn upload_favicon(
         (status = 404, description = "No logo uploaded"),
     )
 )]
-pub async fn serve_logo(
-    State(state): State<Arc<AppState>>,
-) -> Result<impl IntoResponse, AppError> {
+pub async fn serve_logo(State(state): State<Arc<AppState>>) -> Result<impl IntoResponse, AppError> {
     serve_brand_file(&state.config.server.data_dir, "logo").await
 }
 
@@ -292,10 +290,7 @@ async fn serve_brand_file(
     let dir = brand_dir(data_dir);
 
     // Try each supported extension
-    for (ext, content_type) in &[
-        ("png", "image/png"),
-        ("ico", "image/x-icon"),
-    ] {
+    for (ext, content_type) in &[("png", "image/png"), ("ico", "image/x-icon")] {
         let path = dir.join(format!("{name}.{ext}"));
         if path.exists() {
             let bytes = tokio::fs::read(&path)

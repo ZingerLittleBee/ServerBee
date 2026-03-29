@@ -72,7 +72,11 @@ mod tests {
         let entry = &entries[0];
         assert_eq!(entry.user_id, "user-1", "user_id should match");
         assert_eq!(entry.action, "login", "action should match");
-        assert_eq!(entry.detail, Some("via password".to_string()), "detail should match");
+        assert_eq!(
+            entry.detail,
+            Some("via password".to_string()),
+            "detail should match"
+        );
         assert_eq!(entry.ip, "127.0.0.1", "ip should match");
     }
 
@@ -111,7 +115,13 @@ mod tests {
 
         assert_eq!(total, 2, "Should have two entries");
         // Newest first: action-second should come before action-first
-        assert_eq!(entries[0].action, "action-second", "newest entry should be first");
-        assert_eq!(entries[1].action, "action-first", "older entry should be second");
+        assert_eq!(
+            entries[0].action, "action-second",
+            "newest entry should be first"
+        );
+        assert_eq!(
+            entries[1].action, "action-first",
+            "older entry should be second"
+        );
     }
 }

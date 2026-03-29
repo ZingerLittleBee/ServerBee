@@ -9,7 +9,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::entity::server_group;
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -25,8 +25,7 @@ pub struct UpdateGroupRequest {
 
 /// GET endpoints accessible to all authenticated users (admin + member).
 pub fn read_router() -> Router<Arc<AppState>> {
-    Router::new()
-        .route("/server-groups", get(list_groups))
+    Router::new().route("/server-groups", get(list_groups))
 }
 
 /// Write endpoints (POST/PUT/DELETE) restricted to admin users only.

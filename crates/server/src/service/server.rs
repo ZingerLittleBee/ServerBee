@@ -50,9 +50,7 @@ pub struct ServerService;
 
 impl ServerService {
     /// List all servers ordered by weight DESC, then created_at DESC.
-    pub async fn list_servers(
-        db: &DatabaseConnection,
-    ) -> Result<Vec<server::Model>, AppError> {
+    pub async fn list_servers(db: &DatabaseConnection) -> Result<Vec<server::Model>, AppError> {
         let servers = server::Entity::find()
             .order_by_desc(server::Column::Weight)
             .order_by_desc(server::Column::CreatedAt)
@@ -62,10 +60,7 @@ impl ServerService {
     }
 
     /// Get a server by ID. Returns 404 if not found.
-    pub async fn get_server(
-        db: &DatabaseConnection,
-        id: &str,
-    ) -> Result<server::Model, AppError> {
+    pub async fn get_server(db: &DatabaseConnection, id: &str) -> Result<server::Model, AppError> {
         server::Entity::find_by_id(id)
             .one(db)
             .await?
@@ -134,10 +129,7 @@ impl ServerService {
     }
 
     /// Delete a server by ID.
-    pub async fn delete_server(
-        db: &DatabaseConnection,
-        id: &str,
-    ) -> Result<(), AppError> {
+    pub async fn delete_server(db: &DatabaseConnection, id: &str) -> Result<(), AppError> {
         let result = server::Entity::delete_by_id(id).exec(db).await?;
         if result.rows_affected == 0 {
             return Err(AppError::NotFound("Server not found".to_string()));
@@ -146,10 +138,7 @@ impl ServerService {
     }
 
     /// Batch delete servers by IDs.
-    pub async fn batch_delete(
-        db: &DatabaseConnection,
-        ids: &[String],
-    ) -> Result<u64, AppError> {
+    pub async fn batch_delete(db: &DatabaseConnection, ids: &[String]) -> Result<u64, AppError> {
         if ids.is_empty() {
             return Ok(0);
         }
@@ -211,8 +200,8 @@ impl ServerService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::setup_test_db;
     use crate::service::auth::AuthService;
+    use crate::test_utils::setup_test_db;
     use chrono::Utc;
     use sea_orm::ActiveModelTrait;
     use sea_orm::Set;
@@ -244,9 +233,14 @@ mod tests {
         let (db, _tmp) = setup_test_db().await;
         insert_test_server(&db, "srv-list-1", "Test Server List").await;
 
-        let servers = ServerService::list_servers(&db).await.expect("list_servers should succeed");
+        let servers = ServerService::list_servers(&db)
+            .await
+            .expect("list_servers should succeed");
         assert!(!servers.is_empty(), "Should return at least one server");
-        assert!(servers.iter().any(|s| s.id == "srv-list-1"), "Inserted server should be in list");
+        assert!(
+            servers.iter().any(|s| s.id == "srv-list-1"),
+            "Inserted server should be in list"
+        );
     }
 
     #[tokio::test]
@@ -254,7 +248,9 @@ mod tests {
         let (db, _tmp) = setup_test_db().await;
         insert_test_server(&db, "srv-get-1", "Test Server Get").await;
 
-        let server = ServerService::get_server(&db, "srv-get-1").await.expect("get_server should succeed");
+        let server = ServerService::get_server(&db, "srv-get-1")
+            .await
+            .expect("get_server should succeed");
         assert_eq!(server.id, "srv-get-1");
         assert_eq!(server.name, "Test Server Get");
     }
@@ -264,7 +260,10 @@ mod tests {
         let (db, _tmp) = setup_test_db().await;
 
         let result = ServerService::get_server(&db, "nonexistent-id").await;
-        assert!(result.is_err(), "get_server for nonexistent ID should return error");
+        assert!(
+            result.is_err(),
+            "get_server for nonexistent ID should return error"
+        );
     }
 
     #[tokio::test]
@@ -272,10 +271,15 @@ mod tests {
         let (db, _tmp) = setup_test_db().await;
         insert_test_server(&db, "srv-del-1", "Test Server Delete").await;
 
-        ServerService::delete_server(&db, "srv-del-1").await.expect("delete_server should succeed");
+        ServerService::delete_server(&db, "srv-del-1")
+            .await
+            .expect("delete_server should succeed");
 
         let result = ServerService::get_server(&db, "srv-del-1").await;
-        assert!(result.is_err(), "get_server after deletion should return error");
+        assert!(
+            result.is_err(),
+            "get_server after deletion should return error"
+        );
     }
 
     #[tokio::test]
@@ -285,7 +289,9 @@ mod tests {
         insert_test_server(&db, "srv-batch-2", "Test Server Batch 2").await;
 
         let ids = vec!["srv-batch-1".to_string(), "srv-batch-2".to_string()];
-        let rows = ServerService::batch_delete(&db, &ids).await.expect("batch_delete should succeed");
+        let rows = ServerService::batch_delete(&db, &ids)
+            .await
+            .expect("batch_delete should succeed");
         assert_eq!(rows, 2, "Should have deleted 2 rows");
 
         let result1 = ServerService::get_server(&db, "srv-batch-1").await;

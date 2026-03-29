@@ -350,8 +350,7 @@ impl NetworkProbeService {
 
     /// Get global network probe setting. Returns defaults if not configured.
     pub async fn get_setting(db: &DatabaseConnection) -> Result<NetworkProbeSetting, AppError> {
-        let setting: Option<NetworkProbeSetting> =
-            ConfigService::get_typed(db, CONFIG_KEY).await?;
+        let setting: Option<NetworkProbeSetting> = ConfigService::get_typed(db, CONFIG_KEY).await?;
         Ok(setting.unwrap_or_default())
     }
 
@@ -474,10 +473,7 @@ impl NetworkProbeService {
     }
 
     /// Apply default targets from the global setting to a server.
-    pub async fn apply_defaults(
-        db: &DatabaseConnection,
-        server_id: &str,
-    ) -> Result<(), AppError> {
+    pub async fn apply_defaults(db: &DatabaseConnection, server_id: &str) -> Result<(), AppError> {
         let setting = Self::get_setting(db).await?;
         Self::set_server_targets(db, server_id, setting.default_target_ids).await
     }
@@ -534,8 +530,7 @@ impl NetworkProbeService {
                 .filter(network_probe_record_hourly::Column::Hour.lte(to));
 
             if let Some(tid) = target_id {
-                query =
-                    query.filter(network_probe_record_hourly::Column::TargetId.eq(tid));
+                query = query.filter(network_probe_record_hourly::Column::TargetId.eq(tid));
             }
 
             let records = query
@@ -723,11 +718,10 @@ impl NetworkProbeService {
                 .unwrap_or_else(|| server_id.clone());
             let online = agent_manager.is_online(server_id);
 
-            let valid_target_ids: std::collections::HashSet<&String> =
-                config_targets_by_server
-                    .get(server_id)
-                    .map(|ids| ids.iter().collect())
-                    .unwrap_or_default();
+            let valid_target_ids: std::collections::HashSet<&String> = config_targets_by_server
+                .get(server_id)
+                .map(|ids| ids.iter().collect())
+                .unwrap_or_default();
 
             let mut target_summaries = Vec::new();
             let mut last_probe_at: Option<DateTime<Utc>> = None;
@@ -897,11 +891,8 @@ impl NetworkProbeService {
                        FROM network_probe_record \
                        WHERE server_id = ? \
                    ) WHERE rn = 1";
-        let stmt = Statement::from_sql_and_values(
-            DatabaseBackend::Sqlite,
-            sql,
-            vec![server_id.into()],
-        );
+        let stmt =
+            Statement::from_sql_and_values(DatabaseBackend::Sqlite, sql, vec![server_id.into()]);
         Ok(LatestRecordRow::find_by_statement(stmt).all(db).await?)
     }
 
@@ -967,10 +958,8 @@ impl NetworkProbeService {
 
         // Group by (server_id, target_id, hour_str) so records spanning two clock hours
         // get aggregated into the correct hour bucket rather than all sharing the same hour.
-        let mut grouped: HashMap<
-            (String, String, String),
-            Vec<&network_probe_record::Model>,
-        > = HashMap::new();
+        let mut grouped: HashMap<(String, String, String), Vec<&network_probe_record::Model>> =
+            HashMap::new();
 
         for r in &records {
             let hour = r
@@ -1052,8 +1041,7 @@ impl NetworkProbeService {
         retention: &RetentionConfig,
     ) -> Result<(u64, u64), AppError> {
         let raw_cutoff = Utc::now() - Duration::days(retention.network_probe_days as i64);
-        let hourly_cutoff =
-            Utc::now() - Duration::days(retention.network_probe_hourly_days as i64);
+        let hourly_cutoff = Utc::now() - Duration::days(retention.network_probe_hourly_days as i64);
 
         let raw_deleted = network_probe_record::Entity::delete_many()
             .filter(network_probe_record::Column::Timestamp.lt(raw_cutoff))
@@ -1116,7 +1104,9 @@ mod tests {
 
         let before_count = NetworkProbeService::list_targets(&db).await.unwrap().len();
 
-        let created = NetworkProbeService::create_target(&db, input).await.unwrap();
+        let created = NetworkProbeService::create_target(&db, input)
+            .await
+            .unwrap();
         assert_eq!(created.name, "Test Target");
 
         let list = NetworkProbeService::list_targets(&db).await.unwrap();
@@ -1151,7 +1141,9 @@ mod tests {
             target: "1.1.1.1".to_string(),
             probe_type: "icmp".to_string(),
         };
-        let created = NetworkProbeService::create_target(&db, input).await.unwrap();
+        let created = NetworkProbeService::create_target(&db, input)
+            .await
+            .unwrap();
 
         let update = UpdateNetworkProbeTarget {
             name: Some("Updated".to_string()),
@@ -1178,7 +1170,9 @@ mod tests {
             target: "2.2.2.2".to_string(),
             probe_type: "tcp".to_string(),
         };
-        let created = NetworkProbeService::create_target(&db, input).await.unwrap();
+        let created = NetworkProbeService::create_target(&db, input)
+            .await
+            .unwrap();
 
         let before_count = NetworkProbeService::list_targets(&db).await.unwrap().len();
 
@@ -1232,7 +1226,9 @@ mod tests {
             target: "1.2.3.4".to_string(),
             probe_type: "tcp".to_string(),
         };
-        NetworkProbeService::create_target(&db, input).await.unwrap();
+        NetworkProbeService::create_target(&db, input)
+            .await
+            .unwrap();
 
         let list = NetworkProbeService::list_targets(&db).await.unwrap();
         assert_eq!(list.len(), 97); // 96 presets + 1 custom

@@ -73,8 +73,7 @@ pub async fn probe_tcp(host: &str, timeout: Duration) -> ProbeResult {
         format!("{host}:80")
     };
 
-    let result =
-        tokio::time::timeout(timeout, tokio::net::TcpStream::connect(&addr)).await;
+    let result = tokio::time::timeout(timeout, tokio::net::TcpStream::connect(&addr)).await;
 
     let elapsed = start.elapsed().as_secs_f64() * 1000.0;
 

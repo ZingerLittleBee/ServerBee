@@ -62,22 +62,14 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .primary_key(),
                     )
-                    .col(
-                        ColumnDef::new(Alias::new("dashboard_id"))
-                            .text()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(Alias::new("dashboard_id")).text().not_null())
                     .foreign_key(
                         ForeignKey::create()
                             .from(Alias::new("dashboard_widget"), Alias::new("dashboard_id"))
                             .to(Alias::new("dashboard"), Alias::new("id"))
                             .on_delete(ForeignKeyAction::Cascade),
                     )
-                    .col(
-                        ColumnDef::new(Alias::new("widget_type"))
-                            .text()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(Alias::new("widget_type")).text().not_null())
                     .col(ColumnDef::new(Alias::new("title")).text().null())
                     .col(
                         ColumnDef::new(Alias::new("config_json"))

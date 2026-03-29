@@ -225,7 +225,10 @@ mod tests {
         assert_eq!(parsed.ipv4[1], "10.0.0.1");
         assert_eq!(parsed.ipv6.len(), 1);
         assert_eq!(parsed.ipv6[0], "fe80::1");
-        assert_eq!(parsed, iface, "NetworkInterface should implement PartialEq correctly");
+        assert_eq!(
+            parsed, iface,
+            "NetworkInterface should implement PartialEq correctly"
+        );
     }
 
     #[test]

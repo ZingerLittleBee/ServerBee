@@ -31,14 +31,13 @@ pub fn extract_client_ip(
     }
 
     // TCP source is a trusted proxy — parse XFF right-to-left for the first untrusted IP.
-    if let Some(xff) = headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-    {
+    if let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
         // Walk the comma-separated list from right to left.
         for part in xff.split(',').rev() {
             let trimmed = part.trim();
-            if let Ok(ip) = trimmed.parse::<IpAddr>() && !is_trusted(ip, trusted_proxies) {
+            if let Ok(ip) = trimmed.parse::<IpAddr>()
+                && !is_trusted(ip, trusted_proxies)
+            {
                 return ip;
             }
         }

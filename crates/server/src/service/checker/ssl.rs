@@ -24,10 +24,7 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
     // Parse target — may be "domain" or "domain:port"
     let (host, port) = parse_host_port(target, config);
 
-    let timeout_secs = config
-        .get("timeout")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(10);
+    let timeout_secs = config.get("timeout").and_then(|v| v.as_u64()).unwrap_or(10);
     let warning_days = config
         .get("warning_days")
         .and_then(|v| v.as_i64())
@@ -196,13 +193,12 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
 
 /// Parse the host and port from target string. Supports "host" and "host:port".
 fn parse_host_port(target: &str, config: &Value) -> (String, u16) {
-    let default_port = config
-        .get("port")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(443) as u16;
+    let default_port = config.get("port").and_then(|v| v.as_u64()).unwrap_or(443) as u16;
 
     // Handle IPv6 addresses in brackets: [::1]:443
-    if target.starts_with('[') && let Some(bracket_end) = target.find(']') {
+    if target.starts_with('[')
+        && let Some(bracket_end) = target.find(']')
+    {
         let host = target[1..bracket_end].to_string();
         let port = target
             .get(bracket_end + 2..)

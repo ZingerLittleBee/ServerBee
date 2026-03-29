@@ -148,7 +148,10 @@ mod tests {
             .header("x-api-key", "serverbee_abc123def456")
             .body(axum::body::Body::empty())
             .unwrap();
-        assert_eq!(extract_api_key(&req), Some("serverbee_abc123def456".to_string()));
+        assert_eq!(
+            extract_api_key(&req),
+            Some("serverbee_abc123def456".to_string())
+        );
     }
 
     #[test]
