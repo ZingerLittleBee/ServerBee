@@ -229,15 +229,16 @@ Callback URL format: `https://your-domain/api/auth/oauth/{provider}/callback`
 
 ```bash
 # Install server
-sudo bash deploy/install.sh server
+sudo bash deploy/serverbee.sh install server
 
-# Install agent
-sudo bash deploy/install.sh agent
+# Install agent (replace with your server URL and discovery key)
+sudo bash deploy/serverbee.sh install agent --server-url http://YOUR_SERVER:9527 --discovery-key YOUR_KEY
+
+# Interactive mode — guides you through all options
+sudo bash deploy/serverbee.sh
 ```
 
-Service files are provided in `deploy/`:
-- `serverbee-server.service`
-- `serverbee-agent.service`
+See `deploy/serverbee.sh` for full management commands (upgrade, uninstall, config, status, etc.).
 
 ### Reverse Proxy (Nginx)
 
