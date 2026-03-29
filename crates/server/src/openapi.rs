@@ -108,6 +108,7 @@ impl Modify for SecurityAddon {
         crate::router::api::alert::delete_rule,
         crate::router::api::alert::list_states,
         crate::router::api::alert::list_alert_events,
+        crate::router::api::alert::get_alert_event_detail,
         // tasks
         crate::router::api::task::list_tasks,
         crate::router::api::task::create_task,
@@ -245,6 +246,7 @@ impl Modify for SecurityAddon {
             crate::service::alert::UpdateAlertRule,
             crate::service::alert::AlertStateResponse,
             crate::service::alert::AlertEventResponse,
+            crate::router::api::alert::AlertEventDetailResponse,
             // tasks
             crate::router::api::task::CreateTaskRequest,
             crate::router::api::task::UpdateTaskRequest,
