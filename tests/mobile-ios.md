@@ -20,27 +20,27 @@ curl -s -c /tmp/sb-cookies.txt -X POST http://localhost:9527/api/auth/login \
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| MA-1 | 正常登录 | `curl -X POST http://localhost:9527/api/mobile/auth/login -H 'Content-Type: application/json' -d '{"username":"admin","password":"admin123","installation_id":"test-device-001","device_name":"Test Device"}'` | 200, 返回 `access_token`, `refresh_token`, `user` | — |
-| MA-2 | 错误密码 | 同上，密码改为 `wrong` | 401 Unauthorized | — |
+| MA-1 | 正常登录 | `curl -X POST http://localhost:9527/api/mobile/auth/login -H 'Content-Type: application/json' -d '{"username":"admin","password":"admin123","installation_id":"test-device-001","device_name":"Test Device"}'` | 200, 返回 `access_token`, `refresh_token`, `user` | ✅ |
+| MA-2 | 错误密码 | 同上，密码改为 `wrong` | 401 Unauthorized | ✅ |
 | MA-3 | 2FA 必填 | 启用 2FA 后登录不带 `totp_code` | 422 `2fa_required` | — |
 | MA-4 | 限流 | 连续 20 次错误登录 | 429 Too Many Requests | — |
-| MA-5 | device_name 记录 | 登录后查设备列表 | 设备名显示 "Test Device" | — |
+| MA-5 | device_name 记录 | 登录后查设备列表 | 设备名显示 "Test Device" | ✅ |
 
 ### 1.2 Token 刷新
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| MA-6 | 正常刷新 | `curl -X POST .../api/mobile/auth/refresh -d '{"refresh_token":"<token>","installation_id":"test-device-001"}'` | 200, 返回新的 token 对 | — |
-| MA-7 | 旧 token 失效 | 刷新后用旧 access_token 调 `/api/servers` | 401 | — |
-| MA-8 | 新 token 有效 | 用新 access_token 调 `/api/servers` | 200 | — |
-| MA-9 | 错误 installation_id | refresh 时 installation_id 不匹配 | 401 | — |
+| MA-6 | 正常刷新 | `curl -X POST .../api/mobile/auth/refresh -d '{"refresh_token":"<token>","installation_id":"test-device-001"}'` | 200, 返回新的 token 对 | ✅ |
+| MA-7 | 旧 token 失效 | 刷新后用旧 access_token 调 `/api/servers` | 401 | ✅ |
+| MA-8 | 新 token 有效 | 用新 access_token 调 `/api/servers` | 200 | ✅ |
+| MA-9 | 错误 installation_id | refresh 时 installation_id 不匹配 | 401 | ✅ |
 | MA-10 | 过期 refresh_token | 等 token 过期（或手动设短 TTL）后 refresh | 401 | — |
 
 ### 1.3 Bearer 认证
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| MA-11 | Bearer 访问 API | `curl -H 'Authorization: Bearer <access_token>' http://localhost:9527/api/servers` | 200, 返回服务器列表 | — |
+| MA-11 | Bearer 访问 API | `curl -H 'Authorization: Bearer <access_token>' http://localhost:9527/api/servers` | 200, 返回服务器列表 | ✅ |
 | MA-12 | Bearer 访问 WS | 用 Bearer token 连接 `/api/ws/servers` | WS 连接成功，收到 FullSync | — |
 | MA-13 | 无滑动续期 | Bearer token 在 15 分钟后过期（即使一直在用） | 15 分钟后 401 | — |
 
@@ -48,17 +48,17 @@ curl -s -c /tmp/sb-cookies.txt -X POST http://localhost:9527/api/auth/login \
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| MA-14 | 正常登出 | `curl -X POST .../api/mobile/auth/logout -H 'Authorization: Bearer <token>'` | 200 | — |
-| MA-15 | 登出后 token 失效 | 登出后用同一 access_token 调 API | 401 | — |
+| MA-14 | 正常登出 | `curl -X POST .../api/mobile/auth/logout -H 'Authorization: Bearer <token>'` | 200 | ✅ |
+| MA-15 | 登出后 token 失效 | 登出后用同一 access_token 调 API | 401 | ✅ |
 | MA-16 | 登出清理 device_token | 注册 push token → 登出 → 查 device_tokens 表 | 对应记录已删除 | — |
 
 ### 1.5 设备管理
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| MA-17 | 设备列表 | `curl -H 'Authorization: Bearer <token>' .../api/mobile/auth/devices` | 列出当前设备 | — |
-| MA-18 | Web 端查看设备 | 用 session cookie 调 `/api/mobile/auth/devices` | 同样可以列出设备 | — |
-| MA-19 | 远程注销 | `curl -X DELETE .../api/mobile/auth/devices/<id> -b /tmp/sb-cookies.txt` | 该设备的 session 和 device_token 全部删除 | — |
+| MA-17 | 设备列表 | `curl -H 'Authorization: Bearer <token>' .../api/mobile/auth/devices` | 列出当前设备 | ✅ |
+| MA-18 | Web 端查看设备 | 用 session cookie 调 `/api/mobile/auth/devices` | 同样可以列出设备 | ✅ |
+| MA-19 | 远程注销 | `curl -X DELETE .../api/mobile/auth/devices/<id> -b /tmp/sb-cookies.txt` | 该设备的 session 和 device_token 全部删除 | ✅ |
 | MA-20 | 非本人设备 | 尝试注销其他用户的设备 | 404 Not Found | — |
 
 ---
@@ -69,9 +69,9 @@ curl -s -c /tmp/sb-cookies.txt -X POST http://localhost:9527/api/auth/login \
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| QR-1 | 生成配对码 | `curl -X POST .../api/mobile/pair -b /tmp/sb-cookies.txt` | 返回 `{ code: "sb_pair_...", expires_in_secs: 300 }` | — |
-| QR-2 | 兑换配对码 | `curl -X POST .../api/mobile/auth/pair -d '{"code":"<code>","installation_id":"qr-device","device_name":"QR Test"}'` | 200, 返回 token 对 | — |
-| QR-3 | 一次性使用 | 同一 code 再次兑换 | 400 Invalid pairing code | — |
+| QR-1 | 生成配对码 | `curl -X POST .../api/mobile/pair -b /tmp/sb-cookies.txt` | 返回 `{ code: "sb_pair_...", expires_in_secs: 300 }` | ✅ |
+| QR-2 | 兑换配对码 | `curl -X POST .../api/mobile/auth/pair -d '{"code":"<code>","installation_id":"qr-device","device_name":"QR Test"}'` | 200, 返回 token 对 | ✅ |
+| QR-3 | 一次性使用 | 同一 code 再次兑换 | 400 Invalid pairing code | ✅ |
 | QR-4 | 过期码 | 等 5 分钟后兑换 | 401 | — |
 | QR-5 | 单用户单码 | 连续生成 2 个码 → 用第 1 个兑换 | 失败（旧码已被清除） | — |
 
@@ -105,9 +105,9 @@ curl -s -c /tmp/sb-cookies.txt -X POST http://localhost:9527/api/auth/login \
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| PN-1 | 注册 token | `curl -X POST .../api/mobile/push/register -H 'Authorization: Bearer <token>' -d '{"device_token":"abc123hex"}'` | 200 | — |
+| PN-1 | 注册 token | `curl -X POST .../api/mobile/push/register -H 'Authorization: Bearer <token>' -d '{"device_token":"abc123hex"}'` | 200 | ✅ |
 | PN-2 | 重复注册 | 同一设备再次注册（不同 token） | 200, token 被更新（upsert by installation_id） | — |
-| PN-3 | 注销 token | `curl -X POST .../api/mobile/push/unregister -H 'Authorization: Bearer <token>'` | 200, device_token 行被删除 | — |
+| PN-3 | 注销 token | `curl -X POST .../api/mobile/push/unregister -H 'Authorization: Bearer <token>'` | 200, device_token 行被删除 | ✅ |
 
 ### 3.2 Web 端 APNs 渠道配置
 
@@ -201,6 +201,6 @@ curl -s -c /tmp/sb-cookies.txt -X POST http://localhost:9527/api/auth/login \
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| OA-1 | 新端点注册 | 访问 `/swagger-ui/` | 显示 mobile-auth tag 下所有端点 | — |
-| OA-2 | Bearer 认证 | Swagger UI 的 Authorize 按钮 | 可选择 Bearer Token 认证方式 | — |
-| OA-3 | 告警详情端点 | 搜索 alert-events | 包含 `GET /api/alert-events/{alert_key}` | — |
+| OA-1 | 新端点注册 | 访问 `/swagger-ui/` | 显示 mobile-auth tag 下所有端点 | ✅ |
+| OA-2 | Bearer 认证 | Swagger UI 的 Authorize 按钮 | 可选择 Bearer Token 认证方式 | ✅ |
+| OA-3 | 告警详情端点 | 搜索 alert-events | 包含 `GET /api/alert-events/{alert_key}` | ✅ |
