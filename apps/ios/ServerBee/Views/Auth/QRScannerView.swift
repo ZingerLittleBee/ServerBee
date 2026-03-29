@@ -1,6 +1,12 @@
 import AVFoundation
 import SwiftUI
 
+/// Wrapper to pass non-Sendable values across concurrency boundaries.
+private struct UncheckedSendable<T>: @unchecked Sendable {
+    let value: T
+    init(_ value: T) { self.value = value }
+}
+
 struct QRScannerView: UIViewControllerRepresentable {
     let onScanned: (String, String) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -25,7 +31,7 @@ final class QRScannerViewController: UIViewController, @preconcurrency AVCapture
     var onScanned: ((String, String) -> Void)?
     var onDismiss: (() -> Void)?
 
-    private let captureSession = AVCaptureSession()
+    private nonisolated(unsafe) let captureSession = AVCaptureSession()
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private var hasScanned = false
 
@@ -43,9 +49,11 @@ final class QRScannerViewController: UIViewController, @preconcurrency AVCapture
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        if !captureSession.isRunning {
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                self?.captureSession.startRunning()
+        let session = captureSession
+        if !session.isRunning {
+            let sendable = UncheckedSendable(session)
+            DispatchQueue.global(qos: .userInitiated).async {
+                sendable.value.startRunning()
             }
         }
     }
@@ -92,8 +100,9 @@ final class QRScannerViewController: UIViewController, @preconcurrency AVCapture
         view.layer.addSublayer(preview)
         previewLayer = preview
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.captureSession.startRunning()
+        let sendable = UncheckedSendable(captureSession)
+        DispatchQueue.global(qos: .userInitiated).async {
+            sendable.value.startRunning()
         }
     }
 
