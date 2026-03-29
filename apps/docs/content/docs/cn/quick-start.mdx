@@ -81,16 +81,16 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 
 **管理命令：**
 
-安装完成后，可继续复用引导脚本进行日常运维：
+安装完成后，使用 `serverbee` CLI 管理你的实例：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- status              # 查看所有组件状态
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- upgrade -y           # 升级到最新版
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- restart              # 重启所有服务
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- config               # 查看当前配置
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- config set <key> <value>  # 修改配置
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- uninstall agent      # 卸载 Agent
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- uninstall server --purge   # 卸载服务端并清除数据
+sudo serverbee status              # 查看所有组件状态
+sudo serverbee upgrade -y           # 升级到最新版
+sudo serverbee restart              # 重启所有服务
+sudo serverbee config               # 查看当前配置
+sudo serverbee config set <key> <value>  # 修改配置
+sudo serverbee uninstall agent      # 卸载 Agent
+sudo serverbee uninstall server --purge   # 卸载服务端并清除数据
 ```
 
 ## 方式三：源码编译
