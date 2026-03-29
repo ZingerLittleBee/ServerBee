@@ -99,6 +99,15 @@ async fn register(
         .map(|b| b.fingerprint.clone())
         .unwrap_or_default();
 
+    // Validate fingerprint format if provided
+    if !fingerprint.is_empty()
+        && (fingerprint.len() != 64 || !fingerprint.chars().all(|c| c.is_ascii_hexdigit()))
+    {
+        return Err(AppError::BadRequest(
+            "Invalid fingerprint format".to_string(),
+        ));
+    }
+
     // 3. Fingerprint dedup: try to reuse existing server
     if !fingerprint.is_empty() {
         if let Some(existing) = server::Entity::find()

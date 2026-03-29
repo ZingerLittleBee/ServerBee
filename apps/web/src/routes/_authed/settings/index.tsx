@@ -50,7 +50,7 @@ function SettingsPage() {
     }
     try {
       await navigator.clipboard.writeText(config.key)
-      toast.success('Copied to clipboard')
+      toast.success(t('copied'))
     } catch {
       // Clipboard access denied
     }

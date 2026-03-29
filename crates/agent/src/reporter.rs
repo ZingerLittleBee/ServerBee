@@ -57,8 +57,8 @@ impl Reporter {
                         if reregister_attempts >= MAX_REREGISTER_ATTEMPTS {
                             tracing::error!(
                                 "Agent token rejected {reregister_attempts} times consecutively, \
-                                 giving up re-registration. Check server URL and reverse proxy \
-                                 configuration (Authorization header must be forwarded for WebSocket)."
+                                 giving up re-registration. Check server URL and ensure the WebSocket \
+                                 endpoint is accessible (token is sent via query parameter)."
                             );
                         } else {
                             reregister_attempts += 1;

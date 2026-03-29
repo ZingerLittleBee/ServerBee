@@ -67,3 +67,27 @@ fn read_machine_id() -> Option<String> {
 fn read_machine_id() -> Option<String> {
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_returns_64_hex_chars_or_empty() {
+        let fp = generate();
+        assert!(
+            fp.is_empty() || (fp.len() == 64 && fp.chars().all(|c| c.is_ascii_hexdigit())),
+            "Fingerprint must be empty or 64 hex chars, got: {fp}"
+        );
+    }
+
+    #[test]
+    fn test_sha256_deterministic() {
+        // Same input always produces the same hash
+        let input = "testhost:test-machine-id-1234";
+        let hash1 = hex::encode(Sha256::digest(input.as_bytes()));
+        let hash2 = hex::encode(Sha256::digest(input.as_bytes()));
+        assert_eq!(hash1, hash2);
+        assert_eq!(hash1.len(), 64);
+    }
+}
