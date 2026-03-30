@@ -8,10 +8,11 @@ import {
   type SortingState,
   useReactTable
 } from '@tanstack/react-table'
-import { ExternalLink, Search, Trash2 } from 'lucide-react'
+import { ExternalLink, LayoutGrid, Search, Table2, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { ServerCard } from '@/components/server/server-card'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
 import {
@@ -29,6 +30,7 @@ import { Button } from '@/components/ui/button'
 import { createSelectColumn, DataTable, DataTableColumnHeader } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useServer } from '@/hooks/use-api'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
@@ -40,7 +42,8 @@ export const Route = createFileRoute('/_authed/servers/')({
   component: ServersListPage,
   validateSearch: (search: Record<string, unknown>) => ({
     q: (search.q as string) || '',
-    sort: (search.sort as string) || 'name'
+    sort: (search.sort as string) || 'name',
+    view: (search.view as 'table' | 'grid') || 'table'
   })
 })
 
@@ -48,7 +51,21 @@ function ServersListPage() {
   const { t } = useTranslation(['servers', 'common'])
   const queryClient = useQueryClient()
   const navigate = Route.useNavigate()
-  const { q: search, sort } = Route.useSearch()
+  const { q: search, sort, view: viewParam } = Route.useSearch()
+
+  const [viewMode, setViewModeState] = useState<'table' | 'grid'>(() => {
+    if (viewParam === 'table' || viewParam === 'grid') {
+      return viewParam
+    }
+    return (localStorage.getItem('serverbee-servers-view-mode') as 'table' | 'grid') || 'table'
+  })
+
+  const setViewMode = (value: 'table' | 'grid') => {
+    setViewModeState(value)
+    localStorage.setItem('serverbee-servers-view-mode', value)
+    navigate({ search: (prev) => ({ ...prev, view: value }) })
+  }
+
   const { data: servers = [] } = useQuery<ServerMetrics[]>({
     queryKey: ['servers'],
     queryFn: () => [],
@@ -269,6 +286,20 @@ function ServersListPage() {
             value={search}
           />
         </div>
+        <ToggleGroup
+          multiple={false}
+          onValueChange={(value) => value.length > 0 && setViewMode(value[0] as 'table' | 'grid')}
+          size="sm"
+          value={[viewMode]}
+          variant="outline"
+        >
+          <ToggleGroupItem aria-label="Table view" value="table">
+            <Table2 className="size-4" />
+          </ToggleGroupItem>
+          <ToggleGroupItem aria-label="Grid view" value="grid">
+            <LayoutGrid className="size-4" />
+          </ToggleGroupItem>
+        </ToggleGroup>
         {orphanCount > 0 && (
           <AlertDialog>
             <AlertDialogTrigger
@@ -320,15 +351,21 @@ function ServersListPage() {
         )}
       </div>
 
-      {servers.length === 0 ? (
+      {servers.length === 0 && (
         <div className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed">
           <div className="text-center">
             <p className="text-muted-foreground text-sm">{t('no_servers_title')}</p>
             <p className="mt-1 text-muted-foreground text-xs">{t('no_servers_description')}</p>
           </div>
         </div>
-      ) : (
-        <DataTable noResults={t('no_servers_title')} table={table} />
+      )}
+      {servers.length > 0 && viewMode === 'table' && <DataTable noResults={t('no_servers_title')} table={table} />}
+      {servers.length > 0 && viewMode === 'grid' && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((server) => (
+            <ServerCard key={server.id} server={server} />
+          ))}
+        </div>
       )}
 
       {filtered.length > 0 && (

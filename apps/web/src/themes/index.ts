@@ -105,6 +105,6 @@ export async function loadThemeCSS(themeId: ColorTheme): Promise<void> {
   if (themeId === 'default' || loadedThemes.has(themeId)) {
     return
   }
-  await import(`./${themeId}.css`)
+  await import(/* @vite-ignore */ `./${themeId}.css`)
   loadedThemes.add(themeId)
 }
