@@ -17,6 +17,7 @@ import {
   Radar,
   Settings,
   Shield,
+  Smartphone,
   Terminal,
   Users,
   Wifi
@@ -64,6 +65,7 @@ const settingsItems = [
   { to: '/settings/network-probes', labelKey: 'nav_network_probes', icon: Globe, adminOnly: true },
   { to: '/settings/tasks', labelKey: 'nav_commands', icon: Terminal, adminOnly: true },
   { to: '/settings/capabilities', labelKey: 'nav_capabilities', icon: Shield, adminOnly: true },
+  { to: '/settings/mobile-devices', labelKey: 'nav_mobile_devices', icon: Smartphone },
   { to: '/settings/api-keys', labelKey: 'nav_api_keys', icon: Key },
   { to: '/settings/security', labelKey: 'nav_security', icon: Shield },
   { to: '/settings/appearance', labelKey: 'nav_appearance', icon: Palette },

@@ -37,7 +37,7 @@ pub fn write_router() -> Router<Arc<AppState>> {
     responses(
         (status = 200, description = "List all dashboards", body = Vec<dashboard::Model>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn list_dashboards(
     State(state): State<Arc<AppState>>,
@@ -53,7 +53,7 @@ async fn list_dashboards(
     responses(
         (status = 200, description = "Default dashboard with widgets (auto-creates if none exists)", body = DashboardWithWidgets),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_default_dashboard(
     State(state): State<Arc<AppState>>,
@@ -71,7 +71,7 @@ async fn get_default_dashboard(
         (status = 200, description = "Dashboard with widgets", body = DashboardWithWidgets),
         (status = 404, description = "Dashboard not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_dashboard(
     State(state): State<Arc<AppState>>,
@@ -89,7 +89,7 @@ async fn get_dashboard(
     responses(
         (status = 200, description = "Dashboard created", body = dashboard::Model),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn create_dashboard(
     State(state): State<Arc<AppState>>,
@@ -110,7 +110,7 @@ async fn create_dashboard(
         (status = 404, description = "Dashboard not found"),
         (status = 400, description = "Validation error (e.g. cannot unset default, unknown widget type)"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn update_dashboard(
     State(state): State<Arc<AppState>>,
@@ -131,7 +131,7 @@ async fn update_dashboard(
         (status = 400, description = "Cannot delete default or last dashboard"),
         (status = 404, description = "Dashboard not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn delete_dashboard(
     State(state): State<Arc<AppState>>,

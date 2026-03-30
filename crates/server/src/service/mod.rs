@@ -1,5 +1,6 @@
 pub mod agent_manager;
 pub mod alert;
+pub mod apns;
 pub mod audit;
 pub mod auth;
 pub mod checker;
@@ -11,6 +12,7 @@ pub mod file_transfer;
 pub mod geoip;
 pub mod incident;
 pub mod maintenance;
+pub mod mobile_auth;
 pub mod network_probe;
 pub mod notification;
 pub mod oauth;

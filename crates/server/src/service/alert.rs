@@ -576,6 +576,7 @@ impl AlertService {
                 server_name: server_name.to_string(),
                 server_id: server_id.to_string(),
                 rule_name: rule.name.clone(),
+                rule_id: rule.id.clone(),
                 event: "triggered".to_string(),
                 message: format!("Alert rule '{}' triggered", rule.name),
                 time: Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),

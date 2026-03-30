@@ -18,6 +18,9 @@ final class WebSocketClient: @unchecked Sendable {
     /// Called on the main actor whenever a decoded `BrowserMessage` arrives.
     var onMessage: (@Sendable (BrowserMessage) -> Void)?
 
+    /// Called before reconnect to obtain a fresh access token.
+    var tokenRefresher: (@Sendable () async -> String?)?
+
     // MARK: - Private state
 
     private var webSocketTask: URLSessionWebSocketTask?
@@ -149,6 +152,19 @@ final class WebSocketClient: @unchecked Sendable {
         guard !intentionallyClosed, !Task.isCancelled else { return }
 
         reconnectDelay = min(reconnectDelay * 2, maxReconnectDelay)
+
+        // Refresh token before reconnecting
+        if let refresher = tokenRefresher {
+            if let newToken = await refresher() {
+                currentAccessToken = newToken
+            } else {
+                // Refresh failed — stop reconnecting
+                await MainActor.run { [weak self] in
+                    self?.connectionState = .disconnected
+                }
+                return
+            }
+        }
 
         await MainActor.run { [weak self] in
             self?.establishConnection()

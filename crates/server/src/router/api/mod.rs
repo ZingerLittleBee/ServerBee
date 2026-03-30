@@ -9,6 +9,7 @@ pub mod file;
 pub mod geoip;
 pub mod incident;
 pub mod maintenance_api;
+pub mod mobile;
 pub mod network_probe;
 pub mod notification;
 pub mod oauth;
@@ -35,6 +36,7 @@ use crate::state::AppState;
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     Router::new()
         .merge(auth::public_router())
+        .merge(mobile::public_router())
         .merge(agent::public_router())
         .merge(oauth::router())
         .merge(status::router())
@@ -43,6 +45,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(
             Router::new()
                 .merge(auth::protected_router())
+                .merge(mobile::protected_router())
                 // Read-only routes accessible to all authenticated users
                 .merge(server::read_router())
                 .merge(server_group::read_router())

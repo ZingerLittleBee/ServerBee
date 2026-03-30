@@ -56,6 +56,7 @@ docker compose up -d
 | [i18n.md](i18n.md) | 国际化 | 全站 |
 | [terminal.md](terminal.md) | Web 终端 | `/terminal/:serverId` |
 | [performance.md](performance.md) | 前端性能测试 | `/servers/:id` (realtime) |
+| [mobile-ios.md](mobile-ios.md) | iOS 移动端 & Mobile API | `/api/mobile/*`, `/settings/mobile-devices`, iOS App |
 
 ## 页面渲染快速验证
 
@@ -82,3 +83,4 @@ docker compose up -d
 | 公共状态页 | `/status` | ✅ |
 | Swagger UI | `/swagger-ui/` | ✅ |
 | 终端 | `/terminal/:id` | ✅ |
+| 移动设备管理 | `/settings/mobile-devices` | — |

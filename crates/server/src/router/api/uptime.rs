@@ -35,7 +35,7 @@ pub fn read_router() -> Router<Arc<AppState>> {
         (status = 400, description = "Invalid days parameter"),
         (status = 404, description = "Server not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn get_uptime_daily(
     State(state): State<Arc<AppState>>,

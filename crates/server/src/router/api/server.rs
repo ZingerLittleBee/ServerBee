@@ -192,7 +192,7 @@ pub fn write_router() -> Router<Arc<AppState>> {
     responses(
         (status = 200, description = "List all servers", body = Vec<ServerResponse>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn list_servers(
     State(state): State<Arc<AppState>>,
@@ -210,7 +210,7 @@ async fn list_servers(
         (status = 200, description = "Server details", body = ServerResponse),
         (status = 404, description = "Server not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_server(
     State(state): State<Arc<AppState>>,
@@ -230,7 +230,7 @@ async fn get_server(
         (status = 200, description = "Server updated", body = ServerResponse),
         (status = 404, description = "Server not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn update_server(
     State(state): State<Arc<AppState>>,
@@ -355,7 +355,7 @@ async fn update_server(
         (status = 200, description = "Server deleted"),
         (status = 404, description = "Server not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn delete_server(
     State(state): State<Arc<AppState>>,
@@ -373,7 +373,7 @@ async fn delete_server(
     responses(
         (status = 200, description = "Batch delete result", body = BatchDeleteResponse),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn batch_delete(
     State(state): State<Arc<AppState>>,
@@ -395,7 +395,7 @@ async fn batch_delete(
     responses(
         (status = 200, description = "Server metric records", body = Vec<crate::entity::record::Model>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_records(
     State(state): State<Arc<AppState>>,
@@ -427,7 +427,7 @@ async fn get_records(
     responses(
         (status = 200, description = "GPU metric records", body = Vec<crate::entity::gpu_record::Model>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_gpu_records(
     State(state): State<Arc<AppState>>,
@@ -482,7 +482,7 @@ fn normalize_version(version: &str) -> &str {
         (status = 200, description = "Upgrade command sent to agent"),
         (status = 404, description = "Server not found or not online"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn trigger_upgrade(
     State(state): State<Arc<AppState>>,
@@ -614,7 +614,7 @@ struct CapabilityChangeEffect {
         (status = 200, description = "Batch capabilities update result", body = BatchCapabilitiesResponse),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn batch_update_capabilities(
     State(state): State<Arc<AppState>>,
@@ -781,7 +781,7 @@ pub struct SetServerNetworkTargetsRequest {
         (status = 200, description = "Network probe targets updated for server"),
         (status = 422, description = "Validation error (max 20 targets)"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn set_server_network_targets(
     State(state): State<Arc<AppState>>,

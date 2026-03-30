@@ -33,7 +33,7 @@ pub fn router() -> Router<Arc<AppState>> {
     responses(
         (status = 200, description = "List all notifications", body = Vec<crate::entity::notification::Model>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn list_notifications(
     State(state): State<Arc<AppState>>,
@@ -51,7 +51,7 @@ async fn list_notifications(
         (status = 200, description = "Notification details", body = crate::entity::notification::Model),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_notification(
     State(state): State<Arc<AppState>>,
@@ -70,7 +70,7 @@ async fn get_notification(
         (status = 200, description = "Notification created", body = crate::entity::notification::Model),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn create_notification(
     State(state): State<Arc<AppState>>,
@@ -90,7 +90,7 @@ async fn create_notification(
         (status = 200, description = "Notification updated", body = crate::entity::notification::Model),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn update_notification(
     State(state): State<Arc<AppState>>,
@@ -110,7 +110,7 @@ async fn update_notification(
         (status = 200, description = "Notification deleted"),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn delete_notification(
     State(state): State<Arc<AppState>>,
@@ -129,7 +129,7 @@ async fn delete_notification(
         (status = 200, description = "Test notification sent"),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn test_notification(
     State(state): State<Arc<AppState>>,
@@ -147,7 +147,7 @@ async fn test_notification(
     responses(
         (status = 200, description = "List all notification groups", body = Vec<crate::entity::notification_group::Model>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn list_groups(
     State(state): State<Arc<AppState>>,
@@ -165,7 +165,7 @@ async fn list_groups(
         (status = 200, description = "Notification group details", body = crate::entity::notification_group::Model),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_group(
     State(state): State<Arc<AppState>>,
@@ -184,7 +184,7 @@ async fn get_group(
     responses(
         (status = 200, description = "Notification group created", body = crate::entity::notification_group::Model),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn create_group(
     State(state): State<Arc<AppState>>,
@@ -205,7 +205,7 @@ async fn create_group(
         (status = 200, description = "Notification group updated", body = crate::entity::notification_group::Model),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn update_group(
     State(state): State<Arc<AppState>>,
@@ -226,7 +226,7 @@ async fn update_group(
         (status = 200, description = "Notification group deleted"),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn delete_group(
     State(state): State<Arc<AppState>>,

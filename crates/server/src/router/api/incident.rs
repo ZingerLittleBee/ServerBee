@@ -36,7 +36,7 @@ pub struct IncidentListQuery {
     responses(
         (status = 200, description = "List all incidents", body = Vec<incident::Model>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn list_incidents(
     State(state): State<Arc<AppState>>,
@@ -56,7 +56,7 @@ pub async fn list_incidents(
         (status = 200, description = "Incident created", body = incident::Model),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn create_incident(
     State(state): State<Arc<AppState>>,
@@ -78,7 +78,7 @@ pub async fn create_incident(
         (status = 404, description = "Not found"),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn update_incident(
     State(state): State<Arc<AppState>>,
@@ -99,7 +99,7 @@ pub async fn update_incident(
         (status = 200, description = "Incident deleted"),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn delete_incident(
     State(state): State<Arc<AppState>>,
@@ -121,7 +121,7 @@ pub async fn delete_incident(
         (status = 404, description = "Incident not found"),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn add_incident_update(
     State(state): State<Arc<AppState>>,

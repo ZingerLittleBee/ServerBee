@@ -11,8 +11,7 @@ final class AlertDetailViewModel {
         isLoading = true
         defer { isLoading = false }
         do {
-            let response: ApiResponse<MobileAlertDetail> = try await apiClient.get("/api/mobile/alerts/\(alertKey)")
-            detail = response.data
+            detail = try await apiClient.get("/api/alert-events/\(alertKey)")
         } catch {
             errorMessage = String(localized: "Alert not found")
         }

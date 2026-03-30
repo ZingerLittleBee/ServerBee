@@ -61,8 +61,7 @@ final class ServersViewModel {
         isLoading = true
         defer { isLoading = false }
         do {
-            let response: ApiResponse<[ServerStatus]> = try await apiClient.get("/api/servers")
-            servers = response.data
+            servers = try await apiClient.get("/api/servers")
         } catch {
             print("[Servers] Fetch failed: \(error)")
         }
