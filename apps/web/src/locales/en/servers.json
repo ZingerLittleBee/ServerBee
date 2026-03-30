@@ -9,6 +9,8 @@
   "card_swap": "Swap",
   "card_tcp": "TCP",
   "card_udp": "UDP",
+  "card_net_in_speed": "↓ In",
+  "card_net_out_speed": "↑ Out",
   "servers_online": "{{online}} of {{total}} servers online",
   "search_placeholder": "Search servers\u2026",
   "delete_selected": "Delete {{count}}",
