@@ -48,7 +48,7 @@ pub fn router() -> Router<Arc<AppState>> {
     responses(
         (status = 200, description = "System settings", body = SystemSettings),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_settings(
     State(state): State<Arc<AppState>>,
@@ -67,7 +67,7 @@ async fn get_settings(
     responses(
         (status = 200, description = "Settings updated", body = SystemSettings),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn update_settings(
     State(state): State<Arc<AppState>>,
@@ -84,7 +84,7 @@ async fn update_settings(
     responses(
         (status = 200, description = "Auto-discovery key", body = AutoDiscoveryKeyResponse),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_auto_discovery_key(
     State(state): State<Arc<AppState>>,
@@ -102,7 +102,7 @@ async fn get_auto_discovery_key(
     responses(
         (status = 200, description = "Key regenerated", body = AutoDiscoveryKeyResponse),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn regenerate_auto_discovery_key(
     State(state): State<Arc<AppState>>,
@@ -120,7 +120,7 @@ async fn regenerate_auto_discovery_key(
     responses(
         (status = 200, description = "Database backup file (SQLite)"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn create_backup(
     State(state): State<Arc<AppState>>,
@@ -172,7 +172,7 @@ pub async fn create_backup(
         (status = 200, description = "Database restored, restart required"),
         (status = 400, description = "Invalid backup file"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn restore_backup(
     State(state): State<Arc<AppState>>,

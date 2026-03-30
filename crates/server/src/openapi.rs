@@ -1,4 +1,30 @@
-use utoipa::OpenApi;
+use utoipa::openapi::security::{ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder, SecurityScheme};
+use utoipa::{Modify, OpenApi};
+
+struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi.components.get_or_insert_with(Default::default);
+        components.add_security_scheme(
+            "session_cookie",
+            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new("serverbee_session"))),
+        );
+        components.add_security_scheme(
+            "api_key",
+            SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new("X-API-Key"))),
+        );
+        components.add_security_scheme(
+            "bearer_token",
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .bearer_format("JWT")
+                    .build(),
+            ),
+        );
+    }
+}
 
 #[derive(OpenApi)]
 #[openapi(
@@ -7,6 +33,7 @@ use utoipa::OpenApi;
         version = "0.2.1",
         description = "ServerBee VPS monitoring probe API. All responses are wrapped in `{\"data\": <value>}`. Errors return `{\"error\": {\"code\": \"...\", \"message\": \"...\"}}`.",
     ),
+    modifiers(&SecurityAddon),
     paths(
         // auth
         crate::router::api::auth::login,
@@ -82,6 +109,7 @@ use utoipa::OpenApi;
         crate::router::api::alert::delete_rule,
         crate::router::api::alert::list_states,
         crate::router::api::alert::list_alert_events,
+        crate::router::api::alert::get_alert_event_detail,
         // tasks
         crate::router::api::task::list_tasks,
         crate::router::api::task::create_task,
@@ -147,6 +175,16 @@ use utoipa::OpenApi;
         crate::router::api::traffic::get_traffic_overview,
         crate::router::api::traffic::get_traffic_overview_daily,
         crate::router::api::traffic::get_traffic_cycle,
+        // mobile-auth
+        crate::router::api::mobile::mobile_login,
+        crate::router::api::mobile::mobile_refresh,
+        crate::router::api::mobile::mobile_logout,
+        crate::router::api::mobile::list_devices,
+        crate::router::api::mobile::revoke_device,
+        crate::router::api::mobile::generate_pair_code,
+        crate::router::api::mobile::mobile_pair_redeem,
+        crate::router::api::mobile::push_register,
+        crate::router::api::mobile::push_unregister,
         // files
         crate::router::api::file::list_files,
         crate::router::api::file::stat_file,
@@ -212,6 +250,7 @@ use utoipa::OpenApi;
             crate::service::alert::UpdateAlertRule,
             crate::service::alert::AlertStateResponse,
             crate::service::alert::AlertEventResponse,
+            crate::router::api::alert::AlertEventDetailResponse,
             // tasks
             crate::router::api::task::CreateTaskRequest,
             crate::router::api::task::UpdateTaskRequest,
@@ -284,6 +323,15 @@ use utoipa::OpenApi;
             crate::service::traffic::HourlyTraffic,
             crate::service::traffic::ServerTrafficOverview,
             crate::service::traffic::CycleTraffic,
+            // mobile-auth
+            crate::router::api::mobile::MobileLoginRequest,
+            crate::router::api::mobile::MobileRefreshRequest,
+            crate::router::api::mobile::MobilePairRedeemRequest,
+            crate::router::api::mobile::MobilePairCodeResponse,
+            crate::router::api::mobile::MobileDeviceResponse,
+            crate::router::api::mobile::PushRegisterRequest,
+            crate::service::mobile_auth::MobileTokenResponse,
+            crate::service::mobile_auth::MobileUserResponse,
             // files
             serverbee_common::types::FileEntry,
             serverbee_common::types::FileType,
@@ -311,6 +359,7 @@ use utoipa::OpenApi;
     ),
     tags(
         (name = "auth", description = "Authentication & API keys"),
+        (name = "mobile-auth", description = "Mobile authentication & device management"),
         (name = "2fa", description = "Two-factor authentication (TOTP)"),
         (name = "oauth", description = "OAuth login & account linking"),
         (name = "agent", description = "Agent registration"),

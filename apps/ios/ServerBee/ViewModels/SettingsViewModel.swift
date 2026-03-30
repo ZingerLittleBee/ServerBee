@@ -11,16 +11,9 @@ final class SettingsViewModel {
         isLoggingOut = true
         defer { isLoggingOut = false }
 
-        // Best effort: POST logout to server, don't fail on error
-        if let refreshToken = KeychainService.loadString(for: KeychainService.refreshTokenKey) {
-            let installationId = InstallationID.getOrCreate()
-            let request = MobileLogoutRequest(
-                refreshToken: refreshToken,
-                installationId: installationId
-            )
-            try? await apiClient.postVoid("/api/mobile/auth/logout", body: request)
-        }
+        // Best effort: POST logout to server (Bearer token provides identity)
+        try? await apiClient.postVoid("/api/mobile/auth/logout")
 
-        authManager.clearAuth()
+        await authManager.clearAuth()
     }
 }

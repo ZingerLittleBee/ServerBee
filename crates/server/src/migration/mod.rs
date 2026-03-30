@@ -13,6 +13,9 @@ mod m20260320_000010_dashboard;
 mod m20260321_000011_status_page_uptime_thresholds;
 mod m20260327_000012_records_hourly_unique;
 mod m20260329_000013_add_server_fingerprint;
+mod m20260329_000014_create_mobile_session;
+mod m20260329_000015_add_session_source;
+mod m20260329_000016_create_device_token;
 
 pub struct Migrator;
 
@@ -32,6 +35,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260321_000011_status_page_uptime_thresholds::Migration),
             Box::new(m20260327_000012_records_hourly_unique::Migration),
             Box::new(m20260329_000013_add_server_fingerprint::Migration),
+            Box::new(m20260329_000014_create_mobile_session::Migration),
+            Box::new(m20260329_000015_add_session_source::Migration),
+            Box::new(m20260329_000016_create_device_token::Migration),
         ]
     }
 }

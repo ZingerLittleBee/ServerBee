@@ -75,7 +75,7 @@ pub struct MonitorWithRecord {
     responses(
         (status = 200, description = "List all service monitors", body = Vec<service_monitor::Model>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn list_monitors(
     State(state): State<Arc<AppState>>,
@@ -95,7 +95,7 @@ async fn list_monitors(
         (status = 200, description = "Service monitor with latest record", body = MonitorWithRecord),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_monitor(
     State(state): State<Arc<AppState>>,
@@ -119,7 +119,7 @@ async fn get_monitor(
         (status = 200, description = "Service monitor created", body = service_monitor::Model),
         (status = 422, description = "Validation error"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn create_monitor(
     State(state): State<Arc<AppState>>,
@@ -140,7 +140,7 @@ async fn create_monitor(
         (status = 200, description = "Service monitor updated", body = service_monitor::Model),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn update_monitor(
     State(state): State<Arc<AppState>>,
@@ -161,7 +161,7 @@ async fn update_monitor(
         (status = 200, description = "Service monitor deleted"),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn delete_monitor(
     State(state): State<Arc<AppState>>,
@@ -183,7 +183,7 @@ async fn delete_monitor(
     responses(
         (status = 200, description = "Service monitor records", body = Vec<service_monitor_record::Model>),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn get_records(
     State(state): State<Arc<AppState>>,
@@ -205,7 +205,7 @@ async fn get_records(
         (status = 200, description = "Check result", body = service_monitor_record::Model),
         (status = 404, description = "Not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn trigger_check(
     State(state): State<Arc<AppState>>,
