@@ -57,7 +57,12 @@ describe('UptimeBar', () => {
   it('enforces minimum 10% height for non-null non-zero values', () => {
     const { container } = render(<UptimeBar data={[1, 100]} getColor={greenColor} maxValue={100} />)
     const bars = container.querySelectorAll('[data-testid="uptime-bar-item"]')
-    // 1/100 = 1%, but min is 10%
+    expect((bars[0] as HTMLElement).style.height).toBe('10%')
+  })
+
+  it('enforces minimum 10% height for zero values', () => {
+    const { container } = render(<UptimeBar data={[0, 100]} getColor={greenColor} maxValue={100} />)
+    const bars = container.querySelectorAll('[data-testid="uptime-bar-item"]')
     expect((bars[0] as HTMLElement).style.height).toBe('10%')
   })
 
