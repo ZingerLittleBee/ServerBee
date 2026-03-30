@@ -21,9 +21,11 @@ export function RingChart({ value, size = DEFAULT_SIZE, strokeWidth = DEFAULT_ST
       <div style={{ position: 'relative', width: size, height: size }}>
         <svg
           aria-label={`${label} ${clamped.toFixed(1)}%`}
+          height={size}
           role="img"
           style={{ transform: 'rotate(-90deg)' }}
           viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`}
+          width={size}
         >
           <circle
             cx={VIEWBOX / 2}

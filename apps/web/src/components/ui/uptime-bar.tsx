@@ -19,10 +19,7 @@ export function UptimeBar({ data, height = 16, getColor, maxValue, ariaLabel }: 
       return `${MIN_HEIGHT_PCT}%`
     }
     const pct = (value / effectiveMax) * 100
-    if (value > 0 && pct < MIN_HEIGHT_PCT) {
-      return `${MIN_HEIGHT_PCT}%`
-    }
-    return `${Math.min(100, pct)}%`
+    return `${Math.min(100, Math.max(MIN_HEIGHT_PCT, pct))}%`
   }
 
   return (

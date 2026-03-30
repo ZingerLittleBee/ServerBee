@@ -33,6 +33,13 @@ describe('RingChart', () => {
     expect(wrapper.style.width).toBe('40px')
   })
 
+  it('renders SVG with explicit width and height attributes', () => {
+    const { container } = render(<RingChart color="#3b82f6" label="CPU" size={48} value={50} />)
+    const svg = container.querySelector('svg')
+    expect(svg?.getAttribute('width')).toBe('48')
+    expect(svg?.getAttribute('height')).toBe('48')
+  })
+
   it('renders two circles (background track + foreground arc)', () => {
     const { container } = render(<RingChart color="#3b82f6" label="CPU" value={50} />)
     const circles = container.querySelectorAll('circle')
