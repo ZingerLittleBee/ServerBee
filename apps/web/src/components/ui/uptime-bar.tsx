@@ -27,6 +27,7 @@ export function UptimeBar({ data, height = 16, getColor, maxValue, ariaLabel }: 
       {data.map((value, i) => (
         <div
           data-testid="uptime-bar-item"
+          // biome-ignore lint/suspicious/noArrayIndexKey: index is stable for temporal data that doesn't reorder
           key={i}
           style={{
             flex: 1,
