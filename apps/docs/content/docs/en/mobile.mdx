@@ -1,0 +1,144 @@
+---
+title: iOS Mobile Companion
+description: Native iOS app for ServerBee with QR pairing, push notifications, and real-time monitoring.
+icon: Smartphone
+---
+
+ServerBee provides a native iOS companion app that brings server monitoring to your mobile device. Get real-time metrics, receive push notifications for alerts, and manage your servers on the go.
+
+## Features
+
+- **QR Code Pairing** -- Scan a QR code from the web app to authenticate instantly, no manual token entry required
+- **Push Notifications** -- Receive APNs (Apple Push Notification service) alerts directly on your iPhone when servers go offline or thresholds are breached
+- **Real-time Metrics** -- Live server status, CPU, memory, disk, and network metrics streamed via WebSocket
+- **Alert History** -- View recent alerts and their status (triggered/resolved) with detailed information
+- **Secure Authentication** -- Bearer token-based auth with automatic refresh (15-min access token, 30-day refresh token)
+
+## Requirements
+
+- iOS 16.0 or later
+- A ServerBee server instance (v0.8.0+) with mobile auth enabled
+- For push notifications: APNs authentication key configured on the server
+
+## Pairing Your Device
+
+### 1. Enable Mobile Auth (Server-side)
+
+Mobile authentication is enabled by default in v0.8.0+. No additional server configuration is required unless you want to adjust token TTLs.
+
+Optional configuration in `server.toml`:
+
+```toml
+[mobile]
+access_ttl = 900      # Access token lifetime in seconds (default: 15 minutes)
+refresh_ttl = 2592000 # Refresh token lifetime in seconds (default: 30 days)
+```
+
+### 2. Start Pairing from Web App
+
+1. Log in to your ServerBee web app
+2. Go to **Settings** → **Mobile Devices**
+3. Click **Pair New Device**
+4. A QR code will be displayed with a 5-minute expiry timer
+
+### 3. Scan with iOS App
+
+1. Open the ServerBee iOS app
+2. Tap **Scan QR Code** on the welcome screen
+3. Point your camera at the QR code displayed in the web app
+4. The app will automatically authenticate and show your server list
+
+## Managing Paired Devices
+
+### View Connected Devices
+
+In the web app, go to **Settings** → **Mobile Devices** to see all paired iOS devices:
+
+- Device name (e.g., "iPhone 15 Pro")
+- Paired date and time
+- Last active timestamp
+- Current online/offline status
+
+### Revoke Access
+
+To remove a device's access:
+
+1. In the **Mobile Devices** list, find the device you want to remove
+2. Click the **Revoke** button
+3. Confirm the action
+
+The device will be immediately logged out and all its tokens invalidated.
+
+## Push Notifications (APNs)
+
+### Server Configuration
+
+To enable push notifications, configure APNs credentials in the web app:
+
+1. Go to **Settings** → **Notifications**
+2. Add a new notification channel with type **APNs**
+3. Upload your APNs authentication key (.p8 file from Apple Developer Portal)
+4. Enter your Team ID, Key ID, and Bundle ID
+5. Test the configuration with the **Test** button
+
+### Required APNs Fields
+
+| Field | Description |
+|-------|-------------|
+| Team ID | Your Apple Developer Team Identifier (10 characters) |
+| Key ID | The Key ID from your APNs auth key in Apple Developer Portal |
+| Bundle ID | Your iOS app bundle identifier (e.g., `com.example.serverbee`) |
+| Private Key | The .p8 file content from Apple Developer Portal |
+
+### Creating an APNs Key
+
+1. Go to [Apple Developer Portal](https://developer.apple.com)
+2. Navigate to **Certificates, Identifiers & Profiles** → **Keys**
+3. Create a new key with **Apple Push Notifications service (APNs)** enabled
+4. Download the .p8 file (can only be downloaded once)
+5. Note the Key ID displayed on the portal
+
+## Security Considerations
+
+- **Token Rotation**: Refresh tokens are rotated on every use (single-use). Old refresh tokens cannot be reused.
+- **Fixed Expiry**: Access tokens have fixed 15-minute expiry (no sliding renewal) to limit exposure if stolen
+- **Secure Storage**: Tokens are stored in iOS Keychain with appropriate accessibility levels
+- **Automatic Cleanup**: Expired sessions are cleaned up by the server's background task (12-hour interval)
+
+## Troubleshooting
+
+### QR Code Won't Scan
+
+- Ensure the QR code is displayed clearly on your screen
+- Check that the QR code hasn't expired (5-minute timeout)
+- Try generating a new QR code from the web app
+
+### Push Notifications Not Received
+
+- Verify APNs credentials are correct in the notification channel
+- Ensure the iOS app has granted notification permissions
+- Check that the device shows as "Online" in Mobile Devices list
+- Review server logs for APNs delivery errors
+
+### Authentication Failures
+
+- If the app shows "Session Expired", it will automatically refresh the token
+- If refresh fails, you'll need to re-pair using a new QR code
+- Check that your server time is correctly synced (NTP)
+
+## Technical Details
+
+### Authentication Flow
+
+1. **Login/QR Pair**: POST `/api/mobile/auth/login` or QR pair endpoint → returns access_token + refresh_token
+2. **API Requests**: Include `Authorization: Bearer {access_token}` header
+3. **Token Refresh**: On 401, POST `/api/mobile/auth/refresh` with refresh_token → new token pair
+4. **Logout**: POST `/api/mobile/auth/logout` revokes all tokens for the device
+
+### WebSocket Connection
+
+The iOS app maintains a WebSocket connection for real-time updates:
+- Connection URL: `wss://your-server/api/ws/browser`
+- Authentication via `Authorization: Bearer` header during handshake
+- Automatic reconnection with exponential backoff
+- Connection auto-closes when access token expires (reconnect triggers refresh)
