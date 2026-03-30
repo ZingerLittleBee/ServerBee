@@ -1,0 +1,144 @@
+---
+title: iOS 移动客户端
+description: ServerBee 原生 iOS 配套应用，支持二维码配对、推送通知和实时监控。
+icon: Smartphone
+---
+
+ServerBee 提供原生 iOS 配套应用，将服务器监控带到您的移动设备。获取实时指标、接收推送通知告警，并随时随地管理您的服务器。
+
+## 功能特性
+
+- **二维码配对** -- 扫描 Web 应用中的二维码即可即时认证，无需手动输入 Token
+- **推送通知** -- 当服务器离线或触发阈值时，直接在 iPhone 上接收 APNs（Apple 推送通知服务）告警
+- **实时指标** -- 通过 WebSocket 传输的实时服务器状态、CPU、内存、磁盘和网络指标
+- **告警历史** -- 查看近期告警及其状态（触发/已解决）和详细信息
+- **安全认证** -- 基于 Bearer Token 的认证，支持自动刷新（15 分钟访问令牌，30 天刷新令牌）
+
+## 系统要求
+
+- iOS 16.0 或更高版本
+- 启用移动认证的 ServerBee 服务器实例（v0.8.0+）
+- 推送通知需要：在服务器上配置 APNs 认证密钥
+
+## 设备配对
+
+### 1. 启用移动认证（服务端）
+
+在 v0.8.0+ 中，移动认证默认启用。除非需要调整令牌有效期，否则无需额外配置。
+
+可选配置（`server.toml`）：
+
+```toml
+[mobile]
+access_ttl = 900      # 访问令牌有效期（秒），默认 15 分钟
+refresh_ttl = 2592000 # 刷新令牌有效期（秒），默认 30 天
+```
+
+### 2. 从 Web 应用开始配对
+
+1. 登录您的 ServerBee Web 应用
+2. 进入 **设置** → **移动设备**
+3. 点击 **配对新设备**
+4. 显示一个 5 分钟有效期的二维码
+
+### 3. 使用 iOS 应用扫描
+
+1. 打开 ServerBee iOS 应用
+2. 在欢迎屏幕点击 **扫描二维码**
+3. 将相机对准 Web 应用中显示的二维码
+4. 应用将自动认证并显示您的服务器列表
+
+## 管理已配对设备
+
+### 查看已连接设备
+
+在 Web 应用中，进入 **设置** → **移动设备** 查看所有已配对的 iOS 设备：
+
+- 设备名称（如 "iPhone 15 Pro"）
+- 配对日期和时间
+- 最后活跃时间戳
+- 当前在线/离线状态
+
+### 撤销访问权限
+
+要移除设备的访问权限：
+
+1. 在 **移动设备** 列表中找到要移除的设备
+2. 点击 **撤销** 按钮
+3. 确认操作
+
+该设备将立即登出，其所有令牌将被作废。
+
+## 推送通知（APNs）
+
+### 服务器配置
+
+要启用推送通知，请在 Web 应用中配置 APNs 凭证：
+
+1. 进入 **设置** → **通知**
+2. 添加类型为 **APNs** 的新通知渠道
+3. 上传您的 APNs 认证密钥（来自 Apple Developer Portal 的 .p8 文件）
+4. 输入您的 Team ID、Key ID 和 Bundle ID
+5. 使用 **测试** 按钮测试配置
+
+### APNs 必填字段
+
+| 字段 | 说明 |
+|------|------|
+| Team ID | 您的 Apple Developer Team 标识符（10 位字符） |
+| Key ID | Apple Developer Portal 中 APNs 认证密钥的 Key ID |
+| Bundle ID | 您的 iOS 应用 Bundle 标识符（如 `com.example.serverbee`） |
+| Private Key | Apple Developer Portal 中 .p8 文件的内容 |
+
+### 创建 APNs 密钥
+
+1. 访问 [Apple Developer Portal](https://developer.apple.com)
+2. 进入 **Certificates, Identifiers & Profiles** → **Keys**
+3. 创建启用 **Apple Push Notifications service (APNs)** 的新密钥
+4. 下载 .p8 文件（只能下载一次）
+5. 记录 Portal 上显示的 Key ID
+
+## 安全考量
+
+- **令牌轮换**：每次使用时轮换刷新令牌（一次性使用），旧刷新令牌不能重用
+- **固定过期**：访问令牌固定 15 分钟过期（无滑动续期），以限制被盗后的暴露时间
+- **安全存储**：令牌使用适当的可访问性级别存储在 iOS Keychain 中
+- **自动清理**：过期会话由服务器的后台任务清理（12 小时间隔）
+
+## 故障排除
+
+### 二维码无法扫描
+
+- 确保二维码在屏幕上清晰显示
+- 检查二维码是否已过期（5 分钟超时）
+- 尝试从 Web 应用生成新的二维码
+
+### 未收到推送通知
+
+- 验证通知渠道中的 APNs 凭证是否正确
+- 确保 iOS 应用已授予通知权限
+- 检查设备是否在移动设备列表中显示为"在线"
+- 查看服务器日志中的 APNs 投递错误
+
+### 认证失败
+
+- 如果应用显示"会话已过期"，将自动刷新令牌
+- 如果刷新失败，需要使用新的二维码重新配对
+- 检查服务器时间是否正确同步（NTP）
+
+## 技术细节
+
+### 认证流程
+
+1. **登录/二维码配对**：POST `/api/mobile/auth/login` 或二维码配对端点 → 返回 access_token + refresh_token
+2. **API 请求**：在请求头中包含 `Authorization: Bearer {access_token}`
+3. **令牌刷新**：收到 401 时，POST `/api/mobile/auth/refresh` 携带 refresh_token → 新的令牌对
+4. **登出**：POST `/api/mobile/auth/logout` 作废该设备的所有令牌
+
+### WebSocket 连接
+
+iOS 应用维护 WebSocket 连接以获取实时更新：
+- 连接 URL：`wss://your-server/api/ws/browser`
+- 握手期间通过 `Authorization: Bearer` 头进行认证
+- 自动重连，使用指数退避策略
+- 访问令牌过期时连接自动关闭（重连触发刷新）

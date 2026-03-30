@@ -8,6 +8,7 @@ A lightweight, self-hosted VPS monitoring system built with Rust and React.
 
 - **Real-time Dashboard** -- Server status, CPU/memory/disk/network metrics with live WebSocket updates
 - **Server Groups** -- Organize servers by group with country flag display
+- **iOS Mobile Companion** -- Native iOS app with QR pairing, push notifications, and real-time metrics
 - **Detailed Metrics** -- Real-time streaming charts + historical views (1h/6h/24h/7d/30d) for CPU, memory, disk, network, load, temperature, GPU, disk I/O
 - **Alert System** -- 14+ metric types, threshold/offline/traffic/expiration rules, AND logic, 70% sampling
 - **Notifications** -- Webhook, Telegram, Bark, Email (SMTP) channels with notification groups
@@ -111,7 +112,7 @@ SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # Terminal 2: agent
 
 # Testing & code quality:
 make cargo-test        # Run all Rust tests (395)
-make test              # Run frontend tests (222)
+make test              # Run frontend tests (248)
 make cargo-clippy      # Lint Rust code
 make                   # Interactive menu (requires fzf)
 ```
