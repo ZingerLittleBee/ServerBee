@@ -8,6 +8,7 @@
 
 - **实时仪表盘** -- 服务器状态、CPU/内存/磁盘/网络指标，WebSocket 实时推送
 - **服务器分组** -- 按组管理服务器，显示国旗标识
+- **iOS 移动端** -- 原生 iOS 应用，支持二维码配对、推送通知和实时指标查看
 - **详细指标** -- 实时流式图表 + 历史视图 (1h/6h/24h/7d/30d)，涵盖 CPU、内存、磁盘、网络、负载、温度、GPU、磁盘 I/O
 - **告警系统** -- 14+ 指标类型，阈值/离线/流量/到期规则，AND 逻辑，70% 采样
 - **通知渠道** -- Webhook、Telegram、Bark、Email (SMTP)，支持通知组
@@ -111,7 +112,7 @@ SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # 终端 2: Agent
 
 # 测试与代码质量:
 make cargo-test        # 运行全部 Rust 测试 (395)
-make test              # 运行前端测试 (222)
+make test              # 运行前端测试 (248)
 make cargo-clippy      # Rust 代码检查
 make                   # 交互式菜单 (需要 fzf)
 ```
