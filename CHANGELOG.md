@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-03-31
+
+### Added
+
+- **iOS Mobile Companion** -- Full-featured iOS app for ServerBee with QR code pairing, Bearer token authentication, and APNs push notifications. Supports real-time server metrics, alerts, and WebSocket-based live updates
+- **Mobile Authentication API** -- New `/api/mobile/auth/*` endpoints for mobile device registration, access token refresh, and logout. Opaque access tokens (15-min TTL) with refresh token rotation (30-day TTL). New `mobile_sessions` and `device_tokens` tables with 3 database migrations
+- **QR Pairing** -- New `/api/mobile/auth/qr/pair` flow for secure iOS app pairing. Pending pair state stored in-memory with 5-minute expiry. QR code displayed in web app settings; iOS app scans to complete authentication without manual token entry
+- **APNs Push Notifications** -- Apple Push Notification service integration for alert delivery to iOS devices. New APNs notification channel type alongside existing Webhook/Telegram/Bark/Email. Configurable in Settings > Notifications with team ID, key ID, and private key
+- **Server Card Grid Redesign** -- Server cards now display 3 ring charts (CPU, Memory, Disk) using new `RingChart` SVG component, plus compact metric rows for load, processes, TCP/UDP/UDP connections, swap, and network speeds. New `UptimeBar` vertical bar charts for network quality (latency and packet loss trends)
+- **RingChart Component** -- New SVG donut chart component for visualizing resource utilization with percentage text overlay, color-coded thresholds (green <70%, yellow 70-90%, red >90%), and full accessibility support
+- **UptimeBar Component** -- New vertical bar chart component for displaying time-series data (network quality metrics). Supports null values (100% height for failures), minimum 10% height for visibility, and color callbacks per bar
+- **Mobile Devices Management** -- New Settings page `/settings/mobile-devices` for viewing and revoking connected iOS devices. Displays device name, paired date, and last active timestamp with revoke action
+- **Install Script Self-Deploy** -- `deploy/install.sh` can now install itself as `/usr/local/bin/serverbee` CLI when run without the `server` or `agent` subcommand. Supports `--cli-only` and `--version` flags for CLI-only installation and version pinning
+
+### Changed
+
+- **Server card layout** -- Complete rewrite of `ServerCard` component replacing progress bars with ring charts and sparklines with `UptimeBar` charts. 9 metrics now visible per card (3 rings + 5 system metrics + 4 network metrics) with improved information density
+- **Network data merge** -- Network quality data from multiple targets now sorted chronologically before display, ensuring accurate temporal trends across all probe targets
+- **Test counts** -- Frontend tests increased from 222 to 248 across 32 test files. Added 24 new component tests (9 ServerCard, 8 RingChart, 9 UptimeBar)
+
+### Fixed
+
+- **UptimeBar zero values** -- Zero values now render at minimum 10% height per spec instead of disappearing (was incorrectly optimized for positive values only)
+- **RingChart SVG sizing** -- SVG element now has explicit `width` and `height` attributes matching the `size` prop, preventing rendering issues at non-default sizes
+- **Toggle group namespace import** -- Added `biome-ignore` comment for `import * as React` pattern required by React context APIs
+
+### Testing
+
+- 395 Rust tests: 245 server unit + 42 server integration + 4 Docker integration + 43 common + 61 agent
+- 248 frontend Vitest tests across 32 test files (was 222 across 29)
+- 9 new ServerCard component tests (rendering, ring charts, metrics rows, network quality)
+- 8 new RingChart component tests (percentage display, clamping, custom size, SVG sizing)
+- 9 new UptimeBar component tests (bar heights, colors, null handling, zero values)
+
 ## [0.7.5] - 2026-03-29
 
 ### Fixed
