@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "setup": "ln -sf AGENTS.md CLAUDE.md && bun i",
+    "setup": "ln -sf AGENTS.md CLAUDE.md && cp $CONDUCTOR_ROOT_PATH/.env . && bun i",
     "run": ""
   }
 }
