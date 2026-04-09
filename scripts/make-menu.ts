@@ -205,6 +205,14 @@ const COMMANDS: CommandDefinition[] = [
     command: 'bun --filter @serverbee/docs format'
   },
   {
+    key: 'db-pull',
+    name: 'db:pull',
+    category: 'Database',
+    description: 'Pull production database via backup API (needs SERVERBEE_PROD_URL & SERVERBEE_PROD_API_KEY)',
+    command: 'bash scripts/db-pull.sh',
+    featured: true
+  },
+  {
     key: 'db-local',
     name: 'db:local',
     category: 'Database',
@@ -362,6 +370,15 @@ const COMMANDS: CommandDefinition[] = [
     category: 'Rust',
     description: 'Run server in dev mode (admin/admin123, no secure cookie)',
     command: 'SERVERBEE_ADMIN__PASSWORD=admin123 SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server',
+    featured: true
+  },
+  {
+    key: 'server-dev-prod',
+    name: 'server:dev:prod',
+    category: 'Rust',
+    description: 'Run server with production database (data/prod.db, run db-pull first)',
+    command:
+      'SERVERBEE_DATABASE__PATH=prod.db SERVERBEE_ADMIN__PASSWORD=admin123 SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server',
     featured: true
   },
   {

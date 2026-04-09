@@ -29,6 +29,7 @@ COMMAND_TARGETS := \
 	docs-typecheck \
 	docs-lint \
 	docs-format \
+	db-pull \
 	db-local \
 	db-push \
 	db-generate \
@@ -51,6 +52,7 @@ COMMAND_TARGETS := \
 	agent-build \
 	agent-run \
 	server-dev \
+	server-dev-prod \
 	agent-dev \
 	dev-full \
 	docker-build \

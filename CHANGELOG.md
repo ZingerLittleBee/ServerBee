@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-04-09
+
+### Added
+
+- **Database Pull Script** -- New `make db-pull` command to download production SQLite database via the backup API for local development. Validates SQLite file header and stores to `data/prod.db`
+- **Production Data Dev Server** -- New `make server-dev-prod` command to run the local server against a pulled production database
+- **Environment Example** -- `.env.example` with `SERVERBEE_PROD_URL` and `SERVERBEE_PROD_API_KEY` placeholders for database pull configuration
+
+### Changed
+
+- **Setup script** -- Conductor setup now copies `.env` from `CONDUCTOR_ROOT_PATH` for consistent environment configuration
+
 ## [0.8.0] - 2026-03-31
 
 ### Added
