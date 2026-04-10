@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - 2026-04-10
+
+### Added
+
+- **Production Proxy Dev Workflow** -- New `make web-dev-prod` and `bun run dev:prod` workflows let the Vite dev server proxy API requests and live `/api/ws/servers` updates to the production backend for frontend debugging against real traffic
+- **Prod Proxy Warning Banner** -- The web app now shows a persistent banner in `prod-proxy` mode so you do not forget the UI is pointed at production, and whether writes are still blocked
+
+### Changed
+
+- **Prod Proxy Safety Model** -- The production dev proxy now uses a dedicated read-only member API key, blocks non-read HTTP methods by default, strips browser auth headers and cookies, and only allows `GET /api/auth/me` from the auth routes
+- **Configuration Docs** -- `.env.example`, `ENV.md`, and the bilingual configuration docs now document the split production keys and the `ALLOW_WRITES=1` escape hatch
+
+### Fixed
+
+- **Production WebSocket Allow-List** -- The frontend dev proxy now forwards only `/api/ws/servers`, preventing terminal and other control-plane WebSocket routes from piggybacking through localhost into production
+
+### Testing
+
+- Added frontend Vitest coverage for prod-proxy request filtering, auth-path blocking, WebSocket allow-listing, and the persistent warning banner
+
 ## [0.8.1] - 2026-04-09
 
 ### Added
