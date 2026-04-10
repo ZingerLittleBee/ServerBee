@@ -77,10 +77,12 @@ The extracted module's responsibilities:
    respond with HTTP `403` + JSON body and abort the upstream request so
    it never leaves the dev machine.
 3. Block auth mutation paths. Requests whose path starts with
-   `/api/auth/` are rejected with `403` (except `GET /api/auth/me`,
-   which the UI needs to render "current user"). This prevents OAuth
-   callbacks, login, logout, and 2FA flows from ever touching production
-   even if they use a read-only HTTP method.
+   `/api/auth/` are rejected with `403`. The allow-list is **exactly**
+   `GET /api/auth/me` — the UI needs this endpoint to render "current
+   user", and tightening both path and method prevents drift if the
+   backend ever adds `POST /api/auth/me` or similar. Every other
+   `/api/auth/*` request is blocked, which prevents OAuth callbacks,
+   login, logout, and 2FA flows from ever touching production.
 4. Strip auth headers from the request before forwarding. `Cookie` and
    `Authorization` are removed so the backend's `validate_browser_auth`
    can never take the session or Bearer path; the only remaining
@@ -138,7 +140,7 @@ Browser (http://localhost:5173)
 Vite Dev Server (middlewares)
    │
    │ http-proxy configure hooks (all applied in order on proxyReq):
-   │   1. if path starts with /api/auth/ and path != /api/auth/me
+   │   1. if path starts with /api/auth/ and NOT (method=GET & path=/api/auth/me)
    │        → respond 403 { error: "Auth paths blocked in dev proxy" }, STOP
    │   2. if method ∉ {GET, HEAD, OPTIONS} and ALLOW_WRITES != "1"
    │        → respond 403 { error: "Dev proxy is read-only" }, STOP
@@ -213,11 +215,16 @@ export function createDevProxy(opts: DevProxyOptions): ProxyOptions {
         const url  = req.url ?? ''
         const method = (req.method ?? 'GET').toUpperCase()
 
-        // 1. Block auth mutation paths (except GET /api/auth/me)
-        if (url.startsWith('/api/auth/') && url !== '/api/auth/me') {
-          respond403(res, proxyReq,
-            'Auth paths are blocked in dev proxy to prevent production session leakage')
-          return
+        // 1. Block auth paths. Allow-list is EXACTLY `GET /api/auth/me`.
+        //    Both path and method must match; a hypothetical future
+        //    `POST /api/auth/me` would be blocked.
+        if (url.startsWith('/api/auth/')) {
+          const isAllowedAuthRead = method === 'GET' && url === '/api/auth/me'
+          if (!isAllowedAuthRead) {
+            respond403(res, proxyReq,
+              'Auth paths are blocked in dev proxy to prevent production session leakage')
+            return
+          }
         }
 
         // 2. Block writes by default
@@ -362,9 +369,10 @@ Coverage (must all pass):
 3. **HTTP header stripping + injection on GET**: simulate a `GET /api/servers` with `Cookie: session_token=abc` and `Authorization: Bearer xyz`. Expect `proxyReq.removeHeader('cookie')`, `proxyReq.removeHeader('authorization')`, and `proxyReq.setHeader('X-API-Key', 'test-key')` in that order.
 4. **Auth path block — login**: simulate `POST /api/auth/login`. Expect 403 with the auth-specific error message (verifies the auth-block fires *before* the write-block so the error message is more informative).
 5. **Auth path block — OAuth callback**: simulate `GET /api/auth/oauth/github/callback`. Expect 403 even though the method is GET.
-6. **Auth path allow-list — me**: simulate `GET /api/auth/me`. Expect headers stripped, `X-API-Key` injected, no 403.
-7. **WebSocket upgrade header stripping + injection**: simulate the `proxyReqWs` event with the same cookie/authorization mock. Expect both removed and `X-API-Key` set.
-8. **Set-Cookie stripping**: simulate the `proxyRes` event with `set-cookie: session_token=abc; Secure; HttpOnly`. Expect `proxyRes.headers['set-cookie']` to be absent afterwards.
+6. **Auth path allow-list — `GET /api/auth/me`**: simulate `GET /api/auth/me`. Expect headers stripped, `X-API-Key` injected, no 403.
+7. **Auth path allow-list is method-scoped — `POST /api/auth/me`**: simulate `POST /api/auth/me` (a hypothetical future endpoint that does not exist today). Expect 403 with the auth-specific error message, confirming the allow-list checks BOTH path and method and does not drift open if the backend adds a write variant of `/me`.
+8. **WebSocket upgrade header stripping + injection**: simulate the `proxyReqWs` event with the same cookie/authorization mock. Expect both removed and `X-API-Key` set.
+9. **Set-Cookie stripping**: simulate the `proxyRes` event with `set-cookie: session_token=abc; Secure; HttpOnly`. Expect `proxyRes.headers['set-cookie']` to be absent afterwards.
 
 Each test uses a tiny fake `proxy` object that records handler
 registrations, then invokes the registered handlers directly with mock
@@ -447,11 +455,17 @@ SERVERBEE_PROD_URL=https://your-app.up.railway.app
 # when ALLOW_WRITES=1 is set.
 SERVERBEE_PROD_API_KEY=
 
-# Read-only (member role) API key for `bun run dev:prod` / `make web-dev-prod`.
+# Member-role API key for `bun run dev:prod` / `make web-dev-prod`.
 # MUST be a member-role key. Create one in production at
-# Settings → API Keys, selecting role=member. Keeping this separate from
-# SERVERBEE_PROD_API_KEY ensures the frontend proxy can never mutate
-# production even if ALLOW_WRITES=1 is set.
+# Settings → API Keys, selecting role=member. Keeping this separate
+# from SERVERBEE_PROD_API_KEY prevents admin-key bleed-through: even
+# if a developer later sets ALLOW_WRITES=1 to override the proxy's
+# method check, the backend still enforces the member role's
+# permission surface. Note this is NOT zero writes — a handful of
+# routes are accessible to member-role keys (e.g. mobile pairing,
+# push registration, device deletion under
+# crates/server/src/router/api/mobile.rs). Audit your key's
+# permissions if you plan to use ALLOW_WRITES=1.
 SERVERBEE_PROD_READONLY_API_KEY=
 ```
 
@@ -476,7 +490,7 @@ two options documented:
 | # | Layer                  | Mechanism                                                                         | Defeats                                                              |
 | - | ---------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | 1 | Credential isolation   | Dedicated env var `SERVERBEE_PROD_READONLY_API_KEY`, required to be member-role   | Admin key bleed-through from `db-pull` setup                         |
-| 2 | Auth isolation (net)   | Proxy strips `Cookie`/`Authorization` request headers and `Set-Cookie` response header; blocks `/api/auth/*` (except `GET /api/auth/me`) | Session cookie auth path on the backend; OAuth callbacks; accidentally logging into production from localhost |
+| 2 | Auth isolation (net)   | Proxy strips `Cookie`/`Authorization` request headers and `Set-Cookie` response header; blocks every `/api/auth/*` request except exactly `GET /api/auth/me` | Session cookie auth path on the backend; OAuth callbacks; accidentally logging into production from localhost |
 | 3 | Write interception (net) | Proxy returns `403` for non-`GET/HEAD/OPTIONS` methods unless `ALLOW_WRITES=1`  | Accidental clicks on delete/save buttons; stale form submits         |
 | 4 | Human awareness        | Persistent UI banner on every route, red/orange, shows target URL                 | Forgetting the session is wired to production                        |
 
@@ -535,10 +549,11 @@ strategy is:
 
 ### Automated — unit tests on the extracted proxy module
 
-`apps/web/vite/dev-proxy.test.ts` covers the eight cases listed in
+`apps/web/vite/dev-proxy.test.ts` covers the nine cases listed in
 component 3 above (read-only enforcement default, escape hatch, header
 stripping + injection on GET, auth path block for login and OAuth
-callback, auth path allow-list for `/api/auth/me`, WebSocket upgrade,
+callback, auth path allow-list for `GET /api/auth/me`, method-scoping
+of the allow-list via `POST /api/auth/me`, WebSocket upgrade,
 Set-Cookie stripping). Tests run under the existing
 `apps/web/package.json` vitest harness — `bun run test` already exists
 — so CI automatically executes them with no new wiring.
@@ -601,9 +616,9 @@ Test 8 is visual QA.
 | UI banner                        | Yes, on every page, mounted at `apps/web/src/routes/__root.tsx` |
 | API key role enforcement         | Dedicated env var + documentation; backend is the ultimate authority via the member role |
 | Env var strategy                 | **Split**: `SERVERBEE_PROD_READONLY_API_KEY` (new, member) for proxy; `SERVERBEE_PROD_API_KEY` (unchanged, admin) for db-pull |
-| Auth isolation                   | Strip `Cookie` / `Authorization` from requests; strip `Set-Cookie` from responses; block `/api/auth/*` (except `GET /api/auth/me`) |
+| Auth isolation                   | Strip `Cookie` / `Authorization` from requests; strip `Set-Cookie` from responses; block every `/api/auth/*` except exactly `GET /api/auth/me` (method + path must both match) |
 | Proxy logic location             | Extracted to `apps/web/vite/dev-proxy.ts` for unit testability |
-| Automated testing                | Required — `apps/web/vite/dev-proxy.test.ts` (vitest) covering all eight listed cases |
+| Automated testing                | Required — `apps/web/vite/dev-proxy.test.ts` (vitest) covering all nine listed cases |
 | `.env.example` + `AGENTS.md`     | Both updated                                          |
 
 ## Out of scope / Future work
