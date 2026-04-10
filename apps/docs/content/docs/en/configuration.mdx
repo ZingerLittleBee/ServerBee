@@ -12,11 +12,24 @@ Configuration values are merged in the following order. Later sources override e
 
 1. **TOML file (system):** `/etc/serverbee/server.toml` or `/etc/serverbee/agent.toml`
 2. **TOML file (local):** `server.toml` or `agent.toml` in the working directory
-3. **Environment variables:** Prefixed with `SERVERBEE_`, using `__` (double underscore) as the nested key separator
+3. **Runtime environment variables:** Prefixed with `SERVERBEE_`, using `__` (double underscore) as the nested key separator
 
 ## Environment Variable Mapping
 
-Every TOML configuration key maps directly to an environment variable. Replace dots with `__` and prefix with `SERVERBEE_`:
+Every TOML runtime configuration key maps directly to an environment variable. Replace dots with `__` and prefix with `SERVERBEE_`:
+
+## Developer Workflow Env Vars
+
+These variables are for local repo tooling and developer workflows. They are not Figment-backed runtime config for the ServerBee server or agent binaries.
+
+| Environment Variable | Used By | Description |
+|---------------------|---------|-------------|
+| `SERVERBEE_PROD_URL` | `make db-pull`, `make web-dev-prod` | Production base URL used by the database pull script and the frontend prod-proxy workflow |
+| `SERVERBEE_PROD_API_KEY` | `make db-pull` | Admin-scoped API key for the production backup API. Do not reuse this for `make web-dev-prod` |
+| `SERVERBEE_PROD_READONLY_API_KEY` | `make web-dev-prod` | Member-scoped API key injected by the frontend dev proxy for live production browsing |
+| `ALLOW_WRITES` | `make web-dev-prod` | Local opt-in override. Set to `1` to disable the proxy's read-method-only block. When set, the UI banner changes from the normal read-only warning to a stronger write-enabled warning |
+
+These variables are intentionally scoped to local tooling. `ALLOW_WRITES` is not a server feature flag, it is an explicit local override for the frontend prod-proxy workflow only.
 
 ### Server Environment Variables
 
