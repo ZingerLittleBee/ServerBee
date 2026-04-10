@@ -213,13 +213,16 @@ export function createDevProxy(opts: DevProxyOptions): ProxyOptions {
     configure: (proxy) => {
       proxy.on('proxyReq', (proxyReq, req, res) => {
         const url  = req.url ?? ''
+        const pathname = url.split('?')[0]   // strip query string before matching
         const method = (req.method ?? 'GET').toUpperCase()
 
-        // 1. Block auth paths. Allow-list is EXACTLY `GET /api/auth/me`.
-        //    Both path and method must match; a hypothetical future
-        //    `POST /api/auth/me` would be blocked.
-        if (url.startsWith('/api/auth/')) {
-          const isAllowedAuthRead = method === 'GET' && url === '/api/auth/me'
+        // 1. Block auth paths. Allow-list is EXACTLY `GET /api/auth/me`
+        //    (with optional query string). Both path and method must
+        //    match; a hypothetical future `POST /api/auth/me` would be
+        //    blocked, and `/api/auth/me/evil` will not sneak through
+        //    since the comparison is against the pathname, not a prefix.
+        if (pathname.startsWith('/api/auth/')) {
+          const isAllowedAuthRead = method === 'GET' && pathname === '/api/auth/me'
           if (!isAllowedAuthRead) {
             respond403(res, proxyReq,
               'Auth paths are blocked in dev proxy to prevent production session leakage')
@@ -370,9 +373,11 @@ Coverage (must all pass):
 4. **Auth path block — login**: simulate `POST /api/auth/login`. Expect 403 with the auth-specific error message (verifies the auth-block fires *before* the write-block so the error message is more informative).
 5. **Auth path block — OAuth callback**: simulate `GET /api/auth/oauth/github/callback`. Expect 403 even though the method is GET.
 6. **Auth path allow-list — `GET /api/auth/me`**: simulate `GET /api/auth/me`. Expect headers stripped, `X-API-Key` injected, no 403.
-7. **Auth path allow-list is method-scoped — `POST /api/auth/me`**: simulate `POST /api/auth/me` (a hypothetical future endpoint that does not exist today). Expect 403 with the auth-specific error message, confirming the allow-list checks BOTH path and method and does not drift open if the backend adds a write variant of `/me`.
-8. **WebSocket upgrade header stripping + injection**: simulate the `proxyReqWs` event with the same cookie/authorization mock. Expect both removed and `X-API-Key` set.
-9. **Set-Cookie stripping**: simulate the `proxyRes` event with `set-cookie: session_token=abc; Secure; HttpOnly`. Expect `proxyRes.headers['set-cookie']` to be absent afterwards.
+7. **Auth path allow-list with query string — `GET /api/auth/me?_t=123`**: simulate with a cache-buster query string. Expect the same result as case 6 (allowed), confirming the pathname comparison strips the query string before matching.
+8. **Auth path allow-list is method-scoped — `POST /api/auth/me`**: simulate `POST /api/auth/me` (a hypothetical future endpoint that does not exist today). Expect 403 with the auth-specific error message, confirming the allow-list checks BOTH path and method and does not drift open if the backend adds a write variant of `/me`.
+9. **Auth path prefix safety — `GET /api/auth/me/evil`**: simulate a crafted sibling path. Expect 403, confirming the pathname comparison is exact-match not `startsWith`.
+10. **WebSocket upgrade header stripping + injection**: simulate the `proxyReqWs` event with the same cookie/authorization mock. Expect both removed and `X-API-Key` set.
+11. **Set-Cookie stripping**: simulate the `proxyRes` event with `set-cookie: session_token=abc; Secure; HttpOnly`. Expect `proxyRes.headers['set-cookie']` to be absent afterwards.
 
 Each test uses a tiny fake `proxy` object that records handler
 registrations, then invokes the registered handlers directly with mock
@@ -549,14 +554,15 @@ strategy is:
 
 ### Automated — unit tests on the extracted proxy module
 
-`apps/web/vite/dev-proxy.test.ts` covers the nine cases listed in
+`apps/web/vite/dev-proxy.test.ts` covers the eleven cases listed in
 component 3 above (read-only enforcement default, escape hatch, header
 stripping + injection on GET, auth path block for login and OAuth
-callback, auth path allow-list for `GET /api/auth/me`, method-scoping
-of the allow-list via `POST /api/auth/me`, WebSocket upgrade,
-Set-Cookie stripping). Tests run under the existing
-`apps/web/package.json` vitest harness — `bun run test` already exists
-— so CI automatically executes them with no new wiring.
+callback, auth path allow-list for `GET /api/auth/me`, query-string
+tolerance, method-scoping via `POST /api/auth/me`, prefix safety via
+`/api/auth/me/evil`, WebSocket upgrade, Set-Cookie stripping). Tests
+run under the existing `apps/web/package.json` vitest harness —
+`bun run test` already exists — so CI automatically executes them
+with no new wiring.
 
 These tests are **required to pass** before implementation is considered
 complete. They exist specifically because the alternative (manual
@@ -618,7 +624,7 @@ Test 8 is visual QA.
 | Env var strategy                 | **Split**: `SERVERBEE_PROD_READONLY_API_KEY` (new, member) for proxy; `SERVERBEE_PROD_API_KEY` (unchanged, admin) for db-pull |
 | Auth isolation                   | Strip `Cookie` / `Authorization` from requests; strip `Set-Cookie` from responses; block every `/api/auth/*` except exactly `GET /api/auth/me` (method + path must both match) |
 | Proxy logic location             | Extracted to `apps/web/vite/dev-proxy.ts` for unit testability |
-| Automated testing                | Required — `apps/web/vite/dev-proxy.test.ts` (vitest) covering all nine listed cases |
+| Automated testing                | Required — `apps/web/vite/dev-proxy.test.ts` (vitest) covering all eleven listed cases |
 | `.env.example` + `AGENTS.md`     | Both updated                                          |
 
 ## Out of scope / Future work
