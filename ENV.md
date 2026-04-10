@@ -1,10 +1,23 @@
 # ServerBee Environment Variables
 
-All environment variables use the `SERVERBEE_` prefix. Nested config keys use `__` (double underscore) as separator.
+All server and agent runtime environment variables use the `SERVERBEE_` prefix. Nested config keys use `__` (double underscore) as separator.
 
 Example: TOML `admin.password` → env var `SERVERBEE_ADMIN__PASSWORD`
 
 > **Maintainer Note**: When adding or modifying environment variables, update both this file and `apps/docs/content/docs/{en,cn}/configuration.mdx`.
+
+## Developer Workflow Env Vars
+
+These variables are for local repo tooling and development workflows. They are not Figment-backed server or agent runtime config, and changing them does not change `server.toml` or `agent.toml`.
+
+| Environment Variable | Used By | Type | Default | Description |
+|---------------------|---------|------|---------|-------------|
+| `SERVERBEE_PROD_URL` | `make db-pull`, `make web-dev-prod` | string | - | Production base URL used by the database pull script and the frontend prod-proxy workflow |
+| `SERVERBEE_PROD_API_KEY` | `make db-pull` | string | - | Admin-scoped API key for the production backup API. Do not reuse this for `make web-dev-prod` |
+| `SERVERBEE_PROD_READONLY_API_KEY` | `make web-dev-prod` | string | - | Member-scoped API key injected by the frontend dev proxy for live production browsing |
+| `ALLOW_WRITES` | `make web-dev-prod` | string | unset | Local opt-in override. Set to `1` to disable the proxy's read-method-only block. The UI banner also changes from the normal read-only warning to a stronger write-enabled warning when this is set |
+
+`ALLOW_WRITES` is intentionally a local developer override for `make web-dev-prod`, not a runtime feature flag for the Rust server or agent.
 
 ## Server
 
