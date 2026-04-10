@@ -37,7 +37,8 @@ Automated tests cover the proxy factory and banner logic. This checklist covers 
 - [ ] Open `http://localhost:5173/`.
 - [ ] Confirm the banner shows `⚠ Dev proxy → PROD (https://...) · read-only`.
 - [ ] Confirm the server list loads production data.
-- [ ] Confirm charts or server status update in real time, proving WebSocket proxying works.
+- [ ] Confirm charts or server status update in real time, proving `/api/ws/servers` proxying works.
+- [ ] Confirm control-plane WebSocket routes such as terminal or Docker log streaming do not connect through prod-proxy mode.
 
 ### 3. 默认写入拦截
 
