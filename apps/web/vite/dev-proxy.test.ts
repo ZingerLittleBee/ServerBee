@@ -31,6 +31,11 @@ interface MockProxyRes {
   headers: Record<string, unknown>
 }
 
+interface MockWsSocket {
+  destroy: ReturnType<typeof vi.fn<() => void>>
+  write: ReturnType<typeof vi.fn<(chunk: string) => void>>
+}
+
 type MockProxyHandlers = {
   [EventName in keyof DevProxyHookEventMap]: Array<(...args: DevProxyHookEventMap[EventName]) => void>
 }
@@ -106,6 +111,13 @@ function makeMockRes(): MockRes {
   return {
     writeHead: vi.fn<(statusCode: number, headers: Record<string, string>) => void>(),
     end: vi.fn<(body: string) => void>()
+  }
+}
+
+function makeMockWsSocket(): MockWsSocket {
+  return {
+    write: vi.fn<(chunk: string) => void>(),
+    destroy: vi.fn<() => void>()
   }
 }
 
@@ -292,6 +304,32 @@ describe('createDevProxy', () => {
       expect(proxyReq.removeHeader).toHaveBeenCalledWith('cookie')
       expect(proxyReq.removeHeader).toHaveBeenCalledWith('authorization')
       expect(proxyReq.setHeader).toHaveBeenCalledWith('X-API-Key', 'serverbee_test_member')
+    })
+
+    it('allows /api/ws/servers with query strings', () => {
+      const proxy = makeRegisteredProxy()
+
+      const proxyReq = makeMockProxyReq()
+      const req = makeMockReq('GET', '/api/ws/servers?_t=123')
+
+      proxy.emit('proxyReqWs', proxyReq, req, makeMockWsSocket(), {}, Buffer.alloc(0))
+
+      expect(proxyReq.setHeader).toHaveBeenCalledWith('X-API-Key', 'serverbee_test_member')
+    })
+
+    it('blocks terminal WebSocket upgrades outside the allow-list', () => {
+      const proxy = makeRegisteredProxy()
+
+      const proxyReq = makeMockProxyReq()
+      const req = makeMockReq('GET', '/api/ws/terminal/server-1')
+      const socket = makeMockWsSocket()
+
+      proxy.emit('proxyReqWs', proxyReq, req, socket, {}, Buffer.alloc(0))
+
+      expect(socket.write).toHaveBeenCalledWith(expect.stringContaining('403 Forbidden'))
+      expect(socket.write).toHaveBeenCalledWith(expect.stringContaining('WebSocket path'))
+      expect(socket.destroy).toHaveBeenCalled()
+      expect(proxyReq.setHeader).not.toHaveBeenCalledWith('X-API-Key', expect.anything())
     })
   })
 

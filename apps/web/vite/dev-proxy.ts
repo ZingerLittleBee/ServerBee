@@ -30,9 +30,14 @@ interface ProxyResLike {
   headers: Record<string, unknown>
 }
 
+interface WsSocketLike {
+  destroy?(): void
+  write?(chunk: string): void
+}
+
 export interface DevProxyHookEventMap {
   proxyReq: [proxyReq: ProxyReqLike, req: IncomingReqLike, res: ServerResLike]
-  proxyReqWs: [proxyReq: ProxyReqLike, req: IncomingReqLike, socket: unknown, options: unknown, head: unknown]
+  proxyReqWs: [proxyReq: ProxyReqLike, req: IncomingReqLike, socket: WsSocketLike, options: unknown, head: unknown]
   proxyRes: [proxyRes: ProxyResLike, req: IncomingReqLike, res: ServerResLike]
 }
 
@@ -85,7 +90,14 @@ export function registerDevProxyHandlers(proxy: DevProxyHookRegistrar, opts: Dev
     proxyReq.setHeader('X-API-Key', opts.readonlyApiKey)
   })
 
-  proxy.on('proxyReqWs', (proxyReq) => {
+  proxy.on('proxyReqWs', (proxyReq, req, socket) => {
+    const pathname = (req.url ?? '').split('?')[0]
+
+    if (pathname !== '/api/ws/servers') {
+      respondWs403(proxyReq, socket, 'WebSocket path is blocked in dev proxy to prevent production control access.')
+      return
+    }
+
     proxyReq.removeHeader('cookie')
     proxyReq.removeHeader('authorization')
     proxyReq.setHeader('X-API-Key', opts.readonlyApiKey)
@@ -99,12 +111,28 @@ export function registerDevProxyHandlers(proxy: DevProxyHookRegistrar, opts: Dev
 function respond403(res: ServerResLike, proxyReq: ProxyReqLike, message: string) {
   res.writeHead(403, { 'content-type': 'application/json' })
   res.end(JSON.stringify({ error: message }))
+  abortProxyRequest(proxyReq)
+}
 
+function respondWs403(proxyReq: ProxyReqLike, socket: WsSocketLike, message: string) {
+  socket.write?.(
+    [
+      'HTTP/1.1 403 Forbidden',
+      'Content-Type: application/json',
+      'Connection: close',
+      '',
+      JSON.stringify({ error: message })
+    ].join('\r\n')
+  )
+  abortProxyRequest(proxyReq)
+  socket.destroy?.()
+}
+
+function abortProxyRequest(proxyReq: ProxyReqLike) {
   if (typeof proxyReq.destroy === 'function') {
     proxyReq.destroy()
     return
   }
-
   if (typeof proxyReq.abort === 'function') {
     proxyReq.abort()
   }
