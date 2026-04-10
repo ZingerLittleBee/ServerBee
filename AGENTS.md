@@ -127,3 +127,20 @@ E2E manual verification checklists are in `tests/` directory, organized by featu
 - **Scope**: Add a scope when it clarifies the affected area, for example `agent`, `server`, `web`, `deploy`, or `register`
 - **Summary**: Keep the summary imperative, concise, lowercase when practical, and without a trailing period
 - **Examples**: `fix(deploy): handle piped install stdin`, `docs: update agent bootstrap command examples`
+
+## Debugging the frontend with production data
+
+Two workflows exist for seeing production data while developing:
+
+- **`make db-pull && make server-dev-prod`** downloads a VACUUM'd SQLite snapshot from production via the backup API and runs the local Rust server against it. Use this when you need a full local backend stack for Rust handlers, migrations, or background-task debugging. Required env vars: `SERVERBEE_PROD_URL` and the admin-scoped `SERVERBEE_PROD_API_KEY`. Data is a frozen snapshot, so there are no live production WebSocket pushes or agent updates.
+- **`make web-dev-prod`** runs the Vite dev server in `prod-proxy` mode. HTTP `/api/*` requests and the browser server-update WebSocket (`/api/ws/servers`) are forwarded to the production Railway backend so the browser sees live production data and realtime pushes without running the Rust server locally. Use this for frontend layout, styling, chart, and interaction debugging against real traffic. Required env vars: `SERVERBEE_PROD_URL` and the member-scoped `SERVERBEE_PROD_READONLY_API_KEY`.
+
+Safety model for `make web-dev-prod`:
+
+- Non-read HTTP methods (`POST`, `PUT`, `PATCH`, `DELETE`) are blocked with `403` at the proxy layer by default. `ALLOW_WRITES=1 make web-dev-prod` disables that proxy-side method block, but writes are still limited by whatever permissions the member key actually has.
+- `Cookie` and `Authorization` request headers are stripped, and `Set-Cookie` response headers are stripped, so localhost cannot accidentally create or reuse a production browser session.
+- `/api/auth/*` is blocked except exactly `GET /api/auth/me`, which the UI uses to display the current user.
+- WebSocket proxying is allow-listed to `/api/ws/servers`. Control-plane WebSocket routes such as terminal and Docker log streaming stay blocked in prod-proxy mode to avoid exposing production control surfaces through a misconfigured key.
+- The UI always shows a persistent warning banner in prod-proxy mode. In normal mode the banner says `⚠ Dev proxy → PROD (...) · read-only`. If `ALLOW_WRITES=1` is set, the banner switches to a stronger write-enabled warning instead of pretending the session is still read-only.
+
+See `.env.example` for the split-key setup and the warning about member-accessible mobile write endpoints.
