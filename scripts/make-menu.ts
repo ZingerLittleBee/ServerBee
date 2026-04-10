@@ -112,6 +112,15 @@ const COMMANDS: CommandDefinition[] = [
     command: 'bun --filter @serverbee/web dev'
   },
   {
+    key: 'web-dev-prod',
+    name: 'web:dev:prod',
+    category: 'Web',
+    description:
+      'Vite dev server with /api and /api/ws/* proxied to the production Railway backend (read-only; requires SERVERBEE_PROD_URL + SERVERBEE_PROD_READONLY_API_KEY)',
+    command: 'bun --filter @serverbee/web dev:prod',
+    featured: true
+  },
+  {
     key: 'web-build',
     name: 'web:build',
     category: 'Web',

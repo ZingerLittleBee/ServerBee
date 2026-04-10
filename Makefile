@@ -16,6 +16,7 @@ COMMAND_TARGETS := \
 	test \
 	test-watch \
 	web-dev \
+	web-dev-prod \
 	web-build \
 	web-typecheck \
 	web-preview \
