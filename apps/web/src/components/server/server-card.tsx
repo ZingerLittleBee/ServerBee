@@ -176,7 +176,7 @@ export function ServerCard({ server }: ServerCardProps) {
     <div className="flex h-full flex-col rounded-lg border bg-card p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <Link
-          className="flex items-center gap-1.5 truncate hover:underline"
+          className="flex items-center gap-1.5 truncate border-transparent border-b pb-px hover:border-current"
           params={{ id: server.id }}
           search={{ range: 'realtime' }}
           to="/servers/$id"
@@ -231,9 +231,6 @@ export function ServerCard({ server }: ServerCardProps) {
 
       {latencyPoints.length > 0 && (
         <div className="mt-auto border-t pt-3">
-          <div className="mb-2">
-            <span className="text-[10px] text-muted-foreground">{t('card_network_quality')}</span>
-          </div>
           <div>
             <div className="mb-1 flex items-center justify-between">
               <span className="text-[10px] text-muted-foreground">{t('card_latency')}</span>

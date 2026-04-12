@@ -34,12 +34,20 @@ function isWidgetStatic(configJson: string): boolean {
 export function widgetsToLayout(widgets: DashboardWidget[]): Layout {
   return widgets.map((widget) => {
     const { minW, minH, maxW, maxH } = getSizeConstraints(widget.widget_type)
+    let w = Math.max(widget.grid_w, minW)
+    let h = Math.max(widget.grid_h, minH)
+    if (maxW !== undefined) {
+      w = Math.min(w, maxW)
+    }
+    if (maxH !== undefined) {
+      h = Math.min(h, maxH)
+    }
     const item: LayoutItem = {
       i: widget.id,
       x: widget.grid_x,
       y: widget.grid_y,
-      w: widget.grid_w,
-      h: widget.grid_h,
+      w,
+      h,
       minW,
       minH
     }
@@ -48,6 +56,9 @@ export function widgetsToLayout(widgets: DashboardWidget[]): Layout {
     }
     if (maxH !== undefined) {
       item.maxH = maxH
+    }
+    if (maxW !== undefined && maxH !== undefined && minW === maxW && minH === maxH) {
+      item.isResizable = false
     }
     if (isWidgetStatic(widget.config_json)) {
       item.static = true

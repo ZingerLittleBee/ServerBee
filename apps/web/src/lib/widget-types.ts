@@ -18,11 +18,11 @@ export const WIDGET_TYPES = [
     label: 'Stat Number',
     category: 'Real-time',
     defaultW: 2,
-    defaultH: 2,
+    defaultH: 1,
     minW: 2,
-    minH: 2,
-    maxW: 4,
-    maxH: 3
+    minH: 1,
+    maxW: 2,
+    maxH: 1
   },
   { id: 'server-cards', label: 'Server Cards', category: 'Real-time', defaultW: 12, defaultH: 6, minW: 4, minH: 3 },
   { id: 'gauge', label: 'Gauge', category: 'Real-time', defaultW: 3, defaultH: 3, minW: 2, minH: 2, maxW: 6, maxH: 6 },

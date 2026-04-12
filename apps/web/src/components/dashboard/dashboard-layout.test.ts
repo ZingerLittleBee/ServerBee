@@ -12,7 +12,7 @@ const widgets: DashboardWidget[] = [
     grid_x: 0,
     grid_y: 0,
     grid_w: 2,
-    grid_h: 2,
+    grid_h: 1,
     sort_order: 0,
     created_at: '2026-03-20T00:00:00Z'
   },
@@ -34,9 +34,9 @@ const widgets: DashboardWidget[] = [
 describe('dashboard-layout', () => {
   it('widgetsToLayout adds min and max constraints from widget definitions', () => {
     const layout = widgetsToLayout(widgets)
-    expect(layout[0]).toMatchObject({ i: 'w-1', x: 0, y: 0, w: 2, h: 2, minW: 2, minH: 2, maxW: 4, maxH: 3 })
-    // server-cards has no maxW/maxH
-    expect(layout[1]).toMatchObject({ i: 'w-2', x: 2, y: 0, w: 3, h: 6, minW: 4, minH: 3 })
+    expect(layout[0]).toMatchObject({ i: 'w-1', x: 0, y: 0, w: 2, h: 1, minW: 2, minH: 1, maxW: 2, maxH: 1 })
+    // server-cards has no maxW/maxH — stored w=3 is clamped to minW=4
+    expect(layout[1]).toMatchObject({ i: 'w-2', x: 2, y: 0, w: 4, h: 6, minW: 4, minH: 3 })
     expect(layout[1]).not.toHaveProperty('maxW')
     expect(layout[1]).not.toHaveProperty('maxH')
   })
@@ -54,13 +54,13 @@ describe('dashboard-layout', () => {
   it('layoutToPatch only returns changed widgets', () => {
     const patch = layoutToPatch(
       [
-        { i: 'w-1', x: 1, y: 0, w: 2, h: 2 },
+        { i: 'w-1', x: 1, y: 0, w: 2, h: 1 },
         { i: 'w-2', x: 2, y: 0, w: 3, h: 6 }
       ],
       widgets
     )
 
-    expect(patch).toEqual([{ id: 'w-1', grid_x: 1, grid_y: 0, grid_w: 2, grid_h: 2 }])
+    expect(patch).toEqual([{ id: 'w-1', grid_x: 1, grid_y: 0, grid_w: 2, grid_h: 1 }])
   })
 
   it('mergeLayoutPatch only updates layout fields', () => {
