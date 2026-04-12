@@ -1,5 +1,5 @@
-use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::SaltString;
+use argon2::password_hash::rand_core::OsRng;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -95,13 +95,9 @@ impl MobileAuthService {
         params: MobileLoginParams<'_>,
     ) -> Result<MobileTokenResponse, AppError> {
         // Validate credentials using AuthService
-        let user_model = Self::validate_credentials(
-            db,
-            params.username,
-            params.password,
-            params.totp_code,
-        )
-        .await?;
+        let user_model =
+            Self::validate_credentials(db, params.username, params.password, params.totp_code)
+                .await?;
 
         Self::login_for_user(
             db,
@@ -244,10 +240,7 @@ impl MobileAuthService {
 
     /// Delete a mobile session and all associated sessions and device tokens.
     /// This is called when the mobile client explicitly logs out.
-    pub async fn logout(
-        db: &DatabaseConnection,
-        mobile_session_id: &str,
-    ) -> Result<(), AppError> {
+    pub async fn logout(db: &DatabaseConnection, mobile_session_id: &str) -> Result<(), AppError> {
         Self::delete_mobile_session_cascade(db, mobile_session_id).await
     }
 
@@ -289,9 +282,7 @@ impl MobileAuthService {
         let ms = mobile_session::Entity::find_by_id(mobile_session_id)
             .one(db)
             .await?
-            .ok_or(AppError::NotFound(
-                "Mobile session not found".to_string(),
-            ))?;
+            .ok_or(AppError::NotFound("Mobile session not found".to_string()))?;
 
         if ms.user_id != user_id {
             return Err(AppError::Forbidden(
@@ -702,9 +693,11 @@ mod tests {
         assert_eq!(devices.len(), 1);
 
         // userB tries to revoke userA's device
-        let result =
-            MobileAuthService::revoke_device(&db, &devices[0].id, &user_b.id).await;
-        assert!(result.is_err(), "revoking another user's device should fail");
+        let result = MobileAuthService::revoke_device(&db, &devices[0].id, &user_b.id).await;
+        assert!(
+            result.is_err(),
+            "revoking another user's device should fail"
+        );
     }
 
     #[tokio::test]

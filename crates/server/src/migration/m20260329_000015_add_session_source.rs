@@ -12,10 +12,8 @@ impl MigrationName for Migration {
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
-        db.execute_unprepared(
-            "ALTER TABLE sessions ADD COLUMN source TEXT NOT NULL DEFAULT 'web'",
-        )
-        .await?;
+        db.execute_unprepared("ALTER TABLE sessions ADD COLUMN source TEXT NOT NULL DEFAULT 'web'")
+            .await?;
         db.execute_unprepared(
             "ALTER TABLE sessions ADD COLUMN mobile_session_id TEXT REFERENCES mobile_sessions(id)",
         )
