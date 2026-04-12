@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, Crown, Server } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -184,6 +185,7 @@ function SortableHead({
 // ---------------------------------------------------------------------------
 
 function TrafficPage() {
+  const { t } = useTranslation('servers')
   const [sortField, setSortField] = useState<SortField>('total')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
@@ -251,14 +253,18 @@ function TrafficPage() {
 
   return (
     <div>
-      <h1 className="mb-6 font-bold text-2xl">Traffic Overview</h1>
+      <h1 className="mb-6 font-bold text-2xl">{t('traffic_overview_title')}</h1>
 
       {/* Stat cards */}
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={ArrowDownToLine} label="Cycle Inbound" value={formatBytes(totalIn)} />
-        <StatCard icon={ArrowUpFromLine} label="Cycle Outbound" value={formatBytes(totalOut)} />
-        <StatCard icon={Crown} label="Highest Usage" value={highestServer} />
-        <StatCard icon={warnCount > 0 ? AlertTriangle : Server} label="Servers > 80%" value={String(warnCount)} />
+        <StatCard icon={ArrowDownToLine} label={t('traffic_cycle_inbound')} value={formatBytes(totalIn)} />
+        <StatCard icon={ArrowUpFromLine} label={t('traffic_cycle_outbound')} value={formatBytes(totalOut)} />
+        <StatCard icon={Crown} label={t('traffic_highest_usage')} value={highestServer} />
+        <StatCard
+          icon={warnCount > 0 ? AlertTriangle : Server}
+          label={t('traffic_servers_warning')}
+          value={String(warnCount)}
+        />
       </div>
 
       {/* Server traffic ranking table */}
@@ -268,18 +274,18 @@ function TrafficPage() {
             <TableHeader>
               <TableRow>
                 <SortableHead field="name" onSort={handleSort} sortDir={sortDir} sortField={sortField}>
-                  Server
+                  {t('traffic_server')}
                 </SortableHead>
-                <TableHead>Inbound</TableHead>
-                <TableHead>Outbound</TableHead>
+                <TableHead>{t('traffic_inbound')}</TableHead>
+                <TableHead>{t('traffic_outbound')}</TableHead>
                 <SortableHead field="total" onSort={handleSort} sortDir={sortDir} sortField={sortField}>
-                  Total
+                  {t('traffic_total')}
                 </SortableHead>
-                <TableHead>Limit</TableHead>
+                <TableHead>{t('traffic_limit')}</TableHead>
                 <SortableHead field="percent" onSort={handleSort} sortDir={sortDir} sortField={sortField}>
-                  Usage
+                  {t('traffic_usage')}
                 </SortableHead>
-                <TableHead>Days Left</TableHead>
+                <TableHead>{t('traffic_days_left')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -293,7 +299,7 @@ function TrafficPage() {
                     {s.traffic_limit != null ? (
                       formatBytes(s.traffic_limit)
                     ) : (
-                      <Badge variant="secondary">Unlimited</Badge>
+                      <Badge variant="secondary">{t('traffic_unlimited')}</Badge>
                     )}
                   </TableCell>
                   <TableCell>
@@ -315,7 +321,7 @@ function TrafficPage() {
 
       {sorted.length === 0 && (
         <div className="mb-6 rounded-lg border bg-card p-12 text-center">
-          <p className="text-muted-foreground">No servers with traffic data yet.</p>
+          <p className="text-muted-foreground">{t('traffic_no_data')}</p>
         </div>
       )}
 
@@ -323,7 +329,7 @@ function TrafficPage() {
       {dailyData && dailyData.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Global Traffic Trend (Last 30 Days)</CardTitle>
+            <CardTitle>{t('traffic_global_trend')}</CardTitle>
           </CardHeader>
           <CardContent>
             <ChartContainer className="h-[300px] w-full" config={trendConfig}>

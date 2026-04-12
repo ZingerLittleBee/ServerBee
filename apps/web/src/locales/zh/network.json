@@ -90,5 +90,19 @@
   "hostname": "主机名",
   "asn": "ASN",
   "no_response": "*",
-  "timeout": "超时"
+  "timeout": "超时",
+
+  "latency_title": "延迟 (ms)",
+  "latency_inbound": "入站",
+  "latency_outbound": "出站",
+  "latency_no_data": "暂无数据",
+  "latency_chart_no_data": "暂无数据",
+
+  "anomaly_time": "时间",
+  "anomaly_target": "目标",
+  "anomaly_type": "类型",
+  "anomaly_value": "数值",
+  "anomaly_count_with_value": "异常 ({{count}})",
+
+  "tooltip_current_targets": "当前目标"
 }

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import {
   type ChartConfig,
@@ -28,10 +29,12 @@ interface DailyTrafficItem {
 
 const DEFAULT_DAYS = 30
 
-const trafficConfig = {
-  bytes_in: { label: 'Inbound', color: 'var(--chart-1)' },
-  bytes_out: { label: 'Outbound', color: 'var(--chart-2)' }
-} satisfies ChartConfig
+function useTrafficConfig(t: (key: string) => string): ChartConfig {
+  return {
+    bytes_in: { label: t('widgets.trafficBar.legend.inbound'), color: 'var(--chart-1)' },
+    bytes_out: { label: t('widgets.trafficBar.legend.outbound'), color: 'var(--chart-2)' }
+  }
+}
 
 function hoursToDays(hours?: number): number {
   if (!hours || hours <= 0) {
@@ -41,6 +44,8 @@ function hoursToDays(hours?: number): number {
 }
 
 export function TrafficBarWidget({ config, servers }: TrafficBarWidgetProps) {
+  const { t } = useTranslation('dashboard')
+  const trafficConfig = useTrafficConfig(t)
   const { server_id } = config
   const days = hoursToDays(config.hours)
   const hasServerId = server_id != null && server_id.length > 0
@@ -77,10 +82,10 @@ export function TrafficBarWidget({ config, servers }: TrafficBarWidgetProps) {
 
   const serverName = useMemo(() => {
     if (!hasServerId) {
-      return 'All Servers'
+      return t('widgets.common.placeholders.allServers')
     }
-    return servers.find((s) => s.id === server_id)?.name ?? 'Unknown'
-  }, [hasServerId, server_id, servers])
+    return servers.find((s) => s.id === server_id)?.name ?? t('unknown')
+  }, [hasServerId, server_id, servers, t])
 
   if (isLoading) {
     return (
@@ -94,10 +99,10 @@ export function TrafficBarWidget({ config, servers }: TrafficBarWidgetProps) {
   if (!data || data.length === 0) {
     return (
       <div className="flex h-full flex-col rounded-lg border bg-card p-4">
-        <h3 className="mb-3 font-semibold text-sm">Traffic</h3>
+        <h3 className="mb-3 font-semibold text-sm">{t('widgets.trafficBar.title')}</h3>
         <p className="text-muted-foreground text-xs">{serverName}</p>
         <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
-          No traffic data available
+          {t('widgets.trafficBar.empty.noData')}
         </div>
       </div>
     )
@@ -106,7 +111,7 @@ export function TrafficBarWidget({ config, servers }: TrafficBarWidgetProps) {
   return (
     <div className="flex h-full flex-col rounded-lg border bg-card p-4">
       <div className="mb-3">
-        <h3 className="font-semibold text-sm">Traffic</h3>
+        <h3 className="font-semibold text-sm">{t('widgets.trafficBar.title')}</h3>
         <p className="text-muted-foreground text-xs">{serverName}</p>
       </div>
       <div className="min-h-0 flex-1">

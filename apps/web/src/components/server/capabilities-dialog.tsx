@@ -67,10 +67,10 @@ export function CapabilitiesDialog({ server }: { server: ServerWithCaps }) {
     const newCaps = caps & bit ? caps & ~bit : caps | bit
     mutation.mutate(newCaps, {
       onError: (err) => {
-        toast.error(err instanceof Error ? err.message : 'Operation failed')
+        toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
       },
       onSuccess: () => {
-        toast.success('Capabilities updated')
+        toast.success(t('settings:capabilities.toast_updated'))
       }
     })
   }

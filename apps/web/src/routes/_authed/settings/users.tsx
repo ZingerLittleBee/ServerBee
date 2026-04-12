@@ -52,10 +52,10 @@ function UsersPage() {
     onSuccess: () => {
       invalidate()
       resetForm()
-      toast.success('User created')
+      toast.success(t('users.toast_created'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Operation failed')
+      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
     }
   })
 
@@ -64,10 +64,10 @@ function UsersPage() {
     onSuccess: () => {
       invalidate()
       setEditingId(null)
-      toast.success('User role updated')
+      toast.success(t('users.toast_role_updated'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Operation failed')
+      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
     }
   })
 
@@ -75,10 +75,10 @@ function UsersPage() {
     mutationFn: (id: string) => api.delete(`/api/users/${id}`),
     onSuccess: () => {
       invalidate()
-      toast.success('User deleted')
+      toast.success(t('users.toast_deleted'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Operation failed')
+      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
     }
   })
 
@@ -193,8 +193,8 @@ function UsersPage() {
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="member">member</SelectItem>
-                                <SelectItem value="admin">admin</SelectItem>
+                                <SelectItem value="member">{t('users.role_member')}</SelectItem>
+                                <SelectItem value="admin">{t('users.role_admin')}</SelectItem>
                               </SelectContent>
                             </Select>
                             <button

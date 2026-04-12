@@ -1,0 +1,174 @@
+{
+  "page": {
+    "title": "服务监控"
+  },
+  "empty": {
+    "noMonitors": "暂无服务监控配置。",
+    "createFirst": "创建第一个监控"
+  },
+  "dialog": {
+    "addTitle": "添加监控",
+    "editTitle": "编辑监控",
+    "addDescription": "创建新的服务监控。",
+    "editDescription": "更新服务监控配置。"
+  },
+  "monitorTypes": {
+    "ssl": "SSL",
+    "dns": "DNS",
+    "http_keyword": "HTTP 关键词",
+    "tcp": "TCP",
+    "whois": "WHOIS"
+  },
+  "form": {
+    "name": "名称",
+    "type": "类型",
+    "target": "目标",
+    "interval": "间隔（秒）",
+    "enabled": "启用"
+  },
+  "sslConfig": {
+    "warningDays": "警告天数",
+    "criticalDays": "严重天数"
+  },
+  "dnsConfig": {
+    "recordType": "记录类型",
+    "expectedValues": "预期值（每行一个）",
+    "nameserver": "DNS 服务器（可选）"
+  },
+  "httpConfig": {
+    "method": "方法",
+    "timeout": "超时（秒）",
+    "keyword": "关键词",
+    "keywordExists": "响应中应包含关键词",
+    "expectedStatus": "预期状态码（逗号分隔）"
+  },
+  "tcpConfig": {
+    "timeout": "超时（秒）"
+  },
+  "whoisConfig": {
+    "warningDays": "警告天数",
+    "criticalDays": "严重天数"
+  },
+  "table": {
+    "status": "状态",
+    "name": "名称",
+    "type": "类型",
+    "target": "目标",
+    "interval": "间隔",
+    "enabled": "启用",
+    "lastChecked": "最后检查",
+    "actions": "操作"
+  },
+  "targetPlaceholder": {
+    "ssl": "example.com 或 example.com:8443",
+    "dns": "example.com",
+    "http_keyword": "https://example.com/health",
+    "tcp": "example.com:3306",
+    "whois": "example.com"
+  },
+  "namePlaceholder": "我的 SSL 检查",
+  "dnsExpectedPlaceholder": "例如：93.184.216.34",
+  "dnsNameserverPlaceholder": "例如：8.8.8.8",
+  "httpKeywordPlaceholder": "在响应正文中搜索的字符串",
+  "httpStatusPlaceholder": "200, 201",
+  "aria": {
+    "viewDetails": "查看详情",
+    "triggerCheck": "触发检查",
+    "edit": "编辑监控",
+    "deleteMonitor": "删除监控"
+  },
+  "toast": {
+    "created": "监控已创建",
+    "updated": "监控已更新",
+    "deleted": "监控已删除",
+    "createFailed": "创建监控失败",
+    "updateFailed": "更新监控失败",
+    "deleteFailed": "删除监控失败",
+    "checkTriggered": "检查已触发",
+    "triggerFailed": "触发检查失败",
+    "toggleFailed": "切换监控状态失败"
+  },
+  "stats": {
+    "uptime": "可用率",
+    "avgLatency": "平均延迟",
+    "lastCheck": "最后检查"
+  },
+  "detail": {
+    "ssl": {
+      "title": "SSL 证书",
+      "subject": "主题",
+      "issuer": "颁发者",
+      "notBefore": "生效时间",
+      "notAfter": "过期时间",
+      "daysRemaining": "剩余天数",
+      "sha256Fingerprint": "SHA-256 指纹",
+      "warning": "警告"
+    },
+    "dns": {
+      "title": "DNS 解析",
+      "recordType": "记录类型",
+      "nameserver": "DNS 服务器",
+      "changed": "已变更",
+      "resolvedValues": "解析值",
+      "yes": "是",
+      "no": "否"
+    },
+    "http": {
+      "title": "HTTP 检查",
+      "statusCode": "状态码",
+      "keywordFound": "找到关键词",
+      "responseTime": "响应时间",
+      "yes": "是",
+      "no": "否",
+      "na": "不适用"
+    },
+    "tcp": {
+      "title": "TCP 连接",
+      "connected": "已连接",
+      "yes": "是",
+      "no": "否"
+    },
+    "whois": {
+      "title": "WHOIS 信息",
+      "registrar": "注册商",
+      "expiryDate": "过期日期",
+      "daysRemaining": "剩余天数",
+      "warning": "警告"
+    }
+  },
+  "history": {
+    "title": "检查历史",
+    "empty": "暂无检查历史。",
+    "table": {
+      "time": "时间",
+      "status": "状态",
+      "latency": "延迟",
+      "error": "错误"
+    },
+    "status": {
+      "ok": "正常",
+      "fail": "失败"
+    }
+  },
+  "navigation": {
+    "backToList": "返回服务监控"
+  },
+  "actions": {
+    "checkNow": "立即检查",
+    "addMonitor": "添加监控"
+  },
+  "status": {
+    "up": "正常",
+    "down": "故障",
+    "online": "在线",
+    "offline": "离线",
+    "pending": "待检查",
+    "notChecked": "尚未检查"
+  },
+  "chart": {
+    "responseTime": "响应时间",
+    "latency": "延迟",
+    "noRecords": "没有可用于图表的记录。"
+  },
+  "notFound": "未找到服务监控。"
+}

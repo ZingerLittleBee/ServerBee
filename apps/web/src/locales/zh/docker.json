@@ -1,0 +1,75 @@
+{
+  "backToServer": "返回服务器",
+  "containers": {
+    "title": "容器",
+    "searchPlaceholder": "搜索容器...",
+    "noFilterMatch": "没有符合当前筛选条件的容器",
+    "noContainers": "未找到容器"
+  },
+  "notAvailable": {
+    "title": "Docker 不可用",
+    "description": "正在等待 Agent 发送 Docker 数据..."
+  },
+  "noContainers": {
+    "title": "未找到容器",
+    "description": "Docker 正在运行，但当前没有容器"
+  },
+  "networksButton": "网络",
+  "volumesButton": "存储卷",
+  "filter": {
+    "all": "全部",
+    "running": "运行中",
+    "stopped": "已停止"
+  },
+  "table": {
+    "name": "名称",
+    "image": "镜像",
+    "status": "状态",
+    "cpu": "CPU %",
+    "memory": "内存",
+    "networkIO": "网络 I/O"
+  },
+  "detail": {
+    "image": "镜像",
+    "status": "状态",
+    "ports": "端口",
+    "created": "创建时间",
+    "containerId": "容器 ID",
+    "noPorts": "无"
+  },
+  "networks": {
+    "title": "Docker 网络",
+    "empty": "未找到网络",
+    "table": {
+      "name": "名称",
+      "driver": "驱动",
+      "scope": "范围",
+      "containers": "容器数"
+    }
+  },
+  "volumes": {
+    "title": "Docker 存储卷",
+    "empty": "未找到存储卷",
+    "table": {
+      "name": "名称",
+      "driver": "驱动",
+      "mountpoint": "挂载点",
+      "created": "创建时间"
+    }
+  },
+  "logs": {
+    "title": "日志",
+    "connected": "已连接",
+    "disconnected": "已断开",
+    "follow": "跟随",
+    "clear": "清空",
+    "empty": "暂无日志条目..."
+  },
+  "events": {
+    "title": "事件",
+    "empty": "暂无事件记录"
+  },
+  "common": {
+    "notAvailable": "N/A"
+  }
+}

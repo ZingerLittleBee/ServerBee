@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import { filterByIds, formatRelativeTime } from '@/lib/widget-helpers'
@@ -22,6 +23,7 @@ interface AlertEvent {
 }
 
 export function AlertListWidget({ config, servers }: AlertListWidgetProps) {
+  const { t } = useTranslation('dashboard')
   const limit = config.max_items ?? 10
   const serverIds = config.server_ids
 
@@ -44,15 +46,17 @@ export function AlertListWidget({ config, servers }: AlertListWidgetProps) {
   if (!events) {
     return (
       <div className="flex h-full flex-col rounded-lg border bg-card p-4">
-        <h3 className="mb-3 font-semibold text-sm">Alerts</h3>
-        <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">Loading...</div>
+        <h3 className="mb-3 font-semibold text-sm">{t('widgets.alertList.title')}</h3>
+        <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">
+          {t('states.loading')}
+        </div>
       </div>
     )
   }
 
   return (
     <div className="flex h-full flex-col rounded-lg border bg-card p-4">
-      <h3 className="mb-3 font-semibold text-sm">Alerts</h3>
+      <h3 className="mb-3 font-semibold text-sm">{t('widgets.alertList.title')}</h3>
       <div className="flex flex-1 flex-col gap-1.5 overflow-auto">
         {filtered.map((event) => {
           const isFiring = event.status === 'firing'
@@ -74,7 +78,9 @@ export function AlertListWidget({ config, servers }: AlertListWidgetProps) {
           )
         })}
         {filtered.length === 0 && (
-          <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">No alert events</div>
+          <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">
+            {t('widgets.alertList.empty.noEvents')}
+          </div>
         )}
       </div>
     </div>

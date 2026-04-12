@@ -16,5 +16,32 @@
   "active_incidents": "Active Incidents",
   "planned_maintenance": "Planned Maintenance",
   "server_status": "Server Status",
-  "recent_incidents": "Recent Incidents (Last 7 Days)"
+  "recent_incidents": "Recent Incidents (Last 7 Days)",
+
+  "network_in": "Network In",
+  "network_out": "Network Out",
+  "uptime": "Uptime",
+  "maintenance": "Maintenance",
+  "online_status": "Online",
+  "offline_status": "Offline",
+
+  "time_just_now": "just now",
+  "time_minutes_ago": "{{count}}m ago",
+  "time_hours_ago": "{{count}}h ago",
+  "time_days_ago": "{{count}}d ago",
+
+  "incidents_severity_critical": "critical",
+  "incidents_severity_major": "major",
+  "incidents_severity_minor": "minor",
+  "incidents_status_investigating": "investigating",
+  "incidents_status_identified": "identified",
+  "incidents_status_monitoring": "monitoring",
+  "incidents_status_resolved": "resolved",
+
+  "uptime_days_ago": "{{count}} days ago",
+  "uptime_today": "Today",
+  "uptime_operational": "Operational",
+  "uptime_degraded": "Degraded",
+  "uptime_down": "Down",
+  "uptime_no_data": "No data"
 }

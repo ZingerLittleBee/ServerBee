@@ -1,0 +1,75 @@
+{
+  "backToServer": "Back to server",
+  "containers": {
+    "title": "Containers",
+    "searchPlaceholder": "Search containers...",
+    "noFilterMatch": "No containers match the current filter",
+    "noContainers": "No containers found"
+  },
+  "notAvailable": {
+    "title": "Docker is not available",
+    "description": "Waiting for Docker data from the agent..."
+  },
+  "noContainers": {
+    "title": "No containers found",
+    "description": "Docker is running but no containers are present"
+  },
+  "networksButton": "Networks",
+  "volumesButton": "Volumes",
+  "filter": {
+    "all": "All",
+    "running": "Running",
+    "stopped": "Stopped"
+  },
+  "table": {
+    "name": "Name",
+    "image": "Image",
+    "status": "Status",
+    "cpu": "CPU %",
+    "memory": "Memory",
+    "networkIO": "Network I/O"
+  },
+  "detail": {
+    "image": "Image",
+    "status": "Status",
+    "ports": "Ports",
+    "created": "Created",
+    "containerId": "Container ID",
+    "noPorts": "None"
+  },
+  "networks": {
+    "title": "Docker Networks",
+    "empty": "No networks found",
+    "table": {
+      "name": "Name",
+      "driver": "Driver",
+      "scope": "Scope",
+      "containers": "Containers"
+    }
+  },
+  "volumes": {
+    "title": "Docker Volumes",
+    "empty": "No volumes found",
+    "table": {
+      "name": "Name",
+      "driver": "Driver",
+      "mountpoint": "Mountpoint",
+      "created": "Created"
+    }
+  },
+  "logs": {
+    "title": "Logs",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "follow": "Follow",
+    "clear": "Clear",
+    "empty": "No log entries yet..."
+  },
+  "events": {
+    "title": "Events",
+    "empty": "No events recorded yet"
+  },
+  "common": {
+    "notAvailable": "N/A"
+  }
+}

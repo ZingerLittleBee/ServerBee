@@ -37,5 +37,46 @@
   "confirm_title": "确认",
   "confirm_delete_message": "此操作无法撤销，确定要继续吗？",
   "main_navigation": "主导航",
-  "open_menu": "打开菜单"
+  "open_menu": "打开菜单",
+  "status": {
+    "up": "正常",
+    "down": "故障",
+    "online": "在线",
+    "offline": "离线",
+    "pending": "待检查",
+    "ok": "正常",
+    "never": "从未",
+    "notChecked": "未检查"
+  },
+  "actions": {
+    "save": "保存",
+    "create": "创建",
+    "add": "添加",
+    "addMonitor": "添加监控"
+  },
+  "errors": {
+    "operation_failed": "操作失败",
+    "failed": "失败"
+  },
+  "a11y": {
+    "toggle_theme": "切换主题",
+    "breadcrumb": "面包屑导航",
+    "more": "更多",
+    "close": "关闭",
+    "sidebar_title": "侧边栏",
+    "sidebar_description": "显示移动端侧边栏",
+    "toggle_sidebar": "切换侧边栏",
+    "table_view": "表格视图",
+    "grid_view": "网格视图",
+    "edit_server": "编辑服务器",
+    "test_notification": "测试 {{name}}",
+    "delete_notification": "删除 {{name}}",
+    "delete_group": "删除组 {{name}}",
+    "unlink_account": "取消关联 {{provider}}",
+    "revoke_device": "撤销 {{device}}",
+    "delete_api_key": "删除 {{name}}",
+    "delete_user": "删除 {{username}}",
+    "latency_trend": "延迟趋势",
+    "packet_loss_indicator": "丢包指示器"
+  }
 }

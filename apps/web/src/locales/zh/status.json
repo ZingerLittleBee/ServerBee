@@ -16,5 +16,32 @@
   "active_incidents": "\u6D3B\u8DC3\u4E8B\u4EF6",
   "planned_maintenance": "\u8BA1\u5212\u7EF4\u62A4",
   "server_status": "\u670D\u52A1\u5668\u72B6\u6001",
-  "recent_incidents": "\u8FD1\u671F\u4E8B\u4EF6\uFF08\u8FD1 7 \u5929\uFF09"
+  "recent_incidents": "\u8FD1\u671F\u4E8B\u4EF6\uFF08\u8FD1 7 \u5929\uFF09",
+
+  "network_in": "\u5165\u7AD9\u7F51\u7EDC",
+  "network_out": "\u51FA\u7AD9\u7F51\u7EDC",
+  "uptime": "\u8FD0\u884C\u65F6\u95F4",
+  "maintenance": "\u7EF4\u62A4",
+  "online_status": "\u5728\u7EBF",
+  "offline_status": "\u79BB\u7EBF",
+
+  "time_just_now": "\u521A\u521A",
+  "time_minutes_ago": "{{count}}\u5206\u949F\u524D",
+  "time_hours_ago": "{{count}}\u5C0F\u65F6\u524D",
+  "time_days_ago": "{{count}}\u5929\u524D",
+
+  "incidents_severity_critical": "\u4E25\u91CD",
+  "incidents_severity_major": "\u4E3B\u8981",
+  "incidents_severity_minor": "\u8F7B\u5FAE",
+  "incidents_status_investigating": "\u8C03\u67E5\u4E2D",
+  "incidents_status_identified": "\u5DF2\u786E\u8BA4",
+  "incidents_status_monitoring": "\u76D1\u63A7\u4E2D",
+  "incidents_status_resolved": "\u5DF2\u89E3\u51B3",
+
+  "uptime_days_ago": "{{count}} \u5929\u524D",
+  "uptime_today": "\u4ECA\u5929",
+  "uptime_operational": "\u6B63\u5E38\u8FD0\u884C",
+  "uptime_degraded": "\u6027\u80FD\u4E0B\u964D",
+  "uptime_down": "\u6545\u969C",
+  "uptime_no_data": "\u6682\u65E0\u6570\u636E"
 }

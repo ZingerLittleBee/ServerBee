@@ -1,5 +1,6 @@
 import { Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,6 +25,7 @@ function formatNetworkIO(rx: number, tx: number): string {
 }
 
 export function ContainerList({ containers, stats, onSelect }: ContainerListProps) {
+  const { t } = useTranslation('docker')
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<FilterState>('all')
 
@@ -54,7 +56,7 @@ export function ContainerList({ containers, stats, onSelect }: ContainerListProp
   return (
     <div className="space-y-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h3 className="font-semibold text-lg">Containers</h3>
+        <h3 className="font-semibold text-lg">{t('containers.title')}</h3>
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search
@@ -64,27 +66,27 @@ export function ContainerList({ containers, stats, onSelect }: ContainerListProp
             <Input
               className="w-[200px] pl-8"
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search containers..."
+              placeholder={t('containers.searchPlaceholder')}
               value={search}
             />
           </div>
           <div className="flex gap-1">
             <Button onClick={() => setFilter('all')} size="sm" variant={filter === 'all' ? 'default' : 'outline'}>
-              All ({containers.length})
+              {t('filter.all')} ({containers.length})
             </Button>
             <Button
               onClick={() => setFilter('running')}
               size="sm"
               variant={filter === 'running' ? 'default' : 'outline'}
             >
-              Running ({runningCount})
+              {t('filter.running')} ({runningCount})
             </Button>
             <Button
               onClick={() => setFilter('stopped')}
               size="sm"
               variant={filter === 'stopped' ? 'default' : 'outline'}
             >
-              Stopped ({stoppedCount})
+              {t('filter.stopped')} ({stoppedCount})
             </Button>
           </div>
         </div>
@@ -94,19 +96,19 @@ export function ContainerList({ containers, stats, onSelect }: ContainerListProp
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Image</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">CPU %</TableHead>
-              <TableHead className="text-right">Memory</TableHead>
-              <TableHead className="text-right">Network I/O</TableHead>
+              <TableHead>{t('table.name')}</TableHead>
+              <TableHead>{t('table.image')}</TableHead>
+              <TableHead>{t('table.status')}</TableHead>
+              <TableHead className="text-right">{t('table.cpu')}</TableHead>
+              <TableHead className="text-right">{t('table.memory')}</TableHead>
+              <TableHead className="text-right">{t('table.networkIO')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredContainers.length === 0 ? (
               <TableRow>
                 <TableCell className="text-center text-muted-foreground" colSpan={6}>
-                  {search || filter !== 'all' ? 'No containers match the current filter' : 'No containers found'}
+                  {search || filter !== 'all' ? t('containers.noFilterMatch') : t('containers.noContainers')}
                 </TableCell>
               </TableRow>
             ) : (

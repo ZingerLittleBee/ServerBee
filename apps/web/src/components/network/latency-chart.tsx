@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import { CHART_COLORS } from '@/lib/chart-colors'
@@ -31,6 +32,7 @@ function formatTimeHM(timestamp: string): string {
 }
 
 export function LatencyChart({ records, targets, isRealtime = false }: LatencyChartProps) {
+  const { t } = useTranslation('network')
   // Build chartConfig for ALL targets (ChartContainer needs all color vars injected)
   const chartConfig = useMemo(() => {
     const config: ChartConfig = {}
@@ -89,14 +91,14 @@ export function LatencyChart({ records, targets, isRealtime = false }: LatencyCh
   if (chartData.length === 0) {
     return (
       <div className="flex h-[300px] items-center justify-center rounded-lg border bg-card">
-        <p className="text-muted-foreground text-sm">No data available</p>
+        <p className="text-muted-foreground text-sm">{t('latency_chart_no_data')}</p>
       </div>
     )
   }
 
   return (
     <div className="rounded-lg border bg-card p-4">
-      <h3 className="mb-3 font-semibold text-sm">Latency (ms)</h3>
+      <h3 className="mb-3 font-semibold text-sm">{t('latency_title')}</h3>
       <ChartContainer className="h-[300px] w-full" config={chartConfig}>
         <AreaChart accessibilityLayer data={chartData}>
           <CartesianGrid vertical={false} />

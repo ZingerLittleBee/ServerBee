@@ -1,5 +1,6 @@
 import { useQueries } from '@tanstack/react-query'
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { UptimeTimeline } from '@/components/uptime/uptime-timeline'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
@@ -13,6 +14,7 @@ interface UptimeTimelineWidgetProps {
 }
 
 export function UptimeTimelineWidget({ config, servers }: UptimeTimelineWidgetProps) {
+  const { t } = useTranslation('dashboard')
   const serverIds = config.server_ids ?? []
   const days = config.days ?? 90
 
@@ -37,7 +39,7 @@ export function UptimeTimelineWidget({ config, servers }: UptimeTimelineWidgetPr
   if (serverIds.length === 0) {
     return (
       <div className="flex h-full items-center justify-center rounded-lg border bg-card text-muted-foreground text-sm">
-        No servers configured
+        {t('widgets.uptimeTimeline.empty.noServers')}
       </div>
     )
   }
@@ -45,8 +47,10 @@ export function UptimeTimelineWidget({ config, servers }: UptimeTimelineWidgetPr
   if (isLoading) {
     return (
       <div className="flex h-full flex-col rounded-lg border bg-card p-4">
-        <h3 className="mb-3 font-semibold text-sm">Uptime Timeline</h3>
-        <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">Loading...</div>
+        <h3 className="mb-3 font-semibold text-sm">{t('widgets.uptimeTimeline.title')}</h3>
+        <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">
+          {t('states.loading')}
+        </div>
       </div>
     )
   }
@@ -70,7 +74,7 @@ export function UptimeTimelineWidget({ config, servers }: UptimeTimelineWidgetPr
 
   return (
     <div className="flex h-full flex-col rounded-lg border bg-card p-4">
-      <h3 className="mb-3 font-semibold text-sm">Uptime Timeline</h3>
+      <h3 className="mb-3 font-semibold text-sm">{t('widgets.uptimeTimeline.title')}</h3>
       <div className="flex-1 space-y-3 overflow-auto">
         {serverIds.map((id, i) => {
           const uptimeData = queries[i]?.data ?? []
