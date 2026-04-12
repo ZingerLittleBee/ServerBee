@@ -53,7 +53,7 @@ function CapabilitiesPage() {
     queryFn: () => api.get<ServerInfo[]>('/api/servers')
   })
 
-  const singleMutation = useMutation({
+  const { mutate: mutateSingleCap, isPending: isSinglePending } = useMutation({
     mutationFn: ({ id, capabilities }: { capabilities: number; id: string }) =>
       api.put(`/api/servers/${id}`, { capabilities }),
     onSuccess: () => {
@@ -65,7 +65,7 @@ function CapabilitiesPage() {
     }
   })
 
-  const batchMutation = useMutation({
+  const { mutate: mutateBatchCap, isPending: isBatchPending } = useMutation({
     mutationFn: ({ ids, capabilities }: { capabilities: number; ids: string[] }) =>
       api.put('/api/servers/batch-capabilities', { ids, capabilities }),
     onSuccess: () => {
@@ -78,19 +78,22 @@ function CapabilitiesPage() {
     }
   })
 
-  const filtered = servers.filter((s) => s.name.toLowerCase().includes(search.toLowerCase()))
+  const filtered = useMemo(
+    () => servers.filter((s) => s.name.toLowerCase().includes(search.toLowerCase())),
+    [servers, search]
+  )
 
   const toggleCap = useCallback(
     (server: ServerInfo, bit: number) => {
       const caps = server.capabilities ?? CAP_DEFAULT
       // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask toggle
       const newCaps = caps & bit ? caps & ~bit : caps | bit
-      singleMutation.mutate({ id: server.id, capabilities: newCaps })
+      mutateSingleCap({ id: server.id, capabilities: newCaps })
     },
-    [singleMutation]
+    [mutateSingleCap]
   )
 
-  const isPending = singleMutation.isPending || batchMutation.isPending
+  const isPending = isSinglePending || isBatchPending
 
   const columns = useMemo<ColumnDef<ServerInfo>[]>(
     () => [
@@ -167,18 +170,18 @@ function CapabilitiesPage() {
     const firstServer = servers.find((s) => s.id === selectedIds[0])
     const baseCaps = firstServer?.capabilities ?? CAP_DEFAULT
     // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask enable
-    batchMutation.mutate({ ids: selectedIds, capabilities: baseCaps | bit })
+    mutateBatchCap({ ids: selectedIds, capabilities: baseCaps | bit })
   }
 
   const batchDisable = (bit: number) => {
     const firstServer = servers.find((s) => s.id === selectedIds[0])
     const baseCaps = firstServer?.capabilities ?? CAP_DEFAULT
     // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask disable
-    batchMutation.mutate({ ids: selectedIds, capabilities: baseCaps & ~bit })
+    mutateBatchCap({ ids: selectedIds, capabilities: baseCaps & ~bit })
   }
 
   const batchReset = () => {
-    batchMutation.mutate({ ids: selectedIds, capabilities: CAP_DEFAULT })
+    mutateBatchCap({ ids: selectedIds, capabilities: CAP_DEFAULT })
   }
 
   const renderTableContent = () => {
