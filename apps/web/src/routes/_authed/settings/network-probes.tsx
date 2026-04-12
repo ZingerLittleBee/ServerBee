@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { type ColumnDef, getCoreRowModel, useReactTable } from '@tanstack/react-table'
-import { Lock, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Lock, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DataTable } from '@/components/ui/data-table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -52,6 +53,30 @@ const DEFAULT_FORM: TargetFormData = {
   location: '',
   target: '',
   probe_type: 'icmp'
+}
+
+function getCustomTargetCreatedAt(target: NetworkProbeTarget): number {
+  if (target.source || !target.created_at) {
+    return Number.NEGATIVE_INFINITY
+  }
+
+  const timestamp = Date.parse(target.created_at)
+  return Number.isNaN(timestamp) ? Number.NEGATIVE_INFINITY : timestamp
+}
+
+function compareTargetsForDisplay(a: NetworkProbeTarget, b: NetworkProbeTarget): number {
+  const aIsCustom = !a.source
+  const bIsCustom = !b.source
+
+  if (aIsCustom !== bIsCustom) {
+    return aIsCustom ? -1 : 1
+  }
+
+  if (aIsCustom && bIsCustom) {
+    return getCustomTargetCreatedAt(b) - getCustomTargetCreatedAt(a)
+  }
+
+  return 0
 }
 
 export function NetworkProbeSettingsPage() {
@@ -210,6 +235,8 @@ export function NetworkProbeSettingsPage() {
     { value: 'http', label: getProbeTypeLabel('http') }
   ]
 
+  const sortedTargets = useMemo(() => [...(targets ?? [])].sort(compareTargetsForDisplay), [targets])
+
   const targetColumns = useMemo<ColumnDef<NetworkProbeTarget>[]>(
     () => [
       {
@@ -252,7 +279,7 @@ export function NetworkProbeSettingsPage() {
       },
       {
         accessorKey: 'source',
-        header: () => t('target_status', { defaultValue: 'Status' }),
+        header: () => t('target_status', { defaultValue: 'Source' }),
         enableSorting: false,
         cell: ({ row }) =>
           row.original.source ? (
@@ -266,28 +293,40 @@ export function NetworkProbeSettingsPage() {
       },
       {
         id: 'actions',
-        header: () => t('target_actions', { defaultValue: 'Actions' }),
+        header: () => t('target_actions', { defaultValue: 'Manage' }),
         enableSorting: false,
         meta: { className: 'text-right' },
         cell: ({ row }) =>
           !row.original.source && (
-            <div className="flex justify-end gap-1">
-              <Button
-                aria-label={t('edit_target_aria', { defaultValue: 'Edit {{name}}', name: row.original.name })}
-                onClick={() => openEditDialog(row.original)}
-                size="sm"
-                variant="outline"
-              >
-                <Pencil className="size-3.5" />
-              </Button>
-              <Button
-                aria-label={t('delete_target_aria', { defaultValue: 'Delete {{name}}', name: row.original.name })}
-                onClick={() => setDeleteTargetId(row.original.id)}
-                size="sm"
-                variant="destructive"
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
+            <div className="flex justify-end">
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  aria-label={t('target_actions_menu_aria', {
+                    defaultValue: 'More actions for {{name}}',
+                    name: getTargetDisplayName(row.original)
+                  })}
+                  render={<Button className="ml-auto" size="icon-sm" variant="ghost" />}
+                >
+                  <MoreHorizontal aria-hidden="true" className="size-4" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-36">
+                  <DropdownMenuItem
+                    aria-label={t('edit_target_aria', { defaultValue: 'Edit {{name}}', name: row.original.name })}
+                    onSelect={() => openEditDialog(row.original)}
+                  >
+                    <Pencil className="size-3.5" />
+                    {t('edit_target')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    aria-label={t('delete_target_aria', { defaultValue: 'Delete {{name}}', name: row.original.name })}
+                    onSelect={() => setDeleteTargetId(row.original.id)}
+                    variant="destructive"
+                  >
+                    <Trash2 className="size-3.5" />
+                    {t('delete_target')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           )
       }
@@ -296,7 +335,7 @@ export function NetworkProbeSettingsPage() {
   )
 
   const targetsTable = useReactTable({
-    data: targets ?? [],
+    data: sortedTargets,
     columns: targetColumns,
     getCoreRowModel: getCoreRowModel(),
     getRowId: (row) => row.id
@@ -379,10 +418,10 @@ export function NetworkProbeSettingsPage() {
               <div className="space-y-2">
                 <p className="font-medium text-sm">{t('default_targets')}</p>
                 <p className="text-muted-foreground text-xs">{t('default_targets_desc')}</p>
-                {targets && targets.length > 0 ? (
+                {sortedTargets.length > 0 ? (
                   <ScrollArea className="h-72 rounded-md border p-3">
                     <div className="space-y-1.5">
-                      {targets.map((target) => (
+                      {sortedTargets.map((target) => (
                         // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
                         <label className="flex cursor-pointer items-center gap-2 text-sm" key={target.id}>
                           <Checkbox
