@@ -11,6 +11,10 @@ interface NetworkTargetNameParts {
   source: string | null
 }
 
+function shouldLocalizePresetTarget(language: string | undefined, target: NetworkTargetNameParts): boolean {
+  return !!(language?.startsWith('zh') && target.source)
+}
+
 const LOCATION_I18N_KEYS: Record<string, string> = {
   Anhui: 'location_anhui',
   Beijing: 'location_beijing',
@@ -81,12 +85,12 @@ export function getNetworkTargetDisplayName(
   language: string | undefined,
   target: NetworkTargetNameParts
 ): string {
-  if (!(language?.startsWith('zh') && target.source)) {
+  if (!shouldLocalizePresetTarget(language, target)) {
     return target.name
   }
 
-  const locationLabel = getNetworkLocationLabel(t, target.location)
-  const providerLabel = getNetworkProviderShortLabel(t, target.provider)
+  const locationLabel = getNetworkTargetDisplayLocation(t, language, target)
+  const providerLabel = getNetworkTargetDisplayProvider(t, language, target)
 
   if (target.provider in PROVIDER_SHORT_I18N_KEYS) {
     return `${locationLabel}${providerLabel}`
@@ -103,4 +107,28 @@ export function getNetworkTargetDisplayName(
   }
 
   return target.name
+}
+
+export function getNetworkTargetDisplayLocation(
+  t: Translate,
+  language: string | undefined,
+  target: NetworkTargetNameParts
+): string {
+  if (!shouldLocalizePresetTarget(language, target)) {
+    return target.location
+  }
+
+  return getNetworkLocationLabel(t, target.location)
+}
+
+export function getNetworkTargetDisplayProvider(
+  t: Translate,
+  language: string | undefined,
+  target: NetworkTargetNameParts
+): string {
+  if (!shouldLocalizePresetTarget(language, target)) {
+    return target.provider
+  }
+
+  return getNetworkProviderShortLabel(t, target.provider)
 }
