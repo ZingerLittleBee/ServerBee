@@ -117,6 +117,16 @@ ServerBee 采用纵深防御（defense in depth）策略，在 Server 端和 Age
 - **Files 按钮**：无 `CAP_FILE` 权限的服务器不显示 Files 按钮；点击后打开文件管理页面 `/files/{serverId}`
 - **Docker 链接**：无 `CAP_DOCKER` 权限的服务器不显示 Docker 链接；点击后进入 Docker 监控页面 `/servers/{serverId}/docker`
 
+## Server 配置位与客户端锁定
+
+运行时的 capability 现在分成三层：
+
+- `capabilities`：Server 数据库中配置的功能位
+- `agent_local_capabilities`：当前运行中的 Agent 本地允许位
+- `effective_capabilities`：系统实际执行时使用的交集结果
+
+当 Agent 本地策略关闭某个能力时，UI 会把对应开关直接禁用，并显示 tooltip `客户端关闭`。这表示当前运行中的 Agent 已经在本地把它锁死，Server 端不能强行重新打开，除非 Agent 以新的本地策略重新启动。
+
 <Cards>
   <Card title="Web 终端" href="/cn/docs/terminal" />
   <Card title="Ping 探测" href="/cn/docs/ping" />
