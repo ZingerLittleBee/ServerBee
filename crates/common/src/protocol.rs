@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::constants::CapabilityDeniedReason;
 use crate::docker_types::*;
 use crate::types::{
     FileEntry, NetworkInterface, NetworkProbeResultData, NetworkProbeTarget, PingResult,
@@ -14,6 +15,8 @@ pub enum AgentMessage {
         msg_id: String,
         #[serde(flatten)]
         info: SystemInfo,
+        #[serde(default)]
+        agent_local_capabilities: Option<u32>,
     },
     Report(SystemReport),
     PingResult(PingResult),
@@ -37,6 +40,7 @@ pub enum AgentMessage {
         msg_id: Option<String>,
         session_id: Option<String>,
         capability: String,
+        reason: CapabilityDeniedReason,
     },
     NetworkProbeResults {
         results: Vec<NetworkProbeResultData>,
@@ -309,6 +313,8 @@ pub enum BrowserMessage {
     CapabilitiesChanged {
         server_id: String,
         capabilities: u32,
+        agent_local_capabilities: Option<u32>,
+        effective_capabilities: Option<u32>,
     },
     AgentInfoUpdated {
         server_id: String,
@@ -400,6 +406,7 @@ mod tests {
             msg_id: Some("task-1".to_string()),
             session_id: None,
             capability: "exec".to_string(),
+            reason: CapabilityDeniedReason::AgentCapabilityDisabled,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
@@ -408,10 +415,12 @@ mod tests {
                 msg_id,
                 session_id,
                 capability,
+                reason,
             } => {
                 assert_eq!(msg_id, Some("task-1".to_string()));
                 assert_eq!(session_id, None);
                 assert_eq!(capability, "exec");
+                assert_eq!(reason, CapabilityDeniedReason::AgentCapabilityDisabled);
             }
             _ => panic!("Expected CapabilityDenied"),
         }
@@ -422,10 +431,76 @@ mod tests {
         let json = r#"{"type":"system_info","msg_id":"m1","cpu_name":"Intel","cpu_cores":4,"cpu_arch":"x86_64","os":"Linux","kernel_version":"5.4","mem_total":8000000000,"swap_total":0,"disk_total":100000000000,"agent_version":"0.1.0"}"#;
         let msg: AgentMessage = serde_json::from_str(json).unwrap();
         match msg {
-            AgentMessage::SystemInfo { info, .. } => {
+            AgentMessage::SystemInfo {
+                info,
+                agent_local_capabilities,
+                ..
+            } => {
                 assert_eq!(info.protocol_version, 1);
+                assert_eq!(agent_local_capabilities, None);
             }
             _ => panic!("Expected SystemInfo"),
+        }
+    }
+
+    #[test]
+    fn test_system_info_round_trip_with_agent_local_capabilities() {
+        let msg = AgentMessage::SystemInfo {
+            msg_id: "m1".to_string(),
+            info: SystemInfo {
+                cpu_name: "Intel".to_string(),
+                cpu_cores: 4,
+                cpu_arch: "x86_64".to_string(),
+                os: "Linux".to_string(),
+                kernel_version: "6.8".to_string(),
+                mem_total: 8_000_000_000,
+                swap_total: 0,
+                disk_total: 100_000_000_000,
+                ipv4: Some("192.0.2.10".to_string()),
+                ipv6: None,
+                virtualization: Some("kvm".to_string()),
+                agent_version: "0.1.0".to_string(),
+                protocol_version: 3,
+                features: vec!["docker".to_string()],
+            },
+            agent_local_capabilities: Some(64),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::SystemInfo {
+                agent_local_capabilities,
+                ..
+            } => {
+                assert_eq!(agent_local_capabilities, Some(64));
+            }
+            _ => panic!("Expected SystemInfo"),
+        }
+    }
+
+    #[test]
+    fn test_browser_capabilities_changed_round_trip_with_effective_caps() {
+        let msg = BrowserMessage::CapabilitiesChanged {
+            server_id: "server-1".to_string(),
+            capabilities: 7,
+            agent_local_capabilities: Some(64),
+            effective_capabilities: Some(0),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: BrowserMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            BrowserMessage::CapabilitiesChanged {
+                server_id,
+                capabilities,
+                agent_local_capabilities,
+                effective_capabilities,
+            } => {
+                assert_eq!(server_id, "server-1");
+                assert_eq!(capabilities, 7);
+                assert_eq!(agent_local_capabilities, Some(64));
+                assert_eq!(effective_capabilities, Some(0));
+            }
+            _ => panic!("Expected CapabilitiesChanged"),
         }
     }
 
