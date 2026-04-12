@@ -6,7 +6,8 @@ import { RingChart } from '@/components/ui/ring-chart'
 import { UptimeBar } from '@/components/ui/uptime-bar'
 import { useNetworkOverview } from '@/hooks/use-network-api'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { seedFromSummary, summaryStats, toBarData } from '@/lib/sparkline'
+import type { NetworkTargetSummary } from '@/lib/network-types'
+import { SPARKLINE_LENGTH, seedFromSummary, summaryStats, toBarData } from '@/lib/sparkline'
 import { countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 import { StatusBadge } from './status-badge'
 
@@ -15,6 +16,7 @@ interface ServerCardProps {
 }
 
 const NULL_BAR_COLOR = 'var(--color-muted)'
+const EMPTY_TREND = Array.from({ length: SPARKLINE_LENGTH }, (): number | null => null)
 
 function osIcon(os: string | null): string {
   if (!os) {
@@ -116,6 +118,43 @@ function formatLoad(load: number): string {
   return load.toFixed(2)
 }
 
+function hasTrendData(data: readonly (number | null)[]): boolean {
+  return data.some((value) => value != null)
+}
+
+function hasTargetSample(target: NetworkTargetSummary): boolean {
+  return target.avg_latency != null || target.packet_loss > 0 || target.availability > 0
+}
+
+function summarizeTargets(targets: readonly NetworkTargetSummary[]): {
+  avgLatency: number | null
+  avgLoss: number | null
+} {
+  const sampledTargets = targets.filter(hasTargetSample)
+  if (sampledTargets.length === 0) {
+    return { avgLatency: null, avgLoss: null }
+  }
+
+  const latencyTargets = sampledTargets.filter((target) => target.avg_latency != null)
+  const avgLatency =
+    latencyTargets.length === 0
+      ? null
+      : latencyTargets.reduce((sum, target) => sum + (target.avg_latency ?? 0), 0) / latencyTargets.length
+  const avgLoss = (sampledTargets.reduce((sum, target) => sum + target.packet_loss, 0) / sampledTargets.length) * 100
+
+  return { avgLatency, avgLoss }
+}
+
+function fallbackTrend(value: number | null): (number | null)[] {
+  if (value == null) {
+    return EMPTY_TREND
+  }
+
+  const trend = [...EMPTY_TREND]
+  trend[trend.length - 1] = value
+  return trend
+}
+
 export function ServerCard({ server }: ServerCardProps) {
   const { t } = useTranslation(['servers'])
   const { data: networkOverview = [] } = useNetworkOverview()
@@ -130,20 +169,25 @@ export function ServerCard({ server }: ServerCardProps) {
     const summary = networkOverview.find((entry) => entry.server_id === server.id)
 
     if (!summary) {
-      return { latencyData: [], lossData: [], avgLatency: null, avgLoss: null, hasAnyData: false }
+      return { latencyData: EMPTY_TREND, lossData: EMPTY_TREND, avgLatency: null, avgLoss: null, hasAnyData: false }
     }
 
     const points = seedFromSummary(summary)
-    const hasAnyData = points.some((point) => point.latency != null || point.loss != null)
-    const latencyData = toBarData(points, 'latency')
-    const lossData = toBarData(points, 'lossPercent')
-    const stats = summaryStats(points)
+    const sparklineLatencyData = toBarData(points, 'latency')
+    const sparklineLossData = toBarData(points, 'lossPercent')
+    const sparklineStats = summaryStats(points)
+    const targetStats = summarizeTargets(summary.targets)
+    const avgLatency = targetStats.avgLatency ?? sparklineStats.avgLatency
+    const avgLoss = targetStats.avgLoss ?? (sparklineStats.avgLoss == null ? null : sparklineStats.avgLoss * 100)
+    const latencyData = hasTrendData(sparklineLatencyData) ? sparklineLatencyData : fallbackTrend(avgLatency)
+    const lossData = hasTrendData(sparklineLossData) ? sparklineLossData : fallbackTrend(avgLoss)
+    const hasAnyData = avgLatency != null || avgLoss != null || hasTrendData(latencyData) || hasTrendData(lossData)
 
     return {
       latencyData,
       lossData,
-      avgLatency: stats.avgLatency,
-      avgLoss: stats.avgLoss == null ? null : stats.avgLoss * 100,
+      avgLatency,
+      avgLoss,
       hasAnyData
     }
   }, [networkOverview, server.id])
