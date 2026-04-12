@@ -15,6 +15,7 @@ use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
 use crate::router::utils::extract_client_ip;
 use crate::service::audit::AuditService;
+use crate::service::high_risk_audit::ExecAuditContext;
 use crate::state::AppState;
 use serverbee_common::constants::CAP_EXEC;
 use serverbee_common::protocol::ServerMessage;
@@ -430,6 +431,9 @@ pub async fn delete_task(
 )]
 pub async fn run_task(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    Extension(current_user): Extension<CurrentUser>,
+    headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<TaskResponse>>, AppError> {
     // Validate task exists and is scheduled type
@@ -444,7 +448,22 @@ pub async fn run_task(
         ));
     }
 
-    let started = crate::task::task_scheduler::execute_scheduled_task(&state, &id, true).await;
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+    let started = crate::task::task_scheduler::execute_scheduled_task(
+        &state,
+        &id,
+        true,
+        Some(ExecAuditContext {
+            user_id: current_user.user_id.clone(),
+            ip,
+        }),
+    )
+    .await;
     if !started {
         return Err(AppError::Conflict(
             "Task is currently running, try again later".into(),

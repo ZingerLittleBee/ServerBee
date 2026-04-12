@@ -69,7 +69,8 @@ impl TaskScheduler {
             let state = state.clone();
             let task_id = task_id.clone();
             Box::pin(async move {
-                crate::task::task_scheduler::execute_scheduled_task(&state, &task_id, false).await;
+                crate::task::task_scheduler::execute_scheduled_task(&state, &task_id, false, None)
+                    .await;
             })
         })
         .map_err(|e| AppError::BadRequest(format!("Invalid cron expression: {e}")))?;
