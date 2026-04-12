@@ -177,7 +177,7 @@ export function ServerCard({ server }: ServerCardProps) {
   )
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card p-4 shadow-sm">
+    <div className="flex flex-col rounded-lg border bg-card p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <Link
           className="flex items-center gap-1.5 truncate border-transparent border-b pb-px hover:border-current"
@@ -234,65 +234,61 @@ export function ServerCard({ server }: ServerCardProps) {
       </div>
 
       {latencyPoints.length > 0 && (
-        <div className="mt-auto border-t pt-3">
-          <div>
-            <div className="mb-1 flex items-center justify-between">
-              <span className="text-[10px] text-muted-foreground">{t('card_latency')}</span>
-              <div className="flex items-center gap-1 font-medium text-xs">
-                <span
-                  className={latencyColorClass(currentAvgLatency, {
-                    failed: isLatencyFailure(currentAvgLossRatio)
-                  })}
-                >
-                  {formatLatency(currentAvgLatency)}
-                </span>
-                <span className="text-muted-foreground">·</span>
-                <span className={getLossTextClassName(currentAvgLossRatio)}>
-                  {formatPacketLoss(currentAvgLossRatio)}
-                </span>
-              </div>
+        <div>
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground">{t('card_latency')}</span>
+            <div className="flex items-center gap-1 font-medium text-xs">
+              <span
+                className={latencyColorClass(currentAvgLatency, {
+                  failed: isLatencyFailure(currentAvgLossRatio)
+                })}
+              >
+                {formatLatency(currentAvgLatency)}
+              </span>
+              <span className="text-muted-foreground">·</span>
+              <span className={getLossTextClassName(currentAvgLossRatio)}>{formatPacketLoss(currentAvgLossRatio)}</span>
             </div>
-            <figure aria-label={t('common:a11y.latency_trend')} className="relative z-10 m-0">
-              <ChartContainer className="aspect-auto h-7 w-full" config={LATENCY_CHART_CONFIG}>
-                <BarChart
-                  accessibilityLayer
-                  barCategoryGap={CHART_BAR_GAP}
-                  data={latencyPoints}
-                  margin={{ bottom: 0, left: 0, right: 0, top: 0 }}
-                >
-                  <ChartTooltip content={<NetworkChartTooltip t={t} />} cursor={false} />
-                  <Bar dataKey="value" radius={2}>
-                    {latencyPoints.map((point) => (
-                      <Cell
-                        fill={getLatencyBarColor({
-                          latencyMs: point.value,
-                          failed: isLatencyFailure(averageLossRatio(point))
-                        })}
-                        key={point.timestamp}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ChartContainer>
-            </figure>
-            <ChartContainer
-              aria-label={t('common:a11y.packet_loss_indicator')}
-              className="pointer-events-none mt-0.5 aspect-auto h-1 w-full"
-              config={LOSS_STRIP_CONFIG}
-            >
+          </div>
+          <figure aria-label={t('common:a11y.latency_trend')} className="relative z-10 m-0">
+            <ChartContainer className="aspect-auto h-7 w-full" config={LATENCY_CHART_CONFIG}>
               <BarChart
+                accessibilityLayer
                 barCategoryGap={CHART_BAR_GAP}
                 data={latencyPoints}
                 margin={{ bottom: 0, left: 0, right: 0, top: 0 }}
               >
-                <Bar dataKey={() => 1} radius={1}>
+                <ChartTooltip content={<NetworkChartTooltip t={t} />} cursor={false} />
+                <Bar dataKey="value" radius={2}>
                   {latencyPoints.map((point) => (
-                    <Cell fill={getLossStripColor(averageLossRatio(point))} key={point.timestamp} />
+                    <Cell
+                      fill={getLatencyBarColor({
+                        latencyMs: point.value,
+                        failed: isLatencyFailure(averageLossRatio(point))
+                      })}
+                      key={point.timestamp}
+                    />
                   ))}
                 </Bar>
               </BarChart>
             </ChartContainer>
-          </div>
+          </figure>
+          <ChartContainer
+            aria-label={t('common:a11y.packet_loss_indicator')}
+            className="pointer-events-none mt-0.5 aspect-auto h-1 w-full"
+            config={LOSS_STRIP_CONFIG}
+          >
+            <BarChart
+              barCategoryGap={CHART_BAR_GAP}
+              data={latencyPoints}
+              margin={{ bottom: 0, left: 0, right: 0, top: 0 }}
+            >
+              <Bar dataKey={() => 1} radius={1}>
+                {latencyPoints.map((point) => (
+                  <Cell fill={getLossStripColor(averageLossRatio(point))} key={point.timestamp} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ChartContainer>
         </div>
       )}
     </div>
