@@ -99,6 +99,7 @@ RBAC: Admin (full access) vs Member (read-only). `require_admin` middleware on w
 - **API client**: `apps/web/src/lib/api-client.ts` auto-unwraps `{ data: T }` from responses
 - **WebSocket**: Global WS connection in layout, hooks in `apps/web/src/hooks/use-servers-ws.ts`
 - **UI components**: shadcn/ui in `apps/web/src/components/ui/`
+- **Scroll areas**: All scrollable containers must use shadcn `<ScrollArea>` instead of native `overflow-y-auto` / `overflow-auto`
 - **Dev proxy**: Vite proxies `/api/*` to `http://localhost:9527` in dev mode
 
 ### Code Quality (Ultracite/Biome)
