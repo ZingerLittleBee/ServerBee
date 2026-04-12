@@ -11,7 +11,7 @@ export interface ServerCardTooltipTarget {
 
 export interface ServerCardMetricPoint {
   synthetic: boolean
-  targets: ServerCardTooltipTarget[]
+  targets: readonly ServerCardTooltipTarget[]
   timestamp: string
   value: number | null
 }
@@ -180,7 +180,7 @@ function buildFallbackState(
       synthetic: true,
       targets: fallbackTargets,
       timestamp,
-      value: lossSparkline[index] == null ? null : lossSparkline[index] * 100
+      value: lossSparkline[index] == null ? null : lossSparkline[index]! * 100
     })
   }
 

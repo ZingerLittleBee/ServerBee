@@ -33,14 +33,7 @@ describe('seedFromSummary', () => {
   })
 
   it('fills missing sparkline arrays with null points', () => {
-    const points = seedFromSummary({
-      anomaly_count: 0,
-      last_probe_at: null,
-      online: true,
-      server_id: 'server-1',
-      server_name: 'Server 1',
-      targets: []
-    })
+    const points = seedFromSummary({} as Record<string, unknown>)
 
     expect(points).toHaveLength(SPARKLINE_LENGTH)
     expect(points.every((point) => point.latency == null && point.loss == null)).toBe(true)
