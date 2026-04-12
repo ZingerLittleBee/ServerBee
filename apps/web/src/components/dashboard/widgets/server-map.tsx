@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download } from 'lucide-react'
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/use-auth'
@@ -29,6 +30,7 @@ const VIEW_BOX = '-180 -90 360 180'
 const COUNTRY_MAP = new Map(WORLD_MAP_PATHS.map((p) => [p.id, p]))
 
 export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
+  const { t } = useTranslation('dashboard')
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const queryClient = useQueryClient()
@@ -49,7 +51,7 @@ export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
       }
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Download failed')
+      toast.error(err instanceof Error ? err.message : t('states.download_failed'))
     }
   })
 
@@ -99,16 +101,16 @@ export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
 
   return (
     <div className="flex h-full flex-col rounded-lg border bg-card p-3">
-      <h3 className="mb-2 font-semibold text-sm">Server Map</h3>
+      <h3 className="mb-2 font-semibold text-sm">{t('widgets.serverMap.title')}</h3>
       <div className="flex-1 overflow-hidden">
         <svg
-          aria-label="Server map"
+          aria-label={t('widgets.serverMap.title')}
           className="h-full w-full"
           preserveAspectRatio="xMidYMid meet"
           role="img"
           viewBox={VIEW_BOX}
         >
-          <title>Server Map</title>
+          <title>{t('widgets.serverMap.title')}</title>
           {WORLD_MAP_PATHS.map((country) => (
             <path
               className="transition-colors"
@@ -159,7 +161,7 @@ export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
       {countryGroups.length === 0 &&
         (geoStatus?.installed === false ? (
           <div className="space-y-2 py-2 text-center">
-            <p className="text-muted-foreground text-xs">GeoIP database not installed</p>
+            <p className="text-muted-foreground text-xs">{t('widgets.serverMap.empty.noGeoIP')}</p>
             {isAdmin && (
               <Button
                 disabled={downloadMutation.isPending}
@@ -168,14 +170,18 @@ export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
                 variant="outline"
               >
                 <Download className="mr-1 size-3.5" />
-                {downloadMutation.isPending ? 'Downloading...' : 'Download GeoIP Database'}
+                {downloadMutation.isPending ? t('states.downloading') : t('widgets.serverMap.actions.downloadGeoIP')}
               </Button>
             )}
           </div>
         ) : (
-          <p className="py-2 text-center text-muted-foreground text-xs">No server location data available</p>
+          <p className="py-2 text-center text-muted-foreground text-xs">
+            {t('widgets.serverMap.empty.noLocationData')}
+          </p>
         ))}
-      {countryGroups.length > 0 && <p className="text-right text-[10px] text-muted-foreground">GeoIP by DB-IP</p>}
+      {countryGroups.length > 0 && (
+        <p className="text-right text-[10px] text-muted-foreground">{t('widgets.serverMap.attribution')}</p>
+      )}
     </div>
   )
 }

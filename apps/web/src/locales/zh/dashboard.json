@@ -31,5 +31,133 @@
   "set_default": "设为默认",
   "dashboard_name_placeholder": "仪表盘名称",
   "no_widgets_title": "暂无小组件",
-  "no_widgets_description": "点击编辑开始向仪表盘添加小组件"
+  "no_widgets_description": "点击编辑开始向仪表盘添加小组件",
+  "widgets": {
+    "trafficBar": {
+      "title": "流量",
+      "empty": {
+        "noData": "暂无流量数据"
+      },
+      "legend": {
+        "inbound": "入站",
+        "outbound": "出站"
+      }
+    },
+    "alertList": {
+      "title": "告警",
+      "empty": {
+        "noEvents": "暂无告警事件"
+      }
+    },
+    "serviceStatus": {
+      "title": "服务状态",
+      "empty": {
+        "noMonitors": "暂无服务监控"
+      },
+      "status": {
+        "pending": "待检查",
+        "degraded": "降级",
+        "healthy": "健康",
+        "down": "故障"
+      }
+    },
+    "serverMap": {
+      "title": "服务器地图",
+      "empty": {
+        "noGeoIP": "GeoIP 数据库未安装",
+        "noLocationData": "暂无服务器位置数据"
+      },
+      "actions": {
+        "downloadGeoIP": "下载 GeoIP 数据库"
+      },
+      "attribution": "GeoIP by DB-IP"
+    },
+    "uptimeTimeline": {
+      "title": "可用时间线",
+      "empty": {
+        "noServers": "未配置服务器"
+      }
+    },
+    "diskIo": {
+      "title": "磁盘 I/O",
+      "empty": {
+        "noData": "暂无磁盘 I/O 数据"
+      }
+    },
+    "common": {
+      "labels": {
+        "metric": "指标",
+        "server": "服务器",
+        "servers": "服务器",
+        "timeRange": "时间范围",
+        "count": "数量",
+        "maxItems": "最大条目数",
+        "markdownContent": "Markdown 内容",
+        "days": "天数",
+        "titleOptional": "标题（可选）"
+      },
+      "placeholders": {
+        "selectServer": "选择服务器",
+        "selectMetric": "选择指标",
+        "selectRange": "选择范围",
+        "widgetTitle": "小组件标题",
+        "allServers": "所有服务器",
+        "writeMarkdown": "在此编写 Markdown..."
+      },
+      "empty": {
+        "noServers": "暂无可用服务器"
+      }
+    }
+  },
+  "common": {
+    "metrics": {
+      "cpu": "CPU",
+      "memory": "内存",
+      "disk": "磁盘",
+      "swap": "交换分区",
+      "load1m": "负载（1分钟）",
+      "load5m": "负载（5分钟）",
+      "load15m": "负载（15分钟）",
+      "networkIn": "网络入站",
+      "networkOut": "网络出站",
+      "bandwidth": "带宽",
+      "serverCount": "服务器数量",
+      "avgCpu": "平均 CPU",
+      "avgMemory": "平均内存",
+      "totalBandwidth": "总带宽",
+      "health": "健康度"
+    },
+    "timeRange": {
+      "1hour": "1 小时",
+      "6hours": "6 小时",
+      "12hours": "12 小时",
+      "24hours": "24 小时",
+      "3days": "3 天",
+      "7days": "7 天",
+      "30days": "30 天",
+      "60days": "60 天",
+      "90days": "90 天"
+    }
+  },
+  "dialogs": {
+    "widgetConfig": {
+      "editTitle": "编辑小组件",
+      "configureTitle": "配置小组件",
+      "labels": {
+        "titleOptional": "标题（可选）",
+        "preview": "预览"
+      },
+      "placeholders": {
+        "widgetTitle": "小组件标题"
+      },
+      "messages": {
+        "noConfigNeeded": "无需额外配置。"
+      }
+    }
+  },
+  "states": {
+    "loading": "加载中...",
+    "downloading": "下载中...",
+    "download_failed": "下载失败"
+  }
 }

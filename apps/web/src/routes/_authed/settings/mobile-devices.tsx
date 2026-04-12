@@ -32,9 +32,9 @@ export const Route = createFileRoute('/_authed/settings/mobile-devices')({
   component: MobileDevicesPage
 })
 
-function formatRelativeTime(dateStr: string | null): string {
+function formatRelativeTime(dateStr: string | null, t: (key: string, options?: { count: number }) => string): string {
   if (!dateStr) {
-    return 'Never'
+    return t('mobile.time_never')
   }
   const date = new Date(dateStr)
   const now = new Date()
@@ -42,19 +42,19 @@ function formatRelativeTime(dateStr: string | null): string {
   const diffSec = Math.floor(diffMs / 1000)
 
   if (diffSec < 60) {
-    return 'Just now'
+    return t('mobile.time_just_now')
   }
   const diffMin = Math.floor(diffSec / 60)
   if (diffMin < 60) {
-    return `${diffMin.toString()}m ago`
+    return t('mobile.time_minutes_ago', { count: diffMin })
   }
   const diffHours = Math.floor(diffMin / 60)
   if (diffHours < 24) {
-    return `${diffHours.toString()}h ago`
+    return t('mobile.time_hours_ago', { count: diffHours })
   }
   const diffDays = Math.floor(diffHours / 24)
   if (diffDays < 30) {
-    return `${diffDays.toString()}d ago`
+    return t('mobile.time_days_ago', { count: diffDays })
   }
   return date.toLocaleDateString()
 }
@@ -82,7 +82,7 @@ function MobileDevicesPage() {
       toast.success(t('mobile.device_revoked'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Operation failed')
+      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
     }
   })
 
@@ -133,7 +133,7 @@ function MobileDevicesPage() {
                           {t('mobile.paired')} {new Date(device.created_at).toLocaleDateString()}
                         </span>
                         <span>
-                          {t('mobile.last_active')} {formatRelativeTime(device.last_used_at)}
+                          {t('mobile.last_active')} {formatRelativeTime(device.last_used_at, t)}
                         </span>
                       </div>
                     </div>

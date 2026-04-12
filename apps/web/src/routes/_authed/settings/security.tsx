@@ -43,10 +43,10 @@ function TwoFactorSection() {
     mutationFn: () => api.post<TotpSetupResponse>('/api/auth/2fa/setup'),
     onSuccess: (data) => {
       setSetupData(data)
-      toast.success('2FA setup initiated')
+      toast.success(t('security.toast_2fa_setup'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Operation failed')
+      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
     }
   })
 
@@ -56,10 +56,10 @@ function TwoFactorSection() {
       setSetupData(null)
       setVerifyCode('')
       queryClient.invalidateQueries({ queryKey: ['auth', '2fa', 'status'] }).catch(() => undefined)
-      toast.success('2FA enabled')
+      toast.success(t('security.toast_2fa_enabled'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Operation failed')
+      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
     }
   })
 
@@ -67,10 +67,10 @@ function TwoFactorSection() {
     mutationFn: (password: string) => api.post('/api/auth/2fa/disable', { password }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['auth', '2fa', 'status'] }).catch(() => undefined)
-      toast.success('2FA disabled')
+      toast.success(t('security.toast_2fa_disabled'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Operation failed')
+      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
     }
   })
 
@@ -238,10 +238,10 @@ function ChangePasswordSection() {
     onSuccess: () => {
       setOldPassword('')
       setNewPassword('')
-      toast.success('Password changed')
+      toast.success(t('security.toast_password_changed'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Operation failed')
+      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
     }
   })
 
@@ -308,10 +308,10 @@ function OAuthAccountsSection() {
     mutationFn: (id: string) => api.delete(`/api/auth/oauth/accounts/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['auth', 'oauth', 'accounts'] }).catch(() => undefined)
-      toast.success('Account unlinked')
+      toast.success(t('security.toast_account_unlinked'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Operation failed')
+      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
     }
   })
 

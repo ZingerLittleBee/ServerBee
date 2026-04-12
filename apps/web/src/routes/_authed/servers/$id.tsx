@@ -91,11 +91,27 @@ function ServerInfoMeta({ server }: { server: ServerResponse }) {
           {t('detail_ram')} {formatBytes(server.mem_total)}
         </span>
       )}
-      {server.ipv4 && <span>IPv4: {server.ipv4}</span>}
-      {server.ipv6 && <span>IPv6: {server.ipv6}</span>}
-      {server.kernel_version && <span>Kernel: {server.kernel_version}</span>}
-      {server.region && <span>Region: {server.region}</span>}
-      {server.agent_version && <span>Agent: v{server.agent_version}</span>}
+      {server.ipv4 && (
+        <span>
+          {t('detail_ipv4_label')} {server.ipv4}
+        </span>
+      )}
+      {server.ipv6 && (
+        <span>
+          {t('detail_ipv6_label')} {server.ipv6}
+        </span>
+      )}
+      {server.kernel_version && (
+        <span>
+          {t('detail_kernel_label')} {server.kernel_version}
+        </span>
+      )}
+      {server.region && (
+        <span>
+          {t('detail_region_label')} {server.region}
+        </span>
+      )}
+      {server.agent_version && <span>{t('detail_agent_label', { version: server.agent_version })}</span>}
     </div>
   )
 }
@@ -307,6 +323,7 @@ function MetricsTabContent({
 }
 
 function UptimeCard({ serverId }: { serverId: string }) {
+  const { t } = useTranslation('servers')
   const { data: uptimeDays } = useUptimeDaily(serverId)
   if (!uptimeDays || uptimeDays.length === 0) {
     return null
@@ -315,7 +332,7 @@ function UptimeCard({ serverId }: { serverId: string }) {
   return (
     <div className="mb-6 rounded-lg border bg-card p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="font-semibold text-sm">Uptime (90 days)</h3>
+        <h3 className="font-semibold text-sm">{t('uptime_title')}</h3>
         <span className="font-medium text-sm">{uptimePct !== null ? `${uptimePct.toFixed(2)}%` : '\u2014'}</span>
       </div>
       <UptimeTimeline days={uptimeDays} rangeDays={90} showLabels showLegend />
@@ -543,11 +560,11 @@ function ServerDetailPage() {
 
       <Tabs defaultValue="metrics">
         <TabsList>
-          <TabsTrigger value="metrics">Metrics</TabsTrigger>
+          <TabsTrigger value="metrics">{t('metrics_tab')}</TabsTrigger>
           {server.billing_cycle && (
             <TabsTrigger value="traffic">
               <BarChart3 aria-hidden="true" className="mr-1 size-3.5" />
-              Traffic
+              {t('traffic_tab')}
             </TabsTrigger>
           )}
         </TabsList>

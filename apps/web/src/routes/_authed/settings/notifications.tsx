@@ -57,10 +57,10 @@ function NotificationsPage() {
     onSuccess: () => {
       invalidate()
       resetForm()
-      toast.success('Notification channel created')
+      toast.success(t('notifications.toast_created'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to create notification channel')
+      toast.error(err instanceof Error ? err.message : t('notifications.create_failed'))
     }
   })
 
@@ -68,20 +68,20 @@ function NotificationsPage() {
     mutationFn: (id: string) => api.delete(`/api/notifications/${id}`),
     onSuccess: () => {
       invalidate()
-      toast.success('Notification channel deleted')
+      toast.success(t('notifications.toast_deleted'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete notification channel')
+      toast.error(err instanceof Error ? err.message : t('notifications.delete_failed'))
     }
   })
 
   const testMutation = useMutation({
     mutationFn: (id: string) => api.post(`/api/notifications/${id}/test`),
     onSuccess: () => {
-      toast.success('Test notification sent')
+      toast.success(t('notifications.toast_test_sent'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to send test notification')
+      toast.error(err instanceof Error ? err.message : t('notifications.test_failed'))
     }
   })
 
@@ -98,10 +98,10 @@ function NotificationsPage() {
       setGroupName('')
       setSelectedIds([])
       setShowGroupForm(false)
-      toast.success('Notification group created')
+      toast.success(t('notifications.toast_group_created'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to create notification group')
+      toast.error(err instanceof Error ? err.message : t('notifications.group_create_failed'))
     }
   })
 
@@ -109,10 +109,10 @@ function NotificationsPage() {
     mutationFn: (id: string) => api.delete(`/api/notification-groups/${id}`),
     onSuccess: () => {
       invalidate()
-      toast.success('Notification group deleted')
+      toast.success(t('notifications.toast_group_deleted'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete notification group')
+      toast.error(err instanceof Error ? err.message : t('notifications.group_delete_failed'))
     }
   })
 
@@ -292,7 +292,7 @@ function NotificationsPage() {
                       variant="outline"
                     >
                       <Upload className="size-3" />
-                      Upload .p8 file
+                      {t('notifications.upload_p8_file')}
                     </Button>
                   </div>
                   <Input
@@ -361,7 +361,7 @@ function NotificationsPage() {
                   </div>
                   <div className="flex gap-1">
                     <Button
-                      aria-label={`Test ${n.name}`}
+                      aria-label={t('common:a11y.test_notification', { name: n.name })}
                       disabled={testMutation.isPending}
                       onClick={() => testMutation.mutate(n.id)}
                       size="sm"
@@ -370,7 +370,7 @@ function NotificationsPage() {
                       <Send className="size-3.5" />
                     </Button>
                     <Button
-                      aria-label={`Delete ${n.name}`}
+                      aria-label={t('common:a11y.delete_notification', { name: n.name })}
                       disabled={deleteMutation.isPending}
                       onClick={() => deleteMutation.mutate(n.id)}
                       size="sm"
@@ -440,7 +440,7 @@ function NotificationsPage() {
                       </p>
                     </div>
                     <Button
-                      aria-label={`Delete group ${g.name}`}
+                      aria-label={t('common:a11y.delete_group', { name: g.name })}
                       disabled={deleteGroupMutation.isPending}
                       onClick={() => deleteGroupMutation.mutate(g.id)}
                       size="sm"
