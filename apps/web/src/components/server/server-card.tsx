@@ -4,14 +4,17 @@ import { useTranslation } from 'react-i18next'
 import { CompactMetric } from '@/components/server/compact-metric'
 import { RingChart } from '@/components/ui/ring-chart'
 import { UptimeBar } from '@/components/ui/uptime-bar'
-import { useNetworkRealtime } from '@/hooks/use-network-realtime'
+import { useNetworkOverview } from '@/hooks/use-network-api'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import { seedFromSummary, summaryStats, toBarData } from '@/lib/sparkline'
 import { countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 import { StatusBadge } from './status-badge'
 
 interface ServerCardProps {
   server: ServerMetrics
 }
+
+const NULL_BAR_COLOR = 'var(--color-muted)'
 
 function osIcon(os: string | null): string {
   if (!os) {
@@ -45,7 +48,7 @@ function getRingColor(pct: number, brandColor: string): string {
 
 function getLatencyColor(ms: number | null): string {
   if (ms == null) {
-    return '#ef4444'
+    return NULL_BAR_COLOR
   }
   if (ms < 50) {
     return '#10b981'
@@ -58,7 +61,7 @@ function getLatencyColor(ms: number | null): string {
 
 function getLossColor(loss: number | null): string {
   if (loss == null) {
-    return '#ef4444'
+    return NULL_BAR_COLOR
   }
   if (loss < 1) {
     return '#10b981'
@@ -82,7 +85,10 @@ function getLatencyTextClass(ms: number | null): string {
   return 'text-red-600 dark:text-red-400'
 }
 
-function getLossTextClass(loss: number): string {
+function getLossTextClass(loss: number | null): string {
+  if (loss == null) {
+    return 'text-muted-foreground'
+  }
   if (loss < 1) {
     return 'text-emerald-600 dark:text-emerald-400'
   }
@@ -99,7 +105,10 @@ function formatLatency(ms: number | null): string {
   return `${ms.toFixed(0)}ms`
 }
 
-function formatPacketLoss(loss: number): string {
+function formatPacketLoss(loss: number | null): string {
+  if (loss == null) {
+    return '-'
+  }
   return `${loss.toFixed(1)}%`
 }
 
@@ -109,7 +118,7 @@ function formatLoad(load: number): string {
 
 export function ServerCard({ server }: ServerCardProps) {
   const { t } = useTranslation(['servers'])
-  const { data: networkData } = useNetworkRealtime(server.id)
+  const { data: networkOverview = [] } = useNetworkOverview()
 
   const memoryPct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
   const diskPct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
@@ -117,21 +126,27 @@ export function ServerCard({ server }: ServerCardProps) {
   const flag = countryCodeToFlag(server.country_code)
   const osEmoji = osIcon(server.os)
 
-  const { latencyData, lossData, avgLatency, avgLoss } = useMemo(() => {
-    const allResults = Object.values(networkData)
-      .flat()
-      .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
-      .slice(-20)
+  const { latencyData, lossData, avgLatency, avgLoss, hasAnyData } = useMemo(() => {
+    const summary = networkOverview.find((entry) => entry.server_id === server.id)
 
-    const latency = allResults.map((r) => r.avg_latency)
-    const loss = allResults.map((r) => r.packet_loss * 100)
+    if (!summary) {
+      return { latencyData: [], lossData: [], avgLatency: null, avgLoss: null, hasAnyData: false }
+    }
 
-    const validLatencies = latency.filter((v): v is number => v != null)
-    const avg = validLatencies.length > 0 ? validLatencies.reduce((a, b) => a + b, 0) / validLatencies.length : null
-    const avgL = loss.length > 0 ? loss.reduce((a, b) => a + b, 0) / loss.length : 0
+    const points = seedFromSummary(summary)
+    const hasAnyData = points.some((point) => point.latency != null || point.loss != null)
+    const latencyData = toBarData(points, 'latency')
+    const lossData = toBarData(points, 'lossPercent')
+    const stats = summaryStats(points)
 
-    return { latencyData: latency, lossData: loss, avgLatency: avg, avgLoss: avgL }
-  }, [networkData])
+    return {
+      latencyData,
+      lossData,
+      avgLatency: stats.avgLatency,
+      avgLoss: stats.avgLoss == null ? null : stats.avgLoss * 100,
+      hasAnyData
+    }
+  }, [networkOverview, server.id])
 
   return (
     <Link
@@ -195,7 +210,7 @@ export function ServerCard({ server }: ServerCardProps) {
       </div>
 
       {/* Network Quality */}
-      {latencyData.length > 0 && (
+      {hasAnyData && (
         <div className="mt-auto border-t pt-3">
           <div className="mb-2">
             <div className="mb-1 flex items-center justify-between">
