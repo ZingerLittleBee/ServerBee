@@ -37,6 +37,7 @@ describe('capability toggles', () => {
   })
 
   it('detects client capability locks', () => {
+    // biome-ignore lint/suspicious/noBitwiseOperators: capability bitmask
     expect(isClientCapabilityLocked(CAP_DEFAULT | CAP_FILE, CAP_FILE)).toBe(false)
     expect(isClientCapabilityLocked(CAP_DEFAULT, CAP_FILE)).toBe(true)
     expect(isClientCapabilityLocked(undefined, CAP_FILE)).toBe(false)
@@ -44,10 +45,12 @@ describe('capability toggles', () => {
 
   it('prefers effective capabilities when present', () => {
     expect(getEffectiveCapabilityEnabled(CAP_FILE, CAP_DEFAULT, CAP_FILE)).toBe(true)
+    // biome-ignore lint/suspicious/noBitwiseOperators: capability bitmask
     expect(getEffectiveCapabilityEnabled(0, CAP_DEFAULT | CAP_FILE, CAP_FILE)).toBe(false)
   })
 
   it('falls back to configured capabilities when runtime effective capabilities are absent', () => {
+    // biome-ignore lint/suspicious/noBitwiseOperators: capability bitmask
     expect(getEffectiveCapabilityEnabled(undefined, CAP_DEFAULT | CAP_EXEC, CAP_EXEC)).toBe(true)
     expect(getEffectiveCapabilityEnabled(null, CAP_DEFAULT, CAP_EXEC)).toBe(false)
   })

@@ -11,12 +11,7 @@ import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { useAuth } from '@/hooks/use-auth'
 import { api } from '@/lib/api-client'
-import {
-  CAP_DEFAULT,
-  CAPABILITIES,
-  getEffectiveCapabilityEnabled,
-  isClientCapabilityLocked
-} from '@/lib/capabilities'
+import { CAP_DEFAULT, CAPABILITIES, getEffectiveCapabilityEnabled, isClientCapabilityLocked } from '@/lib/capabilities'
 
 interface ServerWithCaps {
   agent_local_capabilities?: number | null

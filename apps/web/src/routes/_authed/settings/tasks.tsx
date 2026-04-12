@@ -18,8 +18,8 @@ export const Route = createFileRoute('/_authed/settings/tasks')({
 })
 
 interface ServerInfo {
-  effective_capabilities?: number | null
   capabilities?: number
+  effective_capabilities?: number | null
   id: string
   name: string
 }
