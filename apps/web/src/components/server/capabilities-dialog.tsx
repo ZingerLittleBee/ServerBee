@@ -15,7 +15,6 @@ import {
   CAP_DEFAULT,
   CAPABILITIES,
   getEffectiveCapabilityEnabled,
-  hasCap,
   isClientCapabilityLocked
 } from '@/lib/capabilities'
 
