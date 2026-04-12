@@ -21,7 +21,7 @@ import {
   useUpdateNetworkSetting,
   useUpdateTarget
 } from '@/hooks/use-network-api'
-import { getNetworkProbeTypeLabel } from '@/lib/network-i18n'
+import { getNetworkProbeTypeLabel, getNetworkTargetDisplayName } from '@/lib/network-i18n'
 import type { NetworkProbeTarget } from '@/lib/network-types'
 
 export const Route = createFileRoute('/_authed/settings/network-probes')({
@@ -50,7 +50,7 @@ const DEFAULT_FORM: TargetFormData = {
 }
 
 export function NetworkProbeSettingsPage() {
-  const { t } = useTranslation('network')
+  const { t, i18n } = useTranslation('network')
 
   const { tab: activeTab } = Route.useSearch()
   const navigate = Route.useNavigate()
@@ -186,6 +186,10 @@ export function NetworkProbeSettingsPage() {
   }
 
   const getProbeTypeLabel = useCallback((probeType: string) => getNetworkProbeTypeLabel(t, probeType), [t])
+  const getTargetDisplayName = useCallback(
+    (target: NetworkProbeTarget) => getNetworkTargetDisplayName(t, i18n.resolvedLanguage ?? i18n.language, target),
+    [t, i18n.language, i18n.resolvedLanguage]
+  )
 
   const probeTypes: { value: ProbeType; label: string }[] = [
     { value: 'icmp', label: getProbeTypeLabel('icmp') },
@@ -199,7 +203,7 @@ export function NetworkProbeSettingsPage() {
         accessorKey: 'name',
         header: () => t('target_name'),
         enableSorting: false,
-        cell: ({ row }) => <span className="font-medium">{row.original.name}</span>
+        cell: ({ row }) => <span className="font-medium">{getTargetDisplayName(row.original)}</span>
       },
       {
         accessorKey: 'provider',
@@ -271,7 +275,7 @@ export function NetworkProbeSettingsPage() {
           )
       }
     ],
-    [t, openEditDialog, getProbeTypeLabel]
+    [t, openEditDialog, getProbeTypeLabel, getTargetDisplayName]
   )
 
   const targetsTable = useReactTable({
@@ -368,7 +372,7 @@ export function NetworkProbeSettingsPage() {
                             checked={defaultTargetIds.includes(target.id)}
                             onCheckedChange={() => toggleDefaultTarget(target.id)}
                           />
-                          <span>{target.name}</span>
+                          <span>{getTargetDisplayName(target)}</span>
                           <span className="text-muted-foreground text-xs">
                             ({getProbeTypeLabel(target.probe_type)})
                           </span>
