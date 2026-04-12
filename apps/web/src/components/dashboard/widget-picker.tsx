@@ -15,6 +15,7 @@ import {
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { WIDGET_TYPES, type WidgetCategory } from '@/lib/widget-types'
 
 interface WidgetPickerProps {
@@ -73,48 +74,50 @@ export function WidgetPicker({ onSelect, open, onOpenChange }: WidgetPickerProps
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-h-[80vh] sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{t('add_widget', 'Add Widget')}</DialogTitle>
         </DialogHeader>
-        <div className="max-h-96 space-y-4 overflow-y-auto">
-          {CATEGORY_ORDER.map((category) => {
-            const widgets = grouped.get(category)
-            if (!widgets || widgets.length === 0) {
-              return null
-            }
-            return (
-              <div key={category}>
-                <h4 className="mb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">{category}</h4>
-                <div className="grid grid-cols-2 gap-2">
-                  {widgets.map((widgetType) => {
-                    const Icon = WIDGET_ICONS[widgetType.id] ?? Server
-                    const description = WIDGET_DESCRIPTIONS[widgetType.id] ?? ''
-                    return (
-                      <button
-                        className="flex items-start gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/50"
-                        key={widgetType.id}
-                        onClick={() => {
-                          onSelect(widgetType.id)
-                          onOpenChange(false)
-                        }}
-                        type="button"
-                      >
-                        <div className="rounded-md bg-muted p-1.5">
-                          <Icon className="size-4 text-muted-foreground" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-medium text-sm leading-tight">{widgetType.label}</p>
-                          <p className="mt-0.5 text-muted-foreground text-xs leading-snug">{description}</p>
-                        </div>
-                      </button>
-                    )
-                  })}
+        <ScrollArea className="max-h-[60vh]">
+          <div className="space-y-4 pr-3">
+            {CATEGORY_ORDER.map((category) => {
+              const widgets = grouped.get(category)
+              if (!widgets || widgets.length === 0) {
+                return null
+              }
+              return (
+                <div key={category}>
+                  <h4 className="mb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">{category}</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {widgets.map((widgetType) => {
+                      const Icon = WIDGET_ICONS[widgetType.id] ?? Server
+                      const description = WIDGET_DESCRIPTIONS[widgetType.id] ?? ''
+                      return (
+                        <button
+                          className="flex items-start gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/50"
+                          key={widgetType.id}
+                          onClick={() => {
+                            onSelect(widgetType.id)
+                            onOpenChange(false)
+                          }}
+                          type="button"
+                        >
+                          <div className="rounded-md bg-muted p-1.5">
+                            <Icon className="size-4 text-muted-foreground" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm leading-tight">{widgetType.label}</p>
+                            <p className="mt-0.5 text-muted-foreground text-xs leading-snug">{description}</p>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+        </ScrollArea>
       </DialogContent>
     </Dialog>
   )

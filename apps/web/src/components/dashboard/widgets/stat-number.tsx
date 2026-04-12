@@ -17,35 +17,30 @@ const METRIC_ICONS: Record<string, typeof Server> = {
   health: Activity
 }
 
-const METRIC_STYLES: Record<string, { glow: string; icon: string; iconShell: string; surface: string }> = {
+const METRIC_STYLES: Record<string, { icon: string; iconBg: string; surface: string }> = {
   server_count: {
-    glow: 'bg-primary/15',
     icon: 'text-primary',
-    iconShell: 'border-primary/15 bg-primary/10',
+    iconBg: 'bg-primary/10',
     surface: 'border-border/70 bg-gradient-to-br from-primary/10 via-card to-card'
   },
   avg_cpu: {
-    glow: 'bg-chart-4/18',
     icon: 'text-chart-4',
-    iconShell: 'border-chart-4/20 bg-chart-4/10',
+    iconBg: 'bg-chart-4/10',
     surface: 'border-border/70 bg-gradient-to-br from-chart-4/10 via-card to-card'
   },
   avg_memory: {
-    glow: 'bg-chart-3/20',
     icon: 'text-chart-3',
-    iconShell: 'border-chart-3/20 bg-chart-3/10',
+    iconBg: 'bg-chart-3/10',
     surface: 'border-border/70 bg-gradient-to-br from-chart-3/12 via-card to-card'
   },
   total_bandwidth: {
-    glow: 'bg-chart-1/18',
     icon: 'text-chart-1',
-    iconShell: 'border-chart-1/20 bg-chart-1/10',
+    iconBg: 'bg-chart-1/10',
     surface: 'border-border/70 bg-gradient-to-br from-chart-1/10 via-card to-card'
   },
   health: {
-    glow: 'bg-chart-2/18',
     icon: 'text-chart-2',
-    iconShell: 'border-chart-2/20 bg-chart-2/10',
+    iconBg: 'bg-chart-2/10',
     surface: 'border-border/70 bg-gradient-to-br from-chart-2/12 via-card to-card'
   }
 }
@@ -115,46 +110,34 @@ export function StatNumberWidget({ config, servers }: StatNumberWidgetProps) {
   return (
     <div
       className={cn(
-        'relative flex h-full min-w-0 flex-col overflow-hidden rounded-xl border p-4 shadow-sm',
+        'flex h-full min-w-0 items-center gap-3 overflow-hidden rounded-xl border px-3.5 shadow-sm',
         metricStyles.surface
       )}
       data-metric={metric}
       data-testid="stat-number-widget"
     >
       <div
-        className={cn('pointer-events-none absolute -top-8 -right-6 size-28 rounded-full blur-3xl', metricStyles.glow)}
-      />
-
-      <div className="relative flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p
-            className="truncate font-medium text-[0.68rem] text-muted-foreground uppercase tracking-[0.24em]"
-            data-testid="stat-number-label"
-          >
-            {label}
-          </p>
-        </div>
-
-        <div
-          className={cn(
-            'flex size-11 shrink-0 items-center justify-center rounded-2xl border backdrop-blur-sm',
-            metricStyles.iconShell
-          )}
-          data-testid="stat-number-icon-shell"
-        >
-          <Icon className={cn('size-5', metricStyles.icon)} />
-        </div>
+        className={cn('flex size-9 shrink-0 items-center justify-center rounded-[10px]', metricStyles.iconBg)}
+        data-testid="stat-number-icon-shell"
+      >
+        <Icon className={cn('size-[18px]', metricStyles.icon)} />
       </div>
 
-      <div className="relative mt-auto pt-8">
+      <div className="min-w-0 flex-1">
         <p
-          className="truncate font-semibold text-[clamp(1.8rem,2vw,2.6rem)] leading-none tracking-[-0.05em]"
+          className="truncate font-medium text-[0.625rem] text-muted-foreground uppercase leading-tight tracking-[0.12em]"
+          data-testid="stat-number-label"
+        >
+          {label}
+        </p>
+        <p
+          className="truncate font-bold text-[1.375rem] leading-tight tracking-[-0.03em]"
           data-testid="stat-number-value"
         >
           {result.value}
         </p>
         <p
-          className="mt-3 line-clamp-2 text-pretty text-muted-foreground text-sm leading-5"
+          className="truncate text-[0.6875rem] text-muted-foreground leading-tight"
           data-testid="stat-number-supporting"
         >
           {result.supporting}

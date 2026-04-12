@@ -5,16 +5,18 @@ interface MetricsChartProps {
   color?: string
   data: Record<string, unknown>[]
   dataKey: string
+  domain?: [number, number]
   formatTick?: (value: number) => string
   formatTime?: (time: string) => string
+  formatTooltipLabel?: (time: string) => string
   formatValue?: (value: number) => string
   title: string
   unit?: string
 }
 
 function defaultFormatTime(time: string): string {
-  const date = new Date(time)
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const d = new Date(time)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 function defaultFormatValue(value: number): string {
@@ -26,10 +28,12 @@ export function MetricsChart({
   data,
   dataKey,
   color = 'var(--color-chart-1)',
+  domain,
   unit = '',
   formatValue = defaultFormatValue,
   formatTick,
-  formatTime = defaultFormatTime
+  formatTime = defaultFormatTime,
+  formatTooltipLabel
 }: MetricsChartProps) {
   const chartConfig = {
     [dataKey]: { label: title, color }
@@ -42,11 +46,17 @@ export function MetricsChart({
         <AreaChart accessibilityLayer data={data}>
           <CartesianGrid vertical={false} />
           <XAxis axisLine={false} dataKey="timestamp" tickFormatter={formatTime} tickLine={false} />
-          <YAxis axisLine={false} tickFormatter={formatTick} tickLine={false} width={formatTick ? 60 : 45} />
+          <YAxis
+            axisLine={false}
+            domain={domain}
+            tickFormatter={formatTick}
+            tickLine={false}
+            width={formatTick ? 60 : 45}
+          />
           <ChartTooltip
             content={
               <ChartTooltipContent
-                labelFormatter={(label) => formatTime(String(label))}
+                labelFormatter={(label) => (formatTooltipLabel ?? formatTime)(String(label))}
                 valueFormatter={(v) => `${formatValue(v)}${unit}`}
               />
             }

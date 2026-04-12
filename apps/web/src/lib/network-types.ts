@@ -1,3 +1,5 @@
+import { getLatencyTextClass } from './network-latency-constants'
+
 export interface NetworkProbeTarget {
   created_at: string | null
   id: string
@@ -114,15 +116,6 @@ export function getProviderLabel(provider: string): string {
   return PROVIDER_LABELS[provider] ?? provider
 }
 
-export function latencyColorClass(ms: number | null): string {
-  if (ms == null) {
-    return 'text-muted-foreground'
-  }
-  if (ms < 50) {
-    return 'text-green-600 dark:text-green-400'
-  }
-  if (ms < 100) {
-    return 'text-yellow-600 dark:text-yellow-400'
-  }
-  return 'text-red-600 dark:text-red-400'
+export function latencyColorClass(ms: number | null, options?: { failed?: boolean }): string {
+  return getLatencyTextClass({ latencyMs: ms, failed: options?.failed })
 }

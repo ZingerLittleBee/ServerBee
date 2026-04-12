@@ -32,6 +32,13 @@ describe('seedFromSummary', () => {
     expect(points).toHaveLength(SPARKLINE_LENGTH)
   })
 
+  it('fills missing sparkline arrays with null points', () => {
+    const points = seedFromSummary({} as Record<string, unknown>)
+
+    expect(points).toHaveLength(SPARKLINE_LENGTH)
+    expect(points.every((point) => point.latency == null && point.loss == null)).toBe(true)
+  })
+
   it('preserves fixed-slot nulls and values from the summary arrays', () => {
     const points = seedFromSummary(
       makeSummary(

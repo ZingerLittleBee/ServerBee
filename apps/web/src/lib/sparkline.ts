@@ -1,5 +1,3 @@
-import type { NetworkServerSummary } from './network-types'
-
 export const SPARKLINE_LENGTH = 30
 
 export interface SparklinePoint {
@@ -7,10 +5,22 @@ export interface SparklinePoint {
   loss: number | null
 }
 
-export function seedFromSummary(summary: NetworkServerSummary): SparklinePoint[] {
+interface SparklineSummaryLike {
+  latency_sparkline?: unknown
+  loss_sparkline?: unknown
+}
+
+function normalizeSparklineSeries(series: unknown): readonly (number | null)[] {
+  return Array.isArray(series) ? series : []
+}
+
+export function seedFromSummary(summary: SparklineSummaryLike): SparklinePoint[] {
+  const latencySparkline = normalizeSparklineSeries(summary.latency_sparkline)
+  const lossSparkline = normalizeSparklineSeries(summary.loss_sparkline)
+
   return Array.from({ length: SPARKLINE_LENGTH }, (_, index) => ({
-    latency: summary.latency_sparkline[index] ?? null,
-    loss: summary.loss_sparkline[index] ?? null
+    latency: latencySparkline[index] ?? null,
+    loss: lossSparkline[index] ?? null
   }))
 }
 
