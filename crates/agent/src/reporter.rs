@@ -5,7 +5,9 @@ use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use rand::Rng;
-use serverbee_common::constants::{DEFAULT_COMMAND_TIMEOUT_SECS, MAX_TASK_OUTPUT_SIZE};
+use serverbee_common::constants::{
+    CapabilityDeniedReason, DEFAULT_COMMAND_TIMEOUT_SECS, MAX_TASK_OUTPUT_SIZE, has_capability,
+};
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
 use serverbee_common::types::{NetworkInterface, NetworkProbeResultData, TracerouteHop};
 use sysinfo::Networks;
@@ -31,13 +33,15 @@ const DOCKER_RETRY_SECS: u64 = 30;
 pub struct Reporter {
     config: AgentConfig,
     fingerprint: String,
+    agent_local_capabilities: u32,
 }
 
 impl Reporter {
-    pub fn new(config: AgentConfig, fingerprint: String) -> Self {
+    pub fn new(config: AgentConfig, fingerprint: String, agent_local_capabilities: u32) -> Self {
         Self {
             config,
             fingerprint,
+            agent_local_capabilities,
         }
     }
 
@@ -106,7 +110,8 @@ impl Reporter {
 
         tracing::info!("Connecting to {}...", build_ws_url(&self.config)?);
 
-        let capabilities = Arc::new(AtomicU32::new(u32::MAX));
+        let capabilities = Arc::new(AtomicU32::new(self.agent_local_capabilities));
+        let server_capabilities = Arc::new(AtomicU32::new(u32::MAX));
 
         let request = build_ws_request(&self.config)?;
         let (ws_stream, _response) = connect_async(request).await?;
@@ -125,14 +130,16 @@ impl Reporter {
                         capabilities: caps,
                         ..
                     } => {
+                        let server_caps = server_capabilities_from_welcome(caps);
+                        let effective_caps = compute_effective_capabilities(
+                            server_caps,
+                            self.agent_local_capabilities,
+                        );
                         tracing::info!(
                             "Welcome from server {server_id}, interval={report_interval}s"
                         );
-                        if let Some(c) = caps {
-                            capabilities.store(c, Ordering::SeqCst);
-                        } else {
-                            capabilities.store(u32::MAX, Ordering::SeqCst);
-                        }
+                        server_capabilities.store(server_caps, Ordering::SeqCst);
+                        capabilities.store(effective_caps, Ordering::SeqCst);
                         report_interval
                     }
                     other => {
@@ -207,6 +214,7 @@ impl Reporter {
                 ipv6: initial_ipv6,
                 ..info
             },
+            agent_local_capabilities: Some(self.agent_local_capabilities),
         };
         let json = serde_json::to_string(&info_msg)?;
         write.send(Message::Text(json.into())).await?;
@@ -382,7 +390,7 @@ impl Reporter {
                 server_msg = read.next() => {
                     match server_msg {
                         Some(Ok(Message::Text(text))) => {
-                            self.handle_server_message(&text, &mut write, &mut ping_manager, &mut terminal_manager, &mut network_prober, &cmd_result_tx, &capabilities, &file_manager, &file_tx, &mut docker_manager, &mut docker_available, &mut docker_stats_interval).await?;
+                            self.handle_server_message(&text, &mut write, &mut ping_manager, &mut terminal_manager, &mut network_prober, &cmd_result_tx, &capabilities, &server_capabilities, &file_manager, &file_tx, &mut docker_manager, &mut docker_available, &mut docker_stats_interval).await?;
                         }
                         Some(Ok(Message::Close(_))) => {
                             tracing::info!("Server closed connection");
@@ -437,6 +445,7 @@ impl Reporter {
         network_prober: &mut NetworkProber,
         cmd_result_tx: &mpsc::Sender<AgentMessage>,
         capabilities: &Arc<AtomicU32>,
+        server_capabilities: &Arc<AtomicU32>,
         file_manager: &FileManager,
         file_tx: &mpsc::Sender<FileEvent>,
         docker_manager: &mut Option<DockerManager>,
@@ -458,13 +467,20 @@ impl Reporter {
 
         match msg {
             ServerMessage::CapabilitiesSync { capabilities: caps } => {
-                tracing::info!("Capabilities updated: {caps}");
-                let old_caps = capabilities.load(Ordering::SeqCst);
-                capabilities.store(caps, Ordering::SeqCst);
+                let old_caps = sync_capability_state(
+                    capabilities,
+                    server_capabilities,
+                    caps,
+                    self.agent_local_capabilities,
+                );
+                let effective_caps = capabilities.load(Ordering::SeqCst);
+                tracing::info!("Capabilities updated: server={caps}, effective={effective_caps}");
                 network_prober.resync_capabilities();
 
                 // If Docker capability was removed, clean up
-                if has_capability(old_caps, CAP_DOCKER) && !has_capability(caps, CAP_DOCKER) {
+                if has_capability(old_caps, CAP_DOCKER)
+                    && !has_capability(effective_caps, CAP_DOCKER)
+                {
                     tracing::info!("Docker capability revoked, cleaning up");
                     if let Some(dm) = docker_manager.as_mut() {
                         dm.cleanup();
@@ -484,11 +500,17 @@ impl Reporter {
             } => {
                 let caps = capabilities.load(Ordering::SeqCst);
                 if !has_capability(caps, CAP_EXEC) {
+                    let denied_reason = capability_denied_reason(
+                        server_capabilities.load(Ordering::SeqCst),
+                        self.agent_local_capabilities,
+                        CAP_EXEC,
+                    );
                     tracing::warn!("Exec denied: capability disabled (task_id={task_id})");
                     let denied = AgentMessage::CapabilityDenied {
                         msg_id: Some(task_id),
                         session_id: None,
                         capability: "exec".to_string(),
+                        reason: denied_reason,
                     };
                     let tx = cmd_result_tx.clone();
                     tokio::spawn(async move {
@@ -553,11 +575,17 @@ impl Reporter {
             } => {
                 let caps = capabilities.load(Ordering::SeqCst);
                 if !has_capability(caps, CAP_UPGRADE) {
+                    let denied_reason = capability_denied_reason(
+                        server_capabilities.load(Ordering::SeqCst),
+                        self.agent_local_capabilities,
+                        CAP_UPGRADE,
+                    );
                     tracing::warn!("Upgrade denied: capability disabled");
                     let denied = AgentMessage::CapabilityDenied {
                         msg_id: None,
                         session_id: None,
                         capability: "upgrade".to_string(),
+                        reason: denied_reason,
                     };
                     let json = serde_json::to_string(&denied)?;
                     write.send(Message::Text(json.into())).await?;
@@ -590,6 +618,11 @@ impl Reporter {
             } => {
                 let caps = capabilities.load(Ordering::SeqCst);
                 if !has_capability(caps, CAP_PING_ICMP) {
+                    let denied_reason = capability_denied_reason(
+                        server_capabilities.load(Ordering::SeqCst),
+                        self.agent_local_capabilities,
+                        CAP_PING_ICMP,
+                    );
                     tracing::warn!(
                         "Traceroute denied: capability disabled (request_id={request_id})"
                     );
@@ -597,6 +630,7 @@ impl Reporter {
                         msg_id: Some(request_id),
                         session_id: None,
                         capability: "ping_icmp".to_string(),
+                        reason: denied_reason,
                     };
                     let tx = cmd_result_tx.clone();
                     tokio::spawn(async move {
@@ -1358,6 +1392,40 @@ fn build_ws_request(
     Ok(request)
 }
 
+fn server_capabilities_from_welcome(server_caps: Option<u32>) -> u32 {
+    server_caps.unwrap_or(u32::MAX)
+}
+
+fn compute_effective_capabilities(server_caps: u32, agent_local_capabilities: u32) -> u32 {
+    serverbee_common::constants::effective_capabilities(server_caps, agent_local_capabilities)
+}
+
+fn sync_capability_state(
+    capabilities: &Arc<AtomicU32>,
+    server_capabilities: &Arc<AtomicU32>,
+    server_caps: u32,
+    agent_local_capabilities: u32,
+) -> u32 {
+    let old_caps = capabilities.load(Ordering::SeqCst);
+    let effective_caps = compute_effective_capabilities(server_caps, agent_local_capabilities);
+    server_capabilities.store(server_caps, Ordering::SeqCst);
+    capabilities.store(effective_caps, Ordering::SeqCst);
+    old_caps
+}
+
+fn capability_denied_reason(
+    server_caps: u32,
+    agent_local_capabilities: u32,
+    cap_bit: u32,
+) -> CapabilityDeniedReason {
+    if !has_capability(server_caps, cap_bit) {
+        CapabilityDeniedReason::ServerCapabilityDisabled
+    } else {
+        debug_assert!(!has_capability(agent_local_capabilities, cap_bit));
+        CapabilityDeniedReason::AgentCapabilityDisabled
+    }
+}
+
 fn should_refresh_registration(config: &AgentConfig, error: &anyhow::Error) -> bool {
     !config.auto_discovery_key.is_empty()
         && matches!(
@@ -1459,7 +1527,54 @@ async fn derive_primary_ips(
 mod tests {
     use super::*;
     use crate::config::{CollectorConfig, FileConfig, IpChangeConfig, LogConfig};
+    use serverbee_common::constants::{
+        CAP_DEFAULT, CAP_EXEC, CAP_FILE, CAP_PING_ICMP, CapabilityDeniedReason,
+    };
     use tokio_tungstenite::tungstenite::http::Response;
+
+    #[test]
+    fn test_effective_capabilities_from_welcome_masks_server_and_local_caps() {
+        assert_eq!(
+            compute_effective_capabilities(CAP_EXEC | CAP_FILE, CAP_FILE),
+            CAP_FILE
+        );
+    }
+
+    #[test]
+    fn test_effective_capabilities_from_welcome_defaults_to_local_caps_when_missing() {
+        assert_eq!(
+            compute_effective_capabilities(server_capabilities_from_welcome(None), CAP_DEFAULT),
+            CAP_DEFAULT
+        );
+    }
+
+    #[test]
+    fn test_capabilities_sync_recomputes_effective_caps_instead_of_overwriting_local_policy() {
+        let capabilities = Arc::new(AtomicU32::new(CAP_FILE));
+        let server_capabilities = Arc::new(AtomicU32::new(u32::MAX));
+        let old_caps =
+            sync_capability_state(&capabilities, &server_capabilities, CAP_EXEC, CAP_FILE);
+
+        assert_eq!(old_caps, CAP_FILE);
+        assert_eq!(capabilities.load(Ordering::SeqCst), 0);
+        assert_eq!(server_capabilities.load(Ordering::SeqCst), CAP_EXEC);
+    }
+
+    #[test]
+    fn test_capability_denied_reason_uses_server_policy_when_server_disables_capability() {
+        assert_eq!(
+            capability_denied_reason(0, CAP_EXEC, CAP_EXEC),
+            CapabilityDeniedReason::ServerCapabilityDisabled
+        );
+    }
+
+    #[test]
+    fn test_capability_denied_reason_uses_agent_policy_when_server_allows_capability() {
+        assert_eq!(
+            capability_denied_reason(CAP_PING_ICMP, 0, CAP_PING_ICMP),
+            CapabilityDeniedReason::AgentCapabilityDisabled
+        );
+    }
 
     #[test]
     fn test_should_refresh_registration_on_unauthorized_handshake() {
