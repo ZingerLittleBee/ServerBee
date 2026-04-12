@@ -18,7 +18,7 @@ use crate::service::audit::AuditService;
 use crate::service::file_transfer::{TransferDirection, TransferInfo};
 use crate::service::server::ServerService;
 use crate::state::AppState;
-use serverbee_common::constants::{CAP_FILE, MAX_FILE_CHUNK_SIZE, has_capability};
+use serverbee_common::constants::{CAP_FILE, MAX_FILE_CHUNK_SIZE};
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
 use serverbee_common::types::FileEntry;
 
@@ -148,15 +148,30 @@ fn agent_error(msg: String) -> AppError {
     }
 }
 
+fn audit_error_reason(error: &AppError) -> Option<&str> {
+    match error {
+        AppError::Forbidden(message)
+        | AppError::BadRequest(message)
+        | AppError::NotFound(message)
+        | AppError::Conflict(message)
+        | AppError::RequestTimeout(message)
+        | AppError::Validation(message)
+        | AppError::TooManyRequests(message)
+        | AppError::Internal(message) => Some(message.as_str()),
+        AppError::Unauthorized => None,
+    }
+}
+
 /// Validate that the server exists, has CAP_FILE capability, and is online.
 /// Returns the server model on success.
 async fn validate_file_access(state: &AppState, server_id: &str) -> Result<(), AppError> {
     let server = ServerService::get_server(&state.db, server_id).await?;
     let caps = server.capabilities as u32;
-    if !has_capability(caps, CAP_FILE) {
-        return Err(AppError::Forbidden(
-            "File capability disabled for this server".into(),
-        ));
+    if let Some(reason) = state
+        .agent_manager
+        .capability_denied_reason(server_id, caps, CAP_FILE)
+    {
+        return Err(AppError::Forbidden(reason.into()));
     }
     if !state.agent_manager.is_online(server_id) {
         return Err(AppError::NotFound("Server offline".into()));
@@ -287,10 +302,37 @@ async fn stat_file(
 )]
 async fn read_file(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Extension(current_user): Extension<CurrentUser>,
+    headers: HeaderMap,
     Path(server_id): Path<String>,
     Json(body): Json<ReadRequest>,
 ) -> Result<Json<ApiResponse<ReadResponse>>, AppError> {
-    validate_file_access(&state, &server_id).await?;
+    let path = body.path.clone();
+
+    if let Err(error) = validate_file_access(&state, &server_id).await {
+        let ip = extract_client_ip(
+            &ConnectInfo(addr),
+            &headers,
+            &state.config.server.trusted_proxies,
+        )
+        .to_string();
+        let detail = serde_json::json!({
+            "server_id": server_id,
+            "path": path,
+            "deny_reason": audit_error_reason(&error),
+        })
+        .to_string();
+        let _ = AuditService::log(
+            &state.db,
+            &current_user.user_id,
+            "file_read_denied",
+            Some(&detail),
+            &ip,
+        )
+        .await;
+        return Err(error);
+    }
 
     let msg_id = uuid::Uuid::new_v4().to_string();
     let rx = state.agent_manager.register_pending_request(msg_id.clone());
@@ -302,7 +344,7 @@ async fn read_file(
     sender
         .send(ServerMessage::FileRead {
             msg_id: msg_id.clone(),
-            path: body.path,
+            path: path.clone(),
             max_size: MAX_FILE_CHUNK_SIZE as u64, // 384KB — stays under WS limit after base64
         })
         .await
@@ -314,6 +356,25 @@ async fn read_file(
                 return Err(agent_error(e));
             }
             let content = content.unwrap_or_default();
+            let ip = extract_client_ip(
+                &ConnectInfo(addr),
+                &headers,
+                &state.config.server.trusted_proxies,
+            )
+            .to_string();
+            let detail = serde_json::json!({
+                "server_id": server_id,
+                "path": path,
+            })
+            .to_string();
+            let _ = AuditService::log(
+                &state.db,
+                &current_user.user_id,
+                "file_read",
+                Some(&detail),
+                &ip,
+            )
+            .await;
             ok(ReadResponse { content })
         }
         Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
@@ -752,7 +813,29 @@ async fn start_download(
     Path(server_id): Path<String>,
     Json(body): Json<DownloadRequest>,
 ) -> Result<Json<ApiResponse<DownloadResponse>>, AppError> {
-    validate_file_access(&state, &server_id).await?;
+    if let Err(error) = validate_file_access(&state, &server_id).await {
+        let ip = extract_client_ip(
+            &ConnectInfo(addr),
+            &headers,
+            &state.config.server.trusted_proxies,
+        )
+        .to_string();
+        let detail = serde_json::json!({
+            "server_id": server_id,
+            "path": body.path,
+            "deny_reason": audit_error_reason(&error),
+        })
+        .to_string();
+        let _ = AuditService::log(
+            &state.db,
+            &current_user.user_id,
+            "file_download_denied",
+            Some(&detail),
+            &ip,
+        )
+        .await;
+        return Err(error);
+    }
 
     let transfer_id = state
         .file_transfers
@@ -786,6 +869,9 @@ async fn start_download(
         &state.config.server.trusted_proxies,
     )
     .to_string();
+    // Download auditing stays on the transfer-start endpoint so a single action
+    // consistently represents the user's export request, even though bytes are
+    // later served from the transfer stream endpoint.
     let detail = serde_json::json!({
         "server_id": server_id,
         "path": body.path,

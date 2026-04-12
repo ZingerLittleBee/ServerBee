@@ -13,6 +13,7 @@ use crate::service::alert::AlertStateManager;
 use crate::service::docker_viewer::DockerViewerTracker;
 use crate::service::file_transfer::FileTransferManager;
 use crate::service::geoip::GeoIpService;
+use crate::service::high_risk_audit::{DockerLogsAuditContext, ExecAuditContext, TerminalAuditContext};
 use crate::service::task_scheduler::TaskScheduler;
 
 /// Pending TOTP setup data, keyed by user_id.
@@ -58,6 +59,12 @@ pub struct AppState {
     pub alert_state_manager: AlertStateManager,
     /// Pending mobile pairing codes for QR login, keyed by code.
     pub pending_pairs: DashMap<String, PendingPair>,
+    /// Terminal session audit contexts keyed by session_id.
+    pub terminal_audit_contexts: DashMap<String, TerminalAuditContext>,
+    /// Docker logs audit contexts keyed by session_id.
+    pub docker_logs_audit_contexts: DashMap<String, DockerLogsAuditContext>,
+    /// Manual scheduled-task exec audit contexts keyed by run_id.
+    pub exec_audit_contexts: DashMap<String, ExecAuditContext>,
 }
 
 static RATE_CHECK_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -164,6 +171,9 @@ impl AppState {
             task_scheduler,
             alert_state_manager,
             pending_pairs: DashMap::new(),
+            terminal_audit_contexts: DashMap::new(),
+            docker_logs_audit_contexts: DashMap::new(),
+            exec_audit_contexts: DashMap::new(),
         }))
     }
 }

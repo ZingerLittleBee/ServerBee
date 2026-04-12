@@ -117,6 +117,16 @@ When an administrator changes capabilities:
 - **Files button**: Hidden for servers without `CAP_FILE`; clicking opens the file manager at `/files/{serverId}`
 - **Docker link**: Hidden for servers without `CAP_DOCKER`; clicking navigates to `/servers/{serverId}/docker`
 
+## Server Config vs Client Lock
+
+Runtime capability state now has three layers:
+
+- `capabilities`: the server-configured bitmap stored in the database
+- `agent_local_capabilities`: the bitmap allowed by the running agent process
+- `effective_capabilities`: the runtime intersection actually enforced by the system
+
+When an agent locally disables a capability, the UI shows the toggle as disabled with the tooltip `客户端关闭`. This means the running agent has locked that capability off locally, and the server cannot turn it back on until the agent is restarted with a different local policy.
+
 <Cards>
   <Card title="Web Terminal" href="/en/docs/terminal" />
   <Card title="Ping Monitoring" href="/en/docs/ping" />

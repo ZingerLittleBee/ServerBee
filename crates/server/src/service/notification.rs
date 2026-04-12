@@ -702,8 +702,7 @@ mod tests {
             "bundle_id": "com.example.serverbee",
             "sandbox": true
         }"#;
-        let config =
-            NotificationService::parse_config("apns", config_json).expect("should parse");
+        let config = NotificationService::parse_config("apns", config_json).expect("should parse");
 
         match config {
             ChannelConfig::Apns {
@@ -730,8 +729,7 @@ mod tests {
             "private_key": "pk",
             "bundle_id": "com.example.app"
         }"#;
-        let config =
-            NotificationService::parse_config("apns", config_json).expect("should parse");
+        let config = NotificationService::parse_config("apns", config_json).expect("should parse");
 
         match config {
             ChannelConfig::Apns { sandbox, .. } => {

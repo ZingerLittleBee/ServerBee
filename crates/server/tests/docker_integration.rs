@@ -135,6 +135,24 @@ async fn create_api_key(client: &Client, base_url: &str) -> String {
         .to_string()
 }
 
+async fn list_audit_entries(client: &Client, base_url: &str) -> Vec<serde_json::Value> {
+    let resp = client
+        .get(format!("{}/api/audit-logs", base_url))
+        .send()
+        .await
+        .expect("GET /api/audit-logs failed");
+
+    assert_eq!(resp.status(), 200, "audit log listing should succeed");
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .expect("Failed to parse audit log response");
+    body["data"]["entries"]
+        .as_array()
+        .expect("entries should be an array")
+        .clone()
+}
+
 async fn register_agent(client: &Client, base_url: &str) -> (String, String) {
     let resp = client
         .post(format!("{}/api/agent/register", base_url))
@@ -239,6 +257,53 @@ async fn send_docker_system_info(
         "agent_version": "0.5.0",
         "protocol_version": 3,
         "features": ["docker"]
+    });
+
+    sink.send(tungstenite::Message::Text(system_info.to_string().into()))
+        .await
+        .expect("Failed to send SystemInfo");
+
+    loop {
+        let msg = recv_text(reader).await;
+        if msg["type"] == "ack" {
+            assert_eq!(msg["msg_id"], "docker-system-info");
+            break;
+        }
+    }
+}
+
+async fn send_docker_system_info_with_local_caps(
+    sink: &mut futures_util::stream::SplitSink<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        tungstenite::Message,
+    >,
+    reader: &mut futures_util::stream::SplitStream<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    >,
+    agent_local_capabilities: u32,
+) {
+    let system_info = json!({
+        "type": "system_info",
+        "msg_id": "docker-system-info",
+        "cpu_name": "Intel Xeon",
+        "cpu_cores": 8,
+        "cpu_arch": "x86_64",
+        "os": "Ubuntu 22.04",
+        "kernel_version": "6.8.0",
+        "mem_total": 16_000_000_000_i64,
+        "swap_total": 4_000_000_000_i64,
+        "disk_total": 100_000_000_000_i64,
+        "ipv4": "1.2.3.4",
+        "ipv6": null,
+        "virtualization": "kvm",
+        "agent_version": "0.5.0",
+        "protocol_version": 3,
+        "features": ["docker"],
+        "agent_local_capabilities": agent_local_capabilities
     });
 
     sink.send(tungstenite::Message::Text(system_info.to_string().into()))
@@ -512,6 +577,154 @@ async fn test_docker_subscribe_requires_capability_and_feature() {
     );
 
     let _ = browser_sink.close().await;
+    let _ = agent_sink.close().await;
+}
+
+#[tokio::test]
+async fn test_docker_info_requires_agent_local_capability_when_runtime_policy_blocks_docker() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, token) = register_agent(&client, &base_url).await;
+    let (mut agent_sink, mut agent_reader) = connect_agent(&base_url, &token).await;
+
+    let welcome = recv_text(&mut agent_reader).await;
+    assert_eq!(welcome["type"], "welcome");
+
+    enable_docker_capability(&client, &base_url, &server_id).await;
+    send_docker_system_info_with_local_caps(&mut agent_sink, &mut agent_reader, CAP_DEFAULT).await;
+
+    let resp = client
+        .get(format!(
+            "{}/api/servers/{}/docker/info",
+            base_url, server_id
+        ))
+        .send()
+        .await
+        .expect("GET /api/servers/{id}/docker/info failed");
+
+    assert_eq!(resp.status(), 403);
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .expect("Failed to parse docker info response");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("agent_capability_disabled"),
+        "Docker read gate should preserve the agent-local capability denial reason"
+    );
+
+    let entries = list_audit_entries(&client, &base_url).await;
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry["action"].as_str() == Some("docker_view_denied")),
+        "docker capability denial should be audited"
+    );
+
+    let _ = agent_sink.close().await;
+}
+
+#[tokio::test]
+async fn test_docker_view_and_logs_session_are_audited() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+    let api_key = create_api_key(&client, &base_url).await;
+
+    let (server_id, token) = register_agent(&client, &base_url).await;
+    let (mut agent_sink, mut agent_reader) = connect_agent(&base_url, &token).await;
+
+    let welcome = recv_text(&mut agent_reader).await;
+    assert_eq!(welcome["type"], "welcome");
+
+    enable_docker_capability(&client, &base_url, &server_id).await;
+    send_docker_system_info_with_local_caps(
+        &mut agent_sink,
+        &mut agent_reader,
+        CAP_DEFAULT | CAP_DOCKER,
+    )
+    .await;
+
+    let containers_resp = client
+        .get(format!(
+            "{}/api/servers/{}/docker/containers",
+            base_url, server_id
+        ))
+        .send()
+        .await
+        .expect("GET /api/servers/{id}/docker/containers failed");
+    assert_eq!(containers_resp.status(), 200);
+
+    let ws_url = format!(
+        "{}/api/ws/docker/logs/{}",
+        base_url.replace("http://", "ws://"),
+        server_id
+    );
+    let mut request = ws_url
+        .into_client_request()
+        .expect("docker logs ws request should build");
+    request.headers_mut().insert(
+        "x-api-key",
+        HeaderValue::from_str(&api_key).expect("api key header should be valid"),
+    );
+    let (mut logs_ws, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("docker logs websocket should connect");
+
+    let session_msg = tokio::time::timeout(Duration::from_secs(5), logs_ws.next())
+        .await
+        .expect("timeout waiting for docker logs session message")
+        .expect("docker logs ws ended")
+        .expect("docker logs ws read error");
+    let session_text = match session_msg {
+        tungstenite::Message::Text(text) => text.to_string(),
+        other => panic!("Expected Text session message, got: {:?}", other),
+    };
+    let session_json: serde_json::Value =
+        serde_json::from_str(&session_text).expect("session message should be json");
+    assert_eq!(session_json["type"], "session");
+
+    logs_ws
+        .send(tungstenite::Message::Text(
+            json!({
+                "type": "subscribe",
+                "container_id": "container-1",
+                "tail": 50,
+                "follow": true
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("failed to send docker logs subscribe");
+    let _ = logs_ws.close(None).await;
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let entries = list_audit_entries(&client, &base_url).await;
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry["action"].as_str() == Some("docker_view")),
+        "docker REST reads should be audited"
+    );
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry["action"].as_str() == Some("docker_logs_subscribed")),
+        "docker logs subscribe should be audited"
+    );
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry["action"].as_str() == Some("docker_logs_unsubscribed")),
+        "docker logs unsubscribe should be audited"
+    );
+
     let _ = agent_sink.close().await;
 }
 

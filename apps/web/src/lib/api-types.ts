@@ -36,6 +36,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/alert-events/{alert_key}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_alert_event_detail']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/alert-rules': {
     parameters: {
       query?: never
@@ -695,6 +711,150 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/mobile/auth/devices': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_devices']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mobile/auth/devices/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['revoke_device']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mobile/auth/login': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['mobile_login']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mobile/auth/logout': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['mobile_logout']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mobile/auth/pair': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['mobile_pair_redeem']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mobile/auth/refresh': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['mobile_refresh']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mobile/pair': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['generate_pair_code']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mobile/push/register': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['push_register']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mobile/push/unregister': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['push_unregister']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/notification-groups': {
     parameters: {
       query?: never
@@ -1028,6 +1188,22 @@ export interface paths {
     put?: never
     post: operations['batch_delete']
     delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/cleanup': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['cleanup_orphaned_servers']
     options?: never
     head?: never
     patch?: never
@@ -1432,6 +1608,21 @@ export interface components {
   requestBodies: never
   responses: never
   schemas: {
+    AlertEventDetailResponse: {
+      alert_key: string
+      first_triggered_at: string
+      message: string
+      resolved_at?: string | null
+      rule_enabled: boolean
+      rule_id: string
+      rule_name: string
+      rule_trigger_mode: string
+      server_id: string
+      server_name: string
+      status: string
+      /** Format: int32 */
+      trigger_count: number
+    }
     AlertEventResponse: {
       /** Format: int32 */
       count: number
@@ -1601,6 +1792,10 @@ export interface components {
     ChangePasswordRequest: {
       new_password: string
       old_password: string
+    }
+    CleanupResponse: {
+      /** Format: int64 */
+      deleted_count: number
     }
     CreateAlertRule: {
       cover_type?: string
@@ -1852,6 +2047,51 @@ export interface components {
     MkdirRequest: {
       path: string
     }
+    MobileDeviceResponse: {
+      created_at: string
+      device_name: string
+      id: string
+      installation_id: string
+      last_used_at: string
+    }
+    MobileLoginRequest: {
+      device_name: string
+      installation_id: string
+      password: string
+      totp_code?: string | null
+      username: string
+    }
+    MobilePairCodeResponse: {
+      code: string
+      /** Format: int64 */
+      expires_in_secs: number
+    }
+    MobilePairRedeemRequest: {
+      code: string
+      device_name: string
+      installation_id: string
+    }
+    MobileRefreshRequest: {
+      installation_id: string
+      refresh_token: string
+    }
+    /** @description Token pair returned after successful login or refresh. */
+    MobileTokenResponse: {
+      /** Format: int64 */
+      access_expires_in_secs: number
+      access_token: string
+      /** Format: int64 */
+      refresh_expires_in_secs: number
+      refresh_token: string
+      token_type: string
+      user: components['schemas']['MobileUserResponse']
+    }
+    /** @description Minimal user info returned alongside tokens. */
+    MobileUserResponse: {
+      id: string
+      role: string
+      username: string
+    }
     Model: {
       config_json: string
       created_at: string
@@ -1937,11 +2177,18 @@ export interface components {
       recent_incidents: components['schemas']['IncidentWithUpdates'][]
       servers: components['schemas']['ServerStatusInfo'][]
     }
+    PushRegisterRequest: {
+      /** @description The APNs device token obtained from the iOS device. */
+      device_token: string
+    }
     ReadRequest: {
       path: string
     }
     ReadResponse: {
       content: string
+    }
+    RegisterRequest: {
+      fingerprint?: string
     }
     RegisterResponse: {
       server_id: string
@@ -2037,6 +2284,8 @@ export interface components {
     }
     /** @description Server response DTO — excludes sensitive fields (token_hash, token_prefix). */
     ServerResponse: {
+      /** Format: int32 */
+      agent_local_capabilities?: number | null
       agent_version?: string | null
       billing_cycle?: string | null
       /** Format: int32 */
@@ -2053,6 +2302,8 @@ export interface components {
       currency?: string | null
       /** Format: int64 */
       disk_total?: number | null
+      /** Format: int32 */
+      effective_capabilities?: number | null
       /** Format: date-time */
       expired_at?: string | null
       features: string[]
@@ -2701,6 +2952,26 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
+      }
+    }
+  }
+  cleanup_orphaned_servers: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Orphaned servers cleaned up */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CleanupResponse']
+        }
       }
     }
   }
@@ -3621,6 +3892,70 @@ export interface operations {
       }
     }
   }
+  generate_pair_code: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Pairing code generated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MobilePairCodeResponse']
+        }
+      }
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_alert_event_detail: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Alert key in the format `rule_id:server_id` */
+        alert_key: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Alert event detail */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AlertEventDetailResponse']
+        }
+      }
+      /** @description Invalid alert_key format */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Alert state or rule not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   get_auto_discovery_key: {
     parameters: {
       query?: never
@@ -4411,6 +4746,33 @@ export interface operations {
       }
     }
   }
+  list_devices: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List of mobile devices */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MobileDeviceResponse'][]
+        }
+      }
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   list_files: {
     parameters: {
       query?: never
@@ -4928,6 +5290,145 @@ export interface operations {
       }
     }
   }
+  mobile_login: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MobileLoginRequest']
+      }
+    }
+    responses: {
+      /** @description Mobile login successful */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MobileTokenResponse']
+        }
+      }
+      /** @description Invalid credentials */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description 2FA code required (code: 2fa_required) */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Too many login attempts */
+      429: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  mobile_logout: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Logged out */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  mobile_pair_redeem: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MobilePairRedeemRequest']
+      }
+    }
+    responses: {
+      /** @description Pairing successful */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MobileTokenResponse']
+        }
+      }
+      /** @description Invalid or expired pairing code */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  mobile_refresh: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MobileRefreshRequest']
+      }
+    }
+    responses: {
+      /** @description Token refreshed */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MobileTokenResponse']
+        }
+      }
+      /** @description Invalid or expired refresh token */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   move_file: {
     parameters: {
       query?: never
@@ -5057,6 +5558,67 @@ export interface operations {
       }
     }
   }
+  push_register: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PushRegisterRequest']
+      }
+    }
+    responses: {
+      /** @description Device token registered */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  push_unregister: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Device token unregistered */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   read_file: {
     parameters: {
       query?: never
@@ -5132,7 +5694,11 @@ export interface operations {
       path?: never
       cookie?: never
     }
-    requestBody?: never
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['RegisterRequest']
+      }
+    }
     responses: {
       /** @description Agent registered */
       200: {
@@ -5143,7 +5709,7 @@ export interface operations {
           'application/json': components['schemas']['RegisterResponse']
         }
       }
-      /** @description Auto-discovery key not configured */
+      /** @description Auto-discovery key not configured or server limit reached */
       400: {
         headers: {
           [name: string]: unknown
@@ -5182,6 +5748,48 @@ export interface operations {
       }
       /** @description Invalid backup file */
       400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  revoke_device: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Mobile session ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Device revoked */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Cannot revoke another user's device */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Mobile session not found */
+      404: {
         headers: {
           [name: string]: unknown
         }

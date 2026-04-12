@@ -1,3 +1,4 @@
+mod capability_policy;
 mod collector;
 mod config;
 mod docker;
@@ -14,6 +15,7 @@ use std::sync::OnceLock;
 
 use tracing_subscriber::EnvFilter;
 
+use crate::capability_policy::{compute_agent_local_capabilities, parse_capability_args};
 use crate::config::AgentConfig;
 use crate::reporter::Reporter;
 
@@ -39,6 +41,8 @@ async fn main() -> anyhow::Result<()> {
         eprintln!("Please create agent.toml or /etc/serverbee/agent.toml");
         std::process::exit(1);
     });
+    let capability_overrides = parse_capability_args(std::env::args())?;
+    let agent_local_capabilities = compute_agent_local_capabilities(&capability_overrides);
 
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -76,7 +80,7 @@ async fn main() -> anyhow::Result<()> {
         config.token = token;
     }
 
-    let mut reporter = Reporter::new(config, machine_fingerprint);
+    let mut reporter = Reporter::new(config, machine_fingerprint, agent_local_capabilities);
     reporter.run().await;
     Ok(())
 }
