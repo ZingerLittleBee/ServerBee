@@ -3,8 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NetworkServerSummary } from '@/lib/network-types'
 import { ServerCard } from './server-card'
 
-const NULL_BAR_COLOR = 'var(--color-muted)'
-
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key
@@ -19,9 +17,33 @@ vi.mock('@tanstack/react-router', () => ({
   )
 }))
 
+vi.mock('recharts', () => {
+  const createWrapper =
+    (testId: string) =>
+    ({ children }: { children?: React.ReactNode }) => <div data-testid={testId}>{children}</div>
+
+  return {
+    ResponsiveContainer: createWrapper('responsive-container'),
+    Tooltip: createWrapper('chart-tooltip'),
+    Legend: createWrapper('chart-legend'),
+    CartesianGrid: () => <div data-testid="cartesian-grid" />,
+    XAxis: () => <div data-testid="x-axis" />,
+    YAxis: () => <div data-testid="y-axis" />,
+    BarChart: createWrapper('bar-chart'),
+    Bar: ({ children, dataKey }: { children?: React.ReactNode; dataKey: string }) => (
+      <div data-testid={`bar-${dataKey}`}>{children}</div>
+    ),
+    Cell: ({ fill }: { fill?: string }) => <div data-fill={fill} data-testid="bar-cell" />
+  }
+})
+
 const mockNetworkOverview = vi.fn()
+const mockNetworkRealtime = vi.fn()
 vi.mock('@/hooks/use-network-api', () => ({
   useNetworkOverview: (...args: unknown[]) => mockNetworkOverview(...args)
+}))
+vi.mock('@/hooks/use-network-realtime', () => ({
+  useNetworkRealtime: (...args: unknown[]) => mockNetworkRealtime(...args)
 }))
 
 function makeServer(overrides: Partial<Parameters<typeof ServerCard>[0]['server']> = {}) {
@@ -74,6 +96,7 @@ function makeSummary(overrides: Partial<NetworkServerSummary> = {}): NetworkServ
 describe('ServerCard', () => {
   beforeEach(() => {
     mockNetworkOverview.mockReturnValue({ data: [] })
+    mockNetworkRealtime.mockReturnValue({ data: {} })
   })
 
   it('renders server name', () => {
@@ -107,74 +130,53 @@ describe('ServerCard', () => {
 
   it('does not render network quality section when no data', () => {
     render(<ServerCard server={makeServer()} />)
-    expect(screen.queryByLabelText('Latency trend')).toBeNull()
+    expect(screen.queryByText('card_network_quality')).toBeNull()
   })
 
-  it('renders network quality from the matching overview summary', () => {
+  it('renders a single aggregated latency and loss view from target summaries', () => {
     mockNetworkOverview.mockReturnValue({
       data: [
         makeSummary({
-          server_id: 'other-server',
-          latency_sparkline: [999],
-          loss_sparkline: [0.99]
-        }),
-        makeSummary({
-          latency_sparkline: [30, null, 60],
-          loss_sparkline: [0.01, null, 0.02]
+          targets: [
+            {
+              availability: 0.99,
+              avg_latency: 40,
+              max_latency: 45,
+              min_latency: 35,
+              packet_loss: 0.01,
+              provider: 'ct',
+              target_id: 'target-1',
+              target_name: 'Shanghai Telecom'
+            },
+            {
+              availability: 0.97,
+              avg_latency: 80,
+              max_latency: 90,
+              min_latency: 70,
+              packet_loss: 0.03,
+              provider: 'cu',
+              target_id: 'target-2',
+              target_name: 'Beijing Unicom'
+            }
+          ]
         })
       ]
     })
+
     render(<ServerCard server={makeServer()} />)
 
+    expect(screen.getByText('card_network_quality')).toBeDefined()
+    expect(screen.getByText('60ms')).toBeDefined()
     expect(screen.getByLabelText('Latency trend')).toBeDefined()
-    expect(screen.getByLabelText('Packet loss trend')).toBeDefined()
-    expect(screen.getByText('45ms')).toBeDefined()
-    expect(screen.getByText('1.5%')).toBeDefined()
-
-    const latencyBars = screen.getByLabelText('Latency trend').querySelectorAll('[data-testid="uptime-bar-item"]')
-    const lossBars = screen.getByLabelText('Packet loss trend').querySelectorAll('[data-testid="uptime-bar-item"]')
-    expect(latencyBars.length).toBe(30)
-    expect(lossBars.length).toBe(30)
+    expect(screen.queryByLabelText('Packet loss trend')).toBeNull()
+    expect(screen.queryByText('Shanghai Telecom')).toBeNull()
+    expect(screen.queryByText('Beijing Unicom')).toBeNull()
   })
 
-  it('does not render network quality when the matching summary has no non-null sparkline data', () => {
+  it('uses realtime samples to update the aggregated current values', () => {
     mockNetworkOverview.mockReturnValue({
       data: [
         makeSummary({
-          server_id: 'other-server',
-          latency_sparkline: [25],
-          loss_sparkline: [0.02]
-        }),
-        makeSummary({
-          latency_sparkline: [null, null],
-          loss_sparkline: [null, null]
-        })
-      ]
-    })
-    render(<ServerCard server={makeServer()} />)
-    expect(screen.queryByLabelText('Latency trend')).toBeNull()
-  })
-
-  it('does not crash when the matching summary is missing sparkline arrays', () => {
-    mockNetworkOverview.mockReturnValue({
-      data: [
-        makeSummary({
-          latency_sparkline: undefined,
-          loss_sparkline: undefined
-        })
-      ]
-    })
-
-    expect(() => render(<ServerCard server={makeServer()} />)).not.toThrow()
-    expect(screen.queryByLabelText('Latency trend')).toBeNull()
-  })
-
-  it('renders network quality from target summaries when sparklines are empty', () => {
-    mockNetworkOverview.mockReturnValue({
-      data: [
-        makeSummary({
-          latency_sparkline: [],
-          loss_sparkline: [],
           targets: [
             {
               availability: 0.99,
@@ -187,11 +189,11 @@ describe('ServerCard', () => {
               target_name: 'Shanghai'
             },
             {
-              availability: 0.97,
-              avg_latency: 80,
-              max_latency: 90,
-              min_latency: 70,
-              packet_loss: 0.03,
+              availability: 0.98,
+              avg_latency: 50,
+              max_latency: 55,
+              min_latency: 45,
+              packet_loss: 0.02,
               provider: 'cu',
               target_id: 'target-2',
               target_name: 'Beijing'
@@ -200,61 +202,116 @@ describe('ServerCard', () => {
         })
       ]
     })
+    mockNetworkRealtime.mockReturnValue({
+      data: {
+        'target-1': [
+          {
+            avg_latency: 50,
+            max_latency: 55,
+            min_latency: 45,
+            packet_loss: 0.02,
+            packet_received: 9,
+            packet_sent: 10,
+            target_id: 'target-1',
+            timestamp: '2026-04-12T10:00:00Z'
+          },
+          {
+            avg_latency: 70,
+            max_latency: 75,
+            min_latency: 65,
+            packet_loss: 0.04,
+            packet_received: 8,
+            packet_sent: 10,
+            target_id: 'target-1',
+            timestamp: '2026-04-12T10:01:00Z'
+          }
+        ],
+        'target-2': [
+          {
+            avg_latency: 30,
+            max_latency: 35,
+            min_latency: 25,
+            packet_loss: 0.01,
+            packet_received: 10,
+            packet_sent: 10,
+            target_id: 'target-2',
+            timestamp: '2026-04-12T10:00:00Z'
+          },
+          {
+            avg_latency: 90,
+            max_latency: 95,
+            min_latency: 85,
+            packet_loss: 0.05,
+            packet_received: 7,
+            packet_sent: 10,
+            target_id: 'target-2',
+            timestamp: '2026-04-12T10:01:00Z'
+          }
+        ]
+      }
+    })
 
     render(<ServerCard server={makeServer()} />)
 
-    expect(screen.getByLabelText('Latency trend')).toBeDefined()
-    expect(screen.getByLabelText('Packet loss trend')).toBeDefined()
-    expect(screen.getByText('60ms')).toBeDefined()
-    expect(screen.getByText('2.0%')).toBeDefined()
+    expect(screen.getByText('80ms')).toBeDefined()
   })
 
-  it('uses placeholder styling when loss summary data is entirely null', () => {
+  it('uses warning styling for latency at or above 300ms', () => {
     mockNetworkOverview.mockReturnValue({
       data: [
         makeSummary({
-          latency_sparkline: [40, 80],
-          loss_sparkline: [null, null]
+          targets: [
+            {
+              availability: 1,
+              avg_latency: 320,
+              max_latency: 330,
+              min_latency: 310,
+              packet_loss: 0,
+              provider: 'intl',
+              target_id: 'target-1',
+              target_name: 'Tokyo'
+            }
+          ]
         })
       ]
     })
+
     render(
       <div className="dark">
         <ServerCard server={makeServer()} />
       </div>
     )
 
-    const packetLossRow = screen.getByText('card_packet_loss').parentElement
-    const packetLossValue = packetLossRow?.querySelector('.font-medium')
-    const lossBars = screen.getByLabelText('Packet loss trend').querySelectorAll('[data-testid="uptime-bar-item"]')
-
-    expect(packetLossValue?.textContent).toBe('-')
-    expect(packetLossValue?.className).toContain('text-muted-foreground')
-    expect((lossBars[0] as HTMLElement).style.backgroundColor).toBe(NULL_BAR_COLOR)
+    expect(screen.getByText('320ms').className).toContain('text-amber-600')
   })
 
-  it('uses placeholder styling when latency summary data is entirely null', () => {
+  it('uses failure styling when packet loss indicates probe failure', () => {
     mockNetworkOverview.mockReturnValue({
       data: [
         makeSummary({
-          latency_sparkline: [null, null],
-          loss_sparkline: [0.02, 0.03]
+          targets: [
+            {
+              availability: 0,
+              avg_latency: null,
+              max_latency: null,
+              min_latency: null,
+              packet_loss: 1,
+              provider: 'intl',
+              target_id: 'target-1',
+              target_name: 'Cloudflare'
+            }
+          ]
         })
       ]
     })
+
     render(
       <div className="dark">
         <ServerCard server={makeServer()} />
       </div>
     )
 
-    const latencyRow = screen.getByText('card_latency').parentElement
-    const latencyValue = latencyRow?.querySelector('.font-medium')
-    const latencyBars = screen.getByLabelText('Latency trend').querySelectorAll('[data-testid="uptime-bar-item"]')
-
-    expect(latencyValue?.textContent).toBe('-')
-    expect(latencyValue?.className).toContain('text-muted-foreground')
-    expect((latencyBars[0] as HTMLElement).style.backgroundColor).toBe(NULL_BAR_COLOR)
+    expect(screen.getByText('-').className).toContain('text-red-600')
   })
 
   it('renders StatusBadge', () => {

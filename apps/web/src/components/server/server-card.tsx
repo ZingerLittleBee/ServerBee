@@ -1,22 +1,32 @@
 import { Link } from '@tanstack/react-router'
-import { useMemo } from 'react'
+import { type ComponentProps, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Bar, BarChart, Cell } from 'recharts'
 import { CompactMetric } from '@/components/server/compact-metric'
+import { type ChartConfig, ChartContainer, ChartTooltip } from '@/components/ui/chart'
 import { RingChart } from '@/components/ui/ring-chart'
-import { UptimeBar } from '@/components/ui/uptime-bar'
 import { useNetworkOverview } from '@/hooks/use-network-api'
+import { useNetworkRealtime } from '@/hooks/use-network-realtime'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import type { NetworkTargetSummary } from '@/lib/network-types'
-import { SPARKLINE_LENGTH, seedFromSummary, summaryStats, toBarData } from '@/lib/sparkline'
+import { getLatencyBarColor, isLatencyFailure } from '@/lib/network-latency-constants'
+import { latencyColorClass } from '@/lib/network-types'
 import { countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
+import { buildServerCardNetworkState, type ServerCardMetricPoint } from './server-card-network-data'
 import { StatusBadge } from './status-badge'
 
 interface ServerCardProps {
   server: ServerMetrics
 }
 
-const NULL_BAR_COLOR = 'var(--color-muted)'
-const EMPTY_TREND = Array.from({ length: SPARKLINE_LENGTH }, (): number | null => null)
+const LATENCY_CHART_CONFIG = {
+  value: { label: 'Latency', color: 'var(--chart-4)' }
+} satisfies ChartConfig
+
+const LOSS_STRIP_CONFIG = {
+  value: { label: 'Packet Loss', color: 'var(--chart-5)' }
+} satisfies ChartConfig
+
+const CHART_BAR_GAP = 2
 
 function osIcon(os: string | null): string {
   if (!os) {
@@ -48,56 +58,30 @@ function getRingColor(pct: number, brandColor: string): string {
   return brandColor
 }
 
-function getLatencyColor(ms: number | null): string {
-  if (ms == null) {
-    return NULL_BAR_COLOR
-  }
-  if (ms < 50) {
-    return '#10b981'
-  }
-  if (ms < 100) {
-    return '#f59e0b'
-  }
-  return '#ef4444'
-}
-
-function getLossColor(loss: number | null): string {
-  if (loss == null) {
-    return NULL_BAR_COLOR
-  }
-  if (loss < 1) {
-    return '#10b981'
-  }
-  if (loss < 5) {
-    return '#f59e0b'
-  }
-  return '#ef4444'
-}
-
-function getLatencyTextClass(ms: number | null): string {
-  if (ms == null) {
+function getLossTextClassName(lossRatio: number | null): string {
+  if (lossRatio == null) {
     return 'text-muted-foreground'
   }
-  if (ms < 50) {
+  if (lossRatio < 0.01) {
     return 'text-emerald-600 dark:text-emerald-400'
   }
-  if (ms < 100) {
+  if (lossRatio < 0.05) {
     return 'text-amber-600 dark:text-amber-400'
   }
   return 'text-red-600 dark:text-red-400'
 }
 
-function getLossTextClass(loss: number | null): string {
-  if (loss == null) {
-    return 'text-muted-foreground'
+function getLossStripColor(lossRatio: number | null): string {
+  if (lossRatio == null) {
+    return 'var(--color-muted)'
   }
-  if (loss < 1) {
-    return 'text-emerald-600 dark:text-emerald-400'
+  if (lossRatio < 0.01) {
+    return '#10b981'
   }
-  if (loss < 5) {
-    return 'text-amber-600 dark:text-amber-400'
+  if (lossRatio < 0.05) {
+    return '#f59e0b'
   }
-  return 'text-red-600 dark:text-red-400'
+  return '#ef4444'
 }
 
 function formatLatency(ms: number | null): string {
@@ -107,57 +91,74 @@ function formatLatency(ms: number | null): string {
   return `${ms.toFixed(0)}ms`
 }
 
-function formatPacketLoss(loss: number | null): string {
-  if (loss == null) {
+function formatPacketLoss(lossRatio: number | null): string {
+  if (lossRatio == null) {
     return '-'
   }
-  return `${loss.toFixed(1)}%`
+  return `${(lossRatio * 100).toFixed(1)}%`
 }
 
 function formatLoad(load: number): string {
   return load.toFixed(2)
 }
 
-function hasTrendData(data: readonly (number | null)[]): boolean {
-  return data.some((value) => value != null)
-}
-
-function hasTargetSample(target: NetworkTargetSummary): boolean {
-  return target.avg_latency != null || target.packet_loss > 0 || target.availability > 0
-}
-
-function summarizeTargets(targets: readonly NetworkTargetSummary[]): {
-  avgLatency: number | null
-  avgLoss: number | null
-} {
-  const sampledTargets = targets.filter(hasTargetSample)
-  if (sampledTargets.length === 0) {
-    return { avgLatency: null, avgLoss: null }
+function averageLossRatio(point: ServerCardMetricPoint): number | null {
+  if (point.targets.length === 0) {
+    return null
   }
 
-  const latencyTargets = sampledTargets.filter((target) => target.avg_latency != null)
-  const avgLatency =
-    latencyTargets.length === 0
-      ? null
-      : latencyTargets.reduce((sum, target) => sum + (target.avg_latency ?? 0), 0) / latencyTargets.length
-  const avgLoss = (sampledTargets.reduce((sum, target) => sum + target.packet_loss, 0) / sampledTargets.length) * 100
-
-  return { avgLatency, avgLoss }
+  return point.targets.reduce((sum, target) => sum + target.lossRatio, 0) / point.targets.length
 }
 
-function fallbackTrend(value: number | null): (number | null)[] {
-  if (value == null) {
-    return EMPTY_TREND
+function formatTooltipLabel(point: ServerCardMetricPoint): string {
+  if (point.synthetic) {
+    return 'Current targets'
   }
 
-  const trend = [...EMPTY_TREND]
-  trend[trend.length - 1] = value
-  return trend
+  return new Date(point.timestamp).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
+}
+
+function NetworkChartTooltip({ active, payload }: ComponentProps<typeof ChartTooltip>) {
+  if (!(active && payload?.length)) {
+    return null
+  }
+
+  const point = payload[0]?.payload as ServerCardMetricPoint | undefined
+  if (!point || point.targets.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="grid min-w-48 gap-1.5 rounded-lg border border-border/50 bg-background/95 px-3 py-2 text-xs shadow-xl backdrop-blur-sm">
+      <div className="font-medium">{formatTooltipLabel(point)}</div>
+      <div className="grid gap-1.5">
+        {point.targets.map((target) => {
+          const failed = isLatencyFailure(target.lossRatio)
+
+          return (
+            <div className="flex items-center justify-between gap-3" key={target.targetId}>
+              <span className="truncate text-muted-foreground">{target.targetName}</span>
+              <div className="flex gap-2 font-medium font-mono tabular-nums">
+                <span className={latencyColorClass(target.latency, { failed })}>{formatLatency(target.latency)}</span>
+                <span className={getLossTextClassName(target.lossRatio)}>{formatPacketLoss(target.lossRatio)}</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 export function ServerCard({ server }: ServerCardProps) {
   const { t } = useTranslation(['servers'])
   const { data: networkOverview = [] } = useNetworkOverview()
+  const { data: realtimeData } = useNetworkRealtime(server.id)
 
   const memoryPct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
   const diskPct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
@@ -165,43 +166,21 @@ export function ServerCard({ server }: ServerCardProps) {
   const flag = countryCodeToFlag(server.country_code)
   const osEmoji = osIcon(server.os)
 
-  const { latencyData, lossData, avgLatency, avgLoss, hasAnyData } = useMemo(() => {
-    const summary = networkOverview.find((entry) => entry.server_id === server.id)
-
-    if (!summary) {
-      return { latencyData: EMPTY_TREND, lossData: EMPTY_TREND, avgLatency: null, avgLoss: null, hasAnyData: false }
-    }
-
-    const points = seedFromSummary(summary)
-    const sparklineLatencyData = toBarData(points, 'latency')
-    const sparklineLossData = toBarData(points, 'lossPercent')
-    const sparklineStats = summaryStats(points)
-    const targetStats = summarizeTargets(summary.targets)
-    const avgLatency = targetStats.avgLatency ?? sparklineStats.avgLatency
-    const avgLoss = targetStats.avgLoss ?? (sparklineStats.avgLoss == null ? null : sparklineStats.avgLoss * 100)
-    const latencyData = hasTrendData(sparklineLatencyData) ? sparklineLatencyData : fallbackTrend(avgLatency)
-    const lossData = hasTrendData(sparklineLossData) ? sparklineLossData : fallbackTrend(avgLoss)
-    const hasAnyData = avgLatency != null || avgLoss != null || hasTrendData(latencyData) || hasTrendData(lossData)
-
-    return {
-      latencyData,
-      lossData,
-      avgLatency,
-      avgLoss,
-      hasAnyData
-    }
-  }, [networkOverview, server.id])
+  const networkSummary = networkOverview.find((entry) => entry.server_id === server.id)
+  const { currentAvgLatency, currentAvgLossRatio, latencyPoints } = useMemo(
+    () => buildServerCardNetworkState(networkSummary, realtimeData),
+    [networkSummary, realtimeData]
+  )
 
   return (
-    <Link
-      className="group flex h-full flex-col rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-accent/50"
-      params={{ id: server.id }}
-      search={{ range: 'realtime' }}
-      to="/servers/$id"
-    >
-      {/* Header */}
+    <div className="flex h-full flex-col rounded-lg border bg-card p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-1.5 truncate">
+        <Link
+          className="flex items-center gap-1.5 truncate hover:underline"
+          params={{ id: server.id }}
+          search={{ range: 'realtime' }}
+          to="/servers/$id"
+        >
           {flag && (
             <span className="shrink-0 text-sm" title={server.country_code ?? ''}>
               {flag}
@@ -213,18 +192,16 @@ export function ServerCard({ server }: ServerCardProps) {
             </span>
           )}
           <h3 className="truncate font-semibold text-sm">{server.name}</h3>
-        </div>
+        </Link>
         <StatusBadge online={server.online} />
       </div>
 
-      {/* Ring Charts */}
       <div className="mb-3 flex justify-around">
         <RingChart color={getRingColor(server.cpu, 'var(--color-chart-1)')} label={t('col_cpu')} value={server.cpu} />
         <RingChart color={getRingColor(memoryPct, 'var(--color-chart-2)')} label={t('col_memory')} value={memoryPct} />
         <RingChart color={getRingColor(diskPct, 'var(--color-chart-3)')} label={t('col_disk')} value={diskPct} />
       </div>
 
-      {/* System Metrics Row */}
       <div className="mb-1.5 grid grid-cols-5 gap-1 rounded-lg bg-muted/40 px-2 py-1.5">
         <CompactMetric className="items-center" label={t('card_load')} value={formatLoad(server.load1)} />
         <CompactMetric className="items-center" label={t('card_processes')} value={server.process_count} />
@@ -233,7 +210,6 @@ export function ServerCard({ server }: ServerCardProps) {
         <CompactMetric className="items-center" label={t('card_swap')} value={`${swapPct.toFixed(0)}%`} />
       </div>
 
-      {/* Network Metrics Row */}
       <div className="mb-3 grid grid-cols-4 gap-1 rounded-lg bg-muted/40 px-2 py-1.5">
         <CompactMetric
           className="items-center"
@@ -253,27 +229,71 @@ export function ServerCard({ server }: ServerCardProps) {
         <CompactMetric className="items-center" label={t('col_uptime')} value={formatUptime(server.uptime)} />
       </div>
 
-      {/* Network Quality */}
-      {hasAnyData && (
+      {latencyPoints.length > 0 && (
         <div className="mt-auto border-t pt-3">
           <div className="mb-2">
-            <div className="mb-1 flex items-center justify-between">
-              <span className="text-[10px] text-muted-foreground">{t('card_latency')}</span>
-              <span className={`font-medium text-xs ${getLatencyTextClass(avgLatency)}`}>
-                {formatLatency(avgLatency)}
-              </span>
-            </div>
-            <UptimeBar ariaLabel="Latency trend" data={latencyData} getColor={getLatencyColor} />
+            <span className="text-[10px] text-muted-foreground">{t('card_network_quality')}</span>
           </div>
           <div>
             <div className="mb-1 flex items-center justify-between">
-              <span className="text-[10px] text-muted-foreground">{t('card_packet_loss')}</span>
-              <span className={`font-medium text-xs ${getLossTextClass(avgLoss)}`}>{formatPacketLoss(avgLoss)}</span>
+              <span className="text-[10px] text-muted-foreground">{t('card_latency')}</span>
+              <div className="flex items-center gap-1 font-medium text-xs">
+                <span
+                  className={latencyColorClass(currentAvgLatency, {
+                    failed: isLatencyFailure(currentAvgLossRatio)
+                  })}
+                >
+                  {formatLatency(currentAvgLatency)}
+                </span>
+                <span className="text-muted-foreground">·</span>
+                <span className={getLossTextClassName(currentAvgLossRatio)}>
+                  {formatPacketLoss(currentAvgLossRatio)}
+                </span>
+              </div>
             </div>
-            <UptimeBar ariaLabel="Packet loss trend" data={lossData} getColor={getLossColor} />
+            <figure aria-label="Latency trend" className="relative z-10 m-0">
+              <ChartContainer className="aspect-auto h-7 w-full" config={LATENCY_CHART_CONFIG}>
+                <BarChart
+                  accessibilityLayer
+                  barCategoryGap={CHART_BAR_GAP}
+                  data={latencyPoints}
+                  margin={{ bottom: 0, left: 0, right: 0, top: 0 }}
+                >
+                  <ChartTooltip content={<NetworkChartTooltip />} cursor={false} />
+                  <Bar dataKey="value" radius={2}>
+                    {latencyPoints.map((point) => (
+                      <Cell
+                        fill={getLatencyBarColor({
+                          latencyMs: point.value,
+                          failed: isLatencyFailure(averageLossRatio(point))
+                        })}
+                        key={point.timestamp}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ChartContainer>
+            </figure>
+            <ChartContainer
+              aria-label="Packet loss indicator"
+              className="pointer-events-none mt-0.5 aspect-auto h-1 w-full"
+              config={LOSS_STRIP_CONFIG}
+            >
+              <BarChart
+                barCategoryGap={CHART_BAR_GAP}
+                data={latencyPoints}
+                margin={{ bottom: 0, left: 0, right: 0, top: 0 }}
+              >
+                <Bar dataKey={() => 1} radius={1}>
+                  {latencyPoints.map((point) => (
+                    <Cell fill={getLossStripColor(averageLossRatio(point))} key={point.timestamp} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ChartContainer>
           </div>
         </div>
       )}
-    </Link>
+    </div>
   )
 }

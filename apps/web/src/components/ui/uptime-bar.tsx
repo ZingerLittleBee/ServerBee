@@ -1,7 +1,7 @@
 interface UptimeBarProps {
   ariaLabel?: string
   data: (number | null)[]
-  getColor: (value: number | null) => string
+  getColor: (value: number | null, index: number) => string
   height?: number
   maxValue?: number
 }
@@ -32,7 +32,7 @@ export function UptimeBar({ data, height = 16, getColor, maxValue, ariaLabel }: 
           style={{
             flex: 1,
             borderRadius: '2px',
-            backgroundColor: getColor(value),
+            backgroundColor: getColor(value, i),
             height: barHeight(value)
           }}
         />
