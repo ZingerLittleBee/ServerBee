@@ -127,7 +127,12 @@ function ProviderColumn({
               >
                 <span className="font-medium">{target.target_name}</span>
                 <div className="flex items-center gap-3 text-xs">
-                  <span className={cn('font-mono', latencyColorClass(target.avg_latency))}>
+                  <span
+                    className={cn(
+                      'font-mono',
+                      latencyColorClass(target.avg_latency, { failed: target.packet_loss >= 1 })
+                    )}
+                  >
                     {formatLatency(target.avg_latency)}
                   </span>
                   <span className="text-muted-foreground">{formatPacketLoss(target.packet_loss)}</span>
@@ -225,13 +230,19 @@ function TracerouteSection({ serverId, t }: { serverId: string; t: (key: string)
                   <TableCell className="font-mono">{hop.hop}</TableCell>
                   <TableCell className="font-mono">{hop.ip ?? t('no_response')}</TableCell>
                   <TableCell className="max-w-[200px] truncate text-muted-foreground">{hop.hostname ?? '-'}</TableCell>
-                  <TableCell className={cn('text-right font-mono', latencyColorClass(hop.rtt1))}>
+                  <TableCell
+                    className={cn('text-right font-mono', latencyColorClass(hop.rtt1, { failed: hop.rtt1 == null }))}
+                  >
                     {hop.rtt1 != null ? `${hop.rtt1.toFixed(1)} ms` : t('no_response')}
                   </TableCell>
-                  <TableCell className={cn('text-right font-mono', latencyColorClass(hop.rtt2))}>
+                  <TableCell
+                    className={cn('text-right font-mono', latencyColorClass(hop.rtt2, { failed: hop.rtt2 == null }))}
+                  >
                     {hop.rtt2 != null ? `${hop.rtt2.toFixed(1)} ms` : t('no_response')}
                   </TableCell>
-                  <TableCell className={cn('text-right font-mono', latencyColorClass(hop.rtt3))}>
+                  <TableCell
+                    className={cn('text-right font-mono', latencyColorClass(hop.rtt3, { failed: hop.rtt3 == null }))}
+                  >
                     {hop.rtt3 != null ? `${hop.rtt3.toFixed(1)} ms` : t('no_response')}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{hop.asn ?? '-'}</TableCell>
