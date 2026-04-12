@@ -11,12 +11,14 @@ import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api-client'
 import type { TaskResponse, TaskResult } from '@/lib/api-schema'
+import { CAP_EXEC, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
 
 export const Route = createFileRoute('/_authed/settings/tasks')({
   component: TasksPage
 })
 
 interface ServerInfo {
+  effective_capabilities?: number | null
   capabilities?: number
   id: string
   name: string
@@ -106,7 +108,12 @@ function OneshotTaskPanel() {
     if (!servers) {
       return
     }
-    setSelectedServerIds(selectedServerIds.length === servers.length ? [] : servers.map((s) => s.id))
+    const execEnabledServers = servers.filter((server) =>
+      getEffectiveCapabilityEnabled(server.effective_capabilities, server.capabilities, CAP_EXEC)
+    )
+    setSelectedServerIds(
+      selectedServerIds.length === execEnabledServers.length ? [] : execEnabledServers.map((server) => server.id)
+    )
   }
 
   return (
@@ -161,8 +168,11 @@ function OneshotTaskPanel() {
             ) : (
               <div className="grid grid-cols-2 gap-1">
                 {servers.map((srv) => {
-                  // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
-                  const execEnabled = !srv.capabilities || (srv.capabilities & 2) !== 0
+                  const execEnabled = getEffectiveCapabilityEnabled(
+                    srv.effective_capabilities,
+                    srv.capabilities,
+                    CAP_EXEC
+                  )
                   return (
                     // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
                     <label

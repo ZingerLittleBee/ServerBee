@@ -11,12 +11,14 @@ import type {
 const MAX_DOCKER_EVENTS = 100
 
 interface ServerMetrics {
+  agent_local_capabilities?: number | null
   capabilities?: number
   country_code: string | null
   cpu: number
   cpu_name: string | null
   disk_total: number
   disk_used: number
+  effective_capabilities?: number | null
   features?: string[]
   group_id: string | null
   id: string
@@ -48,7 +50,13 @@ type WsMessage =
   | { type: 'update'; servers: ServerMetrics[] }
   | { type: 'server_online'; server_id: string }
   | { type: 'server_offline'; server_id: string }
-  | { type: 'capabilities_changed'; server_id: string; capabilities: number }
+  | {
+      type: 'capabilities_changed'
+      server_id: string
+      capabilities: number
+      agent_local_capabilities?: number | null
+      effective_capabilities?: number | null
+    }
   | { type: 'agent_info_updated'; server_id: string; protocol_version: number }
   | { type: 'network_probe_update'; server_id: string; results: NetworkProbeResultData[] }
   | {
@@ -115,6 +123,25 @@ export function setServerDockerAvailability(
   })
 }
 
+export function setServerCapabilities(
+  prev: ServerMetrics[],
+  serverId: string,
+  capabilities: number,
+  agentLocalCapabilities: number | null | undefined,
+  effectiveCapabilities: number | null | undefined
+): ServerMetrics[] {
+  return prev.map((server) =>
+    server.id === serverId
+      ? {
+          ...server,
+          capabilities,
+          agent_local_capabilities: agentLocalCapabilities ?? null,
+          effective_capabilities: effectiveCapabilities ?? null
+        }
+      : server
+  )
+}
+
 function setServerDetailDockerAvailability(
   prev: Record<string, unknown> | undefined,
   available: boolean
@@ -177,12 +204,21 @@ function handleCapabilityMessage(raw: { type: string } & Record<string, unknown>
       return
     }
     const msg = raw as WsMessage & { type: 'capabilities_changed' }
-    const { server_id, capabilities } = msg
+    const { server_id, capabilities, agent_local_capabilities, effective_capabilities } = msg
     queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
-      prev?.map((s) => (s.id === server_id ? { ...s, capabilities } : s))
+      prev
+        ? setServerCapabilities(prev, server_id, capabilities, agent_local_capabilities, effective_capabilities)
+        : prev
     )
     queryClient.setQueryData(['servers', server_id], (prev: Record<string, unknown> | undefined) =>
-      prev ? { ...prev, capabilities } : prev
+      prev
+        ? {
+            ...prev,
+            capabilities,
+            agent_local_capabilities: agent_local_capabilities ?? null,
+            effective_capabilities: effective_capabilities ?? null
+          }
+        : prev
     )
     queryClient.invalidateQueries({ queryKey: ['servers-list'] })
     return

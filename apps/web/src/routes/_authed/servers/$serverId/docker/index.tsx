@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
-import { CAP_DOCKER, hasCap } from '@/lib/capabilities'
+import { CAP_DOCKER, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
 import { ContainerDetailDialog } from './components/container-detail-dialog'
 import { ContainerList } from './components/container-list'
 import { DockerEvents } from './components/docker-events'
@@ -38,12 +38,21 @@ function DockerPage() {
   // Server detail is the source of truth for capability gating and a fallback for features.
   const { data: serverDetail } = useQuery({
     queryKey: ['servers', serverId],
-    queryFn: () => api.get<{ capabilities?: number; features?: string[] }>(`/api/servers/${serverId}`),
+    queryFn: () =>
+      api.get<{
+        capabilities?: number
+        effective_capabilities?: number | null
+        features?: string[]
+      }>(`/api/servers/${serverId}`),
     enabled: serverId.length > 0,
     staleTime: 30_000
   })
 
-  const dockerCapabilityEnabled = hasCap(serverDetail?.capabilities ?? 0, CAP_DOCKER)
+  const dockerCapabilityEnabled = getEffectiveCapabilityEnabled(
+    serverDetail?.effective_capabilities,
+    serverDetail?.capabilities,
+    CAP_DOCKER
+  )
   const apiDockerAvailable = serverDetail?.features?.includes('docker') ?? false
   const dockerAvailable = dockerCapabilityEnabled && (wsDockerAvailable || apiDockerAvailable)
 
