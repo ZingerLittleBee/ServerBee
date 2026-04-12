@@ -5,15 +5,15 @@ use axum::extract::{ConnectInfo, Extension, Path, State};
 use axum::http::HeaderMap;
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use rand::RngCore;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
+use rand::RngCore;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::error::{ok, ApiResponse, AppError};
+use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
 use crate::router::utils::extract_client_ip;
 use crate::service::mobile_auth::{MobileAuthService, MobileLoginParams, MobileTokenResponse};
@@ -215,9 +215,9 @@ pub async fn mobile_logout(
         .await?
         .ok_or(AppError::Unauthorized)?;
 
-    let mobile_session_id = session.mobile_session_id.ok_or_else(|| {
-        AppError::BadRequest("This session is not a mobile session".to_string())
-    })?;
+    let mobile_session_id = session
+        .mobile_session_id
+        .ok_or_else(|| AppError::BadRequest("This session is not a mobile session".to_string()))?;
 
     MobileAuthService::logout(&state.db, &mobile_session_id).await?;
 
@@ -296,8 +296,7 @@ pub async fn generate_pair_code(
     // Clean up expired codes (5 min TTL) and existing codes for this user
     let now = chrono::Utc::now();
     state.pending_pairs.retain(|_, v| {
-        v.user_id != current_user.user_id
-            && (now - v.created_at) < chrono::Duration::minutes(5)
+        v.user_id != current_user.user_id && (now - v.created_at) < chrono::Duration::minutes(5)
     });
 
     // Generate a 32-byte random base64url code with sb_pair_ prefix
@@ -350,9 +349,7 @@ pub async fn mobile_pair_redeem(
 
     // Check 5-minute TTL
     if chrono::Utc::now() - pending.created_at > chrono::Duration::seconds(PAIR_CODE_TTL_SECS) {
-        return Err(AppError::BadRequest(
-            "Pairing code has expired".to_string(),
-        ));
+        return Err(AppError::BadRequest("Pairing code has expired".to_string()));
     }
 
     // Fetch the user who generated this code
@@ -403,9 +400,7 @@ pub async fn push_register(
     Json(body): Json<PushRegisterRequest>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     if body.device_token.is_empty() {
-        return Err(AppError::Validation(
-            "device_token is required".to_string(),
-        ));
+        return Err(AppError::Validation("device_token is required".to_string()));
     }
 
     let token = extract_bearer(&headers).ok_or(AppError::Unauthorized)?;
@@ -417,9 +412,10 @@ pub async fn push_register(
         .await?
         .ok_or(AppError::Unauthorized)?;
 
-    let mobile_session_id = session.mobile_session_id.as_deref().ok_or_else(|| {
-        AppError::BadRequest("This session is not a mobile session".to_string())
-    })?;
+    let mobile_session_id = session
+        .mobile_session_id
+        .as_deref()
+        .ok_or_else(|| AppError::BadRequest("This session is not a mobile session".to_string()))?;
 
     // Look up the mobile session to get installation_id
     let mobile_session = crate::entity::mobile_session::Entity::find_by_id(mobile_session_id)
@@ -430,8 +426,7 @@ pub async fn push_register(
     // Upsert: find by installation_id, update if exists, insert if not
     let existing = crate::entity::device_token::Entity::find()
         .filter(
-            crate::entity::device_token::Column::InstallationId
-                .eq(&mobile_session.installation_id),
+            crate::entity::device_token::Column::InstallationId.eq(&mobile_session.installation_id),
         )
         .one(&state.db)
         .await?;
@@ -483,9 +478,10 @@ pub async fn push_unregister(
         .await?
         .ok_or(AppError::Unauthorized)?;
 
-    let mobile_session_id = session.mobile_session_id.as_deref().ok_or_else(|| {
-        AppError::BadRequest("This session is not a mobile session".to_string())
-    })?;
+    let mobile_session_id = session
+        .mobile_session_id
+        .as_deref()
+        .ok_or_else(|| AppError::BadRequest("This session is not a mobile session".to_string()))?;
 
     let mobile_session = crate::entity::mobile_session::Entity::find_by_id(mobile_session_id)
         .one(&state.db)
@@ -495,8 +491,7 @@ pub async fn push_unregister(
     // Delete the device token for this installation
     crate::entity::device_token::Entity::delete_many()
         .filter(
-            crate::entity::device_token::Column::InstallationId
-                .eq(&mobile_session.installation_id),
+            crate::entity::device_token::Column::InstallationId.eq(&mobile_session.installation_id),
         )
         .exec(&state.db)
         .await?;

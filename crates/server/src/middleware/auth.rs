@@ -197,10 +197,7 @@ mod tests {
             .header("authorization", "Bearer my_token_123")
             .body(axum::body::Body::empty())
             .unwrap();
-        assert_eq!(
-            extract_bearer_token(&req),
-            Some("my_token_123".to_string())
-        );
+        assert_eq!(extract_bearer_token(&req), Some("my_token_123".to_string()));
     }
 
     #[test]

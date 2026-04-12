@@ -10,6 +10,7 @@ pub mod docker;
 pub mod docker_viewer;
 pub mod file_transfer;
 pub mod geoip;
+pub mod high_risk_audit;
 pub mod incident;
 pub mod maintenance;
 pub mod mobile_auth;

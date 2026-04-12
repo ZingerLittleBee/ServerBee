@@ -1122,8 +1122,8 @@ mod tests {
 
     #[test]
     fn test_extract_metric_load() {
-        let rec = make_record(0.0, 0, 3.14);
-        assert!((extract_metric(&rec, "load1") - 3.14).abs() < f64::EPSILON);
+        let rec = make_record(0.0, 0, std::f64::consts::PI);
+        assert!((extract_metric(&rec, "load1") - std::f64::consts::PI).abs() < f64::EPSILON);
     }
 
     #[test]

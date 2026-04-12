@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api-client'
-import { CAP_DEFAULT, CAPABILITIES } from '@/lib/capabilities'
+import { CAP_DEFAULT, CAPABILITIES, getEffectiveCapabilityEnabled, isClientCapabilityLocked } from '@/lib/capabilities'
 
 export const Route = createFileRoute('/_authed/settings/capabilities')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -21,7 +21,9 @@ export const Route = createFileRoute('/_authed/settings/capabilities')({
 })
 
 interface ServerInfo {
+  agent_local_capabilities?: number | null
   capabilities?: number | null
+  effective_capabilities?: number | null
   id: string
   name: string
   protocol_version?: number | null
@@ -124,16 +126,20 @@ function CapabilitiesPage() {
               </div>
             ),
             cell: ({ row }) => {
-              const caps = row.original.capabilities ?? CAP_DEFAULT
-              // biome-ignore lint/suspicious/noBitwiseOperators: bitmask check
-              const isEnabled = (caps & bit) !== 0
+              const isEnabled = getEffectiveCapabilityEnabled(
+                row.original.effective_capabilities,
+                row.original.capabilities,
+                bit
+              )
+              const isLocked = isClientCapabilityLocked(row.original.agent_local_capabilities, bit)
               return (
                 <div className="text-center">
                   <Switch
                     aria-label={`${capLabelMap[key]} - ${row.original.name}`}
                     checked={isEnabled}
-                    disabled={isPending}
+                    disabled={isPending || isLocked}
                     onCheckedChange={() => toggleCap(row.original, bit)}
+                    title={isLocked ? '客户端关闭' : undefined}
                   />
                 </div>
               )

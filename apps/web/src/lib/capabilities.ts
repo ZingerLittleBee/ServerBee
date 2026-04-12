@@ -23,3 +23,21 @@ export function hasCap(capabilities: number, bit: number): boolean {
   // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
   return (capabilities & bit) !== 0
 }
+
+export function isClientCapabilityLocked(agentLocalCapabilities: number | null | undefined, bit: number): boolean {
+  if (agentLocalCapabilities == null) {
+    return false
+  }
+  return !hasCap(agentLocalCapabilities, bit)
+}
+
+export function getEffectiveCapabilityEnabled(
+  effectiveCapabilities: number | null | undefined,
+  configuredCapabilities: number | null | undefined,
+  bit: number
+): boolean {
+  if (effectiveCapabilities != null) {
+    return hasCap(effectiveCapabilities, bit)
+  }
+  return hasCap(configuredCapabilities ?? CAP_DEFAULT, bit)
+}

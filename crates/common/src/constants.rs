@@ -46,6 +46,75 @@ pub const CAP_DOCKER: u32 = 1 << 7; // 128
 pub const CAP_DEFAULT: u32 = CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP; // 56
 pub const CAP_VALID_MASK: u32 = 0b1111_1111; // 255
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CapabilityKey {
+    Terminal,
+    Exec,
+    Upgrade,
+    PingIcmp,
+    PingTcp,
+    PingHttp,
+    File,
+    Docker,
+}
+
+impl CapabilityKey {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Terminal => "terminal",
+            Self::Exec => "exec",
+            Self::Upgrade => "upgrade",
+            Self::PingIcmp => "ping_icmp",
+            Self::PingTcp => "ping_tcp",
+            Self::PingHttp => "ping_http",
+            Self::File => "file",
+            Self::Docker => "docker",
+        }
+    }
+
+    pub fn to_bit(self) -> u32 {
+        match self {
+            Self::Terminal => CAP_TERMINAL,
+            Self::Exec => CAP_EXEC,
+            Self::Upgrade => CAP_UPGRADE,
+            Self::PingIcmp => CAP_PING_ICMP,
+            Self::PingTcp => CAP_PING_TCP,
+            Self::PingHttp => CAP_PING_HTTP,
+            Self::File => CAP_FILE,
+            Self::Docker => CAP_DOCKER,
+        }
+    }
+}
+
+impl std::str::FromStr for CapabilityKey {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "terminal" => Ok(Self::Terminal),
+            "exec" => Ok(Self::Exec),
+            "upgrade" => Ok(Self::Upgrade),
+            "ping_icmp" => Ok(Self::PingIcmp),
+            "ping_tcp" => Ok(Self::PingTcp),
+            "ping_http" => Ok(Self::PingHttp),
+            "file" => Ok(Self::File),
+            "docker" => Ok(Self::Docker),
+            _ => Err(format!("unknown capability: {value}")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityDeniedReason {
+    ServerCapabilityDisabled,
+    AgentCapabilityDisabled,
+}
+
+pub fn effective_capabilities(server_caps: u32, agent_local_caps: u32) -> u32 {
+    server_caps & agent_local_caps
+}
+
 #[derive(Debug)]
 pub struct CapabilityMeta {
     pub bit: u32,
@@ -164,7 +233,8 @@ mod tests {
         for meta in ALL_CAPABILITIES {
             assert!(meta.bit & CAP_VALID_MASK == meta.bit);
         }
-        assert!(256 & !CAP_VALID_MASK != 0);
+        let invalid_bit = 1 << ALL_CAPABILITIES.len();
+        assert_ne!(invalid_bit & !CAP_VALID_MASK, 0);
     }
 
     #[test]
@@ -172,7 +242,6 @@ mod tests {
         assert_eq!(CAP_FILE, 64);
         assert!(has_capability(CAP_FILE, CAP_FILE));
         assert!(!has_capability(CAP_DEFAULT, CAP_FILE));
-        assert!(CAP_FILE & CAP_VALID_MASK == CAP_FILE);
     }
 
     #[test]
@@ -188,7 +257,6 @@ mod tests {
         assert_eq!(CAP_DOCKER, 128);
         assert!(has_capability(CAP_DOCKER, CAP_DOCKER));
         assert!(!has_capability(CAP_DEFAULT, CAP_DOCKER));
-        assert!(CAP_DOCKER & CAP_VALID_MASK != 0);
     }
 
     #[test]
@@ -197,5 +265,34 @@ mod tests {
         assert!(has_capability(u32::MAX, CAP_EXEC));
         assert!(has_capability(u32::MAX, CAP_UPGRADE));
         assert!(has_capability(u32::MAX, CAP_PING_ICMP));
+    }
+
+    #[test]
+    fn test_capability_key_parse_terminal() {
+        assert_eq!(
+            "terminal".parse::<CapabilityKey>(),
+            Ok(CapabilityKey::Terminal)
+        );
+    }
+
+    #[test]
+    fn test_capability_key_parse_ping_http() {
+        assert_eq!(
+            "ping_http".parse::<CapabilityKey>(),
+            Ok(CapabilityKey::PingHttp)
+        );
+    }
+
+    #[test]
+    fn test_capability_key_parse_unknown_fails() {
+        assert!("nope".parse::<CapabilityKey>().is_err());
+    }
+
+    #[test]
+    fn test_effective_capabilities_masks_server_and_agent_caps() {
+        assert_eq!(
+            effective_capabilities(CAP_EXEC | CAP_FILE, CAP_FILE),
+            CAP_FILE
+        );
     }
 }

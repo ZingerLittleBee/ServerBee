@@ -20,7 +20,7 @@ import { useRealtimeMetrics } from '@/hooks/use-realtime-metrics'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerResponse } from '@/lib/api-schema'
-import { CAP_DOCKER, CAP_FILE, hasCap } from '@/lib/capabilities'
+import { CAP_DOCKER, CAP_FILE, CAP_TERMINAL, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
 import { buildMergedDiskIoSeries, buildPerDiskIoSeries } from '@/lib/disk-io'
 import { cn, countryCodeToFlag, formatBytes } from '@/lib/utils'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
@@ -48,7 +48,9 @@ interface GpuRecordAggregated {
 }
 
 interface ServerWithCaps {
+  agent_local_capabilities?: number | null
   capabilities?: number | null
+  effective_capabilities?: number | null
   id: string
   protocol_version?: number | null
 }
@@ -498,10 +500,21 @@ function ServerDetailPage() {
   const isOnline = liveData?.online ?? false
   const hasBilling = server.price != null || server.expired_at != null || server.traffic_limit != null
   const flag = countryCodeToFlag(server.country_code)
-  // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
-  const terminalEnabled = serverWithCaps.capabilities == null || (serverWithCaps.capabilities & 1) !== 0
-  const fileEnabled = hasCap(serverWithCaps.capabilities ?? 0, CAP_FILE)
-  const dockerEnabled = hasCap(serverWithCaps.capabilities ?? 0, CAP_DOCKER)
+  const terminalEnabled = getEffectiveCapabilityEnabled(
+    serverWithCaps.effective_capabilities,
+    serverWithCaps.capabilities,
+    CAP_TERMINAL
+  )
+  const fileEnabled = getEffectiveCapabilityEnabled(
+    serverWithCaps.effective_capabilities,
+    serverWithCaps.capabilities,
+    CAP_FILE
+  )
+  const dockerEnabled = getEffectiveCapabilityEnabled(
+    serverWithCaps.effective_capabilities,
+    serverWithCaps.capabilities,
+    CAP_DOCKER
+  )
 
   // Network cumulative traffic from live data
   const liveNetIn = liveData?.net_in_transfer ?? 0
