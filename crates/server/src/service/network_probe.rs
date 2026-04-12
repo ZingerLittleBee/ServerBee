@@ -713,7 +713,12 @@ impl NetworkProbeService {
         let target_map: HashMap<String, (String, String)> = Self::build_target_map(db).await;
 
         let anomaly_from = Utc::now() - Duration::hours(24);
-        let sparklines = Self::query_sparklines(db, &server_ids, bucket_seconds).await?;
+        let sparklines = Self::query_sparklines(db, &server_ids, bucket_seconds)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("sparkline query failed, falling back to empty: {e}");
+                HashMap::new()
+            });
 
         // Fetch ALL latest records across ALL servers in a single query using a window
         // function, avoiding an N+1 query pattern (one query per server per target).
