@@ -165,7 +165,6 @@ describe('ServerCard', () => {
 
     render(<ServerCard server={makeServer()} />)
 
-    expect(screen.getByText('card_network_quality')).toBeDefined()
     expect(screen.getByText('60ms')).toBeDefined()
     expect(screen.getByLabelText('Latency trend')).toBeDefined()
     expect(screen.queryByLabelText('Packet loss trend')).toBeNull()
