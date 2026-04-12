@@ -180,7 +180,7 @@ function buildFallbackState(
       synthetic: true,
       targets: fallbackTargets,
       timestamp,
-      value: lossSparkline[index] == null ? null : lossSparkline[index]! * 100
+      value: lossSparkline[index] == null ? null : (lossSparkline[index] as number) * 100
     })
   }
 
