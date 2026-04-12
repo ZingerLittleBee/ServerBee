@@ -1,4 +1,5 @@
 import { Eye, EyeOff } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { formatLatency, formatPacketLoss, type NetworkTargetSummary } from '@/lib/network-types'
 import { cn } from '@/lib/utils'
 
@@ -10,6 +11,8 @@ interface TargetCardProps {
 }
 
 export function TargetCard({ target, color, visible, onToggle }: TargetCardProps) {
+  const { t } = useTranslation('network')
+
   return (
     <div
       className={cn(
@@ -23,7 +26,9 @@ export function TargetCard({ target, color, visible, onToggle }: TargetCardProps
         <div className="flex items-center gap-2 text-muted-foreground text-xs">
           <span className="font-mono">{formatLatency(target.avg_latency)}</span>
           <span className="text-muted-foreground/60">|</span>
-          <span>loss {formatPacketLoss(target.packet_loss)}</span>
+          <span>
+            {t('packet_loss')} {formatPacketLoss(target.packet_loss)}
+          </span>
         </div>
       </div>
       <button

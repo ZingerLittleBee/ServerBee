@@ -27,6 +27,7 @@ import {
 } from '@/hooks/use-network-api'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
 import { CHART_COLORS } from '@/lib/chart-colors'
+import { getNetworkProbeTypeLabel } from '@/lib/network-i18n'
 import type { NetworkProbeRecord, NetworkTargetSummary } from '@/lib/network-types'
 import { formatLatency, formatPacketLoss, getProviderLabel, latencyColorClass } from '@/lib/network-types'
 import { cn } from '@/lib/utils'
@@ -303,6 +304,7 @@ function NetworkDetailPage() {
   const { data: realtimeData } = useNetworkRealtime(serverId)
   const { data: allTargets = [] } = useNetworkTargets()
   const setServerTargets = useSetServerTargets(serverId)
+  const getProbeTypeLabel = useCallback((probeType: string) => getNetworkProbeTypeLabel(t, probeType), [t])
 
   const targets = useMemo(() => summary?.targets ?? [], [summary])
 
@@ -443,8 +445,8 @@ function NetworkDetailPage() {
     link.download = `network-${serverId}-${timeRange}.csv`
     link.click()
     URL.revokeObjectURL(url)
-    toast.success('CSV exported')
-  }, [records, serverId, timeRange])
+    toast.success(t('export_csv_success', { defaultValue: 'CSV exported' }))
+  }, [records, serverId, timeRange, t])
 
   const openManageDialog = useCallback(() => {
     // Pre-select targets currently assigned to this server
@@ -476,14 +478,18 @@ function NetworkDetailPage() {
   const handleSaveTargets = useCallback(() => {
     setServerTargets.mutate(Array.from(selectedRef.current), {
       onSuccess: () => {
-        toast.success('Server targets updated')
+        toast.success(t('server_targets_updated', { defaultValue: 'Server targets updated' }))
         setShowManageDialog(false)
       },
       onError: (err) => {
-        toast.error(err instanceof Error ? err.message : 'Failed to update server targets')
+        toast.error(
+          err instanceof Error
+            ? err.message
+            : t('server_targets_update_failed', { defaultValue: 'Failed to update server targets' })
+        )
       }
     })
-  }, [setServerTargets])
+  }, [setServerTargets, t])
 
   if (serverLoading || summaryLoading) {
     return (
@@ -536,13 +542,29 @@ function NetworkDetailPage() {
 
       {/* Server info bar */}
       <div className="mb-6 flex flex-wrap gap-x-4 gap-y-1 rounded-lg border bg-card p-3 text-muted-foreground text-sm">
-        {server.ipv4 && <span>IPv4: {server.ipv4}</span>}
-        {server.ipv6 && <span>IPv6: {server.ipv6}</span>}
-        {server.region && <span>Region: {server.region}</span>}
-        {server.os && <span>OS: {server.os}</span>}
+        {server.ipv4 && (
+          <span>
+            {t('server_ipv4', { defaultValue: 'IPv4' })}: {server.ipv4}
+          </span>
+        )}
+        {server.ipv6 && (
+          <span>
+            {t('server_ipv6', { defaultValue: 'IPv6' })}: {server.ipv6}
+          </span>
+        )}
+        {server.region && (
+          <span>
+            {t('server_region', { defaultValue: 'Region' })}: {server.region}
+          </span>
+        )}
+        {server.os && (
+          <span>
+            {t('server_os', { defaultValue: 'OS' })}: {server.os}
+          </span>
+        )}
         {summary.last_probe_at && (
           <span>
-            Last probe:{' '}
+            {t('last_probe')}:{' '}
             {new Date(summary.last_probe_at).toLocaleString([], {
               month: 'short',
               day: 'numeric',
@@ -672,7 +694,9 @@ function NetworkDetailPage() {
                   <span className="flex-1 font-medium">{target.name}</span>
                   {target.provider && <span className="text-muted-foreground text-xs">{target.provider}</span>}
                   {target.location && <span className="text-muted-foreground text-xs">{target.location}</span>}
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs uppercase">{target.probe_type}</span>
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
+                    {getProbeTypeLabel(target.probe_type)}
+                  </span>
                 </label>
               ))}
             </div>
