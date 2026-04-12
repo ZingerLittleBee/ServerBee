@@ -49,7 +49,7 @@ const DEFAULT_FORM: TargetFormData = {
   probe_type: 'icmp'
 }
 
-function NetworkProbeSettingsPage() {
+export function NetworkProbeSettingsPage() {
   const { t } = useTranslation('network')
 
   const { tab: activeTab } = Route.useSearch()

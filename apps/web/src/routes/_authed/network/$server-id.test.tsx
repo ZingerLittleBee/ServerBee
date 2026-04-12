@@ -160,11 +160,11 @@ vi.mock('@/components/ui/dialog', () => ({
   DialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>
 }))
 
-const { Route } = await import('./$serverId')
+const { NetworkDetailPage } = await import('./$serverId')
 
 describe('NetworkDetailPage', () => {
   it('renders translated network detail labels and probe types in the manage targets dialog', () => {
-    render(<Route.component />)
+    render(<NetworkDetailPage />)
 
     expect(screen.getByText(lastProbePattern)).toBeInTheDocument()
     expect(screen.getByText('地区: 成都')).toBeInTheDocument()
