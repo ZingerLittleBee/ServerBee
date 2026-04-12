@@ -16,7 +16,7 @@ export function ServerCardsWidget({ config, servers }: ServerCardsWidgetProps) {
 
   return (
     <div
-      className="grid h-full gap-4 overflow-auto"
+      className="grid h-full content-start gap-4 overflow-auto"
       style={{
         gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`
       }}

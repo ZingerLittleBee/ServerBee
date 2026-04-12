@@ -9,6 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { DataTable } from '@/components/ui/data-table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -276,46 +277,45 @@ function NetworkProbeSettingsPage() {
   })
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <h1 className="mb-6 font-bold text-2xl">{t('settings_title')}</h1>
-
-      <Tabs onValueChange={(value) => navigate({ search: { tab: value } })} value={activeTab}>
-        <TabsList>
-          <TabsTrigger value="targets">{t('target_management')}</TabsTrigger>
-          <TabsTrigger value="settings">{t('global_settings')}</TabsTrigger>
-        </TabsList>
+      <Tabs
+        className="flex min-h-0 flex-1 flex-col"
+        onValueChange={(value) => navigate({ search: { tab: value } })}
+        value={activeTab}
+      >
+        <div className="flex max-w-4xl items-center justify-between">
+          <TabsList>
+            <TabsTrigger value="targets">{t('target_management')}</TabsTrigger>
+            <TabsTrigger value="settings">{t('global_settings')}</TabsTrigger>
+          </TabsList>
+          {activeTab === 'targets' && (
+            <Button onClick={openAddDialog} size="sm" variant="outline">
+              <Plus className="size-4" />
+              {t('add_target')}
+            </Button>
+          )}
+        </div>
 
         {/* Tab 1: Target Management */}
-        <TabsContent value="targets">
-          <div className="max-w-4xl">
-            <div className="rounded-lg border bg-card p-6">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="font-semibold text-lg">{t('target_management')}</h2>
-                <Button onClick={openAddDialog} size="sm" variant="outline">
-                  <Plus className="size-4" />
-                  {t('add_target')}
-                </Button>
-              </div>
-
-              {targetsLoading && (
-                <div className="space-y-2">
-                  {Array.from({ length: 3 }, (_, i) => (
-                    <Skeleton className="h-10" key={`skel-${i.toString()}`} />
-                  ))}
-                </div>
-              )}
-
-              {!targetsLoading && <DataTable noResults={t('no_targets')} table={targetsTable} />}
+        <TabsContent className="flex min-h-0 flex-1 flex-col overflow-hidden" value="targets">
+          {targetsLoading && (
+            <div className="max-w-4xl space-y-2 p-4">
+              {Array.from({ length: 3 }, (_, i) => (
+                <Skeleton className="h-10" key={`skel-${i.toString()}`} />
+              ))}
             </div>
-          </div>
+          )}
+
+          {!targetsLoading && (
+            <DataTable className="flex h-full max-w-4xl flex-col" noResults={t('no_targets')} table={targetsTable} />
+          )}
         </TabsContent>
 
         {/* Tab 2: Global Settings */}
-        <TabsContent value="settings">
-          <div className="max-w-xl">
-            <form className="space-y-6 rounded-lg border bg-card p-6" onSubmit={handleSaveSettings}>
-              <h2 className="font-semibold text-lg">{t('global_settings')}</h2>
-
+        <TabsContent className="min-h-0 overflow-hidden" value="settings">
+          <ScrollArea className="h-full">
+            <form className="max-w-xl space-y-6 pb-1" onSubmit={handleSaveSettings}>
               <div className="space-y-1.5">
                 <label className="font-medium text-sm" htmlFor="probe-interval">
                   {t('probe_interval')}
@@ -354,19 +354,21 @@ function NetworkProbeSettingsPage() {
                 <p className="font-medium text-sm">{t('default_targets')}</p>
                 <p className="text-muted-foreground text-xs">{t('default_targets_desc')}</p>
                 {targets && targets.length > 0 ? (
-                  <div className="max-h-48 space-y-1.5 overflow-y-auto rounded-md border p-3">
-                    {targets.map((target) => (
-                      // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
-                      <label className="flex cursor-pointer items-center gap-2 text-sm" key={target.id}>
-                        <Checkbox
-                          checked={defaultTargetIds.includes(target.id)}
-                          onCheckedChange={() => toggleDefaultTarget(target.id)}
-                        />
-                        <span>{target.name}</span>
-                        <span className="text-muted-foreground text-xs">({target.probe_type.toUpperCase()})</span>
-                      </label>
-                    ))}
-                  </div>
+                  <ScrollArea className="h-72 rounded-md border p-3">
+                    <div className="space-y-1.5">
+                      {targets.map((target) => (
+                        // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
+                        <label className="flex cursor-pointer items-center gap-2 text-sm" key={target.id}>
+                          <Checkbox
+                            checked={defaultTargetIds.includes(target.id)}
+                            onCheckedChange={() => toggleDefaultTarget(target.id)}
+                          />
+                          <span>{target.name}</span>
+                          <span className="text-muted-foreground text-xs">({target.probe_type.toUpperCase()})</span>
+                        </label>
+                      ))}
+                    </div>
+                  </ScrollArea>
                 ) : (
                   <p className="text-muted-foreground text-xs">{t('no_targets')}</p>
                 )}
@@ -376,11 +378,9 @@ function NetworkProbeSettingsPage() {
                 {t('save')}
               </Button>
             </form>
-          </div>
+          </ScrollArea>
         </TabsContent>
       </Tabs>
-
-      {/* Add/Edit Target Dialog */}
       <Dialog
         onOpenChange={(open) => {
           if (!open) {
@@ -485,7 +485,6 @@ function NetworkProbeSettingsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
       <Dialog
         onOpenChange={(open) => {
           if (!open) {

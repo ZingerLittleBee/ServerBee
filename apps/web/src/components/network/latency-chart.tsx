@@ -12,6 +12,7 @@ interface TargetInfo {
 }
 
 interface LatencyChartProps {
+  hours?: number
   isRealtime?: boolean
   records: NetworkProbeRecord[]
   targets: TargetInfo[]
@@ -27,10 +28,20 @@ function formatTime24(timestamp: string): string {
 }
 
 function formatTimeHM(timestamp: string): string {
-  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
-export function LatencyChart({ records, targets, isRealtime = false }: LatencyChartProps) {
+function formatDateMD(timestamp: string): string {
+  const d = new Date(timestamp)
+  return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function formatDateTimeMDHM(timestamp: string): string {
+  const d = new Date(timestamp)
+  return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+export function LatencyChart({ records, targets, isRealtime = false, hours = 1 }: LatencyChartProps) {
   // Build chartConfig for ALL targets (ChartContainer needs all color vars injected)
   const chartConfig = useMemo(() => {
     const config: ChartConfig = {}
@@ -86,6 +97,38 @@ export function LatencyChart({ records, targets, isRealtime = false }: LatencyCh
     return Math.ceil(chartData.length / 10) - 1
   }, [chartData.length])
 
+  const isExtendedRange = hours >= 168
+
+  const tickFormatter = useMemo<(v: string) => string>(() => {
+    if (isExtendedRange) {
+      let lastDate = ''
+      return (v: string) => {
+        const dateStr = formatDateMD(v)
+        if (dateStr === lastDate) {
+          return ''
+        }
+        lastDate = dateStr
+        return dateStr
+      }
+    }
+    return (v: string) => (isRealtime ? formatTime24(v) : formatTimeHM(v))
+  }, [isRealtime, isExtendedRange])
+
+  const tooltipLabelFormatter = useMemo(() => {
+    if (isExtendedRange) {
+      return (label: string) => formatDateTimeMDHM(label)
+    }
+    return (label: string) =>
+      new Date(label).toLocaleString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      })
+  }, [isExtendedRange])
+
   if (chartData.length === 0) {
     return (
       <div className="flex h-[300px] items-center justify-center rounded-lg border bg-card">
@@ -104,22 +147,14 @@ export function LatencyChart({ records, targets, isRealtime = false }: LatencyCh
             axisLine={false}
             dataKey="timestamp"
             interval={tickInterval}
-            tickFormatter={(v) => (isRealtime ? formatTime24(v) : formatTimeHM(v))}
+            tickFormatter={tickFormatter}
             tickLine={false}
           />
           <YAxis axisLine={false} tickLine={false} unit=" ms" width={60} />
           <ChartTooltip
             content={
               <ChartTooltipContent
-                labelFormatter={(label) =>
-                  new Date(label).toLocaleString([], {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit'
-                  })
-                }
+                labelFormatter={tooltipLabelFormatter}
                 valueFormatter={(v) => `${v.toFixed(1)} ms`}
               />
             }
@@ -128,8 +163,8 @@ export function LatencyChart({ records, targets, isRealtime = false }: LatencyCh
             <Area
               connectNulls={false}
               dataKey={`target_${originalIndex}`}
-              fill={`var(--color-target_${originalIndex})`}
-              fillOpacity={0.05}
+              fill="transparent"
+              fillOpacity={0}
               key={id}
               stroke={`var(--color-target_${originalIndex})`}
               strokeWidth={2}
