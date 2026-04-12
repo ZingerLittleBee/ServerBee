@@ -21,7 +21,12 @@ import {
   useUpdateNetworkSetting,
   useUpdateTarget
 } from '@/hooks/use-network-api'
-import { getNetworkProbeTypeLabel, getNetworkTargetDisplayName } from '@/lib/network-i18n'
+import {
+  getNetworkProbeTypeLabel,
+  getNetworkTargetDisplayLocation,
+  getNetworkTargetDisplayName,
+  getNetworkTargetDisplayProvider
+} from '@/lib/network-i18n'
 import type { NetworkProbeTarget } from '@/lib/network-types'
 
 export const Route = createFileRoute('/_authed/settings/network-probes')({
@@ -190,6 +195,14 @@ export function NetworkProbeSettingsPage() {
     (target: NetworkProbeTarget) => getNetworkTargetDisplayName(t, i18n.resolvedLanguage ?? i18n.language, target),
     [t, i18n.language, i18n.resolvedLanguage]
   )
+  const getTargetDisplayProvider = useCallback(
+    (target: NetworkProbeTarget) => getNetworkTargetDisplayProvider(t, i18n.resolvedLanguage ?? i18n.language, target),
+    [t, i18n.language, i18n.resolvedLanguage]
+  )
+  const getTargetDisplayLocation = useCallback(
+    (target: NetworkProbeTarget) => getNetworkTargetDisplayLocation(t, i18n.resolvedLanguage ?? i18n.language, target),
+    [t, i18n.language, i18n.resolvedLanguage]
+  )
 
   const probeTypes: { value: ProbeType; label: string }[] = [
     { value: 'icmp', label: getProbeTypeLabel('icmp') },
@@ -209,13 +222,17 @@ export function NetworkProbeSettingsPage() {
         accessorKey: 'provider',
         header: () => t('target_provider'),
         enableSorting: false,
-        cell: ({ row }) => <span className="text-muted-foreground">{row.original.provider || '\u2014'}</span>
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">{getTargetDisplayProvider(row.original) || '\u2014'}</span>
+        )
       },
       {
         accessorKey: 'location',
         header: () => t('target_location'),
         enableSorting: false,
-        cell: ({ row }) => <span className="text-muted-foreground">{row.original.location || '\u2014'}</span>
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">{getTargetDisplayLocation(row.original) || '\u2014'}</span>
+        )
       },
       {
         accessorKey: 'target',
@@ -275,7 +292,7 @@ export function NetworkProbeSettingsPage() {
           )
       }
     ],
-    [t, openEditDialog, getProbeTypeLabel, getTargetDisplayName]
+    [t, openEditDialog, getProbeTypeLabel, getTargetDisplayLocation, getTargetDisplayName, getTargetDisplayProvider]
   )
 
   const targetsTable = useReactTable({
