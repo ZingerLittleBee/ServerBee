@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, Play, RefreshCw } from 'lucide-react'
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -53,19 +54,21 @@ interface MonitorWithRecord extends ServiceMonitor {
   latest_record: ServiceMonitorRecord | null
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  ssl: 'SSL',
-  dns: 'DNS',
-  http_keyword: 'HTTP Keyword',
-  tcp: 'TCP',
-  whois: 'WHOIS'
+function useTypeLabels(t: (key: string) => string): Record<string, string> {
+  return {
+    ssl: t('monitorTypes.ssl'),
+    dns: t('monitorTypes.dns'),
+    http_keyword: t('monitorTypes.http_keyword'),
+    tcp: t('monitorTypes.tcp'),
+    whois: t('monitorTypes.whois')
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Stats Row
 // ---------------------------------------------------------------------------
 
-function StatsRow({ records }: { records: ServiceMonitorRecord[] }) {
+function StatsRow({ records, t }: { records: ServiceMonitorRecord[]; t: (key: string) => string }) {
   const stats = useMemo(() => {
     if (records.length === 0) {
       return { uptime: null, avgLatency: null, lastCheck: null }
@@ -82,7 +85,7 @@ function StatsRow({ records }: { records: ServiceMonitorRecord[] }) {
     <div className="grid gap-4 sm:grid-cols-3">
       <Card size="sm">
         <CardHeader>
-          <CardTitle className="text-muted-foreground text-xs">Uptime</CardTitle>
+          <CardTitle className="text-muted-foreground text-xs">{t('stats.uptime')}</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="font-bold text-2xl">{stats.uptime != null ? `${stats.uptime.toFixed(1)}%` : '--'}</p>
@@ -90,7 +93,7 @@ function StatsRow({ records }: { records: ServiceMonitorRecord[] }) {
       </Card>
       <Card size="sm">
         <CardHeader>
-          <CardTitle className="text-muted-foreground text-xs">Avg Latency</CardTitle>
+          <CardTitle className="text-muted-foreground text-xs">{t('stats.avgLatency')}</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="font-bold text-2xl">{stats.avgLatency != null ? `${stats.avgLatency.toFixed(1)} ms` : '--'}</p>
@@ -98,7 +101,7 @@ function StatsRow({ records }: { records: ServiceMonitorRecord[] }) {
       </Card>
       <Card size="sm">
         <CardHeader>
-          <CardTitle className="text-muted-foreground text-xs">Last Check</CardTitle>
+          <CardTitle className="text-muted-foreground text-xs">{t('stats.lastCheck')}</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="font-bold text-sm">{stats.lastCheck ? new Date(stats.lastCheck).toLocaleString() : '--'}</p>
@@ -112,7 +115,7 @@ function StatsRow({ records }: { records: ServiceMonitorRecord[] }) {
 // Response Time Chart
 // ---------------------------------------------------------------------------
 
-function ResponseTimeChart({ records }: { records: ServiceMonitorRecord[] }) {
+function ResponseTimeChart({ records, t }: { records: ServiceMonitorRecord[]; t: (key: string) => string }) {
   const chartData = useMemo(() => {
     // Records come in desc order from API, reverse for chronological chart
     return [...records].reverse().map((r) => ({
@@ -122,20 +125,20 @@ function ResponseTimeChart({ records }: { records: ServiceMonitorRecord[] }) {
   }, [records])
 
   const latencyConfig = {
-    latency: { label: 'Latency', color: 'var(--chart-4)' }
+    latency: { label: t('chart.latency'), color: 'var(--chart-4)' }
   } satisfies ChartConfig
 
   if (chartData.length === 0) {
     return (
       <div className="rounded-lg border bg-card p-6 text-center text-muted-foreground text-sm">
-        No records available for charting.
+        {t('chart.noRecords')}
       </div>
     )
   }
 
   return (
     <div className="rounded-lg border bg-card p-4">
-      <h3 className="mb-3 font-semibold text-sm">Response Time</h3>
+      <h3 className="mb-3 font-semibold text-sm">{t('chart.responseTime')}</h3>
       <ChartContainer className="h-[260px] w-full" config={latencyConfig}>
         <AreaChart accessibilityLayer data={chartData}>
           <CartesianGrid vertical={false} />
@@ -173,43 +176,46 @@ function ResponseTimeChart({ records }: { records: ServiceMonitorRecord[] }) {
 // Type-Specific Detail Cards
 // ---------------------------------------------------------------------------
 
-function SslDetail({ detail }: { detail: Record<string, unknown> }) {
+function SslDetail({ detail, t }: { detail: Record<string, unknown>; t: (key: string) => string }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>SSL Certificate</CardTitle>
+        <CardTitle>{t('detail.ssl.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         <dl className="grid gap-2 text-sm sm:grid-cols-2">
-          <DetailItem label="Subject" value={detail.subject as string} />
-          <DetailItem label="Issuer" value={detail.issuer as string} />
-          <DetailItem label="Not Before" value={detail.not_before as string} />
-          <DetailItem label="Not After" value={detail.not_after as string} />
-          <DetailItem label="Days Remaining" value={String(detail.days_remaining ?? '--')} />
-          <DetailItem label="SHA-256 Fingerprint" value={detail.sha256_fingerprint as string} />
-          {Boolean(detail.warning) && <DetailItem label="Warning" value={detail.warning as string} />}
+          <DetailItem label={t('detail.ssl.subject')} value={detail.subject as string} />
+          <DetailItem label={t('detail.ssl.issuer')} value={detail.issuer as string} />
+          <DetailItem label={t('detail.ssl.notBefore')} value={detail.not_before as string} />
+          <DetailItem label={t('detail.ssl.notAfter')} value={detail.not_after as string} />
+          <DetailItem label={t('detail.ssl.daysRemaining')} value={String(detail.days_remaining ?? '--')} />
+          <DetailItem label={t('detail.ssl.sha256Fingerprint')} value={detail.sha256_fingerprint as string} />
+          {Boolean(detail.warning) && <DetailItem label={t('detail.ssl.warning')} value={detail.warning as string} />}
         </dl>
       </CardContent>
     </Card>
   )
 }
 
-function DnsDetail({ detail }: { detail: Record<string, unknown> }) {
+function DnsDetail({ detail, t }: { detail: Record<string, unknown>; t: (key: string) => string }) {
   const values = Array.isArray(detail.values) ? (detail.values as string[]) : []
   return (
     <Card>
       <CardHeader>
-        <CardTitle>DNS Resolution</CardTitle>
+        <CardTitle>{t('detail.dns.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         <dl className="grid gap-2 text-sm sm:grid-cols-2">
-          <DetailItem label="Record Type" value={detail.record_type as string} />
-          <DetailItem label="Nameserver" value={detail.nameserver as string} />
-          <DetailItem label="Changed" value={detail.changed ? 'Yes' : 'No'} />
+          <DetailItem label={t('detail.dns.recordType')} value={detail.record_type as string} />
+          <DetailItem label={t('detail.dns.nameserver')} value={detail.nameserver as string} />
+          <DetailItem
+            label={t('detail.dns.changed')}
+            value={detail.changed ? t('detail.dns.yes') : t('detail.dns.no')}
+          />
         </dl>
         {values.length > 0 && (
           <div className="mt-3">
-            <p className="mb-1 font-medium text-sm">Resolved Values</p>
+            <p className="mb-1 font-medium text-sm">{t('detail.dns.resolvedValues')}</p>
             <ul className="list-inside list-disc text-muted-foreground text-sm">
               {values.map((v) => (
                 <li key={v}>{v}</li>
@@ -222,18 +228,18 @@ function DnsDetail({ detail }: { detail: Record<string, unknown> }) {
   )
 }
 
-function HttpKeywordDetail({ detail }: { detail: Record<string, unknown> }) {
+function HttpKeywordDetail({ detail, t }: { detail: Record<string, unknown>; t: (key: string) => string }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>HTTP Check</CardTitle>
+        <CardTitle>{t('detail.http.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         <dl className="grid gap-2 text-sm sm:grid-cols-2">
-          <DetailItem label="Status Code" value={String(detail.status_code ?? '--')} />
-          <DetailItem label="Keyword Found" value={formatKeywordFound(detail.keyword_found)} />
+          <DetailItem label={t('detail.http.statusCode')} value={String(detail.status_code ?? '--')} />
+          <DetailItem label={t('detail.http.keywordFound')} value={formatKeywordFound(detail.keyword_found, t)} />
           <DetailItem
-            label="Response Time"
+            label={t('detail.http.responseTime')}
             value={detail.response_time_ms ? `${Number(detail.response_time_ms).toFixed(1)} ms` : '--'}
           />
         </dl>
@@ -242,44 +248,47 @@ function HttpKeywordDetail({ detail }: { detail: Record<string, unknown> }) {
   )
 }
 
-function TcpDetail({ detail }: { detail: Record<string, unknown> }) {
+function TcpDetail({ detail, t }: { detail: Record<string, unknown>; t: (key: string) => string }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>TCP Connection</CardTitle>
+        <CardTitle>{t('detail.tcp.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         <dl className="grid gap-2 text-sm">
-          <DetailItem label="Connected" value={detail.connected ? 'Yes' : 'No'} />
+          <DetailItem
+            label={t('detail.tcp.connected')}
+            value={detail.connected ? t('detail.tcp.yes') : t('detail.tcp.no')}
+          />
         </dl>
       </CardContent>
     </Card>
   )
 }
 
-function WhoisDetail({ detail }: { detail: Record<string, unknown> }) {
+function WhoisDetail({ detail, t }: { detail: Record<string, unknown>; t: (key: string) => string }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>WHOIS Information</CardTitle>
+        <CardTitle>{t('detail.whois.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         <dl className="grid gap-2 text-sm sm:grid-cols-2">
-          <DetailItem label="Registrar" value={(detail.registrar as string) || '--'} />
-          <DetailItem label="Expiry Date" value={(detail.expiry_date as string) || '--'} />
-          <DetailItem label="Days Remaining" value={String(detail.days_remaining ?? '--')} />
-          {Boolean(detail.warning) && <DetailItem label="Warning" value={detail.warning as string} />}
+          <DetailItem label={t('detail.whois.registrar')} value={(detail.registrar as string) || '--'} />
+          <DetailItem label={t('detail.whois.expiryDate')} value={(detail.expiry_date as string) || '--'} />
+          <DetailItem label={t('detail.whois.daysRemaining')} value={String(detail.days_remaining ?? '--')} />
+          {Boolean(detail.warning) && <DetailItem label={t('detail.whois.warning')} value={detail.warning as string} />}
         </dl>
       </CardContent>
     </Card>
   )
 }
 
-function formatKeywordFound(value: unknown): string {
+function formatKeywordFound(value: unknown, t: (key: string) => string): string {
   if (value == null) {
-    return 'N/A'
+    return t('detail.http.na')
   }
-  return value ? 'Yes' : 'No'
+  return value ? t('detail.http.yes') : t('detail.http.no')
 }
 
 function DetailItem({ label, value }: { label: string; value: string | undefined }) {
@@ -291,18 +300,26 @@ function DetailItem({ label, value }: { label: string; value: string | undefined
   )
 }
 
-function TypeSpecificDetail({ detail, type }: { detail: Record<string, unknown>; type: string }) {
+function TypeSpecificDetail({
+  detail,
+  type,
+  t
+}: {
+  detail: Record<string, unknown>
+  type: string
+  t: (key: string) => string
+}) {
   switch (type) {
     case 'ssl':
-      return <SslDetail detail={detail} />
+      return <SslDetail detail={detail} t={t} />
     case 'dns':
-      return <DnsDetail detail={detail} />
+      return <DnsDetail detail={detail} t={t} />
     case 'http_keyword':
-      return <HttpKeywordDetail detail={detail} />
+      return <HttpKeywordDetail detail={detail} t={t} />
     case 'tcp':
-      return <TcpDetail detail={detail} />
+      return <TcpDetail detail={detail} t={t} />
     case 'whois':
-      return <WhoisDetail detail={detail} />
+      return <WhoisDetail detail={detail} t={t} />
     default:
       return null
   }
@@ -312,9 +329,9 @@ function TypeSpecificDetail({ detail, type }: { detail: Record<string, unknown>;
 // History Table
 // ---------------------------------------------------------------------------
 
-function HistoryTable({ records }: { records: ServiceMonitorRecord[] }) {
+function HistoryTable({ records, t }: { records: ServiceMonitorRecord[]; t: (key: string) => string }) {
   if (records.length === 0) {
-    return <p className="py-4 text-center text-muted-foreground text-sm">No check history yet.</p>
+    return <p className="py-4 text-center text-muted-foreground text-sm">{t('history.empty')}</p>
   }
 
   return (
@@ -322,10 +339,10 @@ function HistoryTable({ records }: { records: ServiceMonitorRecord[] }) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Time</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Latency</TableHead>
-            <TableHead>Error</TableHead>
+            <TableHead>{t('history.table.time')}</TableHead>
+            <TableHead>{t('history.table.status')}</TableHead>
+            <TableHead>{t('history.table.latency')}</TableHead>
+            <TableHead>{t('history.table.error')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -336,12 +353,12 @@ function HistoryTable({ records }: { records: ServiceMonitorRecord[] }) {
                 {record.success ? (
                   <span className="inline-flex items-center gap-1 text-emerald-600 text-xs dark:text-emerald-400">
                     <span className="inline-block size-2 rounded-full bg-emerald-500" />
-                    OK
+                    {t('history.status.ok')}
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 text-red-600 text-xs dark:text-red-400">
                     <span className="inline-block size-2 rounded-full bg-red-500" />
-                    Fail
+                    {t('history.status.fail')}
                   </span>
                 )}
               </TableCell>
@@ -366,6 +383,9 @@ function HistoryTable({ records }: { records: ServiceMonitorRecord[] }) {
 function ServiceMonitorDetailPage() {
   const { id } = Route.useParams()
   const queryClient = useQueryClient()
+  const { t } = useTranslation('service-monitors')
+  const { t: tCommon } = useTranslation('common')
+  const TYPE_LABELS = useTypeLabels(t)
 
   const { data, isLoading } = useQuery<MonitorWithRecord>({
     queryKey: ['service-monitor', id],
@@ -382,10 +402,10 @@ function ServiceMonitorDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['service-monitor', id] }).catch(() => undefined)
       queryClient.invalidateQueries({ queryKey: ['service-monitor-records', id] }).catch(() => undefined)
-      toast.success('Check triggered')
+      toast.success(t('toast.checkTriggered'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to trigger check')
+      toast.error(err instanceof Error ? err.message : t('toast.triggerFailed'))
     }
   })
 
@@ -407,7 +427,7 @@ function ServiceMonitorDetailPage() {
   if (!data) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
-        <p className="text-muted-foreground">Service monitor not found.</p>
+        <p className="text-muted-foreground">{t('notFound')}</p>
       </div>
     )
   }
@@ -434,7 +454,7 @@ function ServiceMonitorDetailPage() {
           to="/settings/service-monitors"
         >
           <ArrowLeft aria-hidden="true" className="size-4" />
-          Back to Service Monitors
+          {t('navigation.backToList')}
         </Link>
 
         <div className="flex items-start justify-between">
@@ -444,15 +464,15 @@ function ServiceMonitorDetailPage() {
               <Badge variant="secondary">{TYPE_LABELS[monitor.monitor_type] ?? monitor.monitor_type}</Badge>
               {monitor.last_status === true && (
                 <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" variant="outline">
-                  Online
+                  {tCommon('status.online')}
                 </Badge>
               )}
               {monitor.last_status === false && (
                 <Badge className="bg-red-500/10 text-red-600 dark:text-red-400" variant="outline">
-                  Offline
+                  {tCommon('status.offline')}
                 </Badge>
               )}
-              {monitor.last_status == null && <Badge variant="outline">Pending</Badge>}
+              {monitor.last_status == null && <Badge variant="outline">{tCommon('status.pending')}</Badge>}
             </div>
             <p className="mt-1 font-mono text-muted-foreground text-sm">{monitor.target}</p>
           </div>
@@ -464,7 +484,7 @@ function ServiceMonitorDetailPage() {
               variant="outline"
             >
               {triggerMutation.isPending ? <RefreshCw className="size-4 animate-spin" /> : <Play className="size-4" />}
-              Check Now
+              {t('actions.checkNow')}
             </Button>
           </div>
         </div>
@@ -472,20 +492,20 @@ function ServiceMonitorDetailPage() {
 
       <div className="space-y-6">
         {/* Stats */}
-        <StatsRow records={records} />
+        <StatsRow records={records} t={t} />
 
         {/* Response Time Chart */}
-        <ResponseTimeChart records={records} />
+        <ResponseTimeChart records={records} t={t} />
 
         {/* Type-Specific Detail */}
         {latestRecord && Object.keys(latestDetail).length > 0 && (
-          <TypeSpecificDetail detail={latestDetail} type={monitor.monitor_type} />
+          <TypeSpecificDetail detail={latestDetail} t={t} type={monitor.monitor_type} />
         )}
 
         {/* History Table */}
         <div>
-          <h3 className="mb-3 font-semibold text-lg">Check History</h3>
-          <HistoryTable records={records.slice(0, 50)} />
+          <h3 className="mb-3 font-semibold text-lg">{t('history.title')}</h3>
+          <HistoryTable records={records.slice(0, 50)} t={t} />
         </div>
       </div>
     </div>

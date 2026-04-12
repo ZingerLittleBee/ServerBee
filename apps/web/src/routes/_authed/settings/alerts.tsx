@@ -151,10 +151,10 @@ function AlertsPage() {
     onSuccess: () => {
       invalidate()
       resetForm()
-      toast.success('Alert rule created')
+      toast.success(t('alerts.created'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to create alert rule')
+      toast.error(err instanceof Error ? err.message : t('alerts.create_failed'))
     }
   })
 
@@ -162,10 +162,10 @@ function AlertsPage() {
     mutationFn: (id: string) => api.delete(`/api/alert-rules/${id}`),
     onSuccess: () => {
       invalidate()
-      toast.success('Alert rule deleted')
+      toast.success(t('alerts.deleted'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete alert rule')
+      toast.error(err instanceof Error ? err.message : t('alerts.delete_failed'))
     }
   })
 
@@ -174,10 +174,10 @@ function AlertsPage() {
       api.put<AlertRule>(`/api/alert-rules/${id}`, { enabled }),
     onSuccess: () => {
       invalidate()
-      toast.success('Alert rule updated')
+      toast.success(t('alerts.updated'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to update alert rule')
+      toast.error(err instanceof Error ? err.message : t('alerts.update_failed'))
     }
   })
 

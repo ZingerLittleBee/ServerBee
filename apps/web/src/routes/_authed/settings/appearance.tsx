@@ -132,7 +132,7 @@ function BrandSettingsSection() {
       toast.success(t('appearance.brand_saved'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Operation failed')
+      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
     }
   })
 

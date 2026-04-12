@@ -35,48 +35,58 @@ interface WidgetConfigDialogProps {
 }
 
 // Metric options for stat-number
-const STAT_METRICS = [
-  { label: 'Server Count', value: 'server_count' },
-  { label: 'Average CPU', value: 'avg_cpu' },
-  { label: 'Average Memory', value: 'avg_memory' },
-  { label: 'Total Bandwidth', value: 'total_bandwidth' },
-  { label: 'Health', value: 'health' }
-]
+function useStatMetrics(t: (key: string) => string): { label: string; value: string }[] {
+  return [
+    { label: t('common.metrics.serverCount'), value: 'server_count' },
+    { label: t('common.metrics.avgCpu'), value: 'avg_cpu' },
+    { label: t('common.metrics.avgMemory'), value: 'avg_memory' },
+    { label: t('common.metrics.totalBandwidth'), value: 'total_bandwidth' },
+    { label: t('common.metrics.health'), value: 'health' }
+  ]
+}
 
 // Metric options for gauge / line-chart / multi-line
-const GAUGE_METRICS = [
-  { label: 'CPU', value: 'cpu' },
-  { label: 'Memory', value: 'memory' },
-  { label: 'Disk', value: 'disk' },
-  { label: 'Swap', value: 'swap' }
-]
+function useGaugeMetrics(t: (key: string) => string): { label: string; value: string }[] {
+  return [
+    { label: t('common.metrics.cpu'), value: 'cpu' },
+    { label: t('common.metrics.memory'), value: 'memory' },
+    { label: t('common.metrics.disk'), value: 'disk' },
+    { label: t('common.metrics.swap'), value: 'swap' }
+  ]
+}
 
-const LINE_METRICS = [
-  { label: 'CPU', value: 'cpu' },
-  { label: 'Memory', value: 'memory' },
-  { label: 'Disk', value: 'disk' },
-  { label: 'Load (1m)', value: 'load1' },
-  { label: 'Load (5m)', value: 'load5' },
-  { label: 'Load (15m)', value: 'load15' },
-  { label: 'Network In', value: 'net_in' },
-  { label: 'Network Out', value: 'net_out' }
-]
+function useLineMetrics(t: (key: string) => string): { label: string; value: string }[] {
+  return [
+    { label: t('common.metrics.cpu'), value: 'cpu' },
+    { label: t('common.metrics.memory'), value: 'memory' },
+    { label: t('common.metrics.disk'), value: 'disk' },
+    { label: t('common.metrics.load1m'), value: 'load1' },
+    { label: t('common.metrics.load5m'), value: 'load5' },
+    { label: t('common.metrics.load15m'), value: 'load15' },
+    { label: t('common.metrics.networkIn'), value: 'net_in' },
+    { label: t('common.metrics.networkOut'), value: 'net_out' }
+  ]
+}
 
-const TOP_N_METRICS = [
-  { label: 'CPU', value: 'cpu' },
-  { label: 'Memory', value: 'memory' },
-  { label: 'Disk', value: 'disk' },
-  { label: 'Bandwidth', value: 'bandwidth' }
-]
+function useTopNMetrics(t: (key: string) => string): { label: string; value: string }[] {
+  return [
+    { label: t('common.metrics.cpu'), value: 'cpu' },
+    { label: t('common.metrics.memory'), value: 'memory' },
+    { label: t('common.metrics.disk'), value: 'disk' },
+    { label: t('common.metrics.bandwidth'), value: 'bandwidth' }
+  ]
+}
 
-const RANGE_OPTIONS = [
-  { label: '1 hour', value: '1' },
-  { label: '6 hours', value: '6' },
-  { label: '12 hours', value: '12' },
-  { label: '24 hours', value: '24' },
-  { label: '3 days', value: '72' },
-  { label: '7 days', value: '168' }
-]
+function useRangeOptions(t: (key: string) => string): { label: string; value: string }[] {
+  return [
+    { label: t('common.timeRange.1hour'), value: '1' },
+    { label: t('common.timeRange.6hours'), value: '6' },
+    { label: t('common.timeRange.12hours'), value: '12' },
+    { label: t('common.timeRange.24hours'), value: '24' },
+    { label: t('common.timeRange.3days'), value: '72' },
+    { label: t('common.timeRange.7days'), value: '168' }
+  ]
+}
 
 function parseExistingConfig(widget?: DashboardWidget): WidgetConfig | null {
   if (!widget) {
@@ -89,10 +99,12 @@ function ServerSelect({
   label,
   servers,
   value,
-  onChange
+  onChange,
+  placeholder
 }: {
   label: string
   onChange: (v: string) => void
+  placeholder: string
   servers: ServerMetrics[]
   value: string
 }) {
@@ -105,7 +117,7 @@ function ServerSelect({
         value={value}
       >
         <SelectTrigger className="w-full">
-          <SelectValue placeholder="Select server" />
+          <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
           {servers.map((s) => (
@@ -123,11 +135,13 @@ function MetricSelect({
   label,
   metrics,
   value,
-  onChange
+  onChange,
+  placeholder
 }: {
   label: string
   metrics: { label: string; value: string }[]
   onChange: (v: string) => void
+  placeholder: string
   value: string
 }) {
   return (
@@ -135,7 +149,7 @@ function MetricSelect({
       <Label>{label}</Label>
       <Select items={metrics} onValueChange={(v) => v !== null && onChange(v)} value={value}>
         <SelectTrigger className="w-full">
-          <SelectValue placeholder="Select metric" />
+          <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
           {metrics.map((m) => (
@@ -149,13 +163,22 @@ function MetricSelect({
   )
 }
 
-function RangeSelect({ value, onChange }: { onChange: (v: string) => void; value: string }) {
+function RangeSelect({
+  value,
+  onChange,
+  t
+}: {
+  onChange: (v: string) => void
+  t: (key: string) => string
+  value: string
+}) {
+  const RANGE_OPTIONS = useRangeOptions(t)
   return (
     <div className="space-y-1.5">
-      <Label>Time Range</Label>
+      <Label>{t('widgets.common.labels.timeRange')}</Label>
       <Select items={RANGE_OPTIONS} onValueChange={(v) => v !== null && onChange(v)} value={value}>
         <SelectTrigger className="w-full">
-          <SelectValue placeholder="Select range" />
+          <SelectValue placeholder={t('widgets.common.placeholders.selectRange')} />
         </SelectTrigger>
         <SelectContent>
           {RANGE_OPTIONS.map((r) => (
@@ -173,8 +196,10 @@ function ServerMultiSelect({
   label,
   servers,
   selected,
-  onChange
+  onChange,
+  emptyMessage
 }: {
+  emptyMessage: string
   label: string
   onChange: (ids: string[]) => void
   selected: string[]
@@ -205,7 +230,7 @@ function ServerMultiSelect({
             <span className="text-sm">{s.name}</span>
           </button>
         ))}
-        {servers.length === 0 && <p className="py-2 text-center text-muted-foreground text-xs">No servers available</p>}
+        {servers.length === 0 && <p className="py-2 text-center text-muted-foreground text-xs">{emptyMessage}</p>}
       </div>
     </div>
   )
@@ -215,16 +240,20 @@ function ServerMultiSelect({
 
 function StatNumberForm({
   config,
-  onChange
+  onChange,
+  t
 }: {
   config: Partial<StatNumberConfig>
   onChange: (c: Partial<StatNumberConfig>) => void
+  t: (key: string) => string
 }) {
+  const STAT_METRICS = useStatMetrics(t)
   return (
     <MetricSelect
-      label="Metric"
+      label={t('widgets.common.labels.metric')}
       metrics={STAT_METRICS}
       onChange={(v) => onChange({ ...config, metric: v })}
+      placeholder={t('widgets.common.placeholders.selectMetric')}
       value={config.metric ?? ''}
     />
   )
@@ -233,24 +262,29 @@ function StatNumberForm({
 function GaugeForm({
   config,
   servers,
-  onChange
+  onChange,
+  t
 }: {
   config: Partial<GaugeConfig>
   onChange: (c: Partial<GaugeConfig>) => void
   servers: ServerMetrics[]
+  t: (key: string) => string
 }) {
+  const GAUGE_METRICS = useGaugeMetrics(t)
   return (
     <>
       <ServerSelect
-        label="Server"
+        label={t('widgets.common.labels.server')}
         onChange={(v) => onChange({ ...config, server_id: v })}
+        placeholder={t('widgets.common.placeholders.selectServer')}
         servers={servers}
         value={config.server_id ?? ''}
       />
       <MetricSelect
-        label="Metric"
+        label={t('widgets.common.labels.metric')}
         metrics={GAUGE_METRICS}
         onChange={(v) => onChange({ ...config, metric: v })}
+        placeholder={t('widgets.common.placeholders.selectMetric')}
         value={config.metric ?? ''}
       />
     </>
@@ -260,27 +294,36 @@ function GaugeForm({
 function LineChartForm({
   config,
   servers,
-  onChange
+  onChange,
+  t
 }: {
   config: Partial<LineChartConfig>
   onChange: (c: Partial<LineChartConfig>) => void
   servers: ServerMetrics[]
+  t: (key: string) => string
 }) {
+  const LINE_METRICS = useLineMetrics(t)
   return (
     <>
       <ServerSelect
-        label="Server"
+        label={t('widgets.common.labels.server')}
         onChange={(v) => onChange({ ...config, server_id: v })}
+        placeholder={t('widgets.common.placeholders.selectServer')}
         servers={servers}
         value={config.server_id ?? ''}
       />
       <MetricSelect
-        label="Metric"
+        label={t('widgets.common.labels.metric')}
         metrics={LINE_METRICS}
         onChange={(v) => onChange({ ...config, metric: v })}
+        placeholder={t('widgets.common.placeholders.selectMetric')}
         value={config.metric ?? ''}
       />
-      <RangeSelect onChange={(v) => onChange({ ...config, hours: Number(v) })} value={String(config.hours ?? '24')} />
+      <RangeSelect
+        onChange={(v) => onChange({ ...config, hours: Number(v) })}
+        t={t}
+        value={String(config.hours ?? '24')}
+      />
     </>
   )
 }
@@ -288,42 +331,61 @@ function LineChartForm({
 function MultiLineForm({
   config,
   servers,
-  onChange
+  onChange,
+  t
 }: {
   config: Partial<MultiLineConfig>
   onChange: (c: Partial<MultiLineConfig>) => void
   servers: ServerMetrics[]
+  t: (key: string) => string
 }) {
+  const LINE_METRICS = useLineMetrics(t)
   return (
     <>
       <ServerMultiSelect
-        label="Servers"
+        emptyMessage={t('widgets.common.empty.noServers')}
+        label={t('widgets.common.labels.servers')}
         onChange={(ids) => onChange({ ...config, server_ids: ids })}
         selected={config.server_ids ?? []}
         servers={servers}
       />
       <MetricSelect
-        label="Metric"
+        label={t('widgets.common.labels.metric')}
         metrics={LINE_METRICS}
         onChange={(v) => onChange({ ...config, metric: v })}
+        placeholder={t('widgets.common.placeholders.selectMetric')}
         value={config.metric ?? ''}
       />
-      <RangeSelect onChange={(v) => onChange({ ...config, hours: Number(v) })} value={String(config.hours ?? '24')} />
+      <RangeSelect
+        onChange={(v) => onChange({ ...config, hours: Number(v) })}
+        t={t}
+        value={String(config.hours ?? '24')}
+      />
     </>
   )
 }
 
-function TopNForm({ config, onChange }: { config: Partial<TopNConfig>; onChange: (c: Partial<TopNConfig>) => void }) {
+function TopNForm({
+  config,
+  onChange,
+  t
+}: {
+  config: Partial<TopNConfig>
+  onChange: (c: Partial<TopNConfig>) => void
+  t: (key: string) => string
+}) {
+  const TOP_N_METRICS = useTopNMetrics(t)
   return (
     <>
       <MetricSelect
-        label="Metric"
+        label={t('widgets.common.labels.metric')}
         metrics={TOP_N_METRICS}
         onChange={(v) => onChange({ ...config, metric: v })}
+        placeholder={t('widgets.common.placeholders.selectMetric')}
         value={config.metric ?? ''}
       />
       <div className="space-y-1.5">
-        <Label>Count</Label>
+        <Label>{t('widgets.common.labels.count')}</Label>
         <Input
           max={20}
           min={1}
@@ -339,15 +401,18 @@ function TopNForm({ config, onChange }: { config: Partial<TopNConfig>; onChange:
 function ServerCardsForm({
   config,
   servers,
-  onChange
+  onChange,
+  t
 }: {
   config: Partial<ServerCardsConfig>
   onChange: (c: Partial<ServerCardsConfig>) => void
   servers: ServerMetrics[]
+  t: (key: string) => string
 }) {
   return (
     <ServerMultiSelect
-      label="Servers (optional, leave empty for all)"
+      emptyMessage={t('widgets.common.empty.noServers')}
+      label={t('widgets.common.labels.servers')}
       onChange={(ids) => onChange({ ...config, server_ids: ids })}
       selected={config.server_ids ?? []}
       servers={servers}
@@ -358,26 +423,31 @@ function ServerCardsForm({
 function TrafficBarForm({
   config,
   servers,
-  onChange
+  onChange,
+  t
 }: {
   config: Partial<TrafficBarConfig>
   onChange: (c: Partial<TrafficBarConfig>) => void
   servers: ServerMetrics[]
+  t: (key: string) => string
 }) {
   return (
     <>
       <div className="space-y-1.5">
-        <Label>Server (optional, leave empty for global)</Label>
+        <Label>{t('widgets.common.labels.server')}</Label>
         <Select
-          items={[{ value: '__all__', label: 'All Servers' }, ...servers.map((s) => ({ value: s.id, label: s.name }))]}
+          items={[
+            { value: '__all__', label: t('widgets.common.placeholders.allServers') },
+            ...servers.map((s) => ({ value: s.id, label: s.name }))
+          ]}
           onValueChange={(v) => onChange({ ...config, server_id: v === '__all__' ? '' : (v ?? '') })}
           value={config.server_id || '__all__'}
         >
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="All servers" />
+            <SelectValue placeholder={t('widgets.common.placeholders.allServers')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">All Servers</SelectItem>
+            <SelectItem value="__all__">{t('widgets.common.placeholders.allServers')}</SelectItem>
             {servers.map((s) => (
               <SelectItem key={s.id} value={s.id}>
                 {s.name}
@@ -386,7 +456,11 @@ function TrafficBarForm({
           </SelectContent>
         </Select>
       </div>
-      <RangeSelect onChange={(v) => onChange({ ...config, hours: Number(v) })} value={String(config.hours ?? '720')} />
+      <RangeSelect
+        onChange={(v) => onChange({ ...config, hours: Number(v) })}
+        t={t}
+        value={String(config.hours ?? '720')}
+      />
     </>
   )
 }
@@ -394,35 +468,44 @@ function TrafficBarForm({
 function DiskIoForm({
   config,
   servers,
-  onChange
+  onChange,
+  t
 }: {
   config: Partial<DiskIoConfig>
   onChange: (c: Partial<DiskIoConfig>) => void
   servers: ServerMetrics[]
+  t: (key: string) => string
 }) {
   return (
     <>
       <ServerSelect
-        label="Server"
+        label={t('widgets.common.labels.server')}
         onChange={(v) => onChange({ ...config, server_id: v })}
+        placeholder={t('widgets.common.placeholders.selectServer')}
         servers={servers}
         value={config.server_id ?? ''}
       />
-      <RangeSelect onChange={(v) => onChange({ ...config, hours: Number(v) })} value={String(config.hours ?? '24')} />
+      <RangeSelect
+        onChange={(v) => onChange({ ...config, hours: Number(v) })}
+        t={t}
+        value={String(config.hours ?? '24')}
+      />
     </>
   )
 }
 
 function AlertListForm({
   config,
-  onChange
+  onChange,
+  t
 }: {
   config: Partial<AlertListConfig>
   onChange: (c: Partial<AlertListConfig>) => void
+  t: (key: string) => string
 }) {
   return (
     <div className="space-y-1.5">
-      <Label>Max Items</Label>
+      <Label>{t('widgets.common.labels.maxItems')}</Label>
       <Input
         max={50}
         min={1}
@@ -436,25 +519,27 @@ function AlertListForm({
 
 function MarkdownForm({
   config,
-  onChange
+  onChange,
+  t
 }: {
   config: Partial<MarkdownConfig>
   onChange: (c: Partial<MarkdownConfig>) => void
+  t: (key: string) => string
 }) {
   const html = useMemo(() => renderMarkdown(config.content ?? ''), [config.content])
 
   return (
     <div className="space-y-1.5">
-      <Label>Markdown Content</Label>
+      <Label>{t('widgets.common.labels.markdownContent')}</Label>
       <textarea
         className="h-32 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
         onChange={(e) => onChange({ ...config, content: e.target.value })}
-        placeholder="Write markdown here..."
+        placeholder={t('widgets.common.placeholders.writeMarkdown')}
         value={config.content ?? ''}
       />
       {(config.content ?? '').length > 0 && (
         <div className="rounded-lg border p-3">
-          <p className="mb-1 font-medium text-muted-foreground text-xs">Preview</p>
+          <p className="mb-1 font-medium text-muted-foreground text-xs">{t('dialogs.widgetConfig.labels.preview')}</p>
           <div
             className="prose prose-sm dark:prose-invert max-h-32 max-w-none overflow-auto text-sm"
             // biome-ignore lint/security/noDangerouslySetInnerHtml: renderMarkdown escapes all raw HTML and validates URLs
@@ -466,38 +551,44 @@ function MarkdownForm({
   )
 }
 
-const UPTIME_DAYS_OPTIONS = [
-  { label: '30 days', value: '30' },
-  { label: '60 days', value: '60' },
-  { label: '90 days', value: '90' }
-]
+function useUptimeDaysOptions(t: (key: string) => string): { label: string; value: string }[] {
+  return [
+    { label: t('common.timeRange.30days'), value: '30' },
+    { label: t('common.timeRange.60days'), value: '60' },
+    { label: t('common.timeRange.90days'), value: '90' }
+  ]
+}
 
 function UptimeTimelineForm({
   config,
   servers,
-  onChange
+  onChange,
+  t
 }: {
   config: Partial<UptimeTimelineConfig>
   onChange: (c: Partial<UptimeTimelineConfig>) => void
   servers: ServerMetrics[]
+  t: (key: string) => string
 }) {
+  const UPTIME_DAYS_OPTIONS = useUptimeDaysOptions(t)
   return (
     <>
       <ServerMultiSelect
-        label="Servers"
+        emptyMessage={t('widgets.common.empty.noServers')}
+        label={t('widgets.common.labels.servers')}
         onChange={(ids) => onChange({ ...config, server_ids: ids })}
         selected={config.server_ids ?? []}
         servers={servers}
       />
       <div className="space-y-1.5">
-        <Label>Days</Label>
+        <Label>{t('widgets.common.labels.days')}</Label>
         <Select
           items={UPTIME_DAYS_OPTIONS}
           onValueChange={(v) => v !== null && onChange({ ...config, days: Number(v) })}
           value={String(config.days ?? '90')}
         >
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select range" />
+            <SelectValue placeholder={t('widgets.common.placeholders.selectRange')} />
           </SelectTrigger>
           <SelectContent>
             {UPTIME_DAYS_OPTIONS.map((r) => (
@@ -544,54 +635,66 @@ export function WidgetConfigDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {widget ? t('edit_widget', 'Edit Widget') : t('configure_widget', 'Configure Widget')}
+            {widget ? t('dialogs.widgetConfig.editTitle') : t('dialogs.widgetConfig.configureTitle')}
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label>{t('widget_title', 'Title (optional)')}</Label>
-            <Input onChange={(e) => setTitle(e.target.value)} placeholder="Widget title" value={title} />
+            <Label>{t('dialogs.widgetConfig.labels.titleOptional')}</Label>
+            <Input
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={t('dialogs.widgetConfig.placeholders.widgetTitle')}
+              value={title}
+            />
           </div>
 
           {widgetType === 'stat-number' && (
-            <StatNumberForm config={config as Partial<StatNumberConfig>} onChange={setConfig} />
+            <StatNumberForm config={config as Partial<StatNumberConfig>} onChange={setConfig} t={t} />
           )}
           {widgetType === 'gauge' && (
-            <GaugeForm config={config as Partial<GaugeConfig>} onChange={setConfig} servers={servers} />
+            <GaugeForm config={config as Partial<GaugeConfig>} onChange={setConfig} servers={servers} t={t} />
           )}
           {widgetType === 'line-chart' && (
-            <LineChartForm config={config as Partial<LineChartConfig>} onChange={setConfig} servers={servers} />
+            <LineChartForm config={config as Partial<LineChartConfig>} onChange={setConfig} servers={servers} t={t} />
           )}
           {widgetType === 'multi-line' && (
-            <MultiLineForm config={config as Partial<MultiLineConfig>} onChange={setConfig} servers={servers} />
+            <MultiLineForm config={config as Partial<MultiLineConfig>} onChange={setConfig} servers={servers} t={t} />
           )}
-          {widgetType === 'top-n' && <TopNForm config={config as Partial<TopNConfig>} onChange={setConfig} />}
+          {widgetType === 'top-n' && <TopNForm config={config as Partial<TopNConfig>} onChange={setConfig} t={t} />}
           {widgetType === 'server-cards' && (
-            <ServerCardsForm config={config as Partial<ServerCardsConfig>} onChange={setConfig} servers={servers} />
+            <ServerCardsForm
+              config={config as Partial<ServerCardsConfig>}
+              onChange={setConfig}
+              servers={servers}
+              t={t}
+            />
           )}
           {widgetType === 'traffic-bar' && (
-            <TrafficBarForm config={config as Partial<TrafficBarConfig>} onChange={setConfig} servers={servers} />
+            <TrafficBarForm config={config as Partial<TrafficBarConfig>} onChange={setConfig} servers={servers} t={t} />
           )}
           {widgetType === 'disk-io' && (
-            <DiskIoForm config={config as Partial<DiskIoConfig>} onChange={setConfig} servers={servers} />
+            <DiskIoForm config={config as Partial<DiskIoConfig>} onChange={setConfig} servers={servers} t={t} />
           )}
           {widgetType === 'alert-list' && (
-            <AlertListForm config={config as Partial<AlertListConfig>} onChange={setConfig} />
+            <AlertListForm config={config as Partial<AlertListConfig>} onChange={setConfig} t={t} />
           )}
           {widgetType === 'markdown' && (
-            <MarkdownForm config={config as Partial<MarkdownConfig>} onChange={setConfig} />
+            <MarkdownForm config={config as Partial<MarkdownConfig>} onChange={setConfig} t={t} />
           )}
           {widgetType === 'uptime-timeline' && (
             <UptimeTimelineForm
               config={config as Partial<UptimeTimelineConfig>}
               onChange={setConfig}
               servers={servers}
+              t={t}
             />
           )}
-          {needsNoConfig && <p className="text-muted-foreground text-sm">No additional configuration needed.</p>}
+          {needsNoConfig && (
+            <p className="text-muted-foreground text-sm">{t('dialogs.widgetConfig.messages.noConfigNeeded')}</p>
+          )}
         </div>
         <DialogFooter>
-          <Button onClick={handleSubmit}>{widget ? t('save', 'Save') : t('add', 'Add')}</Button>
+          <Button onClick={handleSubmit}>{widget ? t('save') : t('add_widget')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

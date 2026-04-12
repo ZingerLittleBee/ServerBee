@@ -234,7 +234,7 @@ function ServersListPage() {
       toast.success(t('servers:cleanup_success', { count: data.deleted_count }))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Operation failed')
+      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
     }
   })
 
@@ -253,10 +253,10 @@ function ServersListPage() {
     const count = selectedCount
     batchDeleteMutation.mutate(selectedIds, {
       onSuccess: () => {
-        toast.success(`Deleted ${count} server(s)`)
+        toast.success(t('toast_deleted', { count }))
       },
       onError: (err) => {
-        toast.error(err instanceof Error ? err.message : 'Operation failed')
+        toast.error(err instanceof Error ? err.message : t('toast_batch_delete_failed'))
       }
     })
   }
@@ -293,10 +293,10 @@ function ServersListPage() {
           value={[viewMode]}
           variant="outline"
         >
-          <ToggleGroupItem aria-label="Table view" value="table">
+          <ToggleGroupItem aria-label={t('common:a11y.table_view')} value="table">
             <Table2 className="size-4" />
           </ToggleGroupItem>
-          <ToggleGroupItem aria-label="Grid view" value="grid">
+          <ToggleGroupItem aria-label={t('common:a11y.grid_view')} value="grid">
             <LayoutGrid className="size-4" />
           </ToggleGroupItem>
         </ToggleGroup>

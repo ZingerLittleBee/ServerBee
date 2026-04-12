@@ -38,21 +38,21 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleString()
 }
 
-function formatRelative(iso: string): string {
+function formatRelative(iso: string, t: (key: string, options?: { count: number }) => string): string {
   const diff = Date.now() - new Date(iso).getTime()
   const mins = Math.floor(diff / 60_000)
   if (mins < 1) {
-    return 'just now'
+    return t('time_just_now')
   }
   if (mins < 60) {
-    return `${mins}m ago`
+    return t('time_minutes_ago', { count: mins })
   }
   const hours = Math.floor(mins / 60)
   if (hours < 24) {
-    return `${hours}h ago`
+    return t('time_hours_ago', { count: hours })
   }
   const days = Math.floor(hours / 24)
-  return `${days}d ago`
+  return t('time_days_ago', { count: days })
 }
 
 // ---------------------------------------------------------------------------
@@ -74,32 +74,42 @@ function GlobalStatusBanner({ status, t }: { status: GlobalStatus; t: (key: stri
   )
 }
 
-function ServerStatusDot({ inMaintenance, online }: { inMaintenance: boolean; online: boolean }) {
+function ServerStatusDot({
+  inMaintenance,
+  online,
+  t
+}: {
+  inMaintenance: boolean
+  online: boolean
+  t: (key: string) => string
+}) {
   if (inMaintenance) {
-    return <span className="inline-block size-3 rounded-full bg-blue-500" title="Maintenance" />
+    return <span className="inline-block size-3 rounded-full bg-blue-500" title={t('maintenance')} />
   }
   if (online) {
-    return <span className="inline-block size-3 rounded-full bg-emerald-500" title="Online" />
+    return <span className="inline-block size-3 rounded-full bg-emerald-500" title={t('online_status')} />
   }
-  return <span className="inline-block size-3 rounded-full bg-gray-400" title="Offline" />
+  return <span className="inline-block size-3 rounded-full bg-gray-400" title={t('offline_status')} />
 }
 
 function ServerRow({
   page,
-  server
+  server,
+  t
 }: {
   page: PublicStatusPageData['page']
   server: PublicStatusPageData['servers'][number]
+  t: (key: string) => string
 }) {
   const uptimePct = computeAggregateUptime(server.uptime_daily)
   return (
     <div className="flex items-center gap-3 rounded-md border px-4 py-3">
-      <ServerStatusDot inMaintenance={server.in_maintenance} online={server.online} />
+      <ServerStatusDot inMaintenance={server.in_maintenance} online={server.online} t={t} />
       <span className="min-w-0 flex-1 truncate font-medium text-sm">{server.server_name}</span>
       {server.in_maintenance && (
         <Badge className="shrink-0" variant="secondary">
           <Wrench className="mr-1 size-3" />
-          Maintenance
+          {t('maintenance')}
         </Badge>
       )}
       <div className="hidden w-64 sm:block">
@@ -118,19 +128,22 @@ function ServerRow({
   )
 }
 
-function SeverityBadge({ severity }: { severity: string }) {
+function SeverityBadge({ severity, t }: { severity: string; t: (key: string, options?: { count: number }) => string }) {
   const variants: Record<string, 'default' | 'destructive' | 'secondary'> = {
     critical: 'destructive',
     major: 'destructive',
     minor: 'secondary'
   }
-  return <Badge variant={variants[severity] ?? 'default'}>{severity}</Badge>
+  const severityKey = `incidents_severity_${severity}` as const
+  return <Badge variant={variants[severity] ?? 'default'}>{t(severityKey)}</Badge>
 }
 
 function IncidentCard({
-  incident
+  incident,
+  t
 }: {
   incident: PublicStatusPageData['active_incidents'][number] | PublicStatusPageData['recent_incidents'][number]
+  t: (key: string, options?: { count: number }) => string
 }) {
   const [expanded, setExpanded] = useState(true)
 
@@ -142,11 +155,11 @@ function IncidentCard({
         type="button"
       >
         <div className="flex items-center gap-2">
-          <SeverityBadge severity={incident.severity} />
+          <SeverityBadge severity={incident.severity} t={t} />
           <span className="font-semibold text-sm">{incident.title}</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-muted-foreground text-xs">{formatRelative(incident.created_at)}</span>
+          <span className="text-muted-foreground text-xs">{formatRelative(incident.created_at, t)}</span>
           {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
         </div>
       </button>
@@ -270,7 +283,7 @@ function StatusPageContent({ data }: { data: PublicStatusPageData }) {
           <h2 className="mb-3 font-semibold text-lg">{t('active_incidents')}</h2>
           <div className="space-y-3">
             {data.active_incidents.map((incident) => (
-              <IncidentCard incident={incident} key={incident.id} />
+              <IncidentCard incident={incident} key={incident.id} t={t} />
             ))}
           </div>
         </section>
@@ -304,7 +317,7 @@ function StatusPageContent({ data }: { data: PublicStatusPageData }) {
                 )}
                 <div className="space-y-2">
                   {servers.map((s) => (
-                    <ServerRow key={s.server_id} page={data.page} server={s} />
+                    <ServerRow key={s.server_id} page={data.page} server={s} t={t} />
                   ))}
                 </div>
               </div>
@@ -327,7 +340,7 @@ function StatusPageContent({ data }: { data: PublicStatusPageData }) {
           {showRecent && (
             <div className="mt-3 space-y-3">
               {data.recent_incidents.map((incident) => (
-                <IncidentCard incident={incident} key={incident.id} />
+                <IncidentCard incident={incident} key={incident.id} t={t} />
               ))}
             </div>
           )}

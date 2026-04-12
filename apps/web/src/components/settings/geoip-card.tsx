@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Database, Download, RefreshCw } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -22,22 +23,20 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function StatusDetails({ status }: { status: GeoIpStatus }) {
+function StatusDetails({ status, t }: { status: GeoIpStatus; t: (key: string) => string }) {
   return (
     <div>
-      <p className="font-medium">{status.installed ? 'Installed' : 'Not Installed'}</p>
+      <p className="font-medium">{status.installed ? t('geoip.installed') : t('geoip.not_installed')}</p>
       {status.installed && status.source === 'custom' && (
-        <p className="text-muted-foreground text-sm">Using custom MMDB file</p>
+        <p className="text-muted-foreground text-sm">{t('geoip.custom_file')}</p>
       )}
       {status.installed && status.file_size && (
         <p className="text-muted-foreground text-sm">
           {formatBytes(status.file_size)}
-          {status.updated_at && ` · Updated ${new Date(status.updated_at).toLocaleDateString()}`}
+          {status.updated_at && ` · ${t('geoip.updated')} ${new Date(status.updated_at).toLocaleDateString()}`}
         </p>
       )}
-      {!status.installed && (
-        <p className="text-muted-foreground text-sm">Download the GeoIP database to show server locations on the map</p>
-      )}
+      {!status.installed && <p className="text-muted-foreground text-sm">{t('geoip.download_prompt')}</p>}
     </div>
   )
 }
@@ -45,11 +44,13 @@ function StatusDetails({ status }: { status: GeoIpStatus }) {
 function DownloadButton({
   installed,
   isPending,
-  onDownload
+  onDownload,
+  t
 }: {
   installed: boolean
   isPending: boolean
   onDownload: () => void
+  t: (key: string) => string
 }) {
   return (
     <Button disabled={isPending} onClick={onDownload} variant="outline">
@@ -58,14 +59,15 @@ function DownloadButton({
       ) : (
         <Download className="mr-1.5 size-4" />
       )}
-      {isPending ? 'Downloading...' : null}
-      {!isPending && installed ? 'Update' : null}
-      {isPending || installed ? null : 'Download'}
+      {isPending ? t('geoip.downloading') : null}
+      {!isPending && installed ? t('geoip.update') : null}
+      {isPending || installed ? null : t('geoip.download')}
     </Button>
   )
 }
 
 export function GeoIpCard() {
+  const { t } = useTranslation('settings')
   const queryClient = useQueryClient()
 
   const { data: status, isLoading } = useQuery<GeoIpStatus>({
@@ -84,17 +86,15 @@ export function GeoIpCard() {
       }
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Download failed')
+      toast.error(err instanceof Error ? err.message : t('geoip.download_failed'))
     }
   })
 
   return (
     <div className="space-y-4">
       <div className="rounded-lg border bg-card p-6">
-        <h2 className="mb-1 font-semibold text-lg">GeoIP Database</h2>
-        <p className="mb-4 text-muted-foreground text-sm">
-          Download the GeoIP database to show server locations on the map
-        </p>
+        <h2 className="mb-1 font-semibold text-lg">{t('geoip.title')}</h2>
+        <p className="mb-4 text-muted-foreground text-sm">{t('geoip.description')}</p>
 
         {isLoading ? (
           <div className="space-y-3">
@@ -105,7 +105,7 @@ export function GeoIpCard() {
           <div className="space-y-4">
             <div className="flex items-center gap-3">
               <Database className="size-5 text-muted-foreground" />
-              {status && <StatusDetails status={status} />}
+              {status && <StatusDetails status={status} t={t} />}
             </div>
 
             {status?.source !== 'custom' && (
@@ -113,6 +113,7 @@ export function GeoIpCard() {
                 installed={status?.installed ?? false}
                 isPending={downloadMutation.isPending}
                 onDownload={() => downloadMutation.mutate()}
+                t={t}
               />
             )}
           </div>
@@ -120,11 +121,11 @@ export function GeoIpCard() {
       </div>
 
       <p className="text-muted-foreground text-xs">
-        Data provided by{' '}
+        {t('geoip.data_provider')}{' '}
         <a className="underline" href="https://db-ip.com" rel="noopener noreferrer" target="_blank">
           DB-IP
         </a>
-        , licensed under{' '}
+        , {t('geoip.license')}{' '}
         <a
           className="underline"
           href="https://creativecommons.org/licenses/by/4.0/"

@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { UptimeDailyEntry } from '@/lib/api-schema'
 import { cn } from '@/lib/utils'
 import { computeUptimeColor, formatUptimeTooltip, type UptimeColor } from '@/lib/widget-helpers'
@@ -29,6 +30,7 @@ export function UptimeTimeline({
   showLegend = false,
   height = 28
 }: UptimeTimelineProps) {
+  const { t } = useTranslation('status')
   const segments = useMemo(() => {
     const slice = days.slice(-rangeDays)
     const padCount = rangeDays - slice.length
@@ -45,8 +47,8 @@ export function UptimeTimeline({
     <div className="w-full">
       {showLabels && (
         <div className="mb-1 flex justify-between text-muted-foreground text-xs">
-          <span>{rangeDays} days ago</span>
-          <span>Today</span>
+          <span>{t('uptime_days_ago', { count: rangeDays })}</span>
+          <span>{t('uptime_today')}</span>
         </div>
       )}
       <div className="relative flex w-full" style={{ height, gap: '1.5px' }}>
@@ -58,11 +60,11 @@ export function UptimeTimeline({
               className={cn('group relative flex-1 rounded-[2px]', COLOR_MAP[color])}
               data-segment={color}
               key={entry.date || `pad-${i.toString()}`}
-              title={`${tooltip.date || 'No data'} - ${tooltip.percentage} - ${tooltip.duration}`}
+              title={`${tooltip.date || t('uptime_no_data')} - ${tooltip.percentage} - ${tooltip.duration}`}
             >
               <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 rounded-md bg-popover px-2.5 py-1.5 shadow-md ring-1 ring-border group-hover:block">
                 <div className="whitespace-nowrap text-xs">
-                  <p className="font-medium">{tooltip.date || 'No data'}</p>
+                  <p className="font-medium">{tooltip.date || t('uptime_no_data')}</p>
                   <p className="text-muted-foreground">
                     {tooltip.percentage} &middot; {tooltip.duration}
                   </p>
@@ -77,19 +79,19 @@ export function UptimeTimeline({
         <div className="mt-2 flex gap-4 text-muted-foreground text-xs">
           <span className="flex items-center gap-1">
             <span className="inline-block size-2.5 rounded-[2px] bg-emerald-500" />
-            Operational
+            {t('uptime_operational')}
           </span>
           <span className="flex items-center gap-1">
             <span className="inline-block size-2.5 rounded-[2px] bg-amber-500" />
-            Degraded
+            {t('uptime_degraded')}
           </span>
           <span className="flex items-center gap-1">
             <span className="inline-block size-2.5 rounded-[2px] bg-red-500" />
-            Down
+            {t('uptime_down')}
           </span>
           <span className="flex items-center gap-1">
             <span className="inline-block size-2.5 rounded-[2px] bg-muted" />
-            No data
+            {t('uptime_no_data')}
           </span>
         </div>
       )}

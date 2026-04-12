@@ -1,0 +1,174 @@
+{
+  "page": {
+    "title": "Service Monitors"
+  },
+  "empty": {
+    "noMonitors": "No service monitors configured yet.",
+    "createFirst": "Create your first monitor"
+  },
+  "dialog": {
+    "addTitle": "Add Monitor",
+    "editTitle": "Edit Monitor",
+    "addDescription": "Create a new service monitor.",
+    "editDescription": "Update service monitor configuration."
+  },
+  "monitorTypes": {
+    "ssl": "SSL",
+    "dns": "DNS",
+    "http_keyword": "HTTP Keyword",
+    "tcp": "TCP",
+    "whois": "WHOIS"
+  },
+  "form": {
+    "name": "Name",
+    "type": "Type",
+    "target": "Target",
+    "interval": "Interval (seconds)",
+    "enabled": "Enabled"
+  },
+  "sslConfig": {
+    "warningDays": "Warning Days",
+    "criticalDays": "Critical Days"
+  },
+  "dnsConfig": {
+    "recordType": "Record Type",
+    "expectedValues": "Expected Values (one per line)",
+    "nameserver": "Nameserver (optional)"
+  },
+  "httpConfig": {
+    "method": "Method",
+    "timeout": "Timeout (s)",
+    "keyword": "Keyword",
+    "keywordExists": "Keyword should exist in response",
+    "expectedStatus": "Expected Status Codes (comma-separated)"
+  },
+  "tcpConfig": {
+    "timeout": "Timeout (s)"
+  },
+  "whoisConfig": {
+    "warningDays": "Warning Days",
+    "criticalDays": "Critical Days"
+  },
+  "table": {
+    "status": "Status",
+    "name": "Name",
+    "type": "Type",
+    "target": "Target",
+    "interval": "Interval",
+    "enabled": "Enabled",
+    "lastChecked": "Last Checked",
+    "actions": "Actions"
+  },
+  "targetPlaceholder": {
+    "ssl": "example.com or example.com:8443",
+    "dns": "example.com",
+    "http_keyword": "https://example.com/health",
+    "tcp": "example.com:3306",
+    "whois": "example.com"
+  },
+  "namePlaceholder": "My SSL Check",
+  "dnsExpectedPlaceholder": "e.g. 93.184.216.34",
+  "dnsNameserverPlaceholder": "e.g. 8.8.8.8",
+  "httpKeywordPlaceholder": "String to search in response body",
+  "httpStatusPlaceholder": "200, 201",
+  "aria": {
+    "viewDetails": "View details",
+    "triggerCheck": "Trigger check",
+    "edit": "Edit monitor",
+    "deleteMonitor": "Delete monitor"
+  },
+  "toast": {
+    "created": "Monitor created",
+    "updated": "Monitor updated",
+    "deleted": "Monitor deleted",
+    "createFailed": "Failed to create monitor",
+    "updateFailed": "Failed to update monitor",
+    "deleteFailed": "Failed to delete monitor",
+    "checkTriggered": "Check triggered",
+    "triggerFailed": "Failed to trigger check",
+    "toggleFailed": "Failed to toggle monitor"
+  },
+  "stats": {
+    "uptime": "Uptime",
+    "avgLatency": "Avg Latency",
+    "lastCheck": "Last Check"
+  },
+  "detail": {
+    "ssl": {
+      "title": "SSL Certificate",
+      "subject": "Subject",
+      "issuer": "Issuer",
+      "notBefore": "Not Before",
+      "notAfter": "Not After",
+      "daysRemaining": "Days Remaining",
+      "sha256Fingerprint": "SHA-256 Fingerprint",
+      "warning": "Warning"
+    },
+    "dns": {
+      "title": "DNS Resolution",
+      "recordType": "Record Type",
+      "nameserver": "Nameserver",
+      "changed": "Changed",
+      "resolvedValues": "Resolved Values",
+      "yes": "Yes",
+      "no": "No"
+    },
+    "http": {
+      "title": "HTTP Check",
+      "statusCode": "Status Code",
+      "keywordFound": "Keyword Found",
+      "responseTime": "Response Time",
+      "yes": "Yes",
+      "no": "No",
+      "na": "N/A"
+    },
+    "tcp": {
+      "title": "TCP Connection",
+      "connected": "Connected",
+      "yes": "Yes",
+      "no": "No"
+    },
+    "whois": {
+      "title": "WHOIS Information",
+      "registrar": "Registrar",
+      "expiryDate": "Expiry Date",
+      "daysRemaining": "Days Remaining",
+      "warning": "Warning"
+    }
+  },
+  "history": {
+    "title": "Check History",
+    "empty": "No check history yet.",
+    "table": {
+      "time": "Time",
+      "status": "Status",
+      "latency": "Latency",
+      "error": "Error"
+    },
+    "status": {
+      "ok": "OK",
+      "fail": "Fail"
+    }
+  },
+  "navigation": {
+    "backToList": "Back to Service Monitors"
+  },
+  "actions": {
+    "checkNow": "Check Now",
+    "addMonitor": "Add Monitor"
+  },
+  "status": {
+    "up": "Up",
+    "down": "Down",
+    "online": "Online",
+    "offline": "Offline",
+    "pending": "Pending",
+    "notChecked": "Not checked yet"
+  },
+  "chart": {
+    "responseTime": "Response Time",
+    "latency": "Latency",
+    "noRecords": "No records available for charting."
+  },
+  "notFound": "Service monitor not found."
+}

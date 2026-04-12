@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -62,17 +63,17 @@ const historyConfig = {
 
 type DayRange = 7 | 30 | 90
 
-const DAY_RANGES: { days: DayRange; label: string }[] = [
-  { days: 7, label: '7d' },
-  { days: 30, label: '30d' },
-  { days: 90, label: '90d' }
+const DAY_RANGES: { days: DayRange; labelKey: string }[] = [
+  { days: 7, labelKey: 'traffic_7d' },
+  { days: 30, labelKey: 'traffic_30d' },
+  { days: 90, labelKey: 'traffic_90d' }
 ]
 
 // ---------------------------------------------------------------------------
 // Cycle overview card
 // ---------------------------------------------------------------------------
 
-function CycleOverviewCard({ cycle }: { cycle: CycleData['current'] }) {
+function CycleOverviewCard({ cycle, t }: { cycle: CycleData['current']; t: (key: string) => string }) {
   const percent = cycle.percent ?? 0
   const total = cycle.bytes_in + cycle.bytes_out
 
@@ -99,16 +100,16 @@ function CycleOverviewCard({ cycle }: { cycle: CycleData['current'] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Current Billing Cycle</CardTitle>
+        <CardTitle>{t('traffic_current_cycle')}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
           <div>
-            <span className="text-muted-foreground">Start:</span>{' '}
+            <span className="text-muted-foreground">{t('traffic_start')}</span>{' '}
             <span className="font-medium">{new Date(cycle.start).toLocaleDateString()}</span>
           </div>
           <div>
-            <span className="text-muted-foreground">End:</span>{' '}
+            <span className="text-muted-foreground">{t('traffic_end')}</span>{' '}
             <span className="font-medium">{new Date(cycle.end).toLocaleDateString()}</span>
           </div>
         </div>
@@ -132,15 +133,15 @@ function CycleOverviewCard({ cycle }: { cycle: CycleData['current'] }) {
 
         <div className="flex flex-wrap gap-6 text-sm">
           <div>
-            <span className="text-muted-foreground">Inbound:</span>{' '}
+            <span className="text-muted-foreground">{t('traffic_inbound')}:</span>{' '}
             <span className="font-medium">{formatBytes(cycle.bytes_in)}</span>
           </div>
           <div>
-            <span className="text-muted-foreground">Outbound:</span>{' '}
+            <span className="text-muted-foreground">{t('traffic_outbound')}:</span>{' '}
             <span className="font-medium">{formatBytes(cycle.bytes_out)}</span>
           </div>
           <div>
-            <span className="text-muted-foreground">Total:</span>{' '}
+            <span className="text-muted-foreground">{t('traffic_total')}:</span>{' '}
             <span className="font-medium">{formatBytes(total)}</span>
           </div>
         </div>
@@ -153,7 +154,7 @@ function CycleOverviewCard({ cycle }: { cycle: CycleData['current'] }) {
 // Daily trend chart
 // ---------------------------------------------------------------------------
 
-function DailyTrendChart({ serverId }: { serverId: string }) {
+function DailyTrendChart({ serverId, t }: { serverId: string; t: (key: string) => string }) {
   const [dayRange, setDayRange] = useState<DayRange>(30)
 
   const fromDate = useMemo(() => {
@@ -177,7 +178,7 @@ function DailyTrendChart({ serverId }: { serverId: string }) {
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle>Daily Traffic Trend</CardTitle>
+          <CardTitle>{t('traffic_daily_trend')}</CardTitle>
           <div className="flex gap-1">
             {DAY_RANGES.map((r) => (
               <button
@@ -191,7 +192,7 @@ function DailyTrendChart({ serverId }: { serverId: string }) {
                 onClick={() => setDayRange(r.days)}
                 type="button"
               >
-                {r.label}
+                {t(r.labelKey)}
               </button>
             ))}
           </div>
@@ -235,7 +236,7 @@ function DailyTrendChart({ serverId }: { serverId: string }) {
 // Historical cycle comparison chart
 // ---------------------------------------------------------------------------
 
-function HistoryCycleChart({ history }: { history: CycleData['history'] }) {
+function HistoryCycleChart({ history, t }: { history: CycleData['history']; t: (key: string) => string }) {
   if (history.length === 0) {
     return null
   }
@@ -249,7 +250,7 @@ function HistoryCycleChart({ history }: { history: CycleData['history'] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Historical Cycle Comparison</CardTitle>
+        <CardTitle>{t('traffic_history_comparison')}</CardTitle>
       </CardHeader>
       <CardContent>
         <ChartContainer className="h-[260px] w-full" config={historyConfig}>
@@ -276,6 +277,7 @@ function HistoryCycleChart({ history }: { history: CycleData['history'] }) {
 // ---------------------------------------------------------------------------
 
 export function TrafficTab({ billingCycle, serverId }: { billingCycle: string | null | undefined; serverId: string }) {
+  const { t } = useTranslation('servers')
   const hasBillingCycle = billingCycle != null && billingCycle.length > 0
 
   const { data: cycleData, isLoading } = useQuery<CycleData>({
@@ -288,7 +290,7 @@ export function TrafficTab({ billingCycle, serverId }: { billingCycle: string | 
   if (!hasBillingCycle) {
     return (
       <div className="mt-4 rounded-lg border bg-card p-12 text-center">
-        <p className="text-muted-foreground">Configure billing cycle in server settings to view traffic statistics.</p>
+        <p className="text-muted-foreground">{t('traffic_configure_prompt')}</p>
       </div>
     )
   }
@@ -305,9 +307,9 @@ export function TrafficTab({ billingCycle, serverId }: { billingCycle: string | 
 
   return (
     <div className="mt-4 space-y-4">
-      {cycleData?.current && <CycleOverviewCard cycle={cycleData.current} />}
-      <DailyTrendChart serverId={serverId} />
-      {cycleData?.history && <HistoryCycleChart history={cycleData.history} />}
+      {cycleData?.current && <CycleOverviewCard cycle={cycleData.current} t={t} />}
+      <DailyTrendChart serverId={serverId} t={t} />
+      {cycleData?.history && <HistoryCycleChart history={cycleData.history} t={t} />}
     </div>
   )
 }

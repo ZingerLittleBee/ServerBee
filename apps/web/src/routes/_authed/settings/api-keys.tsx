@@ -49,10 +49,10 @@ function ApiKeysPage() {
         .catch(() => {
           // Invalidation error is non-critical
         })
-      toast.success('API key created')
+      toast.success(t('api_keys.toast_created'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Operation failed')
+      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
     }
   })
 
@@ -66,10 +66,10 @@ function ApiKeysPage() {
         .catch(() => {
           // Invalidation error is non-critical
         })
-      toast.success('API key deleted')
+      toast.success(t('api_keys.toast_deleted'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Operation failed')
+      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
     }
   })
 

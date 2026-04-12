@@ -110,9 +110,9 @@ function averageLossRatio(point: ServerCardMetricPoint): number | null {
   return point.targets.reduce((sum, target) => sum + target.lossRatio, 0) / point.targets.length
 }
 
-function formatTooltipLabel(point: ServerCardMetricPoint): string {
+function formatTooltipLabel(point: ServerCardMetricPoint, t: (key: string) => string): string {
   if (point.synthetic) {
-    return 'Current targets'
+    return t('current_targets')
   }
 
   return new Date(point.timestamp).toLocaleTimeString([], {
@@ -123,7 +123,11 @@ function formatTooltipLabel(point: ServerCardMetricPoint): string {
   })
 }
 
-function NetworkChartTooltip({ active, payload }: ComponentProps<typeof ChartTooltip>) {
+function NetworkChartTooltip({
+  active,
+  payload,
+  t
+}: ComponentProps<typeof ChartTooltip> & { t: (key: string) => string }) {
   if (!(active && payload?.length)) {
     return null
   }
@@ -135,7 +139,7 @@ function NetworkChartTooltip({ active, payload }: ComponentProps<typeof ChartToo
 
   return (
     <div className="grid min-w-48 gap-1.5 rounded-lg border border-border/50 bg-background/95 px-3 py-2 text-xs shadow-xl backdrop-blur-sm">
-      <div className="font-medium">{formatTooltipLabel(point)}</div>
+      <div className="font-medium">{formatTooltipLabel(point, t)}</div>
       <div className="grid gap-1.5">
         {point.targets.map((target) => {
           const failed = isLatencyFailure(target.lossRatio)
@@ -248,7 +252,7 @@ export function ServerCard({ server }: ServerCardProps) {
                 </span>
               </div>
             </div>
-            <figure aria-label="Latency trend" className="relative z-10 m-0">
+            <figure aria-label={t('common:a11y.latency_trend')} className="relative z-10 m-0">
               <ChartContainer className="aspect-auto h-7 w-full" config={LATENCY_CHART_CONFIG}>
                 <BarChart
                   accessibilityLayer
@@ -256,7 +260,7 @@ export function ServerCard({ server }: ServerCardProps) {
                   data={latencyPoints}
                   margin={{ bottom: 0, left: 0, right: 0, top: 0 }}
                 >
-                  <ChartTooltip content={<NetworkChartTooltip />} cursor={false} />
+                  <ChartTooltip content={<NetworkChartTooltip t={t} />} cursor={false} />
                   <Bar dataKey="value" radius={2}>
                     {latencyPoints.map((point) => (
                       <Cell
@@ -272,7 +276,7 @@ export function ServerCard({ server }: ServerCardProps) {
               </ChartContainer>
             </figure>
             <ChartContainer
-              aria-label="Packet loss indicator"
+              aria-label={t('common:a11y.packet_loss_indicator')}
               className="pointer-events-none mt-0.5 aspect-auto h-1 w-full"
               config={LOSS_STRIP_CONFIG}
             >

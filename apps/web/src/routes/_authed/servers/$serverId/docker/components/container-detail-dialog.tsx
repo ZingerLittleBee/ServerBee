@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { DockerContainer, DockerContainerStats } from '../types'
@@ -26,6 +27,7 @@ function formatCreatedDate(timestamp: number): string {
 }
 
 export function ContainerDetailDialog({ container, serverId, stats, open, onOpenChange }: ContainerDetailDialogProps) {
+  const { t } = useTranslation('docker')
   const containerStats = useMemo(() => {
     if (!container) {
       return undefined
@@ -36,6 +38,8 @@ export function ContainerDetailDialog({ container, serverId, stats, open, onOpen
   if (!container) {
     return null
   }
+
+  const portsDisplay = formatPortMapping(container)
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -48,28 +52,28 @@ export function ContainerDetailDialog({ container, serverId, stats, open, onOpen
           {/* Container Meta Info */}
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <p className="text-muted-foreground text-xs">Image</p>
+              <p className="text-muted-foreground text-xs">{t('detail.image')}</p>
               <p className="mt-0.5 truncate font-mono text-sm" title={container.image}>
                 {container.image}
               </p>
             </div>
             <div>
-              <p className="text-muted-foreground text-xs">Status</p>
+              <p className="text-muted-foreground text-xs">{t('detail.status')}</p>
               <div className="mt-0.5 flex items-center gap-2">
                 <Badge variant={container.state === 'running' ? 'default' : 'secondary'}>{container.state}</Badge>
                 <span className="text-muted-foreground text-sm">{container.status}</span>
               </div>
             </div>
             <div>
-              <p className="text-muted-foreground text-xs">Ports</p>
-              <p className="mt-0.5 font-mono text-sm">{formatPortMapping(container)}</p>
+              <p className="text-muted-foreground text-xs">{t('detail.ports')}</p>
+              <p className="mt-0.5 font-mono text-sm">{portsDisplay === 'None' ? t('detail.noPorts') : portsDisplay}</p>
             </div>
             <div>
-              <p className="text-muted-foreground text-xs">Created</p>
+              <p className="text-muted-foreground text-xs">{t('detail.created')}</p>
               <p className="mt-0.5 text-sm">{formatCreatedDate(container.created)}</p>
             </div>
             <div className="sm:col-span-2">
-              <p className="text-muted-foreground text-xs">Container ID</p>
+              <p className="text-muted-foreground text-xs">{t('detail.containerId')}</p>
               <p className="mt-0.5 truncate font-mono text-sm" title={container.id}>
                 {container.id}
               </p>

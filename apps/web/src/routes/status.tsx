@@ -55,10 +55,10 @@ function ServerStatusCard({ server }: { server: StatusServer }) {
           </div>
           <div className="mt-3 flex items-center justify-between text-muted-foreground text-xs">
             <div className="flex gap-3">
-              <span title="Network In">{formatSpeed(m.net_in_speed)}</span>
-              <span title="Network Out">{formatSpeed(m.net_out_speed)}</span>
+              <span title={t('network_in')}>{formatSpeed(m.net_in_speed)}</span>
+              <span title={t('network_out')}>{formatSpeed(m.net_out_speed)}</span>
             </div>
-            <span title="Uptime">{formatUptime(m.uptime)}</span>
+            <span title={t('uptime')}>{formatUptime(m.uptime)}</span>
           </div>
         </>
       ) : (
