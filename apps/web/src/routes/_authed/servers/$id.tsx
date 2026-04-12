@@ -162,7 +162,8 @@ function MetricsTabContent({
   hasGpu,
   hasTemperature,
   rangeIndex,
-  realtimeFormatTime,
+  formatTime,
+  formatTooltipLabel,
   serverId
 }: {
   chartData: Record<string, unknown>[]
@@ -176,7 +177,8 @@ function MetricsTabContent({
   hasGpu: boolean
   hasTemperature: boolean
   rangeIndex: number
-  realtimeFormatTime: ((time: string) => string) | undefined
+  formatTime: ((time: string) => string) | undefined
+  formatTooltipLabel: ((time: string) => string) | undefined
   serverId: string
 }) {
   const { t } = useTranslation('servers')
@@ -203,7 +205,9 @@ function MetricsTabContent({
           color="var(--color-chart-1)"
           data={chartData}
           dataKey="cpu"
-          formatTime={realtimeFormatTime}
+          domain={[0, 100]}
+          formatTime={formatTime}
+          formatTooltipLabel={formatTooltipLabel}
           title={t('chart_cpu')}
           unit="%"
         />
@@ -211,7 +215,9 @@ function MetricsTabContent({
           color="var(--color-chart-2)"
           data={chartData}
           dataKey="memory_pct"
-          formatTime={realtimeFormatTime}
+          domain={[0, 100]}
+          formatTime={formatTime}
+          formatTooltipLabel={formatTooltipLabel}
           title={t('chart_memory')}
           unit="%"
         />
@@ -219,7 +225,9 @@ function MetricsTabContent({
           color="var(--color-chart-3)"
           data={chartData}
           dataKey="disk_pct"
-          formatTime={realtimeFormatTime}
+          domain={[0, 100]}
+          formatTime={formatTime}
+          formatTooltipLabel={formatTooltipLabel}
           title={t('chart_disk')}
           unit="%"
         />
@@ -228,7 +236,8 @@ function MetricsTabContent({
           data={chartData}
           dataKey="net_in_speed"
           formatTick={(v) => formatBytes(v)}
-          formatTime={realtimeFormatTime}
+          formatTime={formatTime}
+          formatTooltipLabel={formatTooltipLabel}
           formatValue={(v) => formatBytes(v)}
           title={t('chart_net_in')}
         />
@@ -237,7 +246,8 @@ function MetricsTabContent({
           data={chartData}
           dataKey="net_out_speed"
           formatTick={(v) => formatBytes(v)}
-          formatTime={realtimeFormatTime}
+          formatTime={formatTime}
+          formatTooltipLabel={formatTooltipLabel}
           formatValue={(v) => formatBytes(v)}
           title={t('chart_net_out')}
         />
@@ -245,7 +255,8 @@ function MetricsTabContent({
           color="var(--color-chart-1)"
           data={chartData}
           dataKey="load1"
-          formatTime={realtimeFormatTime}
+          formatTime={formatTime}
+          formatTooltipLabel={formatTooltipLabel}
           title={t('chart_load')}
         />
 
@@ -254,7 +265,8 @@ function MetricsTabContent({
             color="var(--color-chart-4)"
             data={chartData}
             dataKey="temperature"
-            formatTime={realtimeFormatTime}
+            formatTime={formatTime}
+            formatTooltipLabel={formatTooltipLabel}
             title={t('chart_temperature')}
             unit="°C"
           />
@@ -266,7 +278,9 @@ function MetricsTabContent({
               color="var(--color-chart-5)"
               data={gpuChartData}
               dataKey="gpu_usage"
-              formatTime={realtimeFormatTime}
+              domain={[0, 100]}
+              formatTime={formatTime}
+              formatTooltipLabel={formatTooltipLabel}
               title={t('chart_gpu')}
               unit="%"
             />
@@ -274,7 +288,8 @@ function MetricsTabContent({
               color="var(--color-chart-2)"
               data={gpuChartData}
               dataKey="gpu_temp"
-              formatTime={realtimeFormatTime}
+              formatTime={formatTime}
+              formatTooltipLabel={formatTooltipLabel}
               title={t('chart_gpu_temp')}
               unit="°C"
             />
@@ -282,7 +297,9 @@ function MetricsTabContent({
         )}
       </div>
 
-      {hasDiskIo && <DiskIoChart mergedData={diskIoMergedData} perDiskData={diskIoPerDiskData} />}
+      {hasDiskIo && (
+        <DiskIoChart formatTime={formatTime} mergedData={diskIoMergedData} perDiskData={diskIoPerDiskData} />
+      )}
 
       <TrafficCard serverId={serverId} />
     </>
@@ -367,19 +384,44 @@ function ServerDetailPage() {
     }))
   }, [isRealtime, realtimeData, records, server])
 
-  const realtimeFormatTime = useMemo(() => {
-    if (!isRealtime) {
-      return undefined
-    }
-    const firstTimestamp = realtimeData.length > 0 ? realtimeData[0].timestamp : ''
-    return (time: string) => {
-      if (time === firstTimestamp) {
-        return new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  const chartFormatTime = useMemo<((time: string) => string) | undefined>(() => {
+    if (isRealtime) {
+      const firstTimestamp = realtimeData.length > 0 ? realtimeData[0].timestamp : ''
+      return (time: string) => {
+        if (time === firstTimestamp) {
+          const d = new Date(time)
+          return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
+        }
+        const d = new Date(time)
+        return `${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
       }
-      const d = new Date(time)
-      return `${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
     }
-  }, [isRealtime, realtimeData])
+    if (range.hours >= 168) {
+      let lastDate = ''
+      return (time: string) => {
+        const d = new Date(time)
+        const mm = String(d.getMonth() + 1).padStart(2, '0')
+        const dd = String(d.getDate()).padStart(2, '0')
+        const dateStr = `${mm}-${dd}`
+        if (dateStr === lastDate) {
+          return ''
+        }
+        lastDate = dateStr
+        return dateStr
+      }
+    }
+    return undefined
+  }, [isRealtime, realtimeData, range])
+
+  const tooltipFormatTime = useMemo<((time: string) => string) | undefined>(() => {
+    if (range.hours >= 168) {
+      return (time: string) => {
+        const d = new Date(time)
+        return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+      }
+    }
+    return undefined
+  }, [range])
 
   const gpuChartData = useMemo(() => {
     if (!gpuRecords || gpuRecords.length === 0) {
@@ -515,12 +557,13 @@ function ServerDetailPage() {
             chartData={chartData}
             diskIoMergedData={diskIoMergedData}
             diskIoPerDiskData={diskIoPerDiskData}
+            formatTime={chartFormatTime}
+            formatTooltipLabel={tooltipFormatTime}
             gpuChartData={gpuChartData}
             hasDiskIo={hasDiskIo}
             hasGpu={hasGpu}
             hasTemperature={hasTemperature}
             rangeIndex={rangeIndex}
-            realtimeFormatTime={realtimeFormatTime}
             serverId={id}
           />
         </TabsContent>
