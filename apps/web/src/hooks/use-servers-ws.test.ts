@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ServerMetrics } from './use-servers-ws'
-import { mergeServerUpdate, setServerOnlineStatus } from './use-servers-ws'
+import { mergeServerUpdate, setServerCapabilities, setServerOnlineStatus } from './use-servers-ws'
 
 function makeServer(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
   return {
@@ -93,5 +93,16 @@ describe('setServerOnlineStatus', () => {
     const prev = [makeServer({ id: 's1', online: true })]
     const result = setServerOnlineStatus(prev, 'unknown', false)
     expect(result[0].online).toBe(true)
+  })
+})
+
+describe('setServerCapabilities', () => {
+  it('updates configured, local, and effective capabilities together', () => {
+    const prev = [makeServer({ id: 's1' })]
+    const result = setServerCapabilities(prev, 's1', 64, 0, 0)
+
+    expect(result[0].capabilities).toBe(64)
+    expect(result[0].agent_local_capabilities).toBe(0)
+    expect(result[0].effective_capabilities).toBe(0)
   })
 })

@@ -11,10 +11,18 @@ import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { useAuth } from '@/hooks/use-auth'
 import { api } from '@/lib/api-client'
-import { CAP_DEFAULT, CAPABILITIES, hasCap } from '@/lib/capabilities'
+import {
+  CAP_DEFAULT,
+  CAPABILITIES,
+  getEffectiveCapabilityEnabled,
+  hasCap,
+  isClientCapabilityLocked
+} from '@/lib/capabilities'
 
 interface ServerWithCaps {
+  agent_local_capabilities?: number | null
   capabilities?: number | null
+  effective_capabilities?: number | null
   id: string
   protocol_version?: number | null
 }
@@ -111,31 +119,41 @@ export function CapabilitiesDialog({ server }: { server: ServerWithCaps }) {
                     </CardAction>
                   </CardHeader>
                   <CardContent className="flex flex-col gap-3">
-                    {group.items.map((capability, index) => (
-                      <div className="flex flex-col gap-3" key={capability.bit}>
-                        {index > 0 && <Separator />}
-                        <div className="flex items-center justify-between gap-4">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-medium">{t(capability.labelKey)}</span>
-                              <Badge variant={HIGH_RISK_KEYS.has(capability.key) ? 'destructive' : 'secondary'}>
-                                {capability.risk === 'high' ? t('cap_high_risk') : t('cap_low_risk')}
-                              </Badge>
+                    {group.items.map((capability, index) => {
+                      const isEnabled = getEffectiveCapabilityEnabled(
+                        server.effective_capabilities,
+                        caps,
+                        capability.bit
+                      )
+                      const isLocked = isClientCapabilityLocked(server.agent_local_capabilities, capability.bit)
+
+                      return (
+                        <div className="flex flex-col gap-3" key={capability.bit}>
+                          {index > 0 && <Separator />}
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-medium">{t(capability.labelKey)}</span>
+                                <Badge variant={HIGH_RISK_KEYS.has(capability.key) ? 'destructive' : 'secondary'}>
+                                  {capability.risk === 'high' ? t('cap_high_risk') : t('cap_low_risk')}
+                                </Badge>
+                              </div>
+                              <div className="mt-1 text-muted-foreground text-xs">
+                                {isEnabled
+                                  ? t('cap_enabled', { defaultValue: 'Enabled' })
+                                  : t('cap_disabled', { defaultValue: 'Disabled' })}
+                              </div>
                             </div>
-                            <div className="mt-1 text-muted-foreground text-xs">
-                              {hasCap(caps, capability.bit)
-                                ? t('cap_enabled', { defaultValue: 'Enabled' })
-                                : t('cap_disabled', { defaultValue: 'Disabled' })}
-                            </div>
+                            <Switch
+                              checked={isEnabled}
+                              disabled={mutation.isPending || isLocked}
+                              onCheckedChange={() => toggle(capability.bit)}
+                              title={isLocked ? '客户端关闭' : undefined}
+                            />
                           </div>
-                          <Switch
-                            checked={hasCap(caps, capability.bit)}
-                            disabled={mutation.isPending}
-                            onCheckedChange={() => toggle(capability.bit)}
-                          />
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </CardContent>
                 </Card>
               ))}

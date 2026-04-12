@@ -12,6 +12,7 @@ import {
   useUpdateScheduledTask
 } from '@/hooks/use-scheduled-tasks'
 import { api } from '@/lib/api-client'
+import { CAP_EXEC, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
 
 const CRON_SPLIT_RE = /\s+/
 
@@ -21,6 +22,7 @@ interface Props {
 }
 
 interface ServerInfo {
+  effective_capabilities?: number | null
   capabilities?: number
   id: string
   name: string
@@ -97,8 +99,9 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
     if (!servers) {
       return
     }
-    // biome-ignore lint/suspicious/noBitwiseOperators: capability bitmask
-    const execEnabled = servers.filter((s) => !s.capabilities || (s.capabilities & 2) !== 0)
+    const execEnabled = servers.filter((server) =>
+      getEffectiveCapabilityEnabled(server.effective_capabilities, server.capabilities, CAP_EXEC)
+    )
     setSelectedServerIds(selectedServerIds.length === execEnabled.length ? [] : execEnabled.map((s) => s.id))
   }
 
@@ -229,8 +232,11 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
               <div className="max-h-40 overflow-auto">
                 <div className="grid grid-cols-2 gap-1">
                   {servers.map((srv) => {
-                    // biome-ignore lint/suspicious/noBitwiseOperators: capability bitmask
-                    const execEnabled = !srv.capabilities || (srv.capabilities & 2) !== 0
+                    const execEnabled = getEffectiveCapabilityEnabled(
+                      srv.effective_capabilities,
+                      srv.capabilities,
+                      CAP_EXEC
+                    )
                     return (
                       // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox is labelable
                       <label
