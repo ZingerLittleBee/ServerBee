@@ -13,7 +13,7 @@ export function UptimeBar({ data, height = 16, getColor, maxValue, ariaLabel }: 
 
   function barHeight(value: number | null): string {
     if (value == null) {
-      return '100%'
+      return `${MIN_HEIGHT_PCT}%`
     }
     if (effectiveMax <= 0) {
       return `${MIN_HEIGHT_PCT}%`
