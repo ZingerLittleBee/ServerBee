@@ -197,31 +197,31 @@ export function NetworkProbeSettingsPage() {
     () => [
       {
         accessorKey: 'name',
-        header: t('target_name'),
+        header: () => t('target_name'),
         enableSorting: false,
         cell: ({ row }) => <span className="font-medium">{row.original.name}</span>
       },
       {
         accessorKey: 'provider',
-        header: t('target_provider'),
+        header: () => t('target_provider'),
         enableSorting: false,
         cell: ({ row }) => <span className="text-muted-foreground">{row.original.provider || '\u2014'}</span>
       },
       {
         accessorKey: 'location',
-        header: t('target_location'),
+        header: () => t('target_location'),
         enableSorting: false,
         cell: ({ row }) => <span className="text-muted-foreground">{row.original.location || '\u2014'}</span>
       },
       {
         accessorKey: 'target',
-        header: t('target_address'),
+        header: () => t('target_address'),
         enableSorting: false,
         cell: ({ row }) => <span className="font-mono text-muted-foreground text-xs">{row.original.target}</span>
       },
       {
         accessorKey: 'probe_type',
-        header: t('target_type'),
+        header: () => t('target_type'),
         enableSorting: false,
         cell: ({ row }) => (
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
@@ -231,7 +231,7 @@ export function NetworkProbeSettingsPage() {
       },
       {
         accessorKey: 'source',
-        header: t('target_status', { defaultValue: 'Status' }),
+        header: () => t('target_status', { defaultValue: 'Status' }),
         enableSorting: false,
         cell: ({ row }) =>
           row.original.source ? (
@@ -245,7 +245,7 @@ export function NetworkProbeSettingsPage() {
       },
       {
         id: 'actions',
-        header: t('target_actions', { defaultValue: 'Actions' }),
+        header: () => t('target_actions', { defaultValue: 'Actions' }),
         enableSorting: false,
         meta: { className: 'text-right' },
         cell: ({ row }) =>
