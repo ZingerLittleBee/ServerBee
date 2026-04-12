@@ -1,4 +1,4 @@
-use chrono::{NaiveDate, Utc};
+use chrono::{NaiveDate, SecondsFormat, Utc};
 use sea_orm::*;
 use serde::Serialize;
 
@@ -78,13 +78,13 @@ impl UptimeService {
     pub async fn aggregate_daily(db: &DatabaseConnection) -> Result<u32, AppError> {
         let now = Utc::now();
         let today = now.date_naive();
+        // Use RFC3339 format to match sea-orm's DateTimeUtc storage format in SQLite
         let day_start = today
             .and_hms_opt(0, 0, 0)
             .unwrap()
             .and_utc()
-            .format("%Y-%m-%d %H:%M:%S")
-            .to_string();
-        let day_end = now.format("%Y-%m-%d %H:%M:%S").to_string();
+            .to_rfc3339_opts(SecondsFormat::AutoSi, false);
+        let day_end = now.to_rfc3339_opts(SecondsFormat::AutoSi, false);
 
         // Minutes elapsed in the current day so far
         let total_minutes = {
@@ -301,5 +301,63 @@ mod tests {
         let today = Utc::now().date_naive();
         assert_eq!(entries[0].date, today - chrono::Duration::days(89));
         assert_eq!(entries[89].date, today);
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_daily_counts_rfc3339_records() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let now = Utc::now();
+        let server_id = "test-server-uptime";
+
+        // Insert a server
+        db.execute(Statement::from_sql_and_values(
+            db.get_database_backend(),
+            "INSERT INTO servers (id, token_hash, token_prefix, name, weight, hidden, capabilities, protocol_version, features, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, 0, 0, 0, 1, '[]', $5, $5)",
+            [
+                server_id.into(),
+                "hash".into(),
+                "prefix".into(),
+                "Test Server".into(),
+                now.to_rfc3339_opts(SecondsFormat::AutoSi, false).into(),
+            ],
+        ))
+        .await
+        .unwrap();
+
+        // Insert 5 records with RFC3339 timestamps (as sea-orm stores DateTimeUtc)
+        for i in 0..5 {
+            let time = now - chrono::Duration::minutes(i * 2);
+            let time_str = time.to_rfc3339_opts(SecondsFormat::AutoSi, false);
+            db.execute(Statement::from_sql_and_values(
+                db.get_database_backend(),
+                "INSERT INTO records (server_id, time, cpu, mem_used, swap_used, disk_used, \
+                 net_in_speed, net_out_speed, net_in_transfer, net_out_transfer, \
+                 load1, load5, load15, tcp_conn, udp_conn, process_count) \
+                 VALUES ($1, $2, 0.5, 100, 0, 200, 0, 0, 0, 0, 0.1, 0.1, 0.1, 10, 5, 50)",
+                [server_id.into(), time_str.into()],
+            ))
+            .await
+            .unwrap();
+        }
+
+        // Run aggregation
+        let count = UptimeService::aggregate_daily(&db).await.unwrap();
+        assert_eq!(count, 1, "Should aggregate for 1 server");
+
+        // Verify the uptime_daily record was created with correct online_minutes
+        let entries = UptimeService::get_daily_filled(&db, server_id, 1)
+            .await
+            .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].online_minutes, 5,
+            "Should count 5 records as 5 online minutes"
+        );
+        assert!(
+            entries[0].total_minutes > 0,
+            "total_minutes should be > 0 for today"
+        );
     }
 }

@@ -13,24 +13,31 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { DiskIoChartPoint, DiskIoSeries } from '@/lib/disk-io'
 import { formatSpeed } from '@/lib/utils'
 
+function defaultFormatTime(time: string): string {
+  const d = new Date(time)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
 interface DiskIoChartProps {
+  formatTime?: (time: string) => string
   mergedData: DiskIoChartPoint[]
   perDiskData: DiskIoSeries[]
 }
 
-function DiskIoLineChart({ config, data }: { config: ChartConfig; data: DiskIoChartPoint[] }) {
+function DiskIoLineChart({
+  config,
+  data,
+  formatTime = defaultFormatTime
+}: {
+  config: ChartConfig
+  data: DiskIoChartPoint[]
+  formatTime?: (time: string) => string
+}) {
   return (
     <ChartContainer className="h-[260px] w-full" config={config}>
       <LineChart accessibilityLayer data={data}>
         <CartesianGrid vertical={false} />
-        <XAxis
-          axisLine={false}
-          dataKey="timestamp"
-          tickFormatter={(value: string) =>
-            new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          }
-          tickLine={false}
-        />
+        <XAxis axisLine={false} dataKey="timestamp" tickFormatter={formatTime} tickLine={false} />
         <YAxis axisLine={false} tickFormatter={formatSpeed} tickLine={false} width={70} />
         <ChartTooltip content={<ChartTooltipContent hideLabel valueFormatter={(value) => formatSpeed(value)} />} />
         <ChartLegend content={<ChartLegendContent />} />
@@ -55,7 +62,7 @@ function DiskIoLineChart({ config, data }: { config: ChartConfig; data: DiskIoCh
   )
 }
 
-export function DiskIoChart({ mergedData, perDiskData }: DiskIoChartProps) {
+export function DiskIoChart({ formatTime, mergedData, perDiskData }: DiskIoChartProps) {
   const { t } = useTranslation('servers')
 
   if (mergedData.length === 0 && perDiskData.length === 0) {
@@ -80,7 +87,7 @@ export function DiskIoChart({ mergedData, perDiskData }: DiskIoChartProps) {
 
         <CardContent>
           <TabsContent value="merged">
-            <DiskIoLineChart config={chartConfig} data={mergedData} />
+            <DiskIoLineChart config={chartConfig} data={mergedData} formatTime={formatTime} />
           </TabsContent>
 
           <TabsContent value="per-disk">
@@ -88,7 +95,7 @@ export function DiskIoChart({ mergedData, perDiskData }: DiskIoChartProps) {
               {perDiskData.map((series) => (
                 <div key={series.name}>
                   <h4 className="mb-3 font-medium text-sm">{series.name}</h4>
-                  <DiskIoLineChart config={chartConfig} data={series.data} />
+                  <DiskIoLineChart config={chartConfig} data={series.data} formatTime={formatTime} />
                 </div>
               ))}
             </div>

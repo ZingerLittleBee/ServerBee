@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::{Datelike, Duration, NaiveDate, Utc};
+use chrono::{Datelike, Duration, NaiveDate, SecondsFormat, Utc};
 use sea_orm::{ConnectionTrait, DatabaseConnection, EntityTrait, Statement};
 use serde::Serialize;
 
@@ -176,9 +176,9 @@ impl TrafficService {
 
     /// Clean up task_results older than the given number of days.
     pub async fn cleanup_task_results(db: &DatabaseConnection, days: u32) -> Result<u64, AppError> {
+        // Use RFC3339 format to match sea-orm's DateTimeUtc storage format
         let cutoff = (Utc::now() - Duration::days(days as i64))
-            .format("%Y-%m-%d %H:%M:%S")
-            .to_string();
+            .to_rfc3339_opts(SecondsFormat::AutoSi, false);
         let result = db
             .execute(Statement::from_sql_and_values(
                 db.get_database_backend(),
