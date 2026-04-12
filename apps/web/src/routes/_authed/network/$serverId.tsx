@@ -624,7 +624,7 @@ function NetworkDetailPage() {
 
       {/* Latency chart */}
       <div className="mb-4">
-        <LatencyChart isRealtime={isRealtime} records={records} targets={chartTargets} />
+        <LatencyChart hours={hours} isRealtime={isRealtime} records={records} targets={chartTargets} />
       </div>
 
       {/* Bottom stats */}

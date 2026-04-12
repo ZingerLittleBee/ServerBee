@@ -230,7 +230,7 @@ function AuthedLayout() {
             </div>
           </header>
           <ScrollArea className="min-h-0 flex-1 overflow-hidden">
-            <main className="p-4 pt-0">
+            <main className="flex h-full flex-col p-4 pt-0">
               <Outlet />
             </main>
           </ScrollArea>

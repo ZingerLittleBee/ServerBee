@@ -20,7 +20,7 @@ function DataTable<TData>({ table, noResults, className }: DataTableProps<TData>
   return (
     <div className={cn('overflow-hidden rounded-lg border', className)}>
       <Table>
-        <TableHeader>
+        <TableHeader className="sticky top-0 z-10 bg-background">
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow className="bg-muted/50 hover:bg-muted/50" key={headerGroup.id}>
               {headerGroup.headers.map((header) => (
