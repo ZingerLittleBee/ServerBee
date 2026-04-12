@@ -173,10 +173,7 @@ impl AuthService {
                 let db = db.clone();
                 tokio::spawn(async move {
                     let _ = mobile_session::Entity::update_many()
-                        .col_expr(
-                            mobile_session::Column::LastUsedAt,
-                            Expr::value(Utc::now()),
-                        )
+                        .col_expr(mobile_session::Column::LastUsedAt, Expr::value(Utc::now()))
                         .filter(mobile_session::Column::Id.eq(&ms_id))
                         .exec(&db)
                         .await;
@@ -186,9 +183,7 @@ impl AuthService {
         };
 
         // Fetch the user
-        let user = user::Entity::find_by_id(&session.user_id)
-            .one(db)
-            .await?;
+        let user = user::Entity::find_by_id(&session.user_id).one(db).await?;
 
         match user {
             Some(u) => Ok(Some((u, session))),

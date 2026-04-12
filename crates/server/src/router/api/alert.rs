@@ -206,9 +206,9 @@ pub async fn get_alert_event_detail(
     Path(alert_key): Path<String>,
 ) -> Result<Json<ApiResponse<AlertEventDetailResponse>>, AppError> {
     // Parse alert_key: "rule_id:server_id"
-    let (rule_id, server_id) = alert_key
-        .split_once(':')
-        .ok_or_else(|| AppError::BadRequest("alert_key must be in the format rule_id:server_id".to_string()))?;
+    let (rule_id, server_id) = alert_key.split_once(':').ok_or_else(|| {
+        AppError::BadRequest("alert_key must be in the format rule_id:server_id".to_string())
+    })?;
     let alert_key_owned = alert_key.clone();
 
     // Find the alert_state row
@@ -232,7 +232,11 @@ pub async fn get_alert_event_detail(
         .map(|s| s.name)
         .unwrap_or_else(|| "Unknown".to_string());
 
-    let status = if alert_state.resolved { "resolved" } else { "firing" };
+    let status = if alert_state.resolved {
+        "resolved"
+    } else {
+        "firing"
+    };
     let message = if alert_state.resolved {
         format!("Alert resolved after {} trigger(s)", alert_state.count)
     } else {

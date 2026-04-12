@@ -1,4 +1,7 @@
-use a2::{ClientConfig, DefaultNotificationBuilder, Endpoint, NotificationBuilder, NotificationOptions, Priority};
+use a2::{
+    ClientConfig, DefaultNotificationBuilder, Endpoint, NotificationBuilder, NotificationOptions,
+    Priority,
+};
 use sea_orm::*;
 
 use crate::entity::device_token;
@@ -97,10 +100,7 @@ impl ApnsService {
                     }
                 }
                 Err(e) => {
-                    tracing::error!(
-                        "APNs send failed for device {}: {e}",
-                        dt.installation_id
-                    );
+                    tracing::error!("APNs send failed for device {}: {e}", dt.installation_id);
                 }
             }
         }
