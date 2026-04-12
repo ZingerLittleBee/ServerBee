@@ -146,7 +146,7 @@ vi.mock('@/components/ui/tabs', () => ({
   TabsTrigger: ({ children }: { children?: ReactNode }) => <button type="button">{children}</button>
 }))
 
-const { Route } = await import('./network-probes')
+const { NetworkProbeSettingsPage } = await import('./network-probes')
 
 describe('NetworkProbeSettingsPage', () => {
   beforeEach(() => {
@@ -154,7 +154,7 @@ describe('NetworkProbeSettingsPage', () => {
   })
 
   it('renders translated probe target labels in the targets table and controls', () => {
-    render(<Route.component />)
+    render(<NetworkProbeSettingsPage />)
 
     expect(screen.getByRole('columnheader', { name: '状态' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '操作' })).toBeInTheDocument()

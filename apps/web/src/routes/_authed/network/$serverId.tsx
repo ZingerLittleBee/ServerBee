@@ -264,7 +264,7 @@ function TracerouteSection({ serverId, t }: { serverId: string; t: (key: string)
   )
 }
 
-function NetworkDetailPage() {
+export function NetworkDetailPage() {
   const { t } = useTranslation('network')
   const { serverId } = Route.useParams()
   const { user } = useAuth()

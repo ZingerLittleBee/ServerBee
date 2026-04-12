@@ -1,4 +1,4 @@
-interface TranslateOptions {
+interface TranslateOptions extends Record<string, unknown> {
   defaultValue?: string
 }
 
