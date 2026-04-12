@@ -10,6 +10,8 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 use crate::entity::{task, task_result};
+use crate::service::audit::AuditService;
+use crate::service::high_risk_audit::ExecAuditContext;
 use crate::state::AppState;
 use serverbee_common::constants::CAP_EXEC;
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
@@ -26,6 +28,7 @@ pub async fn execute_scheduled_task(
     state: &Arc<AppState>,
     task_id: &str,
     skip_retry: bool,
+    audit_context: Option<ExecAuditContext>,
 ) -> bool {
     let scheduler = &state.task_scheduler;
 
@@ -66,6 +69,11 @@ pub async fn execute_scheduled_task(
         task_model.retry_count.max(0)
     };
     let retry_interval = task_model.retry_interval.max(1) as u64;
+    let command = task_model.command.clone();
+    let audit_context_ref = audit_context.as_ref();
+    if let Some(context) = audit_context.clone() {
+        state.exec_audit_contexts.insert(run_id.clone(), context);
+    }
 
     // Step 3: Update last_run_at and compute next_run_at (using configured timezone)
     let tz: chrono_tz::Tz = scheduler.timezone().parse().unwrap_or(chrono_tz::UTC);
@@ -115,14 +123,49 @@ pub async fn execute_scheduled_task(
                 crate::router::api::task::exec_capability_denied_output(reason),
             )
             .await;
+            if let Some(context) = audit_context_ref {
+                let detail = serde_json::json!({
+                    "server_id": sid,
+                    "task_id": task_id,
+                    "command": command,
+                    "deny_reason": reason,
+                })
+                .to_string();
+                let _ = AuditService::log(
+                    &state.db,
+                    &context.user_id,
+                    "exec_denied",
+                    Some(&detail),
+                    &context.ip,
+                )
+                .await;
+            }
             continue;
+        }
+
+        if let Some(context) = audit_context_ref {
+            let detail = serde_json::json!({
+                "server_id": sid,
+                "task_id": task_id,
+                "command": command,
+                "timeout": Some(timeout_secs as u32),
+            })
+            .to_string();
+            let _ = AuditService::log(
+                &state.db,
+                &context.user_id,
+                "exec_started",
+                Some(&detail),
+                &context.ip,
+            )
+            .await;
         }
 
         let state = state.clone();
         let task_id = task_id.to_string();
         let run_id = run_id.clone();
         let sid = sid.clone();
-        let command = task_model.command.clone();
+        let command = command.clone();
         let token = token.clone();
 
         join_set.spawn(async move {
@@ -145,19 +188,26 @@ pub async fn execute_scheduled_task(
     // Use Arc::clone so the guard operates on the *shared* DashMap, not a clone.
     let task_id_owned = task_id.to_string();
     let active_runs = Arc::clone(&scheduler.active_runs);
+    let run_id_for_cleanup = run_id.clone();
+    let state_for_cleanup = state.clone();
     tokio::spawn(async move {
         struct ActiveRunGuard {
             active_runs: Arc<DashMap<String, (String, CancellationToken)>>,
             task_id: String,
+            state: Arc<AppState>,
+            run_id: String,
         }
         impl Drop for ActiveRunGuard {
             fn drop(&mut self) {
                 self.active_runs.remove(&self.task_id);
+                self.state.exec_audit_contexts.remove(&self.run_id);
             }
         }
         let _guard = ActiveRunGuard {
             active_runs,
             task_id: task_id_owned,
+            state: state_for_cleanup,
+            run_id: run_id_for_cleanup,
         };
         while join_set.join_next().await.is_some() {}
     });

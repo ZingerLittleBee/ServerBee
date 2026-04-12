@@ -468,7 +468,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     tracing::error!("Failed to save task result for {server_id}: {e}");
                 }
             }
-            if let Err(e) = audit_exec_finished(&state.db, server_id, &result).await {
+            if let Err(e) = audit_exec_finished(state, server_id, &result).await {
                 tracing::error!("Failed to write exec_finished audit log for {server_id}: {e}");
             }
             // Send Ack
@@ -997,7 +997,7 @@ async fn save_task_result(
 }
 
 async fn audit_exec_finished(
-    db: &sea_orm::DatabaseConnection,
+    state: &Arc<AppState>,
     server_id: &str,
     result: &serverbee_common::types::TaskResult,
 ) -> Result<(), crate::error::AppError> {
@@ -1005,9 +1005,31 @@ async fn audit_exec_finished(
     use sea_orm::EntityTrait;
 
     let base_task_id = result.task_id.split(':').next().unwrap_or(&result.task_id);
-    let Some(task_model) = task::Entity::find_by_id(base_task_id).one(db).await? else {
+    let Some(task_model) = task::Entity::find_by_id(base_task_id).one(&state.db).await? else {
         return Ok(());
     };
+
+    if let Some(run_id) = result.task_id.split(':').nth(1)
+        && let Some(context) = state.exec_audit_contexts.get(run_id)
+    {
+        let detail = serde_json::json!({
+            "server_id": server_id,
+            "task_id": task_model.id,
+            "command": task_model.command,
+            "exit_code": result.exit_code,
+        })
+        .to_string();
+        AuditService::log(
+            &state.db,
+            &context.user_id,
+            "exec_finished",
+            Some(&detail),
+            &context.ip,
+        )
+        .await?;
+        return Ok(());
+    }
+
     if task_model.task_type != "oneshot" {
         return Ok(());
     }
@@ -1020,7 +1042,7 @@ async fn audit_exec_finished(
     })
     .to_string();
     AuditService::log(
-        db,
+        &state.db,
         &task_model.created_by,
         "exec_finished",
         Some(&detail),

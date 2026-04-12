@@ -1150,12 +1150,16 @@ async fn test_oneshot_exec_started_and_finished_are_audited() {
         .expect("POST /api/tasks failed");
     assert_eq!(create_resp.status(), 200);
 
-    let exec_msg = loop {
-        let msg = recv_agent_text(&mut ws_reader).await;
-        if msg["type"] == "exec" {
-            break msg;
+    let exec_msg = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let msg = recv_agent_text(&mut ws_reader).await;
+            if msg["type"] == "exec" {
+                break msg;
+            }
         }
-    };
+    })
+    .await
+    .expect("timed out waiting for scheduled exec dispatch");
     let task_id = exec_msg["task_id"]
         .as_str()
         .expect("exec message task_id missing")

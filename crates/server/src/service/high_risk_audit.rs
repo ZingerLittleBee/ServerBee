@@ -20,6 +20,12 @@ pub struct DockerLogsAuditContext {
     pub started_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ExecAuditContext {
+    pub user_id: String,
+    pub ip: String,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum DockerViewResource {
