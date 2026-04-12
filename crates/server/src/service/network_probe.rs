@@ -23,6 +23,8 @@ pub struct NetworkProbeService;
 // DTOs
 // ---------------------------------------------------------------------------
 
+pub const SPARKLINE_LENGTH: usize = 30;
+
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct NetworkProbeSetting {
     pub interval: u32,
@@ -97,6 +99,14 @@ pub struct ServerOverview {
     pub last_probe_at: Option<String>,
     pub targets: Vec<TargetSummary>,
     pub anomaly_count: i64,
+    pub latency_sparkline: Vec<Option<f64>>,
+    pub loss_sparkline: Vec<Option<f64>>,
+}
+
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct SparklineBundle {
+    pub latency: Vec<Option<f64>>,
+    pub loss: Vec<Option<f64>>,
 }
 
 /// Unified record DTO returned by query_records.
@@ -126,6 +136,14 @@ struct LatestRecordRow {
     pub max_latency: Option<f64>,
     pub packet_loss: f64,
     pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct SparklineRow {
+    pub server_id: String,
+    pub bucket_ts: i64,
+    pub latency: Option<f64>,
+    pub loss: Option<f64>,
 }
 
 /// Unified target DTO merging preset and custom targets.
@@ -207,6 +225,13 @@ impl NetworkProbeService {
             }
         }
         map
+    }
+
+    fn empty_sparkline_bundle() -> SparklineBundle {
+        SparklineBundle {
+            latency: vec![None; SPARKLINE_LENGTH],
+            loss: vec![None; SPARKLINE_LENGTH],
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -678,6 +703,8 @@ impl NetworkProbeService {
             .map(|s| (s.id.clone(), s.name.clone()))
             .collect();
         let server_ids: Vec<String> = servers.into_iter().map(|s| s.id).collect();
+        let setting = Self::get_setting(db).await?;
+        let bucket_seconds = i64::from(setting.interval).max(60);
 
         // Load all probe configs for target lookup
         let configs = network_probe_config::Entity::find().all(db).await?;
@@ -686,6 +713,7 @@ impl NetworkProbeService {
         let target_map: HashMap<String, (String, String)> = Self::build_target_map(db).await;
 
         let anomaly_from = Utc::now() - Duration::hours(24);
+        let sparklines = Self::query_sparklines(db, &server_ids, bucket_seconds).await?;
 
         // Fetch ALL latest records across ALL servers in a single query using a window
         // function, avoiding an N+1 query pattern (one query per server per target).
@@ -776,6 +804,10 @@ impl NetworkProbeService {
             }
 
             let anomaly_count = Self::count_anomalies(db, server_id, anomaly_from).await?;
+            let sparkline_bundle = sparklines
+                .get(server_id)
+                .cloned()
+                .unwrap_or_else(Self::empty_sparkline_bundle);
 
             overviews.push(ServerOverview {
                 server_id: server_id.clone(),
@@ -784,6 +816,8 @@ impl NetworkProbeService {
                 last_probe_at: last_probe_at.map(|t| t.to_rfc3339()),
                 targets: target_summaries,
                 anomaly_count,
+                latency_sparkline: sparkline_bundle.latency,
+                loss_sparkline: sparkline_bundle.loss,
             });
         }
 
@@ -910,6 +944,98 @@ impl NetworkProbeService {
                    ) WHERE rn = 1";
         let stmt = Statement::from_sql_and_values(DatabaseBackend::Sqlite, sql, vec![]);
         Ok(LatestRecordRow::find_by_statement(stmt).all(db).await?)
+    }
+
+    pub async fn query_sparklines(
+        db: &DatabaseConnection,
+        server_ids: &[String],
+        bucket_seconds: i64,
+    ) -> Result<HashMap<String, SparklineBundle>, AppError> {
+        if server_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let bucket_seconds = bucket_seconds.max(1);
+        let now_bucket = Utc::now().timestamp().div_euclid(bucket_seconds) * bucket_seconds;
+        let window_span = (SPARKLINE_LENGTH as i64 - 1) * bucket_seconds;
+        let placeholders = vec!["(?)"; server_ids.len()].join(", ");
+        let sql = format!(
+            "WITH input_servers(server_id) AS (VALUES {placeholders}), \
+             latest_buckets AS ( \
+                 SELECT s.server_id, \
+                        ((MAX(CAST(strftime('%s', r.timestamp) AS INTEGER)) / ?) * ?) AS latest_bucket \
+                 FROM input_servers s \
+                 LEFT JOIN network_probe_record r ON r.server_id = s.server_id \
+                 GROUP BY s.server_id \
+             ), \
+             bucketed AS ( \
+                 SELECT r.server_id, \
+                        ((CAST(strftime('%s', r.timestamp) AS INTEGER) / ?) * ?) AS bucket_ts, \
+                        AVG(r.avg_latency) AS latency, \
+                        AVG(r.packet_loss) AS loss \
+                  FROM network_probe_record r \
+                  JOIN latest_buckets lb ON lb.server_id = r.server_id \
+                  WHERE lb.latest_bucket IS NOT NULL \
+                   AND ((CAST(strftime('%s', r.timestamp) AS INTEGER) / ?) * ?) \
+                       BETWEEN lb.latest_bucket - ? AND lb.latest_bucket \
+                 GROUP BY r.server_id, bucket_ts \
+             ) \
+             SELECT server_id, bucket_ts, latency, loss \
+             FROM bucketed \
+             ORDER BY server_id ASC, bucket_ts ASC"
+        );
+
+        let mut values: Vec<Value> = server_ids.iter().cloned().map(Value::from).collect();
+        values.push(bucket_seconds.into());
+        values.push(bucket_seconds.into());
+        values.push(bucket_seconds.into());
+        values.push(bucket_seconds.into());
+        values.push(bucket_seconds.into());
+        values.push(bucket_seconds.into());
+        values.push(window_span.into());
+
+        let stmt = Statement::from_sql_and_values(DatabaseBackend::Sqlite, sql, values);
+        let rows = SparklineRow::find_by_statement(stmt).all(db).await?;
+        let mut rows_by_server: HashMap<String, Vec<SparklineRow>> = HashMap::new();
+
+        for row in rows {
+            rows_by_server
+                .entry(row.server_id.clone())
+                .or_default()
+                .push(row);
+        }
+
+        let mut sparklines = HashMap::new();
+
+        for server_id in server_ids {
+            let server_rows = rows_by_server.remove(server_id).unwrap_or_default();
+            let latest_bucket = server_rows
+                .last()
+                .map(|row| row.bucket_ts)
+                .unwrap_or(now_bucket);
+            let start_bucket = latest_bucket - ((SPARKLINE_LENGTH as i64 - 1) * bucket_seconds);
+            let row_map: HashMap<i64, SparklineRow> = server_rows
+                .into_iter()
+                .map(|row| (row.bucket_ts, row))
+                .collect();
+            let mut latency = Vec::with_capacity(SPARKLINE_LENGTH);
+            let mut loss = Vec::with_capacity(SPARKLINE_LENGTH);
+
+            for index in 0..SPARKLINE_LENGTH {
+                let bucket_ts = start_bucket + index as i64 * bucket_seconds;
+                if let Some(row) = row_map.get(&bucket_ts) {
+                    latency.push(row.latency);
+                    loss.push(row.loss);
+                } else {
+                    latency.push(None);
+                    loss.push(None);
+                }
+            }
+
+            sparklines.insert(server_id.clone(), SparklineBundle { latency, loss });
+        }
+
+        Ok(sparklines)
     }
 
     /// Count anomalous records for a server since a given time.
@@ -1062,7 +1188,107 @@ impl NetworkProbeService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::auth::AuthService;
     use crate::test_utils::setup_test_db;
+    use sea_orm::{ActiveModelTrait, Set};
+    use serverbee_common::constants::CAP_DEFAULT;
+    use tokio::sync::broadcast;
+
+    async fn insert_test_server(db: &DatabaseConnection, id: &str, name: &str) {
+        let token_hash = AuthService::hash_password("test").expect("hash_password should succeed");
+        let now = Utc::now();
+
+        server::ActiveModel {
+            id: Set(id.to_string()),
+            token_hash: Set(token_hash),
+            token_prefix: Set("serverbee_test".to_string()),
+            name: Set(name.to_string()),
+            weight: Set(0),
+            hidden: Set(false),
+            capabilities: Set(CAP_DEFAULT as i32),
+            protocol_version: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert test server should succeed");
+    }
+
+    async fn seed_probe_record(
+        db: &DatabaseConnection,
+        server_id: &str,
+        target_id: &str,
+        timestamp: DateTime<Utc>,
+        avg_latency: Option<f64>,
+        packet_loss: f64,
+    ) {
+        let packet_sent = 10_u32;
+        let packet_received =
+            ((1.0 - packet_loss).clamp(0.0, 1.0) * packet_sent as f64).round() as u32;
+
+        NetworkProbeService::save_results(
+            db,
+            server_id,
+            vec![NetworkProbeResultData {
+                target_id: target_id.to_string(),
+                avg_latency,
+                min_latency: avg_latency,
+                max_latency: avg_latency,
+                packet_loss,
+                packet_sent,
+                packet_received,
+                timestamp,
+            }],
+        )
+        .await
+        .expect("seed probe record should succeed");
+    }
+
+    fn bucket_start(timestamp: DateTime<Utc>, bucket_seconds: i64) -> DateTime<Utc> {
+        let bucket_ts = timestamp.timestamp().div_euclid(bucket_seconds) * bucket_seconds;
+        DateTime::from_timestamp(bucket_ts, 0).expect("bucket timestamp should be valid")
+    }
+
+    fn bucket_sample_time(timestamp: DateTime<Utc>, bucket_seconds: i64) -> DateTime<Utc> {
+        let offset_seconds = if bucket_seconds > 1 { 1 } else { 0 };
+        bucket_start(timestamp, bucket_seconds) + Duration::seconds(offset_seconds)
+    }
+
+    fn assert_option_series_eq(actual: &[Option<f64>], expected: &[Option<f64>]) {
+        assert_eq!(
+            actual.len(),
+            expected.len(),
+            "series lengths differ: actual={actual:?}, expected={expected:?}"
+        );
+
+        for (index, (actual_value, expected_value)) in actual.iter().zip(expected).enumerate() {
+            match (actual_value, expected_value) {
+                (Some(actual), Some(expected)) => {
+                    assert!(
+                        (actual - expected).abs() < 1e-9,
+                        "series value mismatch at index {index}: actual={actual}, expected={expected}"
+                    );
+                }
+                (None, None) => {}
+                _ => {
+                    panic!(
+                        "series option mismatch at index {index}: actual={actual_value:?}, expected={expected_value:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    fn empty_sparkline() -> Vec<Option<f64>> {
+        vec![None; SPARKLINE_LENGTH]
+    }
+
+    fn test_agent_manager() -> AgentManager {
+        let (browser_tx, _) = broadcast::channel(4);
+        AgentManager::new(browser_tx)
+    }
 
     #[tokio::test]
     async fn test_setting_default_roundtrip() {
@@ -1339,5 +1565,508 @@ mod tests {
             .unwrap();
         assert_eq!(targets.len(), 2);
         assert!(targets.iter().all(|t| t.source.is_some()));
+    }
+
+    #[tokio::test]
+    async fn test_sparkline_empty_server_ids() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let sparklines = NetworkProbeService::query_sparklines(&db, &[], 60)
+            .await
+            .unwrap();
+
+        assert!(sparklines.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_sparkline_single_server_dense_data() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-dense", "Dense Server").await;
+
+        let bucket_seconds = 60;
+        let latest_bucket = bucket_start(Utc::now(), bucket_seconds);
+
+        for index in 0..SPARKLINE_LENGTH {
+            let bucket_time = latest_bucket
+                - Duration::seconds(((SPARKLINE_LENGTH - 1 - index) as i64) * bucket_seconds);
+            seed_probe_record(
+                &db,
+                "srv-dense",
+                "dense-target",
+                bucket_sample_time(bucket_time, bucket_seconds),
+                Some(index as f64),
+                index as f64 / 100.0,
+            )
+            .await;
+        }
+
+        let sparklines =
+            NetworkProbeService::query_sparklines(&db, &["srv-dense".to_string()], bucket_seconds)
+                .await
+                .unwrap();
+        let bundle = sparklines.get("srv-dense").expect("sparkline should exist");
+
+        let expected_latency: Vec<Option<f64>> = (0..SPARKLINE_LENGTH)
+            .map(|index| Some(index as f64))
+            .collect();
+        let expected_loss: Vec<Option<f64>> = (0..SPARKLINE_LENGTH)
+            .map(|index| Some(index as f64 / 100.0))
+            .collect();
+
+        assert_option_series_eq(&bundle.latency, &expected_latency);
+        assert_option_series_eq(&bundle.loss, &expected_loss);
+    }
+
+    #[tokio::test]
+    async fn test_sparkline_multi_target_bucket_averaging() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-avg", "Average Server").await;
+
+        let bucket_seconds = 60;
+        let bucket_time = bucket_start(Utc::now(), bucket_seconds);
+
+        seed_probe_record(
+            &db,
+            "srv-avg",
+            "target-a",
+            bucket_sample_time(bucket_time, bucket_seconds),
+            Some(10.0),
+            0.0,
+        )
+        .await;
+        seed_probe_record(
+            &db,
+            "srv-avg",
+            "target-b",
+            bucket_sample_time(bucket_time, bucket_seconds) + Duration::seconds(10),
+            Some(30.0),
+            0.5,
+        )
+        .await;
+
+        let sparklines =
+            NetworkProbeService::query_sparklines(&db, &["srv-avg".to_string()], bucket_seconds)
+                .await
+                .unwrap();
+        let bundle = sparklines.get("srv-avg").expect("sparkline should exist");
+
+        let mut expected_latency = empty_sparkline();
+        expected_latency[SPARKLINE_LENGTH - 1] = Some(20.0);
+        let mut expected_loss = empty_sparkline();
+        expected_loss[SPARKLINE_LENGTH - 1] = Some(0.25);
+
+        assert_option_series_eq(&bundle.latency, &expected_latency);
+        assert_option_series_eq(&bundle.loss, &expected_loss);
+    }
+
+    #[tokio::test]
+    async fn test_sparkline_sparse_data_with_front_padding() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-sparse", "Sparse Server").await;
+
+        let bucket_seconds = 60;
+        let latest_bucket = bucket_start(Utc::now(), bucket_seconds);
+        let previous_bucket = latest_bucket - Duration::seconds(bucket_seconds);
+
+        seed_probe_record(
+            &db,
+            "srv-sparse",
+            "sparse-target",
+            bucket_sample_time(previous_bucket, bucket_seconds),
+            Some(11.0),
+            0.1,
+        )
+        .await;
+        seed_probe_record(
+            &db,
+            "srv-sparse",
+            "sparse-target",
+            bucket_sample_time(latest_bucket, bucket_seconds),
+            Some(22.0),
+            0.2,
+        )
+        .await;
+
+        let sparklines =
+            NetworkProbeService::query_sparklines(&db, &["srv-sparse".to_string()], bucket_seconds)
+                .await
+                .unwrap();
+        let bundle = sparklines
+            .get("srv-sparse")
+            .expect("sparkline should exist");
+
+        let mut expected_latency = empty_sparkline();
+        expected_latency[SPARKLINE_LENGTH - 2] = Some(11.0);
+        expected_latency[SPARKLINE_LENGTH - 1] = Some(22.0);
+        let mut expected_loss = empty_sparkline();
+        expected_loss[SPARKLINE_LENGTH - 2] = Some(0.1);
+        expected_loss[SPARKLINE_LENGTH - 1] = Some(0.2);
+
+        assert_option_series_eq(&bundle.latency, &expected_latency);
+        assert_option_series_eq(&bundle.loss, &expected_loss);
+    }
+
+    #[tokio::test]
+    async fn test_sparkline_gap_fill_continuity() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-gap", "Gap Server").await;
+
+        let bucket_seconds = 60;
+        let latest_bucket = bucket_start(Utc::now(), bucket_seconds);
+        let oldest_bucket = latest_bucket - Duration::seconds(bucket_seconds * 2);
+
+        seed_probe_record(
+            &db,
+            "srv-gap",
+            "gap-target",
+            bucket_sample_time(oldest_bucket, bucket_seconds),
+            Some(5.0),
+            0.05,
+        )
+        .await;
+        seed_probe_record(
+            &db,
+            "srv-gap",
+            "gap-target",
+            bucket_sample_time(latest_bucket, bucket_seconds),
+            Some(25.0),
+            0.25,
+        )
+        .await;
+
+        let sparklines =
+            NetworkProbeService::query_sparklines(&db, &["srv-gap".to_string()], bucket_seconds)
+                .await
+                .unwrap();
+        let bundle = sparklines.get("srv-gap").expect("sparkline should exist");
+
+        let mut expected_latency = empty_sparkline();
+        expected_latency[SPARKLINE_LENGTH - 3] = Some(5.0);
+        expected_latency[SPARKLINE_LENGTH - 1] = Some(25.0);
+        let mut expected_loss = empty_sparkline();
+        expected_loss[SPARKLINE_LENGTH - 3] = Some(0.05);
+        expected_loss[SPARKLINE_LENGTH - 1] = Some(0.25);
+
+        assert_option_series_eq(&bundle.latency, &expected_latency);
+        assert_option_series_eq(&bundle.loss, &expected_loss);
+    }
+
+    #[tokio::test]
+    async fn test_sparkline_null_latency_handling() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-null", "Null Server").await;
+
+        let bucket_seconds = 60;
+        let bucket_time = bucket_start(Utc::now(), bucket_seconds);
+
+        seed_probe_record(
+            &db,
+            "srv-null",
+            "null-target",
+            bucket_sample_time(bucket_time, bucket_seconds),
+            None,
+            1.0,
+        )
+        .await;
+        seed_probe_record(
+            &db,
+            "srv-null",
+            "nonnull-target",
+            bucket_sample_time(bucket_time, bucket_seconds) + Duration::seconds(5),
+            Some(20.0),
+            0.0,
+        )
+        .await;
+
+        let sparklines =
+            NetworkProbeService::query_sparklines(&db, &["srv-null".to_string()], bucket_seconds)
+                .await
+                .unwrap();
+        let bundle = sparklines.get("srv-null").expect("sparkline should exist");
+
+        let mut expected_latency = empty_sparkline();
+        expected_latency[SPARKLINE_LENGTH - 1] = Some(20.0);
+        let mut expected_loss = empty_sparkline();
+        expected_loss[SPARKLINE_LENGTH - 1] = Some(0.5);
+
+        assert_option_series_eq(&bundle.latency, &expected_latency);
+        assert_option_series_eq(&bundle.loss, &expected_loss);
+    }
+
+    #[tokio::test]
+    async fn test_sparkline_batch_multiple_servers() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-batch-a", "Batch Server A").await;
+        insert_test_server(&db, "srv-batch-b", "Batch Server B").await;
+
+        let bucket_seconds = 60;
+        let latest_bucket = bucket_start(Utc::now(), bucket_seconds);
+
+        seed_probe_record(
+            &db,
+            "srv-batch-a",
+            "batch-a",
+            bucket_sample_time(
+                latest_bucket - Duration::seconds(bucket_seconds),
+                bucket_seconds,
+            ),
+            Some(7.0),
+            0.07,
+        )
+        .await;
+        seed_probe_record(
+            &db,
+            "srv-batch-b",
+            "batch-b",
+            bucket_sample_time(latest_bucket, bucket_seconds),
+            Some(9.0),
+            0.09,
+        )
+        .await;
+
+        let sparklines = NetworkProbeService::query_sparklines(
+            &db,
+            &["srv-batch-a".to_string(), "srv-batch-b".to_string()],
+            bucket_seconds,
+        )
+        .await
+        .unwrap();
+
+        let mut expected_a = empty_sparkline();
+        expected_a[SPARKLINE_LENGTH - 1] = Some(7.0);
+        let mut expected_b = empty_sparkline();
+        expected_b[SPARKLINE_LENGTH - 1] = Some(9.0);
+
+        assert_eq!(sparklines.len(), 2);
+        assert_option_series_eq(
+            &sparklines
+                .get("srv-batch-a")
+                .expect("server A sparkline should exist")
+                .latency,
+            &expected_a,
+        );
+        assert_option_series_eq(
+            &sparklines
+                .get("srv-batch-b")
+                .expect("server B sparkline should exist")
+                .latency,
+            &expected_b,
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sparkline_preserves_offline_frozen_history() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-offline", "Offline Server").await;
+
+        let bucket_seconds = 60;
+        let now_bucket = bucket_start(Utc::now(), bucket_seconds);
+        let historical_latest = now_bucket - Duration::seconds(bucket_seconds * 40);
+
+        seed_probe_record(
+            &db,
+            "srv-offline",
+            "offline-target",
+            bucket_sample_time(
+                historical_latest - Duration::seconds(bucket_seconds),
+                bucket_seconds,
+            ),
+            Some(12.0),
+            0.12,
+        )
+        .await;
+        seed_probe_record(
+            &db,
+            "srv-offline",
+            "offline-target",
+            bucket_sample_time(historical_latest, bucket_seconds),
+            Some(34.0),
+            0.34,
+        )
+        .await;
+
+        let sparklines = NetworkProbeService::query_sparklines(
+            &db,
+            &["srv-offline".to_string()],
+            bucket_seconds,
+        )
+        .await
+        .unwrap();
+        let bundle = sparklines
+            .get("srv-offline")
+            .expect("offline sparkline should exist");
+
+        let mut expected_latency = empty_sparkline();
+        expected_latency[SPARKLINE_LENGTH - 2] = Some(12.0);
+        expected_latency[SPARKLINE_LENGTH - 1] = Some(34.0);
+        let mut expected_loss = empty_sparkline();
+        expected_loss[SPARKLINE_LENGTH - 2] = Some(0.12);
+        expected_loss[SPARKLINE_LENGTH - 1] = Some(0.34);
+
+        assert_option_series_eq(&bundle.latency, &expected_latency);
+        assert_option_series_eq(&bundle.loss, &expected_loss);
+    }
+
+    #[tokio::test]
+    async fn test_sparkline_offline_history_keeps_latest_30_buckets() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-offline-30", "Offline Server 30").await;
+
+        let bucket_seconds = 60;
+        let now_bucket = bucket_start(Utc::now(), bucket_seconds);
+        let historical_latest = now_bucket - Duration::seconds(bucket_seconds * 40);
+
+        for index in 0..(SPARKLINE_LENGTH + 2) {
+            let bucket_time = historical_latest
+                - Duration::seconds(((SPARKLINE_LENGTH + 1 - index) as i64) * bucket_seconds);
+            seed_probe_record(
+                &db,
+                "srv-offline-30",
+                "offline-30-target",
+                bucket_sample_time(bucket_time, bucket_seconds),
+                Some(index as f64),
+                index as f64 / 100.0,
+            )
+            .await;
+        }
+
+        let sparklines = NetworkProbeService::query_sparklines(
+            &db,
+            &["srv-offline-30".to_string()],
+            bucket_seconds,
+        )
+        .await
+        .unwrap();
+        let bundle = sparklines
+            .get("srv-offline-30")
+            .expect("offline 30 sparkline should exist");
+
+        let expected_latency: Vec<Option<f64>> = (2..(SPARKLINE_LENGTH + 2))
+            .map(|index| Some(index as f64))
+            .collect();
+        let expected_loss: Vec<Option<f64>> = (2..(SPARKLINE_LENGTH + 2))
+            .map(|index| Some(index as f64 / 100.0))
+            .collect();
+
+        assert_option_series_eq(&bundle.latency, &expected_latency);
+        assert_option_series_eq(&bundle.loss, &expected_loss);
+    }
+
+    #[tokio::test]
+    async fn test_sparkline_adaptive_bucket_size() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-adaptive", "Adaptive Server").await;
+        insert_test_server(&db, "srv-empty", "Empty Server").await;
+
+        let thirty_second_bucket = 30;
+        let sixty_second_bucket = 60;
+        let minute_bucket = bucket_start(Utc::now(), sixty_second_bucket);
+
+        NetworkProbeService::update_setting(
+            &db,
+            &NetworkProbeSetting {
+                interval: 30,
+                packet_count: 10,
+                default_target_ids: vec![],
+            },
+        )
+        .await
+        .unwrap();
+
+        seed_probe_record(
+            &db,
+            "srv-adaptive",
+            "adaptive-a",
+            bucket_sample_time(minute_bucket, thirty_second_bucket),
+            Some(100.0),
+            0.1,
+        )
+        .await;
+        seed_probe_record(
+            &db,
+            "srv-adaptive",
+            "adaptive-b",
+            bucket_sample_time(minute_bucket, thirty_second_bucket) + Duration::seconds(30),
+            Some(200.0),
+            0.3,
+        )
+        .await;
+
+        let overviews = NetworkProbeService::get_overview(&db, &test_agent_manager())
+            .await
+            .unwrap();
+        let adaptive = overviews
+            .iter()
+            .find(|overview| overview.server_id == "srv-adaptive")
+            .expect("adaptive server should be present");
+        let empty = overviews
+            .iter()
+            .find(|overview| overview.server_id == "srv-empty")
+            .expect("empty server should be present");
+
+        let mut expected_latency = empty_sparkline();
+        expected_latency[SPARKLINE_LENGTH - 1] = Some(150.0);
+        let mut expected_loss = empty_sparkline();
+        expected_loss[SPARKLINE_LENGTH - 1] = Some(0.2);
+
+        assert_option_series_eq(&adaptive.latency_sparkline, &expected_latency);
+        assert_option_series_eq(&adaptive.loss_sparkline, &expected_loss);
+        assert_option_series_eq(&empty.latency_sparkline, &empty_sparkline());
+        assert_option_series_eq(&empty.loss_sparkline, &empty_sparkline());
+    }
+
+    #[tokio::test]
+    async fn test_sparkline_widened_bucket_size() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-wide", "Wide Bucket Server").await;
+
+        let bucket_seconds = 120;
+        let wide_bucket = bucket_start(Utc::now(), bucket_seconds);
+
+        NetworkProbeService::update_setting(
+            &db,
+            &NetworkProbeSetting {
+                interval: bucket_seconds as u32,
+                packet_count: 10,
+                default_target_ids: vec![],
+            },
+        )
+        .await
+        .unwrap();
+
+        seed_probe_record(
+            &db,
+            "srv-wide",
+            "wide-a",
+            bucket_sample_time(wide_bucket, bucket_seconds),
+            Some(100.0),
+            0.1,
+        )
+        .await;
+        seed_probe_record(
+            &db,
+            "srv-wide",
+            "wide-b",
+            bucket_sample_time(wide_bucket, bucket_seconds) + Duration::seconds(60),
+            Some(200.0),
+            0.3,
+        )
+        .await;
+
+        let overviews = NetworkProbeService::get_overview(&db, &test_agent_manager())
+            .await
+            .unwrap();
+        let overview = overviews
+            .iter()
+            .find(|candidate| candidate.server_id == "srv-wide")
+            .expect("wide bucket server should be present");
+
+        let mut expected_latency = empty_sparkline();
+        expected_latency[SPARKLINE_LENGTH - 1] = Some(150.0);
+        let mut expected_loss = empty_sparkline();
+        expected_loss[SPARKLINE_LENGTH - 1] = Some(0.2);
+
+        assert_option_series_eq(&overview.latency_sparkline, &expected_latency);
+        assert_option_series_eq(&overview.loss_sparkline, &expected_loss);
     }
 }
