@@ -44,6 +44,8 @@ export interface NetworkTargetSummary {
 export interface NetworkServerSummary {
   anomaly_count: number
   last_probe_at: string | null
+  latency_sparkline: (number | null)[]
+  loss_sparkline: (number | null)[]
   online: boolean
   server_id: string
   server_name: string
