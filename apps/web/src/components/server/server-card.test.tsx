@@ -155,6 +155,20 @@ describe('ServerCard', () => {
     expect(screen.queryByLabelText('Latency trend')).toBeNull()
   })
 
+  it('does not crash when the matching summary is missing sparkline arrays', () => {
+    mockNetworkOverview.mockReturnValue({
+      data: [
+        makeSummary({
+          latency_sparkline: undefined,
+          loss_sparkline: undefined
+        })
+      ]
+    })
+
+    expect(() => render(<ServerCard server={makeServer()} />)).not.toThrow()
+    expect(screen.queryByLabelText('Latency trend')).toBeNull()
+  })
+
   it('uses placeholder styling when loss summary data is entirely null', () => {
     mockNetworkOverview.mockReturnValue({
       data: [
