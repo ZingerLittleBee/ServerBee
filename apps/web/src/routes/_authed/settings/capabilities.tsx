@@ -11,12 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api-client'
-import {
-  CAP_DEFAULT,
-  CAPABILITIES,
-  getEffectiveCapabilityEnabled,
-  isClientCapabilityLocked
-} from '@/lib/capabilities'
+import { CAP_DEFAULT, CAPABILITIES, getEffectiveCapabilityEnabled, isClientCapabilityLocked } from '@/lib/capabilities'
 
 export const Route = createFileRoute('/_authed/settings/capabilities')({
   validateSearch: (search: Record<string, unknown>) => ({

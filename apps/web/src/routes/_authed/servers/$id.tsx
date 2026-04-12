@@ -483,7 +483,6 @@ function ServerDetailPage() {
   const isOnline = liveData?.online ?? false
   const hasBilling = server.price != null || server.expired_at != null || server.traffic_limit != null
   const flag = countryCodeToFlag(server.country_code)
-  // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
   const terminalEnabled = getEffectiveCapabilityEnabled(
     serverWithCaps.effective_capabilities,
     serverWithCaps.capabilities,

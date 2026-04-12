@@ -24,10 +24,7 @@ export function hasCap(capabilities: number, bit: number): boolean {
   return (capabilities & bit) !== 0
 }
 
-export function isClientCapabilityLocked(
-  agentLocalCapabilities: number | null | undefined,
-  bit: number
-): boolean {
+export function isClientCapabilityLocked(agentLocalCapabilities: number | null | undefined, bit: number): boolean {
   if (agentLocalCapabilities == null) {
     return false
   }
