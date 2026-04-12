@@ -169,6 +169,46 @@ describe('ServerCard', () => {
     expect(screen.queryByLabelText('Latency trend')).toBeNull()
   })
 
+  it('renders network quality from target summaries when sparklines are empty', () => {
+    mockNetworkOverview.mockReturnValue({
+      data: [
+        makeSummary({
+          latency_sparkline: [],
+          loss_sparkline: [],
+          targets: [
+            {
+              availability: 0.99,
+              avg_latency: 40,
+              max_latency: 45,
+              min_latency: 35,
+              packet_loss: 0.01,
+              provider: 'ct',
+              target_id: 'target-1',
+              target_name: 'Shanghai'
+            },
+            {
+              availability: 0.97,
+              avg_latency: 80,
+              max_latency: 90,
+              min_latency: 70,
+              packet_loss: 0.03,
+              provider: 'cu',
+              target_id: 'target-2',
+              target_name: 'Beijing'
+            }
+          ]
+        })
+      ]
+    })
+
+    render(<ServerCard server={makeServer()} />)
+
+    expect(screen.getByLabelText('Latency trend')).toBeDefined()
+    expect(screen.getByLabelText('Packet loss trend')).toBeDefined()
+    expect(screen.getByText('60ms')).toBeDefined()
+    expect(screen.getByText('2.0%')).toBeDefined()
+  })
+
   it('uses placeholder styling when loss summary data is entirely null', () => {
     mockNetworkOverview.mockReturnValue({
       data: [
