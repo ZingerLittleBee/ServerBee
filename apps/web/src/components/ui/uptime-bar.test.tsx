@@ -33,10 +33,10 @@ describe('UptimeBar', () => {
     expect((bars[2] as HTMLElement).style.backgroundColor).toBe('rgb(239, 68, 68)')
   })
 
-  it('renders null values at 100% height', () => {
+  it('renders null values at the minimum height', () => {
     const { container } = render(<UptimeBar data={[50, null]} getColor={greenColor} maxValue={100} />)
     const bars = container.querySelectorAll('[data-testid="uptime-bar-item"]')
-    expect((bars[1] as HTMLElement).style.height).toBe('100%')
+    expect((bars[1] as HTMLElement).style.height).toBe('10%')
   })
 
   it('scales bar heights relative to maxValue', () => {
