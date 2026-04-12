@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Path, State};
+use axum::extract::{ConnectInfo, Path, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -10,7 +10,10 @@ use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
+use crate::router::utils::extract_client_ip;
 use crate::service::agent_manager::TerminalSessionEvent;
+use crate::service::audit::AuditService;
+use crate::service::high_risk_audit::TerminalAuditContext;
 use crate::state::AppState;
 use serverbee_common::constants::{MAX_WS_MESSAGE_SIZE, TERMINAL_IDLE_TIMEOUT_SECS};
 use serverbee_common::protocol::ServerMessage;
@@ -21,16 +24,37 @@ pub fn router() -> Router<Arc<AppState>> {
 
 async fn terminal_ws_handler(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Path(server_id): Path<String>,
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Response {
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+
     // Auth: session cookie or API key
     let user = validate_auth(&state, &headers).await;
     match user {
-        Some((_, role)) => {
+        Some((user_id, role)) => {
             // Terminal access is admin-only
             if role != "admin" {
+                let detail = serde_json::json!({
+                    "server_id": server_id,
+                    "deny_reason": "role_forbidden",
+                })
+                .to_string();
+                let _ = AuditService::log(
+                    &state.db,
+                    &user_id,
+                    "terminal_open_denied",
+                    Some(&detail),
+                    &ip,
+                )
+                .await;
                 return axum::http::StatusCode::FORBIDDEN.into_response();
             }
             // Check agent is online
@@ -40,15 +64,25 @@ async fn terminal_ws_handler(
             // Check terminal capability
             match crate::service::server::ServerService::get_server(&state.db, &server_id).await {
                 Ok(server) => {
-                    if !serverbee_common::constants::has_capability(
+                    if let Some(reason) = state.agent_manager.capability_denied_reason(
+                        &server_id,
                         server.capabilities as u32,
                         serverbee_common::constants::CAP_TERMINAL,
                     ) {
-                        return (
-                            axum::http::StatusCode::FORBIDDEN,
-                            "Terminal is disabled for this server",
+                        let detail = serde_json::json!({
+                            "server_id": server_id,
+                            "deny_reason": reason,
+                        })
+                        .to_string();
+                        let _ = AuditService::log(
+                            &state.db,
+                            &user_id,
+                            "terminal_open_denied",
+                            Some(&detail),
+                            &ip,
                         )
-                            .into_response();
+                        .await;
+                        return (axum::http::StatusCode::FORBIDDEN, reason).into_response();
                     }
                 }
                 Err(_) => {
@@ -56,7 +90,7 @@ async fn terminal_ws_handler(
                 }
             }
             ws.max_message_size(MAX_WS_MESSAGE_SIZE)
-                .on_upgrade(move |socket| handle_terminal_ws(socket, state, server_id))
+                .on_upgrade(move |socket| handle_terminal_ws(socket, state, server_id, user_id, ip))
         }
         None => axum::http::StatusCode::UNAUTHORIZED.into_response(),
     }
@@ -128,7 +162,13 @@ enum BrowserTerminalMessage {
     Resize { rows: u16, cols: u16 },
 }
 
-async fn handle_terminal_ws(socket: WebSocket, state: Arc<AppState>, server_id: String) {
+async fn handle_terminal_ws(
+    socket: WebSocket,
+    state: Arc<AppState>,
+    server_id: String,
+    user_id: String,
+    ip: String,
+) {
     let (mut ws_sink, mut ws_stream) = socket.split();
 
     // Create unique session ID
@@ -161,6 +201,31 @@ async fn handle_terminal_ws(socket: WebSocket, state: Arc<AppState>, server_id: 
         }
     };
 
+    let started_at = chrono::Utc::now();
+    state.terminal_audit_contexts.insert(
+        session_id.clone(),
+        TerminalAuditContext {
+            server_id: server_id.clone(),
+            user_id: user_id.clone(),
+            ip: ip.clone(),
+            started_at,
+        },
+    );
+    let open_detail = serde_json::json!({
+        "server_id": server_id,
+        "session_id": session_id,
+        "started_at": started_at,
+    })
+    .to_string();
+    let _ = AuditService::log(
+        &state.db,
+        &user_id,
+        "terminal_opened",
+        Some(&open_detail),
+        &ip,
+    )
+    .await;
+
     // Send initial open with default size (will be resized by browser)
     let _ = agent_tx
         .send(ServerMessage::TerminalOpen {
@@ -183,6 +248,7 @@ async fn handle_terminal_ws(socket: WebSocket, state: Arc<AppState>, server_id: 
     let idle_duration = std::time::Duration::from_secs(TERMINAL_IDLE_TIMEOUT_SECS);
     let idle_timer = tokio::time::sleep(idle_duration);
     tokio::pin!(idle_timer);
+    let mut close_reason = "client_closed".to_string();
 
     loop {
         tokio::select! {
@@ -205,6 +271,7 @@ async fn handle_terminal_ws(socket: WebSocket, state: Arc<AppState>, server_id: 
                     }
                     None => {
                         // Channel closed, agent disconnected
+                        close_reason = "agent_disconnect".to_string();
                         break;
                     }
                 }
@@ -235,6 +302,7 @@ async fn handle_terminal_ws(socket: WebSocket, state: Arc<AppState>, server_id: 
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => {
+                        close_reason = "client_closed".to_string();
                         break;
                     }
                     Some(Ok(Message::Ping(_))) => {
@@ -243,6 +311,7 @@ async fn handle_terminal_ws(socket: WebSocket, state: Arc<AppState>, server_id: 
                     Some(Ok(_)) => {}
                     Some(Err(e)) => {
                         tracing::debug!("Terminal WS error: {e}");
+                        close_reason = "server_disconnect".to_string();
                         break;
                     }
                 }
@@ -252,6 +321,7 @@ async fn handle_terminal_ws(socket: WebSocket, state: Arc<AppState>, server_id: 
                 tracing::info!("Terminal session {session_id} timed out after idle");
                 let msg = serde_json::json!({"type": "error", "error": "Session timed out due to inactivity"});
                 let _ = ws_sink.send(Message::Text(msg.to_string().into())).await;
+                close_reason = "idle_timeout".to_string();
                 break;
             }
         }
@@ -264,6 +334,27 @@ async fn handle_terminal_ws(socket: WebSocket, state: Arc<AppState>, server_id: 
         })
         .await;
     state.agent_manager.unregister_terminal_session(&session_id);
+    if let Some((_, context)) = state.terminal_audit_contexts.remove(&session_id) {
+        let ended_at = chrono::Utc::now();
+        let duration_ms = (ended_at - context.started_at).num_milliseconds().max(0);
+        let detail = serde_json::json!({
+            "server_id": context.server_id,
+            "session_id": session_id,
+            "started_at": context.started_at,
+            "ended_at": ended_at,
+            "duration_ms": duration_ms,
+            "close_reason": close_reason,
+        })
+        .to_string();
+        let _ = AuditService::log(
+            &state.db,
+            &context.user_id,
+            "terminal_closed",
+            Some(&detail),
+            &context.ip,
+        )
+        .await;
+    }
 
     tracing::info!("Terminal WS closed: session={session_id}");
 }

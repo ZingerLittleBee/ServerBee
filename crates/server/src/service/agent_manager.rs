@@ -4,7 +4,7 @@ use std::time::Instant;
 use dashmap::DashMap;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use serverbee_common::constants::{CAP_DOCKER, has_capability};
+use serverbee_common::constants::{CAP_DOCKER, effective_capabilities, has_capability};
 use serverbee_common::docker_types::*;
 use serverbee_common::protocol::{AgentMessage, BrowserMessage, ServerMessage};
 use serverbee_common::types::{ServerStatus, SystemReport, TracerouteHop};
@@ -52,7 +52,8 @@ pub struct AgentManager {
     docker_stats: DashMap<String, Vec<DockerContainerStats>>,
     docker_info: DashMap<String, DockerSystemInfo>,
     features: DashMap<String, Vec<String>>,
-    capabilities: DashMap<String, u32>,
+    server_capabilities: DashMap<String, u32>,
+    agent_local_capabilities: DashMap<String, u32>,
     /// Maps server_id -> (session_id -> log entry sender)
     docker_log_sessions: DashMap<String, DashMap<String, mpsc::Sender<Vec<DockerLogEntry>>>>,
     /// Maps request_id -> traceroute result entry (cached for polling)
@@ -90,7 +91,8 @@ impl AgentManager {
             docker_stats: DashMap::new(),
             docker_info: DashMap::new(),
             features: DashMap::new(),
-            capabilities: DashMap::new(),
+            server_capabilities: DashMap::new(),
+            agent_local_capabilities: DashMap::new(),
             docker_log_sessions: DashMap::new(),
             traceroute_results: DashMap::new(),
         }
@@ -128,6 +130,8 @@ impl AgentManager {
     /// Unregister an agent connection and broadcast ServerOffline to browsers.
     pub fn remove_connection(&self, server_id: &str) {
         self.connections.remove(server_id);
+        self.server_capabilities.remove(server_id);
+        self.agent_local_capabilities.remove(server_id);
         self.remove_docker_log_sessions_for_server(server_id);
 
         let _ = self.browser_tx.send(BrowserMessage::ServerOffline {
@@ -395,14 +399,57 @@ impl AgentManager {
 
     // --- Capabilities cache ---
 
+    pub fn update_server_capabilities(&self, server_id: &str, caps: u32) {
+        self.server_capabilities.insert(server_id.to_string(), caps);
+    }
+
     pub fn update_capabilities(&self, server_id: &str, caps: u32) {
-        self.capabilities.insert(server_id.to_string(), caps);
+        self.update_server_capabilities(server_id, caps);
+    }
+
+    pub fn get_server_capabilities(&self, server_id: &str) -> Option<u32> {
+        self.server_capabilities.get(server_id).map(|cap| *cap)
+    }
+
+    pub fn update_agent_local_capabilities(&self, server_id: &str, caps: u32) {
+        self.agent_local_capabilities
+            .insert(server_id.to_string(), caps);
+    }
+
+    pub fn get_agent_local_capabilities(&self, server_id: &str) -> Option<u32> {
+        self.agent_local_capabilities.get(server_id).map(|cap| *cap)
+    }
+
+    pub fn get_effective_capabilities(&self, server_id: &str) -> Option<u32> {
+        self.get_server_capabilities(server_id)
+            .zip(self.get_agent_local_capabilities(server_id))
+            .map(|(server_caps, agent_local_caps)| {
+                effective_capabilities(server_caps, agent_local_caps)
+            })
+    }
+
+    pub fn capability_denied_reason(
+        &self,
+        server_id: &str,
+        configured_caps: u32,
+        cap_bit: u32,
+    ) -> Option<&'static str> {
+        if !has_capability(configured_caps, cap_bit) {
+            Some("server_capability_disabled")
+        } else if self
+            .get_agent_local_capabilities(server_id)
+            .is_some_and(|caps| !has_capability(caps, cap_bit))
+        {
+            Some("agent_capability_disabled")
+        } else {
+            None
+        }
     }
 
     pub fn has_docker_capability(&self, server_id: &str) -> bool {
-        self.capabilities
-            .get(server_id)
-            .is_some_and(|cap| has_capability(*cap, CAP_DOCKER))
+        self.get_effective_capabilities(server_id)
+            .or_else(|| self.get_server_capabilities(server_id))
+            .is_some_and(|cap| has_capability(cap, CAP_DOCKER))
     }
 
     pub async fn preload_capabilities(
@@ -421,7 +468,7 @@ impl AgentManager {
             .all(db)
             .await?;
         for (id, caps, features_json) in servers {
-            self.capabilities.insert(id.clone(), caps as u32);
+            self.server_capabilities.insert(id.clone(), caps as u32);
             let features: Vec<String> = serde_json::from_str(&features_json).unwrap_or_default();
             self.features.insert(id, features);
         }
@@ -530,6 +577,7 @@ impl AgentManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serverbee_common::constants::{CAP_DOCKER, CAP_EXEC, CAP_FILE};
     use serverbee_common::protocol::AgentMessage;
     use std::net::{IpAddr, Ipv4Addr};
 
@@ -658,6 +706,42 @@ mod tests {
         assert_eq!(mgr.get_protocol_version("s1"), Some(1));
         mgr.set_protocol_version("s1", 2);
         assert_eq!(mgr.get_protocol_version("s1"), Some(2));
+    }
+
+    #[test]
+    fn test_effective_capabilities_intersect_configured_and_local_caps() {
+        let (mgr, _rx) = make_manager();
+        mgr.update_server_capabilities("s1", CAP_EXEC | CAP_FILE);
+        mgr.update_agent_local_capabilities("s1", CAP_FILE);
+
+        assert_eq!(mgr.get_agent_local_capabilities("s1"), Some(CAP_FILE));
+        assert_eq!(mgr.get_effective_capabilities("s1"), Some(CAP_FILE));
+    }
+
+    #[test]
+    fn test_effective_capabilities_are_none_without_local_caps() {
+        let (mgr, _rx) = make_manager();
+        mgr.update_server_capabilities("s1", CAP_EXEC | CAP_FILE);
+
+        assert_eq!(mgr.get_agent_local_capabilities("s1"), None);
+        assert_eq!(mgr.get_effective_capabilities("s1"), None);
+    }
+
+    #[test]
+    fn test_remove_connection_clears_runtime_capability_state() {
+        let (mgr, _rx) = make_manager();
+        let (tx, _) = mpsc::channel(1);
+        mgr.add_connection("s1".into(), "Srv".into(), tx, test_addr());
+        mgr.update_server_capabilities("s1", CAP_DOCKER);
+        mgr.update_agent_local_capabilities("s1", CAP_DOCKER);
+
+        assert!(mgr.has_docker_capability("s1"));
+
+        mgr.remove_connection("s1");
+
+        assert_eq!(mgr.get_agent_local_capabilities("s1"), None);
+        assert_eq!(mgr.get_effective_capabilities("s1"), None);
+        assert!(!mgr.has_docker_capability("s1"));
     }
 
     #[test]

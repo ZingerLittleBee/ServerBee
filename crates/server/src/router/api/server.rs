@@ -20,12 +20,14 @@ use crate::router::api::network_probe::{
     get_server_network_anomalies, get_server_network_records, get_server_network_summary,
     get_server_network_targets,
 };
+use crate::service::agent_manager::AgentManager;
 use crate::service::audit::AuditService;
 use crate::service::network_probe::NetworkProbeService;
 use crate::service::ping::PingService;
 use crate::service::record::{QueryHistoryResult, RecordService};
 use crate::service::server::{ServerService, UpdateServerInput};
 use crate::state::AppState;
+use serverbee_common::constants::effective_capabilities;
 use serverbee_common::protocol::{BrowserMessage, ServerMessage};
 use serverbee_common::types::NetworkProbeTarget;
 
@@ -96,49 +98,85 @@ pub struct ServerResponse {
     traffic_limit_type: Option<String>,
     billing_start_day: Option<i32>,
     pub capabilities: i32,
+    pub agent_local_capabilities: Option<i32>,
+    pub effective_capabilities: Option<i32>,
     pub protocol_version: i32,
     features: Vec<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
 
-impl From<server::Model> for ServerResponse {
-    fn from(s: server::Model) -> Self {
-        Self {
-            id: s.id,
-            name: s.name,
-            cpu_name: s.cpu_name,
-            cpu_cores: s.cpu_cores,
-            cpu_arch: s.cpu_arch,
-            os: s.os,
-            kernel_version: s.kernel_version,
-            mem_total: s.mem_total,
-            swap_total: s.swap_total,
-            disk_total: s.disk_total,
-            ipv4: s.ipv4,
-            ipv6: s.ipv6,
-            region: s.region,
-            country_code: s.country_code,
-            virtualization: s.virtualization,
-            agent_version: s.agent_version,
-            group_id: s.group_id,
-            weight: s.weight,
-            hidden: s.hidden,
-            remark: s.remark,
-            public_remark: s.public_remark,
-            price: s.price,
-            billing_cycle: s.billing_cycle,
-            currency: s.currency,
-            expired_at: s.expired_at,
-            traffic_limit: s.traffic_limit,
-            traffic_limit_type: s.traffic_limit_type,
-            billing_start_day: s.billing_start_day,
-            capabilities: s.capabilities,
-            protocol_version: s.protocol_version,
-            features: serde_json::from_str(&s.features).unwrap_or_default(),
-            created_at: s.created_at,
-            updated_at: s.updated_at,
-        }
+fn runtime_capability_fields(
+    agent_manager: &AgentManager,
+    server_id: &str,
+) -> (Option<i32>, Option<i32>) {
+    (
+        agent_manager
+            .get_agent_local_capabilities(server_id)
+            .map(|caps| caps as i32),
+        agent_manager
+            .get_effective_capabilities(server_id)
+            .map(|caps| caps as i32),
+    )
+}
+
+fn build_server_response(s: server::Model, agent_manager: &AgentManager) -> ServerResponse {
+    let (agent_local_capabilities, effective_capabilities) =
+        runtime_capability_fields(agent_manager, &s.id);
+
+    ServerResponse {
+        id: s.id,
+        name: s.name,
+        cpu_name: s.cpu_name,
+        cpu_cores: s.cpu_cores,
+        cpu_arch: s.cpu_arch,
+        os: s.os,
+        kernel_version: s.kernel_version,
+        mem_total: s.mem_total,
+        swap_total: s.swap_total,
+        disk_total: s.disk_total,
+        ipv4: s.ipv4,
+        ipv6: s.ipv6,
+        region: s.region,
+        country_code: s.country_code,
+        virtualization: s.virtualization,
+        agent_version: s.agent_version,
+        group_id: s.group_id,
+        weight: s.weight,
+        hidden: s.hidden,
+        remark: s.remark,
+        public_remark: s.public_remark,
+        price: s.price,
+        billing_cycle: s.billing_cycle,
+        currency: s.currency,
+        expired_at: s.expired_at,
+        traffic_limit: s.traffic_limit,
+        traffic_limit_type: s.traffic_limit_type,
+        billing_start_day: s.billing_start_day,
+        capabilities: s.capabilities,
+        agent_local_capabilities,
+        effective_capabilities,
+        protocol_version: s.protocol_version,
+        features: serde_json::from_str(&s.features).unwrap_or_default(),
+        created_at: s.created_at,
+        updated_at: s.updated_at,
+    }
+}
+
+fn capability_change_message(
+    agent_manager: &AgentManager,
+    server_id: &str,
+    capabilities: u32,
+) -> BrowserMessage {
+    let agent_local_capabilities = agent_manager.get_agent_local_capabilities(server_id);
+    let effective_capabilities =
+        agent_local_capabilities.map(|bits| effective_capabilities(capabilities, bits));
+
+    BrowserMessage::CapabilitiesChanged {
+        server_id: server_id.to_string(),
+        capabilities,
+        agent_local_capabilities,
+        effective_capabilities,
     }
 }
 
@@ -198,7 +236,10 @@ async fn list_servers(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<Vec<ServerResponse>>>, AppError> {
     let servers = ServerService::list_servers(&state.db).await?;
-    ok(servers.into_iter().map(ServerResponse::from).collect())
+    ok(servers
+        .into_iter()
+        .map(|server| build_server_response(server, &state.agent_manager))
+        .collect())
 }
 
 #[utoipa::path(
@@ -217,7 +258,7 @@ async fn get_server(
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ServerResponse>>, AppError> {
     let server = ServerService::get_server(&state.db, &id).await?;
-    ok(ServerResponse::from(server))
+    ok(build_server_response(server, &state.agent_manager))
 }
 
 #[utoipa::path(
@@ -267,7 +308,9 @@ async fn update_server(
     // If capabilities changed, broadcast + re-sync
     if let Some(old) = old_caps {
         let new_caps = server.capabilities as u32;
-        state.agent_manager.update_capabilities(&id, new_caps);
+        state
+            .agent_manager
+            .update_server_capabilities(&id, new_caps);
 
         // Send CapabilitiesSync to Agent (if online and protocol_version >= 2)
         if let Some(pv) = state.agent_manager.get_protocol_version(&id)
@@ -284,10 +327,11 @@ async fn update_server(
         // Broadcast to browsers
         state
             .agent_manager
-            .broadcast_browser(BrowserMessage::CapabilitiesChanged {
-                server_id: id.clone(),
-                capabilities: new_caps,
-            });
+            .broadcast_browser(capability_change_message(
+                &state.agent_manager,
+                &id,
+                new_caps,
+            ));
 
         // Re-sync ping tasks only if ping bits changed
         let ping_mask = CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP;
@@ -343,7 +387,7 @@ async fn update_server(
         .await;
     }
 
-    ok(ServerResponse::from(server))
+    ok(build_server_response(server, &state.agent_manager))
 }
 
 #[utoipa::path(
@@ -687,7 +731,9 @@ async fn batch_update_capabilities(
         let new_caps = *new_caps;
         let old_caps = *old_caps;
 
-        state.agent_manager.update_capabilities(server_id, new_caps);
+        state
+            .agent_manager
+            .update_server_capabilities(server_id, new_caps);
 
         // Sync to agent if online and protocol v2+
         if let Some(pv) = state.agent_manager.get_protocol_version(server_id)
@@ -704,10 +750,11 @@ async fn batch_update_capabilities(
         // Broadcast to browsers
         state
             .agent_manager
-            .broadcast_browser(BrowserMessage::CapabilitiesChanged {
-                server_id: server_id.clone(),
-                capabilities: new_caps,
-            });
+            .broadcast_browser(capability_change_message(
+                &state.agent_manager,
+                server_id,
+                new_caps,
+            ));
 
         // Re-sync ping tasks if ping bits changed
         let ping_mask = CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP;

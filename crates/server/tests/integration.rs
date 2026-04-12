@@ -4,7 +4,10 @@ use futures_util::{SinkExt, StreamExt};
 use sea_orm::{ConnectOptions, ConnectionTrait, Database};
 use sea_orm_migration::MigratorTrait;
 use serde_json::json;
+use serverbee_common::constants::{CAP_DEFAULT, CAP_EXEC, CAP_FILE, CAP_PING_TCP};
 use tokio_tungstenite::tungstenite;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::http::HeaderValue;
 
 use serverbee_common::types::{DiskIo, SystemReport};
 use serverbee_server::config::{AdminConfig, AppConfig, AuthConfig, DatabaseConfig, ServerConfig};
@@ -133,6 +136,164 @@ async fn login_admin(client: &reqwest::Client, base_url: &str) -> serde_json::Va
     resp.json::<serde_json::Value>()
         .await
         .expect("Failed to parse login response")
+}
+
+async fn create_api_key(client: &reqwest::Client, base_url: &str) -> String {
+    let resp = client
+        .post(format!("{}/api/auth/api-keys", base_url))
+        .json(&json!({ "name": "integration-key" }))
+        .send()
+        .await
+        .expect("POST /api/auth/api-keys failed");
+
+    assert_eq!(resp.status(), 200, "API key creation should succeed");
+    let body: serde_json::Value = resp.json().await.expect("Failed to parse API key response");
+    body["data"]["key"]
+        .as_str()
+        .expect("API key missing")
+        .to_string()
+}
+
+async fn list_audit_entries(client: &reqwest::Client, base_url: &str) -> Vec<serde_json::Value> {
+    let audit_resp = client
+        .get(format!("{}/api/audit-logs", base_url))
+        .send()
+        .await
+        .expect("GET /api/audit-logs failed");
+
+    assert_eq!(audit_resp.status(), 200, "audit log listing should succeed");
+    let audit_body: serde_json::Value = audit_resp.json().await.unwrap();
+    audit_body["data"]["entries"]
+        .as_array()
+        .expect("entries should be an array")
+        .clone()
+}
+
+async fn register_agent(client: &reqwest::Client, base_url: &str) -> (String, String) {
+    let register_resp = client
+        .post(format!("{}/api/agent/register", base_url))
+        .header("Authorization", "Bearer test-key")
+        .send()
+        .await
+        .expect("Register request failed");
+
+    assert_eq!(
+        register_resp.status(),
+        200,
+        "Agent registration should succeed"
+    );
+    let register_body: serde_json::Value = register_resp
+        .json()
+        .await
+        .expect("Failed to parse register response");
+
+    let server_id = register_body["data"]["server_id"]
+        .as_str()
+        .expect("server_id missing")
+        .to_string();
+    let token = register_body["data"]["token"]
+        .as_str()
+        .expect("token missing")
+        .to_string();
+
+    (server_id, token)
+}
+
+async fn connect_agent(
+    base_url: &str,
+    token: &str,
+) -> (
+    futures_util::stream::SplitSink<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        tungstenite::Message,
+    >,
+    futures_util::stream::SplitStream<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    >,
+) {
+    let ws_url = format!(
+        "{}/api/agent/ws?token={}",
+        base_url.replace("http://", "ws://"),
+        token
+    );
+    let (ws_stream, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .expect("WebSocket connection failed");
+
+    ws_stream.split()
+}
+
+async fn recv_agent_text(
+    reader: &mut futures_util::stream::SplitStream<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    >,
+) -> serde_json::Value {
+    let message = tokio::time::timeout(Duration::from_secs(5), reader.next())
+        .await
+        .expect("Timed out waiting for agent message")
+        .expect("Agent WebSocket stream ended")
+        .expect("Agent WebSocket read error");
+
+    let text = match message {
+        tungstenite::Message::Text(text) => text.to_string(),
+        other => panic!("Expected Text message, got: {:?}", other),
+    };
+
+    serde_json::from_str(&text).expect("Failed to parse agent message")
+}
+
+async fn send_system_info(
+    sink: &mut futures_util::stream::SplitSink<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        tungstenite::Message,
+    >,
+    reader: &mut futures_util::stream::SplitStream<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    >,
+    msg_id: &str,
+    agent_local_capabilities: Option<u32>,
+) {
+    let system_info = json!({
+        "type": "system_info",
+        "msg_id": msg_id,
+        "cpu_name": "Intel Xeon E5-2680 v4",
+        "cpu_cores": 8,
+        "cpu_arch": "x86_64",
+        "os": "Ubuntu 22.04",
+        "kernel_version": "5.15.0-100-generic",
+        "mem_total": 16_000_000_000_i64,
+        "swap_total": 4_000_000_000_i64,
+        "disk_total": 100_000_000_000_i64,
+        "ipv4": "1.2.3.4",
+        "ipv6": null,
+        "virtualization": "kvm",
+        "agent_version": "0.1.0",
+        "protocol_version": serverbee_common::constants::PROTOCOL_VERSION,
+        "features": [],
+        "agent_local_capabilities": agent_local_capabilities
+    });
+
+    sink.send(tungstenite::Message::Text(system_info.to_string().into()))
+        .await
+        .expect("Failed to send SystemInfo");
+
+    loop {
+        let msg = recv_agent_text(reader).await;
+        if msg["type"] == "ack" {
+            assert_eq!(msg["msg_id"], msg_id);
+            break;
+        }
+    }
 }
 
 #[tokio::test]
@@ -324,6 +485,52 @@ async fn test_agent_register_connect_report() {
     assert_eq!(server_data["ipv4"], "1.2.3.4");
 
     // Clean up: close the WS connection
+    let _ = ws_sink.close().await;
+}
+
+#[tokio::test]
+async fn test_server_detail_returns_runtime_capability_fields() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+
+    let (server_id, token) = register_agent(&client, &base_url).await;
+    let (mut ws_sink, mut ws_reader) = connect_agent(&base_url, &token).await;
+
+    let welcome = recv_agent_text(&mut ws_reader).await;
+    assert_eq!(welcome["type"], "welcome");
+    assert_eq!(welcome["server_id"], server_id);
+
+    let agent_local_capabilities = CAP_PING_TCP | CAP_FILE;
+    send_system_info(
+        &mut ws_sink,
+        &mut ws_reader,
+        "runtime-capabilities-msg",
+        Some(agent_local_capabilities),
+    )
+    .await;
+
+    login_admin(&client, &base_url).await;
+
+    let server_resp = client
+        .get(format!("{}/api/servers/{}", base_url, server_id))
+        .send()
+        .await
+        .expect("GET /api/servers/{id} failed");
+
+    assert_eq!(server_resp.status(), 200);
+    let server_body: serde_json::Value = server_resp
+        .json()
+        .await
+        .expect("Failed to parse server detail response");
+
+    let server_data = &server_body["data"];
+    assert_eq!(server_data["capabilities"], CAP_DEFAULT);
+    assert_eq!(
+        server_data["agent_local_capabilities"],
+        agent_local_capabilities
+    );
+    assert_eq!(server_data["effective_capabilities"], CAP_PING_TCP);
+
     let _ = ws_sink.close().await;
 }
 
@@ -779,6 +986,298 @@ async fn test_audit_log_recorded() {
             .any(|e| e["action"].as_str() == Some("login")),
         "Audit log should contain a 'login' entry"
     );
+}
+
+#[tokio::test]
+async fn test_terminal_open_denied_is_audited() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+    let api_key = create_api_key(&client, &base_url).await;
+
+    let (server_id, token) = register_agent(&client, &base_url).await;
+    let (_ws_sink, _ws_reader) = connect_agent(&base_url, &token).await;
+
+    let ws_url = format!(
+        "{}/api/ws/terminal/{}",
+        base_url.replace("http://", "ws://"),
+        server_id
+    );
+    let mut request = ws_url
+        .into_client_request()
+        .expect("terminal ws request should build");
+    request.headers_mut().insert(
+        "x-api-key",
+        HeaderValue::from_str(&api_key).expect("api key header should be valid"),
+    );
+
+    let err = tokio_tungstenite::connect_async(request)
+        .await
+        .expect_err("terminal websocket should be denied without terminal capability");
+    assert!(
+        matches!(err, tungstenite::Error::Http(_)),
+        "expected http handshake failure, got {err:?}"
+    );
+
+    let entries = list_audit_entries(&client, &base_url).await;
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry["action"].as_str() == Some("terminal_open_denied")),
+        "terminal capability denial should be audited"
+    );
+}
+
+#[tokio::test]
+async fn test_terminal_open_and_close_are_audited() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+    let api_key = create_api_key(&client, &base_url).await;
+
+    let (server_id, token) = register_agent(&client, &base_url).await;
+    let update_resp = client
+        .put(format!("{}/api/servers/batch-capabilities", base_url))
+        .json(&json!({
+            "server_ids": [server_id],
+            "set": 1,
+            "unset": 0
+        }))
+        .send()
+        .await
+        .expect("batch-capabilities update failed");
+    assert_eq!(update_resp.status(), 200);
+
+    let (mut agent_sink, mut agent_reader) = connect_agent(&base_url, &token).await;
+    let welcome = recv_agent_text(&mut agent_reader).await;
+    assert_eq!(welcome["type"], "welcome");
+    send_system_info(
+        &mut agent_sink,
+        &mut agent_reader,
+        "terminal-audit-msg",
+        Some(CAP_DEFAULT | 1),
+    )
+    .await;
+
+    let ws_url = format!(
+        "{}/api/ws/terminal/{}",
+        base_url.replace("http://", "ws://"),
+        server_id
+    );
+    let mut request = ws_url.into_client_request().expect("terminal ws request should build");
+    request.headers_mut().insert(
+        "x-api-key",
+        HeaderValue::from_str(&api_key).expect("api key header should be valid"),
+    );
+
+    let (mut terminal_ws, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("terminal websocket should connect");
+
+    let session_msg = tokio::time::timeout(Duration::from_secs(5), terminal_ws.next())
+        .await
+        .expect("timeout waiting for terminal session message")
+        .expect("terminal ws ended")
+        .expect("terminal ws read error");
+    let session_text = match session_msg {
+        tungstenite::Message::Text(text) => text.to_string(),
+        other => panic!("Expected terminal session message, got: {:?}", other),
+    };
+    let session_json: serde_json::Value =
+        serde_json::from_str(&session_text).expect("terminal session message should be json");
+    assert_eq!(session_json["type"], "session");
+
+    let _ = terminal_ws.close(None).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let entries = list_audit_entries(&client, &base_url).await;
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry["action"].as_str() == Some("terminal_opened")),
+        "terminal open should be audited"
+    );
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry["action"].as_str() == Some("terminal_closed")),
+        "terminal close should be audited"
+    );
+
+    let _ = agent_sink.close().await;
+}
+
+#[tokio::test]
+async fn test_oneshot_exec_started_and_finished_are_audited() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, token) = register_agent(&client, &base_url).await;
+    let update_resp = client
+        .put(format!("{}/api/servers/batch-capabilities", base_url))
+        .json(&json!({
+            "server_ids": [server_id],
+            "set": CAP_EXEC,
+            "unset": 0
+        }))
+        .send()
+        .await
+        .expect("batch-capabilities update failed");
+    assert_eq!(update_resp.status(), 200);
+
+    let (mut ws_sink, mut ws_reader) = connect_agent(&base_url, &token).await;
+    let welcome = recv_agent_text(&mut ws_reader).await;
+    assert_eq!(welcome["type"], "welcome");
+
+    send_system_info(
+        &mut ws_sink,
+        &mut ws_reader,
+        "exec-audit-msg",
+        Some(CAP_DEFAULT | CAP_EXEC),
+    )
+    .await;
+
+    let create_resp = client
+        .post(format!("{}/api/tasks", base_url))
+        .json(&json!({
+            "command": "echo audit",
+            "server_ids": [server_id],
+            "task_type": "oneshot"
+        }))
+        .send()
+        .await
+        .expect("POST /api/tasks failed");
+    assert_eq!(create_resp.status(), 200);
+
+    let exec_msg = loop {
+        let msg = recv_agent_text(&mut ws_reader).await;
+        if msg["type"] == "exec" {
+            break msg;
+        }
+    };
+    let task_id = exec_msg["task_id"]
+        .as_str()
+        .expect("exec message task_id missing")
+        .to_string();
+
+    ws_sink
+        .send(tungstenite::Message::Text(
+            json!({
+                "type": "task_result",
+                "msg_id": "exec-audit-result",
+                "task_id": task_id,
+                "output": "ok",
+                "exit_code": 0
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("Failed to send TaskResult");
+
+    loop {
+        let msg = recv_agent_text(&mut ws_reader).await;
+        if msg["type"] == "ack" && msg["msg_id"] == "exec-audit-result" {
+            break;
+        }
+    }
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let entries = list_audit_entries(&client, &base_url).await;
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry["action"].as_str() == Some("exec_started")),
+        "oneshot task dispatch should be audited as exec_started"
+    );
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry["action"].as_str() == Some("exec_finished")),
+        "oneshot task completion should be audited as exec_finished"
+    );
+}
+
+#[tokio::test]
+async fn test_file_read_is_audited() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, token) = register_agent(&client, &base_url).await;
+    let update_resp = client
+        .put(format!("{}/api/servers/batch-capabilities", base_url))
+        .json(&json!({
+            "server_ids": [server_id],
+            "set": CAP_FILE,
+            "unset": 0
+        }))
+        .send()
+        .await
+        .expect("batch-capabilities update failed");
+    assert_eq!(update_resp.status(), 200);
+
+    let (mut ws_sink, mut ws_reader) = connect_agent(&base_url, &token).await;
+    let welcome = recv_agent_text(&mut ws_reader).await;
+    assert_eq!(welcome["type"], "welcome");
+
+    send_system_info(
+        &mut ws_sink,
+        &mut ws_reader,
+        "file-read-audit-msg",
+        Some(CAP_DEFAULT | CAP_FILE),
+    )
+    .await;
+
+    let read_client = client.clone();
+    let read_base_url = base_url.clone();
+    let read_server_id = server_id.clone();
+    let read_handle = tokio::spawn(async move {
+        read_client
+            .post(format!("{}/api/files/{}/read", read_base_url, read_server_id))
+            .json(&json!({ "path": "/etc/hostname" }))
+            .send()
+            .await
+    });
+
+    let file_read_msg = loop {
+        let msg = recv_agent_text(&mut ws_reader).await;
+        if msg["type"] == "file_read" {
+            break msg;
+        }
+    };
+
+    ws_sink
+        .send(tungstenite::Message::Text(
+            json!({
+                "type": "file_read_result",
+                "msg_id": file_read_msg["msg_id"],
+                "content": "serverbee\n",
+                "error": null
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("Failed to send FileReadResult");
+
+    let read_resp = read_handle
+        .await
+        .expect("file read task should join")
+        .expect("POST /api/files/{id}/read failed");
+    assert_eq!(read_resp.status(), 200);
+
+    let entries = list_audit_entries(&client, &base_url).await;
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry["action"].as_str() == Some("file_read")),
+        "successful file reads should be audited"
+    );
+
+    let _ = ws_sink.close().await;
 }
 
 // ── Network probe integration tests ──────────────────────────────────────────
@@ -1801,9 +2300,138 @@ async fn test_file_capability_enforcement() {
         body["error"]["message"]
             .as_str()
             .unwrap_or("")
-            .contains("File capability disabled"),
-        "Error message should mention file capability"
+            .contains("server_capability_disabled"),
+        "Error message should preserve the server-side capability denial reason"
     );
+}
+
+#[tokio::test]
+async fn test_file_capability_enforcement_uses_agent_local_policy_reason() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, token) = register_agent(&client, &base_url).await;
+
+    let update_resp = client
+        .put(format!("{}/api/servers/batch-capabilities", base_url))
+        .json(&json!({
+            "server_ids": [server_id],
+            "set": CAP_FILE,
+            "unset": 0
+        }))
+        .send()
+        .await
+        .expect("batch-capabilities update failed");
+    assert_eq!(update_resp.status(), 200);
+
+    let (mut ws_sink, mut ws_reader) = connect_agent(&base_url, &token).await;
+    let welcome = recv_agent_text(&mut ws_reader).await;
+    assert_eq!(welcome["type"], "welcome");
+
+    send_system_info(
+        &mut ws_sink,
+        &mut ws_reader,
+        "file-local-caps-msg",
+        Some(CAP_DEFAULT),
+    )
+    .await;
+
+    let list_resp = client
+        .post(format!("{}/api/files/{}/list", base_url, server_id))
+        .json(&json!({ "path": "/" }))
+        .send()
+        .await
+        .expect("POST /api/files/{id}/list failed");
+
+    assert_eq!(list_resp.status(), 403);
+    let body: serde_json::Value = list_resp.json().await.unwrap();
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("agent_capability_disabled"),
+        "Error message should preserve the agent-local capability denial reason"
+    );
+
+    let _ = ws_sink.close().await;
+}
+
+#[tokio::test]
+async fn test_oneshot_exec_capability_denial_uses_agent_local_policy_reason() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, token) = register_agent(&client, &base_url).await;
+
+    let update_resp = client
+        .put(format!("{}/api/servers/batch-capabilities", base_url))
+        .json(&json!({
+            "server_ids": [server_id],
+            "set": CAP_EXEC,
+            "unset": 0
+        }))
+        .send()
+        .await
+        .expect("batch-capabilities update failed");
+    assert_eq!(update_resp.status(), 200);
+
+    let (mut ws_sink, mut ws_reader) = connect_agent(&base_url, &token).await;
+    let welcome = recv_agent_text(&mut ws_reader).await;
+    assert_eq!(welcome["type"], "welcome");
+
+    send_system_info(
+        &mut ws_sink,
+        &mut ws_reader,
+        "exec-local-caps-msg",
+        Some(CAP_DEFAULT),
+    )
+    .await;
+
+    let create_resp = client
+        .post(format!("{}/api/tasks", base_url))
+        .json(&json!({
+            "command": "echo hello",
+            "server_ids": [server_id],
+            "task_type": "oneshot"
+        }))
+        .send()
+        .await
+        .expect("POST /api/tasks failed");
+
+    assert_eq!(create_resp.status(), 200);
+    let create_body: serde_json::Value = create_resp
+        .json()
+        .await
+        .expect("Failed to parse task create response");
+    let task_id = create_body["data"]["id"].as_str().expect("task id missing");
+
+    let results_resp = client
+        .get(format!("{}/api/tasks/{}/results", base_url, task_id))
+        .send()
+        .await
+        .expect("GET /api/tasks/{id}/results failed");
+    assert_eq!(results_resp.status(), 200);
+
+    let results_body: serde_json::Value = results_resp
+        .json()
+        .await
+        .expect("Failed to parse task results response");
+    let results = results_body["data"]
+        .as_array()
+        .expect("task results should be an array");
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["server_id"], server_id);
+    assert!(
+        results[0]["output"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Capability denied: exec blocked by agent local policy"),
+        "Task result should preserve the agent-local exec denial reason"
+    );
+
+    let _ = ws_sink.close().await;
 }
 
 #[tokio::test]
