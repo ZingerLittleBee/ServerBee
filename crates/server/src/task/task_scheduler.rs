@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::entity::{task, task_result};
 use crate::state::AppState;
-use serverbee_common::constants::{CAP_EXEC, has_capability};
+use serverbee_common::constants::CAP_EXEC;
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
 
 /// Build correlation ID: {task_id}:{run_id}:{server_id}:{attempt}
@@ -101,14 +101,18 @@ pub async fn execute_scheduled_task(
         let caps = server_caps.get(sid).copied().unwrap_or(0);
 
         // Check CAP_EXEC
-        if !has_capability(caps as u32, CAP_EXEC) {
+        if let Some(reason) =
+            state
+                .agent_manager
+                .capability_denied_reason(sid, caps as u32, CAP_EXEC)
+        {
             let _ = write_synthetic_result(
                 &state.db,
                 task_id,
                 &run_id,
                 sid,
                 -2,
-                "Capability denied: exec not enabled",
+                crate::router::api::task::exec_capability_denied_output(reason),
             )
             .await;
             continue;

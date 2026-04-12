@@ -20,7 +20,7 @@ use crate::service::ping::PingService;
 use crate::service::record::RecordService;
 use crate::service::server::ServerService;
 use crate::state::AppState;
-use serverbee_common::constants::MAX_WS_MESSAGE_SIZE;
+use serverbee_common::constants::{MAX_WS_MESSAGE_SIZE, effective_capabilities};
 use serverbee_common::protocol::{AgentMessage, BrowserMessage, ServerMessage};
 use serverbee_common::types::NetworkProbeTarget as NetworkProbeTargetDto;
 
@@ -270,7 +270,11 @@ async fn handle_agent_ws(
 
 async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: AgentMessage) {
     match msg {
-        AgentMessage::SystemInfo { msg_id, info } => {
+        AgentMessage::SystemInfo {
+            msg_id,
+            info,
+            agent_local_capabilities,
+        } => {
             // Resolve GeoIP — prefer agent-reported public IP, fall back to remote_addr
             let ip = info
                 .ipv4
@@ -401,6 +405,23 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 info.cpu_arch.clone(),
             );
 
+            if let Some(bits) = agent_local_capabilities {
+                state
+                    .agent_manager
+                    .update_agent_local_capabilities(server_id, bits);
+
+                if let Some(configured) = state.agent_manager.get_server_capabilities(server_id) {
+                    state
+                        .agent_manager
+                        .broadcast_browser(BrowserMessage::CapabilitiesChanged {
+                            server_id: server_id.to_string(),
+                            capabilities: configured,
+                            agent_local_capabilities: Some(bits),
+                            effective_capabilities: Some(effective_capabilities(configured, bits)),
+                        });
+                }
+            }
+
             // Broadcast to browsers
             state
                 .agent_manager
@@ -447,6 +468,9 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     tracing::error!("Failed to save task result for {server_id}: {e}");
                 }
             }
+            if let Err(e) = audit_exec_finished(&state.db, server_id, &result).await {
+                tracing::error!("Failed to write exec_finished audit log for {server_id}: {e}");
+            }
             // Send Ack
             if let Some(tx) = state.agent_manager.get_sender(server_id) {
                 let _ = tx.send(ServerMessage::Ack { msg_id }).await;
@@ -486,15 +510,16 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             msg_id,
             session_id,
             capability,
+            reason,
         } => {
             tracing::warn!(
-                "Agent {server_id} denied capability '{capability}' (msg_id={msg_id:?}, session_id={session_id:?})"
+                "Agent {server_id} denied capability '{capability}' with reason {reason:?} (msg_id={msg_id:?}, session_id={session_id:?})"
             );
             // For exec: try pending dispatch first, then save directly
             if let Some(task_id) = &msg_id {
                 let synthetic = serverbee_common::types::TaskResult {
                     task_id: task_id.clone(),
-                    output: format!("Capability denied: {capability}"),
+                    output: capability_denied_output(&capability, reason),
                     exit_code: -2,
                 };
                 let dispatched = state.agent_manager.dispatch_pending_response(
@@ -511,7 +536,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                         id: NotSet,
                         task_id: Set(task_id.clone()),
                         server_id: Set(server_id.to_string()),
-                        output: Set(format!("Capability denied: {capability}")),
+                        output: Set(capability_denied_output(&capability, reason)),
                         exit_code: Set(-2),
                         run_id: Set(None),
                         attempt: Set(1),
@@ -971,6 +996,39 @@ async fn save_task_result(
     Ok(())
 }
 
+async fn audit_exec_finished(
+    db: &sea_orm::DatabaseConnection,
+    server_id: &str,
+    result: &serverbee_common::types::TaskResult,
+) -> Result<(), crate::error::AppError> {
+    use crate::entity::task;
+    use sea_orm::EntityTrait;
+
+    let base_task_id = result.task_id.split(':').next().unwrap_or(&result.task_id);
+    let Some(task_model) = task::Entity::find_by_id(base_task_id).one(db).await? else {
+        return Ok(());
+    };
+    if task_model.task_type != "oneshot" {
+        return Ok(());
+    }
+
+    let detail = serde_json::json!({
+        "server_id": server_id,
+        "task_id": task_model.id,
+        "command": task_model.command,
+        "exit_code": result.exit_code,
+    })
+    .to_string();
+    AuditService::log(
+        db,
+        &task_model.created_by,
+        "exec_finished",
+        Some(&detail),
+        "system",
+    )
+    .await
+}
+
 /// Save a ping result to the database.
 async fn save_ping_result(
     db: &sea_orm::DatabaseConnection,
@@ -1008,6 +1066,21 @@ async fn update_last_remote_addr(
     active.updated_at = Set(chrono::Utc::now());
     active.update(db).await?;
     Ok(())
+}
+
+fn capability_denied_output(
+    capability: &str,
+    reason: serverbee_common::constants::CapabilityDeniedReason,
+) -> String {
+    match (capability, reason) {
+        ("exec", serverbee_common::constants::CapabilityDeniedReason::ServerCapabilityDisabled) => {
+            "Capability denied: exec disabled on server".to_string()
+        }
+        ("exec", serverbee_common::constants::CapabilityDeniedReason::AgentCapabilityDisabled) => {
+            "Capability denied: exec blocked by agent local policy".to_string()
+        }
+        _ => format!("Capability denied: {capability}"),
+    }
 }
 
 /// Update the `ipv4` and `ipv6` fields on a server record.

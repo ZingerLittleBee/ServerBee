@@ -1,7 +1,8 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{ConnectInfo, Extension, Path, Query, State};
+use axum::http::HeaderMap;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::Utc;
@@ -11,8 +12,11 @@ use uuid::Uuid;
 
 use crate::entity::{server, task, task_result};
 use crate::error::{ApiResponse, AppError, ok};
+use crate::middleware::auth::CurrentUser;
+use crate::router::utils::extract_client_ip;
+use crate::service::audit::AuditService;
 use crate::state::AppState;
-use serverbee_common::constants::{CAP_EXEC, has_capability};
+use serverbee_common::constants::CAP_EXEC;
 use serverbee_common::protocol::ServerMessage;
 
 pub fn router() -> Router<Arc<AppState>> {
@@ -146,6 +150,9 @@ pub async fn list_tasks(
 )]
 pub async fn create_task(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    Extension(current_user): Extension<CurrentUser>,
+    headers: HeaderMap,
     Json(input): Json<CreateTaskRequest>,
 ) -> Result<Json<ApiResponse<TaskResponse>>, AppError> {
     if input.server_ids.is_empty() {
@@ -185,6 +192,12 @@ pub async fn create_task(
 
     let task_id = Uuid::new_v4().to_string();
     let now = Utc::now();
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
     let server_ids_json = serde_json::to_string(&input.server_ids)
         .map_err(|e| AppError::Internal(format!("Serialization error: {e}")))?;
 
@@ -204,7 +217,7 @@ pub async fn create_task(
         id: Set(task_id.clone()),
         command: Set(input.command.clone()),
         server_ids_json: Set(server_ids_json),
-        created_by: Set("admin".to_string()),
+        created_by: Set(current_user.user_id.clone()),
         task_type: Set(input.task_type.clone()),
         name: Set(input.name.clone()),
         cron_expression: Set(input.cron_expression.clone()),
@@ -237,6 +250,8 @@ pub async fn create_task(
             &input.command,
             &input.server_ids,
             input.timeout,
+            &current_user.user_id,
+            &ip,
         )
         .await?;
     }
@@ -474,27 +489,41 @@ async fn dispatch_oneshot(
     command: &str,
     server_ids: &[String],
     timeout: Option<u32>,
+    user_id: &str,
+    ip: &str,
 ) -> Result<(), AppError> {
     let servers = server::Entity::find()
         .filter(server::Column::Id.is_in(server_ids.iter().cloned()))
         .all(&state.db)
         .await?;
 
-    let (capable, disabled): (Vec<_>, Vec<_>) = server_ids.iter().partition(|sid| {
-        servers
+    let mut capable = Vec::new();
+    let mut disabled = Vec::new();
+    for sid in server_ids {
+        let configured_caps = servers
             .iter()
-            .find(|s| &s.id == *sid)
-            .map(|s| has_capability(s.capabilities as u32, CAP_EXEC))
-            .unwrap_or(false)
-    });
+            .find(|s| s.id == *sid)
+            .map(|s| s.capabilities as u32)
+            .unwrap_or(0);
+
+        if let Some(reason) =
+            state
+                .agent_manager
+                .capability_denied_reason(sid, configured_caps, CAP_EXEC)
+        {
+            disabled.push((sid.as_str(), exec_capability_denied_output(reason), reason));
+        } else {
+            capable.push(sid);
+        }
+    }
 
     let now = Utc::now();
-    for sid in &disabled {
+    for (sid, output, deny_reason) in &disabled {
         let result = task_result::ActiveModel {
             id: NotSet,
             task_id: Set(task_id.to_string()),
-            server_id: Set(sid.to_string()),
-            output: Set("Capability 'exec' is disabled for this server".to_string()),
+            server_id: Set((*sid).to_string()),
+            output: Set((*output).to_string()),
             exit_code: Set(-2),
             run_id: Set(None),
             attempt: Set(1),
@@ -502,6 +531,14 @@ async fn dispatch_oneshot(
             finished_at: Set(now),
         };
         result.insert(&state.db).await?;
+        let detail = serde_json::json!({
+            "server_id": sid,
+            "task_id": task_id,
+            "command": command,
+            "deny_reason": deny_reason,
+        })
+        .to_string();
+        let _ = AuditService::log(&state.db, user_id, "exec_denied", Some(&detail), ip).await;
     }
 
     let mut dispatched = 0;
@@ -514,6 +551,15 @@ async fn dispatch_oneshot(
             };
             if tx.send(msg).await.is_ok() {
                 dispatched += 1;
+                let detail = serde_json::json!({
+                    "server_id": sid,
+                    "task_id": task_id,
+                    "command": command,
+                    "timeout": timeout,
+                })
+                .to_string();
+                let _ =
+                    AuditService::log(&state.db, user_id, "exec_started", Some(&detail), ip).await;
             }
         }
     }
@@ -525,4 +571,12 @@ async fn dispatch_oneshot(
         server_ids.len()
     );
     Ok(())
+}
+
+pub(crate) fn exec_capability_denied_output(reason: &str) -> &'static str {
+    match reason {
+        "agent_capability_disabled" => "Capability denied: exec blocked by agent local policy",
+        "server_capability_disabled" => "Capability denied: exec disabled on server",
+        _ => "Capability denied: exec disabled",
+    }
 }
