@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts'
 import {
   type ChartConfig,
@@ -30,6 +31,7 @@ const chartConfig = {
 } satisfies ChartConfig
 
 export function DiskIoWidget({ config, servers }: DiskIoWidgetProps) {
+  const { t } = useTranslation('dashboard')
   const server_id = config.server_id ?? ''
   const hours = config.hours ?? DEFAULT_HOURS
   const interval = config.interval ?? DEFAULT_INTERVAL
@@ -59,10 +61,10 @@ export function DiskIoWidget({ config, servers }: DiskIoWidgetProps) {
   if (chartData.length === 0) {
     return (
       <div className="flex h-full flex-col rounded-lg border bg-card p-4">
-        <h3 className="mb-3 font-semibold text-sm">Disk I/O</h3>
+        <h3 className="mb-3 font-semibold text-sm">{t('widgets.diskIo.title')}</h3>
         <p className="text-muted-foreground text-xs">{serverName}</p>
         <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
-          No disk I/O data available
+          {t('widgets.diskIo.empty.noData')}
         </div>
       </div>
     )
@@ -71,7 +73,7 @@ export function DiskIoWidget({ config, servers }: DiskIoWidgetProps) {
   return (
     <div className="flex h-full flex-col rounded-lg border bg-card p-4">
       <div className="mb-3">
-        <h3 className="font-semibold text-sm">Disk I/O</h3>
+        <h3 className="font-semibold text-sm">{t('widgets.diskIo.title')}</h3>
         <p className="text-muted-foreground text-xs">{serverName}</p>
       </div>
       <div className="min-h-0 flex-1">

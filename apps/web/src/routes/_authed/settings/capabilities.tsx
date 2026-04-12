@@ -56,10 +56,10 @@ function CapabilitiesPage() {
       api.put(`/api/servers/${id}`, { capabilities }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['servers-list'] })
-      toast.success('Capability updated')
+      toast.success(t('capabilities.toast_updated'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to update capability')
+      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
     }
   })
 
@@ -69,10 +69,10 @@ function CapabilitiesPage() {
     onSuccess: () => {
       setRowSelection({})
       queryClient.invalidateQueries({ queryKey: ['servers-list'] })
-      toast.success('Batch capabilities updated')
+      toast.success(t('capabilities.toast_batch_updated'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to update batch capabilities')
+      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
     }
   })
 
@@ -238,10 +238,10 @@ function CapabilitiesPage() {
           {CAPABILITIES.map(({ bit, key }) => (
             <div className="flex gap-1" key={bit}>
               <Button disabled={isPending} onClick={() => batchEnable(bit)} size="sm" variant="outline">
-                +{capLabelMap[key]}
+                {t('capabilities.batch_enable', { capability: capLabelMap[key] })}
               </Button>
               <Button disabled={isPending} onClick={() => batchDisable(bit)} size="sm" variant="outline">
-                -{capLabelMap[key]}
+                {t('capabilities.batch_disable', { capability: capLabelMap[key] })}
               </Button>
             </div>
           ))}
@@ -252,8 +252,8 @@ function CapabilitiesPage() {
 
       {filtered.length > 0 && (
         <p className="mt-3 text-muted-foreground text-xs">
-          Showing {filtered.length} of {servers.length} servers
-          {selectedIds.length > 0 && ` · ${selectedIds.length} selected`}
+          {t('capabilities.footer_showing', { filtered: filtered.length, total: servers.length })}
+          {selectedIds.length > 0 && ` · ${t('capabilities.footer_selected', { count: selectedIds.length })}`}
         </p>
       )}
     </div>

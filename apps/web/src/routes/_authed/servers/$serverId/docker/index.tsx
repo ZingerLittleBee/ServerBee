@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, Container, HardDrive, Network } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
@@ -20,6 +21,7 @@ export const Route = createFileRoute('/_authed/servers/$serverId/docker/')({
 })
 
 function DockerPage() {
+  const { t } = useTranslation('docker')
   const { serverId } = Route.useParams()
   const [selectedContainer, setSelectedContainer] = useState<DockerContainer | null>(null)
   const [networksOpen, setNetworksOpen] = useState(false)
@@ -97,7 +99,7 @@ function DockerPage() {
           to="/servers/$id"
         >
           <ArrowLeft aria-hidden="true" className="size-4" />
-          Back to server
+          {t('backToServer')}
         </Link>
 
         <div className="flex items-center gap-3">
@@ -106,11 +108,11 @@ function DockerPage() {
           <div className="ml-auto flex items-center gap-2">
             <Button onClick={() => setNetworksOpen(true)} size="sm" variant="outline">
               <Network aria-hidden="true" className="mr-1.5 size-4" />
-              Networks
+              {t('networksButton')}
             </Button>
             <Button onClick={() => setVolumesOpen(true)} size="sm" variant="outline">
               <HardDrive aria-hidden="true" className="mr-1.5 size-4" />
-              Volumes
+              {t('volumesButton')}
             </Button>
           </div>
         </div>
@@ -120,8 +122,8 @@ function DockerPage() {
         <div className="flex min-h-[400px] items-center justify-center rounded-lg border border-dashed">
           <div className="text-center">
             <Container aria-hidden="true" className="mx-auto mb-3 size-10 text-muted-foreground" />
-            <p className="text-muted-foreground text-sm">Docker is not available</p>
-            <p className="mt-1 text-muted-foreground text-xs">Waiting for Docker data from the agent...</p>
+            <p className="text-muted-foreground text-sm">{t('notAvailable.title')}</p>
+            <p className="mt-1 text-muted-foreground text-xs">{t('notAvailable.description')}</p>
           </div>
         </div>
       )}
@@ -133,8 +135,8 @@ function DockerPage() {
           <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-dashed">
             <div className="text-center">
               <Container aria-hidden="true" className="mx-auto mb-3 size-8 text-muted-foreground" />
-              <p className="text-muted-foreground text-sm">No containers found</p>
-              <p className="mt-1 text-muted-foreground text-xs">Docker is running but no containers are present</p>
+              <p className="text-muted-foreground text-sm">{t('noContainers.title')}</p>
+              <p className="mt-1 text-muted-foreground text-xs">{t('noContainers.description')}</p>
             </div>
           </div>
 

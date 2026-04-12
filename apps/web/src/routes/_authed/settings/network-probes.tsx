@@ -21,6 +21,7 @@ import {
   useUpdateNetworkSetting,
   useUpdateTarget
 } from '@/hooks/use-network-api'
+import { getNetworkProbeTypeLabel } from '@/lib/network-i18n'
 import type { NetworkProbeTarget } from '@/lib/network-types'
 
 export const Route = createFileRoute('/_authed/settings/network-probes')({
@@ -48,7 +49,7 @@ const DEFAULT_FORM: TargetFormData = {
   probe_type: 'icmp'
 }
 
-function NetworkProbeSettingsPage() {
+export function NetworkProbeSettingsPage() {
   const { t } = useTranslation('network')
 
   const { tab: activeTab } = Route.useSearch()
@@ -184,10 +185,12 @@ function NetworkProbeSettingsPage() {
     setDefaultTargetIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }
 
+  const getProbeTypeLabel = useCallback((probeType: string) => getNetworkProbeTypeLabel(t, probeType), [t])
+
   const probeTypes: { value: ProbeType; label: string }[] = [
-    { value: 'icmp', label: 'ICMP (Ping)' },
-    { value: 'tcp', label: 'TCP' },
-    { value: 'http', label: 'HTTP' }
+    { value: 'icmp', label: getProbeTypeLabel('icmp') },
+    { value: 'tcp', label: getProbeTypeLabel('tcp') },
+    { value: 'http', label: getProbeTypeLabel('http') }
   ]
 
   const targetColumns = useMemo<ColumnDef<NetworkProbeTarget>[]>(
@@ -221,18 +224,20 @@ function NetworkProbeSettingsPage() {
         header: t('target_type'),
         enableSorting: false,
         cell: ({ row }) => (
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs uppercase">{row.original.probe_type}</span>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
+            {getProbeTypeLabel(row.original.probe_type)}
+          </span>
         )
       },
       {
         accessorKey: 'source',
-        header: 'Status',
+        header: t('target_status', { defaultValue: 'Status' }),
         enableSorting: false,
         cell: ({ row }) =>
           row.original.source ? (
             <span className="flex items-center gap-1 text-muted-foreground text-xs">
               <Lock aria-hidden="true" className="size-3" />
-              {row.original.source_name ?? t('preset')}
+              {row.original.source_name ?? t('builtin', { defaultValue: 'Built-in' })}
             </span>
           ) : (
             <span className="text-muted-foreground text-xs">{t('custom')}</span>
@@ -240,14 +245,14 @@ function NetworkProbeSettingsPage() {
       },
       {
         id: 'actions',
-        header: 'Actions',
+        header: t('target_actions', { defaultValue: 'Actions' }),
         enableSorting: false,
         meta: { className: 'text-right' },
         cell: ({ row }) =>
           !row.original.source && (
             <div className="flex justify-end gap-1">
               <Button
-                aria-label={`Edit ${row.original.name}`}
+                aria-label={t('edit_target_aria', { defaultValue: 'Edit {{name}}', name: row.original.name })}
                 onClick={() => openEditDialog(row.original)}
                 size="sm"
                 variant="outline"
@@ -255,7 +260,7 @@ function NetworkProbeSettingsPage() {
                 <Pencil className="size-3.5" />
               </Button>
               <Button
-                aria-label={`Delete ${row.original.name}`}
+                aria-label={t('delete_target_aria', { defaultValue: 'Delete {{name}}', name: row.original.name })}
                 onClick={() => setDeleteTargetId(row.original.id)}
                 size="sm"
                 variant="destructive"
@@ -266,7 +271,7 @@ function NetworkProbeSettingsPage() {
           )
       }
     ],
-    [t, openEditDialog]
+    [t, openEditDialog, getProbeTypeLabel]
   )
 
   const targetsTable = useReactTable({
@@ -364,7 +369,9 @@ function NetworkProbeSettingsPage() {
                             onCheckedChange={() => toggleDefaultTarget(target.id)}
                           />
                           <span>{target.name}</span>
-                          <span className="text-muted-foreground text-xs">({target.probe_type.toUpperCase()})</span>
+                          <span className="text-muted-foreground text-xs">
+                            ({getProbeTypeLabel(target.probe_type)})
+                          </span>
                         </label>
                       ))}
                     </div>
@@ -446,7 +453,7 @@ function NetworkProbeSettingsPage() {
                 id="form-target"
                 name="target-address"
                 onChange={(e) => setForm((prev) => ({ ...prev, target: e.target.value }))}
-                placeholder="e.g. 1.1.1.1 or example.com:80"
+                placeholder={t('target_address_placeholder', { defaultValue: 'e.g. 1.1.1.1 or example.com:80' })}
                 required
                 type="text"
                 value={form.target}

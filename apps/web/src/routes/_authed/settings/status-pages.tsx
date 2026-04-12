@@ -130,7 +130,7 @@ function StatusPageFormDialog({
             <Input
               id="sp-title"
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="My Status Page"
+              placeholder={t('status_pages.placeholder_title')}
               required
               value={title}
             />
@@ -140,7 +140,7 @@ function StatusPageFormDialog({
             <Input
               id="sp-slug"
               onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
-              placeholder="my-services"
+              placeholder={t('status_pages.placeholder_slug')}
               required
               value={slug}
             />
@@ -152,7 +152,7 @@ function StatusPageFormDialog({
               className="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               id="sp-desc"
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional description"
+              placeholder={t('status_pages.placeholder_description')}
               rows={2}
               value={description}
             />
@@ -166,7 +166,7 @@ function StatusPageFormDialog({
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
-              <Label htmlFor="sp-yellow">Uptime Yellow Threshold (%)</Label>
+              <Label htmlFor="sp-yellow">{t('status_pages.uptime_yellow_label')}</Label>
               <Input
                 id="sp-yellow"
                 max={100}
@@ -176,10 +176,10 @@ function StatusPageFormDialog({
                 type="number"
                 value={yellowThreshold}
               />
-              <p className="text-muted-foreground text-xs">Below this = yellow (degraded)</p>
+              <p className="text-muted-foreground text-xs">{t('status_pages.uptime_yellow_hint')}</p>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="sp-red">Uptime Red Threshold (%)</Label>
+              <Label htmlFor="sp-red">{t('status_pages.uptime_red_label')}</Label>
               <Input
                 id="sp-red"
                 max={100}
@@ -189,7 +189,7 @@ function StatusPageFormDialog({
                 type="number"
                 value={redThreshold}
               />
-              <p className="text-muted-foreground text-xs">Below this = red (down)</p>
+              <p className="text-muted-foreground text-xs">{t('status_pages.uptime_red_hint')}</p>
             </div>
           </div>
           <div className="space-y-2">
@@ -239,7 +239,7 @@ function StatusPagesTab({ servers }: { servers: ServerResponse[] }) {
       setDialogOpen(false)
       toast.success(t('status_pages.created'))
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed')
+    onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))
   })
 
   const updateMutation = useMutation({
@@ -251,7 +251,7 @@ function StatusPagesTab({ servers }: { servers: ServerResponse[] }) {
       setEditing(null)
       toast.success(t('status_pages.updated'))
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed')
+    onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))
   })
 
   const deleteMutation = useMutation({
@@ -260,7 +260,7 @@ function StatusPagesTab({ servers }: { servers: ServerResponse[] }) {
       invalidate()
       toast.success(t('status_pages.deleted'))
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed')
+    onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))
   })
 
   const handleSubmit = (data: Record<string, unknown>, id?: string) => {
@@ -458,7 +458,7 @@ function IncidentFormDialog({
             <Input
               id="inc-title"
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Service disruption"
+              placeholder={t('incidents.placeholder_title')}
               required
               value={title}
             />
@@ -473,7 +473,7 @@ function IncidentFormDialog({
                 <SelectContent>
                   {INCIDENT_SEVERITIES.map((s) => (
                     <SelectItem key={s} value={s}>
-                      {s}
+                      {t(`incidents.severity_${s}`)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -488,7 +488,7 @@ function IncidentFormDialog({
                 <SelectContent>
                   {INCIDENT_STATUSES.map((s) => (
                     <SelectItem key={s} value={s}>
-                      {s}
+                      {t(`incidents.status_${s}`)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -541,7 +541,7 @@ function IncidentUpdateDialog({
       setMessage('')
       toast.success(t('incidents.update_added'))
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed')
+    onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))
   })
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -576,7 +576,7 @@ function IncidentUpdateDialog({
               <SelectContent>
                 {INCIDENT_STATUSES.map((s) => (
                   <SelectItem key={s} value={s}>
-                    {s}
+                    {t(`incidents.status_${s}`)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -588,7 +588,7 @@ function IncidentUpdateDialog({
               className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               id="upd-message"
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="Describe the update..."
+              placeholder={t('incidents.placeholder_message')}
               required
               rows={3}
               value={message}
@@ -628,7 +628,7 @@ function IncidentsTab({ servers }: { servers: ServerResponse[] }) {
       setDialogOpen(false)
       toast.success(t('incidents.created'))
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed')
+    onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))
   })
 
   const updateMutation = useMutation({
@@ -640,7 +640,7 @@ function IncidentsTab({ servers }: { servers: ServerResponse[] }) {
       setEditing(null)
       toast.success(t('incidents.updated'))
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed')
+    onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))
   })
 
   const deleteMutation = useMutation({
@@ -649,7 +649,7 @@ function IncidentsTab({ servers }: { servers: ServerResponse[] }) {
       invalidate()
       toast.success(t('incidents.deleted'))
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed')
+    onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))
   })
 
   const handleSubmit = (data: Record<string, unknown>, id?: string) => {
@@ -860,7 +860,7 @@ function MaintenanceFormDialog({
             <Input
               id="mnt-title"
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Scheduled server maintenance"
+              placeholder={t('maintenance.placeholder_title')}
               required
               value={title}
             />
@@ -871,7 +871,7 @@ function MaintenanceFormDialog({
               className="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               id="mnt-desc"
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional details"
+              placeholder={t('maintenance.placeholder_description')}
               rows={2}
               value={description}
             />
@@ -951,7 +951,7 @@ function MaintenanceTab({ servers }: { servers: ServerResponse[] }) {
       setDialogOpen(false)
       toast.success(t('maintenance.created'))
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed')
+    onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))
   })
 
   const updateMutation = useMutation({
@@ -963,7 +963,7 @@ function MaintenanceTab({ servers }: { servers: ServerResponse[] }) {
       setEditing(null)
       toast.success(t('maintenance.updated'))
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed')
+    onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))
   })
 
   const deleteMutation = useMutation({
@@ -972,7 +972,7 @@ function MaintenanceTab({ servers }: { servers: ServerResponse[] }) {
       invalidate()
       toast.success(t('maintenance.deleted'))
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed')
+    onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))
   })
 
   const handleSubmit = (data: Record<string, unknown>, id?: string) => {

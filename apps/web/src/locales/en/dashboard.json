@@ -31,5 +31,133 @@
   "set_default": "Set as default",
   "dashboard_name_placeholder": "Dashboard name",
   "no_widgets_title": "No widgets yet",
-  "no_widgets_description": "Click Edit to start adding widgets to your dashboard"
+  "no_widgets_description": "Click Edit to start adding widgets to your dashboard",
+  "widgets": {
+    "trafficBar": {
+      "title": "Traffic",
+      "empty": {
+        "noData": "No traffic data available"
+      },
+      "legend": {
+        "inbound": "Inbound",
+        "outbound": "Outbound"
+      }
+    },
+    "alertList": {
+      "title": "Alerts",
+      "empty": {
+        "noEvents": "No alert events"
+      }
+    },
+    "serviceStatus": {
+      "title": "Service Status",
+      "empty": {
+        "noMonitors": "No service monitors"
+      },
+      "status": {
+        "pending": "Pending",
+        "degraded": "Degraded",
+        "healthy": "Healthy",
+        "down": "Down"
+      }
+    },
+    "serverMap": {
+      "title": "Server Map",
+      "empty": {
+        "noGeoIP": "GeoIP database not installed",
+        "noLocationData": "No server location data available"
+      },
+      "actions": {
+        "downloadGeoIP": "Download GeoIP Database"
+      },
+      "attribution": "GeoIP by DB-IP"
+    },
+    "uptimeTimeline": {
+      "title": "Uptime Timeline",
+      "empty": {
+        "noServers": "No servers configured"
+      }
+    },
+    "diskIo": {
+      "title": "Disk I/O",
+      "empty": {
+        "noData": "No disk I/O data available"
+      }
+    },
+    "common": {
+      "labels": {
+        "metric": "Metric",
+        "server": "Server",
+        "servers": "Servers",
+        "timeRange": "Time Range",
+        "count": "Count",
+        "maxItems": "Max Items",
+        "markdownContent": "Markdown Content",
+        "days": "Days",
+        "titleOptional": "Title (optional)"
+      },
+      "placeholders": {
+        "selectServer": "Select server",
+        "selectMetric": "Select metric",
+        "selectRange": "Select range",
+        "widgetTitle": "Widget title",
+        "allServers": "All Servers",
+        "writeMarkdown": "Write markdown here..."
+      },
+      "empty": {
+        "noServers": "No servers available"
+      }
+    }
+  },
+  "common": {
+    "metrics": {
+      "cpu": "CPU",
+      "memory": "Memory",
+      "disk": "Disk",
+      "swap": "Swap",
+      "load1m": "Load (1m)",
+      "load5m": "Load (5m)",
+      "load15m": "Load (15m)",
+      "networkIn": "Network In",
+      "networkOut": "Network Out",
+      "bandwidth": "Bandwidth",
+      "serverCount": "Server Count",
+      "avgCpu": "Average CPU",
+      "avgMemory": "Average Memory",
+      "totalBandwidth": "Total Bandwidth",
+      "health": "Health"
+    },
+    "timeRange": {
+      "1hour": "1 hour",
+      "6hours": "6 hours",
+      "12hours": "12 hours",
+      "24hours": "24 hours",
+      "3days": "3 days",
+      "7days": "7 days",
+      "30days": "30 days",
+      "60days": "60 days",
+      "90days": "90 days"
+    }
+  },
+  "dialogs": {
+    "widgetConfig": {
+      "editTitle": "Edit Widget",
+      "configureTitle": "Configure Widget",
+      "labels": {
+        "titleOptional": "Title (optional)",
+        "preview": "Preview"
+      },
+      "placeholders": {
+        "widgetTitle": "Widget title"
+      },
+      "messages": {
+        "noConfigNeeded": "No additional configuration needed."
+      }
+    }
+  },
+  "states": {
+    "loading": "Loading...",
+    "downloading": "Downloading...",
+    "download_failed": "Download failed"
+  }
 }

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { Eye, Pencil, Play, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -66,20 +67,24 @@ interface UpdateInput {
   target?: string
 }
 
-const MONITOR_TYPES: { label: string; value: MonitorType }[] = [
-  { value: 'ssl', label: 'SSL' },
-  { value: 'dns', label: 'DNS' },
-  { value: 'http_keyword', label: 'HTTP Keyword' },
-  { value: 'tcp', label: 'TCP' },
-  { value: 'whois', label: 'WHOIS' }
-]
+function useMonitorTypes(t: (key: string) => string): { label: string; value: MonitorType }[] {
+  return [
+    { value: 'ssl', label: t('monitorTypes.ssl') },
+    { value: 'dns', label: t('monitorTypes.dns') },
+    { value: 'http_keyword', label: t('monitorTypes.http_keyword') },
+    { value: 'tcp', label: t('monitorTypes.tcp') },
+    { value: 'whois', label: t('monitorTypes.whois') }
+  ]
+}
 
-const TYPE_LABELS: Record<string, string> = {
-  ssl: 'SSL',
-  dns: 'DNS',
-  http_keyword: 'HTTP Keyword',
-  tcp: 'TCP',
-  whois: 'WHOIS'
+function useTypeLabels(t: (key: string) => string): Record<string, string> {
+  return {
+    ssl: t('monitorTypes.ssl'),
+    dns: t('monitorTypes.dns'),
+    http_keyword: t('monitorTypes.http_keyword'),
+    tcp: t('monitorTypes.tcp'),
+    whois: t('monitorTypes.whois')
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -88,15 +93,17 @@ const TYPE_LABELS: Record<string, string> = {
 
 function SslConfigFields({
   config,
-  onChange
+  onChange,
+  t
 }: {
   config: Record<string, unknown>
   onChange: (c: Record<string, unknown>) => void
+  t: (key: string) => string
 }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       <div className="space-y-1">
-        <Label htmlFor="ssl-warning-days">Warning Days</Label>
+        <Label htmlFor="ssl-warning-days">{t('sslConfig.warningDays')}</Label>
         <Input
           id="ssl-warning-days"
           min={1}
@@ -106,7 +113,7 @@ function SslConfigFields({
         />
       </div>
       <div className="space-y-1">
-        <Label htmlFor="ssl-critical-days">Critical Days</Label>
+        <Label htmlFor="ssl-critical-days">{t('sslConfig.criticalDays')}</Label>
         <Input
           id="ssl-critical-days"
           min={1}
@@ -121,17 +128,19 @@ function SslConfigFields({
 
 function DnsConfigFields({
   config,
-  onChange
+  onChange,
+  t
 }: {
   config: Record<string, unknown>
   onChange: (c: Record<string, unknown>) => void
+  t: (key: string) => string
 }) {
   const expectedStr = Array.isArray(config.expected_values) ? (config.expected_values as string[]).join('\n') : ''
 
   return (
     <div className="space-y-3">
       <div className="space-y-1">
-        <Label htmlFor="dns-record-type">Record Type</Label>
+        <Label htmlFor="dns-record-type">{t('dnsConfig.recordType')}</Label>
         <Select
           onValueChange={(v) => onChange({ ...config, record_type: v })}
           value={(config.record_type as string) ?? 'A'}
@@ -149,7 +158,7 @@ function DnsConfigFields({
         </Select>
       </div>
       <div className="space-y-1">
-        <Label htmlFor="dns-expected">Expected Values (one per line)</Label>
+        <Label htmlFor="dns-expected">{t('dnsConfig.expectedValues')}</Label>
         <textarea
           className="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           id="dns-expected"
@@ -160,17 +169,17 @@ function DnsConfigFields({
               .filter(Boolean)
             onChange({ ...config, expected_values: values.length > 0 ? values : undefined })
           }}
-          placeholder="e.g. 93.184.216.34"
+          placeholder={t('dnsExpectedPlaceholder')}
           rows={3}
           value={expectedStr}
         />
       </div>
       <div className="space-y-1">
-        <Label htmlFor="dns-nameserver">Nameserver (optional)</Label>
+        <Label htmlFor="dns-nameserver">{t('dnsConfig.nameserver')}</Label>
         <Input
           id="dns-nameserver"
           onChange={(e) => onChange({ ...config, nameserver: e.target.value || undefined })}
-          placeholder="e.g. 8.8.8.8"
+          placeholder={t('dnsNameserverPlaceholder')}
           value={(config.nameserver as string) ?? ''}
         />
       </div>
@@ -180,10 +189,12 @@ function DnsConfigFields({
 
 function HttpKeywordConfigFields({
   config,
-  onChange
+  onChange,
+  t
 }: {
   config: Record<string, unknown>
   onChange: (c: Record<string, unknown>) => void
+  t: (key: string) => string
 }) {
   const expectedStatusStr = Array.isArray(config.expected_status)
     ? (config.expected_status as number[]).join(', ')
@@ -193,7 +204,7 @@ function HttpKeywordConfigFields({
     <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
-          <Label htmlFor="http-method">Method</Label>
+          <Label htmlFor="http-method">{t('httpConfig.method')}</Label>
           <Select onValueChange={(v) => onChange({ ...config, method: v })} value={(config.method as string) ?? 'GET'}>
             <SelectTrigger id="http-method">
               <SelectValue />
@@ -205,7 +216,7 @@ function HttpKeywordConfigFields({
           </Select>
         </div>
         <div className="space-y-1">
-          <Label htmlFor="http-timeout">Timeout (s)</Label>
+          <Label htmlFor="http-timeout">{t('httpConfig.timeout')}</Label>
           <Input
             id="http-timeout"
             min={1}
@@ -216,11 +227,11 @@ function HttpKeywordConfigFields({
         </div>
       </div>
       <div className="space-y-1">
-        <Label htmlFor="http-keyword">Keyword</Label>
+        <Label htmlFor="http-keyword">{t('httpConfig.keyword')}</Label>
         <Input
           id="http-keyword"
           onChange={(e) => onChange({ ...config, keyword: e.target.value || undefined })}
-          placeholder="String to search in response body"
+          placeholder={t('httpKeywordPlaceholder')}
           value={(config.keyword as string) ?? ''}
         />
       </div>
@@ -230,10 +241,10 @@ function HttpKeywordConfigFields({
           checked={(config.keyword_exists as boolean) ?? true}
           onCheckedChange={(checked) => onChange({ ...config, keyword_exists: checked })}
         />
-        Keyword should exist in response
+        {t('httpConfig.keywordExists')}
       </label>
       <div className="space-y-1">
-        <Label htmlFor="http-expected-status">Expected Status Codes (comma-separated)</Label>
+        <Label htmlFor="http-expected-status">{t('httpConfig.expectedStatus')}</Label>
         <Input
           id="http-expected-status"
           onChange={(e) => {
@@ -243,7 +254,7 @@ function HttpKeywordConfigFields({
               .filter((n) => n > 0)
             onChange({ ...config, expected_status: codes.length > 0 ? codes : [200] })
           }}
-          placeholder="200, 201"
+          placeholder={t('httpStatusPlaceholder')}
           value={expectedStatusStr}
         />
       </div>
@@ -253,14 +264,16 @@ function HttpKeywordConfigFields({
 
 function TcpConfigFields({
   config,
-  onChange
+  onChange,
+  t
 }: {
   config: Record<string, unknown>
   onChange: (c: Record<string, unknown>) => void
+  t: (key: string) => string
 }) {
   return (
     <div className="space-y-1">
-      <Label htmlFor="tcp-timeout">Timeout (s)</Label>
+      <Label htmlFor="tcp-timeout">{t('tcpConfig.timeout')}</Label>
       <Input
         id="tcp-timeout"
         min={1}
@@ -274,15 +287,17 @@ function TcpConfigFields({
 
 function WhoisConfigFields({
   config,
-  onChange
+  onChange,
+  t
 }: {
   config: Record<string, unknown>
   onChange: (c: Record<string, unknown>) => void
+  t: (key: string) => string
 }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       <div className="space-y-1">
-        <Label htmlFor="whois-warning-days">Warning Days</Label>
+        <Label htmlFor="whois-warning-days">{t('whoisConfig.warningDays')}</Label>
         <Input
           id="whois-warning-days"
           min={1}
@@ -292,7 +307,7 @@ function WhoisConfigFields({
         />
       </div>
       <div className="space-y-1">
-        <Label htmlFor="whois-critical-days">Critical Days</Label>
+        <Label htmlFor="whois-critical-days">{t('whoisConfig.criticalDays')}</Label>
         <Input
           id="whois-critical-days"
           min={1}
@@ -308,23 +323,25 @@ function WhoisConfigFields({
 function TypeConfigFields({
   config,
   onChange,
-  type
+  type,
+  t
 }: {
   config: Record<string, unknown>
   onChange: (c: Record<string, unknown>) => void
   type: MonitorType
+  t: (key: string) => string
 }) {
   switch (type) {
     case 'ssl':
-      return <SslConfigFields config={config} onChange={onChange} />
+      return <SslConfigFields config={config} onChange={onChange} t={t} />
     case 'dns':
-      return <DnsConfigFields config={config} onChange={onChange} />
+      return <DnsConfigFields config={config} onChange={onChange} t={t} />
     case 'http_keyword':
-      return <HttpKeywordConfigFields config={config} onChange={onChange} />
+      return <HttpKeywordConfigFields config={config} onChange={onChange} t={t} />
     case 'tcp':
-      return <TcpConfigFields config={config} onChange={onChange} />
+      return <TcpConfigFields config={config} onChange={onChange} t={t} />
     case 'whois':
-      return <WhoisConfigFields config={config} onChange={onChange} />
+      return <WhoisConfigFields config={config} onChange={onChange} t={t} />
     default:
       return null
   }
@@ -347,6 +364,10 @@ function MonitorFormDialog({
   open: boolean
   pending: boolean
 }) {
+  const { t } = useTranslation('service-monitors')
+  const { t: tCommon } = useTranslation('common')
+  const MONITOR_TYPES = useMonitorTypes(t)
+
   const [name, setName] = useState('')
   const [monitorType, setMonitorType] = useState<MonitorType>('ssl')
   const [target, setTarget] = useState('')
@@ -408,22 +429,37 @@ function MonitorFormDialog({
     }
   }
 
+  function getTargetPlaceholder(type: MonitorType): string {
+    switch (type) {
+      case 'ssl':
+        return t('targetPlaceholder.ssl')
+      case 'dns':
+        return t('targetPlaceholder.dns')
+      case 'http_keyword':
+        return t('targetPlaceholder.http_keyword')
+      case 'tcp':
+        return t('targetPlaceholder.tcp')
+      case 'whois':
+        return t('targetPlaceholder.whois')
+      default:
+        return 'target'
+    }
+  }
+
   return (
     <Dialog onOpenChange={handleOpenChange} open={open}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{editing ? 'Edit Monitor' : 'Add Monitor'}</DialogTitle>
-          <DialogDescription>
-            {editing ? 'Update service monitor configuration.' : 'Create a new service monitor.'}
-          </DialogDescription>
+          <DialogTitle>{editing ? t('dialog.editTitle') : t('dialog.addTitle')}</DialogTitle>
+          <DialogDescription>{editing ? t('dialog.editDescription') : t('dialog.addDescription')}</DialogDescription>
         </DialogHeader>
         <form className="space-y-4" id="monitor-form" onSubmit={handleSubmit}>
           <div className="space-y-1">
-            <Label htmlFor="monitor-name">Name</Label>
+            <Label htmlFor="monitor-name">{t('form.name')}</Label>
             <Input
               id="monitor-name"
               onChange={(e) => setName(e.target.value)}
-              placeholder="My SSL Check"
+              placeholder={t('namePlaceholder')}
               required
               value={name}
             />
@@ -431,7 +467,7 @@ function MonitorFormDialog({
 
           {!editing && (
             <div className="space-y-1">
-              <Label htmlFor="monitor-type">Type</Label>
+              <Label htmlFor="monitor-type">{t('form.type')}</Label>
               <Select
                 items={MONITOR_TYPES}
                 onValueChange={(v) => {
@@ -455,7 +491,7 @@ function MonitorFormDialog({
           )}
 
           <div className="space-y-1">
-            <Label htmlFor="monitor-target">Target</Label>
+            <Label htmlFor="monitor-target">{t('form.target')}</Label>
             <Input
               id="monitor-target"
               onChange={(e) => setTarget(e.target.value)}
@@ -467,7 +503,7 @@ function MonitorFormDialog({
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
-              <Label htmlFor="monitor-interval">Interval (seconds)</Label>
+              <Label htmlFor="monitor-interval">{t('form.interval')}</Label>
               <Input
                 id="monitor-interval"
                 min={10}
@@ -480,7 +516,7 @@ function MonitorFormDialog({
               {/* biome-ignore lint/a11y/noLabelWithoutControl: Switch renders as a labelable button element */}
               <label className="flex items-center gap-2 text-sm">
                 <Switch checked={enabled} onCheckedChange={setEnabled} />
-                Enabled
+                {t('form.enabled')}
               </label>
             </div>
           </div>
@@ -488,12 +524,13 @@ function MonitorFormDialog({
           <TypeConfigFields
             config={config}
             onChange={setConfig}
+            t={t}
             type={(editing?.monitor_type as MonitorType) ?? monitorType}
           />
         </form>
         <DialogFooter>
           <Button disabled={pending} form="monitor-form" type="submit">
-            {editing ? 'Save Changes' : 'Create'}
+            {editing ? tCommon('actions.save') : tCommon('actions.create')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -501,35 +538,18 @@ function MonitorFormDialog({
   )
 }
 
-function getTargetPlaceholder(type: MonitorType): string {
-  switch (type) {
-    case 'ssl':
-      return 'example.com or example.com:8443'
-    case 'dns':
-      return 'example.com'
-    case 'http_keyword':
-      return 'https://example.com/health'
-    case 'tcp':
-      return 'example.com:3306'
-    case 'whois':
-      return 'example.com'
-    default:
-      return 'target'
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Status dot
 // ---------------------------------------------------------------------------
 
-function StatusDot({ status }: { status: boolean | null }) {
+function StatusDot({ status, t }: { status: boolean | null; t: (key: string) => string }) {
   if (status === null) {
-    return <span className="inline-block size-2.5 rounded-full bg-muted-foreground/40" title="Not checked yet" />
+    return <span className="inline-block size-2.5 rounded-full bg-muted-foreground/40" title={t('status.notChecked')} />
   }
   return status ? (
-    <span className="inline-block size-2.5 rounded-full bg-emerald-500" title="Up" />
+    <span className="inline-block size-2.5 rounded-full bg-emerald-500" title={t('status.up')} />
   ) : (
-    <span className="inline-block size-2.5 rounded-full bg-red-500" title="Down" />
+    <span className="inline-block size-2.5 rounded-full bg-red-500" title={t('status.down')} />
   )
 }
 
@@ -538,6 +558,9 @@ function StatusDot({ status }: { status: boolean | null }) {
 // ---------------------------------------------------------------------------
 
 function ServiceMonitorsPage() {
+  const { t } = useTranslation('service-monitors')
+  const { t: tCommon } = useTranslation('common')
+  const TYPE_LABELS = useTypeLabels(t)
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<ServiceMonitor | null>(null)
@@ -556,10 +579,10 @@ function ServiceMonitorsPage() {
     onSuccess: () => {
       invalidate()
       setDialogOpen(false)
-      toast.success('Monitor created')
+      toast.success(t('toast.created'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to create monitor')
+      toast.error(err instanceof Error ? err.message : t('toast.createFailed'))
     }
   })
 
@@ -570,10 +593,10 @@ function ServiceMonitorsPage() {
       invalidate()
       setDialogOpen(false)
       setEditing(null)
-      toast.success('Monitor updated')
+      toast.success(t('toast.updated'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to update monitor')
+      toast.error(err instanceof Error ? err.message : t('toast.updateFailed'))
     }
   })
 
@@ -581,10 +604,10 @@ function ServiceMonitorsPage() {
     mutationFn: (id: string) => api.delete(`/api/service-monitors/${id}`),
     onSuccess: () => {
       invalidate()
-      toast.success('Monitor deleted')
+      toast.success(t('toast.deleted'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete monitor')
+      toast.error(err instanceof Error ? err.message : t('toast.deleteFailed'))
     }
   })
 
@@ -592,10 +615,10 @@ function ServiceMonitorsPage() {
     mutationFn: (id: string) => api.post(`/api/service-monitors/${id}/check`),
     onSuccess: () => {
       invalidate()
-      toast.success('Check triggered')
+      toast.success(t('toast.checkTriggered'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to trigger check')
+      toast.error(err instanceof Error ? err.message : t('toast.triggerFailed'))
     }
   })
 
@@ -606,7 +629,7 @@ function ServiceMonitorsPage() {
       invalidate()
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to toggle monitor')
+      toast.error(err instanceof Error ? err.message : t('toast.toggleFailed'))
     }
   })
 
@@ -631,10 +654,10 @@ function ServiceMonitorsPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-bold text-2xl">Service Monitors</h1>
+        <h1 className="font-bold text-2xl">{t('page.title')}</h1>
         <Button onClick={openCreate} size="sm">
           <Plus className="size-4" />
-          Add Monitor
+          {tCommon('actions.addMonitor')}
         </Button>
       </div>
 
@@ -649,10 +672,10 @@ function ServiceMonitorsPage() {
 
         {!isLoading && (!monitors || monitors.length === 0) && (
           <div className="rounded-lg border bg-card p-12 text-center">
-            <p className="text-muted-foreground">No service monitors configured yet.</p>
+            <p className="text-muted-foreground">{t('empty.noMonitors')}</p>
             <Button className="mt-4" onClick={openCreate} size="sm" variant="outline">
               <Plus className="size-4" />
-              Create your first monitor
+              {t('empty.createFirst')}
             </Button>
           </div>
         )}
@@ -662,21 +685,21 @@ function ServiceMonitorsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Target</TableHead>
-                  <TableHead>Interval</TableHead>
-                  <TableHead>Enabled</TableHead>
-                  <TableHead>Last Checked</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>{t('table.status')}</TableHead>
+                  <TableHead>{t('table.name')}</TableHead>
+                  <TableHead>{t('table.type')}</TableHead>
+                  <TableHead>{t('table.target')}</TableHead>
+                  <TableHead>{t('table.interval')}</TableHead>
+                  <TableHead>{t('table.enabled')}</TableHead>
+                  <TableHead>{t('table.lastChecked')}</TableHead>
+                  <TableHead className="text-right">{t('table.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {monitors.map((monitor) => (
                   <TableRow key={monitor.id}>
                     <TableCell>
-                      <StatusDot status={monitor.last_status} />
+                      <StatusDot status={monitor.last_status} t={t} />
                     </TableCell>
                     <TableCell className="font-medium">{monitor.name}</TableCell>
                     <TableCell>
@@ -692,17 +715,19 @@ function ServiceMonitorsPage() {
                       />
                     </TableCell>
                     <TableCell className="text-muted-foreground text-xs">
-                      {monitor.last_checked_at ? new Date(monitor.last_checked_at).toLocaleString() : 'Never'}
+                      {monitor.last_checked_at
+                        ? new Date(monitor.last_checked_at).toLocaleString()
+                        : tCommon('status.never')}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         <Link params={{ id: monitor.id }} to="/service-monitors/$id">
-                          <Button aria-label="View details" size="sm" variant="ghost">
+                          <Button aria-label={t('aria.viewDetails')} size="sm" variant="ghost">
                             <Eye className="size-3.5" />
                           </Button>
                         </Link>
                         <Button
-                          aria-label="Trigger check"
+                          aria-label={t('aria.triggerCheck')}
                           disabled={triggerMutation.isPending}
                           onClick={() => triggerMutation.mutate(monitor.id)}
                           size="sm"
@@ -710,11 +735,11 @@ function ServiceMonitorsPage() {
                         >
                           <Play className="size-3.5" />
                         </Button>
-                        <Button aria-label="Edit monitor" onClick={() => openEdit(monitor)} size="sm" variant="ghost">
+                        <Button aria-label={t('aria.edit')} onClick={() => openEdit(monitor)} size="sm" variant="ghost">
                           <Pencil className="size-3.5" />
                         </Button>
                         <Button
-                          aria-label={`Delete monitor ${monitor.name}`}
+                          aria-label={`${t('aria.deleteMonitor')} ${monitor.name}`}
                           disabled={deleteMutation.isPending}
                           onClick={() => deleteMutation.mutate(monitor.id)}
                           size="sm"

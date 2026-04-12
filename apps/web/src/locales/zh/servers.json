@@ -134,5 +134,45 @@
   "traffic_hourly": "今日小时流量",
   "traffic_tab_today": "今日",
   "traffic_tab_cycle": "月度",
-  "traffic_exceed_warning": "预计将超出限额 (~{{percent}}%)"
+  "traffic_exceed_warning": "预计将超出限额 (~{{percent}}%)",
+
+  "traffic_overview_title": "流量总览",
+  "traffic_cycle_inbound": "周期入站",
+  "traffic_cycle_outbound": "周期出站",
+  "traffic_highest_usage": "最高用量",
+  "traffic_servers_warning": "超 80% 服务器",
+  "traffic_server": "服务器",
+  "traffic_inbound": "入站",
+  "traffic_outbound": "出站",
+  "traffic_total": "总计",
+  "traffic_limit": "限额",
+  "traffic_usage": "用量",
+  "traffic_days_left": "剩余天数",
+  "traffic_unlimited": "不限",
+  "traffic_no_data": "暂无服务器流量数据。",
+  "traffic_global_trend": "全局流量趋势（最近 30 天）",
+  "traffic_current_cycle": "当前计费周期",
+  "traffic_start": "开始：",
+  "traffic_end": "结束：",
+  "traffic_daily_trend": "每日流量趋势",
+  "traffic_history_comparison": "历史周期对比",
+  "traffic_configure_prompt": "请在服务器设置中配置计费周期以查看流量统计。",
+  "traffic_7d": "7天",
+  "traffic_30d": "30天",
+  "traffic_90d": "90天",
+
+  "detail_ipv4_label": "IPv4：",
+  "detail_ipv6_label": "IPv6：",
+  "detail_kernel_label": "内核：",
+  "detail_region_label": "地区：",
+  "detail_agent_label": "Agent: v{{version}}",
+
+  "uptime_title": "运行时间（90 天）",
+  "metrics_tab": "指标",
+  "traffic_tab": "流量",
+
+  "toast_deleted": "已删除 {{count}} 台服务器",
+  "toast_batch_delete_failed": "操作失败",
+
+  "current_targets": "当前目标"
 }

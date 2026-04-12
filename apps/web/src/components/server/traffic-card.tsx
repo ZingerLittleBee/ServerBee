@@ -37,12 +37,12 @@ export function TrafficCard({ serverId }: { serverId: string }) {
     <Card className="mt-4">
       <Tabs className="gap-0" defaultValue={defaultTab}>
         <CardHeader>
-          <CardTitle>{t('traffic_title', { defaultValue: 'Traffic Statistics' })}</CardTitle>
+          <CardTitle>{t('traffic_title')}</CardTitle>
           {showTabs && (
             <CardAction>
               <TabsList>
-                <TabsTrigger value="hourly">{t('traffic_tab_today', { defaultValue: 'Today' })}</TabsTrigger>
-                <TabsTrigger value="daily">{t('traffic_tab_cycle', { defaultValue: 'Monthly' })}</TabsTrigger>
+                <TabsTrigger value="hourly">{t('traffic_tab_today')}</TabsTrigger>
+                <TabsTrigger value="daily">{t('traffic_tab_cycle')}</TabsTrigger>
               </TabsList>
             </CardAction>
           )}

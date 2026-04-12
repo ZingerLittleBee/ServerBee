@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { formatRelativeTime } from '@/lib/widget-helpers'
 import type { DockerEventInfo } from '../types'
@@ -23,6 +24,7 @@ function eventTypeBadgeVariant(eventType: string): 'default' | 'secondary' | 'ou
 }
 
 export function DockerEvents({ events }: DockerEventsProps) {
+  const { t } = useTranslation('docker')
   const sortedEvents = useMemo(() => {
     return [...events].sort((a, b) => b.timestamp - a.timestamp)
   }, [events])
@@ -30,14 +32,14 @@ export function DockerEvents({ events }: DockerEventsProps) {
   if (sortedEvents.length === 0) {
     return (
       <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-dashed">
-        <p className="text-muted-foreground text-sm">No events recorded yet</p>
+        <p className="text-muted-foreground text-sm">{t('events.empty')}</p>
       </div>
     )
   }
 
   return (
     <div className="space-y-2">
-      <h3 className="font-semibold text-lg">Events</h3>
+      <h3 className="font-semibold text-lg">{t('events.title')}</h3>
       <div className="max-h-[400px] space-y-1 overflow-y-auto rounded-lg border p-3">
         {sortedEvents.map((event, idx) => (
           <div
