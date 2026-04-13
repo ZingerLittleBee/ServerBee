@@ -222,9 +222,7 @@ vi.mock('@/lib/api-client', () => ({
   }
 }))
 
-const { Route } = await import('./service-monitors')
-
-const ServiceMonitorsPage = Route.component as () => ReactNode
+const { ServiceMonitorsPage } = await import('./service-monitors')
 
 describe('ServiceMonitorsPage', () => {
   beforeEach(() => {

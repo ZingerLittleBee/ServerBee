@@ -637,7 +637,7 @@ function StatusDot({ status, t }: { status: boolean | null; t: (key: string) => 
 // Main Page
 // ---------------------------------------------------------------------------
 
-function ServiceMonitorsPage() {
+export function ServiceMonitorsPage() {
   const { t } = useTranslation('service-monitors')
   const { t: tCommon } = useTranslation('common')
   const TYPE_LABELS = useTypeLabels(t)

@@ -91,8 +91,8 @@ vi.mock('@/components/ui/data-table', async () => {
           <div data-testid={`header-group-${headerGroup.id}`} key={headerGroup.id}>
             {headerGroup.headers.map((header) => {
               const typedHeader = header as {
-                column: { columnDef: { header: unknown } }
-                getContext: () => unknown
+                column: { columnDef: { header: Parameters<typeof flexRender>[0] } }
+                getContext: () => Parameters<typeof flexRender>[1]
                 id: string
                 isPlaceholder: boolean
               }
@@ -129,8 +129,7 @@ vi.mock('@/components/ui/skeleton', () => ({
   Skeleton: () => <div />
 }))
 
-const { Route } = await import('./capabilities')
-const CapabilitiesPage = Route.component
+const { CapabilitiesPage } = await import('./capabilities')
 
 describe('CapabilitiesPage', () => {
   beforeEach(() => {

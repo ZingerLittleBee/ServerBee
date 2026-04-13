@@ -137,9 +137,7 @@ vi.mock('@/lib/api-client', () => ({
   }
 }))
 
-const { Route } = await import('./$id')
-
-const ServiceMonitorDetailPage = Route.component as () => ReactNode
+const { ServiceMonitorDetailPage } = await import('./$id')
 
 describe('ServiceMonitorDetailPage', () => {
   it('renders when the latest record detail payload is null JSON', () => {

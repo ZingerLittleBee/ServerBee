@@ -34,7 +34,7 @@ const ORDERED_CAPABILITIES = [
   ...CAPABILITIES.filter(({ risk }) => risk === 'low')
 ]
 
-function CapabilitiesPage() {
+export function CapabilitiesPage() {
   const { t } = useTranslation(['settings', 'servers'])
   const queryClient = useQueryClient()
   const { q: search } = Route.useSearch()

@@ -195,7 +195,7 @@ function SortableHead({
 // Main Page
 // ---------------------------------------------------------------------------
 
-function TrafficPage() {
+export function TrafficPage() {
   const { t } = useTranslation('servers')
   const [sortField, setSortField] = useState<SortField>('total')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
