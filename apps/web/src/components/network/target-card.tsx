@@ -5,13 +5,15 @@ import { cn } from '@/lib/utils'
 
 interface TargetCardProps {
   color: string
+  displayName?: string
   onToggle: () => void
   target: NetworkTargetSummary
   visible: boolean
 }
 
-export function TargetCard({ target, color, visible, onToggle }: TargetCardProps) {
+export function TargetCard({ target, color, displayName, visible, onToggle }: TargetCardProps) {
   const { t } = useTranslation('network')
+  const targetName = displayName ?? target.target_name
 
   return (
     <div
@@ -22,7 +24,7 @@ export function TargetCard({ target, color, visible, onToggle }: TargetCardProps
     >
       <div aria-hidden="true" className="size-3 shrink-0 rounded-full" style={{ backgroundColor: color }} />
       <div className="min-w-0 flex-1">
-        <p className="truncate font-medium text-sm">{target.target_name}</p>
+        <p className="truncate font-medium text-sm">{targetName}</p>
         <div className="flex items-center gap-2 text-muted-foreground text-xs">
           <span className="font-mono">{formatLatency(target.avg_latency)}</span>
           <span className="text-muted-foreground/60">|</span>
@@ -32,7 +34,7 @@ export function TargetCard({ target, color, visible, onToggle }: TargetCardProps
         </div>
       </div>
       <button
-        aria-label={target.target_name}
+        aria-label={targetName}
         className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         onClick={onToggle}
         type="button"

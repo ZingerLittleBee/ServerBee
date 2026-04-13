@@ -342,7 +342,7 @@ function UptimeCard({ serverId }: { serverId: string }) {
   )
 }
 
-function ServerDetailPage() {
+export function ServerDetailPage() {
   const { t } = useTranslation('servers')
   const { id } = Route.useParams()
   const { range: rangeParam } = Route.useSearch()
@@ -521,7 +521,7 @@ function ServerDetailPage() {
   const liveNetOut = liveData?.net_out_transfer ?? 0
 
   return (
-    <div>
+    <div className="pb-6">
       <div className="mb-6">
         <Link
           className="mb-3 inline-flex items-center gap-1 text-muted-foreground text-sm hover:text-foreground"

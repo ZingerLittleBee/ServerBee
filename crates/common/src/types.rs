@@ -168,6 +168,10 @@ pub struct ServerStatus {
     pub group_id: Option<String>,
     #[serde(default)]
     pub features: Vec<String>,
+    #[serde(default)]
+    pub disk_read_bytes_per_sec: u64,
+    #[serde(default)]
+    pub disk_write_bytes_per_sec: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
