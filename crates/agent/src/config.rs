@@ -130,6 +130,25 @@ impl Default for CollectorConfig {
     }
 }
 
+impl AgentConfig {
+    pub fn load() -> anyhow::Result<Self> {
+        let config: Self = Figment::new()
+            .merge(Toml::file("/etc/serverbee/agent.toml"))
+            .merge(Toml::file("agent.toml"))
+            .merge(Env::prefixed("SERVERBEE_").split("__"))
+            .extract()?;
+        Ok(config)
+    }
+
+    pub fn config_path() -> &'static str {
+        if std::path::Path::new("/etc/serverbee/agent.toml").exists() {
+            "/etc/serverbee/agent.toml"
+        } else {
+            "agent.toml"
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,24 +172,5 @@ mod tests {
             config.external_ip_url, "https://api.ipify.org",
             "default external IP URL should be api.ipify.org"
         );
-    }
-}
-
-impl AgentConfig {
-    pub fn load() -> anyhow::Result<Self> {
-        let config: Self = Figment::new()
-            .merge(Toml::file("/etc/serverbee/agent.toml"))
-            .merge(Toml::file("agent.toml"))
-            .merge(Env::prefixed("SERVERBEE_").split("__"))
-            .extract()?;
-        Ok(config)
-    }
-
-    pub fn config_path() -> &'static str {
-        if std::path::Path::new("/etc/serverbee/agent.toml").exists() {
-            "/etc/serverbee/agent.toml"
-        } else {
-            "agent.toml"
-        }
     }
 }

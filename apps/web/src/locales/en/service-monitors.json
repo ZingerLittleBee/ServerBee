@@ -47,7 +47,11 @@
   },
   "whoisConfig": {
     "warningDays": "Warning Days",
-    "criticalDays": "Critical Days"
+    "criticalDays": "Critical Days",
+    "targetHint": "WHOIS accepts a domain, URL, or host:port, and will extract the domain before saving.",
+    "targetPreview": "WHOIS will query: {{target}}",
+    "unsupportedTldHint": ".app, .dev, and .page domains usually do not expose traditional WHOIS, so an SSL monitor is recommended instead.",
+    "targetInvalid": "Enter a WHOIS target that resolves to a domain, such as example.com or https://example.com."
   },
   "table": {
     "status": "Status",

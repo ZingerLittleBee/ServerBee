@@ -314,7 +314,7 @@ mod tests {
     #[test]
     fn test_png_magic_detection() {
         // Valid PNG header
-        let png_data = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        let png_data = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
         let magic: [u8; 4] = png_data[..4].try_into().unwrap();
         assert_eq!(magic, PNG_MAGIC);
     }
@@ -322,7 +322,7 @@ mod tests {
     #[test]
     fn test_ico_magic_detection() {
         // Valid ICO header
-        let ico_data = vec![0x00, 0x00, 0x01, 0x00, 0x01, 0x00];
+        let ico_data = [0x00, 0x00, 0x01, 0x00, 0x01, 0x00];
         let magic: [u8; 4] = ico_data[..4].try_into().unwrap();
         assert_eq!(magic, ICO_MAGIC);
     }

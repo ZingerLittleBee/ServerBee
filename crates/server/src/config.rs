@@ -423,6 +423,17 @@ fn default_400() -> u32 {
     400
 }
 
+impl AppConfig {
+    pub fn load() -> anyhow::Result<Self> {
+        let config: AppConfig = Figment::new()
+            .merge(Toml::file("/etc/serverbee/server.toml"))
+            .merge(Toml::file("server.toml"))
+            .merge(Env::prefixed("SERVERBEE_").split("__"))
+            .extract()?;
+        Ok(config)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -448,16 +459,5 @@ mod tests {
         // Verify public IP is NOT covered
         let public_ip: std::net::IpAddr = "8.8.8.8".parse().unwrap();
         assert!(!proxies.iter().any(|net| net.contains(&public_ip)));
-    }
-}
-
-impl AppConfig {
-    pub fn load() -> anyhow::Result<Self> {
-        let config: AppConfig = Figment::new()
-            .merge(Toml::file("/etc/serverbee/server.toml"))
-            .merge(Toml::file("server.toml"))
-            .merge(Env::prefixed("SERVERBEE_").split("__"))
-            .extract()?;
-        Ok(config)
     }
 }
