@@ -143,12 +143,16 @@ async fn handle_agent_ws(
     }
 
     // Register in AgentManager
-    state
-        .agent_manager
-        .add_connection(server_id.clone(), server_name, tx, remote_addr);
-    state
-        .agent_manager
-        .update_capabilities(&server_id, server_capabilities as u32);
+    {
+        let server_lock = state.agent_manager.server_cleanup_lock(&server_id);
+        let _guard = server_lock.lock().await;
+        state
+            .agent_manager
+            .add_connection(server_id.clone(), server_name, tx, remote_addr);
+        state
+            .agent_manager
+            .update_capabilities(&server_id, server_capabilities as u32);
+    }
 
     // Send current ping tasks to the newly connected agent
     PingService::sync_tasks_to_agent(&state.db, &state.agent_manager, &server_id).await;
