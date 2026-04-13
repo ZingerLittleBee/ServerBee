@@ -10,18 +10,21 @@ const translationMap: Record<string, string> = {
   avg_latency: '平均延迟',
   availability: '可用性',
   back_to_overview: '返回总览',
+  builtin: '内置',
   by_provider: '按运营商',
   cancel: '取消',
   deselect_all: '取消全选',
   export_csv: '导出 CSV',
   global_settings: '全局设置',
   last_probe: '最后探测',
+  location_shanghai: '上海',
   manage_targets: '管理目标',
   no_targets: '未配置探测目标',
   packet_loss: '丢包率',
   probe_type_http: 'HTTP 探测',
   probe_type_icmp: 'ICMP 探测',
   probe_type_tcp: 'TCP 探测',
+  provider_short_telecom: '电信',
   realtime: '实时',
   save: '保存',
   select_all: '全选',
@@ -44,6 +47,10 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
+    i18n: {
+      language: 'zh-CN',
+      resolvedLanguage: 'zh-CN'
+    },
     t: (key: string, options?: { defaultValue?: string }) => translationMap[key] ?? options?.defaultValue ?? key
   })
 }))
@@ -95,7 +102,7 @@ vi.mock('@/hooks/use-network-api', () => ({
           packet_loss: 0,
           provider: 'ct',
           target_id: 'target-1',
-          target_name: '中国电信'
+          target_name: 'Shanghai Telecom'
         }
       ]
     },
@@ -106,11 +113,11 @@ vi.mock('@/hooks/use-network-api', () => ({
       {
         created_at: null,
         id: 'target-1',
-        location: '成都',
-        name: '中国电信',
+        location: 'Shanghai',
+        name: 'Shanghai Telecom',
         probe_type: 'tcp',
-        provider: '电信',
-        source: null,
+        provider: 'Telecom',
+        source: 'builtin',
         source_name: null,
         target: 'example.com:443',
         updated_at: null
@@ -141,7 +148,7 @@ vi.mock('@/components/network/latency-chart', () => ({
 }))
 
 vi.mock('@/components/network/target-card', () => ({
-  TargetCard: ({ target }: { target: { target_name: string } }) => <div>{target.target_name}</div>
+  TargetCard: ({ displayName }: { displayName: string }) => <div>{displayName}</div>
 }))
 
 vi.mock('@/components/server/status-badge', () => ({
@@ -163,15 +170,25 @@ vi.mock('@/components/ui/dialog', () => ({
 const { NetworkDetailPage } = await import('./$serverId')
 
 describe('NetworkDetailPage', () => {
+  it('keeps bottom padding on the page container', () => {
+    const { container } = render(<NetworkDetailPage />)
+
+    expect(container.firstElementChild).toHaveClass('pb-6')
+  })
+
   it('renders translated network detail labels and probe types in the manage targets dialog', () => {
     render(<NetworkDetailPage />)
 
     expect(screen.getByText(lastProbePattern)).toBeInTheDocument()
     expect(screen.getByText('地区: 成都')).toBeInTheDocument()
     expect(screen.getByText('操作系统: Ubuntu 24.04')).toBeInTheDocument()
+    expect(screen.getByText('上海电信')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '管理目标' }))
 
     expect(screen.getByText('TCP 探测')).toBeInTheDocument()
+    expect(screen.getAllByText('上海电信').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('电信')).toBeInTheDocument()
+    expect(screen.getByText('上海')).toBeInTheDocument()
   })
 })

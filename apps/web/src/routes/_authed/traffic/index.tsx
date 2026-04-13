@@ -110,6 +110,17 @@ function StatCard({
   )
 }
 
+function TrafficOverviewEmptyState({ description, title }: { description: string; title: string }) {
+  return (
+    <Card className="mb-6">
+      <CardContent className="flex flex-col items-center gap-2 p-12 text-center">
+        <p className="font-medium">{title}</p>
+        <p className="max-w-xl text-muted-foreground text-sm">{description}</p>
+      </CardContent>
+    </Card>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Progress bar (inline)
 // ---------------------------------------------------------------------------
@@ -233,6 +244,8 @@ function TrafficPage() {
     () => (overview ?? []).filter((s) => s.percent_used != null && s.percent_used > 80).length,
     [overview]
   )
+  const hasOverviewData = sorted.length > 0
+  const hasDailyData = (dailyData?.length ?? 0) > 0
 
   const isLoading = overviewLoading || dailyLoading
 
@@ -255,78 +268,76 @@ function TrafficPage() {
     <div>
       <h1 className="mb-6 font-bold text-2xl">{t('traffic_overview_title')}</h1>
 
-      {/* Stat cards */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={ArrowDownToLine} label={t('traffic_cycle_inbound')} value={formatBytes(totalIn)} />
-        <StatCard icon={ArrowUpFromLine} label={t('traffic_cycle_outbound')} value={formatBytes(totalOut)} />
-        <StatCard icon={Crown} label={t('traffic_highest_usage')} value={highestServer} />
-        <StatCard
-          icon={warnCount > 0 ? AlertTriangle : Server}
-          label={t('traffic_servers_warning')}
-          value={String(warnCount)}
-        />
-      </div>
+      {hasOverviewData ? (
+        <>
+          {/* Stat cards */}
+          <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard icon={ArrowDownToLine} label={t('traffic_cycle_inbound')} value={formatBytes(totalIn)} />
+            <StatCard icon={ArrowUpFromLine} label={t('traffic_cycle_outbound')} value={formatBytes(totalOut)} />
+            <StatCard icon={Crown} label={t('traffic_highest_usage')} value={highestServer} />
+            <StatCard
+              icon={warnCount > 0 ? AlertTriangle : Server}
+              label={t('traffic_servers_warning')}
+              value={String(warnCount)}
+            />
+          </div>
 
-      {/* Server traffic ranking table */}
-      {sorted.length > 0 && (
-        <div className="mb-6 rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <SortableHead field="name" onSort={handleSort} sortDir={sortDir} sortField={sortField}>
-                  {t('traffic_server')}
-                </SortableHead>
-                <TableHead>{t('traffic_inbound')}</TableHead>
-                <TableHead>{t('traffic_outbound')}</TableHead>
-                <SortableHead field="total" onSort={handleSort} sortDir={sortDir} sortField={sortField}>
-                  {t('traffic_total')}
-                </SortableHead>
-                <TableHead>{t('traffic_limit')}</TableHead>
-                <SortableHead field="percent" onSort={handleSort} sortDir={sortDir} sortField={sortField}>
-                  {t('traffic_usage')}
-                </SortableHead>
-                <TableHead>{t('traffic_days_left')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sorted.map((s) => (
-                <TableRow key={s.server_id}>
-                  <TableCell className="font-medium">{s.name}</TableCell>
-                  <TableCell className="tabular-nums">{formatBytes(s.cycle_in)}</TableCell>
-                  <TableCell className="tabular-nums">{formatBytes(s.cycle_out)}</TableCell>
-                  <TableCell className="tabular-nums">{formatBytes(getTotal(s))}</TableCell>
-                  <TableCell className="tabular-nums">
-                    {s.traffic_limit != null ? (
-                      formatBytes(s.traffic_limit)
-                    ) : (
-                      <Badge variant="secondary">{t('traffic_unlimited')}</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <UsageBar percent={s.percent_used} />
-                  </TableCell>
-                  <TableCell className="tabular-nums">
-                    {s.days_remaining != null ? (
-                      <span>{s.days_remaining}d</span>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
+          {/* Server traffic ranking table */}
+          <div className="mb-6 rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <SortableHead field="name" onSort={handleSort} sortDir={sortDir} sortField={sortField}>
+                    {t('traffic_server')}
+                  </SortableHead>
+                  <TableHead>{t('traffic_inbound')}</TableHead>
+                  <TableHead>{t('traffic_outbound')}</TableHead>
+                  <SortableHead field="total" onSort={handleSort} sortDir={sortDir} sortField={sortField}>
+                    {t('traffic_total')}
+                  </SortableHead>
+                  <TableHead>{t('traffic_limit')}</TableHead>
+                  <SortableHead field="percent" onSort={handleSort} sortDir={sortDir} sortField={sortField}>
+                    {t('traffic_usage')}
+                  </SortableHead>
+                  <TableHead>{t('traffic_days_left')}</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {sorted.length === 0 && (
-        <div className="mb-6 rounded-lg border bg-card p-12 text-center">
-          <p className="text-muted-foreground">{t('traffic_no_data')}</p>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {sorted.map((s) => (
+                  <TableRow key={s.server_id}>
+                    <TableCell className="font-medium">{s.name}</TableCell>
+                    <TableCell className="tabular-nums">{formatBytes(s.cycle_in)}</TableCell>
+                    <TableCell className="tabular-nums">{formatBytes(s.cycle_out)}</TableCell>
+                    <TableCell className="tabular-nums">{formatBytes(getTotal(s))}</TableCell>
+                    <TableCell className="tabular-nums">
+                      {s.traffic_limit != null ? (
+                        formatBytes(s.traffic_limit)
+                      ) : (
+                        <Badge variant="secondary">{t('traffic_unlimited')}</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <UsageBar percent={s.percent_used} />
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {s.days_remaining != null ? (
+                        <span>{s.days_remaining}d</span>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      ) : (
+        <TrafficOverviewEmptyState description={t('traffic_configure_prompt')} title={t('traffic_no_data')} />
       )}
 
       {/* Global 30-day trend chart */}
-      {dailyData && dailyData.length > 0 && (
+      {hasDailyData && (
         <Card>
           <CardHeader>
             <CardTitle>{t('traffic_global_trend')}</CardTitle>

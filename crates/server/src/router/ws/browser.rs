@@ -8,6 +8,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use futures_util::{SinkExt, StreamExt};
 
+use crate::service::agent_manager::aggregate_disk_io;
 use crate::service::auth::AuthService;
 use crate::service::server::ServerService;
 use crate::state::AppState;
@@ -310,6 +311,11 @@ async fn build_full_sync(state: &Arc<AppState>) -> BrowserMessage {
                 server.updated_at.timestamp()
             };
 
+            let (disk_read_bytes_per_sec, disk_write_bytes_per_sec) = report
+                .as_ref()
+                .map(|r| aggregate_disk_io(r))
+                .unwrap_or((0, 0));
+
             ServerStatus {
                 id: server.id.clone(),
                 name: server.name.clone(),
@@ -339,6 +345,8 @@ async fn build_full_sync(state: &Arc<AppState>) -> BrowserMessage {
                 country_code: server.country_code,
                 group_id: server.group_id,
                 features: serde_json::from_str(&server.features).unwrap_or_default(),
+                disk_read_bytes_per_sec,
+                disk_write_bytes_per_sec,
             }
         })
         .collect();
