@@ -13,6 +13,19 @@ use serverbee_common::types::{ServerStatus, SystemReport, TracerouteHop};
 
 use crate::state::AppState;
 
+/// Sum per-device disk I/O rates into a single (read, write) pair for broadcast.
+pub(crate) fn aggregate_disk_io(report: &SystemReport) -> (u64, u64) {
+    let Some(devices) = report.disk_io.as_ref() else {
+        return (0, 0);
+    };
+    devices.iter().fold((0u64, 0u64), |(r, w), d| {
+        (
+            r.saturating_add(d.read_bytes_per_sec),
+            w.saturating_add(d.write_bytes_per_sec),
+        )
+    })
+}
+
 /// Sender for forwarding terminal output from agent to browser WS.
 pub type TerminalOutputTx = mpsc::Sender<TerminalSessionEvent>;
 
@@ -178,6 +191,8 @@ impl AgentManager {
             conn.last_report_at = now;
         }
 
+        let (disk_read_bytes_per_sec, disk_write_bytes_per_sec) = aggregate_disk_io(&report);
+
         // Build a ServerStatus for the broadcast. Static fields (mem_total, disk_total,
         // os, cpu_name, etc.) are not available here -- set them to defaults since the
         // browser can merge with REST data.
@@ -214,6 +229,8 @@ impl AgentManager {
             country_code: None,
             group_id: None,
             features: vec![],
+            disk_read_bytes_per_sec,
+            disk_write_bytes_per_sec,
         };
 
         let _ = self.browser_tx.send(BrowserMessage::Update {

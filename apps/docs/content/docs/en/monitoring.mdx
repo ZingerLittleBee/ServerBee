@@ -11,12 +11,10 @@ ServerBee provides real-time monitoring of all your connected servers through a 
 The main dashboard shows all registered servers with their current status at a glance:
 
 - **Online/Offline status** with color indicators
-- **CPU usage** percentage with visual bar
-- **Memory usage** (used / total) with percentage
-- **Disk usage** (used / total) with percentage
-- **Network throughput** (upload/download speed)
-- **Load average** (1/5/15 minute)
-- **Uptime** duration
+- **Ring grid** of four donut charts per card: CPU, Memory, Disk, and monthly **Traffic quota** utilization. When no quota is configured the traffic ring falls back to cumulative bytes transferred, and when a billing cycle is active a "days remaining" hint is shown under the footer
+- **Disk I/O throughput** (read / write bytes per second, aggregated across devices) streamed live alongside network speed
+- **Network throughput** (upload / download speed)
+- **Load trend** (`load5 · load15` next to `load1`) and **uptime / swap / process / TCP / UDP** summary row
 - **Region and country** flags (when GeoIP is enabled)
 
 Servers are organized by groups and sorted by weight. You can filter, search, and batch-operate on servers from this view.

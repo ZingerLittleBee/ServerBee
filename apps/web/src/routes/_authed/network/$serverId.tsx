@@ -27,8 +27,13 @@ import {
 } from '@/hooks/use-network-api'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
 import { CHART_COLORS } from '@/lib/chart-colors'
-import { getNetworkProbeTypeLabel } from '@/lib/network-i18n'
-import type { NetworkProbeRecord, NetworkTargetSummary } from '@/lib/network-types'
+import {
+  getNetworkProbeTypeLabel,
+  getNetworkTargetDisplayLocation,
+  getNetworkTargetDisplayName,
+  getNetworkTargetDisplayProvider
+} from '@/lib/network-i18n'
+import type { NetworkProbeRecord, NetworkProbeTarget, NetworkTargetSummary } from '@/lib/network-types'
 import { formatLatency, formatPacketLoss, getProviderLabel, latencyColorClass } from '@/lib/network-types'
 import { cn } from '@/lib/utils'
 
@@ -77,16 +82,18 @@ function groupTargetsByProvider(targets: NetworkTargetSummary[]) {
 }
 
 function ProviderColumn({
+  getTargetDisplayName,
   provider,
   targets,
   t
 }: {
+  getTargetDisplayName: (target: NetworkTargetSummary) => string
   provider: string
   targets: NetworkTargetSummary[]
-  t: (key: string) => string
+  t: (key: string, options?: { defaultValue?: string }) => string
 }) {
   const providerI18nKey = `provider_${provider}`
-  const label = t(providerI18nKey) || getProviderLabel(provider)
+  const label = t(providerI18nKey, { defaultValue: getProviderLabel(provider) })
 
   const avgLatency = useMemo(() => {
     const valid = targets.filter((t) => t.avg_latency != null)
@@ -126,7 +133,7 @@ function ProviderColumn({
                 className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
                 key={target.target_id}
               >
-                <span className="font-medium">{target.target_name}</span>
+                <span className="font-medium">{getTargetDisplayName(target)}</span>
                 <div className="flex items-center gap-3 text-xs">
                   <span
                     className={cn(
@@ -265,7 +272,7 @@ function TracerouteSection({ serverId, t }: { serverId: string; t: (key: string)
 }
 
 export function NetworkDetailPage() {
-  const { t } = useTranslation('network')
+  const { i18n, t } = useTranslation('network')
   const { serverId } = Route.useParams()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -304,7 +311,32 @@ export function NetworkDetailPage() {
   const { data: realtimeData } = useNetworkRealtime(serverId)
   const { data: allTargets = [] } = useNetworkTargets()
   const setServerTargets = useSetServerTargets(serverId)
+  const language = i18n.resolvedLanguage ?? i18n.language
   const getProbeTypeLabel = useCallback((probeType: string) => getNetworkProbeTypeLabel(t, probeType), [t])
+  const targetMetadataById = useMemo(() => new Map(allTargets.map((target) => [target.id, target])), [allTargets])
+  const getLocalizedTargetDisplayName = useCallback(
+    (target: NetworkProbeTarget) => getNetworkTargetDisplayName(t, language, target),
+    [language, t]
+  )
+  const getLocalizedTargetDisplayProvider = useCallback(
+    (target: NetworkProbeTarget) => getNetworkTargetDisplayProvider(t, language, target),
+    [language, t]
+  )
+  const getLocalizedTargetDisplayLocation = useCallback(
+    (target: NetworkProbeTarget) => getNetworkTargetDisplayLocation(t, language, target),
+    [language, t]
+  )
+  const getSummaryTargetDisplayName = useCallback(
+    (target: NetworkTargetSummary) => {
+      const targetMetadata = targetMetadataById.get(target.target_id)
+      if (!targetMetadata) {
+        return target.target_name
+      }
+
+      return getLocalizedTargetDisplayName(targetMetadata)
+    },
+    [getLocalizedTargetDisplayName, targetMetadataById]
+  )
 
   const targets = useMemo(() => summary?.targets ?? [], [summary])
 
@@ -356,11 +388,11 @@ export function NetworkDetailPage() {
     () =>
       targets.map((t) => ({
         id: t.target_id,
-        name: t.target_name,
+        name: getSummaryTargetDisplayName(t),
         color: targetColorMap[t.target_id] ?? CHART_COLORS[0],
         visible: effectiveVisible.has(t.target_id)
       })),
-    [targets, targetColorMap, effectiveVisible]
+    [targets, targetColorMap, effectiveVisible, getSummaryTargetDisplayName]
   )
 
   const records: NetworkProbeRecord[] = useMemo(() => {
@@ -508,7 +540,7 @@ export function NetworkDetailPage() {
   }
 
   return (
-    <div>
+    <div className="pb-6">
       {/* Header */}
       <div className="mb-6">
         <Link
@@ -603,6 +635,7 @@ export function NetworkDetailPage() {
               {targets.map((target) => (
                 <TargetCard
                   color={targetColorMap[target.target_id] ?? CHART_COLORS[0]}
+                  displayName={getSummaryTargetDisplayName(target)}
                   key={target.target_id}
                   onToggle={() => toggleTarget(target.target_id)}
                   target={target}
@@ -615,7 +648,13 @@ export function NetworkDetailPage() {
           <TabsContent value="provider">
             <div className="grid gap-4 pt-2 md:grid-cols-2 lg:grid-cols-3">
               {orderedProviderKeys.map((provider) => (
-                <ProviderColumn key={provider} provider={provider} t={t} targets={providerGroups[provider]} />
+                <ProviderColumn
+                  getTargetDisplayName={getSummaryTargetDisplayName}
+                  key={provider}
+                  provider={provider}
+                  t={t}
+                  targets={providerGroups[provider]}
+                />
               ))}
             </div>
           </TabsContent>
@@ -691,9 +730,13 @@ export function NetworkDetailPage() {
                     checked={selectedTargetIds.has(target.id)}
                     onCheckedChange={() => toggleSelectedTarget(target.id)}
                   />
-                  <span className="flex-1 font-medium">{target.name}</span>
-                  {target.provider && <span className="text-muted-foreground text-xs">{target.provider}</span>}
-                  {target.location && <span className="text-muted-foreground text-xs">{target.location}</span>}
+                  <span className="flex-1 font-medium">{getLocalizedTargetDisplayName(target)}</span>
+                  {target.provider && (
+                    <span className="text-muted-foreground text-xs">{getLocalizedTargetDisplayProvider(target)}</span>
+                  )}
+                  {target.location && (
+                    <span className="text-muted-foreground text-xs">{getLocalizedTargetDisplayLocation(target)}</span>
+                  )}
                   <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
                     {getProbeTypeLabel(target.probe_type)}
                   </span>

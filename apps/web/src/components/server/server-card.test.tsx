@@ -39,11 +39,15 @@ vi.mock('recharts', () => {
 
 const mockNetworkOverview = vi.fn()
 const mockNetworkRealtime = vi.fn()
+const mockTrafficOverview = vi.fn()
 vi.mock('@/hooks/use-network-api', () => ({
   useNetworkOverview: (...args: unknown[]) => mockNetworkOverview(...args)
 }))
 vi.mock('@/hooks/use-network-realtime', () => ({
   useNetworkRealtime: (...args: unknown[]) => mockNetworkRealtime(...args)
+}))
+vi.mock('@/hooks/use-traffic-overview', () => ({
+  useTrafficOverview: (...args: unknown[]) => mockTrafficOverview(...args)
 }))
 
 function makeServer(overrides: Partial<Parameters<typeof ServerCard>[0]['server']> = {}) {
@@ -97,6 +101,7 @@ describe('ServerCard', () => {
   beforeEach(() => {
     mockNetworkOverview.mockReturnValue({ data: [] })
     mockNetworkRealtime.mockReturnValue({ data: {} })
+    mockTrafficOverview.mockReturnValue({ data: [] })
   })
 
   it('renders server name', () => {
@@ -104,28 +109,30 @@ describe('ServerCard', () => {
     expect(screen.getByText('test-server')).toBeDefined()
   })
 
-  it('renders three ring charts with CPU, Memory, Disk labels', () => {
+  it('renders four ring charts with CPU, Memory, Disk, Traffic labels', () => {
     render(<ServerCard server={makeServer()} />)
     expect(screen.getByText('col_cpu')).toBeDefined()
     expect(screen.getByText('col_memory')).toBeDefined()
     expect(screen.getByText('col_disk')).toBeDefined()
+    expect(screen.getByText('card_traffic_quota')).toBeDefined()
   })
 
-  it('renders system metrics row', () => {
+  it('renders footnote secondary metrics', () => {
     render(<ServerCard server={makeServer()} />)
-    expect(screen.getByText('card_load')).toBeDefined()
+    expect(screen.getByText('col_uptime')).toBeDefined()
+    expect(screen.getByText('card_swap')).toBeDefined()
     expect(screen.getByText('card_processes')).toBeDefined()
     expect(screen.getByText('card_tcp')).toBeDefined()
     expect(screen.getByText('card_udp')).toBeDefined()
-    expect(screen.getByText('card_swap')).toBeDefined()
   })
 
-  it('renders network metrics row', () => {
+  it('renders network and disk I/O rates with load trend', () => {
     render(<ServerCard server={makeServer()} />)
     expect(screen.getByText('card_net_in_speed')).toBeDefined()
     expect(screen.getByText('card_net_out_speed')).toBeDefined()
-    expect(screen.getByText('card_net_total')).toBeDefined()
-    expect(screen.getByText('col_uptime')).toBeDefined()
+    expect(screen.getByText('card_disk_read')).toBeDefined()
+    expect(screen.getByText('card_disk_write')).toBeDefined()
+    expect(screen.getByText('card_load_trend')).toBeDefined()
   })
 
   it('does not render network quality section when no data', () => {
@@ -166,8 +173,8 @@ describe('ServerCard', () => {
     render(<ServerCard server={makeServer()} />)
 
     expect(screen.getByText('60ms')).toBeDefined()
-    expect(screen.getByLabelText('Latency trend')).toBeDefined()
-    expect(screen.queryByLabelText('Packet loss trend')).toBeNull()
+    expect(screen.getByLabelText('common:a11y.latency_trend')).toBeDefined()
+    expect(screen.queryByLabelText('common:a11y.packet_loss_trend')).toBeNull()
     expect(screen.queryByText('Shanghai Telecom')).toBeNull()
     expect(screen.queryByText('Beijing Unicom')).toBeNull()
   })
