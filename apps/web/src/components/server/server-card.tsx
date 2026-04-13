@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { type ComponentProps, useMemo } from 'react'
+import { type ComponentProps, memo, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Bar, BarChart, Cell } from 'recharts'
 import { CompactMetric } from '@/components/server/compact-metric'
@@ -159,7 +159,7 @@ function NetworkChartTooltip({
   )
 }
 
-export function ServerCard({ server }: ServerCardProps) {
+const ServerCardInner = ({ server }: ServerCardProps) => {
   const { t } = useTranslation(['servers'])
   const { data: networkOverview = [] } = useNetworkOverview()
   const { data: realtimeData } = useNetworkRealtime(server.id)
@@ -258,7 +258,7 @@ export function ServerCard({ server }: ServerCardProps) {
                 margin={{ bottom: 0, left: 0, right: 0, top: 0 }}
               >
                 <ChartTooltip content={<NetworkChartTooltip t={t} />} cursor={false} />
-                <Bar dataKey="value" radius={2}>
+                <Bar dataKey="value" isAnimationActive={false} radius={2}>
                   {latencyPoints.map((point) => (
                     <Cell
                       fill={getLatencyBarColor({
@@ -282,7 +282,7 @@ export function ServerCard({ server }: ServerCardProps) {
               data={latencyPoints}
               margin={{ bottom: 0, left: 0, right: 0, top: 0 }}
             >
-              <Bar dataKey={() => 1} radius={1}>
+              <Bar dataKey={() => 1} isAnimationActive={false} radius={1}>
                 {latencyPoints.map((point) => (
                   <Cell fill={getLossStripColor(averageLossRatio(point))} key={point.timestamp} />
                 ))}
@@ -294,3 +294,19 @@ export function ServerCard({ server }: ServerCardProps) {
     </div>
   )
 }
+
+export const ServerCard = memo(ServerCardInner, (prev, next) => {
+  const a = prev.server
+  const b = next.server
+  return (
+    a.id === b.id &&
+    a.online === b.online &&
+    a.last_active === b.last_active &&
+    a.name === b.name &&
+    a.country_code === b.country_code &&
+    a.os === b.os &&
+    a.mem_total === b.mem_total &&
+    a.disk_total === b.disk_total &&
+    a.swap_total === b.swap_total
+  )
+})
