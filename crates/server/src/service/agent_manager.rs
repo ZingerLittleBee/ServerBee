@@ -317,6 +317,7 @@ impl AgentManager {
 
     /// Find agents that have not reported for `threshold_secs` seconds,
     /// remove them, and return their server IDs.
+    #[cfg(test)]
     pub fn check_offline(&self, threshold_secs: u64) -> Vec<String> {
         let mut offline_ids = Vec::new();
         for (server_id, connection_id) in self.stale_connection_candidates(threshold_secs) {
@@ -630,6 +631,12 @@ impl AgentManager {
     }
 }
 
+/// Clean up Docker viewer tracking, features, and broadcast availability change.
+///
+/// Docker caches (containers, stats, info) and log sessions are intentionally NOT
+/// cleared here — they are already handled by `finish_connection_removal()` on the
+/// disconnect path, and by `handle_docker_unavailable()` for the DockerUnavailable
+/// message path.
 pub async fn cleanup_disconnected_docker_state(state: &AppState, server_id: &str) {
     state.docker_viewers.remove_all_for_server(server_id);
 

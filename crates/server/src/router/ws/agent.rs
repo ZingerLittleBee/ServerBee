@@ -240,7 +240,7 @@ async fn handle_agent_ws(
                         &state_read,
                         &sid_read,
                         connection_id,
-                        CurrentConnectionFrame::AgentMessage(agent_msg),
+                        CurrentConnectionFrame::AgentMessage(Box::new(agent_msg)),
                     )
                     .await
                     {
@@ -257,7 +257,7 @@ async fn handle_agent_ws(
                         &state_read,
                         &sid_read,
                         connection_id,
-                        CurrentConnectionFrame::AgentMessage(agent_msg),
+                        CurrentConnectionFrame::AgentMessage(Box::new(agent_msg)),
                     )
                     .await
                     {
@@ -308,7 +308,7 @@ async fn handle_agent_ws(
 }
 
 enum CurrentConnectionFrame {
-    AgentMessage(AgentMessage),
+    AgentMessage(Box<AgentMessage>),
     Pong,
 }
 
@@ -318,22 +318,24 @@ async fn handle_current_connection_frame(
     connection_id: u64,
     frame: CurrentConnectionFrame,
 ) -> bool {
-    let server_lock = state.agent_manager.server_cleanup_lock(server_id);
-    let _guard = server_lock.lock().await;
-
-    if !state
-        .agent_manager
-        .is_current_connection(server_id, connection_id)
     {
-        tracing::info!(
-            "Stopping superseded agent socket for {server_id} (connection_id={connection_id})"
-        );
-        return false;
+        let server_lock = state.agent_manager.server_cleanup_lock(server_id);
+        let _guard = server_lock.lock().await;
+
+        if !state
+            .agent_manager
+            .is_current_connection(server_id, connection_id)
+        {
+            tracing::info!(
+                "Stopping superseded agent socket for {server_id} (connection_id={connection_id})"
+            );
+            return false;
+        }
     }
 
     match frame {
         CurrentConnectionFrame::AgentMessage(agent_msg) => {
-            handle_agent_message(state, server_id, agent_msg).await;
+            handle_agent_message(state, server_id, *agent_msg).await;
         }
         CurrentConnectionFrame::Pong => {
             state.agent_manager.touch_connection(server_id);
@@ -1018,25 +1020,17 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
 }
 
 async fn handle_docker_unavailable(state: &Arc<AppState>, server_id: &str) {
+    // Clear Docker caches (containers, stats, info) and log sessions — these are
+    // also cleared by finish_connection_removal() on disconnect, but the
+    // DockerUnavailable message can arrive while the agent is still connected
+    // (e.g., Docker daemon stopped), so we must clear them here too.
     state.agent_manager.clear_docker_caches(server_id);
-    state.docker_viewers.remove_all_for_server(server_id);
     state
         .agent_manager
         .remove_docker_log_sessions_for_server(server_id);
 
-    let mut features = state.agent_manager.get_features(server_id);
-    features.retain(|feature| feature != "docker");
-
-    let _ = crate::service::server::ServerService::update_features(&state.db, server_id, &features)
-        .await;
-    state.agent_manager.update_features(server_id, features);
-
-    state
-        .agent_manager
-        .broadcast_browser(BrowserMessage::DockerAvailabilityChanged {
-            server_id: server_id.to_string(),
-            available: false,
-        });
+    // Shared cleanup: viewer tracker, features, DB persist, browser broadcast.
+    crate::service::agent_manager::cleanup_disconnected_docker_state(state, server_id).await;
 }
 
 async fn send_server_message(
