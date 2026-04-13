@@ -47,7 +47,11 @@
   },
   "whoisConfig": {
     "warningDays": "警告天数",
-    "criticalDays": "严重天数"
+    "criticalDays": "严重天数",
+    "targetHint": "WHOIS 可填写域名、URL 或 host:port，提交时会自动提取域名部分。",
+    "targetPreview": "将实际查询域名：{{target}}",
+    "unsupportedTldHint": ".app、.dev、.page 等域名通常不提供传统 WHOIS，建议改用 SSL 监控。",
+    "targetInvalid": "请输入可解析出域名的 WHOIS 目标，例如 example.com 或 https://example.com。"
   },
   "table": {
     "status": "状态",
