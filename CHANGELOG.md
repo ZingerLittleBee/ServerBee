@@ -39,6 +39,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extended `server-card`, `network/$server-id`, and `settings/network-probes` test suites with coverage for disk I/O metrics, traffic ring fallbacks, preset-name localization, and language-switch rerenders
 - New Rust coverage in `crates/server/src/service/checker/whois.rs` for target normalization (URL, host:port) and the unsupported-TLD error path
 
+## [0.8.5] - 2026-04-12
+
+### Added
+
+- **Agent local capability locks** -- Agents can now refuse high-risk capabilities locally via CLI flags (`--deny-terminal`, `--deny-exec`, `--deny-upgrade`, `--deny-file`, `--deny-docker`) regardless of what the server grants. Locks are reported back to the server and surfaced in the capabilities UI so admins can see which features are locked on each host
+- **High-risk audit trail** -- New `high_risk_audit` service logs terminal sessions, exec invocations, file transfers, and Docker log/exec access with actor, target server, and session source. Audit rows are retained alongside admin audit logs and are visible in the admin audit view
+- **Effective capability UI** -- The per-server capabilities dialog and `/settings/capabilities` page now show the *effective* capability (server grant AND agent lock) with tooltips explaining which side is denying each bit
+- **Memory and frontend optimization pass** -- ServerCard uses `React.memo` with a tailored comparator, `Bar` animations are disabled, the grid uses `content-visibility: auto`, `QueryClient` now carries an explicit `gcTime`, and `useRealtimeMetrics` mutates the sparkline buffer in place to avoid per-tick allocation
+- **Selective sysinfo refresh on agent** -- Agent metric collection switches from `refresh_all` to targeted `refresh_*` calls, reducing CPU usage on the agent for high-interval collectors
+
+### Changed
+
+- **Server ownership of SystemReport** -- Server `AgentManager` now stores `Arc<SystemReport>` instead of cloning full reports for every broadcast, eliminating allocation churn on every agent tick
+- **Servers-list mutation** -- Frontend replaces `invalidateQueries` on each ws message with `setQueryData`, preventing unnecessary refetches when only a few server fields changed
+- **Scheduled task audit lifecycle** -- Manual scheduled-task execution and scheduler-driven execution now flow through the same audit context, so the audit log always records who triggered an exec
+- **Network probes i18n coverage** -- Remaining untranslated strings in the network-probes settings surfaces are now localized; scroll areas use shadcn `ScrollArea` consistently
+- **Capabilities dialog layout** -- Capabilities dialog groups high-risk toggles together and adds inline descriptions for each bit
+
+### Fixed
+
+- **Stale agent connection teardown** -- Agent WS teardown on reconnect now serializes frame handling and disconnect cleanup per connection, preventing the server from applying offline-state cleanup belonging to a previous connection after a successful reconnect
+- **Docker state cleanup on disconnect** -- On agent disconnect the server now fully clears Docker viewer state and container cache, avoiding stale Docker pages after the agent comes back online
+- **Workspace CI type errors** -- Resolved residual TypeScript errors in the web app that only surfaced in CI
+- **Ultracite lints** -- Removed an unused `capabilities` import and other fixes required to pass the frontend Biome check
+
+### Testing
+
+- New `crates/server/tests/docker_integration.rs` exercising Docker flow cleanup (213 lines)
+- Significantly expanded `crates/server/tests/integration.rs` (+636 lines) covering capability enforcement, high-risk audit writes, and scheduled-task exec audit paths
+- Frontend tests added for `use-servers-ws` setQueryData fast path and `capabilities` effective-grant logic
+
+## [0.8.4] - 2026-04-12
+
+### Added
+
+- **Server card network redesign** -- The ServerCard network section is restructured with a dedicated data layer (`server-card-network-data.ts`) and clearer click-through behavior that takes the user into the per-server network detail page
+- **Disk I/O chart polish** -- `disk-io-chart.tsx` gains a consistent legend and axis formatting to match other historical charts
+- **Widget picker improvements** -- The dashboard widget-picker dialog is enlarged, scrollable via shadcn `ScrollArea`, and uses a more compact `stat-number` widget preset
+
+### Changed
+
+- **Chart time axes** -- All historical charts now use a 24-hour time format and show explicit date labels for 7d/30d ranges, so day boundaries are obvious at long ranges
+- **Dashboard layout clamp** -- Dashboard layout constraints are now clamped so widgets cannot be resized below a usable minimum
+- **Server card network click** -- Clicking the network section of a card now navigates to `/network/:serverId` instead of the generic detail page
+
+### Fixed
+
+- **RFC3339 time format in raw SQL** -- Raw SQL queries issued against sea-orm tables now emit timestamps in RFC3339, matching the storage format and avoiding zero-row results on time-range filters
+- **TypeScript errors in network and sparkline tests** -- Resolved type drift in network data types and the sparkline test after refactoring
+- **Server card latency fallback** -- Restored the graceful latency fallback when no probe data is available for a server
+- **Missing network sparklines guard** -- Server card no longer crashes when the sparkline payload is absent for a newly registered server
+- **Widget picker lint** -- Replaced a non-null assertion with a type cast to satisfy Biome
+
+### Testing
+
+- New `server-card-network-data.test.ts` (212 lines) covering network-data derivation and fallback ordering
+- Dashboard layout tests updated for the new clamp rules
+
+## [0.8.3] - 2026-04-12
+
+### Added
+
+- **Seeded server card sparklines** -- Server cards now render latency sparklines immediately on first render by seeding from the overview history payload, instead of waiting for the next realtime tick. Includes new `sparkline.ts` utilities and a 164-line test suite
+- **Overview sparkline history** -- Server backend `network_probe` service now returns seeded sparkline data as part of the overview response, so the frontend no longer has to request per-server probe history just to populate the first paint
+- **Design spec and plan** -- `2026-04-12-server-card-latency-sparkline-seed-design.md` and the matching 6-task implementation plan document the seed flow and rollout
+
+### Fixed
+
+- **Graceful sparkline fallback** -- When the seeded sparkline query fails the server now degrades gracefully and the card still renders the latency number without the trend line, instead of surfacing a JSON error to the browser
+
+### Testing
+
+- 164-line `sparkline.test.ts` covering downsampling, buffer trimming, and empty-history handling
+- Extended `server-card.test.tsx` for seeded-vs-realtime precedence
+
 ## [0.8.2] - 2026-04-10
 
 ### Added
