@@ -716,7 +716,7 @@ mod tests {
     #[test]
     fn test_hourly_aggregation_averages() {
         // Simulate the averaging computation used in aggregate_hourly
-        let cpu_values = vec![80.0_f64, 90.0, 70.0, 85.0, 95.0];
+        let cpu_values = [80.0_f64, 90.0, 70.0, 85.0, 95.0];
         let count = cpu_values.len() as f64;
         let avg_cpu = cpu_values.iter().sum::<f64>() / count;
         assert!(

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { Eye, Pencil, Play, Plus, Trash2 } from 'lucide-react'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -67,6 +67,9 @@ interface UpdateInput {
   target?: string
 }
 
+const WHOIS_UNSUPPORTED_TLDS = new Set(['app', 'dev', 'page'])
+const TRAILING_DOTS_RE = /\.+$/
+
 function useMonitorTypes(t: (key: string) => string): { label: string; value: MonitorType }[] {
   return [
     { value: 'ssl', label: t('monitorTypes.ssl') },
@@ -85,6 +88,40 @@ function useTypeLabels(t: (key: string) => string): Record<string, string> {
     tcp: t('monitorTypes.tcp'),
     whois: t('monitorTypes.whois')
   }
+}
+
+function parseConfigJson(configJson: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(configJson)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
+    }
+  } catch {
+    // Ignore malformed config and fall back to defaults.
+  }
+
+  return {}
+}
+
+function normalizeWhoisTarget(target: string): string | null {
+  const trimmed = target.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  try {
+    const candidate = trimmed.includes('://') ? trimmed : `https://${trimmed}`
+    const url = new URL(candidate)
+    return url.hostname.trim().replace(TRAILING_DOTS_RE, '').toLowerCase() || null
+  } catch {
+    return null
+  }
+}
+
+function isUnsupportedWhoisTld(target: string): boolean {
+  const parts = target.split('.')
+  const tld = parts.at(-1) ?? ''
+  return WHOIS_UNSUPPORTED_TLDS.has(tld)
 }
 
 // ---------------------------------------------------------------------------
@@ -374,43 +411,71 @@ function MonitorFormDialog({
   const [interval, setIntervalVal] = useState(300)
   const [enabled, setEnabled] = useState(true)
   const [config, setConfig] = useState<Record<string, unknown>>({})
+  const [targetError, setTargetError] = useState<string | null>(null)
 
-  // Reset form when dialog opens
-  const handleOpenChange = (isOpen: boolean) => {
-    if (isOpen && editing) {
+  const activeMonitorType = (editing?.monitor_type as MonitorType) ?? monitorType
+  const normalizedWhoisTarget = activeMonitorType === 'whois' ? normalizeWhoisTarget(target) : null
+  const showUnsupportedWhoisHint =
+    activeMonitorType === 'whois' && normalizedWhoisTarget ? isUnsupportedWhoisTld(normalizedWhoisTarget) : false
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    setTargetError(null)
+
+    if (editing) {
       setName(editing.name)
       setMonitorType(editing.monitor_type as MonitorType)
       setTarget(editing.target)
       setIntervalVal(editing.interval)
       setEnabled(editing.enabled)
-      try {
-        setConfig(JSON.parse(editing.config_json) as Record<string, unknown>)
-      } catch {
-        setConfig({})
-      }
-    } else if (isOpen) {
-      setName('')
-      setMonitorType('ssl')
-      setTarget('')
-      setIntervalVal(300)
-      setEnabled(true)
-      setConfig({})
+      setConfig(parseConfigJson(editing.config_json))
+      return
     }
+
+    setName('')
+    setMonitorType('ssl')
+    setTarget('')
+    setIntervalVal(300)
+    setEnabled(true)
+    setConfig({})
+  }, [editing, open])
+
+  const handleOpenChange = (isOpen: boolean) => {
     if (!isOpen) {
+      setName('')
+      setTarget('')
+      setConfig({})
+      setTargetError(null)
       onClose()
     }
   }
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-    if (name.trim().length === 0 || target.trim().length === 0) {
+    const trimmedName = name.trim()
+    const trimmedTarget = target.trim()
+
+    if (trimmedName.length === 0 || trimmedTarget.length === 0) {
       return
     }
+
+    const normalizedTarget = activeMonitorType === 'whois' ? normalizeWhoisTarget(trimmedTarget) : trimmedTarget
+
+    if (activeMonitorType === 'whois' && !normalizedTarget) {
+      setTargetError(t('whoisConfig.targetInvalid'))
+      return
+    }
+
+    setTargetError(null)
+
     if (editing) {
       onSubmit(
         {
-          name: name.trim(),
-          target: target.trim(),
+          name: trimmedName,
+          target: normalizedTarget ?? trimmedTarget,
           interval,
           enabled,
           config_json: config
@@ -419,9 +484,9 @@ function MonitorFormDialog({
       )
     } else {
       onSubmit({
-        name: name.trim(),
+        name: trimmedName,
         monitor_type: monitorType,
-        target: target.trim(),
+        target: normalizedTarget ?? trimmedTarget,
         interval,
         enabled,
         config_json: config
@@ -493,12 +558,32 @@ function MonitorFormDialog({
           <div className="space-y-1">
             <Label htmlFor="monitor-target">{t('form.target')}</Label>
             <Input
+              aria-invalid={targetError ? true : undefined}
               id="monitor-target"
-              onChange={(e) => setTarget(e.target.value)}
-              placeholder={getTargetPlaceholder((editing?.monitor_type as MonitorType) ?? monitorType)}
+              onChange={(e) => {
+                setTarget(e.target.value)
+                if (targetError) {
+                  setTargetError(null)
+                }
+              }}
+              placeholder={getTargetPlaceholder(activeMonitorType)}
               required
               value={target}
             />
+            {activeMonitorType === 'whois' && (
+              <div className="space-y-1">
+                <p className="text-muted-foreground text-xs">{t('whoisConfig.targetHint')}</p>
+                {normalizedWhoisTarget && (
+                  <p className="text-muted-foreground text-xs">
+                    {t('whoisConfig.targetPreview', { target: normalizedWhoisTarget })}
+                  </p>
+                )}
+                {showUnsupportedWhoisHint && (
+                  <p className="text-amber-600 text-xs dark:text-amber-400">{t('whoisConfig.unsupportedTldHint')}</p>
+                )}
+                {targetError && <p className="text-destructive text-xs">{targetError}</p>}
+              </div>
+            )}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -521,12 +606,7 @@ function MonitorFormDialog({
             </div>
           </div>
 
-          <TypeConfigFields
-            config={config}
-            onChange={setConfig}
-            t={t}
-            type={(editing?.monitor_type as MonitorType) ?? monitorType}
-          />
+          <TypeConfigFields config={config} onChange={setConfig} t={t} type={activeMonitorType} />
         </form>
         <DialogFooter>
           <Button disabled={pending} form="monitor-form" type="submit">
@@ -557,7 +637,7 @@ function StatusDot({ status, t }: { status: boolean | null; t: (key: string) => 
 // Main Page
 // ---------------------------------------------------------------------------
 
-function ServiceMonitorsPage() {
+export function ServiceMonitorsPage() {
   const { t } = useTranslation('service-monitors')
   const { t: tCommon } = useTranslation('common')
   const TYPE_LABELS = useTypeLabels(t)

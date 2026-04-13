@@ -7,6 +7,7 @@ A lightweight, self-hosted VPS monitoring system built with Rust and React.
 ## Features
 
 - **Real-time Dashboard** -- Server status, CPU/memory/disk/network metrics with live WebSocket updates
+- **Server Card Ring Grid** -- Four ring charts per server (CPU, Memory, Disk, Traffic quota) plus inline disk I/O throughput, load trend, and billing-cycle "days remaining" hint
 - **Server Groups** -- Organize servers by group with country flag display
 - **iOS Mobile Companion** -- Native iOS app with QR pairing, push notifications, and real-time metrics
 - **Detailed Metrics** -- Real-time streaming charts + historical views (1h/6h/24h/7d/30d) for CPU, memory, disk, network, load, temperature, GPU, disk I/O
@@ -28,6 +29,7 @@ A lightweight, self-hosted VPS monitoring system built with Rust and React.
 - **Uptime Timeline** -- 90-day uptime visualization with per-day color-coded bars on server detail, public status pages, and customizable dashboard widgets
 - **Public Status Page** -- Unauthenticated status page with server groups, live metrics, and 90-day uptime timelines with configurable thresholds
 - **Monthly Traffic Statistics** -- Billing cycle-aware traffic tracking with daily/hourly breakdowns, usage progress bars, and end-of-cycle prediction
+- **Service Monitors (SSL/WHOIS/HTTP/Ping/TCP)** -- Scheduled service checks with normalized WHOIS hostnames, unsupported-TLD hints (e.g. `.app` / `.dev` → use SSL monitor), and reliable edit-form prefill
 - **Billing Tracking** -- Price, billing cycle, expiration alerts, traffic limits per server
 - **Backup & Restore** -- SQLite database backup/restore via admin API
 - **Agent Auto-update** -- Remote binary upgrade with SHA-256 verification

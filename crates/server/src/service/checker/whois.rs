@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 use chrono::{NaiveDate, NaiveDateTime, Utc};
+use reqwest::Url;
 use serde_json::{Value, json};
 
 use super::CheckResult;
@@ -24,6 +25,7 @@ const EXPIRY_PATTERNS: &[&str] = &[
 
 /// Known WHOIS registrar field patterns.
 const REGISTRAR_PATTERNS: &[&str] = &["Registrar:", "Sponsoring Registrar:", "registrar:"];
+const UNSUPPORTED_WHOIS_TLDS: &[&str] = &["app", "dev", "page"];
 
 /// Check WHOIS information for a domain.
 ///
@@ -42,12 +44,35 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
         .and_then(|v| v.as_i64())
         .unwrap_or(7);
 
+    let lookup_target = match normalize_lookup_target(target) {
+        Ok(target) => target,
+        Err(error) => {
+            let latency = start.elapsed().as_secs_f64() * 1000.0;
+            return CheckResult {
+                success: false,
+                latency: Some(latency),
+                detail: Value::Null,
+                error: Some(error),
+            };
+        }
+    };
+
+    if let Some(error) = unsupported_tld_error(&lookup_target) {
+        let latency = start.elapsed().as_secs_f64() * 1000.0;
+        return CheckResult {
+            success: false,
+            latency: Some(latency),
+            detail: Value::Null,
+            error: Some(error),
+        };
+    }
+
     // Try whois-rust crate first
-    let whois_text = match query_whois(target).await {
+    let whois_text = match query_whois(&lookup_target).await {
         Ok(text) => text,
         Err(crate_err) => {
             // Fall back to system `whois` command
-            match query_whois_system(target).await {
+            match query_whois_system(&lookup_target).await {
                 Ok(text) => text,
                 Err(sys_err) => {
                     let latency = start.elapsed().as_secs_f64() * 1000.0;
@@ -115,6 +140,45 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
             error: Some("Could not parse expiry date from WHOIS response".to_string()),
         },
     }
+}
+
+fn normalize_lookup_target(target: &str) -> Result<String, String> {
+    let trimmed = target.trim();
+    if trimmed.is_empty() {
+        return Err("WHOIS target is empty.".to_string());
+    }
+
+    let candidate = if trimmed.contains("://") {
+        trimmed.to_string()
+    } else {
+        format!("https://{trimmed}")
+    };
+
+    let url = Url::parse(&candidate)
+        .map_err(|_| "WHOIS target must be a domain, URL, or host:port.".to_string())?;
+
+    let host = url
+        .host_str()
+        .ok_or_else(|| "WHOIS target must include a host name.".to_string())?;
+    let normalized = host.trim().trim_end_matches('.').to_ascii_lowercase();
+
+    if normalized.is_empty() {
+        return Err("WHOIS target must include a host name.".to_string());
+    }
+
+    Ok(normalized)
+}
+
+fn unsupported_tld_error(target: &str) -> Option<String> {
+    let tld = target.rsplit('.').next()?;
+
+    if UNSUPPORTED_WHOIS_TLDS.contains(&tld) {
+        return Some(format!(
+            ".{tld} domains do not expose a standard WHOIS service in this monitor. Use an SSL monitor for {target} instead."
+        ));
+    }
+
+    None
 }
 
 /// Query WHOIS using the `whois-rust` crate (runs blocking I/O on a spawn_blocking thread).
@@ -305,5 +369,31 @@ mod tests {
         assert!(parse_date_string("15-Aug-2025").is_some());
         assert!(parse_date_string("15.08.2025").is_some());
         assert!(parse_date_string("not-a-date").is_none());
+    }
+
+    #[test]
+    fn test_normalize_lookup_target_from_url() {
+        let result = normalize_lookup_target("https://demo.example.com/path").unwrap();
+        assert_eq!(result, "demo.example.com");
+    }
+
+    #[test]
+    fn test_normalize_lookup_target_from_host_port() {
+        let result = normalize_lookup_target("demo.example.com:8443").unwrap();
+        assert_eq!(result, "demo.example.com");
+    }
+
+    #[tokio::test]
+    async fn test_check_returns_clear_error_for_unsupported_google_registry_tld() {
+        let result = check("https://demo.serverbee.app/path", &json!({})).await;
+
+        assert!(!result.success);
+        assert_eq!(result.detail, Value::Null);
+        assert_eq!(
+            result.error,
+            Some(
+                ".app domains do not expose a standard WHOIS service in this monitor. Use an SSL monitor for demo.serverbee.app instead.".to_string()
+            )
+        );
     }
 }

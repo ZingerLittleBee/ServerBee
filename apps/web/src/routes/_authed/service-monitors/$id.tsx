@@ -54,6 +54,27 @@ interface MonitorWithRecord extends ServiceMonitor {
   latest_record: ServiceMonitorRecord | null
 }
 
+function isMonitorDetail(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function parseMonitorDetail(detailJson: string | null | undefined): Record<string, unknown> {
+  if (!detailJson) {
+    return {}
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(detailJson)
+    if (isMonitorDetail(parsed)) {
+      return parsed
+    }
+  } catch {
+    // Ignore malformed detail payloads and render without the detail card.
+  }
+
+  return {}
+}
+
 function useTypeLabels(t: (key: string) => string): Record<string, string> {
   return {
     ssl: t('monitorTypes.ssl'),
@@ -380,7 +401,7 @@ function HistoryTable({ records, t }: { records: ServiceMonitorRecord[]; t: (key
 // Main Detail Page
 // ---------------------------------------------------------------------------
 
-function ServiceMonitorDetailPage() {
+export function ServiceMonitorDetailPage() {
   const { id } = Route.useParams()
   const queryClient = useQueryClient()
   const { t } = useTranslation('service-monitors')
@@ -435,15 +456,7 @@ function ServiceMonitorDetailPage() {
   // data is flat (serde flatten) — monitor fields are at top level
   const monitor = data
   const latestRecord = data.latest_record
-
-  let latestDetail: Record<string, unknown> = {}
-  if (latestRecord?.detail_json) {
-    try {
-      latestDetail = JSON.parse(latestRecord.detail_json) as Record<string, unknown>
-    } catch {
-      // ignore malformed JSON
-    }
-  }
+  const latestDetail = parseMonitorDetail(latestRecord?.detail_json)
 
   return (
     <div>
