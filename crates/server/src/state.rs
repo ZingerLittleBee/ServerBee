@@ -13,7 +13,9 @@ use crate::service::alert::AlertStateManager;
 use crate::service::docker_viewer::DockerViewerTracker;
 use crate::service::file_transfer::FileTransferManager;
 use crate::service::geoip::GeoIpService;
-use crate::service::high_risk_audit::{DockerLogsAuditContext, ExecAuditContext, TerminalAuditContext};
+use crate::service::high_risk_audit::{
+    DockerLogsAuditContext, ExecAuditContext, TerminalAuditContext,
+};
 use crate::service::task_scheduler::TaskScheduler;
 
 /// Pending TOTP setup data, keyed by user_id.

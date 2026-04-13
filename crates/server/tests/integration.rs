@@ -1064,7 +1064,9 @@ async fn test_terminal_open_and_close_are_audited() {
         base_url.replace("http://", "ws://"),
         server_id
     );
-    let mut request = ws_url.into_client_request().expect("terminal ws request should build");
+    let mut request = ws_url
+        .into_client_request()
+        .expect("terminal ws request should build");
     request.headers_mut().insert(
         "x-api-key",
         HeaderValue::from_str(&api_key).expect("api key header should be valid"),
@@ -1240,7 +1242,10 @@ async fn test_file_read_is_audited() {
     let read_server_id = server_id.clone();
     let read_handle = tokio::spawn(async move {
         read_client
-            .post(format!("{}/api/files/{}/read", read_base_url, read_server_id))
+            .post(format!(
+                "{}/api/files/{}/read",
+                read_base_url, read_server_id
+            ))
             .json(&json!({ "path": "/etc/hostname" }))
             .send()
             .await
