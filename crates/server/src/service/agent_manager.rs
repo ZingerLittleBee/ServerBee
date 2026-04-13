@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use dashmap::DashMap;
@@ -60,10 +61,12 @@ pub struct AgentManager {
     /// Maps request_id -> traceroute result entry (cached for polling)
     traceroute_results: DashMap<String, TracerouteResultEntry>,
     server_lifecycle_locks: DashMap<String, Arc<Mutex<()>>>,
+    next_connection_id: AtomicU64,
 }
 
 #[allow(dead_code)]
 pub struct AgentConnection {
+    pub connection_id: u64,
     pub server_id: String,
     pub server_name: String,
     pub tx: mpsc::Sender<ServerMessage>,
@@ -98,6 +101,7 @@ impl AgentManager {
             docker_log_sessions: DashMap::new(),
             traceroute_results: DashMap::new(),
             server_lifecycle_locks: DashMap::new(),
+            next_connection_id: AtomicU64::new(1),
         }
     }
 
@@ -108,11 +112,13 @@ impl AgentManager {
         server_name: String,
         tx: mpsc::Sender<ServerMessage>,
         remote_addr: SocketAddr,
-    ) {
+    ) -> u64 {
         let now = Instant::now();
+        let connection_id = self.next_connection_id.fetch_add(1, Ordering::Relaxed);
         self.connections.insert(
             server_id.clone(),
             AgentConnection {
+                connection_id,
                 server_id: server_id.clone(),
                 server_name,
                 tx,
@@ -128,19 +134,27 @@ impl AgentManager {
         let _ = self
             .browser_tx
             .send(BrowserMessage::ServerOnline { server_id });
+
+        connection_id
     }
 
     /// Unregister an agent connection and broadcast ServerOffline to browsers.
     pub fn remove_connection(&self, server_id: &str) {
-        self.connections.remove(server_id);
-        self.server_capabilities.remove(server_id);
-        self.agent_local_capabilities.remove(server_id);
-        self.remove_docker_log_sessions_for_server(server_id);
-        self.clear_docker_caches(server_id);
+        if self.connections.remove(server_id).is_some() {
+            self.finish_connection_removal(server_id);
+        }
+    }
 
-        let _ = self.browser_tx.send(BrowserMessage::ServerOffline {
-            server_id: server_id.to_string(),
+    pub fn remove_connection_if_current(&self, server_id: &str, expected_connection_id: u64) -> bool {
+        let removed = self.connections.remove_if(server_id, |_, connection| {
+            connection.connection_id == expected_connection_id
         });
+        if removed.is_some() {
+            self.finish_connection_removal(server_id);
+            true
+        } else {
+            false
+        }
     }
 
     /// Update the latest report for a server and broadcast an Update to browsers.
@@ -278,22 +292,35 @@ impl AgentManager {
     /// remove them, and return their server IDs.
     pub fn check_offline(&self, threshold_secs: u64) -> Vec<String> {
         let now = Instant::now();
-        let mut offline_ids = Vec::new();
+        let mut stale_connections = Vec::new();
 
         // Collect IDs of agents that are past the threshold
         for entry in self.connections.iter() {
             let elapsed = now.duration_since(entry.value().last_report_at);
             if elapsed.as_secs() >= threshold_secs {
-                offline_ids.push(entry.key().clone());
+                stale_connections.push((entry.key().clone(), entry.value().connection_id));
             }
         }
 
-        // Remove each offline agent (this also broadcasts ServerOffline)
-        for id in &offline_ids {
-            self.remove_connection(id);
+        let mut offline_ids = Vec::new();
+        for (server_id, connection_id) in stale_connections {
+            if self.remove_connection_if_current(&server_id, connection_id) {
+                offline_ids.push(server_id);
+            }
         }
 
         offline_ids
+    }
+
+    fn finish_connection_removal(&self, server_id: &str) {
+        self.server_capabilities.remove(server_id);
+        self.agent_local_capabilities.remove(server_id);
+        self.remove_docker_log_sessions_for_server(server_id);
+        self.clear_docker_caches(server_id);
+
+        let _ = self.browser_tx.send(BrowserMessage::ServerOffline {
+            server_id: server_id.to_string(),
+        });
     }
 
     pub fn set_protocol_version(&self, server_id: &str, version: u32) {
@@ -785,6 +812,23 @@ mod tests {
         assert!(mgr.get_docker_containers("s1").is_none());
         assert!(mgr.get_docker_stats("s1").is_none());
         assert!(mgr.get_docker_info("s1").is_none());
+    }
+
+    #[test]
+    fn test_remove_connection_if_current_does_not_remove_newer_connection() {
+        let (mgr, _rx) = make_manager();
+        let (tx1, _) = mpsc::channel(1);
+        let (tx2, _) = mpsc::channel(1);
+        let first_connection_id = mgr.add_connection("s1".into(), "Srv".into(), tx1, test_addr());
+        let second_connection_id = mgr.add_connection("s1".into(), "Srv".into(), tx2, test_addr());
+
+        mgr.update_docker_containers("s1", vec![]);
+
+        assert_ne!(first_connection_id, second_connection_id);
+        assert!(!mgr.remove_connection_if_current("s1", first_connection_id));
+        assert!(mgr.is_online("s1"));
+        assert!(mgr.get_sender("s1").is_some());
+        assert!(mgr.get_docker_containers("s1").is_some());
     }
 
     #[test]
