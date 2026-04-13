@@ -4,79 +4,90 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockNavigate = vi.fn()
 
-const translationMaps = {
-  en: {
-    add_target: 'Add Target',
-    builtin: 'Built-in',
-    cancel: 'Cancel',
-    confirm_delete_target: 'Are you sure you want to delete this target?',
-    custom: 'Custom',
-    default_targets: 'Default Targets',
-    default_targets_desc: 'Probe targets assigned to new servers by default',
-    delete_target: 'Delete Target',
-    delete_target_aria: 'Delete {{name}}',
-    edit_target: 'Edit Target',
-    edit_target_aria: 'Edit {{name}}',
-    global_settings: 'Global Settings',
-    location_beijing: 'Beijing',
-    no_targets: 'No probe targets configured',
-    probe_interval: 'Probe Interval',
-    probe_interval_desc: 'Seconds between probe rounds (30-600)',
-    probe_type_http: 'HTTP Probe',
-    probe_type_icmp: 'ICMP Probe',
-    probe_type_tcp: 'TCP Probe',
-    provider_short_telecom: 'Telecom',
-    save: 'Save',
-    settings_title: 'Network Probe Settings',
-    target_actions_menu_aria: 'More actions for {{name}}',
-    target_actions: 'Manage',
-    target_address: 'Address',
-    target_location: 'Location',
-    target_management: 'Target Management',
-    target_name: 'Name',
-    target_provider: 'Provider',
-    target_status: 'Source',
-    target_type: 'Probe Type'
-  },
-  zh: {
-    add_target: '添加目标',
-    builtin: '内置',
-    cancel: '取消',
-    confirm_delete_target: '确定要删除此目标吗？',
-    custom: '自定义',
-    default_targets: '默认目标',
-    default_targets_desc: '新服务器自动分配的探测目标',
-    delete_target: '删除目标',
-    delete_target_aria: '删除 {{name}}',
-    edit_target: '编辑目标',
-    edit_target_aria: '编辑 {{name}}',
-    global_settings: '全局设置',
-    location_beijing: '北京',
-    no_targets: '未配置探测目标',
-    probe_interval: '探测间隔',
-    probe_interval_desc: '探测轮次间隔秒数 (30-600)',
-    probe_type_http: 'HTTP 探测',
-    probe_type_icmp: 'ICMP 探测',
-    probe_type_tcp: 'TCP 探测',
-    provider_short_telecom: '电信',
-    save: '保存',
-    settings_title: '网络探测设置',
-    target_actions_menu_aria: '{{name}} 的更多操作',
-    target_actions: '管理',
-    target_address: '地址',
-    target_location: '地区',
-    target_management: '目标管理',
-    target_name: '名称',
-    target_provider: '运营商',
-    target_status: '来源',
-    target_type: '探测类型'
-  }
-} satisfies Record<'en' | 'zh', Record<string, string>>
+const enTranslations = {
+  add_target: 'Add Target',
+  builtin: 'Built-in',
+  cancel: 'Cancel',
+  confirm_delete_target: 'Are you sure you want to delete this target?',
+  custom: 'Custom',
+  default_targets: 'Default Targets',
+  default_targets_desc: 'Probe targets assigned to new servers by default',
+  delete_target: 'Delete Target',
+  delete_target_aria: 'Delete {{name}}',
+  edit_target: 'Edit Target',
+  edit_target_aria: 'Edit {{name}}',
+  global_settings: 'Global Settings',
+  location_beijing: 'Beijing',
+  no_targets: 'No probe targets configured',
+  probe_interval: 'Probe Interval',
+  probe_interval_desc: 'Seconds between probe rounds (30-600)',
+  probe_type_http: 'HTTP Probe',
+  probe_type_icmp: 'ICMP Probe',
+  probe_type_tcp: 'TCP Probe',
+  provider_short_telecom: 'Telecom',
+  save: 'Save',
+  settings_title: 'Network Probe Settings',
+  target_actions_menu_aria: 'More actions for {{name}}',
+  target_actions: 'Manage',
+  target_address: 'Address',
+  target_location: 'Location',
+  target_management: 'Target Management',
+  target_name: 'Name',
+  target_provider: 'Provider',
+  target_status: 'Source',
+  target_type: 'Probe Type'
+}
+
+type TranslationKey = keyof typeof enTranslations
+
+const zhTranslations = {
+  add_target: '添加目标',
+  builtin: '内置',
+  cancel: '取消',
+  confirm_delete_target: '确定要删除此目标吗？',
+  custom: '自定义',
+  default_targets: '默认目标',
+  default_targets_desc: '新服务器自动分配的探测目标',
+  delete_target: '删除目标',
+  delete_target_aria: '删除 {{name}}',
+  edit_target: '编辑目标',
+  edit_target_aria: '编辑 {{name}}',
+  global_settings: '全局设置',
+  location_beijing: '北京',
+  no_targets: '未配置探测目标',
+  probe_interval: '探测间隔',
+  probe_interval_desc: '探测轮次间隔秒数 (30-600)',
+  probe_type_http: 'HTTP 探测',
+  probe_type_icmp: 'ICMP 探测',
+  probe_type_tcp: 'TCP 探测',
+  provider_short_telecom: '电信',
+  save: '保存',
+  settings_title: '网络探测设置',
+  target_actions_menu_aria: '{{name}} 的更多操作',
+  target_actions: '管理',
+  target_address: '地址',
+  target_location: '地区',
+  target_management: '目标管理',
+  target_name: '名称',
+  target_provider: '运营商',
+  target_status: '来源',
+  target_type: '探测类型'
+} satisfies Record<TranslationKey, string>
+
+const translationMaps: Record<'en' | 'zh', Record<TranslationKey, string>> = {
+  en: enTranslations,
+  zh: zhTranslations
+}
 
 let currentLanguage: 'en' | 'zh' = 'zh'
 
+function isTranslationKey(key: string): key is TranslationKey {
+  return key in enTranslations
+}
+
 const stableT = (key: string, options?: { defaultValue?: string; name?: string }) => {
-  const value = translationMaps[currentLanguage][key] ?? options?.defaultValue ?? key
+  const localeTranslations = translationMaps[currentLanguage]
+  const value = isTranslationKey(key) ? localeTranslations[key] : (options?.defaultValue ?? key)
   return value.replace('{{name}}', options?.name ?? '')
 }
 
