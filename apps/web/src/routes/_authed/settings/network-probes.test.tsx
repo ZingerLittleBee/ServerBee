@@ -1,10 +1,46 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockNavigate = vi.fn()
 
-const translationMap: Record<string, string> = {
+const enTranslations = {
+  add_target: 'Add Target',
+  builtin: 'Built-in',
+  cancel: 'Cancel',
+  confirm_delete_target: 'Are you sure you want to delete this target?',
+  custom: 'Custom',
+  default_targets: 'Default Targets',
+  default_targets_desc: 'Probe targets assigned to new servers by default',
+  delete_target: 'Delete Target',
+  delete_target_aria: 'Delete {{name}}',
+  edit_target: 'Edit Target',
+  edit_target_aria: 'Edit {{name}}',
+  global_settings: 'Global Settings',
+  location_beijing: 'Beijing',
+  no_targets: 'No probe targets configured',
+  probe_interval: 'Probe Interval',
+  probe_interval_desc: 'Seconds between probe rounds (30-600)',
+  probe_type_http: 'HTTP Probe',
+  probe_type_icmp: 'ICMP Probe',
+  probe_type_tcp: 'TCP Probe',
+  provider_short_telecom: 'Telecom',
+  save: 'Save',
+  settings_title: 'Network Probe Settings',
+  target_actions_menu_aria: 'More actions for {{name}}',
+  target_actions: 'Manage',
+  target_address: 'Address',
+  target_location: 'Location',
+  target_management: 'Target Management',
+  target_name: 'Name',
+  target_provider: 'Provider',
+  target_status: 'Source',
+  target_type: 'Probe Type'
+}
+
+type TranslationKey = keyof typeof enTranslations
+
+const zhTranslations = {
   add_target: '添加目标',
   builtin: '内置',
   cancel: '取消',
@@ -17,39 +53,59 @@ const translationMap: Record<string, string> = {
   edit_target: '编辑目标',
   edit_target_aria: '编辑 {{name}}',
   global_settings: '全局设置',
+  location_beijing: '北京',
   no_targets: '未配置探测目标',
   probe_interval: '探测间隔',
   probe_interval_desc: '探测轮次间隔秒数 (30-600)',
   probe_type_http: 'HTTP 探测',
   probe_type_icmp: 'ICMP 探测',
   probe_type_tcp: 'TCP 探测',
+  provider_short_telecom: '电信',
   save: '保存',
   settings_title: '网络探测设置',
-  target_actions: '操作',
+  target_actions_menu_aria: '{{name}} 的更多操作',
+  target_actions: '管理',
   target_address: '地址',
   target_location: '地区',
   target_management: '目标管理',
   target_name: '名称',
   target_provider: '运营商',
-  target_status: '状态',
+  target_status: '来源',
   target_type: '探测类型'
+} satisfies Record<TranslationKey, string>
+
+const translationMaps: Record<'en' | 'zh', Record<TranslationKey, string>> = {
+  en: enTranslations,
+  zh: zhTranslations
+}
+
+let currentLanguage: 'en' | 'zh' = 'zh'
+
+function isTranslationKey(key: string): key is TranslationKey {
+  return key in enTranslations
+}
+
+const stableT = (key: string, options?: { defaultValue?: string; name?: string }) => {
+  const localeTranslations = translationMaps[currentLanguage]
+  const value = isTranslationKey(key) ? localeTranslations[key] : (options?.defaultValue ?? key)
+  return value.replace('{{name}}', options?.name ?? '')
 }
 
 const networkTargets = [
   {
     created_at: null,
     id: 'target-1',
-    location: '成都',
-    name: '中国电信成都',
+    location: 'Beijing',
+    name: 'Beijing Telecom',
     probe_type: 'icmp',
-    provider: '电信',
+    provider: 'Telecom',
     source: 'builtin',
     source_name: null,
     target: '1.1.1.1',
     updated_at: null
   },
   {
-    created_at: null,
+    created_at: '2026-04-11T10:00:00Z',
     id: 'target-2',
     location: '香港',
     name: '自定义 TCP 目标',
@@ -58,7 +114,19 @@ const networkTargets = [
     source: null,
     source_name: null,
     target: 'example.com:443',
-    updated_at: null
+    updated_at: '2026-04-11T10:00:00Z'
+  },
+  {
+    created_at: '2026-04-12T09:00:00Z',
+    id: 'target-3',
+    location: '东京',
+    name: '最新 HTTP 目标',
+    probe_type: 'http',
+    provider: '',
+    source: null,
+    source_name: null,
+    target: 'https://example.com',
+    updated_at: '2026-04-12T09:00:00Z'
   }
 ]
 
@@ -78,10 +146,11 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { defaultValue?: string; name?: string }) => {
-      const value = translationMap[key] ?? options?.defaultValue ?? key
-      return value.replace('{{name}}', options?.name ?? '')
-    }
+    i18n: {
+      language: currentLanguage,
+      resolvedLanguage: currentLanguage
+    },
+    t: stableT
   })
 }))
 
@@ -123,6 +192,64 @@ vi.mock('@/components/ui/dialog', () => ({
   DialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>
 }))
 
+vi.mock('@/components/ui/dropdown-menu', async () => {
+  const React = await import('react')
+  const MenuContext = React.createContext<{
+    open: boolean
+    setOpen: React.Dispatch<React.SetStateAction<boolean>>
+  } | null>(null)
+
+  function useMenuContext() {
+    const context = React.useContext(MenuContext)
+    if (!context) {
+      throw new Error('Dropdown menu context missing in test')
+    }
+    return context
+  }
+
+  return {
+    DropdownMenu: ({ children }: { children?: ReactNode }) => {
+      const [open, setOpen] = React.useState(false)
+      return <MenuContext.Provider value={{ open, setOpen }}>{children}</MenuContext.Provider>
+    },
+    DropdownMenuContent: ({ children }: { children?: ReactNode }) => {
+      const { open } = useMenuContext()
+      return open ? <div>{children}</div> : null
+    },
+    DropdownMenuItem: ({
+      children,
+      onSelect,
+      ...props
+    }: { children?: ReactNode; onSelect?: () => void } & Record<string, unknown>) => (
+      <button onClick={() => onSelect?.()} type="button" {...props}>
+        {children}
+      </button>
+    ),
+    DropdownMenuTrigger: ({
+      children,
+      render: renderProp,
+      ...props
+    }: { children?: ReactNode; render?: React.ReactElement } & Record<string, unknown>) => {
+      const { open, setOpen } = useMenuContext()
+      const triggerProps = {
+        ...props,
+        'aria-expanded': open,
+        onClick: () => setOpen((prev) => !prev)
+      }
+
+      if (renderProp && React.isValidElement(renderProp)) {
+        return React.cloneElement(renderProp, triggerProps, children)
+      }
+
+      return (
+        <button type="button" {...triggerProps}>
+          {children}
+        </button>
+      )
+    }
+  }
+})
+
 vi.mock('@/components/ui/input', () => ({
   Input: (props: Record<string, unknown>) => <input {...props} />
 }))
@@ -150,18 +277,52 @@ const { NetworkProbeSettingsPage } = await import('./network-probes')
 
 describe('NetworkProbeSettingsPage', () => {
   beforeEach(() => {
+    currentLanguage = 'zh'
     mockNavigate.mockReset()
   })
 
   it('renders translated probe target labels in the targets table and controls', () => {
     render(<NetworkProbeSettingsPage />)
 
-    expect(screen.getByRole('columnheader', { name: '状态' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: '操作' })).toBeInTheDocument()
+    const rows = screen.getAllByRole('row')
+    expect(rows[1]).toHaveTextContent('最新 HTTP 目标')
+    expect(rows[2]).toHaveTextContent('自定义 TCP 目标')
+    expect(rows[3]).toHaveTextContent('北京电信')
+
+    expect(screen.getByRole('columnheader', { name: '来源' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '管理' })).toBeInTheDocument()
+    expect(screen.getAllByText('北京电信').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('最新 HTTP 目标').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Beijing Telecom')).not.toBeInTheDocument()
+    expect(screen.getByText('电信')).toBeInTheDocument()
+    expect(screen.queryByText('Telecom')).not.toBeInTheDocument()
+    expect(screen.getByText('北京')).toBeInTheDocument()
+    expect(screen.queryByText('Beijing')).not.toBeInTheDocument()
     expect(screen.getAllByText('ICMP 探测').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('HTTP 探测').length).toBeGreaterThan(0)
     expect(screen.getByText('内置')).toBeInTheDocument()
-    expect(screen.getByText('自定义')).toBeInTheDocument()
+    expect(screen.getAllByText('自定义').length).toBe(2)
+    expect(screen.getByRole('button', { name: '自定义 TCP 目标 的更多操作' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '编辑 自定义 TCP 目标' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '删除 自定义 TCP 目标' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '自定义 TCP 目标 的更多操作' }))
+
     expect(screen.getByRole('button', { name: '编辑 自定义 TCP 目标' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '删除 自定义 TCP 目标' })).toBeInTheDocument()
+  })
+
+  it('updates translated column headers after a language change', () => {
+    currentLanguage = 'en'
+    const { rerender } = render(<NetworkProbeSettingsPage />)
+
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: '名称' })).not.toBeInTheDocument()
+
+    currentLanguage = 'zh'
+    rerender(<NetworkProbeSettingsPage />)
+
+    expect(screen.getByRole('columnheader', { name: '名称' })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Name' })).not.toBeInTheDocument()
   })
 })
