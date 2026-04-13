@@ -12,7 +12,7 @@ pub mod virtualization;
 use std::time::Instant;
 
 use serverbee_common::types::{SystemInfo, SystemReport};
-use sysinfo::{Networks, System};
+use sysinfo::{Networks, ProcessRefreshKind, ProcessesToUpdate, System};
 
 pub struct Collector {
     sys: System,
@@ -44,7 +44,13 @@ impl Collector {
     }
 
     pub fn collect(&mut self) -> SystemReport {
-        self.sys.refresh_all();
+        self.sys.refresh_cpu_usage();
+        self.sys.refresh_memory();
+        self.sys.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing(),
+        );
         self.networks.refresh(true);
 
         let elapsed = self.prev_time.elapsed().as_secs_f64().max(1.0);
