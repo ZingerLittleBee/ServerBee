@@ -363,7 +363,9 @@ function ServersListPage() {
       {servers.length > 0 && viewMode === 'grid' && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((server) => (
-            <ServerCard key={server.id} server={server} />
+            <div className="[contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={server.id}>
+              <ServerCard server={server} />
+            </div>
           ))}
         </div>
       )}

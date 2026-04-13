@@ -440,7 +440,7 @@ async fn test_docker_info_endpoint_requests_agent_when_cache_empty() {
 }
 
 #[tokio::test]
-async fn test_docker_streams_restart_for_existing_browser_viewers_after_agent_reconnect() {
+async fn test_docker_streams_require_browser_resubscribe_after_agent_reconnect() {
     let (base_url, _tmp) = start_test_server().await;
     let client = http_client();
     login_admin(&client, &base_url).await;
@@ -511,8 +511,31 @@ async fn test_docker_streams_restart_for_existing_browser_viewers_after_agent_re
     .await;
     assert_eq!(
         resumed_seen.len(),
+        0,
+        "Disconnect cleanup should clear docker viewers until the browser subscribes again"
+    );
+
+    browser_sink
+        .send(tungstenite::Message::Text(
+            json!({
+                "type": "docker_subscribe",
+                "server_id": server_id
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("Failed to re-send docker_subscribe");
+
+    let resubscribed_seen = recv_until_types(
+        &mut agent_reader2,
+        &["docker_start_stats", "docker_events_start"],
+    )
+    .await;
+    assert_eq!(
+        resubscribed_seen.len(),
         2,
-        "Existing browser viewers should resume docker streams after agent reconnect"
+        "A fresh browser subscribe should restart docker streams after reconnect"
     );
 
     let _ = browser_sink.close().await;

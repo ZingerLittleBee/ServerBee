@@ -1,13 +1,17 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use dashmap::DashMap;
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 
 use serverbee_common::constants::{CAP_DOCKER, effective_capabilities, has_capability};
 use serverbee_common::docker_types::*;
 use serverbee_common::protocol::{AgentMessage, BrowserMessage, ServerMessage};
 use serverbee_common::types::{ServerStatus, SystemReport, TracerouteHop};
+
+use crate::state::AppState;
 
 /// Sender for forwarding terminal output from agent to browser WS.
 pub type TerminalOutputTx = mpsc::Sender<TerminalSessionEvent>;
@@ -58,10 +62,13 @@ pub struct AgentManager {
     docker_log_sessions: DashMap<String, DashMap<String, mpsc::Sender<Vec<DockerLogEntry>>>>,
     /// Maps request_id -> traceroute result entry (cached for polling)
     traceroute_results: DashMap<String, TracerouteResultEntry>,
+    server_lifecycle_locks: DashMap<String, Arc<Mutex<()>>>,
+    next_connection_id: AtomicU64,
 }
 
 #[allow(dead_code)]
 pub struct AgentConnection {
+    pub connection_id: u64,
     pub server_id: String,
     pub server_name: String,
     pub tx: mpsc::Sender<ServerMessage>,
@@ -75,7 +82,7 @@ pub struct AgentConnection {
 
 #[allow(dead_code)]
 pub struct CachedReport {
-    pub report: SystemReport,
+    pub report: Arc<SystemReport>,
     pub received_at: Instant,
 }
 
@@ -95,6 +102,8 @@ impl AgentManager {
             agent_local_capabilities: DashMap::new(),
             docker_log_sessions: DashMap::new(),
             traceroute_results: DashMap::new(),
+            server_lifecycle_locks: DashMap::new(),
+            next_connection_id: AtomicU64::new(1),
         }
     }
 
@@ -105,11 +114,13 @@ impl AgentManager {
         server_name: String,
         tx: mpsc::Sender<ServerMessage>,
         remote_addr: SocketAddr,
-    ) {
+    ) -> u64 {
         let now = Instant::now();
+        let connection_id = self.next_connection_id.fetch_add(1, Ordering::Relaxed);
         self.connections.insert(
             server_id.clone(),
             AgentConnection {
+                connection_id,
                 server_id: server_id.clone(),
                 server_name,
                 tx,
@@ -125,18 +136,37 @@ impl AgentManager {
         let _ = self
             .browser_tx
             .send(BrowserMessage::ServerOnline { server_id });
+
+        connection_id
     }
 
     /// Unregister an agent connection and broadcast ServerOffline to browsers.
     pub fn remove_connection(&self, server_id: &str) {
-        self.connections.remove(server_id);
-        self.server_capabilities.remove(server_id);
-        self.agent_local_capabilities.remove(server_id);
-        self.remove_docker_log_sessions_for_server(server_id);
+        if self.connections.remove(server_id).is_some() {
+            self.finish_connection_removal(server_id);
+        }
+    }
 
-        let _ = self.browser_tx.send(BrowserMessage::ServerOffline {
-            server_id: server_id.to_string(),
+    pub fn remove_connection_if_current(
+        &self,
+        server_id: &str,
+        expected_connection_id: u64,
+    ) -> bool {
+        let removed = self.connections.remove_if(server_id, |_, connection| {
+            connection.connection_id == expected_connection_id
         });
+        if removed.is_some() {
+            self.finish_connection_removal(server_id);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn is_current_connection(&self, server_id: &str, expected_connection_id: u64) -> bool {
+        self.connections
+            .get(server_id)
+            .is_some_and(|connection| connection.connection_id == expected_connection_id)
     }
 
     /// Update the latest report for a server and broadcast an Update to browsers.
@@ -194,7 +224,7 @@ impl AgentManager {
         self.latest_reports.insert(
             server_id.to_string(),
             CachedReport {
-                report,
+                report: Arc::new(report),
                 received_at: now,
             },
         );
@@ -205,6 +235,13 @@ impl AgentManager {
         self.connections.contains_key(server_id)
     }
 
+    pub fn server_cleanup_lock(&self, server_id: &str) -> Arc<Mutex<()>> {
+        self.server_lifecycle_locks
+            .entry(server_id.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
+    }
+
     /// Return the number of currently connected agents.
     #[allow(dead_code)]
     pub fn online_count(&self) -> usize {
@@ -212,15 +249,17 @@ impl AgentManager {
     }
 
     /// Get the latest cached report for a server.
-    pub fn get_latest_report(&self, server_id: &str) -> Option<SystemReport> {
-        self.latest_reports.get(server_id).map(|r| r.report.clone())
+    pub fn get_latest_report(&self, server_id: &str) -> Option<Arc<SystemReport>> {
+        self.latest_reports
+            .get(server_id)
+            .map(|r| Arc::clone(&r.report))
     }
 
     /// Get all latest cached reports as (server_id, report) pairs.
-    pub fn all_latest_reports(&self) -> Vec<(String, SystemReport)> {
+    pub fn all_latest_reports(&self) -> Vec<(String, Arc<SystemReport>)> {
         self.latest_reports
             .iter()
-            .map(|entry| (entry.key().clone(), entry.value().report.clone()))
+            .map(|entry| (entry.key().clone(), Arc::clone(&entry.value().report)))
             .collect()
     }
 
@@ -261,26 +300,44 @@ impl AgentManager {
         self.terminal_sessions.get(session_id).map(|v| v.clone())
     }
 
-    /// Find agents that have not reported for `threshold_secs` seconds,
-    /// remove them, and return their server IDs.
-    pub fn check_offline(&self, threshold_secs: u64) -> Vec<String> {
+    /// Find agents that have not reported for `threshold_secs` seconds.
+    pub fn stale_connection_candidates(&self, threshold_secs: u64) -> Vec<(String, u64)> {
         let now = Instant::now();
-        let mut offline_ids = Vec::new();
+        let mut stale_connections = Vec::new();
 
-        // Collect IDs of agents that are past the threshold
         for entry in self.connections.iter() {
             let elapsed = now.duration_since(entry.value().last_report_at);
             if elapsed.as_secs() >= threshold_secs {
-                offline_ids.push(entry.key().clone());
+                stale_connections.push((entry.key().clone(), entry.value().connection_id));
             }
         }
 
-        // Remove each offline agent (this also broadcasts ServerOffline)
-        for id in &offline_ids {
-            self.remove_connection(id);
+        stale_connections
+    }
+
+    /// Find agents that have not reported for `threshold_secs` seconds,
+    /// remove them, and return their server IDs.
+    #[cfg(test)]
+    pub fn check_offline(&self, threshold_secs: u64) -> Vec<String> {
+        let mut offline_ids = Vec::new();
+        for (server_id, connection_id) in self.stale_connection_candidates(threshold_secs) {
+            if self.remove_connection_if_current(&server_id, connection_id) {
+                offline_ids.push(server_id);
+            }
         }
 
         offline_ids
+    }
+
+    fn finish_connection_removal(&self, server_id: &str) {
+        self.server_capabilities.remove(server_id);
+        self.agent_local_capabilities.remove(server_id);
+        self.remove_docker_log_sessions_for_server(server_id);
+        self.clear_docker_caches(server_id);
+
+        let _ = self.browser_tx.send(BrowserMessage::ServerOffline {
+            server_id: server_id.to_string(),
+        });
     }
 
     pub fn set_protocol_version(&self, server_id: &str, version: u32) {
@@ -574,6 +631,29 @@ impl AgentManager {
     }
 }
 
+/// Clean up Docker viewer tracking, features, and broadcast availability change.
+///
+/// Docker caches (containers, stats, info) and log sessions are intentionally NOT
+/// cleared here — they are already handled by `finish_connection_removal()` on the
+/// disconnect path, and by `handle_docker_unavailable()` for the DockerUnavailable
+/// message path.
+pub async fn cleanup_disconnected_docker_state(state: &AppState, server_id: &str) {
+    state.docker_viewers.remove_all_for_server(server_id);
+
+    let mut features = state.agent_manager.get_features(server_id);
+    features.retain(|feature| feature != "docker");
+    let _ = crate::service::server::ServerService::update_features(&state.db, server_id, &features)
+        .await;
+
+    state.agent_manager.update_features(server_id, features);
+    state
+        .agent_manager
+        .broadcast_browser(BrowserMessage::DockerAvailabilityChanged {
+            server_id: server_id.to_string(),
+            available: false,
+        });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -742,6 +822,75 @@ mod tests {
         assert_eq!(mgr.get_agent_local_capabilities("s1"), None);
         assert_eq!(mgr.get_effective_capabilities("s1"), None);
         assert!(!mgr.has_docker_capability("s1"));
+    }
+
+    #[test]
+    fn test_remove_connection_clears_docker_caches() {
+        let (mgr, _rx) = make_manager();
+        let (tx, _) = mpsc::channel(1);
+        mgr.add_connection("s1".into(), "Srv".into(), tx, test_addr());
+
+        mgr.update_docker_containers("s1", vec![]);
+        mgr.update_docker_stats("s1", vec![]);
+        mgr.update_docker_info(
+            "s1",
+            DockerSystemInfo {
+                docker_version: "26.1.0".into(),
+                api_version: "1.45".into(),
+                os: "linux".into(),
+                arch: "amd64".into(),
+                containers_running: 1,
+                containers_paused: 0,
+                containers_stopped: 0,
+                images: 1,
+                memory_total: 1024,
+            },
+        );
+
+        mgr.remove_connection("s1");
+
+        assert!(mgr.get_docker_containers("s1").is_none());
+        assert!(mgr.get_docker_stats("s1").is_none());
+        assert!(mgr.get_docker_info("s1").is_none());
+    }
+
+    #[test]
+    fn test_remove_connection_if_current_does_not_remove_newer_connection() {
+        let (mgr, _rx) = make_manager();
+        let (tx1, _) = mpsc::channel(1);
+        let (tx2, _) = mpsc::channel(1);
+        let first_connection_id = mgr.add_connection("s1".into(), "Srv".into(), tx1, test_addr());
+        let second_connection_id = mgr.add_connection("s1".into(), "Srv".into(), tx2, test_addr());
+
+        mgr.update_docker_containers("s1", vec![]);
+
+        assert_ne!(first_connection_id, second_connection_id);
+        assert!(!mgr.remove_connection_if_current("s1", first_connection_id));
+        assert!(mgr.is_online("s1"));
+        assert!(mgr.get_sender("s1").is_some());
+        assert!(mgr.get_docker_containers("s1").is_some());
+    }
+
+    #[test]
+    fn test_stale_connection_candidates_do_not_remove_newer_connection() {
+        let (mgr, _rx) = make_manager();
+        let (tx1, _) = mpsc::channel(1);
+        let (tx2, _) = mpsc::channel(1);
+        let first_connection_id = mgr.add_connection("s1".into(), "Srv".into(), tx1, test_addr());
+
+        let stale_candidates = mgr.stale_connection_candidates(0);
+        assert_eq!(
+            stale_candidates,
+            vec![("s1".to_string(), first_connection_id)]
+        );
+
+        let second_connection_id = mgr.add_connection("s1".into(), "Srv".into(), tx2, test_addr());
+        assert_ne!(first_connection_id, second_connection_id);
+
+        assert!(!mgr.remove_connection_if_current("s1", stale_candidates[0].1));
+        assert!(!mgr.is_current_connection("s1", first_connection_id));
+        assert!(mgr.is_current_connection("s1", second_connection_id));
+        assert!(mgr.is_online("s1"));
     }
 
     #[test]
