@@ -151,13 +151,14 @@ const queryClient = new QueryClient({
 ```typescript
 export const ServerCard = memo(ServerCardInner, (prev, next) =>
   prev.server.id === next.server.id &&
+  prev.server.online === next.server.online &&
   prev.server.last_active === next.server.last_active &&
   prev.server.capabilities === next.server.capabilities &&
   prev.server.effective_capabilities === next.server.effective_capabilities &&
   prev.server.features === next.server.features
 )
 ```
-- Include `capabilities`, `effective_capabilities`, and `features` in the comparator because `capabilities_changed` and `docker_availability_changed` WS messages update these fields without changing `last_active`, and the card may display Docker badges or capability indicators
+- Include `online`, `capabilities`, `effective_capabilities`, and `features` in the comparator because `server_online/offline`, `capabilities_changed`, and `docker_availability_changed` WS messages update these fields without changing `last_active`, and the card displays status badges and Docker/capability indicators
 - Add `isAnimationActive={false}` to BarChart components inside ServerCard
 - Detail page charts (metrics-chart, disk-io-chart) keep animation — single-server view, good UX
 
@@ -198,8 +199,8 @@ The `['servers-list']` query fetches `ServerInfo[]` from `/api/servers` — a RE
 **Change**: Replace `invalidateQueries` with targeted `setQueryData` updates:
 
 ```typescript
-// For capabilities_changed:
-queryClient.setQueryData<ServerInfo[]>(['servers-list'], (prev) =>
+// For capabilities_changed (use Record<string, unknown> since no shared ServerInfo type exists):
+queryClient.setQueryData<Record<string, unknown>[]>(['servers-list'], (prev) =>
   prev?.map((s) =>
     s.id === server_id
       ? { ...s, capabilities, agent_local_capabilities, effective_capabilities }
@@ -208,12 +209,14 @@ queryClient.setQueryData<ServerInfo[]>(['servers-list'], (prev) =>
 )
 
 // For agent_info_updated:
-queryClient.setQueryData<ServerInfo[]>(['servers-list'], (prev) =>
+queryClient.setQueryData<Record<string, unknown>[]>(['servers-list'], (prev) =>
   prev?.map((s) =>
     s.id === server_id ? { ...s, protocol_version } : s
   )
 )
 ```
+
+**Note**: The `['servers-list']` query is typed as various local interfaces (`ServerInfo`, `Server`, `ServerResponse`) in different consumers, with no shared type. Use `Record<string, unknown>[]` for the updater to avoid coupling. Alternatively, the implementer may extract a shared type as a follow-up.
 
 This eliminates the network round-trip while keeping all query caches consistent. The pattern matches the existing `setQueryData` usage for `['servers']` in the same handlers.
 
