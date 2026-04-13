@@ -8,7 +8,7 @@ import { router } from './router'
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 30_000, retry: 1 }
+    queries: { staleTime: 30_000, gcTime: 300_000, retry: 1 }
   }
 })
 
