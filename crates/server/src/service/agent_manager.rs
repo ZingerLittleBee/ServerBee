@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Instant;
 
 use dashmap::DashMap;
@@ -75,7 +76,7 @@ pub struct AgentConnection {
 
 #[allow(dead_code)]
 pub struct CachedReport {
-    pub report: SystemReport,
+    pub report: Arc<SystemReport>,
     pub received_at: Instant,
 }
 
@@ -194,7 +195,7 @@ impl AgentManager {
         self.latest_reports.insert(
             server_id.to_string(),
             CachedReport {
-                report,
+                report: Arc::new(report),
                 received_at: now,
             },
         );
@@ -212,15 +213,17 @@ impl AgentManager {
     }
 
     /// Get the latest cached report for a server.
-    pub fn get_latest_report(&self, server_id: &str) -> Option<SystemReport> {
-        self.latest_reports.get(server_id).map(|r| r.report.clone())
+    pub fn get_latest_report(&self, server_id: &str) -> Option<Arc<SystemReport>> {
+        self.latest_reports
+            .get(server_id)
+            .map(|r| Arc::clone(&r.report))
     }
 
     /// Get all latest cached reports as (server_id, report) pairs.
-    pub fn all_latest_reports(&self) -> Vec<(String, SystemReport)> {
+    pub fn all_latest_reports(&self) -> Vec<(String, Arc<SystemReport>)> {
         self.latest_reports
             .iter()
-            .map(|entry| (entry.key().clone(), entry.value().report.clone()))
+            .map(|entry| (entry.key().clone(), Arc::clone(&entry.value().report)))
             .collect()
     }
 
