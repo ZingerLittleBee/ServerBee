@@ -57,8 +57,7 @@ beforeEach(() => {
   })
 })
 
-const { Route } = await import('./index')
-const TrafficPage = Route.component
+const { TrafficPage } = await import('./index')
 
 describe('TrafficPage', () => {
   it('shows an explanatory empty state instead of empty stat cards when overview data is missing', () => {

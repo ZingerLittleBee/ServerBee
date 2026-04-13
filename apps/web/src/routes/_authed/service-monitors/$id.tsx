@@ -401,7 +401,7 @@ function HistoryTable({ records, t }: { records: ServiceMonitorRecord[]; t: (key
 // Main Detail Page
 // ---------------------------------------------------------------------------
 
-function ServiceMonitorDetailPage() {
+export function ServiceMonitorDetailPage() {
   const { id } = Route.useParams()
   const queryClient = useQueryClient()
   const { t } = useTranslation('service-monitors')
