@@ -236,16 +236,16 @@ async fn handle_agent_ws(
         match result {
             Ok(Message::Text(text)) => match serde_json::from_str::<AgentMessage>(&text) {
                 Ok(agent_msg) => {
-                    if !state_read
-                        .agent_manager
-                        .is_current_connection(&sid_read, connection_id)
+                    if !handle_current_connection_frame(
+                        &state_read,
+                        &sid_read,
+                        connection_id,
+                        CurrentConnectionFrame::AgentMessage(agent_msg),
+                    )
+                    .await
                     {
-                        tracing::info!(
-                            "Stopping superseded agent socket for {sid_read} (connection_id={connection_id})"
-                        );
                         break;
                     }
-                    handle_agent_message(&state_read, &sid_read, agent_msg).await;
                 }
                 Err(e) => {
                     tracing::warn!("Invalid message from agent {sid_read}: {e}, text: {text}");
@@ -253,33 +253,32 @@ async fn handle_agent_ws(
             },
             Ok(Message::Binary(data)) => match serde_json::from_slice::<AgentMessage>(&data) {
                 Ok(agent_msg) => {
-                    if !state_read
-                        .agent_manager
-                        .is_current_connection(&sid_read, connection_id)
+                    if !handle_current_connection_frame(
+                        &state_read,
+                        &sid_read,
+                        connection_id,
+                        CurrentConnectionFrame::AgentMessage(agent_msg),
+                    )
+                    .await
                     {
-                        tracing::info!(
-                            "Stopping superseded agent socket for {sid_read} (connection_id={connection_id})"
-                        );
                         break;
                     }
-                    handle_agent_message(&state_read, &sid_read, agent_msg).await;
                 }
                 Err(e) => {
                     tracing::warn!("Invalid binary message from agent {sid_read}: {e}");
                 }
             },
             Ok(Message::Pong(_)) => {
-                if !state_read
-                    .agent_manager
-                    .is_current_connection(&sid_read, connection_id)
+                if !handle_current_connection_frame(
+                    &state_read,
+                    &sid_read,
+                    connection_id,
+                    CurrentConnectionFrame::Pong,
+                )
+                .await
                 {
-                    tracing::info!(
-                        "Stopping superseded agent socket for {sid_read} (connection_id={connection_id})"
-                    );
                     break;
                 }
-                // Agent responded to our Ping, update heartbeat timestamp
-                state_read.agent_manager.touch_connection(&sid_read);
             }
             Ok(Message::Close(_)) => {
                 tracing::info!("Agent {sid_read} sent close frame");
@@ -306,6 +305,42 @@ async fn handle_agent_ws(
     }
     write_task.abort();
     tracing::info!("Agent {server_id} disconnected");
+}
+
+enum CurrentConnectionFrame {
+    AgentMessage(AgentMessage),
+    Pong,
+}
+
+async fn handle_current_connection_frame(
+    state: &Arc<AppState>,
+    server_id: &str,
+    connection_id: u64,
+    frame: CurrentConnectionFrame,
+) -> bool {
+    let server_lock = state.agent_manager.server_cleanup_lock(server_id);
+    let _guard = server_lock.lock().await;
+
+    if !state
+        .agent_manager
+        .is_current_connection(server_id, connection_id)
+    {
+        tracing::info!(
+            "Stopping superseded agent socket for {server_id} (connection_id={connection_id})"
+        );
+        return false;
+    }
+
+    match frame {
+        CurrentConnectionFrame::AgentMessage(agent_msg) => {
+            handle_agent_message(state, server_id, agent_msg).await;
+        }
+        CurrentConnectionFrame::Pong => {
+            state.agent_manager.touch_connection(server_id);
+        }
+    }
+
+    true
 }
 
 async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: AgentMessage) {
@@ -1184,4 +1219,80 @@ async fn update_server_geo(
     active.updated_at = Set(chrono::Utc::now());
     active.update(db).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AppConfig;
+    use crate::test_utils::setup_test_db;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    fn test_addr() -> SocketAddr {
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080)
+    }
+
+    #[tokio::test]
+    async fn current_connection_frame_handler_waits_for_server_lock() {
+        let (db, _tmp) = setup_test_db().await;
+        let state = AppState::new(db, AppConfig::default()).await.unwrap();
+        let (tx, _) = mpsc::channel(1);
+        let connection_id =
+            state
+                .agent_manager
+                .add_connection("s1".into(), "Srv".into(), tx, test_addr());
+
+        let server_lock = state.agent_manager.server_cleanup_lock("s1");
+        let held_guard = server_lock.lock().await;
+
+        let task_state = Arc::clone(&state);
+        let handle_task = tokio::spawn(async move {
+            handle_current_connection_frame(
+                &task_state,
+                "s1",
+                connection_id,
+                CurrentConnectionFrame::Pong,
+            )
+            .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        assert!(!handle_task.is_finished());
+
+        drop(held_guard);
+
+        assert!(handle_task.await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn current_connection_frame_handler_stops_superseded_connection() {
+        let (db, _tmp) = setup_test_db().await;
+        let state = AppState::new(db, AppConfig::default()).await.unwrap();
+        let (tx1, _) = mpsc::channel(1);
+        let (tx2, _) = mpsc::channel(1);
+        let first_connection_id =
+            state
+                .agent_manager
+                .add_connection("s1".into(), "Srv".into(), tx1, test_addr());
+        let second_connection_id =
+            state
+                .agent_manager
+                .add_connection("s1".into(), "Srv".into(), tx2, test_addr());
+
+        assert_ne!(first_connection_id, second_connection_id);
+        assert!(
+            !handle_current_connection_frame(
+                &state,
+                "s1",
+                first_connection_id,
+                CurrentConnectionFrame::Pong,
+            )
+            .await
+        );
+        assert!(
+            state
+                .agent_manager
+                .is_current_connection("s1", second_connection_id)
+        );
+    }
 }
