@@ -134,6 +134,7 @@ impl AgentManager {
         self.server_capabilities.remove(server_id);
         self.agent_local_capabilities.remove(server_id);
         self.remove_docker_log_sessions_for_server(server_id);
+        self.clear_docker_caches(server_id);
 
         let _ = self.browser_tx.send(BrowserMessage::ServerOffline {
             server_id: server_id.to_string(),
@@ -745,6 +746,21 @@ mod tests {
         assert_eq!(mgr.get_agent_local_capabilities("s1"), None);
         assert_eq!(mgr.get_effective_capabilities("s1"), None);
         assert!(!mgr.has_docker_capability("s1"));
+    }
+
+    #[test]
+    fn test_remove_connection_clears_docker_caches() {
+        let (mgr, _rx) = make_manager();
+        let (tx, _) = mpsc::channel(1);
+        mgr.add_connection("s1".into(), "Srv".into(), tx, test_addr());
+
+        mgr.update_docker_containers("s1", vec![]);
+        mgr.update_docker_stats("s1", vec![]);
+
+        mgr.remove_connection("s1");
+
+        assert!(mgr.get_docker_containers("s1").is_none());
+        assert!(mgr.get_docker_stats("s1").is_none());
     }
 
     #[test]
