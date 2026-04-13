@@ -8,6 +8,7 @@ import { RingChart } from '@/components/ui/ring-chart'
 import { useNetworkOverview } from '@/hooks/use-network-api'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import { useTrafficOverview } from '@/hooks/use-traffic-overview'
 import { getLatencyBarColor, isLatencyFailure } from '@/lib/network-latency-constants'
 import { latencyColorClass } from '@/lib/network-types'
 import { countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
@@ -102,6 +103,8 @@ function formatLoad(load: number): string {
   return load.toFixed(2)
 }
 
+const DEFAULT_TRAFFIC_LIMIT_BYTES = 1024 ** 4 // 1 TiB fallback when no quota configured
+
 function averageLossRatio(point: ServerCardMetricPoint): number | null {
   if (point.targets.length === 0) {
     return null
@@ -163,6 +166,7 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
   const { t } = useTranslation(['servers'])
   const { data: networkOverview = [] } = useNetworkOverview()
   const { data: realtimeData } = useNetworkRealtime(server.id)
+  const { data: trafficOverview } = useTrafficOverview()
 
   const memoryPct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
   const diskPct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
@@ -175,6 +179,18 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
     () => buildServerCardNetworkState(networkSummary, realtimeData),
     [networkSummary, realtimeData]
   )
+
+  const trafficEntry = trafficOverview?.find((entry) => entry.server_id === server.id)
+  const trafficUsed = trafficEntry
+    ? trafficEntry.cycle_in + trafficEntry.cycle_out
+    : server.net_in_transfer + server.net_out_transfer
+  const trafficLimit =
+    trafficEntry?.traffic_limit != null && trafficEntry.traffic_limit > 0
+      ? trafficEntry.traffic_limit
+      : DEFAULT_TRAFFIC_LIMIT_BYTES
+  const trafficRawPct = trafficLimit > 0 ? (trafficUsed / trafficLimit) * 100 : 0
+  const trafficRingPct = Math.min(trafficRawPct, 100)
+  const trafficDaysRemaining = trafficEntry?.days_remaining ?? null
 
   return (
     <div className="flex flex-col rounded-lg border bg-card p-4 shadow-sm">
@@ -200,21 +216,48 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
         <StatusBadge online={server.online} />
       </div>
 
-      <div className="mb-3 flex justify-around">
-        <RingChart color={getRingColor(server.cpu, 'var(--color-chart-1)')} label={t('col_cpu')} value={server.cpu} />
-        <RingChart color={getRingColor(memoryPct, 'var(--color-chart-2)')} label={t('col_memory')} value={memoryPct} />
-        <RingChart color={getRingColor(diskPct, 'var(--color-chart-3)')} label={t('col_disk')} value={diskPct} />
+      <div className="mb-3 grid grid-cols-4 gap-2">
+        <div className="flex flex-col items-center gap-1">
+          <RingChart color={getRingColor(server.cpu, 'var(--color-chart-1)')} label={t('col_cpu')} value={server.cpu} />
+          <div className="text-[10px] text-muted-foreground tabular-nums">
+            {t('card_load')} <span className="font-medium text-foreground">{formatLoad(server.load1)}</span>
+          </div>
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <RingChart
+            color={getRingColor(memoryPct, 'var(--color-chart-2)')}
+            label={t('col_memory')}
+            value={memoryPct}
+          />
+          <div className="text-[10px] text-muted-foreground tabular-nums">
+            <span className="font-medium text-foreground">{formatBytes(server.mem_used)}</span>
+            <span className="mx-0.5">/</span>
+            {formatBytes(server.mem_total)}
+          </div>
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <RingChart color={getRingColor(diskPct, 'var(--color-chart-3)')} label={t('col_disk')} value={diskPct} />
+          <div className="text-[10px] text-muted-foreground tabular-nums">
+            <span className="font-medium text-foreground">{formatBytes(server.disk_used)}</span>
+            <span className="mx-0.5">/</span>
+            {formatBytes(server.disk_total)}
+          </div>
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <RingChart
+            color={getRingColor(trafficRingPct, 'var(--color-chart-4)')}
+            label={t('card_traffic_quota')}
+            value={trafficRingPct}
+          />
+          <div className="text-[10px] text-muted-foreground tabular-nums">
+            <span className="font-medium text-foreground">{formatBytes(trafficUsed)}</span>
+            <span className="mx-0.5">/</span>
+            {formatBytes(trafficLimit)}
+          </div>
+        </div>
       </div>
 
-      <div className="mb-1.5 grid grid-cols-5 gap-1 rounded-lg bg-muted/40 px-2 py-1.5">
-        <CompactMetric className="items-center" label={t('card_load')} value={formatLoad(server.load1)} />
-        <CompactMetric className="items-center" label={t('card_processes')} value={server.process_count} />
-        <CompactMetric className="items-center" label={t('card_tcp')} value={server.tcp_conn} />
-        <CompactMetric className="items-center" label={t('card_udp')} value={server.udp_conn} />
-        <CompactMetric className="items-center" label={t('card_swap')} value={`${swapPct.toFixed(0)}%`} />
-      </div>
-
-      <div className="mb-3 grid grid-cols-4 gap-1 rounded-lg bg-muted/40 px-2 py-1.5">
+      <div className="mb-2 grid grid-cols-5 gap-1 rounded-lg bg-muted/40 px-2 py-1.5">
         <CompactMetric
           className="items-center"
           label={t('card_net_in_speed')}
@@ -227,10 +270,48 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
         />
         <CompactMetric
           className="items-center"
+          label={t('card_disk_read')}
+          value={formatSpeed(server.disk_read_bytes_per_sec ?? 0)}
+        />
+        <CompactMetric
+          className="items-center"
+          label={t('card_disk_write')}
+          value={formatSpeed(server.disk_write_bytes_per_sec ?? 0)}
+        />
+        <CompactMetric
+          className="items-center"
           label={t('card_net_total')}
           value={formatBytes(server.net_in_transfer + server.net_out_transfer)}
         />
-        <CompactMetric className="items-center" label={t('col_uptime')} value={formatUptime(server.uptime)} />
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
+        <span>
+          {t('col_uptime')}{' '}
+          <span className="font-medium text-foreground tabular-nums">{formatUptime(server.uptime)}</span>
+        </span>
+        <span aria-hidden="true">·</span>
+        <span>
+          {t('card_swap')} <span className="font-medium text-foreground tabular-nums">{`${swapPct.toFixed(0)}%`}</span>
+        </span>
+        <span aria-hidden="true">·</span>
+        <span>
+          {t('card_processes')} <span className="font-medium text-foreground tabular-nums">{server.process_count}</span>
+        </span>
+        <span aria-hidden="true">·</span>
+        <span>
+          {t('card_tcp')} <span className="font-medium text-foreground tabular-nums">{server.tcp_conn}</span>
+        </span>
+        <span aria-hidden="true">·</span>
+        <span>
+          {t('card_udp')} <span className="font-medium text-foreground tabular-nums">{server.udp_conn}</span>
+        </span>
+        {trafficDaysRemaining != null && (
+          <>
+            <span aria-hidden="true">·</span>
+            <span className="tabular-nums">{t('card_traffic_days_left', { count: trafficDaysRemaining })}</span>
+          </>
+        )}
       </div>
 
       {latencyPoints.length > 0 && (
