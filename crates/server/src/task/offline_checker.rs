@@ -29,12 +29,20 @@ pub async fn run(state: Arc<AppState>) {
 }
 
 async fn cleanup_docker_for_server(state: &AppState, server_id: &str) {
-    state.docker_viewers.remove_all_for_server(server_id);
+    if state.agent_manager.is_online(server_id) {
+        return;
+    }
 
     let mut features = state.agent_manager.get_features(server_id);
     features.retain(|feature| feature != "docker");
     let _ = crate::service::server::ServerService::update_features(&state.db, server_id, &features)
         .await;
+
+    if state.agent_manager.is_online(server_id) {
+        return;
+    }
+
+    state.docker_viewers.remove_all_for_server(server_id);
     state.agent_manager.update_features(server_id, features);
 
     state
@@ -43,4 +51,44 @@ async fn cleanup_docker_for_server(state: &AppState, server_id: &str) {
             server_id: server_id.to_string(),
             available: false,
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AppConfig;
+    use crate::test_utils::setup_test_db;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use tokio::sync::mpsc;
+
+    fn test_addr() -> SocketAddr {
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080)
+    }
+
+    #[tokio::test]
+    async fn cleanup_docker_skips_runtime_side_effects_after_reconnect() {
+        let (db, _tmp) = setup_test_db().await;
+        let state = AppState::new(db, AppConfig::default()).await.unwrap();
+        let (tx1, _) = mpsc::channel(1);
+        let (tx2, _) = mpsc::channel(1);
+
+        state.agent_manager.add_connection("s1".into(), "Srv".into(), tx1, test_addr());
+        state
+            .agent_manager
+            .update_features("s1", vec!["docker".into(), "process".into()]);
+        state.docker_viewers.add_viewer("s1", "conn1");
+
+        let offline_ids = state.agent_manager.check_offline(0);
+        assert_eq!(offline_ids, vec!["s1"]);
+
+        state.agent_manager.add_connection("s1".into(), "Srv".into(), tx2, test_addr());
+        let mut rx = state.browser_tx.subscribe();
+
+        cleanup_docker_for_server(&state, "s1").await;
+
+        assert!(state.agent_manager.is_online("s1"));
+        assert!(state.docker_viewers.has_viewers("s1"));
+        assert!(state.agent_manager.has_feature("s1", "docker"));
+        assert!(rx.try_recv().is_err());
+    }
 }

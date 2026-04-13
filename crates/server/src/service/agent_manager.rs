@@ -756,11 +756,26 @@ mod tests {
 
         mgr.update_docker_containers("s1", vec![]);
         mgr.update_docker_stats("s1", vec![]);
+        mgr.update_docker_info(
+            "s1",
+            DockerSystemInfo {
+                docker_version: "26.1.0".into(),
+                api_version: "1.45".into(),
+                os: "linux".into(),
+                arch: "amd64".into(),
+                containers_running: 1,
+                containers_paused: 0,
+                containers_stopped: 0,
+                images: 1,
+                memory_total: 1024,
+            },
+        );
 
         mgr.remove_connection("s1");
 
         assert!(mgr.get_docker_containers("s1").is_none());
         assert!(mgr.get_docker_stats("s1").is_none());
+        assert!(mgr.get_docker_info("s1").is_none());
     }
 
     #[test]
