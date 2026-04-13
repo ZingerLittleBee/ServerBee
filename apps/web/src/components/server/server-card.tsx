@@ -280,8 +280,8 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
         />
         <CompactMetric
           className="items-center"
-          label={t('card_net_total')}
-          value={formatBytes(server.net_in_transfer + server.net_out_transfer)}
+          label={t('card_load_trend')}
+          value={`${formatLoad(server.load5)}·${formatLoad(server.load15)}`}
         />
       </div>
 

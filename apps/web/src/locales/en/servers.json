@@ -13,6 +13,7 @@
   "card_net_out_speed": "↑ Out",
   "card_disk_read": "↺ Read",
   "card_disk_write": "↻ Write",
+  "card_load_trend": "Load 5m·15m",
   "card_traffic_quota": "Traffic",
   "card_traffic_days_left": "{{count}}d left",
   "servers_online": "{{online}} of {{total}} servers online",
