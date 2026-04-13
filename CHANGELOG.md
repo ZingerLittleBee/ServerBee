@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.6] - 2026-04-14
+
+### Added
+
+- **Traffic quota ring on server cards** -- Server cards now render a fourth ring chart showing monthly traffic-quota utilization, wired to `/api/traffic/overview`. Rings fall back to cumulative agent counters when no quota is configured, and a `days remaining` hint appears when a billing cycle is active
+- **Disk I/O and load trend in server cards** -- Cards display current disk read/write throughput and a compact `load5 · load15` trend alongside network speed, replacing the old single "net total" cell
+- **Aggregate disk I/O in ServerStatus** -- The server-to-browser `ServerStatus` WebSocket payload now includes `disk_read_bytes_per_sec` / `disk_write_bytes_per_sec`, summed across devices, so server cards can render realtime disk throughput without fetching historical data
+- **Configurable anomaly threshold design** -- New spec `2026-04-13-configurable-anomaly-thresholds-design.md` defines how network-probe warning/critical thresholds for latency and packet loss will become user-configurable (spec only; implementation lands in a later release)
+
+### Changed
+
+- **Server card layout** -- Reworked into a 4-column ring grid (CPU, Memory, Disk, Traffic) with inline bytes/percent values, plus a condensed footer row summarising uptime, swap, processes, and TCP/UDP counts. Visual density increases without crowding the network sparklines below
+- **WHOIS targets are normalized** -- Both the Rust service and the frontend form now normalize WHOIS inputs such as `https://example.com/path` or `example.com:8443` down to the bare hostname before looking up registry data, preventing spurious lookup errors caused by schemes, ports, or trailing dots
+- **Localized preset network-probe metadata** -- Preset probe target names, providers, and locations are translated into Chinese when the UI language is `zh-*` (e.g. "China Telecom" → "电信", "Shanghai" → "上海"). English users continue to see the canonical names from the catalog
+- **Service monitor form prefill** -- The Service Monitors create/edit dialog now resets from a `useEffect` whenever it opens, so editing an existing monitor reliably prefills name, type, target, interval, enabled flag, and parsed config instead of retaining stale values from the last open
+
+### Fixed
+
+- **Unsupported WHOIS TLD error** -- `.app`, `.dev`, and `.page` domains (Google Registry) now return a clear, actionable error ("Use an SSL monitor for `demo.example.app` instead.") from both the backend checker and the frontend form hint, instead of failing with an opaque lookup error
+- **Service monitor detail JSON parsing** -- Monitor detail rendering now goes through a shared `parseMonitorDetail` helper that rejects non-object payloads and swallows malformed JSON, avoiding runtime errors when `detail_json` is `null`, an array, or invalid JSON
+- **Capabilities settings navigation freeze** -- Stabilized the `_authed/settings/capabilities` route so navigating away no longer wedges the router in a loading state
+- **Network probe i18n stability** -- Column headers for the network-probes settings table are now produced by lazy header functions, fixing stale-translation bugs after switching UI language. New language-switch tests guard the regression
+- **Network probe target actions** -- Target-row actions in the settings table now render with clearer affordances and correct spacing on narrow widths
+- **Capability headers and risk ordering** -- Restored the original capability column order on the settings page so high-risk toggles are grouped and labelled consistently with the backend catalog
+- **Traffic overview empty state** -- The `/traffic` page now shows a clearer empty-state message when no servers have traffic quotas configured, instead of rendering an empty chart
+- **Network detail and server detail spacing** -- Added bottom padding to `/servers/:id` and restored vertical spacing on `/network/:serverId` so the last card no longer sits flush against the viewport edge
+- **CI typed route tests** -- Route components `ServiceMonitorDetailPage` and related detail routes are now exported so typed tests in CI can import them directly
+
+### Testing
+
+- 5 new frontend test files: `servers/$id.test.tsx`, `service-monitors/$id.test.tsx`, `settings/capabilities.test.tsx`, `settings/service-monitors.test.tsx`, `traffic/index.test.tsx` — covering ring layouts, WHOIS form validation, capability toggling, and traffic overview rendering
+- Extended `server-card`, `network/$server-id`, and `settings/network-probes` test suites with coverage for disk I/O metrics, traffic ring fallbacks, preset-name localization, and language-switch rerenders
+- New Rust coverage in `crates/server/src/service/checker/whois.rs` for target normalization (URL, host:port) and the unsupported-TLD error path
+
 ## [0.8.2] - 2026-04-10
 
 ### Added
