@@ -14,7 +14,7 @@ ServerBee is a VPS monitoring system (Rust server + agent, React SPA). Current d
 - Each change must be independently mergeable and testable
 - No architectural redesigns (e.g., broadcast channel overhaul, streaming file transfer)
 - Behavior must remain identical — pure performance/memory improvements
-- No new dependencies except `@tanstack/react-virtual` for frontend virtualization
+- No new dependencies
 
 ---
 
@@ -26,6 +26,7 @@ ServerBee is a VPS monitoring system (Rust server + agent, React SPA). Current d
 
 - `record_writer.rs`: `all_latest_reports()` every 60s — clones N reports
 - `browser.rs`: `build_full_sync()` calls `get_latest_report()` per server on every browser connect and lag resync
+- `status.rs`: `get_latest_report()` for public status page rendering
 - Alert evaluator: periodic lookups
 
 At 50 servers, this is 50+ unnecessary deep copies per minute.
@@ -45,28 +46,50 @@ pub report: Arc<SystemReport>
 - Callers access fields via auto-deref (`report.cpu`, `report.mem_used`, etc.) — no business logic changes needed
 - Two calls to `get_latest_report()` for the same server return `Arc` clones pointing to the same data (can verify with `Arc::ptr_eq`)
 
-**Files**: `crates/server/src/service/agent_manager.rs`, `crates/server/src/task/record_writer.rs`, `crates/server/src/router/ws/browser.rs`
+**Files**: `crates/server/src/service/agent_manager.rs`, `crates/server/src/task/record_writer.rs`, `crates/server/src/router/ws/browser.rs`, `crates/server/src/router/api/status.rs`
 
-### S2. Docker Cache Cleanup on Agent Disconnect
+### S2. Full Docker State Cleanup on Agent Disconnect
 
-**Problem**: `docker_containers`, `docker_stats`, `docker_info` DashMaps in AgentManager are NOT cleaned in `remove_connection()` — that method only removes from `connections`, `server_capabilities`, `agent_local_capabilities`, and `docker_log_sessions`. Docker cache cleanup relies on `handle_docker_unavailable()` being called separately in the agent WS handler. When the `offline_checker` detects a stale agent and calls `remove_connection()` directly, Docker caches for that server leak permanently.
+**Problem**: `remove_connection()` in AgentManager does NOT perform complete Docker cleanup. It cleans `connections`, `server_capabilities`, `agent_local_capabilities`, and `docker_log_sessions` — but NOT the three Docker cache maps (`docker_containers`, `docker_stats`, `docker_info`), not the `DockerViewerTracker`, and does not broadcast `DockerAvailabilityChanged` or update the server's `features`.
 
-**Change**: Add `clear_docker_caches(server_id)` call inside `remove_connection()`:
+The full Docker unavailable cleanup lives in `handle_docker_unavailable()` (`router/ws/agent.rs:945`), which:
+1. Calls `clear_docker_caches(server_id)` — clears the 3 cache maps
+2. Calls `docker_viewers.remove_all_for_server(server_id)` — clears viewer tracking
+3. Calls `remove_docker_log_sessions_for_server(server_id)` — clears log sessions
+4. Removes `"docker"` from server features, persists to DB, updates cache
+5. Broadcasts `DockerAvailabilityChanged { available: false }`
+
+When the `offline_checker` detects a stale agent, it calls `check_offline()` → `remove_connection()` which skips steps 1, 2, 4, and 5. This leaks Docker caches and viewer tracker entries. When the agent reconnects (`agent.rs:437`), stale viewer tracker entries can cause it to resume Docker stats/events streaming to non-existent browser connections.
+
+**Change**: Extract the Docker unavailable cleanup into a method on `AgentManager` (or a standalone helper that takes `&AppState`) so both `remove_connection()` and the WS handler share the same cleanup path:
 
 ```rust
-pub fn remove_connection(&self, server_id: &str) {
-    self.connections.remove(server_id);
-    self.server_capabilities.remove(server_id);
-    self.agent_local_capabilities.remove(server_id);
-    self.remove_docker_log_sessions_for_server(server_id);
-    self.clear_docker_caches(server_id);  // NEW — ensures cleanup on all disconnect paths
-    // ... broadcast ServerOffline
+// In AgentManager or as a standalone function:
+pub async fn handle_agent_docker_cleanup(state: &AppState, server_id: &str) {
+    state.agent_manager.clear_docker_caches(server_id);
+    state.docker_viewers.remove_all_for_server(server_id);
+    state.agent_manager.remove_docker_log_sessions_for_server(server_id);
+
+    let mut features = state.agent_manager.get_features(server_id);
+    if features.contains(&"docker".to_string()) {
+        features.retain(|f| f != "docker");
+        let _ = ServerService::update_features(&state.db, server_id, &features).await;
+        state.agent_manager.update_features(server_id, features);
+    }
+
+    state.agent_manager.broadcast_browser(BrowserMessage::DockerAvailabilityChanged {
+        server_id: server_id.to_string(),
+        available: false,
+    });
 }
 ```
 
-This consolidates all disconnect cleanup in one place instead of relying on the WS handler calling `clear_docker_caches` separately.
+- `remove_connection()` is sync, but this cleanup requires DB access (async). Two options:
+  - (a) Make `remove_connection()` async and call `handle_agent_docker_cleanup` inside it
+  - (b) Keep `remove_connection()` sync; call `handle_agent_docker_cleanup` from `check_offline()` in `offline_checker.rs` after `remove_connection()` returns
+- Option (b) is lower-risk since it doesn't change `remove_connection()`'s signature. The WS handler (`agent.rs`) replaces its inline `handle_docker_unavailable` with a call to the same shared helper.
 
-**Files**: `crates/server/src/service/agent_manager.rs` (`remove_connection` method)
+**Files**: `crates/server/src/service/agent_manager.rs`, `crates/server/src/task/offline_checker.rs`, `crates/server/src/router/ws/agent.rs`
 
 ---
 
@@ -74,12 +97,12 @@ This consolidates all disconnect cleanup in one place instead of relying on the 
 
 ### A1. Selective sysinfo Refresh
 
-**Problem**: `collector/mod.rs:47` calls `self.sys.refresh_all()` every collection cycle. This refreshes everything including full process details (command line, environment, open files on some platforms), component temperatures, and disk metadata — most of which `collect()` doesn't use. The `sysinfo` crate's `refresh_all()` is documented as the heaviest refresh operation.
+**Problem**: `collector/mod.rs:47` calls `self.sys.refresh_all()` every collection cycle. This refreshes everything including full process details, component temperatures, and disk metadata — most of which `collect()` doesn't use.
 
 **What `collect()` actually needs from `System`**:
 - CPU usage → `refresh_cpu_usage()`
 - Memory/swap counters → `refresh_memory()`
-- Process count → `refresh_processes()` (for `sys.processes().len()`)
+- Process count → only `sys.processes().len()` — no per-process details needed
 - Disk used/total → **independent** — `disk.rs` uses `Disks::new_with_refreshed_list()` directly, not `System`
 - Network → **independent** — uses `self.networks.refresh(true)` directly
 - Temperature/GPU → **independent** — collected by dedicated functions
@@ -93,12 +116,15 @@ self.sys.refresh_all();
 // After:
 self.sys.refresh_cpu_usage();
 self.sys.refresh_memory();
-self.sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+self.sys.refresh_processes_specifics(
+    sysinfo::ProcessesToUpdate::All,
+    true,  // remove dead processes to prevent unbounded growth
+    sysinfo::ProcessRefreshKind::nothing(),  // only enumerate, skip per-process details
+);
 ```
 
-- `refresh_cpu_usage()`: only CPU utilization percentages
-- `refresh_memory()`: only RAM/swap counters
-- `refresh_processes(All, true)`: refreshes process list; `true` = remove dead processes from internal map to prevent unbounded growth on long-running agents
+**Why `refresh_processes_specifics` instead of `refresh_processes`**: The default `refresh_processes()` delegates to `refresh_processes_specifics()` with `ProcessRefreshKind::nothing().with_memory().with_cpu().with_disk_usage().with_exe(OnlyIfNotSet)`. Since we only call `sys.processes().len()` for process count, we don't need any per-process details. `ProcessRefreshKind::nothing()` enumerates the process list (for `.len()`) and removes dead entries (when `remove_dead_processes=true`) without reading each process's memory/cpu/disk/exe.
+
 - Keep `System::new_all()` + `refresh_all()` in `Collector::new()` for initial full snapshot
 
 **Files**: `crates/agent/src/collector/mod.rs` (line 47)
@@ -125,41 +151,51 @@ const queryClient = new QueryClient({
 
 **Files**: `apps/web/src/main.tsx`
 
-### F2. Server Card Grid Virtual Scrolling
+### F2. Server Card Grid — content-visibility for Off-screen Cards
 
-**Problem**: The servers index page renders all ServerCard components simultaneously. Each card contains Recharts mini-charts (BarChart for latency). At 50+ servers, this means 50+ chart instances mounted at once, each with its own SVG DOM subtree.
+**Problem**: The servers index page renders all ServerCard components simultaneously. Each card contains Recharts mini-charts (BarChart for latency). At 50+ servers, 50+ chart SVG subtrees are painted and laid out even when off-screen.
 
-**Change**:
+**Why not TanStack Virtual**: The current grid is responsive (`sm:grid-cols-2 lg:grid-cols-3`) with variable-height cards (the network quality section at `server-card.tsx:236` is conditionally rendered). TanStack Virtual requires a fixed scroll container, explicit size estimates, and grid lanes handling — significant complexity for a case where `memo()` (F3) already eliminates most re-render overhead. The benefit doesn't justify the risk of layout regressions.
 
-- Add `@tanstack/react-virtual` dependency
-- In `servers/index.tsx` grid view, wrap the card list with `useVirtualizer` to only render visible cards
-- Only enable virtualization when the server count exceeds a threshold (e.g., 20+) to avoid virtualizer overhead for small deployments
-- Table view (DataTable) is left as-is — row rendering at 50 items is acceptable
-- File browser and Docker container lists are not changed — not bottlenecks at current scale
+**Change**: Use CSS `content-visibility: auto` on card elements to let the browser skip layout and painting for off-screen cards:
 
-**Files**: `apps/web/src/routes/_authed/servers/index.tsx`, `apps/web/package.json`
+```css
+/* In the grid card wrapper */
+.server-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 280px;  /* estimated card height */
+}
+```
+
+- `content-visibility: auto` tells the browser to skip rendering content that's off-screen, but render it normally once it scrolls into view
+- `contain-intrinsic-size` provides a height placeholder so the scrollbar doesn't jump
+- Works with the existing responsive grid layout without any structural changes
+- Browser support: Chrome 85+, Edge 85+, Firefox 125+ — covers all modern browsers
+- Combined with F3 (memo), this means off-screen cards aren't even laid out, and on-screen cards only re-render when their data changes
+
+**Files**: `apps/web/src/routes/_authed/servers/index.tsx` (add className to card wrapper), `apps/web/src/index.css` or component styles
 
 ### F3. memo(ServerCard) + Disable Chart Animation
 
 **Problem**:
 1. `ServerCard` is not wrapped in `memo()` — every WS update to `['servers']` re-renders all cards
-2. Recharts BarChart in cards uses default animation (800ms transitions) — 50+ simultaneous animations cause frame drops
+2. Recharts `<Bar>` elements in cards use default animation — 50+ simultaneous animations cause frame drops
 
 **Change**:
 
-- Wrap `ServerCard` export with `memo()`, comparing key fields for equality:
+- Wrap `ServerCard` export with `memo()`, comparing fields that drive visual output:
 ```typescript
 export const ServerCard = memo(ServerCardInner, (prev, next) =>
   prev.server.id === next.server.id &&
   prev.server.online === next.server.online &&
-  prev.server.last_active === next.server.last_active &&
-  prev.server.capabilities === next.server.capabilities &&
-  prev.server.effective_capabilities === next.server.effective_capabilities &&
-  prev.server.features === next.server.features
+  prev.server.last_active === next.server.last_active
 )
 ```
-- Include `online`, `capabilities`, `effective_capabilities`, and `features` in the comparator because `server_online/offline`, `capabilities_changed`, and `docker_availability_changed` WS messages update these fields without changing `last_active`, and the card displays status badges and Docker/capability indicators
-- Add `isAnimationActive={false}` to BarChart components inside ServerCard
+- `last_active` changes whenever any metric changes (cpu, mem, net, etc.), so it's a reliable proxy for "data changed"
+- `online` changes independently via `server_online/offline` WS messages (doesn't update `last_active`)
+- `capabilities` and `features` are NOT included because the current `ServerCard` does not render them (verified: `server-card.tsx:162-296` renders status, metrics, and network data only). If capability/feature indicators are added to the card in the future, the comparator should be updated.
+
+- Add `isAnimationActive={false}` to the two `<Bar>` elements inside ServerCard (`server-card.tsx:261` and `:285`), NOT on `<BarChart>`. In Recharts, animation is controlled per-shape (`<Bar>`, `<Line>`, `<Area>`), not on the chart container.
 - Detail page charts (metrics-chart, disk-io-chart) keep animation — single-server view, good UX
 
 **Files**: `apps/web/src/components/server/server-card.tsx`
@@ -231,11 +267,11 @@ Each optimization is independently verifiable:
 | Change | Verification |
 |--------|-------------|
 | S1 (Arc) | `cargo test -p serverbee-server` — all existing tests pass; type-check ensures correct usage. Optionally add a test that verifies two `get_latest_report` calls return `Arc::ptr_eq` pointers. |
-| S2 (Docker cleanup) | Add unit test: connect agent, populate Docker caches, call `remove_connection`, verify Docker caches are cleared. |
-| A1 (sysinfo) | `cargo test -p serverbee-agent` — collector tests verify report structure unchanged. Manual: run agent for 1h, confirm no process entry accumulation via memory profiling. |
+| S2 (Docker cleanup) | Add unit test: connect agent, populate Docker caches + viewer tracker, call `remove_connection` + Docker cleanup, verify all Docker state (caches, viewers, features) is cleared. |
+| A1 (sysinfo) | `cargo test -p serverbee-agent` — collector tests verify report structure unchanged. Manual: run agent for 1h, confirm process map doesn't grow unbounded. |
 | F1 (gcTime) | Code review only — value matches existing default. |
-| F2 (virtual) | Manual: load 50+ servers, verify smooth scrolling, measure DOM node count before/after. |
-| F3 (memo) | React devtools Profiler: verify ServerCard skips re-render when `last_active` unchanged. Also verify card updates when capabilities change. |
+| F2 (content-visibility) | Manual: load 50+ servers, verify no layout shift or scrollbar jump. Chrome DevTools Performance tab: confirm off-screen cards are not in paint records. |
+| F3 (memo) | React devtools Profiler: verify ServerCard skips re-render when `last_active` unchanged. Also verify card updates on online/offline transition. |
 | F4 (buffer) | Existing `use-realtime-metrics` tests + manual: verify chart data continuity on long sessions. |
 | F5 (invalidation) | Network tab: verify no redundant GET `/api/servers` after `capabilities_changed` WS message. Verify capabilities settings page reflects updated values. |
 
@@ -246,6 +282,7 @@ The following items were considered but removed during spec review:
 - **S3 (AlertStateManager key type)**: Removed — `alert_rule.id` is a String (UUID), not an integer. The `.to_string()` allocation cost on UUID strings is negligible compared to the DB I/O in the same code paths.
 - **A2 (prev_disk_io cleanup)**: Removed — `disk_io::collect()` already does `*previous = current` (line 29), which replaces the entire HashMap each cycle. Stale device entries are naturally removed.
 - **A3 (Docker filter LazyLock)**: Removed — bollard's `list_containers()` takes `Option<ListContainersOptions<T>>` by value (ownership). A `LazyLock` constant would require `.clone()` on every call, providing no benefit.
+- **F2 TanStack Virtual**: Replaced with `content-visibility: auto` CSS approach. TanStack Virtual requires explicit scroll container, size estimates, and grid lane handling — too much complexity for variable-height responsive cards. `content-visibility` achieves 80% of the rendering benefit with zero structural changes.
 
 ## Non-Goals
 
