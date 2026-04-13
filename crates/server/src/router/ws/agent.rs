@@ -143,16 +143,17 @@ async fn handle_agent_ws(
     }
 
     // Register in AgentManager
-    {
+    let connection_id = {
         let server_lock = state.agent_manager.server_cleanup_lock(&server_id);
         let _guard = server_lock.lock().await;
-        state
+        let connection_id = state
             .agent_manager
             .add_connection(server_id.clone(), server_name, tx, remote_addr);
         state
             .agent_manager
             .update_capabilities(&server_id, server_capabilities as u32);
-    }
+        connection_id
+    };
 
     // Send current ping tasks to the newly connected agent
     PingService::sync_tasks_to_agent(&state.db, &state.agent_manager, &server_id).await;
@@ -267,7 +268,9 @@ async fn handle_agent_ws(
     }
 
     // Cleanup: remove from AgentManager and abort write task
-    state.agent_manager.remove_connection(&server_id);
+    state
+        .agent_manager
+        .remove_connection_if_current(&server_id, connection_id);
     write_task.abort();
     tracing::info!("Agent {server_id} disconnected");
 }
