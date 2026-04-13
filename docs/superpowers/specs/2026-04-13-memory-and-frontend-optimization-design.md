@@ -70,12 +70,13 @@ pub async fn handle_agent_docker_cleanup(state: &AppState, server_id: &str) {
     state.docker_viewers.remove_all_for_server(server_id);
     state.agent_manager.remove_docker_log_sessions_for_server(server_id);
 
+    // Unconditionally retain + persist, matching existing handle_docker_unavailable semantics.
+    // Even if "docker" isn't in the list, writing back the retained vec ensures DB and cache
+    // stay in sync and any stale "docker" entry in the persistent layer is cleaned up.
     let mut features = state.agent_manager.get_features(server_id);
-    if features.contains(&"docker".to_string()) {
-        features.retain(|f| f != "docker");
-        let _ = ServerService::update_features(&state.db, server_id, &features).await;
-        state.agent_manager.update_features(server_id, features);
-    }
+    features.retain(|f| f != "docker");
+    let _ = ServerService::update_features(&state.db, server_id, &features).await;
+    state.agent_manager.update_features(server_id, features);
 
     state.agent_manager.broadcast_browser(BrowserMessage::DockerAvailabilityChanged {
         server_id: server_id.to_string(),
@@ -185,15 +186,26 @@ const queryClient = new QueryClient({
 
 - Wrap `ServerCard` export with `memo()`, comparing fields that drive visual output:
 ```typescript
-export const ServerCard = memo(ServerCardInner, (prev, next) =>
-  prev.server.id === next.server.id &&
-  prev.server.online === next.server.online &&
-  prev.server.last_active === next.server.last_active
-)
+export const ServerCard = memo(ServerCardInner, (prev, next) => {
+  const a = prev.server
+  const b = next.server
+  return (
+    a.id === b.id &&
+    a.online === b.online &&
+    a.last_active === b.last_active &&
+    a.name === b.name &&
+    a.country_code === b.country_code &&
+    a.os === b.os &&
+    a.mem_total === b.mem_total &&
+    a.disk_total === b.disk_total &&
+    a.swap_total === b.swap_total
+  )
+})
 ```
-- `last_active` changes whenever any metric changes (cpu, mem, net, etc.), so it's a reliable proxy for "data changed"
+- `last_active` changes whenever metric values change (cpu, mem_used, net_in_speed, etc.), so it's a reliable proxy for "realtime data changed"
 - `online` changes independently via `server_online/offline` WS messages (doesn't update `last_active`)
-- `capabilities` and `features` are NOT included because the current `ServerCard` does not render them (verified: `server-card.tsx:162-296` renders status, metrics, and network data only). If capability/feature indicators are added to the card in the future, the comparator should be updated.
+- `name`, `country_code`, `os` are rendered in the card header (lines 170-198) and may change via server edit without updating `last_active`
+- `mem_total`, `disk_total`, `swap_total` are used as divisors for percentage calculations (lines 167-169); if these change (e.g., server info refresh after agent reconnect) while `last_active` stays the same, the ring charts would display stale percentages
 
 - Add `isAnimationActive={false}` to the two `<Bar>` elements inside ServerCard (`server-card.tsx:261` and `:285`), NOT on `<BarChart>`. In Recharts, animation is controlled per-shape (`<Bar>`, `<Line>`, `<Area>`), not on the chart container.
 - Detail page charts (metrics-chart, disk-io-chart) keep animation — single-server view, good UX
