@@ -29,24 +29,17 @@ interface ServerInfo {
   protocol_version?: number | null
 }
 
+const ORDERED_CAPABILITIES = [
+  ...CAPABILITIES.filter(({ risk }) => risk === 'high'),
+  ...CAPABILITIES.filter(({ risk }) => risk === 'low')
+]
+
 function CapabilitiesPage() {
   const { t } = useTranslation(['settings', 'servers'])
   const queryClient = useQueryClient()
   const { q: search } = Route.useSearch()
   const navigate = Route.useNavigate()
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
-
-  const capLabelMap = useMemo<Record<string, string>>(
-    () => ({
-      terminal: t('cap_terminal', { ns: 'servers' }),
-      exec: t('cap_exec', { ns: 'servers' }),
-      upgrade: t('cap_upgrade', { ns: 'servers' }),
-      ping_icmp: t('cap_ping_icmp', { ns: 'servers' }),
-      ping_tcp: t('cap_ping_tcp', { ns: 'servers' }),
-      ping_http: t('cap_ping_http', { ns: 'servers' })
-    }),
-    [t]
-  )
 
   const { data: servers = [], isLoading } = useQuery<ServerInfo[]>({
     queryKey: ['servers-list'],
@@ -116,13 +109,13 @@ function CapabilitiesPage() {
         },
         enableSorting: false
       },
-      ...CAPABILITIES.map(
-        ({ bit, key, risk }) =>
+      ...ORDERED_CAPABILITIES.map(
+        ({ bit, key, labelKey, risk }) =>
           ({
             id: `cap_${key}`,
             header: () => (
               <div className="text-center">
-                <div>{capLabelMap[key]}</div>
+                <div>{t(labelKey, { ns: 'servers' })}</div>
                 <div className={`text-[10px] ${risk === 'high' ? 'text-red-500' : 'text-muted-foreground'}`}>
                   {t(risk === 'high' ? 'cap_high_risk' : 'cap_low_risk', { ns: 'servers' })}
                 </div>
@@ -138,7 +131,7 @@ function CapabilitiesPage() {
               return (
                 <div className="text-center">
                   <Switch
-                    aria-label={`${capLabelMap[key]} - ${row.original.name}`}
+                    aria-label={`${t(labelKey, { ns: 'servers' })} - ${row.original.name}`}
                     checked={isEnabled}
                     disabled={isPending || isLocked}
                     onCheckedChange={() => toggleCap(row.original, bit)}
@@ -152,7 +145,7 @@ function CapabilitiesPage() {
           }) satisfies ColumnDef<ServerInfo>
       )
     ],
-    [capLabelMap, isPending, toggleCap, t]
+    [isPending, toggleCap, t]
   )
 
   const table = useReactTable({
@@ -244,13 +237,13 @@ function CapabilitiesPage() {
       {selectedIds.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2 rounded-lg border bg-muted/30 p-3">
           <span className="self-center text-muted-foreground text-sm">{t('capabilities.batch_toggle')}</span>
-          {CAPABILITIES.map(({ bit, key }) => (
+          {ORDERED_CAPABILITIES.map(({ bit, labelKey }) => (
             <div className="flex gap-1" key={bit}>
               <Button disabled={isPending} onClick={() => batchEnable(bit)} size="sm" variant="outline">
-                {t('capabilities.batch_enable', { capability: capLabelMap[key] })}
+                {t('capabilities.batch_enable', { capability: t(labelKey, { ns: 'servers' }) })}
               </Button>
               <Button disabled={isPending} onClick={() => batchDisable(bit)} size="sm" variant="outline">
-                {t('capabilities.batch_disable', { capability: capLabelMap[key] })}
+                {t('capabilities.batch_disable', { capability: t(labelKey, { ns: 'servers' }) })}
               </Button>
             </div>
           ))}
