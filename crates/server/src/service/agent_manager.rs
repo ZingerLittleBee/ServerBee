@@ -11,6 +11,8 @@ use serverbee_common::docker_types::*;
 use serverbee_common::protocol::{AgentMessage, BrowserMessage, ServerMessage};
 use serverbee_common::types::{ServerStatus, SystemReport, TracerouteHop};
 
+use crate::state::AppState;
+
 /// Sender for forwarding terminal output from agent to browser WS.
 pub type TerminalOutputTx = mpsc::Sender<TerminalSessionEvent>;
 
@@ -145,7 +147,11 @@ impl AgentManager {
         }
     }
 
-    pub fn remove_connection_if_current(&self, server_id: &str, expected_connection_id: u64) -> bool {
+    pub fn remove_connection_if_current(
+        &self,
+        server_id: &str,
+        expected_connection_id: u64,
+    ) -> bool {
         let removed = self.connections.remove_if(server_id, |_, connection| {
             connection.connection_id == expected_connection_id
         });
@@ -155,6 +161,12 @@ impl AgentManager {
         } else {
             false
         }
+    }
+
+    pub fn is_current_connection(&self, server_id: &str, expected_connection_id: u64) -> bool {
+        self.connections
+            .get(server_id)
+            .is_some_and(|connection| connection.connection_id == expected_connection_id)
     }
 
     /// Update the latest report for a server and broadcast an Update to browsers.
@@ -288,13 +300,11 @@ impl AgentManager {
         self.terminal_sessions.get(session_id).map(|v| v.clone())
     }
 
-    /// Find agents that have not reported for `threshold_secs` seconds,
-    /// remove them, and return their server IDs.
-    pub fn check_offline(&self, threshold_secs: u64) -> Vec<String> {
+    /// Find agents that have not reported for `threshold_secs` seconds.
+    pub fn stale_connection_candidates(&self, threshold_secs: u64) -> Vec<(String, u64)> {
         let now = Instant::now();
         let mut stale_connections = Vec::new();
 
-        // Collect IDs of agents that are past the threshold
         for entry in self.connections.iter() {
             let elapsed = now.duration_since(entry.value().last_report_at);
             if elapsed.as_secs() >= threshold_secs {
@@ -302,8 +312,14 @@ impl AgentManager {
             }
         }
 
+        stale_connections
+    }
+
+    /// Find agents that have not reported for `threshold_secs` seconds,
+    /// remove them, and return their server IDs.
+    pub fn check_offline(&self, threshold_secs: u64) -> Vec<String> {
         let mut offline_ids = Vec::new();
-        for (server_id, connection_id) in stale_connections {
+        for (server_id, connection_id) in self.stale_connection_candidates(threshold_secs) {
             if self.remove_connection_if_current(&server_id, connection_id) {
                 offline_ids.push(server_id);
             }
@@ -614,6 +630,23 @@ impl AgentManager {
     }
 }
 
+pub async fn cleanup_disconnected_docker_state(state: &AppState, server_id: &str) {
+    state.docker_viewers.remove_all_for_server(server_id);
+
+    let mut features = state.agent_manager.get_features(server_id);
+    features.retain(|feature| feature != "docker");
+    let _ = crate::service::server::ServerService::update_features(&state.db, server_id, &features)
+        .await;
+
+    state.agent_manager.update_features(server_id, features);
+    state
+        .agent_manager
+        .broadcast_browser(BrowserMessage::DockerAvailabilityChanged {
+            server_id: server_id.to_string(),
+            available: false,
+        });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -829,6 +862,28 @@ mod tests {
         assert!(mgr.is_online("s1"));
         assert!(mgr.get_sender("s1").is_some());
         assert!(mgr.get_docker_containers("s1").is_some());
+    }
+
+    #[test]
+    fn test_stale_connection_candidates_do_not_remove_newer_connection() {
+        let (mgr, _rx) = make_manager();
+        let (tx1, _) = mpsc::channel(1);
+        let (tx2, _) = mpsc::channel(1);
+        let first_connection_id = mgr.add_connection("s1".into(), "Srv".into(), tx1, test_addr());
+
+        let stale_candidates = mgr.stale_connection_candidates(0);
+        assert_eq!(
+            stale_candidates,
+            vec![("s1".to_string(), first_connection_id)]
+        );
+
+        let second_connection_id = mgr.add_connection("s1".into(), "Srv".into(), tx2, test_addr());
+        assert_ne!(first_connection_id, second_connection_id);
+
+        assert!(!mgr.remove_connection_if_current("s1", stale_candidates[0].1));
+        assert!(!mgr.is_current_connection("s1", first_connection_id));
+        assert!(mgr.is_current_connection("s1", second_connection_id));
+        assert!(mgr.is_online("s1"));
     }
 
     #[test]

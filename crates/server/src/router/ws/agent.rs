@@ -146,9 +146,10 @@ async fn handle_agent_ws(
     let connection_id = {
         let server_lock = state.agent_manager.server_cleanup_lock(&server_id);
         let _guard = server_lock.lock().await;
-        let connection_id = state
-            .agent_manager
-            .add_connection(server_id.clone(), server_name, tx, remote_addr);
+        let connection_id =
+            state
+                .agent_manager
+                .add_connection(server_id.clone(), server_name, tx, remote_addr);
         state
             .agent_manager
             .update_capabilities(&server_id, server_capabilities as u32);
@@ -235,6 +236,15 @@ async fn handle_agent_ws(
         match result {
             Ok(Message::Text(text)) => match serde_json::from_str::<AgentMessage>(&text) {
                 Ok(agent_msg) => {
+                    if !state_read
+                        .agent_manager
+                        .is_current_connection(&sid_read, connection_id)
+                    {
+                        tracing::info!(
+                            "Stopping superseded agent socket for {sid_read} (connection_id={connection_id})"
+                        );
+                        break;
+                    }
                     handle_agent_message(&state_read, &sid_read, agent_msg).await;
                 }
                 Err(e) => {
@@ -243,6 +253,15 @@ async fn handle_agent_ws(
             },
             Ok(Message::Binary(data)) => match serde_json::from_slice::<AgentMessage>(&data) {
                 Ok(agent_msg) => {
+                    if !state_read
+                        .agent_manager
+                        .is_current_connection(&sid_read, connection_id)
+                    {
+                        tracing::info!(
+                            "Stopping superseded agent socket for {sid_read} (connection_id={connection_id})"
+                        );
+                        break;
+                    }
                     handle_agent_message(&state_read, &sid_read, agent_msg).await;
                 }
                 Err(e) => {
@@ -250,6 +269,15 @@ async fn handle_agent_ws(
                 }
             },
             Ok(Message::Pong(_)) => {
+                if !state_read
+                    .agent_manager
+                    .is_current_connection(&sid_read, connection_id)
+                {
+                    tracing::info!(
+                        "Stopping superseded agent socket for {sid_read} (connection_id={connection_id})"
+                    );
+                    break;
+                }
                 // Agent responded to our Ping, update heartbeat timestamp
                 state_read.agent_manager.touch_connection(&sid_read);
             }
@@ -268,9 +296,14 @@ async fn handle_agent_ws(
     }
 
     // Cleanup: remove from AgentManager and abort write task
-    state
+    let server_lock = state.agent_manager.server_cleanup_lock(&server_id);
+    let _guard = server_lock.lock().await;
+    if state
         .agent_manager
-        .remove_connection_if_current(&server_id, connection_id);
+        .remove_connection_if_current(&server_id, connection_id)
+    {
+        crate::service::agent_manager::cleanup_disconnected_docker_state(&state, &server_id).await;
+    }
     write_task.abort();
     tracing::info!("Agent {server_id} disconnected");
 }
@@ -1012,7 +1045,10 @@ async fn audit_exec_finished(
     use sea_orm::EntityTrait;
 
     let base_task_id = result.task_id.split(':').next().unwrap_or(&result.task_id);
-    let Some(task_model) = task::Entity::find_by_id(base_task_id).one(&state.db).await? else {
+    let Some(task_model) = task::Entity::find_by_id(base_task_id)
+        .one(&state.db)
+        .await?
+    else {
         return Ok(());
     };
 
