@@ -29,6 +29,9 @@ pub async fn run(state: Arc<AppState>) {
 }
 
 async fn cleanup_docker_for_server(state: &AppState, server_id: &str) {
+    let server_lock = state.agent_manager.server_cleanup_lock(server_id);
+    let _guard = server_lock.lock().await;
+
     if state.agent_manager.is_online(server_id) {
         return;
     }
@@ -37,10 +40,6 @@ async fn cleanup_docker_for_server(state: &AppState, server_id: &str) {
     features.retain(|feature| feature != "docker");
     let _ = crate::service::server::ServerService::update_features(&state.db, server_id, &features)
         .await;
-
-    if state.agent_manager.is_online(server_id) {
-        return;
-    }
 
     state.docker_viewers.remove_all_for_server(server_id);
     state.agent_manager.update_features(server_id, features);
@@ -59,14 +58,27 @@ mod tests {
     use crate::config::AppConfig;
     use crate::test_utils::setup_test_db;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-    use tokio::sync::mpsc;
+    use tokio::sync::{broadcast, mpsc};
 
     fn test_addr() -> SocketAddr {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080)
     }
 
+    async fn register_connection_for_test(
+        state: Arc<AppState>,
+        server_id: &str,
+        server_name: &str,
+        tx: mpsc::Sender<serverbee_common::protocol::ServerMessage>,
+    ) {
+        let server_lock = state.agent_manager.server_cleanup_lock(server_id);
+        let _guard = server_lock.lock().await;
+        state
+            .agent_manager
+            .add_connection(server_id.to_string(), server_name.to_string(), tx, test_addr());
+    }
+
     #[tokio::test]
-    async fn cleanup_docker_skips_runtime_side_effects_after_reconnect() {
+    async fn cleanup_docker_waits_for_serialized_reconnect_and_noops() {
         let (db, _tmp) = setup_test_db().await;
         let state = AppState::new(db, AppConfig::default()).await.unwrap();
         let (tx1, _) = mpsc::channel(1);
@@ -81,14 +93,37 @@ mod tests {
         let offline_ids = state.agent_manager.check_offline(0);
         assert_eq!(offline_ids, vec!["s1"]);
 
-        state.agent_manager.add_connection("s1".into(), "Srv".into(), tx2, test_addr());
+        let server_lock = state.agent_manager.server_cleanup_lock("s1");
+        let held_guard = server_lock.lock().await;
         let mut rx = state.browser_tx.subscribe();
 
-        cleanup_docker_for_server(&state, "s1").await;
+        let reconnect_state = Arc::clone(&state);
+        let reconnect_task = tokio::spawn(async move {
+            register_connection_for_test(reconnect_state, "s1", "Srv", tx2).await;
+        });
 
-        assert!(state.agent_manager.is_online("s1"));
+        tokio::time::sleep(Duration::from_millis(10)).await;
         assert!(state.docker_viewers.has_viewers("s1"));
         assert!(state.agent_manager.has_feature("s1", "docker"));
-        assert!(rx.try_recv().is_err());
+
+        let cleanup_state = Arc::clone(&state);
+        let cleanup_task = tokio::spawn(async move {
+            cleanup_docker_for_server(&cleanup_state, "s1").await;
+        });
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        drop(held_guard);
+
+        reconnect_task.await.unwrap();
+        cleanup_task.await.unwrap();
+
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(BrowserMessage::ServerOnline { server_id }) if server_id == "s1"
+        ));
+        assert!(matches!(rx.try_recv(), Err(broadcast::error::TryRecvError::Empty)));
+        assert!(state.docker_viewers.has_viewers("s1"));
+        assert!(state.agent_manager.has_feature("s1", "docker"));
+        assert!(state.agent_manager.is_online("s1"));
     }
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use dashmap::DashMap;
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 
 use serverbee_common::constants::{CAP_DOCKER, effective_capabilities, has_capability};
 use serverbee_common::docker_types::*;
@@ -59,6 +59,7 @@ pub struct AgentManager {
     docker_log_sessions: DashMap<String, DashMap<String, mpsc::Sender<Vec<DockerLogEntry>>>>,
     /// Maps request_id -> traceroute result entry (cached for polling)
     traceroute_results: DashMap<String, TracerouteResultEntry>,
+    server_lifecycle_locks: DashMap<String, Arc<Mutex<()>>>,
 }
 
 #[allow(dead_code)]
@@ -96,6 +97,7 @@ impl AgentManager {
             agent_local_capabilities: DashMap::new(),
             docker_log_sessions: DashMap::new(),
             traceroute_results: DashMap::new(),
+            server_lifecycle_locks: DashMap::new(),
         }
     }
 
@@ -205,6 +207,13 @@ impl AgentManager {
     /// Check if a server is currently connected.
     pub fn is_online(&self, server_id: &str) -> bool {
         self.connections.contains_key(server_id)
+    }
+
+    pub fn server_cleanup_lock(&self, server_id: &str) -> Arc<Mutex<()>> {
+        self.server_lifecycle_locks
+            .entry(server_id.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
     }
 
     /// Return the number of currently connected agents.
