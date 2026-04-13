@@ -220,7 +220,18 @@ function handleCapabilityMessage(raw: { type: string } & Record<string, unknown>
           }
         : prev
     )
-    queryClient.invalidateQueries({ queryKey: ['servers-list'] })
+    queryClient.setQueryData<Record<string, unknown>[]>(['servers-list'], (prev) =>
+      prev?.map((s) =>
+        s.id === server_id
+          ? {
+              ...s,
+              capabilities,
+              agent_local_capabilities: agent_local_capabilities ?? null,
+              effective_capabilities: effective_capabilities ?? null
+            }
+          : s
+      )
+    )
     return
   }
   if (raw.type === 'agent_info_updated') {
@@ -232,7 +243,9 @@ function handleCapabilityMessage(raw: { type: string } & Record<string, unknown>
     queryClient.setQueryData(['servers', server_id], (prev: Record<string, unknown> | undefined) =>
       prev ? { ...prev, protocol_version } : prev
     )
-    queryClient.invalidateQueries({ queryKey: ['servers-list'] })
+    queryClient.setQueryData<Record<string, unknown>[]>(['servers-list'], (prev) =>
+      prev?.map((s) => (s.id === server_id ? { ...s, protocol_version } : s))
+    )
   }
 }
 
