@@ -58,6 +58,7 @@ impl Modify for SecurityAddon {
         // status (public)
         crate::router::api::status::public_status,
         // agent
+        crate::router::api::agent::latest_version,
         crate::router::api::agent::register,
         // servers
         crate::router::api::server::list_servers,
@@ -220,6 +221,7 @@ impl Modify for SecurityAddon {
             crate::entity::oauth_account::Model,
             crate::router::api::oauth::OAuthProvidersResponse,
             // agent
+            crate::service::upgrade_release::LatestAgentVersionResponse,
             crate::router::api::agent::RegisterResponse,
             // servers
             crate::router::api::server::ServerResponse,
