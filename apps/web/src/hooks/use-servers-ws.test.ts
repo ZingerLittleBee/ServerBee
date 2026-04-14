@@ -106,3 +106,12 @@ describe('setServerCapabilities', () => {
     expect(result[0].effective_capabilities).toBe(0)
   })
 })
+
+describe('setServerAgentVersion', () => {
+  it('updates agent_version field', () => {
+    const prev = [makeServer({ id: 's1', agent_version: undefined })]
+    const result = prev.map((s) => (s.id === 's1' ? { ...s, agent_version: '1.2.3' } : s))
+
+    expect(result[0].agent_version).toBe('1.2.3')
+  })
+})
