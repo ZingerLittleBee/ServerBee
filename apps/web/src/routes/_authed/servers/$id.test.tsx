@@ -33,7 +33,9 @@ vi.mock('react-i18next', () => ({
 }))
 
 vi.mock('@/components/server/agent-version-section', () => ({
-  AgentVersionSection: ({ latestVersion }: { latestVersion?: string | null }) => <div>{latestVersion ?? 'no-latest-version'}</div>
+  AgentVersionSection: ({ latestVersion }: { latestVersion?: string | null }) => (
+    <div>{latestVersion ?? 'no-latest-version'}</div>
+  )
 }))
 
 vi.mock('@/components/server/capabilities-dialog', () => ({

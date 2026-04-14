@@ -357,7 +357,7 @@ export function handleWsMessage(raw: unknown, queryClient: QueryClient): void {
       ) {
         break
       }
-      const { server_id, target_version, stage } = raw as {
+      const { server_id, target_version, stage } = raw as unknown as {
         server_id: string
         job_id: string
         target_version: string
@@ -382,7 +382,7 @@ export function handleWsMessage(raw: unknown, queryClient: QueryClient): void {
       ) {
         break
       }
-      const { server_id, job_id, target_version, status, stage, error, backup_path } = raw as {
+      const { server_id, job_id, target_version, status, stage, error, backup_path } = raw as unknown as {
         server_id: string
         job_id: string
         target_version: string
