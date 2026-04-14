@@ -127,6 +127,50 @@
           }
         }
       }
+    },
+    {
+      "includes": [
+        "apps/web/src/components/data-table/**",
+        "apps/web/src/components/ui/calendar.tsx",
+        "apps/web/src/components/ui/command.tsx",
+        "apps/web/src/components/ui/input-group.tsx",
+        "apps/web/src/components/ui/popover.tsx",
+        "apps/web/src/components/ui/slider.tsx",
+        "apps/web/src/components/ui/textarea.tsx",
+        "apps/web/src/config/data-table.ts",
+        "apps/web/src/hooks/use-callback-ref.ts",
+        "apps/web/src/hooks/use-data-table.ts",
+        "apps/web/src/hooks/use-debounced-callback.ts",
+        "apps/web/src/lib/data-table.ts",
+        "apps/web/src/lib/format.ts",
+        "apps/web/src/lib/parsers.ts",
+        "apps/web/src/types/data-table.ts"
+      ],
+      "linter": {
+        "rules": {
+          "performance": {
+            "noNamespaceImport": "off",
+            "useTopLevelRegex": "off"
+          },
+          "style": {
+            "noNestedTernary": "off"
+          },
+          "suspicious": {
+            "noArrayIndexKey": "off"
+          },
+          "complexity": {
+            "noVoid": "off"
+          },
+          "correctness": {
+            "noNestedComponentDefinitions": "off"
+          },
+          "a11y": {
+            "useSemanticElements": "off",
+            "useKeyWithClickEvents": "off",
+            "noNoninteractiveElementInteractions": "off"
+          }
+        }
+      }
     }
   ],
   "extends": ["ultracite/biome/core", "ultracite/biome/react"]

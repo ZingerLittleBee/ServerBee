@@ -23,6 +23,8 @@
   "no_servers_description": "服务器通过 Agent 连接后将显示在此处",
   "col_name": "名称",
   "col_status": "状态",
+  "status_online": "在线",
+  "status_offline": "离线",
   "col_cpu": "CPU",
   "col_memory": "内存",
   "col_disk": "磁盘",
