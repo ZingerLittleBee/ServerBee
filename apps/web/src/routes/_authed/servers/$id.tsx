@@ -541,7 +541,7 @@ export function ServerDetailPage() {
         </Link>
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3">
               {flag && <span className="text-xl">{flag}</span>}
               <h1 className="font-bold text-2xl">{server.name}</h1>
@@ -549,6 +549,15 @@ export function ServerDetailPage() {
               <UpgradeJobBadge job={upgradeJob} />
             </div>
             <ServerInfoMeta server={server} />
+            <div className="mt-4">
+              <AgentVersionSection
+                agentVersion={server.agent_version}
+                configuredCapabilities={serverWithCaps.capabilities}
+                effectiveCapabilities={serverWithCaps.effective_capabilities}
+                latestVersion={latestAgentVersion?.version ?? null}
+                serverId={id}
+              />
+            </div>
           </div>
           <ServerActionButtons
             dockerEnabled={dockerEnabled}
@@ -580,14 +589,6 @@ export function ServerDetailPage() {
       )}
 
       <UptimeCard serverId={id} />
-
-      <AgentVersionSection
-        agentVersion={server.agent_version}
-        configuredCapabilities={serverWithCaps.capabilities}
-        effectiveCapabilities={serverWithCaps.effective_capabilities}
-        latestVersion={latestAgentVersion?.version ?? null}
-        serverId={id}
-      />
 
       <Tabs className="mt-6" defaultValue="metrics">
         <TabsList>

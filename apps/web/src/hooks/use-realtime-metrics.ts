@@ -120,10 +120,10 @@ export function useRealtimeMetrics(serverId: string): RealtimeDataPoint[] {
 
       lastActiveRef.current = server.last_active
       const point = toRealtimeDataPoint(server)
-      bufferRef.current.push(point)
+      bufferRef.current = [...bufferRef.current, point]
 
       if (bufferRef.current.length > TRIM_THRESHOLD) {
-        bufferRef.current.splice(0, bufferRef.current.length - MAX_BUFFER_SIZE)
+        bufferRef.current = bufferRef.current.slice(-MAX_BUFFER_SIZE)
       }
 
       scheduleRender()
