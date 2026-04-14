@@ -1,8 +1,31 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { UptimeDailyEntry } from '@/lib/api-schema'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
 import { UptimeTimeline } from './uptime-timeline'
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { count?: number }) => {
+      switch (key) {
+        case 'uptime_days_ago':
+          return `${options?.count ?? 0} days ago`
+        case 'uptime_today':
+          return 'Today'
+        case 'uptime_operational':
+          return 'Operational'
+        case 'uptime_degraded':
+          return 'Degraded'
+        case 'uptime_down':
+          return 'Down'
+        case 'uptime_no_data':
+          return 'No data'
+        default:
+          return key
+      }
+    }
+  })
+}))
 
 function makeEntry(overrides: Partial<UptimeDailyEntry> = {}): UptimeDailyEntry {
   return {

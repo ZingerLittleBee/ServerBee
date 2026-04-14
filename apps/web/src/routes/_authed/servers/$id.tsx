@@ -3,6 +3,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, BarChart3, Container, CreditCard, FileText, Pencil, Terminal as TerminalIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { AgentVersionSection } from '@/components/server/agent-version-section'
 import { CapabilitiesDialog } from '@/components/server/capabilities-dialog'
 import { DiskIoChart } from '@/components/server/disk-io-chart'
 import { MetricsChart } from '@/components/server/metrics-chart'
@@ -11,6 +12,7 @@ import { StatusBadge } from '@/components/server/status-badge'
 import { TrafficCard } from '@/components/server/traffic-card'
 import { TrafficProgress } from '@/components/server/traffic-progress'
 import { TrafficTab } from '@/components/server/traffic-tab'
+import { UpgradeJobBadge } from '@/components/server/upgrade-job-badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -24,6 +26,7 @@ import { CAP_DOCKER, CAP_FILE, CAP_TERMINAL, getEffectiveCapabilityEnabled } fro
 import { buildMergedDiskIoSeries, buildPerDiskIoSeries } from '@/lib/disk-io'
 import { cn, countryCodeToFlag, formatBytes } from '@/lib/utils'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
+import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 
 export const Route = createFileRoute('/_authed/servers/$id')({
   component: ServerDetailPage,
@@ -347,6 +350,11 @@ export function ServerDetailPage() {
   const { id } = Route.useParams()
   const { range: rangeParam } = Route.useSearch()
   const [editOpen, setEditOpen] = useState(false)
+  const { data: latestAgentVersion } = useQuery<{ version?: string | null }>({
+    queryKey: ['agent', 'latest-version'],
+    queryFn: () => api.get<{ version?: string | null }>('/api/agent/latest-version'),
+    staleTime: 60_000
+  })
 
   const selectedRange = TIME_RANGES.findIndex((tr) => tr.key === rangeParam)
   const rangeIndex = selectedRange >= 0 ? selectedRange : 0
@@ -379,6 +387,7 @@ export function ServerDetailPage() {
     refetchOnWindowFocus: false
   })
   const liveData = liveServers?.find((s) => s.id === id)
+  const upgradeJob = useUpgradeJobsStore((state) => state.jobs.get(id))
 
   const chartData: Record<string, unknown>[] = useMemo(() => {
     if (isRealtime) {
@@ -537,6 +546,7 @@ export function ServerDetailPage() {
               {flag && <span className="text-xl">{flag}</span>}
               <h1 className="font-bold text-2xl">{server.name}</h1>
               <StatusBadge online={isOnline} />
+              <UpgradeJobBadge job={upgradeJob} />
             </div>
             <ServerInfoMeta server={server} />
           </div>
@@ -571,7 +581,15 @@ export function ServerDetailPage() {
 
       <UptimeCard serverId={id} />
 
-      <Tabs defaultValue="metrics">
+      <AgentVersionSection
+        agentVersion={server.agent_version}
+        configuredCapabilities={serverWithCaps.capabilities}
+        effectiveCapabilities={serverWithCaps.effective_capabilities}
+        latestVersion={latestAgentVersion?.version ?? null}
+        serverId={id}
+      />
+
+      <Tabs className="mt-6" defaultValue="metrics">
         <TabsList>
           <TabsTrigger value="metrics">{t('metrics_tab')}</TabsTrigger>
           {server.billing_cycle && (

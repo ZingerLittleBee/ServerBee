@@ -17,6 +17,8 @@ use crate::service::high_risk_audit::{
     DockerLogsAuditContext, ExecAuditContext, TerminalAuditContext,
 };
 use crate::service::task_scheduler::TaskScheduler;
+use crate::service::upgrade_release::UpgradeReleaseService;
+use crate::service::upgrade_tracker::UpgradeJobTracker;
 
 /// Pending TOTP setup data, keyed by user_id.
 pub struct PendingTotp {
@@ -41,6 +43,8 @@ pub struct AppState {
     pub agent_manager: AgentManager,
     pub browser_tx: broadcast::Sender<BrowserMessage>,
     pub config: AppConfig,
+    pub upgrade_tracker: UpgradeJobTracker,
+    pub upgrade_release_service: UpgradeReleaseService,
     pub geoip: Arc<std::sync::RwLock<Option<GeoIpService>>>,
     pub geoip_downloading: AtomicBool,
     /// CSRF state tokens for OAuth flow, keyed by state string → provider.
@@ -128,6 +132,8 @@ impl AppState {
     pub async fn new(db: DatabaseConnection, config: AppConfig) -> Result<Arc<Self>, AppError> {
         let (browser_tx, _) = broadcast::channel(256);
         let agent_manager = AgentManager::new(browser_tx.clone());
+        let upgrade_tracker = UpgradeJobTracker::new(browser_tx.clone());
+        let upgrade_release_service = UpgradeReleaseService::new(&config.upgrade);
         let geoip = if !config.geoip.mmdb_path.is_empty() {
             GeoIpService::load(&config.geoip.mmdb_path)
         } else {
@@ -162,6 +168,8 @@ impl AppState {
             agent_manager,
             browser_tx,
             config,
+            upgrade_tracker,
+            upgrade_release_service,
             geoip: Arc::new(std::sync::RwLock::new(geoip)),
             geoip_downloading: AtomicBool::new(false),
             oauth_states: DashMap::new(),

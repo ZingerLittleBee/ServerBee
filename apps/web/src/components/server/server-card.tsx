@@ -12,8 +12,10 @@ import { useTrafficOverview } from '@/hooks/use-traffic-overview'
 import { getLatencyBarColor, isLatencyFailure } from '@/lib/network-latency-constants'
 import { latencyColorClass } from '@/lib/network-types'
 import { countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
+import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import { buildServerCardNetworkState, type ServerCardMetricPoint } from './server-card-network-data'
 import { StatusBadge } from './status-badge'
+import { UpgradeJobBadge } from './upgrade-job-badge'
 
 interface ServerCardProps {
   server: ServerMetrics
@@ -167,6 +169,7 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
   const { data: networkOverview = [] } = useNetworkOverview()
   const { data: realtimeData } = useNetworkRealtime(server.id)
   const { data: trafficOverview } = useTrafficOverview()
+  const upgradeJob = useUpgradeJobsStore((state) => state.jobs.get(server.id))
 
   const memoryPct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
   const diskPct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
@@ -213,7 +216,10 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
           )}
           <h3 className="truncate font-semibold text-sm">{server.name}</h3>
         </Link>
-        <StatusBadge online={server.online} />
+        <div className="flex items-center gap-1.5">
+          <UpgradeJobBadge job={upgradeJob} />
+          <StatusBadge online={server.online} />
+        </div>
       </div>
 
       <div className="mb-3 grid grid-cols-4 gap-2">
