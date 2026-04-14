@@ -43,7 +43,7 @@ pub const CAP_PING_HTTP: u32 = 1 << 5; // 32
 pub const CAP_FILE: u32 = 1 << 6; // 64
 pub const CAP_DOCKER: u32 = 1 << 7; // 128
 
-pub const CAP_DEFAULT: u32 = CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP; // 56
+pub const CAP_DEFAULT: u32 = CAP_UPGRADE | CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP; // 60
 pub const CAP_VALID_MASK: u32 = 0b1111_1111; // 255
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,8 +143,8 @@ pub const ALL_CAPABILITIES: &[CapabilityMeta] = &[
         bit: CAP_UPGRADE,
         key: "upgrade",
         display_name: "Auto Upgrade",
-        default_enabled: false,
-        risk_level: "high",
+        default_enabled: true,
+        risk_level: "low",
     },
     CapabilityMeta {
         bit: CAP_PING_ICMP,
@@ -221,10 +221,21 @@ mod tests {
     fn test_default_capabilities() {
         assert!(!has_capability(CAP_DEFAULT, CAP_TERMINAL));
         assert!(!has_capability(CAP_DEFAULT, CAP_EXEC));
-        assert!(!has_capability(CAP_DEFAULT, CAP_UPGRADE));
+        assert!(has_capability(CAP_DEFAULT, CAP_UPGRADE));
         assert!(has_capability(CAP_DEFAULT, CAP_PING_ICMP));
         assert!(has_capability(CAP_DEFAULT, CAP_PING_TCP));
         assert!(has_capability(CAP_DEFAULT, CAP_PING_HTTP));
+    }
+
+    #[test]
+    fn test_upgrade_metadata_is_low_risk_and_enabled_by_default() {
+        let upgrade = ALL_CAPABILITIES
+            .iter()
+            .find(|meta| meta.key == "upgrade")
+            .expect("upgrade capability should exist");
+
+        assert!(upgrade.default_enabled);
+        assert_eq!(upgrade.risk_level, "low");
     }
 
     #[test]

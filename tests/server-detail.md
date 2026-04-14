@@ -150,9 +150,9 @@
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| SV-55 | 对话框渲染 | 点击 Capabilities | 显示 2 列 Card 布局：High Risk Operations (Terminal/Exec/Upgrade/File/Docker 5 项) + Monitoring & Maintenance (ICMP/TCP/HTTP 3 项) | ✅ |
+| SV-55 | 对话框渲染 | 点击 Capabilities | 显示 2 列 Card 布局：High Risk Operations (Terminal/Exec/File/Docker 4 项) + Monitoring & Maintenance (Upgrade/ICMP/TCP/HTTP 4 项) | ✅ |
 | SV-56 | Toggle 开关 | 切换某个 capability 的 Switch | 调用 PUT /api/servers/:id，toast "Capabilities updated" | ✅ 切换 Terminal: unchecked→checked→unchecked |
-| SV-57 | 默认值 | CAP_DEFAULT=56 | ICMP(8)+TCP(16)+HTTP(32) 默认开启（checked），Terminal/Exec/Upgrade/File/Docker 关闭 | ✅ 8 个 switch 前 5 未 checked 后 3 checked |
+| SV-57 | 默认值 | CAP_DEFAULT=60 | Upgrade(4)+ICMP(8)+TCP(16)+HTTP(32) 默认开启（checked），Terminal/Exec/File/Docker 关闭 | ✅ 8 个 switch 中 4 个低风险默认 checked，4 个高风险默认关闭 |
 | SV-58 | Member 不可见 | Member 用户进入详情页 | Capabilities 按钮不渲染（user.role !== 'admin' 返回 null） | ✅ 单元测试覆盖 |
 
 ---

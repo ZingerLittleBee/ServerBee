@@ -156,9 +156,9 @@ describe('CapabilitiesPage', () => {
       'Server',
       'WebTerminalHighRisk',
       'RemoteExecHighRisk',
-      'AutoUpgradeHighRisk',
       'FileManagerHighRisk',
       'DockerManagementHighRisk',
+      'AutoUpgradeLowRisk',
       'ICMPPingLowRisk',
       'TCPProbeLowRisk',
       'HTTPProbeLowRisk'
