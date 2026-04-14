@@ -1,17 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import {
-  type ColumnDef,
-  getCoreRowModel,
-  getSortedRowModel,
-  type RowSelectionState,
-  type SortingState,
-  useReactTable
-} from '@tanstack/react-table'
-import { ExternalLink, LayoutGrid, Search, Table2, Trash2 } from 'lucide-react'
+import type { ColumnDef } from '@tanstack/react-table'
+import { CircleDot, ExternalLink, LayoutGrid, Search, Table2, Tag, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { DataTable } from '@/components/data-table/data-table'
+import { DataTableColumnHeader } from '@/components/data-table/data-table-column-header'
+import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { ServerCard } from '@/components/server/server-card'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
@@ -28,11 +24,12 @@ import {
   AlertDialogTrigger
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { createSelectColumn, DataTable, DataTableColumnHeader } from '@/components/ui/data-table'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useServer } from '@/hooks/use-api'
+import { useDataTable } from '@/hooks/use-data-table'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerGroup } from '@/lib/api-schema'
@@ -48,17 +45,24 @@ function UpgradeBadgeCell({ serverId }: { serverId: string }) {
 export const Route = createFileRoute('/_authed/servers/')({
   component: ServersListPage,
   validateSearch: (search: Record<string, unknown>) => ({
+    ...search,
     q: (search.q as string) || '',
-    sort: (search.sort as string) || 'name',
-    view: (search.view as 'table' | 'grid') || 'table'
+    view: (search.view === 'grid' ? 'grid' : 'table') as 'table' | 'grid'
   })
 })
+
+const arrayIncludesFilter = (row: { getValue: (id: string) => unknown }, id: string, value: unknown) => {
+  if (!Array.isArray(value) || value.length === 0) {
+    return true
+  }
+  return value.includes(String(row.getValue(id) ?? ''))
+}
 
 function ServersListPage() {
   const { t } = useTranslation(['servers', 'common'])
   const queryClient = useQueryClient()
   const navigate = Route.useNavigate()
-  const { q: search, sort, view: viewParam } = Route.useSearch()
+  const { q: search, view: viewParam } = Route.useSearch()
 
   const [viewMode, setViewModeState] = useState<'table' | 'grid'>(() => {
     if (viewParam === 'table' || viewParam === 'grid') {
@@ -88,8 +92,6 @@ function ServersListPage() {
   })
 
   const setSearch = (value: string) => navigate({ search: (prev) => ({ ...prev, q: value }) })
-  const [sorting, setSorting] = useState<SortingState>([{ id: sort, desc: false }])
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [editingId, setEditingId] = useState<string | null>(null)
 
   const groupMap = useMemo(() => new Map(groups?.map((g) => [g.id, g.name]) ?? []), [groups])
@@ -109,64 +111,117 @@ function ServersListPage() {
     )
   }, [servers, search, groupMap])
 
+  const groupOptions = useMemo(
+    () =>
+      (groups ?? []).map((g) => ({
+        label: g.name,
+        value: g.id
+      })),
+    [groups]
+  )
+
+  const statusOptions = useMemo(
+    () => [
+      { label: t('servers:status_online'), value: 'online' },
+      { label: t('servers:status_offline'), value: 'offline' }
+    ],
+    [t]
+  )
+
   const columns = useMemo<ColumnDef<ServerMetrics>[]>(
     () => [
-      createSelectColumn<ServerMetrics>(),
+      {
+        id: 'select',
+        enableSorting: false,
+        header: ({ table }) => (
+          <Checkbox
+            aria-label="Select all"
+            checked={table.getIsAllPageRowsSelected()}
+            onCheckedChange={(checked) => table.toggleAllPageRowsSelected(!!checked)}
+          />
+        ),
+        cell: ({ row }) => (
+          <Checkbox
+            aria-label="Select row"
+            checked={row.getIsSelected()}
+            onCheckedChange={(checked) => row.toggleSelected(!!checked)}
+          />
+        ),
+        size: 36,
+        meta: { className: 'w-9' }
+      },
       {
         accessorKey: 'name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title={t('col_name')} />,
+        id: 'name',
+        header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_name')} />,
         cell: ({ row }) => {
           const s = row.original
           const flag = countryCodeToFlag(s.country_code)
           return (
-            <Link
-              className="group/link flex items-center gap-1.5"
-              params={{ id: s.id }}
-              search={{ range: 'realtime' }}
-              to="/servers/$id"
-            >
-              {flag && <span className="text-xs">{flag}</span>}
-              <span className="font-medium group-hover/link:underline">{s.name}</span>
-            </Link>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <Link
+                className="group/link flex min-w-0 items-center gap-1.5"
+                params={{ id: s.id }}
+                search={{ range: 'realtime' }}
+                to="/servers/$id"
+              >
+                {flag && <span className="text-xs">{flag}</span>}
+                <span className="truncate font-medium group-hover/link:underline">{s.name}</span>
+              </Link>
+              <UpgradeBadgeCell serverId={s.id} />
+            </div>
           )
+        },
+        size: 260,
+        meta: { className: 'min-w-[200px]' }
+      },
+      {
+        id: 'status',
+        accessorFn: (row) => (row.online ? 'online' : 'offline'),
+        header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_status')} />,
+        cell: ({ row }) => <StatusBadge online={row.original.online} />,
+        filterFn: arrayIncludesFilter,
+        enableColumnFilter: true,
+        size: 84,
+        meta: {
+          className: 'w-[84px]',
+          label: t('col_status'),
+          variant: 'select',
+          options: statusOptions,
+          icon: CircleDot
         }
       },
       {
-        accessorKey: 'online',
-        header: ({ column }) => <DataTableColumnHeader column={column} title={t('col_status')} />,
-        cell: ({ row }) => <StatusBadge online={row.original.online} />
-      },
-      {
-        id: 'upgrade',
-        enableSorting: false,
-        header: () => null,
-        cell: ({ row }) => <UpgradeBadgeCell serverId={row.original.id} />,
-        meta: { className: 'w-10' }
-      },
-      {
         accessorKey: 'cpu',
-        header: ({ column }) => <DataTableColumnHeader column={column} title={t('col_cpu')} />,
-        cell: ({ row }) => <MiniBar pct={row.original.cpu} />
+        id: 'cpu',
+        header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_cpu')} />,
+        cell: ({ row }) => <MiniBar pct={row.original.cpu} />,
+        size: 160,
+        meta: { className: 'w-[160px]' }
       },
       {
         accessorFn: (row) => (row.mem_total > 0 ? row.mem_used / row.mem_total : 0),
         id: 'memory',
-        header: ({ column }) => <DataTableColumnHeader column={column} title={t('col_memory')} />,
+        header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_memory')} />,
         cell: ({ row }) => {
           const s = row.original
           const memPct = s.mem_total > 0 ? (s.mem_used / s.mem_total) * 100 : 0
           return <MiniBar pct={memPct} sub={formatBytes(s.mem_used)} />
-        }
+        },
+        size: 160,
+        meta: { className: 'w-[160px]' }
       },
       {
         accessorFn: (row) => (row.disk_total > 0 ? row.disk_used / row.disk_total : 0),
         id: 'disk',
-        header: ({ column }) => <DataTableColumnHeader column={column} title={t('col_disk')} />,
+        header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_disk')} />,
         cell: ({ row }) => {
           const s = row.original
           const diskPct = s.disk_total > 0 ? (s.disk_used / s.disk_total) * 100 : 0
           return <MiniBar pct={diskPct} sub={formatBytes(s.disk_used)} />
-        }
+        },
+        size: 160,
+        meta: { className: 'w-[160px]' }
       },
       {
         id: 'network',
@@ -175,27 +230,34 @@ function ServersListPage() {
         cell: ({ row }) => {
           const s = row.original
           return (
-            <span className="text-muted-foreground text-xs">
-              <span>↓{formatSpeed(s.net_in_speed)}</span>
-              <span className="ml-2">↑{formatSpeed(s.net_out_speed)}</span>
+            <span className="font-mono text-muted-foreground text-xs tabular-nums">
+              <span className="inline-block min-w-[64px]">↓{formatSpeed(s.net_in_speed)}</span>
+              <span className="ml-2 inline-block min-w-[64px]">↑{formatSpeed(s.net_out_speed)}</span>
             </span>
           )
         },
-        meta: { className: 'hidden lg:table-cell' }
+        size: 160,
+        meta: { className: 'hidden lg:table-cell lg:w-[160px]' }
       },
       {
         accessorKey: 'uptime',
-        header: ({ column }) => <DataTableColumnHeader column={column} title={t('col_uptime')} />,
+        id: 'uptime',
+        header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_uptime')} />,
         cell: ({ row }) => {
           const s = row.original
-          return <span className="text-muted-foreground text-xs">{s.online ? formatUptime(s.uptime) : '-'}</span>
+          return (
+            <span className="font-mono text-muted-foreground text-xs tabular-nums">
+              {s.online ? formatUptime(s.uptime) : '-'}
+            </span>
+          )
         },
-        meta: { className: 'hidden xl:table-cell' }
+        size: 100,
+        meta: { className: 'hidden xl:table-cell xl:w-[100px]' }
       },
       {
-        accessorFn: (row) => (row.group_id ? (groupMap.get(row.group_id) ?? '') : ''),
         id: 'group',
-        header: ({ column }) => <DataTableColumnHeader column={column} title={t('col_group')} />,
+        accessorFn: (row) => row.group_id ?? '',
+        header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_group')} />,
         cell: ({ row }) => {
           const s = row.original
           return (
@@ -204,7 +266,16 @@ function ServersListPage() {
             </span>
           )
         },
-        meta: { className: 'hidden xl:table-cell' }
+        filterFn: arrayIncludesFilter,
+        enableColumnFilter: true,
+        size: 140,
+        meta: {
+          className: 'hidden xl:table-cell xl:w-[140px]',
+          label: t('col_group'),
+          variant: 'multiSelect',
+          options: groupOptions,
+          icon: Tag
+        }
       },
       {
         id: 'actions',
@@ -219,20 +290,21 @@ function ServersListPage() {
             <ExternalLink aria-hidden="true" className="size-3.5" />
           </button>
         ),
+        size: 40,
         meta: { className: 'w-10' }
       }
     ],
-    [t, groupMap]
+    [t, groupMap, groupOptions, statusOptions]
   )
 
-  const table = useReactTable({
+  const { table } = useDataTable({
     data: filtered,
     columns,
-    state: { sorting, rowSelection },
-    onSortingChange: setSorting,
-    onRowSelectionChange: setRowSelection,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
+    pageCount: -1,
+    initialState: {
+      sorting: [{ id: 'name', desc: false }],
+      pagination: { pageIndex: 0, pageSize: 20 }
+    },
     getRowId: (row) => row.id
   })
 
@@ -255,7 +327,7 @@ function ServersListPage() {
   const batchDeleteMutation = useMutation({
     mutationFn: (ids: string[]) => api.post<{ deleted: number }>('/api/servers/batch-delete', { ids }),
     onSuccess: () => {
-      setRowSelection({})
+      table.toggleAllRowsSelected(false)
       queryClient.invalidateQueries({ queryKey: ['servers'] })
     }
   })
@@ -373,7 +445,11 @@ function ServersListPage() {
           </div>
         </div>
       )}
-      {servers.length > 0 && viewMode === 'table' && <DataTable noResults={t('no_servers_title')} table={table} />}
+      {servers.length > 0 && viewMode === 'table' && (
+        <DataTable table={table}>
+          <DataTableToolbar table={table} />
+        </DataTable>
+      )}
       {servers.length > 0 && viewMode === 'grid' && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((server) => (
@@ -382,13 +458,6 @@ function ServersListPage() {
             </div>
           ))}
         </div>
-      )}
-
-      {filtered.length > 0 && (
-        <p className="mt-3 text-muted-foreground text-xs">
-          {t('showing_servers', { shown: filtered.length, total: servers.length })}
-          {selectedCount > 0 && ` · ${t('selected_count', { count: selectedCount })}`}
-        </p>
       )}
 
       {editingId !== null && <EditWrapper onClose={() => setEditingId(null)} serverId={editingId} />}
@@ -417,7 +486,7 @@ function MiniBar({ pct, sub }: { pct: number; sub?: string }) {
         </div>
         <span className="w-10 text-right font-mono text-xs tabular-nums">{p.toFixed(0)}%</span>
       </div>
-      {sub && <p className="mt-0.5 text-[10px] text-muted-foreground">{sub}</p>}
+      {sub && <p className="mt-0.5 text-[10px] text-muted-foreground tabular-nums">{sub}</p>}
     </div>
   )
 }

@@ -23,6 +23,8 @@
   "no_servers_description": "Servers will appear here once they connect via the agent",
   "col_name": "Name",
   "col_status": "Status",
+  "status_online": "Online",
+  "status_offline": "Offline",
   "col_cpu": "CPU",
   "col_memory": "Memory",
   "col_disk": "Disk",
