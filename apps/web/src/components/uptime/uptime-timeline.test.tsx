@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { UptimeDailyEntry } from '@/lib/api-schema'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
 import { UptimeTimeline } from './uptime-timeline'

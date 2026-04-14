@@ -23,10 +23,10 @@ import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerResponse } from '@/lib/api-schema'
 import { CAP_DOCKER, CAP_FILE, CAP_TERMINAL, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
-import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import { buildMergedDiskIoSeries, buildPerDiskIoSeries } from '@/lib/disk-io'
 import { cn, countryCodeToFlag, formatBytes } from '@/lib/utils'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
+import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 
 export const Route = createFileRoute('/_authed/servers/$id')({
   component: ServerDetailPage,
@@ -387,6 +387,7 @@ export function ServerDetailPage() {
     refetchOnWindowFocus: false
   })
   const liveData = liveServers?.find((s) => s.id === id)
+  const upgradeJob = useUpgradeJobsStore((state) => state.jobs.get(id))
 
   const chartData: Record<string, unknown>[] = useMemo(() => {
     if (isRealtime) {
@@ -524,8 +525,6 @@ export function ServerDetailPage() {
     CAP_DOCKER
   )
 
-  const upgradeJob = useUpgradeJobsStore((state) => state.jobs.get(id))
-
   // Network cumulative traffic from live data
   const liveNetIn = liveData?.net_in_transfer ?? 0
   const liveNetOut = liveData?.net_out_transfer ?? 0
@@ -543,12 +542,12 @@ export function ServerDetailPage() {
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-          <div className="flex items-center gap-3">
-            {flag && <span className="text-xl">{flag}</span>}
-            <h1 className="font-bold text-2xl">{server.name}</h1>
-            <StatusBadge online={isOnline} />
-            <UpgradeJobBadge job={upgradeJob} />
-          </div>
+            <div className="flex items-center gap-3">
+              {flag && <span className="text-xl">{flag}</span>}
+              <h1 className="font-bold text-2xl">{server.name}</h1>
+              <StatusBadge online={isOnline} />
+              <UpgradeJobBadge job={upgradeJob} />
+            </div>
             <ServerInfoMeta server={server} />
           </div>
           <ServerActionButtons

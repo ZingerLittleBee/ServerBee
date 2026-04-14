@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { UpgradeJob } from './upgrade-jobs-store'
 import { useUpgradeJobsStore } from './upgrade-jobs-store'
 
 describe('useUpgradeJobsStore', () => {
@@ -17,14 +18,14 @@ describe('useUpgradeJobsStore', () => {
       server_id: string
       job_id: string
       target_version: string
-      stage: string
-      status: string
+      stage: UpgradeJob['stage']
+      status: UpgradeJob['status']
       error: string | null
       backup_path: string | null
       started_at: string
       finished_at: string | null
     }> = {}
-  ) {
+  ): UpgradeJob {
     return {
       server_id: 'server-1',
       job_id: 'job-1',

@@ -84,7 +84,7 @@ impl UpgradeLookup {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum StartUpgradeJobError {
-    Conflict(UpgradeJob),
+    Conflict(Box<UpgradeJob>),
 }
 
 pub struct UpgradeJobTracker {
@@ -111,7 +111,7 @@ impl UpgradeJobTracker {
         if let Some(existing) = self.jobs.get(&server_id)
             && existing.status == UpgradeStatus::Running
         {
-            return Err(StartUpgradeJobError::Conflict(existing.clone()));
+            return Err(StartUpgradeJobError::Conflict(Box::new(existing.clone())));
         }
 
         let job = UpgradeJob {
