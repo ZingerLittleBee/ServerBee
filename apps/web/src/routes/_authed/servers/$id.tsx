@@ -185,7 +185,8 @@ function MetricsTabContent({
   rangeIndex,
   formatTime,
   formatTooltipLabel,
-  serverId
+  serverId,
+  xAxisInterval
 }: {
   chartData: Record<string, unknown>[]
   diskIoMergedData: { read_bytes_per_sec: number; timestamp: string; write_bytes_per_sec: number }[]
@@ -201,6 +202,7 @@ function MetricsTabContent({
   formatTime: ((time: string) => string) | undefined
   formatTooltipLabel: ((time: string) => string) | undefined
   serverId: string
+  xAxisInterval?: number | 'preserveStart' | 'preserveEnd' | 'preserveStartEnd' | 'equidistantPreserveStart'
 }) {
   const { t } = useTranslation('servers')
   const navigate = Route.useNavigate()
@@ -231,6 +233,7 @@ function MetricsTabContent({
           formatTooltipLabel={formatTooltipLabel}
           title={t('chart_cpu')}
           unit="%"
+          xAxisInterval={xAxisInterval}
         />
         <MetricsChart
           color="var(--color-chart-2)"
@@ -241,6 +244,7 @@ function MetricsTabContent({
           formatTooltipLabel={formatTooltipLabel}
           title={t('chart_memory')}
           unit="%"
+          xAxisInterval={xAxisInterval}
         />
         <MetricsChart
           color="var(--color-chart-3)"
@@ -251,6 +255,7 @@ function MetricsTabContent({
           formatTooltipLabel={formatTooltipLabel}
           title={t('chart_disk')}
           unit="%"
+          xAxisInterval={xAxisInterval}
         />
         <MetricsChart
           color="var(--color-chart-4)"
@@ -261,6 +266,7 @@ function MetricsTabContent({
           formatTooltipLabel={formatTooltipLabel}
           formatValue={(v) => formatBytes(v)}
           title={t('chart_net_in')}
+          xAxisInterval={xAxisInterval}
         />
         <MetricsChart
           color="var(--color-chart-5)"
@@ -271,6 +277,7 @@ function MetricsTabContent({
           formatTooltipLabel={formatTooltipLabel}
           formatValue={(v) => formatBytes(v)}
           title={t('chart_net_out')}
+          xAxisInterval={xAxisInterval}
         />
         <MetricsChart
           color="var(--color-chart-1)"
@@ -279,6 +286,7 @@ function MetricsTabContent({
           formatTime={formatTime}
           formatTooltipLabel={formatTooltipLabel}
           title={t('chart_load')}
+          xAxisInterval={xAxisInterval}
         />
 
         {hasTemperature && (
@@ -290,6 +298,7 @@ function MetricsTabContent({
             formatTooltipLabel={formatTooltipLabel}
             title={t('chart_temperature')}
             unit="°C"
+            xAxisInterval={xAxisInterval}
           />
         )}
 
@@ -304,6 +313,7 @@ function MetricsTabContent({
               formatTooltipLabel={formatTooltipLabel}
               title={t('chart_gpu')}
               unit="%"
+              xAxisInterval={xAxisInterval}
             />
             <MetricsChart
               color="var(--color-chart-2)"
@@ -313,6 +323,7 @@ function MetricsTabContent({
               formatTooltipLabel={formatTooltipLabel}
               title={t('chart_gpu_temp')}
               unit="°C"
+              xAxisInterval={xAxisInterval}
             />
           </>
         )}
@@ -412,16 +423,18 @@ export function ServerDetailPage() {
     }))
   }, [isRealtime, realtimeData, records, server])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: realtimeData in deps forces closure rebuild on buffer updates so `lastLabel` resets before Recharts re-iterates ticks
   const chartFormatTime = useMemo<((time: string) => string) | undefined>(() => {
     if (isRealtime) {
-      const firstTimestamp = realtimeData.length > 0 ? realtimeData[0].timestamp : ''
+      let lastLabel = ''
       return (time: string) => {
-        if (time === firstTimestamp) {
-          const d = new Date(time)
-          return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
-        }
         const d = new Date(time)
-        return `${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
+        const label = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+        if (label === lastLabel) {
+          return ''
+        }
+        lastLabel = label
+        return label
       }
     }
     if (range.hours >= 168) {
@@ -442,6 +455,12 @@ export function ServerDetailPage() {
   }, [isRealtime, realtimeData, range])
 
   const tooltipFormatTime = useMemo<((time: string) => string) | undefined>(() => {
+    if (isRealtime) {
+      return (time: string) => {
+        const d = new Date(time)
+        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
+      }
+    }
     if (range.hours >= 168) {
       return (time: string) => {
         const d = new Date(time)
@@ -449,7 +468,7 @@ export function ServerDetailPage() {
       }
     }
     return undefined
-  }, [range])
+  }, [isRealtime, range])
 
   const gpuChartData = useMemo(() => {
     if (!gpuRecords || gpuRecords.length === 0) {
@@ -540,8 +559,8 @@ export function ServerDetailPage() {
           {t('detail_back')}
         </Link>
 
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3">
               {flag && <span className="text-xl">{flag}</span>}
               <h1 className="font-bold text-2xl">{server.name}</h1>
@@ -550,15 +569,26 @@ export function ServerDetailPage() {
             </div>
             <ServerInfoMeta server={server} />
           </div>
-          <ServerActionButtons
-            dockerEnabled={dockerEnabled}
-            fileEnabled={fileEnabled}
-            id={id}
-            isOnline={isOnline}
-            onEditOpen={() => setEditOpen(true)}
-            serverWithCaps={serverWithCaps}
-            terminalEnabled={terminalEnabled}
-          />
+          <div className="sm:col-span-2">
+            <AgentVersionSection
+              agentVersion={server.agent_version}
+              configuredCapabilities={serverWithCaps.capabilities}
+              effectiveCapabilities={serverWithCaps.effective_capabilities}
+              latestVersion={latestAgentVersion?.version ?? null}
+              serverId={id}
+            />
+          </div>
+          <div className="sm:col-start-2 sm:row-start-1 sm:justify-self-end">
+            <ServerActionButtons
+              dockerEnabled={dockerEnabled}
+              fileEnabled={fileEnabled}
+              id={id}
+              isOnline={isOnline}
+              onEditOpen={() => setEditOpen(true)}
+              serverWithCaps={serverWithCaps}
+              terminalEnabled={terminalEnabled}
+            />
+          </div>
         </div>
       </div>
 
@@ -580,14 +610,6 @@ export function ServerDetailPage() {
       )}
 
       <UptimeCard serverId={id} />
-
-      <AgentVersionSection
-        agentVersion={server.agent_version}
-        configuredCapabilities={serverWithCaps.capabilities}
-        effectiveCapabilities={serverWithCaps.effective_capabilities}
-        latestVersion={latestAgentVersion?.version ?? null}
-        serverId={id}
-      />
 
       <Tabs className="mt-6" defaultValue="metrics">
         <TabsList>
@@ -613,6 +635,7 @@ export function ServerDetailPage() {
             hasTemperature={hasTemperature}
             rangeIndex={rangeIndex}
             serverId={id}
+            xAxisInterval={isRealtime ? 0 : undefined}
           />
         </TabsContent>
 

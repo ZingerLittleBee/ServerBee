@@ -112,6 +112,8 @@ This project uses **Ultracite** (Biome-based) for frontend linting and formattin
 
 ## Testing
 
+For tiny CSS-only or presentational class changes with no logic or behavior changes, default to minimal verification instead of running tests. Prefer a targeted visual check, typecheck, or lint as appropriate. Only run tests if the user asks, the change affects behavior, or you add/update regression coverage.
+
 E2E manual verification checklists are in `tests/` directory, organized by feature/page. See `tests/README.md` for the full index and local environment setup.
 
 ## Documentation
