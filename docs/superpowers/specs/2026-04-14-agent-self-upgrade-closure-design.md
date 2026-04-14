@@ -369,8 +369,8 @@ type UpgradeJob = {
 
 type UpgradeJobsStore = {
   jobs: Record<string, UpgradeJob>    // key: serverId
-  setJobs: (jobs: UpgradeJob[]) => void           // FullSync 批量初始化
-  upsertJob: (job: UpgradeJob) => void            // 单条更新
+  setJobs: (jobs: UpgradeJob[]) => void           // FullSync 批量替换（整体覆盖；未出现在新列表的 serverId 被删除）
+  upsertJob: (job: UpgradeJob) => void            // 单条更新；相同 (serverId, jobId, status) 的重复消息需要去重，避免 WS 回放导致 UI 闪烁
   clearFinished: (serverId: string) => void       // 成功态 3 秒后调用
 }
 ```
@@ -427,7 +427,7 @@ type UpgradeJobsStore = {
 
 `apps/web/src/components/server/server-list` 或对应列表组件订阅全局 upgrade job store：
 - Running 态 → 行尾小 badge `"Upgrading..."`
-- Failed 态 → 红色 badge `"Upgrade failed"`（可点击跳到 CapabilitiesDialog 查看详情）
+- Failed 态 → 红色 badge `"Upgrade failed"`（可点击跳到 Server 详情页的 AgentVersionSection 查看原因）
 
 ### i18n
 
