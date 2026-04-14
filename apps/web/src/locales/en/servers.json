@@ -179,5 +179,21 @@
   "toast_deleted": "Deleted {{count}} server(s)",
   "toast_batch_delete_failed": "Operation failed",
 
-  "current_targets": "Current targets"
+  "current_targets": "Current targets",
+
+  "upgrade_current_version": "Current Version",
+  "upgrade_latest_version": "Latest",
+  "upgrade_start": "Upgrade",
+  "upgrade_in_progress": "Upgrade in progress",
+  "upgrade_stage_downloading": "Downloading",
+  "upgrade_stage_verifying": "Verifying",
+  "upgrade_stage_pre_flight": "Pre-flight",
+  "upgrade_stage_installing": "Installing",
+  "upgrade_stage_restarting": "Restarting",
+  "upgrade_status_running": "Upgrading",
+  "upgrade_status_succeeded": "Upgrade completed",
+  "upgrade_status_failed": "Upgrade failed",
+  "upgrade_status_timeout": "Upgrade timed out",
+  "upgrade_error_with_backup": "Backup saved at",
+  "upgrade_backup_path": "Backup location"
 }

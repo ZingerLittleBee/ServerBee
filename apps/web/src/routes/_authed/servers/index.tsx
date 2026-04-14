@@ -15,6 +15,7 @@ import { toast } from 'sonner'
 import { ServerCard } from '@/components/server/server-card'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
+import { UpgradeJobBadge } from '@/components/server/upgrade-job-badge'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,6 +38,12 @@ import { api } from '@/lib/api-client'
 import type { ServerGroup } from '@/lib/api-schema'
 import { countCleanupCandidates } from '@/lib/orphan-server-utils'
 import { cn, countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
+import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
+
+function UpgradeBadgeCell({ serverId }: { serverId: string }) {
+  const job = useUpgradeJobsStore((state) => state.jobs.get(serverId))
+  return <UpgradeJobBadge job={job} />
+}
 
 export const Route = createFileRoute('/_authed/servers/')({
   component: ServersListPage,
@@ -128,6 +135,13 @@ function ServersListPage() {
         accessorKey: 'online',
         header: ({ column }) => <DataTableColumnHeader column={column} title={t('col_status')} />,
         cell: ({ row }) => <StatusBadge online={row.original.online} />
+      },
+      {
+        id: 'upgrade',
+        enableSorting: false,
+        header: () => null,
+        cell: ({ row }) => <UpgradeBadgeCell serverId={row.original.id} />,
+        meta: { className: 'w-10' }
       },
       {
         accessorKey: 'cpu',
