@@ -1,15 +1,14 @@
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use chrono::{NaiveDateTime, Utc};
 use futures_util::{SinkExt, StreamExt};
 use rand::Rng;
 use serverbee_common::constants::{
     CapabilityDeniedReason, DEFAULT_COMMAND_TIMEOUT_SECS, MAX_TASK_OUTPUT_SIZE, has_capability,
 };
-use serverbee_common::protocol::{AgentMessage, ServerMessage, UpgradeStage};
+use serverbee_common::protocol::{AgentMessage, ServerMessage};
 use serverbee_common::types::{NetworkInterface, NetworkProbeResultData, TracerouteHop};
 use sysinfo::Networks;
 use tokio::sync::mpsc;
@@ -30,31 +29,6 @@ const MAX_BACKOFF_SECS: u64 = 30;
 const JITTER_FACTOR: f64 = 0.2;
 const MAX_REREGISTER_ATTEMPTS: u32 = 3;
 const DOCKER_RETRY_SECS: u64 = 30;
-const UPGRADE_DOWNLOAD_TIMEOUT_SECS: u64 = 600;
-const UPGRADE_BACKUP_RETENTION_HOURS: i64 = 24;
-
-static UPGRADE_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
-
-struct UpgradeFailure {
-    stage: UpgradeStage,
-    error: anyhow::Error,
-    backup_path: Option<String>,
-}
-
-impl UpgradeFailure {
-    fn new(stage: UpgradeStage, error: impl Into<anyhow::Error>) -> Self {
-        Self {
-            stage,
-            error: error.into(),
-            backup_path: None,
-        }
-    }
-
-    fn with_backup_path(mut self, backup_path: &std::path::Path) -> Self {
-        self.backup_path = Some(backup_path.display().to_string());
-        self
-    }
-}
 
 pub struct Reporter {
     config: AgentConfig,
@@ -598,7 +572,6 @@ impl Reporter {
                 version,
                 download_url,
                 sha256,
-                job_id,
             } => {
                 let caps = capabilities.load(Ordering::SeqCst);
                 if !has_capability(caps, CAP_UPGRADE) {
@@ -618,51 +591,10 @@ impl Reporter {
                     write.send(Message::Text(json.into())).await?;
                     return Ok(());
                 }
-
-                if UPGRADE_IN_PROGRESS
-                    .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-                    .is_err()
-                {
-                    tracing::warn!("Upgrade rejected: another upgrade is already running");
-                    emit_upgrade_failure(
-                        cmd_result_tx,
-                        job_id,
-                        version,
-                        UpgradeStage::Downloading,
-                        "another upgrade is already running".to_string(),
-                        None,
-                    )
-                    .await;
-                    return Ok(());
-                }
-
                 tracing::info!("Upgrade requested: v{version} from {download_url}");
-                let tx = cmd_result_tx.clone();
                 tokio::spawn(async move {
-                    if let Err(failure) = perform_upgrade(
-                        &version,
-                        &download_url,
-                        &sha256,
-                        job_id.clone(),
-                        tx.clone(),
-                    )
-                    .await
-                    {
-                        tracing::error!(
-                            "Upgrade to v{version} failed during {:?}: {}",
-                            failure.stage,
-                            failure.error
-                        );
-                        emit_upgrade_failure(
-                            &tx,
-                            job_id,
-                            version,
-                            failure.stage,
-                            failure.error.to_string(),
-                            failure.backup_path,
-                        )
-                        .await;
-                        UPGRADE_IN_PROGRESS.store(false, Ordering::SeqCst);
+                    if let Err(e) = perform_upgrade(&version, &download_url, &sha256).await {
+                        tracing::error!("Upgrade to v{version} failed: {e}");
                     }
                 });
             }
@@ -1596,11 +1528,9 @@ async fn derive_primary_ips(
 mod tests {
     use super::*;
     use crate::config::{CollectorConfig, FileConfig, IpChangeConfig, LogConfig};
-    use chrono::{Duration as ChronoDuration, Utc};
     use serverbee_common::constants::{
         CAP_DEFAULT, CAP_EXEC, CAP_FILE, CAP_PING_ICMP, CapabilityDeniedReason,
     };
-    use tempfile::tempdir;
     use tokio_tungstenite::tungstenite::http::Response;
 
     #[test]
@@ -1806,55 +1736,6 @@ HOST: agent                       Loss%   Snt   Last   Avg  Best  Wrst StDev
         let hops = parse_traceroute_output("");
         assert!(hops.is_empty());
     }
-
-    #[test]
-    fn verify_sha256_rejects_mismatched_hash() {
-        let err = verify_sha256(b"serverbee", "deadbeef").expect_err("hash should mismatch");
-
-        assert!(err.to_string().contains("Checksum mismatch"));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn run_preflight_rejects_non_zero_exit() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let temp = tempdir().unwrap();
-        let binary_path = temp.path().join("fake-agent");
-        std::fs::write(&binary_path, "#!/bin/sh\nexit 23\n").unwrap();
-        std::fs::set_permissions(&binary_path, std::fs::Permissions::from_mode(0o755)).unwrap();
-
-        let err = run_preflight(&binary_path).expect_err("preflight should fail");
-
-        assert!(err.to_string().contains("Preflight check failed"));
-    }
-
-    #[test]
-    fn cleanup_old_backups_removes_only_stale_backup_files() {
-        let temp = tempdir().unwrap();
-        let exe_path = temp.path().join("serverbee-agent");
-        std::fs::write(&exe_path, b"current").unwrap();
-
-        let stale = exe_path.with_extension(format!(
-            "bak.{}",
-            (Utc::now() - ChronoDuration::hours(25)).format("%Y%m%d-%H%M%S")
-        ));
-        let fresh = exe_path.with_extension(format!(
-            "bak.{}",
-            (Utc::now() - ChronoDuration::hours(1)).format("%Y%m%d-%H%M%S")
-        ));
-        let unrelated = temp.path().join("other-agent.bak.20200101-000000");
-
-        std::fs::write(&stale, b"stale").unwrap();
-        std::fs::write(&fresh, b"fresh").unwrap();
-        std::fs::write(&unrelated, b"other").unwrap();
-
-        cleanup_old_backups(&exe_path).unwrap();
-
-        assert!(!stale.exists());
-        assert!(fresh.exists());
-        assert!(unrelated.exists());
-    }
 }
 
 /// Fetch external IP address from a remote service.
@@ -1891,68 +1772,23 @@ async fn fetch_external_ip(url: &str) -> anyhow::Result<String> {
     Ok(ip)
 }
 
-async fn emit_upgrade_progress(
-    tx: &mpsc::Sender<AgentMessage>,
-    job_id: Option<String>,
-    version: &str,
-    stage: UpgradeStage,
-) {
-    let message = AgentMessage::UpgradeProgress {
-        msg_id: uuid::Uuid::new_v4().to_string(),
-        job_id,
-        target_version: version.to_string(),
-        stage,
-    };
-
-    if tx.send(message).await.is_err() {
-        tracing::warn!("Failed to emit upgrade progress: channel closed");
-    }
-}
-
-async fn emit_upgrade_failure(
-    tx: &mpsc::Sender<AgentMessage>,
-    job_id: Option<String>,
-    version: String,
-    stage: UpgradeStage,
-    error: String,
-    backup_path: Option<String>,
-) {
-    let message = AgentMessage::UpgradeResult {
-        msg_id: uuid::Uuid::new_v4().to_string(),
-        job_id,
-        target_version: version,
-        stage,
-        error,
-        backup_path,
-    };
-
-    if tx.send(message).await.is_err() {
-        tracing::warn!("Failed to emit upgrade failure: channel closed");
-    }
-}
-
-fn verify_sha256(bytes: &[u8], expected_sha256: &str) -> anyhow::Result<()> {
+/// Download a new agent binary, verify checksum, replace current binary, and restart.
+async fn perform_upgrade(version: &str, download_url: &str, sha256: &str) -> anyhow::Result<()> {
     use sha2::{Digest, Sha256};
+    use std::io::Write;
 
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    let actual = format!("{:x}", hasher.finalize());
-    let expected = expected_sha256.to_ascii_lowercase();
-
-    if actual != expected {
-        anyhow::bail!("Checksum mismatch: expected {expected_sha256}, got {actual}");
-    }
-
-    Ok(())
-}
-
-async fn download_upgrade_bytes(download_url: &str) -> anyhow::Result<Vec<u8>> {
+    // Validate URL scheme
     if !download_url.starts_with("https://") {
         anyhow::bail!("Upgrade URL must use HTTPS, got: {download_url}");
     }
 
+    let current_exe = std::env::current_exe()?;
+    let tmp_path = current_exe.with_extension("new");
+    let backup_path = current_exe.with_extension("bak");
+
+    tracing::info!("Downloading agent v{version} from {download_url}...");
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(UPGRADE_DOWNLOAD_TIMEOUT_SECS))
+        .timeout(std::time::Duration::from_secs(600)) // 10 minute timeout
         .build()?;
     let response = client
         .get(download_url)
@@ -1964,158 +1800,47 @@ async fn download_upgrade_bytes(download_url: &str) -> anyhow::Result<Vec<u8>> {
         anyhow::bail!("Download failed with status {}", response.status());
     }
 
-    Ok(response.bytes().await?.to_vec())
-}
+    let bytes = response.bytes().await?;
+    tracing::info!("Downloaded {} bytes", bytes.len());
 
-fn set_executable_permissions(path: &std::path::Path) -> anyhow::Result<()> {
+    // Mandatory SHA-256 verification
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    let actual = format!("{:x}", hasher.finalize());
+    if actual != sha256 {
+        anyhow::bail!("Checksum mismatch: expected {sha256}, got {actual}");
+    }
+    tracing::info!("Checksum verified");
+
+    // Write to temporary file
+    {
+        let mut file = std::fs::File::create(&tmp_path)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+    }
+
+    // Set executable permission on Unix
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
+        std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755))?;
     }
 
-    #[cfg(not(unix))]
-    {
-        let _ = path;
+    // Backup current binary and replace
+    if backup_path.exists() {
+        std::fs::remove_file(&backup_path)?;
     }
+    std::fs::rename(&current_exe, &backup_path)?;
+    std::fs::rename(&tmp_path, &current_exe)?;
 
-    Ok(())
-}
-
-fn run_preflight(path: &std::path::Path) -> anyhow::Result<()> {
-    let output = std::process::Command::new(path).arg("--version").output()?;
-
-    if !output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let details = if !stderr.is_empty() {
-            stderr
-        } else if !stdout.is_empty() {
-            stdout
-        } else {
-            "no output".to_string()
-        };
-        anyhow::bail!(
-            "Preflight check failed with status {}: {}",
-            output.status,
-            details
-        );
-    }
-
-    Ok(())
-}
-
-fn cleanup_old_backups(current_exe: &std::path::Path) -> anyhow::Result<()> {
-    let Some(parent) = current_exe.parent() else {
-        return Ok(());
-    };
-    let Some(name) = current_exe.file_name().and_then(|value| value.to_str()) else {
-        return Ok(());
-    };
-
-    let prefix = format!("{name}.bak.");
-    let cutoff = Utc::now() - chrono::Duration::hours(UPGRADE_BACKUP_RETENTION_HOURS);
-
-    for entry in std::fs::read_dir(parent)? {
-        let entry = entry?;
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-
-        let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
-            continue;
-        };
-        let Some(timestamp) = file_name.strip_prefix(&prefix) else {
-            continue;
-        };
-        let Ok(parsed) = NaiveDateTime::parse_from_str(timestamp, "%Y%m%d-%H%M%S") else {
-            continue;
-        };
-
-        let backup_time = chrono::DateTime::<Utc>::from_naive_utc_and_offset(parsed, Utc);
-        if backup_time < cutoff {
-            std::fs::remove_file(path)?;
-        }
-    }
-
-    Ok(())
-}
-
-/// Download a new agent binary, verify checksum, replace current binary, and restart.
-async fn perform_upgrade(
-    version: &str,
-    download_url: &str,
-    sha256: &str,
-    job_id: Option<String>,
-    tx: mpsc::Sender<AgentMessage>,
-) -> Result<(), UpgradeFailure> {
-    use std::io::Write;
-
-    let current_exe = std::env::current_exe()
-        .map_err(|error| UpgradeFailure::new(UpgradeStage::Installing, error))?;
-    let tmp_path = current_exe.with_extension("new");
-    let backup_path =
-        current_exe.with_extension(format!("bak.{}", Utc::now().format("%Y%m%d-%H%M%S")));
-
-    emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::Downloading).await;
-    tracing::info!("Downloading agent v{version} from {download_url}...");
-    let bytes = download_upgrade_bytes(download_url)
-        .await
-        .map_err(|error| UpgradeFailure::new(UpgradeStage::Downloading, error))?;
-
-    emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::Verifying).await;
-    verify_sha256(&bytes, sha256)
-        .map_err(|error| UpgradeFailure::new(UpgradeStage::Verifying, error))?;
-
-    {
-        let mut file = std::fs::File::create(&tmp_path)
-            .map_err(|error| UpgradeFailure::new(UpgradeStage::Installing, error))?;
-        file.write_all(&bytes)
-            .map_err(|error| UpgradeFailure::new(UpgradeStage::Installing, error))?;
-        file.sync_all()
-            .map_err(|error| UpgradeFailure::new(UpgradeStage::Installing, error))?;
-    }
-    set_executable_permissions(&tmp_path)
-        .map_err(|error| UpgradeFailure::new(UpgradeStage::Installing, error))?;
-
-    emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::PreFlight).await;
-    run_preflight(&tmp_path)
-        .map_err(|error| UpgradeFailure::new(UpgradeStage::PreFlight, error))?;
-
-    emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::Installing).await;
-    std::fs::rename(&current_exe, &backup_path)
-        .map_err(|error| UpgradeFailure::new(UpgradeStage::Installing, error))?;
-
-    if let Err(error) = std::fs::rename(&tmp_path, &current_exe) {
-        let rollback_result = std::fs::rename(&backup_path, &current_exe);
-        let rollback_error = rollback_result.err();
-        let install_error = if let Some(rollback_error) = rollback_error {
-            anyhow::anyhow!(
-                "Failed to install new binary: {error}; rollback also failed: {rollback_error}"
-            )
-        } else {
-            anyhow::anyhow!("Failed to install new binary: {error}; restored backup")
-        };
-        return Err(UpgradeFailure::new(UpgradeStage::Installing, install_error)
-            .with_backup_path(&backup_path));
-    }
-
-    cleanup_old_backups(&current_exe).map_err(|error| {
-        UpgradeFailure::new(UpgradeStage::Installing, error).with_backup_path(&backup_path)
-    })?;
-
-    emit_upgrade_progress(&tx, job_id, version, UpgradeStage::Restarting).await;
     tracing::info!("Agent binary replaced. Restarting...");
 
+    let args: Vec<String> = std::env::args().collect();
     let mut cmd = std::process::Command::new(&current_exe);
-    let args: Vec<_> = std::env::args_os().skip(1).collect();
-    if !args.is_empty() {
-        cmd.args(args);
+    if args.len() > 1 {
+        cmd.args(&args[1..]);
     }
-    cmd.spawn().map_err(|error| {
-        UpgradeFailure::new(UpgradeStage::Restarting, error).with_backup_path(&backup_path)
-    })?;
+    cmd.spawn()?;
 
     std::process::exit(0);
 }
