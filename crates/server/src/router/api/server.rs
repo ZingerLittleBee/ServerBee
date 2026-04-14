@@ -26,6 +26,7 @@ use crate::service::network_probe::NetworkProbeService;
 use crate::service::ping::PingService;
 use crate::service::record::{QueryHistoryResult, RecordService};
 use crate::service::server::{ServerService, UpdateServerInput};
+use crate::service::upgrade_tracker::{StartUpgradeJobError, UpgradeLookup};
 use crate::state::AppState;
 use serverbee_common::constants::effective_capabilities;
 use serverbee_common::protocol::{BrowserMessage, ServerMessage};
@@ -612,15 +613,31 @@ async fn trigger_upgrade(
         .get_sender(&id)
         .ok_or_else(|| AppError::NotFound("Agent not connected".into()))?;
 
+    let job = state
+        .upgrade_tracker
+        .start_job(&id, version.to_string())
+        .map_err(|error| match error {
+            StartUpgradeJobError::Conflict(existing) => AppError::Conflict(format!(
+                "Upgrade already running for server {} (job_id={}, target_version={})",
+                existing.server_id, existing.job_id, existing.target_version
+            )),
+        })?;
+
     let msg = ServerMessage::Upgrade {
         version: version.to_string(),
         download_url,
         sha256,
+        job_id: Some(job.job_id.clone()),
     };
-    sender
-        .send(msg)
-        .await
-        .map_err(|_| AppError::Internal("Failed to send upgrade command".into()))?;
+    if let Err(_send_error) = sender.send(msg).await {
+        state.upgrade_tracker.mark_failed(
+            UpgradeLookup::from_job(&job),
+            job.stage,
+            "Failed to send upgrade command".into(),
+            None,
+        );
+        return Err(AppError::Internal("Failed to send upgrade command".into()));
+    }
 
     ok("ok")
 }

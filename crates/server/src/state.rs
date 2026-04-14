@@ -17,6 +17,7 @@ use crate::service::high_risk_audit::{
     DockerLogsAuditContext, ExecAuditContext, TerminalAuditContext,
 };
 use crate::service::task_scheduler::TaskScheduler;
+use crate::service::upgrade_tracker::UpgradeJobTracker;
 
 /// Pending TOTP setup data, keyed by user_id.
 pub struct PendingTotp {
@@ -59,6 +60,8 @@ pub struct AppState {
     pub task_scheduler: Arc<TaskScheduler>,
     /// Shared alert state manager for dedup across poll-based and event-driven evaluation.
     pub alert_state_manager: AlertStateManager,
+    /// Tracks in-flight and recent agent upgrade jobs.
+    pub upgrade_tracker: UpgradeJobTracker,
     /// Pending mobile pairing codes for QR login, keyed by code.
     pub pending_pairs: DashMap<String, PendingPair>,
     /// Terminal session audit contexts keyed by session_id.
@@ -160,7 +163,7 @@ impl AppState {
         Ok(Arc::new(Self {
             db,
             agent_manager,
-            browser_tx,
+            browser_tx: browser_tx.clone(),
             config,
             geoip: Arc::new(std::sync::RwLock::new(geoip)),
             geoip_downloading: AtomicBool::new(false),
@@ -172,6 +175,7 @@ impl AppState {
             docker_viewers: DockerViewerTracker::new(),
             task_scheduler,
             alert_state_manager,
+            upgrade_tracker: UpgradeJobTracker::new(browser_tx.clone()),
             pending_pairs: DashMap::new(),
             terminal_audit_contexts: DashMap::new(),
             docker_logs_audit_contexts: DashMap::new(),

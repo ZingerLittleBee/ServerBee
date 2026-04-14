@@ -197,7 +197,7 @@ pub enum AgentMessage {
         job_id: Option<String>,
         target_version: String,
         stage: UpgradeStage,
-        error: Option<String>,
+        error: String,
         #[serde(default)]
         backup_path: Option<String>,
     },
@@ -438,6 +438,24 @@ pub enum BrowserClientMessage {
 mod tests {
     use super::*;
     use crate::types::DiskIo;
+
+    #[test]
+    fn test_agent_info_updated_accepts_optional_agent_version() {
+        let json = r#"{"type":"agent_info_updated","server_id":"s1","protocol_version":3,"agent_version":"1.2.3"}"#;
+
+        match serde_json::from_str::<BrowserMessage>(json).unwrap() {
+            BrowserMessage::AgentInfoUpdated {
+                server_id,
+                protocol_version,
+                agent_version,
+            } => {
+                assert_eq!(server_id, "s1");
+                assert_eq!(protocol_version, 3);
+                assert_eq!(agent_version.as_deref(), Some("1.2.3"));
+            }
+            _ => panic!("Expected AgentInfoUpdated"),
+        }
+    }
 
     #[test]
     fn test_welcome_without_capabilities_deserializes() {
@@ -1208,8 +1226,7 @@ mod tests {
 
     #[test]
     fn test_upgrade_messages_without_job_id_stay_backward_compatible() {
-        let server_json =
-            r#"{"type":"upgrade","version":"2.0.0","download_url":"https://example.com/serverbee.tar.gz","sha256":"abc123"}"#;
+        let server_json = r#"{"type":"upgrade","version":"2.0.0","download_url":"https://example.com/serverbee.tar.gz","sha256":"abc123"}"#;
         let server_msg: ServerMessage = serde_json::from_str(server_json).unwrap();
         match server_msg {
             ServerMessage::Upgrade {
@@ -1226,8 +1243,7 @@ mod tests {
             _ => panic!("Expected Upgrade"),
         }
 
-        let agent_json =
-            r#"{"type":"upgrade_progress","msg_id":"m1","target_version":"2.0.0","stage":"downloading"}"#;
+        let agent_json = r#"{"type":"upgrade_progress","msg_id":"m1","target_version":"2.0.0","stage":"downloading"}"#;
         let agent_msg: AgentMessage = serde_json::from_str(agent_json).unwrap();
         match agent_msg {
             AgentMessage::UpgradeProgress {
@@ -1275,30 +1291,13 @@ mod tests {
                 assert_eq!(upgrades[0].stage, UpgradeStage::Installing);
                 assert_eq!(upgrades[0].status, UpgradeStatus::Running);
                 assert_eq!(upgrades[0].error, None);
-                assert_eq!(upgrades[0].backup_path, Some("/backups/server-1.tar.gz".to_string()));
+                assert_eq!(
+                    upgrades[0].backup_path,
+                    Some("/backups/server-1.tar.gz".to_string())
+                );
                 assert!(upgrades[0].finished_at.is_none());
             }
             _ => panic!("Expected FullSync"),
-        }
-    }
-
-    #[test]
-    fn test_agent_info_updated_accepts_optional_agent_version() {
-        let json =
-            r#"{"type":"agent_info_updated","server_id":"server-1","protocol_version":3}"#;
-        let msg: BrowserMessage = serde_json::from_str(json).unwrap();
-
-        match msg {
-            BrowserMessage::AgentInfoUpdated {
-                server_id,
-                protocol_version,
-                agent_version,
-            } => {
-                assert_eq!(server_id, "server-1");
-                assert_eq!(protocol_version, 3);
-                assert_eq!(agent_version, None);
-            }
-            _ => panic!("Expected AgentInfoUpdated"),
         }
     }
 }
