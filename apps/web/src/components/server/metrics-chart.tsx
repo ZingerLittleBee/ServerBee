@@ -1,6 +1,8 @@
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 
+type XAxisInterval = number | 'preserveStart' | 'preserveEnd' | 'preserveStartEnd' | 'equidistantPreserveStart'
+
 interface MetricsChartProps {
   color?: string
   data: Record<string, unknown>[]
@@ -12,6 +14,7 @@ interface MetricsChartProps {
   formatValue?: (value: number) => string
   title: string
   unit?: string
+  xAxisInterval?: XAxisInterval
 }
 
 function defaultFormatTime(time: string): string {
@@ -33,7 +36,8 @@ export function MetricsChart({
   formatValue = defaultFormatValue,
   formatTick,
   formatTime = defaultFormatTime,
-  formatTooltipLabel
+  formatTooltipLabel,
+  xAxisInterval
 }: MetricsChartProps) {
   const chartConfig = {
     [dataKey]: { label: title, color }
@@ -45,7 +49,13 @@ export function MetricsChart({
       <ChartContainer className="h-[260px] w-full" config={chartConfig}>
         <AreaChart accessibilityLayer data={data}>
           <CartesianGrid vertical={false} />
-          <XAxis axisLine={false} dataKey="timestamp" tickFormatter={formatTime} tickLine={false} />
+          <XAxis
+            axisLine={false}
+            dataKey="timestamp"
+            interval={xAxisInterval}
+            tickFormatter={formatTime}
+            tickLine={false}
+          />
           <YAxis
             axisLine={false}
             domain={domain}
