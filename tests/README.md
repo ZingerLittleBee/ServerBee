@@ -57,6 +57,7 @@ docker compose up -d
 | [terminal.md](terminal.md) | Web 终端 | `/terminal/:serverId` |
 | [performance.md](performance.md) | 前端性能测试 | `/servers/:id` (realtime) |
 | [mobile-ios.md](mobile-ios.md) | iOS 移动端 & Mobile API | `/api/mobile/*`, `/settings/mobile-devices`, iOS App |
+| [agent-upgrade.md](agent-upgrade.md) | Agent 自动升级 | `/servers/:id` (Upgrade button) |
 
 ## 页面渲染快速验证
 

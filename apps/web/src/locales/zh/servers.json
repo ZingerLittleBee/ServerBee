@@ -179,5 +179,21 @@
   "toast_deleted": "已删除 {{count}} 台服务器",
   "toast_batch_delete_failed": "操作失败",
 
-  "current_targets": "当前目标"
+  "current_targets": "当前目标",
+
+  "upgrade_current_version": "当前版本",
+  "upgrade_latest_version": "最新",
+  "upgrade_start": "升级",
+  "upgrade_in_progress": "升级进行中",
+  "upgrade_stage_downloading": "下载中",
+  "upgrade_stage_verifying": "验证中",
+  "upgrade_stage_pre_flight": "预检中",
+  "upgrade_stage_installing": "安装中",
+  "upgrade_stage_restarting": "重启中",
+  "upgrade_status_running": "升级中",
+  "upgrade_status_succeeded": "升级完成",
+  "upgrade_status_failed": "升级失败",
+  "upgrade_status_timeout": "升级超时",
+  "upgrade_error_with_backup": "备份保存在",
+  "upgrade_backup_path": "备份位置"
 }
