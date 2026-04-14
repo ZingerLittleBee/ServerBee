@@ -17,6 +17,7 @@ use crate::service::high_risk_audit::{
     DockerLogsAuditContext, ExecAuditContext, TerminalAuditContext,
 };
 use crate::service::task_scheduler::TaskScheduler;
+use crate::service::upgrade_release::UpgradeReleaseService;
 use crate::service::upgrade_tracker::UpgradeJobTracker;
 
 /// Pending TOTP setup data, keyed by user_id.
@@ -62,6 +63,8 @@ pub struct AppState {
     pub alert_state_manager: AlertStateManager,
     /// Tracks in-flight and recent agent upgrade jobs.
     pub upgrade_tracker: UpgradeJobTracker,
+    /// Resolves latest agent release metadata and assets.
+    pub upgrade_release_service: UpgradeReleaseService,
     /// Pending mobile pairing codes for QR login, keyed by code.
     pub pending_pairs: DashMap<String, PendingPair>,
     /// Terminal session audit contexts keyed by session_id.
@@ -149,6 +152,7 @@ impl AppState {
             std::env::temp_dir().join("serverbee-transfers"),
         ));
         let task_scheduler = Arc::new(TaskScheduler::new(&config.scheduler.timezone).await?);
+        let upgrade_release_service = UpgradeReleaseService::new(&config.upgrade);
         let alert_state_manager = match AlertStateManager::load_from_db(&db).await {
             Ok(sm) => sm,
             Err(e) => {
@@ -176,6 +180,7 @@ impl AppState {
             task_scheduler,
             alert_state_manager,
             upgrade_tracker: UpgradeJobTracker::new(browser_tx.clone()),
+            upgrade_release_service,
             pending_pairs: DashMap::new(),
             terminal_audit_contexts: DashMap::new(),
             docker_logs_audit_contexts: DashMap::new(),
