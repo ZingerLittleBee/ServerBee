@@ -5,10 +5,15 @@ import { TrafficCard } from './traffic-card'
 
 const mockUseTraffic = vi.fn()
 const TabsContext = createContext<{ setValue: (value: string) => void; value: string } | null>(null)
+const translations: Record<string, string> = {
+  traffic_title: 'Traffic Statistics',
+  traffic_tab_today: 'Today',
+  traffic_tab_cycle: 'Monthly'
+}
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (_key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? _key
+    t: (key: string, options?: { defaultValue?: string }) => translations[key] ?? options?.defaultValue ?? key
   })
 }))
 
