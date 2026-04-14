@@ -28,6 +28,10 @@ vi.mock('react-i18next', () => ({
   })
 }))
 
+vi.mock('@/components/server/agent-version-section', () => ({
+  AgentVersionSection: () => <div>agent-version</div>
+}))
+
 vi.mock('@/components/server/capabilities-dialog', () => ({
   CapabilitiesDialog: () => <div>capabilities</div>
 }))
