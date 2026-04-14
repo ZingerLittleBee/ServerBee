@@ -1,6 +1,6 @@
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
@@ -8,7 +8,7 @@ use rand::Rng;
 use serverbee_common::constants::{
     CapabilityDeniedReason, DEFAULT_COMMAND_TIMEOUT_SECS, MAX_TASK_OUTPUT_SIZE, has_capability,
 };
-use serverbee_common::protocol::{AgentMessage, ServerMessage};
+use serverbee_common::protocol::{AgentMessage, ServerMessage, UpgradeStage};
 use serverbee_common::types::{NetworkInterface, NetworkProbeResultData, TracerouteHop};
 use sysinfo::Networks;
 use tokio::sync::mpsc;
@@ -29,6 +29,9 @@ const MAX_BACKOFF_SECS: u64 = 30;
 const JITTER_FACTOR: f64 = 0.2;
 const MAX_REREGISTER_ATTEMPTS: u32 = 3;
 const DOCKER_RETRY_SECS: u64 = 30;
+const UPGRADE_DOWNLOAD_TIMEOUT_SECS: u64 = 600;
+
+static UPGRADE_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
 pub struct Reporter {
     config: AgentConfig,
@@ -572,6 +575,7 @@ impl Reporter {
                 version,
                 download_url,
                 sha256,
+                job_id,
             } => {
                 let caps = capabilities.load(Ordering::SeqCst);
                 if !has_capability(caps, CAP_UPGRADE) {
@@ -591,10 +595,32 @@ impl Reporter {
                     write.send(Message::Text(json.into())).await?;
                     return Ok(());
                 }
+
+                if UPGRADE_IN_PROGRESS
+                    .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_err()
+                {
+                    let tx = cmd_result_tx.clone();
+                    tokio::spawn(async move {
+                        emit_upgrade_failure(
+                            &tx,
+                            job_id,
+                            version,
+                            UpgradeStage::Downloading,
+                            "another upgrade is already running".to_string(),
+                            None,
+                        )
+                        .await;
+                    });
+                    return Ok(());
+                }
+
                 tracing::info!("Upgrade requested: v{version} from {download_url}");
+                let tx = cmd_result_tx.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = perform_upgrade(&version, &download_url, &sha256).await {
+                    if let Err(e) = perform_upgrade(&version, &download_url, &sha256, job_id, tx.clone()).await {
                         tracing::error!("Upgrade to v{version} failed: {e}");
+                        UPGRADE_IN_PROGRESS.store(false, Ordering::SeqCst);
                     }
                 });
             }
@@ -1772,14 +1798,72 @@ async fn fetch_external_ip(url: &str) -> anyhow::Result<String> {
     Ok(ip)
 }
 
+async fn emit_upgrade_progress(
+    tx: &mpsc::Sender<AgentMessage>,
+    job_id: Option<String>,
+    version: &str,
+    stage: UpgradeStage,
+) {
+    let message = AgentMessage::UpgradeProgress {
+        msg_id: uuid::Uuid::new_v4().to_string(),
+        job_id,
+        target_version: version.to_string(),
+        stage,
+    };
+
+    if tx.send(message).await.is_err() {
+        tracing::warn!("Failed to emit upgrade progress: channel closed");
+    }
+}
+
+async fn emit_upgrade_failure(
+    tx: &mpsc::Sender<AgentMessage>,
+    job_id: Option<String>,
+    version: String,
+    stage: UpgradeStage,
+    error: String,
+    backup_path: Option<String>,
+) {
+    let message = AgentMessage::UpgradeResult {
+        msg_id: uuid::Uuid::new_v4().to_string(),
+        job_id,
+        target_version: version,
+        stage,
+        error,
+        backup_path,
+    };
+
+    if tx.send(message).await.is_err() {
+        tracing::warn!("Failed to emit upgrade failure: channel closed");
+    }
+}
+
 /// Download a new agent binary, verify checksum, replace current binary, and restart.
-async fn perform_upgrade(version: &str, download_url: &str, sha256: &str) -> anyhow::Result<()> {
+async fn perform_upgrade(
+    version: &str,
+    download_url: &str,
+    sha256: &str,
+    job_id: Option<String>,
+    tx: mpsc::Sender<AgentMessage>,
+) -> anyhow::Result<()> {
     use sha2::{Digest, Sha256};
     use std::io::Write;
 
+    emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::Downloading).await;
+
     // Validate URL scheme
     if !download_url.starts_with("https://") {
-        anyhow::bail!("Upgrade URL must use HTTPS, got: {download_url}");
+        let error = format!("Upgrade URL must use HTTPS, got: {download_url}");
+        emit_upgrade_failure(
+            &tx,
+            job_id,
+            version.to_string(),
+            UpgradeStage::Downloading,
+            error.clone(),
+            None,
+        )
+        .await;
+        anyhow::bail!(error);
     }
 
     let current_exe = std::env::current_exe()?;
@@ -1788,7 +1872,7 @@ async fn perform_upgrade(version: &str, download_url: &str, sha256: &str) -> any
 
     tracing::info!("Downloading agent v{version} from {download_url}...");
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(600)) // 10 minute timeout
+        .timeout(std::time::Duration::from_secs(UPGRADE_DOWNLOAD_TIMEOUT_SECS))
         .build()?;
     let response = client
         .get(download_url)
@@ -1797,18 +1881,40 @@ async fn perform_upgrade(version: &str, download_url: &str, sha256: &str) -> any
         .await?;
 
     if !response.status().is_success() {
-        anyhow::bail!("Download failed with status {}", response.status());
+        let error = format!("Download failed with status {}", response.status());
+        emit_upgrade_failure(
+            &tx,
+            job_id,
+            version.to_string(),
+            UpgradeStage::Downloading,
+            error.clone(),
+            None,
+        )
+        .await;
+        anyhow::bail!(error);
     }
 
     let bytes = response.bytes().await?;
     tracing::info!("Downloaded {} bytes", bytes.len());
+
+    emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::Verifying).await;
 
     // Mandatory SHA-256 verification
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
     let actual = format!("{:x}", hasher.finalize());
     if actual != sha256 {
-        anyhow::bail!("Checksum mismatch: expected {sha256}, got {actual}");
+        let error = format!("Checksum mismatch: expected {sha256}, got {actual}");
+        emit_upgrade_failure(
+            &tx,
+            job_id.clone(),
+            version.to_string(),
+            UpgradeStage::Verifying,
+            error.clone(),
+            None,
+        )
+        .await;
+        anyhow::bail!(error);
     }
     tracing::info!("Checksum verified");
 
@@ -1826,6 +1932,8 @@ async fn perform_upgrade(version: &str, download_url: &str, sha256: &str) -> any
         std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755))?;
     }
 
+    emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::Installing).await;
+
     // Backup current binary and replace
     if backup_path.exists() {
         std::fs::remove_file(&backup_path)?;
@@ -1834,13 +1942,25 @@ async fn perform_upgrade(version: &str, download_url: &str, sha256: &str) -> any
     std::fs::rename(&tmp_path, &current_exe)?;
 
     tracing::info!("Agent binary replaced. Restarting...");
+    emit_upgrade_progress(&tx, job_id, version, UpgradeStage::Restarting).await;
 
     let args: Vec<String> = std::env::args().collect();
     let mut cmd = std::process::Command::new(&current_exe);
     if args.len() > 1 {
         cmd.args(&args[1..]);
     }
-    cmd.spawn()?;
+    if let Err(error) = cmd.spawn() {
+        emit_upgrade_failure(
+            &tx,
+            None,
+            version.to_string(),
+            UpgradeStage::Restarting,
+            error.to_string(),
+            Some(backup_path.display().to_string()),
+        )
+        .await;
+        return Err(error.into());
+    }
 
     std::process::exit(0);
 }

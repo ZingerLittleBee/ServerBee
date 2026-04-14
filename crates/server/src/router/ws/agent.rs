@@ -19,6 +19,7 @@ use crate::service::network_probe::NetworkProbeService;
 use crate::service::ping::PingService;
 use crate::service::record::RecordService;
 use crate::service::server::ServerService;
+use crate::service::upgrade_tracker::UpgradeLookup;
 use crate::state::AppState;
 use serverbee_common::constants::{MAX_WS_MESSAGE_SIZE, effective_capabilities};
 use serverbee_common::protocol::{AgentMessage, BrowserMessage, ServerMessage};
@@ -505,7 +506,17 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 .broadcast_browser(BrowserMessage::AgentInfoUpdated {
                     server_id: server_id.to_string(),
                     protocol_version: agent_pv,
+                    agent_version: Some(info.agent_version.clone()),
                 });
+
+            if let Some(job) = state.upgrade_tracker.get(server_id)
+                && job.status == serverbee_common::protocol::UpgradeStatus::Running
+                && job.target_version == info.agent_version
+            {
+                state
+                    .upgrade_tracker
+                    .mark_succeeded(UpgradeLookup::from_job(&job), None);
+            }
 
             // Send Ack
             if let Some(tx) = state.agent_manager.get_sender(server_id) {
@@ -549,6 +560,39 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 tracing::error!("Failed to write exec_finished audit log for {server_id}: {e}");
             }
             // Send Ack
+            if let Some(tx) = state.agent_manager.get_sender(server_id) {
+                let _ = tx.send(ServerMessage::Ack { msg_id }).await;
+            }
+        }
+        AgentMessage::UpgradeProgress {
+            msg_id,
+            job_id,
+            target_version,
+            stage,
+        } => {
+            state
+                .upgrade_tracker
+                .update_stage(UpgradeLookup::new(server_id, job_id, target_version), stage);
+
+            if let Some(tx) = state.agent_manager.get_sender(server_id) {
+                let _ = tx.send(ServerMessage::Ack { msg_id }).await;
+            }
+        }
+        AgentMessage::UpgradeResult {
+            msg_id,
+            job_id,
+            target_version,
+            stage,
+            error,
+            backup_path,
+        } => {
+            state.upgrade_tracker.mark_failed(
+                UpgradeLookup::new(server_id, job_id, target_version),
+                stage,
+                error,
+                backup_path,
+            );
+
             if let Some(tx) = state.agent_manager.get_sender(server_id) {
                 let _ = tx.send(ServerMessage::Ack { msg_id }).await;
             }
@@ -624,6 +668,13 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                         tracing::error!("Failed to write CapabilityDenied task result: {e}");
                     }
                 }
+            }
+            if capability == "upgrade"
+                && let Some(job) = state.upgrade_tracker.get(server_id)
+            {
+                state
+                    .upgrade_tracker
+                    .mark_failed_by_capability_denied(UpgradeLookup::from_job(&job), reason);
             }
             // For terminal: unregister session so browser gets notified
             if let Some(sid) = &session_id {

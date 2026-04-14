@@ -350,6 +350,11 @@ export function ServerDetailPage() {
   const { id } = Route.useParams()
   const { range: rangeParam } = Route.useSearch()
   const [editOpen, setEditOpen] = useState(false)
+  const { data: latestAgentVersion } = useQuery<{ version?: string | null }>({
+    queryKey: ['agent', 'latest-version'],
+    queryFn: () => api.get<{ version?: string | null }>('/api/agent/latest-version'),
+    staleTime: 60_000
+  })
 
   const selectedRange = TIME_RANGES.findIndex((tr) => tr.key === rangeParam)
   const rangeIndex = selectedRange >= 0 ? selectedRange : 0
@@ -581,7 +586,7 @@ export function ServerDetailPage() {
         agentVersion={server.agent_version}
         configuredCapabilities={serverWithCaps.capabilities}
         effectiveCapabilities={serverWithCaps.effective_capabilities}
-        latestVersion={server.latest_agent_version}
+        latestVersion={latestAgentVersion?.version ?? null}
         serverId={id}
       />
 

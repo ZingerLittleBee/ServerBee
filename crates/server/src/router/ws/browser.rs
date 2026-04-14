@@ -255,6 +255,7 @@ async fn build_full_sync(state: &Arc<AppState>) -> BrowserMessage {
             tracing::error!("Failed to list servers for FullSync: {e}");
             return BrowserMessage::FullSync {
                 servers: Vec::new(),
+                upgrades: state.upgrade_tracker.snapshot(),
             };
         }
     };
@@ -351,7 +352,10 @@ async fn build_full_sync(state: &Arc<AppState>) -> BrowserMessage {
         })
         .collect();
 
-    BrowserMessage::FullSync { servers: statuses }
+    BrowserMessage::FullSync {
+        servers: statuses,
+        upgrades: state.upgrade_tracker.snapshot(),
+    }
 }
 
 async fn send_browser_message(

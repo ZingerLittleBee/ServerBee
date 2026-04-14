@@ -25,4 +25,6 @@ pub mod status_page;
 pub mod task_scheduler;
 pub mod traffic;
 pub mod uptime;
+pub mod upgrade_release;
+pub mod upgrade_tracker;
 pub mod user;

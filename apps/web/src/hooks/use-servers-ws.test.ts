@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import type { ServerMetrics } from './use-servers-ws'
-import { mergeServerUpdate, setServerCapabilities, setServerOnlineStatus } from './use-servers-ws'
+import { handleWsMessage, mergeServerUpdate, setServerCapabilities, setServerOnlineStatus } from './use-servers-ws'
 
 function makeServer(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
   return {
@@ -104,5 +105,107 @@ describe('setServerCapabilities', () => {
     expect(result[0].capabilities).toBe(64)
     expect(result[0].agent_local_capabilities).toBe(0)
     expect(result[0].effective_capabilities).toBe(0)
+  })
+})
+
+describe('handleWsMessage upgrade messages', () => {
+  function makeQueryClient() {
+    const cache = new Map<string, unknown>()
+    return {
+      setQueryData: (key: unknown[], value: unknown | ((prev: unknown) => unknown)) => {
+        const cacheKey = JSON.stringify(key)
+        const prev = cache.get(cacheKey)
+        const next = typeof value === 'function' ? (value as (prev: unknown) => unknown)(prev) : value
+        cache.set(cacheKey, next)
+      }
+    }
+  }
+
+  it('hydrates upgrade jobs from full_sync', () => {
+    useUpgradeJobsStore.setState({ jobs: new Map() })
+    const queryClient = makeQueryClient()
+
+    handleWsMessage(
+      {
+        type: 'full_sync',
+        servers: [],
+        upgrades: [
+          {
+            server_id: 'server-1',
+            job_id: 'job-1',
+            target_version: '1.2.3',
+            stage: 'downloading',
+            status: 'running',
+            error: null,
+            backup_path: null,
+            started_at: '2024-01-01T00:00:00Z',
+            finished_at: null
+          }
+        ]
+      },
+      queryClient as never
+    )
+
+    expect(useUpgradeJobsStore.getState().jobs.get('server-1')?.job_id).toBe('job-1')
+  })
+
+  it('updates existing upgrade stage from upgrade_progress', () => {
+    useUpgradeJobsStore.setState({
+      jobs: new Map([
+        [
+          'server-1',
+          {
+            server_id: 'server-1',
+            job_id: 'job-1',
+            target_version: '1.2.3',
+            stage: 'downloading',
+            status: 'running',
+            error: null,
+            backup_path: null,
+            started_at: '2024-01-01T00:00:00Z',
+            finished_at: null
+          }
+        ]
+      ])
+    })
+    const queryClient = makeQueryClient()
+
+    handleWsMessage(
+      {
+        type: 'upgrade_progress',
+        server_id: 'server-1',
+        job_id: 'job-1',
+        target_version: '1.2.3',
+        stage: 'installing'
+      },
+      queryClient as never
+    )
+
+    expect(useUpgradeJobsStore.getState().jobs.get('server-1')?.stage).toBe('installing')
+  })
+
+  it('stores terminal upgrade result from upgrade_result', () => {
+    useUpgradeJobsStore.setState({ jobs: new Map() })
+    const queryClient = makeQueryClient()
+
+    handleWsMessage(
+      {
+        type: 'upgrade_result',
+        server_id: 'server-1',
+        job_id: 'job-1',
+        target_version: '1.2.3',
+        status: 'failed',
+        stage: 'installing',
+        error: 'install failed',
+        backup_path: '/tmp/backup'
+      },
+      queryClient as never
+    )
+
+    const job = useUpgradeJobsStore.getState().jobs.get('server-1')
+    expect(job?.status).toBe('failed')
+    expect(job?.error).toBe('install failed')
+    expect(job?.backup_path).toBe('/tmp/backup')
+    expect(job?.finished_at).not.toBeNull()
   })
 })
