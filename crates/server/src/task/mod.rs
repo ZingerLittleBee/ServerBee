@@ -6,4 +6,3 @@ pub mod record_writer;
 pub mod service_monitor_checker;
 pub mod session_cleaner;
 pub mod task_scheduler;
-pub mod upgrade_timeout;
