@@ -7,18 +7,30 @@ import {
   CAP_PING_ICMP,
   CAP_PING_TCP,
   CAP_TERMINAL,
+  CAP_UPGRADE,
+  CAPABILITIES,
   getEffectiveCapabilityEnabled,
   hasCap,
   isClientCapabilityLocked
 } from './capabilities'
 
 describe('capability toggles', () => {
-  it('default capabilities have ping enabled, terminal disabled', () => {
+  it('default capabilities enable upgrade alongside the low-risk probes', () => {
     expect(hasCap(CAP_DEFAULT, CAP_TERMINAL)).toBe(false)
     expect(hasCap(CAP_DEFAULT, CAP_EXEC)).toBe(false)
+    expect(hasCap(CAP_DEFAULT, CAP_UPGRADE)).toBe(true)
     expect(hasCap(CAP_DEFAULT, CAP_PING_ICMP)).toBe(true)
     expect(hasCap(CAP_DEFAULT, CAP_PING_TCP)).toBe(true)
     expect(hasCap(CAP_DEFAULT, CAP_PING_HTTP)).toBe(true)
+  })
+
+  it('classifies auto upgrade as a low-risk capability', () => {
+    const upgradeCapability = CAPABILITIES.find(({ key }) => key === 'upgrade')
+
+    expect(upgradeCapability).toMatchObject({
+      bit: CAP_UPGRADE,
+      risk: 'low'
+    })
   })
 
   it('toggle on adds bit', () => {

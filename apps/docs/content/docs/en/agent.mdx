@@ -177,8 +177,8 @@ serverbee-agent --allow-cap terminal --allow-cap exec
 serverbee-agent --deny-cap ping_http
 ```
 
-- Low-risk capabilities (`ping_icmp`, `ping_tcp`, `ping_http`) are enabled by default
-- High-risk capabilities (`terminal`, `exec`, `upgrade`, `file`, `docker`) are disabled by default
+- Low-risk capabilities (`upgrade`, `ping_icmp`, `ping_tcp`, `ping_http`) are enabled by default
+- High-risk capabilities (`terminal`, `exec`, `file`, `docker`) are disabled by default
 - `--deny-cap` always wins over `--allow-cap`
 
 This policy is local to the agent process. The server can only further restrict capabilities, it cannot override an agent-local deny.

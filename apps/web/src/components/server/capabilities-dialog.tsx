@@ -21,8 +21,6 @@ interface ServerWithCaps {
   protocol_version?: number | null
 }
 
-const HIGH_RISK_KEYS = new Set(['exec', 'file', 'terminal', 'upgrade'])
-
 export function CapabilitiesDialog({ server }: { server: ServerWithCaps }) {
   const { t } = useTranslation('servers')
   const { user } = useAuth()
@@ -48,7 +46,7 @@ export function CapabilitiesDialog({ server }: { server: ServerWithCaps }) {
       },
       {
         description: t('cap_group_low_risk_desc', {
-          defaultValue: 'Network checks and observability features that are generally safe to keep enabled.'
+          defaultValue: 'Monitoring and maintenance features that are generally safe to keep enabled by default.'
         }),
         items: CAPABILITIES.filter(({ risk }) => risk === 'low'),
         key: 'low',
@@ -128,7 +126,7 @@ export function CapabilitiesDialog({ server }: { server: ServerWithCaps }) {
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-2">
                                 <span className="font-medium">{t(capability.labelKey)}</span>
-                                <Badge variant={HIGH_RISK_KEYS.has(capability.key) ? 'destructive' : 'secondary'}>
+                                <Badge variant={capability.risk === 'high' ? 'destructive' : 'secondary'}>
                                   {capability.risk === 'high' ? t('cap_high_risk') : t('cap_low_risk')}
                                 </Badge>
                               </div>

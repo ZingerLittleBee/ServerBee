@@ -16,12 +16,11 @@ ServerBee 定义了 8 个功能位，分为两个风险等级：
 |------|------|------|
 | **Web Terminal** | `CAP_TERMINAL` (1) | 允许通过浏览器打开远程终端 |
 | **Remote Exec** | `CAP_EXEC` (2) | 允许远程执行命令 |
-| **Auto Upgrade** | `CAP_UPGRADE` (4) | 允许远程推送二进制升级 |
 | **File Manager** | `CAP_FILE` (64) | 允许远程文件浏览、编辑、上传/下载 |
 | **Docker Management** | `CAP_DOCKER` (128) | 允许 Docker 容器监控、日志流、容器操作 |
 
 <Callout type="warn">
-这些功能涉及在目标服务器上执行任意代码、替换二进制文件或访问文件系统，因此默认关闭。请仅在信任的服务器上启用。
+这些功能涉及在目标服务器上执行任意代码或访问文件系统，因此默认关闭。请仅在信任的服务器上启用。
 </Callout>
 
 <Callout type="info">
@@ -32,11 +31,12 @@ ServerBee 定义了 8 个功能位，分为两个风险等级：
 
 | 功能 | 位值 | 说明 |
 |------|------|------|
+| **Auto Upgrade** | `CAP_UPGRADE` (4) | 允许远程推送二进制升级 |
 | **ICMP Ping** | `CAP_PING_ICMP` (8) | 允许执行 ICMP 探测任务 |
 | **TCP Probe** | `CAP_PING_TCP` (16) | 允许执行 TCP 端口探测任务 |
 | **HTTP Probe** | `CAP_PING_HTTP` (32) | 允许执行 HTTP 探测任务 |
 
-新注册的 Agent 默认 capabilities 值为 `56`（即三个 Ping 功能全部启用）。
+新注册的 Agent 默认 capabilities 值为 `60`（即自动升级和三个 Ping 功能全部启用）。
 
 ## 配置方式
 
@@ -74,10 +74,10 @@ curl -X PUT https://your-server/api/servers/batch-capabilities \
 ```
 
 capabilities 值是各功能位的按位或（OR）结果。例如：
-- `56` = ICMP + TCP + HTTP（默认值）
+- `60` = 自动升级 + ICMP + TCP + HTTP（默认值）
 - `255` = 全部功能启用
-- `184` = ICMP + TCP + HTTP + Docker
-- `120` = ICMP + TCP + HTTP + 文件管理
+- `188` = 自动升级 + ICMP + TCP + HTTP + Docker
+- `124` = 自动升级 + ICMP + TCP + HTTP + 文件管理
 - `0` = 全部功能禁用
 
 ## 双重验证机制

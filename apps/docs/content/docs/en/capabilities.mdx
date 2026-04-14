@@ -16,12 +16,11 @@ ServerBee defines 8 capability bits, divided into two risk levels:
 |------------|-----------|-------------|
 | **Web Terminal** | `CAP_TERMINAL` (1) | Allow opening a remote terminal via browser |
 | **Remote Exec** | `CAP_EXEC` (2) | Allow remote command execution |
-| **Auto Upgrade** | `CAP_UPGRADE` (4) | Allow remote binary upgrades |
 | **File Manager** | `CAP_FILE` (64) | Allow remote file browsing, editing, upload/download |
 | **Docker Management** | `CAP_DOCKER` (128) | Allow Docker container monitoring, log streaming, and container actions |
 
 <Callout type="warn">
-These capabilities involve executing arbitrary code, replacing binaries, or accessing the filesystem on the target server. They are disabled by default. Only enable them on trusted servers.
+These capabilities involve executing arbitrary code or accessing the filesystem on the target server. They are disabled by default. Only enable them on trusted servers.
 </Callout>
 
 <Callout type="info">
@@ -32,11 +31,12 @@ File Manager requires additional agent-side configuration (`root_paths`, `deny_p
 
 | Capability | Bit Value | Description |
 |------------|-----------|-------------|
+| **Auto Upgrade** | `CAP_UPGRADE` (4) | Allow remote binary upgrades |
 | **ICMP Ping** | `CAP_PING_ICMP` (8) | Allow ICMP probe tasks |
 | **TCP Probe** | `CAP_PING_TCP` (16) | Allow TCP port probe tasks |
 | **HTTP Probe** | `CAP_PING_HTTP` (32) | Allow HTTP probe tasks |
 
-Newly registered agents default to a capabilities value of `56` (all three ping capabilities enabled).
+Newly registered agents default to a capabilities value of `60` (auto upgrade plus all three ping capabilities enabled).
 
 ## Configuration
 
@@ -74,10 +74,10 @@ curl -X PUT https://your-server/api/servers/batch-capabilities \
 ```
 
 The capabilities value is a bitwise OR of individual capability bits. Examples:
-- `56` = ICMP + TCP + HTTP (default)
+- `60` = Auto Upgrade + ICMP + TCP + HTTP (default)
 - `255` = all capabilities enabled
-- `184` = ICMP + TCP + HTTP + Docker
-- `120` = ICMP + TCP + HTTP + File Manager
+- `188` = Auto Upgrade + ICMP + TCP + HTTP + Docker
+- `124` = Auto Upgrade + ICMP + TCP + HTTP + File Manager
 - `0` = all capabilities disabled
 
 ## Defense in Depth

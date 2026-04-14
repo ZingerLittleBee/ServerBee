@@ -94,7 +94,7 @@
   "cap_group_high_risk": "高风险操作",
   "cap_group_high_risk_desc": "可能改变系统状态，或开放终端、文件等敏感访问能力。",
   "cap_group_low_risk": "探测与维护",
-  "cap_group_low_risk_desc": "以探测和可观测性为主，通常可以安全开启。",
+  "cap_group_low_risk_desc": "以探测和日常维护为主，通常适合默认开启。",
   "cap_terminal": "Web 终端",
   "cap_exec": "远程执行",
   "cap_upgrade": "自动升级",
