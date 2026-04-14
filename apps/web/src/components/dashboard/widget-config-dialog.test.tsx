@@ -3,9 +3,35 @@ import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { WidgetConfigDialog } from './widget-config-dialog'
 
+const translations: Record<string, string> = {
+  'dialogs.widgetConfig.configureTitle': 'Configure Widget',
+  'dialogs.widgetConfig.editTitle': 'Edit Widget',
+  'dialogs.widgetConfig.labels.titleOptional': 'Title (optional)',
+  'dialogs.widgetConfig.placeholders.widgetTitle': 'Widget title',
+  'dialogs.widgetConfig.messages.noConfigNeeded': 'No additional configuration needed.',
+  'widgets.common.labels.server': 'Server',
+  'widgets.common.labels.servers': 'Servers',
+  'widgets.common.labels.metric': 'Metric',
+  'widgets.common.labels.timeRange': 'Time Range',
+  'widgets.common.labels.days': 'Days',
+  'widgets.common.labels.markdownContent': 'Markdown Content',
+  'widgets.common.placeholders.writeMarkdown': 'Write markdown here...',
+  'common.metrics.serverCount': 'Server Count',
+  'common.metrics.avgCpu': 'Average CPU',
+  'common.metrics.avgMemory': 'Average Memory',
+  'common.metrics.health': 'Health',
+  'common.metrics.cpu': 'CPU',
+  'common.metrics.memory': 'Memory',
+  'common.timeRange.1hour': '1 hour',
+  'common.timeRange.24hours': '24 hours',
+  'common.timeRange.30days': '30 days',
+  'common.timeRange.60days': '60 days',
+  'common.timeRange.90days': '90 days'
+}
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback ?? key
+    t: (key: string, fallback?: string) => translations[key] ?? fallback ?? key
   })
 }))
 
@@ -45,7 +71,22 @@ vi.mock('@/components/ui/button', () => ({
 }))
 
 vi.mock('@/components/ui/checkbox', () => ({
-  Checkbox: (props: Record<string, unknown>) => <input data-testid="checkbox" type="checkbox" {...props} />
+  Checkbox: ({
+    checked,
+    onCheckedChange,
+    ...props
+  }: {
+    checked?: boolean
+    onCheckedChange?: (checked: boolean) => void
+  } & Record<string, unknown>) => (
+    <input
+      checked={checked}
+      data-testid="checkbox"
+      onChange={() => onCheckedChange?.(!checked)}
+      type="checkbox"
+      {...props}
+    />
+  )
 }))
 
 vi.mock('@/lib/markdown', () => ({
