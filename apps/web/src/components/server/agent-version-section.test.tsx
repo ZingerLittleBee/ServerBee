@@ -24,6 +24,9 @@ vi.mock('@/lib/capabilities', () => ({
   CAP_UPGRADE: 4,
   getEffectiveCapabilityEnabled: (...args: unknown[]) => mockGetEffectiveCapabilityEnabled(...args)
 }))
+const UPGRADE_LATEST_PATTERN = /upgrade_latest_version/
+const UPGRADE_ERROR_WITH_BACKUP_PATTERN = /upgrade_error_with_backup/
+const UPGRADE_BACKUP_PATH_PATTERN = /upgrade_backup_path/
 
 describe('AgentVersionSection', () => {
   beforeEach(() => {
@@ -73,7 +76,7 @@ describe('AgentVersionSection', () => {
         serverId="srv-1"
       />
     )
-    expect(screen.getByText(/upgrade_latest_version/)).toBeDefined()
+    expect(screen.getByText(UPGRADE_LATEST_PATTERN)).toBeDefined()
   })
 
   it('shows upgrade button for admin when update available and capability enabled', () => {
@@ -232,7 +235,7 @@ describe('AgentVersionSection', () => {
     )
     expect(screen.getByText('upgrade_status_failed')).toBeDefined()
     expect(screen.getByText('Download failed: connection timeout')).toBeDefined()
-    expect(screen.getByText(/upgrade_error_with_backup/)).toBeDefined()
+    expect(screen.getByText(UPGRADE_ERROR_WITH_BACKUP_PATTERN)).toBeDefined()
   })
 
   it('shows timeout state with backup path', () => {
@@ -261,7 +264,7 @@ describe('AgentVersionSection', () => {
       />
     )
     expect(screen.getByText('upgrade_status_timeout')).toBeDefined()
-    expect(screen.getByText(/upgrade_backup_path/)).toBeDefined()
+    expect(screen.getByText(UPGRADE_BACKUP_PATH_PATTERN)).toBeDefined()
   })
 
   it('disables upgrade button while loading', () => {

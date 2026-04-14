@@ -29,14 +29,16 @@ export function UpgradeJobBadge({ job }: UpgradeJobBadgeProps) {
   const Icon = config.icon
 
   return (
-    <TooltipProvider delayDuration={100}>
+    <TooltipProvider delay={100}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Badge className="gap-1" variant={config.variant}>
-            <Icon className={`size-3 ${job.status === 'running' ? 'animate-spin' : ''}`} />
-            {job.status === 'running' && t(`upgrade_stage_${job.stage}`)}
-          </Badge>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <Badge className="gap-1" variant={config.variant}>
+              <Icon className={`size-3 ${job.status === 'running' ? 'animate-spin' : ''}`} />
+              {job.status === 'running' && t(`upgrade_stage_${job.stage}`)}
+            </Badge>
+          }
+        />
         <TooltipContent side="top">
           <div className="space-y-1">
             <p className="font-medium">{t(config.label)}</p>
