@@ -568,45 +568,10 @@ async fn trigger_upgrade(
         format!("serverbee-agent-{os}-{arch}")
     };
 
-    let base_url = &state.config.upgrade.release_base_url;
-    let download_url = format!("{base_url}/download/v{version}/{asset_name}");
-
-    // Fetch checksums.txt
-    let checksums_url = format!("{base_url}/download/v{version}/checksums.txt");
-    let checksums_response = reqwest::get(&checksums_url)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to fetch checksums: {e}")))?;
-
-    if !checksums_response.status().is_success() {
-        return Err(AppError::NotFound(format!(
-            "Checksums not found for version v{version} (HTTP {})",
-            checksums_response.status()
-        )));
-    }
-
-    let checksums_body = checksums_response
-        .text()
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to read checksums: {e}")))?;
-
-    // Parse: each line is "<sha256>  <filename>" or "<sha256> <filename>"
-    let sha256 = checksums_body
-        .lines()
-        .find_map(|line| {
-            let mut parts = line.splitn(2, |c: char| c.is_whitespace());
-            let hash = parts.next()?;
-            let name = parts.next()?.trim();
-            if name == asset_name {
-                Some(hash.to_string())
-            } else {
-                None
-            }
-        })
-        .ok_or_else(|| {
-            AppError::NotFound(format!(
-                "Checksum not found for {asset_name} in v{version} release"
-            ))
-        })?;
+    let asset = state
+        .upgrade_release_service
+        .resolve_asset(&version, &asset_name)
+        .await?;
 
     let sender = state
         .agent_manager
@@ -625,8 +590,8 @@ async fn trigger_upgrade(
 
     let msg = ServerMessage::Upgrade {
         version: version.to_string(),
-        download_url,
-        sha256,
+        download_url: asset.download_url,
+        sha256: asset.sha256,
         job_id: Some(job.job_id.clone()),
     };
     if let Err(_send_error) = sender.send(msg).await {

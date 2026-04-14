@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use axum::extract::{ConnectInfo, State};
 use axum::http::HeaderMap;
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::Utc;
 use sea_orm::{
@@ -19,6 +19,7 @@ use crate::router::utils::extract_client_ip;
 use crate::service::auth::AuthService;
 use crate::service::config::ConfigService;
 use crate::service::network_probe::NetworkProbeService;
+use crate::service::upgrade_release::LatestAgentVersionResponse;
 use crate::state::AppState;
 
 const CONFIG_KEY_AUTO_DISCOVERY: &str = "auto_discovery_key";
@@ -39,6 +40,25 @@ pub struct RegisterResponse {
 /// Public routes for agent registration (Bearer auth checked inside handler).
 pub fn public_router() -> Router<Arc<AppState>> {
     Router::new().route("/agent/register", post(register))
+}
+
+pub fn read_router() -> Router<Arc<AppState>> {
+    Router::new().route("/agent/latest-version", get(latest_version))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/agent/latest-version",
+    tag = "agent",
+    responses(
+        (status = 200, description = "Latest agent release metadata", body = LatestAgentVersionResponse),
+    ),
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
+)]
+pub async fn latest_version(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ApiResponse<LatestAgentVersionResponse>>, AppError> {
+    ok(state.upgrade_release_service.latest().await)
 }
 
 #[utoipa::path(
