@@ -540,7 +540,7 @@ export function ServerDetailPage() {
           {t('detail_back')}
         </Link>
 
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3">
               {flag && <span className="text-xl">{flag}</span>}
@@ -549,25 +549,27 @@ export function ServerDetailPage() {
               <UpgradeJobBadge job={upgradeJob} />
             </div>
             <ServerInfoMeta server={server} />
-            <div className="mt-4">
-              <AgentVersionSection
-                agentVersion={server.agent_version}
-                configuredCapabilities={serverWithCaps.capabilities}
-                effectiveCapabilities={serverWithCaps.effective_capabilities}
-                latestVersion={latestAgentVersion?.version ?? null}
-                serverId={id}
-              />
-            </div>
           </div>
-          <ServerActionButtons
-            dockerEnabled={dockerEnabled}
-            fileEnabled={fileEnabled}
-            id={id}
-            isOnline={isOnline}
-            onEditOpen={() => setEditOpen(true)}
-            serverWithCaps={serverWithCaps}
-            terminalEnabled={terminalEnabled}
-          />
+          <div className="sm:col-span-2">
+            <AgentVersionSection
+              agentVersion={server.agent_version}
+              configuredCapabilities={serverWithCaps.capabilities}
+              effectiveCapabilities={serverWithCaps.effective_capabilities}
+              latestVersion={latestAgentVersion?.version ?? null}
+              serverId={id}
+            />
+          </div>
+          <div className="sm:col-start-2 sm:row-start-1 sm:justify-self-end">
+            <ServerActionButtons
+              dockerEnabled={dockerEnabled}
+              fileEnabled={fileEnabled}
+              id={id}
+              isOnline={isOnline}
+              onEditOpen={() => setEditOpen(true)}
+              serverWithCaps={serverWithCaps}
+              terminalEnabled={terminalEnabled}
+            />
+          </div>
         </div>
       </div>
 

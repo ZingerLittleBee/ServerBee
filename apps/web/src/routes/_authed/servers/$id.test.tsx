@@ -182,7 +182,7 @@ describe('ServerDetailPage', () => {
     expect(container).toHaveTextContent('1.3.0')
   })
 
-  it('renders the upgrade card directly after server metadata in the header area', () => {
+  it('places the upgrade card in its own full-width header row', () => {
     mockUseUptimeDaily.mockReturnValue({
       data: [{ date: '2026-04-14', total: 100, up: 100 }]
     })
@@ -192,8 +192,11 @@ describe('ServerDetailPage', () => {
     const agentMeta = screen.getByText('detail_agent_label')
     const upgradeCard = screen.getByTestId('agent-version-section')
     const editButton = screen.getByText('detail_edit')
+    const headerGrid = upgradeCard.parentElement?.parentElement
 
-    expect(agentMeta.compareDocumentPosition(upgradeCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(upgradeCard.compareDocumentPosition(editButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(upgradeCard.parentElement).toHaveClass('sm:col-span-2')
+    expect(headerGrid?.children[0]).toContainElement(agentMeta)
+    expect(headerGrid?.children[1]).toContainElement(upgradeCard)
+    expect(headerGrid?.children[2]).toContainElement(editButton)
   })
 })
