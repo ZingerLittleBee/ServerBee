@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.8] - 2026-04-15
+
+### Added
+
+- **Diceui data-table on /servers** -- Replaced the hand-rolled servers-list table with the `@diceui/data-table` registry. Adds URL-synced status and group filters, client-side pagination (pageSize 20), and stabilizes column layout (`table-fixed`, explicit widths, `tabular-nums`) so WebSocket metric updates no longer cause horizontal jitter. The upgrade badge is inlined next to the server name, dropping the blank upgrade column
+
+### Changed
+
+- **Auto-upgrade reclassified as low risk** -- `CAP_UPGRADE` is now treated as a low-risk capability and included in `CAP_DEFAULT`. The capabilities UI regroups and relabels the badge accordingly, with docs and QA notes updated to match
+- **Agent version card in server header** -- The agent version card now lives in the server detail header beside metadata and actions, spanning its own full-width row. Header ordering is asserted in the server detail route test
+
+### Fixed
+
+- **Realtime chart stops updating** -- `useRealtimeMetrics` no longer mutates the sparkline buffer in place, so React detects buffer changes and realtime charts refresh continuously without requiring a tab switch to reveal accumulated points
+- **Realtime chart axis labels** -- X-axis ticks now show `hh:mm` with consecutive duplicates hidden, the first data point is always labelled, and tooltips display full `hh:mm:ss`. `MetricsChart` exposes an `xAxisInterval` prop so the realtime path forces a tick per data point
+
 ## [0.8.6] - 2026-04-14
 
 ### Added
