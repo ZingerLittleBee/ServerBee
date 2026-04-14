@@ -101,17 +101,6 @@ export type RegisterResponse = S['RegisterResponse']
 export type UpgradeRequest = S['UpgradeRequest']
 export type AutoDiscoveryKeyResponse = S['AutoDiscoveryKeyResponse']
 
-// Upgrade jobs
-export type UpgradeJobDto = S['UpgradeJobDto']
-export type UpgradeStage = S['UpgradeStage']
-export type UpgradeStatus = S['UpgradeStatus']
-
-export interface LatestAgentVersionResponse {
-  download_url: string
-  sha256: string
-  version: string
-}
-
 // Traffic (manually typed until OpenAPI types are regenerated)
 export interface TrafficResponse {
   bytes_in: number
