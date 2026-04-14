@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::constants::CapabilityDeniedReason;
@@ -6,6 +7,44 @@ use crate::types::{
     FileEntry, NetworkInterface, NetworkProbeResultData, NetworkProbeTarget, PingResult,
     PingTaskConfig, SystemInfo, SystemReport, TaskResult, TracerouteHop,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub enum UpgradeStage {
+    Downloading,
+    Verifying,
+    PreFlight,
+    Installing,
+    Restarting,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub enum UpgradeStatus {
+    Running,
+    Succeeded,
+    Failed,
+    Timeout,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct UpgradeJobDto {
+    pub server_id: String,
+    pub job_id: String,
+    pub target_version: String,
+    pub stage: UpgradeStage,
+    pub status: UpgradeStatus,
+    #[serde(default)]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub backup_path: Option<String>,
+    pub started_at: DateTime<Utc>,
+    #[serde(default)]
+    pub finished_at: Option<DateTime<Utc>>,
+}
 
 /// Agent -> Server messages
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,6 +183,23 @@ pub enum AgentMessage {
         hops: Vec<TracerouteHop>,
         completed: bool,
         error: Option<String>,
+    },
+    UpgradeProgress {
+        msg_id: String,
+        #[serde(default)]
+        job_id: Option<String>,
+        target_version: String,
+        stage: UpgradeStage,
+    },
+    UpgradeResult {
+        msg_id: String,
+        #[serde(default)]
+        job_id: Option<String>,
+        target_version: String,
+        stage: UpgradeStage,
+        error: Option<String>,
+        #[serde(default)]
+        backup_path: Option<String>,
     },
     Pong,
 }
@@ -288,6 +344,8 @@ pub enum ServerMessage {
         version: String,
         download_url: String,
         sha256: String,
+        #[serde(default)]
+        job_id: Option<String>,
     },
     CapabilitiesSync {
         capabilities: u32,
@@ -300,6 +358,8 @@ pub enum ServerMessage {
 pub enum BrowserMessage {
     FullSync {
         servers: Vec<crate::types::ServerStatus>,
+        #[serde(default)]
+        upgrades: Vec<UpgradeJobDto>,
     },
     Update {
         servers: Vec<crate::types::ServerStatus>,
@@ -319,6 +379,23 @@ pub enum BrowserMessage {
     AgentInfoUpdated {
         server_id: String,
         protocol_version: u32,
+        #[serde(default)]
+        agent_version: Option<String>,
+    },
+    UpgradeProgress {
+        server_id: String,
+        job_id: String,
+        target_version: String,
+        stage: UpgradeStage,
+    },
+    UpgradeResult {
+        server_id: String,
+        job_id: String,
+        target_version: String,
+        status: UpgradeStatus,
+        stage: Option<UpgradeStage>,
+        error: Option<String>,
+        backup_path: Option<String>,
     },
     NetworkProbeUpdate {
         server_id: String,
@@ -1098,6 +1175,130 @@ mod tests {
                 assert_eq!(new_remote_addr, Some("5.6.7.8:12345".to_string()));
             }
             _ => panic!("Expected ServerIpChanged"),
+        }
+    }
+
+    #[test]
+    fn test_server_upgrade_with_job_id_round_trip() {
+        let msg = ServerMessage::Upgrade {
+            version: "2.0.0".to_string(),
+            download_url: "https://example.com/serverbee.tar.gz".to_string(),
+            sha256: "abc123".to_string(),
+            job_id: Some("job-1".to_string()),
+        };
+
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+
+        match parsed {
+            ServerMessage::Upgrade {
+                version,
+                download_url,
+                sha256,
+                job_id,
+            } => {
+                assert_eq!(version, "2.0.0");
+                assert_eq!(download_url, "https://example.com/serverbee.tar.gz");
+                assert_eq!(sha256, "abc123");
+                assert_eq!(job_id, Some("job-1".to_string()));
+            }
+            _ => panic!("Expected Upgrade"),
+        }
+    }
+
+    #[test]
+    fn test_upgrade_messages_without_job_id_stay_backward_compatible() {
+        let server_json =
+            r#"{"type":"upgrade","version":"2.0.0","download_url":"https://example.com/serverbee.tar.gz","sha256":"abc123"}"#;
+        let server_msg: ServerMessage = serde_json::from_str(server_json).unwrap();
+        match server_msg {
+            ServerMessage::Upgrade {
+                job_id,
+                version,
+                download_url,
+                sha256,
+            } => {
+                assert_eq!(job_id, None);
+                assert_eq!(version, "2.0.0");
+                assert_eq!(download_url, "https://example.com/serverbee.tar.gz");
+                assert_eq!(sha256, "abc123");
+            }
+            _ => panic!("Expected Upgrade"),
+        }
+
+        let agent_json =
+            r#"{"type":"upgrade_progress","msg_id":"m1","target_version":"2.0.0","stage":"downloading"}"#;
+        let agent_msg: AgentMessage = serde_json::from_str(agent_json).unwrap();
+        match agent_msg {
+            AgentMessage::UpgradeProgress {
+                msg_id,
+                job_id,
+                target_version,
+                stage,
+            } => {
+                assert_eq!(msg_id, "m1");
+                assert_eq!(job_id, None);
+                assert_eq!(target_version, "2.0.0");
+                assert_eq!(stage, UpgradeStage::Downloading);
+            }
+            _ => panic!("Expected UpgradeProgress"),
+        }
+    }
+
+    #[test]
+    fn test_browser_full_sync_with_upgrades_round_trip() {
+        let msg = BrowserMessage::FullSync {
+            servers: vec![],
+            upgrades: vec![UpgradeJobDto {
+                server_id: "server-1".to_string(),
+                job_id: "job-1".to_string(),
+                target_version: "2.0.0".to_string(),
+                stage: UpgradeStage::Installing,
+                status: UpgradeStatus::Running,
+                error: None,
+                backup_path: Some("/backups/server-1.tar.gz".to_string()),
+                started_at: chrono::Utc::now(),
+                finished_at: None,
+            }],
+        };
+
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: BrowserMessage = serde_json::from_str(&json).unwrap();
+
+        match parsed {
+            BrowserMessage::FullSync { servers, upgrades } => {
+                assert!(servers.is_empty());
+                assert_eq!(upgrades.len(), 1);
+                assert_eq!(upgrades[0].server_id, "server-1");
+                assert_eq!(upgrades[0].job_id, "job-1");
+                assert_eq!(upgrades[0].target_version, "2.0.0");
+                assert_eq!(upgrades[0].stage, UpgradeStage::Installing);
+                assert_eq!(upgrades[0].status, UpgradeStatus::Running);
+                assert_eq!(upgrades[0].error, None);
+                assert_eq!(upgrades[0].backup_path, Some("/backups/server-1.tar.gz".to_string()));
+                assert!(upgrades[0].finished_at.is_none());
+            }
+            _ => panic!("Expected FullSync"),
+        }
+    }
+
+    #[test]
+    fn test_agent_info_updated_accepts_optional_agent_version() {
+        let json =
+            r#"{"type":"agent_info_updated","server_id":"server-1","protocol_version":3}"#;
+        let msg: BrowserMessage = serde_json::from_str(json).unwrap();
+
+        match msg {
+            BrowserMessage::AgentInfoUpdated {
+                server_id,
+                protocol_version,
+                agent_version,
+            } => {
+                assert_eq!(server_id, "server-1");
+                assert_eq!(protocol_version, 3);
+                assert_eq!(agent_version, None);
+            }
+            _ => panic!("Expected AgentInfoUpdated"),
         }
     }
 }
