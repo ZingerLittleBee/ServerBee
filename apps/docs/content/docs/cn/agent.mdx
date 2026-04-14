@@ -197,8 +197,8 @@ serverbee-agent --allow-cap terminal --allow-cap exec
 serverbee-agent --deny-cap ping_http
 ```
 
-- 低风险能力（`ping_icmp`、`ping_tcp`、`ping_http`）默认开启
-- 高风险能力（`terminal`、`exec`、`upgrade`、`file`、`docker`）默认关闭
+- 低风险能力（`upgrade`、`ping_icmp`、`ping_tcp`、`ping_http`）默认开启
+- 高风险能力（`terminal`、`exec`、`file`、`docker`）默认关闭
 - `--deny-cap` 优先级高于 `--allow-cap`
 
 这个策略只由 Agent 本地进程控制。Server 只能进一步收紧，不能覆盖 Agent 本地的拒绝设置。
@@ -324,7 +324,7 @@ curl -X POST https://your-server/api/servers/{id}/upgrade \
 ```
 
 <Callout type="warn">
-自动更新需要 Agent 具有 `upgrade` 能力（CAP_UPGRADE）。默认情况下该能力是关闭的，需要管理员在 Settings → Capabilities 中手动启用。
+自动更新需要 Agent 具有 `upgrade` 能力（CAP_UPGRADE）。新注册 Agent 默认会启用该能力，管理员仍然可以在 Settings → Capabilities 中手动关闭。
 </Callout>
 
 <Cards>
