@@ -1,6 +1,6 @@
-import { render } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children?: ReactNode }) => <a href="/">{children}</a>,
@@ -34,7 +34,7 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('@/components/server/agent-version-section', () => ({
   AgentVersionSection: ({ latestVersion }: { latestVersion?: string | null }) => (
-    <div>{latestVersion ?? 'no-latest-version'}</div>
+    <div data-testid="agent-version-section">{latestVersion ?? 'no-latest-version'}</div>
   )
 }))
 
@@ -90,39 +90,17 @@ vi.mock('@/components/ui/tabs', () => ({
 }))
 
 vi.mock('@/components/uptime/uptime-timeline', () => ({
-  UptimeTimeline: () => <div>uptime</div>
+  UptimeTimeline: () => <div data-testid="uptime-timeline">uptime</div>
 }))
 
+const mockUseServer = vi.fn()
+const mockUseServerRecords = vi.fn()
+const mockUseUptimeDaily = vi.fn()
+
 vi.mock('@/hooks/use-api', () => ({
-  useServer: () => ({
-    data: {
-      agent_version: '1.0.0',
-      billing_cycle: null,
-      capabilities: 0,
-      country_code: 'US',
-      cpu_arch: 'x86_64',
-      cpu_cores: 4,
-      cpu_name: 'Test CPU',
-      disk_total: 1,
-      effective_capabilities: 0,
-      id: 'server-1',
-      ip_v4: null,
-      ip_v6: null,
-      ipv4: '127.0.0.1',
-      ipv6: null,
-      kernel_version: '6.0.0',
-      mem_total: 1,
-      name: 'test-server',
-      os: 'Ubuntu',
-      price: null,
-      protocol_version: 1,
-      region: 'test-region',
-      traffic_limit: null
-    },
-    isLoading: false
-  }),
-  useServerRecords: () => ({ data: [] }),
-  useUptimeDaily: () => ({ data: [] })
+  useServer: (serverId: string) => mockUseServer(serverId),
+  useServerRecords: (...args: unknown[]) => mockUseServerRecords(...args),
+  useUptimeDaily: (serverId: string) => mockUseUptimeDaily(serverId)
 }))
 
 vi.mock('@/hooks/use-realtime-metrics', () => ({
@@ -160,6 +138,38 @@ vi.mock('@/lib/widget-helpers', () => ({
 const { ServerDetailPage } = await import('./$id')
 
 describe('ServerDetailPage', () => {
+  beforeEach(() => {
+    mockUseServer.mockReturnValue({
+      data: {
+        agent_version: '1.0.0',
+        billing_cycle: null,
+        capabilities: 0,
+        country_code: 'US',
+        cpu_arch: 'x86_64',
+        cpu_cores: 4,
+        cpu_name: 'Test CPU',
+        disk_total: 1,
+        effective_capabilities: 0,
+        id: 'server-1',
+        ip_v4: null,
+        ip_v6: null,
+        ipv4: '127.0.0.1',
+        ipv6: null,
+        kernel_version: '6.0.0',
+        mem_total: 1,
+        name: 'test-server',
+        os: 'Ubuntu',
+        price: null,
+        protocol_version: 1,
+        region: 'test-region',
+        traffic_limit: null
+      },
+      isLoading: false
+    })
+    mockUseServerRecords.mockReturnValue({ data: [] })
+    mockUseUptimeDaily.mockReturnValue({ data: [] })
+  })
+
   it('keeps bottom padding on the page container', () => {
     const { container } = render(<ServerDetailPage />)
 
@@ -170,5 +180,20 @@ describe('ServerDetailPage', () => {
     const { container } = render(<ServerDetailPage />)
 
     expect(container).toHaveTextContent('1.3.0')
+  })
+
+  it('renders the upgrade card directly after server metadata in the header area', () => {
+    mockUseUptimeDaily.mockReturnValue({
+      data: [{ date: '2026-04-14', total: 100, up: 100 }]
+    })
+
+    render(<ServerDetailPage />)
+
+    const agentMeta = screen.getByText('detail_agent_label')
+    const upgradeCard = screen.getByTestId('agent-version-section')
+    const editButton = screen.getByText('detail_edit')
+
+    expect(agentMeta.compareDocumentPosition(upgradeCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(upgradeCard.compareDocumentPosition(editButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
