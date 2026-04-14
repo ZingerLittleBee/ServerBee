@@ -59,7 +59,6 @@ impl Modify for SecurityAddon {
         crate::router::api::status::public_status,
         // agent
         crate::router::api::agent::register,
-        crate::router::api::agent::latest_version,
         // servers
         crate::router::api::server::list_servers,
         crate::router::api::server::get_server,
@@ -222,7 +221,6 @@ impl Modify for SecurityAddon {
             crate::router::api::oauth::OAuthProvidersResponse,
             // agent
             crate::router::api::agent::RegisterResponse,
-            crate::service::upgrade_release::LatestAgentVersionResponse,
             // servers
             crate::router::api::server::ServerResponse,
             crate::router::api::server::BatchDeleteRequest,

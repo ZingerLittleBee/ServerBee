@@ -88,8 +88,6 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move { task::task_scheduler::run(s).await });
     let s = state.clone();
     tokio::spawn(async move { task::service_monitor_checker::run(s).await });
-    let s = state.clone();
-    tokio::spawn(async move { task::upgrade_timeout::run(s).await });
 
     // Build router
     let app = create_router(state);
