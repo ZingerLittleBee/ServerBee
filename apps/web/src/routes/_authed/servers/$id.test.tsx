@@ -18,6 +18,10 @@ vi.mock('@tanstack/react-query', () => ({
       return { data: [] }
     }
 
+    if (queryKey[0] === 'agent' && queryKey[1] === 'latest-version') {
+      return { data: { version: '1.3.0' } }
+    }
+
     return { data: [] }
   }
 }))
@@ -29,7 +33,7 @@ vi.mock('react-i18next', () => ({
 }))
 
 vi.mock('@/components/server/agent-version-section', () => ({
-  AgentVersionSection: () => <div>agent-version</div>
+  AgentVersionSection: ({ latestVersion }: { latestVersion?: string | null }) => <div>{latestVersion ?? 'no-latest-version'}</div>
 }))
 
 vi.mock('@/components/server/capabilities-dialog', () => ({
@@ -158,5 +162,11 @@ describe('ServerDetailPage', () => {
     const { container } = render(<ServerDetailPage />)
 
     expect(container.firstElementChild).toHaveClass('pb-6')
+  })
+
+  it('passes latest agent version into the version section', () => {
+    const { container } = render(<ServerDetailPage />)
+
+    expect(container).toHaveTextContent('1.3.0')
   })
 })

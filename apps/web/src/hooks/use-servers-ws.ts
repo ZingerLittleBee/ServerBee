@@ -7,6 +7,7 @@ import type {
   DockerContainerStats,
   DockerEventInfo
 } from '@/routes/_authed/servers/$serverId/docker/types'
+import { type UpgradeJob, useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 
 const MAX_DOCKER_EVENTS = 100
 
@@ -48,7 +49,7 @@ interface ServerMetrics {
 }
 
 type WsMessage =
-  | { type: 'full_sync'; servers: ServerMetrics[] }
+  | { type: 'full_sync'; servers: ServerMetrics[]; upgrades?: UpgradeJob[] }
   | { type: 'update'; servers: ServerMetrics[] }
   | { type: 'server_online'; server_id: string }
   | { type: 'server_offline'; server_id: string }
@@ -59,7 +60,7 @@ type WsMessage =
       agent_local_capabilities?: number | null
       effective_capabilities?: number | null
     }
-  | { type: 'agent_info_updated'; server_id: string; protocol_version: number }
+  | { type: 'agent_info_updated'; server_id: string; protocol_version: number; agent_version?: string | null }
   | { type: 'network_probe_update'; server_id: string; results: NetworkProbeResultData[] }
   | {
       type: 'docker_update'
@@ -69,6 +70,17 @@ type WsMessage =
     }
   | { type: 'docker_event'; server_id: string; event: DockerEventInfo }
   | { type: 'docker_availability_changed'; server_id: string; available: boolean }
+  | { type: 'upgrade_progress'; server_id: string; job_id: string; target_version: string; stage: string }
+  | {
+      type: 'upgrade_result'
+      server_id: string
+      job_id: string
+      target_version: string
+      status: string
+      stage?: string
+      error?: string | null
+      backup_path?: string | null
+    }
 
 export type { ServerMetrics }
 
@@ -181,6 +193,9 @@ function handleServerMetricsMessage(raw: { type: string } & Record<string, unkno
     const msg = raw as WsMessage & { type: 'full_sync' | 'update' }
     if (raw.type === 'full_sync') {
       queryClient.setQueryData<ServerMetrics[]>(['servers'], msg.servers)
+      if (Array.isArray(raw.upgrades)) {
+        useUpgradeJobsStore.getState().setJobs(raw.upgrades as UpgradeJob[])
+      }
     } else {
       queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
         prev ? mergeServerUpdate(prev, msg.servers) : msg.servers
@@ -241,12 +256,12 @@ function handleCapabilityMessage(raw: { type: string } & Record<string, unknown>
       return
     }
     const msg = raw as WsMessage & { type: 'agent_info_updated' }
-    const { server_id, protocol_version } = msg
+    const { server_id, protocol_version, agent_version } = msg
     queryClient.setQueryData(['servers', server_id], (prev: Record<string, unknown> | undefined) =>
-      prev ? { ...prev, protocol_version } : prev
+      prev ? { ...prev, protocol_version, agent_version: agent_version ?? null } : prev
     )
     queryClient.setQueryData<Record<string, unknown>[]>(['servers-list'], (prev) =>
-      prev?.map((s) => (s.id === server_id ? { ...s, protocol_version } : s))
+      prev?.map((s) => (s.id === server_id ? { ...s, protocol_version, agent_version: agent_version ?? null } : s))
     )
   }
 }
@@ -296,7 +311,7 @@ function handleDockerMessage(raw: { type: string } & Record<string, unknown>, qu
   }
 }
 
-function handleWsMessage(raw: unknown, queryClient: QueryClient): void {
+export function handleWsMessage(raw: unknown, queryClient: QueryClient): void {
   if (!isWsMessageLike(raw)) {
     console.warn('WS: unexpected message shape', raw)
     return
@@ -333,6 +348,64 @@ function handleWsMessage(raw: unknown, queryClient: QueryClient): void {
     case 'docker_availability_changed':
       handleDockerMessage(raw, queryClient)
       break
+    case 'upgrade_progress': {
+      if (
+        typeof raw.server_id !== 'string' ||
+        typeof raw.job_id !== 'string' ||
+        typeof raw.target_version !== 'string' ||
+        typeof raw.stage !== 'string'
+      ) {
+        break
+      }
+      const { server_id, target_version, stage } = raw as {
+        server_id: string
+        job_id: string
+        target_version: string
+        stage: string
+      }
+      const existingJob = useUpgradeJobsStore.getState().getJob(server_id)
+      if (existingJob) {
+        useUpgradeJobsStore.getState().setJob(server_id, {
+          ...existingJob,
+          stage: stage as UpgradeJob['stage'],
+          target_version
+        })
+      }
+      break
+    }
+    case 'upgrade_result': {
+      if (
+        typeof raw.server_id !== 'string' ||
+        typeof raw.job_id !== 'string' ||
+        typeof raw.target_version !== 'string' ||
+        typeof raw.status !== 'string'
+      ) {
+        break
+      }
+      const { server_id, job_id, target_version, status, stage, error, backup_path } = raw as {
+        server_id: string
+        job_id: string
+        target_version: string
+        status: string
+        stage?: string
+        error?: string | null
+        backup_path?: string | null
+      }
+      const existingJob = useUpgradeJobsStore.getState().getJob(server_id)
+      const now = new Date().toISOString()
+      useUpgradeJobsStore.getState().setJob(server_id, {
+        server_id,
+        job_id,
+        target_version,
+        stage: (stage as UpgradeJob['stage']) ?? existingJob?.stage ?? 'downloading',
+        status: status as UpgradeJob['status'],
+        error: error ?? null,
+        backup_path: backup_path ?? null,
+        started_at: existingJob?.started_at ?? now,
+        finished_at: now
+      })
+      break
+    }
     default:
       break
   }

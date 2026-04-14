@@ -275,6 +275,8 @@ impl Default for SchedulerConfig {
 pub struct UpgradeConfig {
     #[serde(default = "default_release_base_url")]
     pub release_base_url: String,
+    #[serde(default)]
+    pub latest_version_url: String,
 }
 
 fn default_release_base_url() -> String {
@@ -285,6 +287,7 @@ impl Default for UpgradeConfig {
     fn default() -> Self {
         Self {
             release_base_url: default_release_base_url(),
+            latest_version_url: String::new(),
         }
     }
 }

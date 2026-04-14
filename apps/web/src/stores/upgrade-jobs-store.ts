@@ -35,18 +35,15 @@ export const useUpgradeJobsStore = create<UpgradeJobsState>()((set, get) => ({
 
   setJob: (serverId: string, job: UpgradeJob) => {
     set((state) => {
-      const existingJob = state.jobs.get(serverId)
-
-      if (existingJob && existingJob.job_id === job.job_id) {
-        return { jobs: state.jobs }
-      }
-
       const newJobs = new Map(state.jobs)
       newJobs.set(serverId, job)
 
       if (isFinished(job.status)) {
         setTimeout(() => {
-          get().clearJob(serverId)
+          const currentJob = get().getJob(serverId)
+          if (currentJob?.job_id === job.job_id) {
+            get().clearJob(serverId)
+          }
         }, AUTO_CLEAR_DELAY)
       }
 
@@ -69,7 +66,10 @@ export const useUpgradeJobsStore = create<UpgradeJobsState>()((set, get) => ({
 
       if (isFinished(job.status)) {
         setTimeout(() => {
-          get().clearJob(job.server_id)
+          const currentJob = get().getJob(job.server_id)
+          if (currentJob?.job_id === job.job_id) {
+            get().clearJob(job.server_id)
+          }
         }, AUTO_CLEAR_DELAY)
       }
     }

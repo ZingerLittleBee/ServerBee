@@ -60,17 +60,16 @@ describe('useUpgradeJobsStore', () => {
       expect(storedJob?.target_version).toBe('2.0.0')
     })
 
-    it('skips update if incoming job_id equals existing job_id', () => {
+    it('updates existing job when incoming job_id matches', () => {
       const job1 = makeJob({ job_id: 'job-1', target_version: '1.0.0' })
       useUpgradeJobsStore.getState().setJob('server-1', job1)
 
-      // Try to update with same job_id but different data
-      const job2 = makeJob({ job_id: 'job-1', target_version: '2.0.0' })
+      const job2 = makeJob({ job_id: 'job-1', target_version: '2.0.0', stage: 'installing' })
       useUpgradeJobsStore.getState().setJob('server-1', job2)
 
       const storedJob = useUpgradeJobsStore.getState().jobs.get('server-1')
-      // Should keep the original data (deduplication)
-      expect(storedJob?.target_version).toBe('1.0.0')
+      expect(storedJob?.target_version).toBe('2.0.0')
+      expect(storedJob?.stage).toBe('installing')
     })
 
     it('stores jobs keyed by server_id', () => {
@@ -171,6 +170,18 @@ describe('useUpgradeJobsStore', () => {
       vi.advanceTimersByTime(5000)
 
       expect(useUpgradeJobsStore.getState().jobs.has('server-1')).toBe(true)
+    })
+
+    it('does not let an old finished-job timer clear a newer running job', () => {
+      const finishedJob = makeJob({ job_id: 'job-1', status: 'succeeded', finished_at: '2024-01-01T00:01:00Z' })
+      useUpgradeJobsStore.getState().setJob('server-1', finishedJob)
+
+      const runningJob = makeJob({ job_id: 'job-2', status: 'running', finished_at: null })
+      useUpgradeJobsStore.getState().setJob('server-1', runningJob)
+
+      vi.advanceTimersByTime(5000)
+
+      expect(useUpgradeJobsStore.getState().jobs.get('server-1')?.job_id).toBe('job-2')
     })
   })
 
