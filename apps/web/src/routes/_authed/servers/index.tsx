@@ -34,9 +34,9 @@ import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerGroup } from '@/lib/api-schema'
 import { countCleanupCandidates } from '@/lib/orphan-server-utils'
-import { countryCodeToFlag, formatSpeed, formatUptime } from '@/lib/utils'
+import { countryCodeToFlag, formatUptime } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
-import { CpuCell, DiskCell, MemoryCell } from './index.cells'
+import { CpuCell, DiskCell, MemoryCell, NetworkCell } from './index.cells'
 
 function UpgradeBadgeCell({ serverId }: { serverId: string }) {
   const job = useUpgradeJobsStore((state) => state.jobs.get(serverId))
@@ -220,15 +220,7 @@ function ServersListPage() {
         id: 'network',
         enableSorting: false,
         header: () => <span className="text-muted-foreground text-xs">{t('col_network')}</span>,
-        cell: ({ row }) => {
-          const s = row.original
-          return (
-            <span className="font-mono text-muted-foreground text-xs tabular-nums">
-              <span className="inline-block min-w-[64px]">↓{formatSpeed(s.net_in_speed)}</span>
-              <span className="ml-2 inline-block min-w-[64px]">↑{formatSpeed(s.net_out_speed)}</span>
-            </span>
-          )
-        },
+        cell: ({ row }) => <NetworkCell server={row.original} />,
         size: 160,
         meta: { className: 'hidden lg:table-cell lg:w-[160px]' }
       },

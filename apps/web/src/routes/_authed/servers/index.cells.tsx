@@ -80,3 +80,21 @@ export function DiskCell({ server }: { server: ServerMetrics }) {
     />
   )
 }
+
+export function NetworkCell({ server }: { server: ServerMetrics }) {
+  const inSpeed = server.online ? server.net_in_speed : 0
+  const outSpeed = server.online ? server.net_out_speed : 0
+
+  return (
+    <div className="flex flex-col gap-0.5 font-mono text-muted-foreground text-xs tabular-nums">
+      <span className="inline-flex gap-2">
+        <span className="inline-block min-w-[64px]">↓{formatSpeed(inSpeed)}</span>
+        <span className="inline-block min-w-[64px]">↑{formatSpeed(outSpeed)}</span>
+      </span>
+      <span className="text-[10px]">
+        <span>Σ ↓{formatBytes(server.net_in_transfer)}</span>
+        <span className="ml-2">↑{formatBytes(server.net_out_transfer)}</span>
+      </span>
+    </div>
+  )
+}

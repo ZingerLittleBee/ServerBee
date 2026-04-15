@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { CpuCell, DiskCell, MemoryCell } from './index.cells'
+import { CpuCell, DiskCell, MemoryCell, NetworkCell } from './index.cells'
 
 const CPU_LOAD_TEXT = /card_load\s+1\.23/
 const DISK_USAGE_TEXT = '111.8 GB / 465.7 GB'
@@ -11,6 +11,11 @@ const DISK_ZERO_READ_TEXT = '↺ 0 B/s'
 const DISK_ZERO_WRITE_TEXT = '↻ 0 B/s'
 const DISK_READ_ARROW_TEXT = /↺/
 const DISK_WRITE_ARROW_TEXT = /↻/
+const NETWORK_IN_SPEED_TEXT = '↓1.1 MB/s'
+const NETWORK_OUT_SPEED_TEXT = '↑332.0 KB/s'
+const NETWORK_ZERO_IN_SPEED_TEXT = '↓0 B/s'
+const NETWORK_ZERO_OUT_SPEED_TEXT = '↑0 B/s'
+const NETWORK_CUMULATIVE_TEXT = /^Σ ↓5\.0 GB\s*↑2\.0 GB$/
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key })
@@ -49,6 +54,10 @@ function makeServer(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
     uptime: 0,
     ...overrides
   }
+}
+
+function hasTextContent(node: Element | null, pattern: RegExp): boolean {
+  return pattern.test(node?.textContent ?? '')
 }
 
 describe('CpuCell', () => {
@@ -124,5 +133,45 @@ describe('DiskCell', () => {
 
     expect(screen.getByText(DISK_ZERO_READ_TEXT)).toBeDefined()
     expect(screen.getByText(DISK_ZERO_WRITE_TEXT)).toBeDefined()
+  })
+})
+
+describe('NetworkCell', () => {
+  it('shows live speeds and cumulative row when online', () => {
+    render(
+      <NetworkCell
+        server={makeServer({
+          net_in_speed: 1_153_434,
+          net_out_speed: 339_968,
+          net_in_transfer: 5 * 1024 ** 3,
+          net_out_transfer: 2 * 1024 ** 3,
+          online: true
+        })}
+      />
+    )
+
+    expect(screen.getByText(NETWORK_IN_SPEED_TEXT)).toBeDefined()
+    expect(screen.getByText(NETWORK_OUT_SPEED_TEXT)).toBeDefined()
+    expect(screen.getByText((_, node) => hasTextContent(node, NETWORK_CUMULATIVE_TEXT))).toBeDefined()
+  })
+
+  it('zeros live speeds but keeps cumulative row when offline', () => {
+    render(
+      <NetworkCell
+        server={makeServer({
+          net_in_speed: 1_153_434,
+          net_out_speed: 339_968,
+          net_in_transfer: 5 * 1024 ** 3,
+          net_out_transfer: 2 * 1024 ** 3,
+          online: false
+        })}
+      />
+    )
+
+    expect(screen.getByText(NETWORK_ZERO_IN_SPEED_TEXT)).toBeDefined()
+    expect(screen.getByText(NETWORK_ZERO_OUT_SPEED_TEXT)).toBeDefined()
+    expect(screen.queryByText(NETWORK_IN_SPEED_TEXT)).toBeNull()
+    expect(screen.queryByText(NETWORK_OUT_SPEED_TEXT)).toBeNull()
+    expect(screen.getByText((_, node) => hasTextContent(node, NETWORK_CUMULATIVE_TEXT))).toBeDefined()
   })
 })
