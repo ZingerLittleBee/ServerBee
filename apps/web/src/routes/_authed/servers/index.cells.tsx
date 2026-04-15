@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { cn, formatBytes } from '@/lib/utils'
+import { cn, formatBytes, formatSpeed } from '@/lib/utils'
 
 function getBarColor(p: number): string {
   if (p > 90) {
@@ -54,6 +54,28 @@ export function MemoryCell({ server }: { server: ServerMetrics }) {
         <span>
           {formatBytes(server.mem_used)} / {formatBytes(server.mem_total)}
         </span>
+      }
+    />
+  )
+}
+
+export function DiskCell({ server }: { server: ServerMetrics }) {
+  const pct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
+  return (
+    <MiniBar
+      pct={pct}
+      sub={
+        <div className="flex flex-col gap-0.5">
+          <span>
+            {formatBytes(server.disk_used)} / {formatBytes(server.disk_total)}
+          </span>
+          {server.online && (
+            <span>
+              ↺ {formatSpeed(server.disk_read_bytes_per_sec)}
+              {'  '}↻ {formatSpeed(server.disk_write_bytes_per_sec)}
+            </span>
+          )}
+        </div>
       }
     />
   )
