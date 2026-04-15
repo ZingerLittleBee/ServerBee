@@ -34,9 +34,9 @@ import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerGroup } from '@/lib/api-schema'
 import { countCleanupCandidates } from '@/lib/orphan-server-utils'
-import { countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
+import { countryCodeToFlag, formatSpeed, formatUptime } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
-import { CpuCell, MemoryCell, MiniBar } from './index.cells'
+import { CpuCell, DiskCell, MemoryCell } from './index.cells'
 
 function UpgradeBadgeCell({ serverId }: { serverId: string }) {
   const job = useUpgradeJobsStore((state) => state.jobs.get(serverId))
@@ -212,11 +212,7 @@ function ServersListPage() {
         accessorFn: (row) => (row.disk_total > 0 ? row.disk_used / row.disk_total : 0),
         id: 'disk',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_disk')} />,
-        cell: ({ row }) => {
-          const s = row.original
-          const diskPct = s.disk_total > 0 ? (s.disk_used / s.disk_total) * 100 : 0
-          return <MiniBar pct={diskPct} sub={<span>{formatBytes(s.disk_used)}</span>} />
-        },
+        cell: ({ row }) => <DiskCell server={row.original} />,
         size: 160,
         meta: { className: 'w-[160px]' }
       },
