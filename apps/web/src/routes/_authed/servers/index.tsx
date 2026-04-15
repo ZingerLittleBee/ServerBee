@@ -36,7 +36,7 @@ import type { ServerGroup } from '@/lib/api-schema'
 import { countCleanupCandidates } from '@/lib/orphan-server-utils'
 import { countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
-import { MiniBar } from './index.cells'
+import { CpuCell, MiniBar } from './index.cells'
 
 function UpgradeBadgeCell({ serverId }: { serverId: string }) {
   const job = useUpgradeJobsStore((state) => state.jobs.get(serverId))
@@ -196,7 +196,7 @@ function ServersListPage() {
         accessorKey: 'cpu',
         id: 'cpu',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_cpu')} />,
-        cell: ({ row }) => <MiniBar pct={row.original.cpu} />,
+        cell: ({ row }) => <CpuCell server={row.original} />,
         size: 160,
         meta: { className: 'w-[160px]' }
       },
