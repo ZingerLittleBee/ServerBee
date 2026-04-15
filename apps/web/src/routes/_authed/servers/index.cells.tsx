@@ -70,9 +70,9 @@ export function DiskCell({ server }: { server: ServerMetrics }) {
             {formatBytes(server.disk_used)} / {formatBytes(server.disk_total)}
           </span>
           {server.online && (
-            <span>
-              ↺ {formatSpeed(server.disk_read_bytes_per_sec)}
-              {'  '}↻ {formatSpeed(server.disk_write_bytes_per_sec)}
+            <span className="inline-flex gap-2">
+              <span>↺ {formatSpeed(server.disk_read_bytes_per_sec)}</span>
+              <span>↻ {formatSpeed(server.disk_write_bytes_per_sec)}</span>
             </span>
           )}
         </div>
