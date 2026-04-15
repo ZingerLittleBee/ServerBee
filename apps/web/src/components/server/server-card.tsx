@@ -277,12 +277,12 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
         <CompactMetric
           className="items-center"
           label={t('card_disk_read')}
-          value={formatSpeed(server.disk_read_bytes_per_sec ?? 0)}
+          value={formatSpeed(server.disk_read_bytes_per_sec)}
         />
         <CompactMetric
           className="items-center"
           label={t('card_disk_write')}
-          value={formatSpeed(server.disk_write_bytes_per_sec ?? 0)}
+          value={formatSpeed(server.disk_write_bytes_per_sec)}
         />
         <CompactMetric
           className="items-center"
