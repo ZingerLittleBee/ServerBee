@@ -27,10 +27,10 @@ Non-goals:
 
 ```
 ▓▓▓▓▓░░░░░  45%
-load 1.23
+Load 1.23
 ```
 
-Sub-line shows `load {load1.toFixed(2)}`. `cpu_cores` is not available on the `ServerMetrics` list payload (only on the detail DTO), so we do not display core count here.
+Sub-line shows `{t('card_load')} {load1.toFixed(2)}` (reuses existing `card_load` key in `servers.json` — "Load" / "负载"). `cpu_cores` is not available on the `ServerMetrics` list payload (only on the detail DTO), so we do not display core count here.
 
 **Memory** (2 rows, 160px)
 
@@ -49,7 +49,7 @@ Sub-line upgraded from `formatBytes(used)` to `formatBytes(used) / formatBytes(t
 ↺ 2.1MB/s  ↻ 1.2MB/s
 ```
 
-Third row shows I/O. Rendered **only when** `disk_read_bytes_per_sec !== undefined || disk_write_bytes_per_sec !== undefined`. Missing side shows `0B/s` so the row stays fixed-width. The arrow glyphs (`↺` read, `↻` write) match the existing `ServerCard` convention (see `servers.json` `card_disk_read` / `card_disk_write`).
+Third row shows I/O. Rendered **only when `server.online === true`**. We cannot distinguish "legacy agent that never reports I/O" from "modern agent reporting 0" on the browser, because `crates/common/src/types.rs:172` declares `disk_read_bytes_per_sec: u64` with `#[serde(default)]` — missing fields deserialize to 0 on the server and are re-emitted as numbers to the browser. Offline rows hide the I/O line (value would be a stale last frame); online rows always show it, with legacy / idle agents rendering `↺ 0B/s  ↻ 0B/s`. The arrow glyphs (`↺` read, `↻` write) match the existing `ServerCard` convention (see `servers.json` `card_disk_read` / `card_disk_write`). The TypeScript type in `apps/web/src/hooks/use-servers-ws.ts` should be tightened from `disk_read_bytes_per_sec?: number` to `disk_read_bytes_per_sec: number` (non-optional, default 0) to reflect the wire reality.
 
 **Network** (2 rows, 160px, stays `hidden lg:table-cell`)
 
@@ -71,7 +71,7 @@ Sub-line shows cumulative transfer using `net_in_transfer` / `net_out_transfer`,
 **CPU column cell**
 
 ```tsx
-<MiniBar pct={s.cpu} sub={<span>load {s.load1.toFixed(2)}</span>} />
+<MiniBar pct={s.cpu} sub={<span>{t('card_load')} {s.load1.toFixed(2)}</span>} />
 ```
 
 **Memory column cell**
@@ -83,15 +83,14 @@ Sub-line shows cumulative transfer using `net_in_transfer` / `net_out_transfer`,
 **Disk column cell**
 
 ```tsx
-const hasIo = s.disk_read_bytes_per_sec !== undefined || s.disk_write_bytes_per_sec !== undefined
 <MiniBar
   pct={diskPct}
   sub={
     <div className="flex flex-col gap-0.5">
       <span>{formatBytes(s.disk_used)} / {formatBytes(s.disk_total)}</span>
-      {hasIo && (
+      {s.online && (
         <span>
-          ↺ {formatSpeed(s.disk_read_bytes_per_sec ?? 0)}  ↻ {formatSpeed(s.disk_write_bytes_per_sec ?? 0)}
+          ↺ {formatSpeed(s.disk_read_bytes_per_sec)}  ↻ {formatSpeed(s.disk_write_bytes_per_sec)}
         </span>
       )}
     </div>
@@ -99,13 +98,17 @@ const hasIo = s.disk_read_bytes_per_sec !== undefined || s.disk_write_bytes_per_
 />
 ```
 
+The visibility gate is `s.online` (not `disk_*` field presence) — see the HIGH rationale under "Cell layouts / Disk" above.
+
 **Network column cell** (inline, no `MiniBar`)
 
 ```tsx
+const inSpeed = s.online ? s.net_in_speed : 0
+const outSpeed = s.online ? s.net_out_speed : 0
 <div className="flex flex-col gap-0.5 font-mono text-muted-foreground text-xs tabular-nums">
   <span>
-    <span className="inline-block min-w-[64px]">↓{formatSpeed(s.net_in_speed)}</span>
-    <span className="ml-2 inline-block min-w-[64px]">↑{formatSpeed(s.net_out_speed)}</span>
+    <span className="inline-block min-w-[64px]">↓{formatSpeed(inSpeed)}</span>
+    <span className="ml-2 inline-block min-w-[64px]">↑{formatSpeed(outSpeed)}</span>
   </span>
   <span className="text-[10px]">
     Σ ↓{formatBytes(s.net_in_transfer)}  ↑{formatBytes(s.net_out_transfer)}
@@ -113,31 +116,55 @@ const hasIo = s.disk_read_bytes_per_sec !== undefined || s.disk_write_bytes_per_
 </div>
 ```
 
+Live speed is explicitly zeroed when `!s.online`, because `use-servers-ws.ts` keeps the last-frame `net_*_speed` values on `server_offline` (only flips the `online` boolean). Without the zeroing, offline rows would look like they are still pushing traffic. Cumulative `net_*_transfer` keeps its last value intentionally — historical totals do not expire.
+
 ### Row height
 
 Current row height ≈ 48px. After change:
 
-- Rows with I/O data (most rows): ≈ 64px (Disk cell has 3 rows).
-- Rows without I/O (offline / legacy agents): ≈ 52px (Disk cell has 2 rows).
+- Online rows: ≈ 64px (Disk cell has 3 rows — bar, `used/total`, I/O).
+- Offline rows: ≈ 52px (Disk cell drops the I/O row).
 
-This is acceptable given the user's explicit approval to grow row height.
+The ≈12px in-table jump between online and offline rows is acceptable; offline rows are rare in steady state. User has explicitly approved row-height growth.
 
 ## Edge cases
 
 | Case | Behavior |
 |------|----------|
-| `disk_total === 0` | Existing logic: pct = 0, sub shows `0B / 0B`. No I/O row unless `disk_read_bytes_per_sec` / `disk_write_bytes_per_sec` present. |
-| `disk_read_bytes_per_sec === undefined` and `disk_write_bytes_per_sec === undefined` | No I/O row (legacy agent compatibility). |
-| Only one I/O side defined | Both shown, missing side renders as `0B/s`. |
-| Offline server | Network live speeds become 0; cumulative transfer still shows last known values. Matches existing behavior. |
+| `disk_total === 0` | pct = 0, sub shows `0B / 0B`. I/O row shown if online (as `↺ 0B/s ↻ 0B/s`). |
+| Legacy agent (never sends `disk_*_bytes_per_sec`) | Server's `#[serde(default)]` lands 0; browser sees `0` and renders `↺ 0B/s ↻ 0B/s` when the server is online. Indistinguishable from a truly idle disk — this is intentional given the protocol. |
+| Offline server — Disk I/O row | Hidden (would be stale last-frame). Disk `used/total` stays (stored value). |
+| Offline server — Network live speeds | Rendered as `↓0B/s ↑0B/s` (explicitly zeroed in the cell, since `use-servers-ws.ts` does not clear the fields on `server_offline`). |
+| Offline server — Network cumulative | Unchanged (Σ ↓.. ↑..), historical totals do not expire. |
 | `mem_total === 0` / `disk_total === 0` | Sub-line renders `0B / 0B`. `formatBytes(0)` returns `0B`. |
 
 ## Testing
 
-- No new unit tests for the page itself (existing pattern: table logic lives inline in the route file without tests).
-- Manual check: offline agent, legacy agent (no I/O fields), normal agent — verify I/O row visibility and row-height consistency.
-- Lint: `bun x ultracite check` and `bun run typecheck`.
-- Visual: 1789×963 viewport (user's reported size) and narrow viewport to confirm `hidden lg:` / `hidden xl:` breakpoints still work.
+The change's two riskiest behaviors — conditional I/O row rendering and offline speed zeroing — must have regression coverage. Visual QA alone is not enough.
+
+**Refactor for testability**: extract the metric cell renderers from the inline `columns` array into named exports in `apps/web/src/routes/_authed/servers/index.cells.tsx`:
+
+- `CpuCell({ server })`
+- `MemoryCell({ server })`
+- `DiskCell({ server })`
+- `NetworkCell({ server })`
+
+The `columns` definition then wires `cell: ({ row }) => <DiskCell server={row.original} />`. `MiniBar` and `UpgradeBadgeCell` stay in `index.tsx`.
+
+**Unit tests** in `apps/web/src/routes/_authed/servers/index.cells.test.tsx` (vitest + RTL, wrapped in `I18nextProvider` per existing `server-card.test.tsx` pattern):
+
+1. `DiskCell` — online server: I/O row is present and shows both `↺` and `↻` values.
+2. `DiskCell` — offline server: I/O row is not rendered (assert neither arrow glyph appears).
+3. `DiskCell` — online with `disk_read_bytes_per_sec === 0` and `disk_write_bytes_per_sec === 0`: I/O row still renders as `↺ 0B/s  ↻ 0B/s` (documents the "legacy agent ≡ idle disk" behavior).
+4. `NetworkCell` — offline server: live speed row shows `↓0B/s ↑0B/s` regardless of the numeric `net_in_speed` / `net_out_speed` fields on the record; cumulative row shows the stored `net_*_transfer` values.
+5. `NetworkCell` — online server with non-zero speeds: live speed row reflects the fields.
+
+**Manual checks**:
+
+- 1789×963 viewport (user's reported size) — verify Disk row does not overflow at 160px, row height increase is acceptable.
+- `hidden lg:` / `hidden xl:` breakpoints — narrow viewport still hides Network / Group / Uptime correctly.
+
+**Lint / typecheck**: `bun x ultracite check` and `bun run typecheck`. The latter will flag the `disk_read_bytes_per_sec?: number` → `disk_read_bytes_per_sec: number` type tightening if any consumer was relying on `undefined`.
 
 ## Rejected alternatives
 
