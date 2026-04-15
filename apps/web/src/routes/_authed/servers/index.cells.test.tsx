@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { CpuCell } from './index.cells'
 
+const CPU_LOAD_TEXT = /card_load\s+1\.23/
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key })
 }))
@@ -46,6 +48,6 @@ describe('CpuCell', () => {
   it('shows cpu percentage and load1', () => {
     render(<CpuCell server={makeServer({ cpu: 45, load1: 1.23 })} />)
     expect(screen.getByText('45%')).toBeDefined()
-    expect(screen.getByText(/card_load\s+1\.23/)).toBeDefined()
+    expect(screen.getByText(CPU_LOAD_TEXT)).toBeDefined()
   })
 })
