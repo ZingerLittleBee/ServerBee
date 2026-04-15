@@ -36,7 +36,7 @@ import type { ServerGroup } from '@/lib/api-schema'
 import { countCleanupCandidates } from '@/lib/orphan-server-utils'
 import { countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
-import { CpuCell, MiniBar } from './index.cells'
+import { CpuCell, MemoryCell, MiniBar } from './index.cells'
 
 function UpgradeBadgeCell({ serverId }: { serverId: string }) {
   const job = useUpgradeJobsStore((state) => state.jobs.get(serverId))
@@ -204,11 +204,7 @@ function ServersListPage() {
         accessorFn: (row) => (row.mem_total > 0 ? row.mem_used / row.mem_total : 0),
         id: 'memory',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_memory')} />,
-        cell: ({ row }) => {
-          const s = row.original
-          const memPct = s.mem_total > 0 ? (s.mem_used / s.mem_total) * 100 : 0
-          return <MiniBar pct={memPct} sub={<span>{formatBytes(s.mem_used)}</span>} />
-        },
+        cell: ({ row }) => <MemoryCell server={row.original} />,
         size: 160,
         meta: { className: 'w-[160px]' }
       },
