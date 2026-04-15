@@ -35,8 +35,8 @@ import { api } from '@/lib/api-client'
 import type { ServerGroup } from '@/lib/api-schema'
 import { countCleanupCandidates } from '@/lib/orphan-server-utils'
 import { countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
-import { MiniBar } from './index.cells'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
+import { MiniBar } from './index.cells'
 
 function UpgradeBadgeCell({ serverId }: { serverId: string }) {
   const job = useUpgradeJobsStore((state) => state.jobs.get(serverId))
