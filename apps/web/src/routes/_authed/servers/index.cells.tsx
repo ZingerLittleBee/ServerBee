@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { cn } from '@/lib/utils'
+import { cn, formatBytes } from '@/lib/utils'
 
 function getBarColor(p: number): string {
   if (p > 90) {
@@ -39,6 +39,20 @@ export function CpuCell({ server }: { server: ServerMetrics }) {
       sub={
         <span>
           {t('card_load')} {server.load1.toFixed(2)}
+        </span>
+      }
+    />
+  )
+}
+
+export function MemoryCell({ server }: { server: ServerMetrics }) {
+  const pct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
+  return (
+    <MiniBar
+      pct={pct}
+      sub={
+        <span>
+          {formatBytes(server.mem_used)} / {formatBytes(server.mem_total)}
         </span>
       }
     />

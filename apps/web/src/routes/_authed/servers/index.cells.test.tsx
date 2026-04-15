@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { CpuCell } from './index.cells'
+import { CpuCell, MemoryCell } from './index.cells'
 
 const CPU_LOAD_TEXT = /card_load\s+1\.23/
 
@@ -49,5 +49,19 @@ describe('CpuCell', () => {
     render(<CpuCell server={makeServer({ cpu: 45, load1: 1.23 })} />)
     expect(screen.getByText('45%')).toBeDefined()
     expect(screen.getByText(CPU_LOAD_TEXT)).toBeDefined()
+  })
+})
+
+describe('MemoryCell', () => {
+  it('shows used/total with percentage', () => {
+    render(<MemoryCell server={makeServer({ mem_used: 3_200_000_000, mem_total: 8_000_000_000 })} />)
+    expect(screen.getByText('3.0 GB / 7.5 GB')).toBeDefined()
+    expect(screen.getByText('40%')).toBeDefined()
+  })
+
+  it('renders 0B / 0B when mem_total is zero', () => {
+    render(<MemoryCell server={makeServer({ mem_used: 0, mem_total: 0 })} />)
+    expect(screen.getByText('0 B / 0 B')).toBeDefined()
+    expect(screen.getByText('0%')).toBeDefined()
   })
 })
