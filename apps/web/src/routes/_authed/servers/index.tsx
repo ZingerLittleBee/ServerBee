@@ -34,7 +34,8 @@ import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerGroup } from '@/lib/api-schema'
 import { countCleanupCandidates } from '@/lib/orphan-server-utils'
-import { cn, countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
+import { countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
+import { MiniBar } from './index.cells'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 
 function UpgradeBadgeCell({ serverId }: { serverId: string }) {
@@ -206,7 +207,7 @@ function ServersListPage() {
         cell: ({ row }) => {
           const s = row.original
           const memPct = s.mem_total > 0 ? (s.mem_used / s.mem_total) * 100 : 0
-          return <MiniBar pct={memPct} sub={formatBytes(s.mem_used)} />
+          return <MiniBar pct={memPct} sub={<span>{formatBytes(s.mem_used)}</span>} />
         },
         size: 160,
         meta: { className: 'w-[160px]' }
@@ -218,7 +219,7 @@ function ServersListPage() {
         cell: ({ row }) => {
           const s = row.original
           const diskPct = s.disk_total > 0 ? (s.disk_used / s.disk_total) * 100 : 0
-          return <MiniBar pct={diskPct} sub={formatBytes(s.disk_used)} />
+          return <MiniBar pct={diskPct} sub={<span>{formatBytes(s.disk_used)}</span>} />
         },
         size: 160,
         meta: { className: 'w-[160px]' }
@@ -461,32 +462,6 @@ function ServersListPage() {
       )}
 
       {editingId !== null && <EditWrapper onClose={() => setEditingId(null)} serverId={editingId} />}
-    </div>
-  )
-}
-
-function getBarColor(p: number): string {
-  if (p > 90) {
-    return 'bg-red-500'
-  }
-  if (p > 70) {
-    return 'bg-amber-500'
-  }
-  return 'bg-emerald-500'
-}
-
-function MiniBar({ pct, sub }: { pct: number; sub?: string }) {
-  const p = Math.min(100, Math.max(0, pct))
-  const color = getBarColor(p)
-  return (
-    <div className="min-w-[80px]">
-      <div className="flex items-center gap-2">
-        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-          <div className={cn('h-full rounded-full', color)} style={{ width: `${p}%` }} />
-        </div>
-        <span className="w-10 text-right font-mono text-xs tabular-nums">{p.toFixed(0)}%</span>
-      </div>
-      {sub && <p className="mt-0.5 text-[10px] text-muted-foreground tabular-nums">{sub}</p>}
     </div>
   )
 }
