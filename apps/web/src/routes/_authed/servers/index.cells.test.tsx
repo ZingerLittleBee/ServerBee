@@ -5,8 +5,12 @@ import { CpuCell, DiskCell, MemoryCell } from './index.cells'
 
 const CPU_LOAD_TEXT = /card_load\s+1\.23/
 const DISK_USAGE_TEXT = '111.8 GB / 465.7 GB'
-const DISK_IO_TEXT = /↺\s+2\.0 MB\/s\s+↻\s+1\.1 MB\/s/
-const DISK_ZERO_IO_TEXT = /↺\s+0 B\/s\s+↻\s+0 B\/s/
+const DISK_READ_TEXT = '↺ 2.0 MB/s'
+const DISK_WRITE_TEXT = '↻ 1.1 MB/s'
+const DISK_ZERO_READ_TEXT = '↺ 0 B/s'
+const DISK_ZERO_WRITE_TEXT = '↻ 0 B/s'
+const DISK_READ_ARROW_TEXT = /↺/
+const DISK_WRITE_ARROW_TEXT = /↻/
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key })
@@ -85,7 +89,8 @@ describe('DiskCell', () => {
 
     expect(screen.getByText(DISK_USAGE_TEXT)).toBeDefined()
     expect(screen.getByText('24%')).toBeDefined()
-    expect(screen.getByText(DISK_IO_TEXT)).toBeDefined()
+    expect(screen.getByText(DISK_READ_TEXT)).toBeDefined()
+    expect(screen.getByText(DISK_WRITE_TEXT)).toBeDefined()
   })
 
   it('shows used/total but hides io row when offline', () => {
@@ -102,7 +107,8 @@ describe('DiskCell', () => {
     )
 
     expect(screen.getByText(DISK_USAGE_TEXT)).toBeDefined()
-    expect(screen.queryByText(DISK_IO_TEXT)).toBeNull()
+    expect(screen.queryByText(DISK_READ_ARROW_TEXT)).toBeNull()
+    expect(screen.queryByText(DISK_WRITE_ARROW_TEXT)).toBeNull()
   })
 
   it('shows zero io speeds when online and idle', () => {
@@ -116,6 +122,7 @@ describe('DiskCell', () => {
       />
     )
 
-    expect(screen.getByText(DISK_ZERO_IO_TEXT)).toBeDefined()
+    expect(screen.getByText(DISK_ZERO_READ_TEXT)).toBeDefined()
+    expect(screen.getByText(DISK_ZERO_WRITE_TEXT)).toBeDefined()
   })
 })
