@@ -17,10 +17,10 @@ interface ServerMetrics {
   country_code: string | null
   cpu: number
   cpu_name: string | null
-  disk_read_bytes_per_sec?: number
+  disk_read_bytes_per_sec: number
   disk_total: number
   disk_used: number
-  disk_write_bytes_per_sec?: number
+  disk_write_bytes_per_sec: number
   effective_capabilities?: number | null
   features?: string[]
   group_id: string | null
