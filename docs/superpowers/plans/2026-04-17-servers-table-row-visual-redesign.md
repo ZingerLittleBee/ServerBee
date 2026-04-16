@@ -24,7 +24,7 @@
 | `apps/web/src/lib/traffic.test.ts` | Create | Unit tests for the helper |
 | `apps/web/src/components/server/server-card.tsx` | Modify | Consume `computeTrafficQuota` instead of inlined logic |
 | `apps/web/src/hooks/use-servers-ws.ts` | Modify | Add `tags`, `cpu_cores` to `ServerMetrics`; extend `STATIC_FIELDS` + default guard to cover `[]` arrays |
-| `apps/web/src/hooks/use-servers-ws.test.ts` | Create | Unit tests for `mergeServerUpdate` guard |
+| `apps/web/src/hooks/use-servers-ws.test.ts` | Modify | Append new `describe('mergeServerUpdate static-fields guard')` block (file already exists with existing tests — do NOT replace) |
 | `apps/web/src/components/server/status-dot.tsx` | Create | `<StatusDot online />` — pulsing/muted dot |
 | `apps/web/src/components/server/status-dot.test.tsx` | Create | Unit test |
 | `apps/web/src/components/server/tag-chip.tsx` | Create | `<TagChipRow tags>` with stable-hash palette |
@@ -94,9 +94,15 @@ Insert after the `"edit_failed"` line in `zh/servers.json`:
 
 - [ ] **Step 3: Verify JSON is valid**
 
-Run: `bun run --cwd apps/web typecheck` (TypeScript resource files are validated by the build; if the project uses `bun x tsc --noEmit` it will also surface JSON parse errors through imports)
+Run these commands (JSON parse errors are surfaced directly; typecheck alone will not catch malformed translation JSON):
 
-Expected: exit 0.
+```bash
+node -e "JSON.parse(require('node:fs').readFileSync('apps/web/src/locales/en/servers.json','utf8')); console.log('en ok')"
+node -e "JSON.parse(require('node:fs').readFileSync('apps/web/src/locales/zh/servers.json','utf8')); console.log('zh ok')"
+bun run --cwd apps/web typecheck
+```
+
+Expected: `en ok`, `zh ok`, and typecheck exits 0.
 
 - [ ] **Step 4: Commit**
 
@@ -308,16 +314,18 @@ git commit -m "refactor(web): ServerCard consumes shared computeTrafficQuota hel
 
 **Files:**
 - Modify: `apps/web/src/hooks/use-servers-ws.ts`
-- Create: `apps/web/src/hooks/use-servers-ws.test.ts`
+- Modify: `apps/web/src/hooks/use-servers-ws.test.ts` (file already exists; APPEND a new describe block — do NOT replace existing content)
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **Step 1: Append failing tests**
 
-Create `apps/web/src/hooks/use-servers-ws.test.ts`:
+**IMPORTANT:** This test file already exists with `mergeServerUpdate` / `setServerOnlineStatus` / `setServerCapabilities` / `handleWsMessage upgrade messages` describes and a `makeServer` helper. Do **not** overwrite the file. Either:
+
+- Option A: **Append** a new `describe('mergeServerUpdate static-fields guard', …)` block and a locally-named helper `baseServer` (to avoid colliding with the existing `makeServer`), OR
+- Option B: Extend the existing `makeServer` to propagate `tags` / `cpu_cores` / `features` via overrides and use it in the new describe.
+
+The code below uses Option A (local `baseServer`) — paste it at the bottom of the existing file. Assume `describe`, `expect`, `it`, `mergeServerUpdate`, and `ServerMetrics` are already imported by the existing file; do NOT add duplicate imports.
 
 ```ts
-import { describe, expect, it } from 'vitest'
-import { mergeServerUpdate, type ServerMetrics } from './use-servers-ws'
-
 function baseServer(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
   return {
     id: 'srv-1',
@@ -660,10 +668,10 @@ Because the cells are all inter-dependent and the existing tests reference the o
 
 - [ ] **Step 1: Back up intent — note the current exports**
 
-The current `index.cells.tsx` exports: `MiniBar`, `CpuCell`, `MemoryCell`, `DiskCell`, `NetworkCell`. The rewrite must keep exporting `CpuCell`, `MemoryCell`, `DiskCell`, `NetworkCell` (consumed in `index.tsx`). `MiniBar` is no longer used elsewhere in `src/` (`rg -n "from.*index.cells" apps/web/src` will show only `index.tsx`); it will be removed.
+The current `index.cells.tsx` exports: `MiniBar`, `CpuCell`, `MemoryCell`, `DiskCell`, `NetworkCell`. The rewrite must keep exporting all of these (`MiniBar` is refactored internally per the spec to delegate to `MetricBarRow`, but its public signature `{ pct: number; sub?: ReactNode }` is preserved for back-compat).
 
 Run: `rg -n "import.*MiniBar" apps/web/src`
-Expected: empty (no other callers).
+Expected: current call sites listed (document them; they must still compile after the refactor).
 
 - [ ] **Step 2: Write the failing test skeleton for `MetricBarRow`**
 
@@ -791,8 +799,10 @@ export function MetricBarRow({ icon, pct, ariaLabel, valueClassName }: MetricBar
   const clamped = Math.min(100, Math.max(0, pct))
   const colorBg = getBarColor(clamped)
   const colorText = getBarTextColor(clamped)
+  // Only apply role="img" when an ariaLabel is supplied; otherwise the role would be unnamed (a11y anti-pattern).
+  const imgProps = ariaLabel ? ({ role: 'img' as const, 'aria-label': ariaLabel }) : {}
   return (
-    <div className="flex items-center gap-1.5" role="img" aria-label={ariaLabel}>
+    <div className="flex items-center gap-1.5" {...imgProps}>
       {icon !== null && <span className="inline-flex size-3.5 flex-none text-muted-foreground">{icon}</span>}
       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
         <div className={cn('h-full rounded-full', colorBg)} data-slot="metric-bar-fill" style={{ width: `${clamped}%` }} />
@@ -807,12 +817,25 @@ export function MetricBarRow({ icon, pct, ariaLabel, valueClassName }: MetricBar
 }
 ```
 
-The remainder of `index.cells.tsx` (the `CpuCell`, `MemoryCell`, `DiskCell`, `NetworkCell`, plus the new `UptimeCell` and `NameCell`) will be implemented in subsequent tasks on top of this primitive. For now, leave placeholders that preserve the existing column integration by temporarily re-exporting the old cells — **however**, to avoid breaking the route, also delete the old `MiniBar`-based implementations immediately and supply stubs that will be replaced in Tasks 8–13.
+**a11y note:** all call sites in `CpuCell`/`MemoryCell`/`DiskCell`/`NetworkCell` below MUST pass `ariaLabel` so the metric bar announces (e.g. `ariaLabel={`${t('col_cpu')}: ${cpu}%`}`). Cells that omit `ariaLabel` will render without `role="img"`, which is acceptable but less informative for screen readers.
+
+The remainder of `index.cells.tsx` (the `CpuCell`, `MemoryCell`, `DiskCell`, `NetworkCell`, plus the new `UptimeCell` and `NameCell`) will be implemented in subsequent tasks on top of this primitive. For now, supply minimal stubs so the route still compiles; they will be replaced in Tasks 8–13. `MiniBar` is also preserved (as a thin wrapper around `MetricBarRow`) per the spec's back-compat rule.
 
 Append to `index.cells.tsx`:
 
 ```tsx
+import type { ReactNode } from 'react'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
+
+// Back-compat: MiniBar keeps its existing public signature but now delegates to MetricBarRow.
+export function MiniBar({ pct, sub }: { pct: number; sub?: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <MetricBarRow icon={null} pct={pct} />
+      {sub !== undefined && <div className="text-xs text-muted-foreground">{sub}</div>}
+    </div>
+  )
+}
 
 // Temporary stubs — replaced in Tasks 8–13.
 export function CpuCell(_: { server: ServerMetrics }) { return <MetricBarRow icon={null} pct={0} /> }
@@ -928,6 +951,10 @@ git commit -m "feat(web): CpuCell shows cores + load with Phase A fallback"
 
 ### Task 9: `<MemoryCell />` rewrite (TDD)
 
+**Files:**
+- Modify: `apps/web/src/routes/_authed/servers/index.cells.tsx`
+- Modify: `apps/web/src/routes/_authed/servers/index.cells.test.tsx`
+
 - [ ] **Step 1: Append failing tests**
 
 ```tsx
@@ -1016,6 +1043,10 @@ git commit -m "feat(web): MemoryCell shows used/total + swap pct"
 ---
 
 ### Task 10: `<DiskCell />` rewrite (TDD)
+
+**Files:**
+- Modify: `apps/web/src/routes/_authed/servers/index.cells.tsx`
+- Modify: `apps/web/src/routes/_authed/servers/index.cells.test.tsx`
 
 - [ ] **Step 1: Append failing tests**
 
@@ -1414,10 +1445,9 @@ git commit -m "feat(web): UptimeCell and NameCell with tags support"
 
 - [ ] **Step 1: Wire the new cells and add traffic-overview query**
 
-At the top of the file, add:
+At the top of the file, ensure these imports exist (merge into existing import lines rather than creating duplicates; `CircleDot` is already imported from `lucide-react` in this file — keep it):
 
 ```tsx
-import { CircleDot } from 'lucide-react'
 import { useTrafficOverview } from '@/hooks/use-traffic-overview'
 import { StatusDot } from '@/components/server/status-dot'
 import { CpuCell, DiskCell, MemoryCell, NameCell, NetworkCell, UptimeCell } from './index.cells'
@@ -1425,8 +1455,9 @@ import { CpuCell, DiskCell, MemoryCell, NameCell, NetworkCell, UptimeCell } from
 
 Remove the following imports (no longer used):
 - `StatusBadge` (replaced by `StatusDot`)
-- `CircleDot` **keep** — still used for filter icon in the new dot column meta
 - Individual cell imports from `./index.cells` were already present; update to the new list
+
+**Keep:** `CircleDot` from `lucide-react` — still used for the new dot column's `meta.icon`.
 
 Inside `ServersListPage`, near the other queries:
 
@@ -1518,25 +1549,50 @@ In `index.tsx`, the `name` column cell becomes:
         cell: ({ row }) => <NameCell server={row.original} rightSlot={<UpgradeBadgeCell serverId={row.original.id} />} />,
 ```
 
-- [ ] **Step 2: Run the frontend test suite**
+- [ ] **Step 2: Add regression tests for filter-pill migration + NameCell rightSlot**
+
+Append to `apps/web/src/routes/_authed/servers/index.cells.test.tsx`:
+
+```tsx
+describe('NameCell rightSlot', () => {
+  it('renders the rightSlot next to the server name', () => {
+    render(<NameCell server={makeServer({ name: 'web-01' })} rightSlot={<span data-testid="slot" />} />)
+    expect(screen.getByTestId('slot')).toBeDefined()
+    expect(screen.getByText('web-01')).toBeDefined()
+  })
+})
+```
+
+If an existing route-level test file (`apps/web/src/routes/_authed/servers/index.test.tsx`) exists, append a test that renders the page (with a mocked servers-WS dataset containing one online + one offline row) and asserts:
+
+```tsx
+// Pseudocode — adapt to existing test harness:
+// 1) Open the toolbar filter-pill for "status".
+// 2) Assert both "online" and "offline" options appear (sourced from the new `status-dot` column's meta.options).
+// 3) Click "offline" and assert only the offline row remains visible.
+```
+
+If no such route-level test exists, add a minimal unit test in `index.cells.test.tsx` that imports the `statusOptions` array used by the column meta and asserts it contains `{ value: 'online' }` and `{ value: 'offline' }` so the filter pill source is guarded.
+
+- [ ] **Step 3: Run the frontend test suite**
 
 Run: `bun run --cwd apps/web test`
 Expected: PASS (cells + existing route tests).
 
-- [ ] **Step 3: Run ultracite**
+- [ ] **Step 4: Run ultracite**
 
 Run: `bun x ultracite check apps/web/src/routes/_authed/servers/`
 Expected: no errors.
 
-- [ ] **Step 4: Run typecheck**
+- [ ] **Step 5: Run typecheck**
 
 Run: `bun run --cwd apps/web typecheck`
 Expected: exit 0.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add apps/web/src/routes/_authed/servers/index.tsx apps/web/src/routes/_authed/servers/index.cells.tsx
+git add apps/web/src/routes/_authed/servers/index.tsx apps/web/src/routes/_authed/servers/index.cells.tsx apps/web/src/routes/_authed/servers/index.cells.test.tsx
 git commit -m "feat(web): servers table adopts new cells with status-dot column"
 ```
 
@@ -1687,12 +1743,18 @@ In `crates/server/src/service/mod.rs`, add:
 pub mod server_tag;
 ```
 
-- [ ] **Step 2: Write the unit tests first**
+- [ ] **Step 2: Write the full service module (implementation + unit tests) in one pass**
 
-Create `crates/server/src/service/server_tag.rs` with the tests at the bottom:
+**Wire contract reminder:** `set_tags` must only mutate the `server_tag` table. It must NOT touch `servers.updated_at` — per spec, editing tags should never make an offline server appear to have just phoned home. The code below respects this rule by using only `server_tag::Entity` operations inside the transaction.
+
+Create `crates/server/src/service/server_tag.rs` (final import block; no step-3 fix-up later):
 
 ```rust
-use sea_orm::{DatabaseConnection, EntityTrait, QueryOrder, Set, TransactionTrait};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+    TransactionTrait,
+};
+
 use crate::entity::server_tag;
 use crate::error::AppError;
 
@@ -1799,22 +1861,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: Add the missing `ColumnTrait` import (sea-orm filtering)**
-
-At the top of `server_tag.rs`:
-
-```rust
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set, TransactionTrait};
-```
-
-(Replace the earlier imports if duplicate.)
-
-- [ ] **Step 4: Run tests**
+- [ ] **Step 3: Run tests**
 
 Run: `cargo test -p serverbee-server --lib service::server_tag`
 Expected: PASS (6 unit tests).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add crates/server/src/service/server_tag.rs crates/server/src/service/mod.rs
@@ -1940,18 +1992,46 @@ git commit -m "feat(server): add /api/servers/:id/tags read/write routes"
 
 **Files:**
 - Create: `crates/server/tests/server_tags.rs`
+- Modify: `crates/server/tests/integration.rs` (append one new `#[tokio::test]` — do not replace existing content)
 
-- [ ] **Step 1: Reuse the test helpers**
+> **Important:** Rust integration test files compile as separate binaries and do not share `mod` code. Rather than duplicate helpers, this task:
+> 1. Adds **all** new test cases (REST CRUD, admin, member RBAC, validation, browser-WS full_sync) as new `#[tokio::test]` functions inside the existing `integration.rs` so they can reuse `start_test_server`, `http_client`, `login_admin`, `register_agent`.
+> 2. Leaves `crates/server/tests/server_tags.rs` as a tiny stub that re-verifies the service module compiles in isolation — OR it is skipped entirely and all tests live in `integration.rs`. **Prefer the latter** (all tests go into `integration.rs`) to minimize helper duplication.
 
-The existing `crates/server/tests/integration.rs` defines `start_test_server`, `http_client`, `login_admin`, `register_agent`. Because those helpers are `async fn` in a separate test binary, copy-paste the minimal set needed into the new `server_tags.rs` (Rust integration tests don't share modules across files).
+- [ ] **Step 1: Add a `register_member` helper to `integration.rs`**
 
-Create `crates/server/tests/server_tags.rs`:
+Locate the existing `login_admin` helper (line ~124) and append the following below it:
 
 ```rust
-// Copy `start_test_server`, `http_client`, `login_admin`, `register_agent` verbatim
-// from tests/integration.rs. (Integration test binaries don't share modules.)
+/// Register a member-role user with a fresh client; returns (client_cookies_stored, username).
+async fn register_member(base_url: &str) -> reqwest::Client {
+    let client = http_client();
+    let username = format!("member-{}", uuid::Uuid::new_v4().simple());
+    let resp = client
+        .post(format!("{}/api/auth/register", base_url))
+        .json(&json!({ "username": username, "password": "memberpass" }))
+        .send()
+        .await
+        .expect("register member failed");
+    assert_eq!(resp.status(), 200, "member register should succeed");
+    let resp = client
+        .post(format!("{}/api/auth/login", base_url))
+        .json(&json!({ "username": username, "password": "memberpass" }))
+        .send()
+        .await
+        .expect("login member failed");
+    assert_eq!(resp.status(), 200, "member login should succeed");
+    client
+}
+```
 
-// ...helpers above...
+**Verify before adding:** this helper assumes `/api/auth/register` exists for user registration. If the project uses a different pattern (e.g. admin-created users), adjust accordingly by reading `crates/server/src/router/api/auth.rs` and mirroring the canonical user-creation flow. If no public registration exists, create the member via a direct SQL insert using the same pattern as `AuthService::init_admin`.
+
+- [ ] **Step 2: Append the tags tests directly to `integration.rs`**
+
+At the bottom of `crates/server/tests/integration.rs`, append:
+
+```rust
 
 #[tokio::test]
 async fn unauthenticated_get_tags_returns_401() {
@@ -2035,49 +2115,187 @@ async fn admin_put_rejects_invalid_char() {
         .unwrap();
     assert_eq!(resp.status(), 400);
 }
-```
 
-Add a second test binary file for full_sync inclusion; but to minimize new files, extend the test above with a full_sync WebSocket open and assertion. Alternatively, use the existing `integration.rs` test binary — **prefer** adding a test to `integration.rs` (same binary, shared helpers) rather than duplicating helpers.
-
-Simpler: **put the full_sync assertion directly in `integration.rs`** (not in the new `server_tags.rs` file). Add to `integration.rs`:
-
-```rust
 #[tokio::test]
-async fn browser_ws_full_sync_includes_tags_and_cpu_cores() {
+async fn admin_put_rejects_too_long_tag() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+    let (server_id, _token) = register_agent(&admin, &base_url).await;
+    let seventeen = "a".repeat(17);
+    let resp = admin
+        .put(format!("{}/api/servers/{server_id}/tags", base_url))
+        .json(&serde_json::json!({"tags": [seventeen]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+}
+
+#[tokio::test]
+async fn member_get_tags_returns_200() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+    let (server_id, _token) = register_agent(&admin, &base_url).await;
+    admin
+        .put(format!("{}/api/servers/{server_id}/tags", base_url))
+        .json(&serde_json::json!({"tags": ["prod"]}))
+        .send()
+        .await
+        .unwrap();
+
+    let member = register_member(&base_url).await;
+    let resp = member
+        .get(format!("{}/api/servers/{server_id}/tags", base_url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let data: Vec<String> = serde_json::from_value(body["data"].clone()).unwrap();
+    assert_eq!(data, vec!["prod"]);
+}
+
+#[tokio::test]
+async fn member_put_tags_returns_403() {
     let (base_url, _tmp) = start_test_server().await;
     let admin = http_client();
     login_admin(&admin, &base_url).await;
     let (server_id, _token) = register_agent(&admin, &base_url).await;
 
-    // Seed tags
-    admin
+    let member = register_member(&base_url).await;
+    let resp = member
+        .put(format!("{}/api/servers/{server_id}/tags", base_url))
+        .json(&serde_json::json!({"tags": ["prod"]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 403);
+}
+
+#[tokio::test]
+async fn browser_ws_full_sync_includes_tags_and_cpu_cores() {
+    // This test opens a browser WebSocket and asserts the first `full_sync` frame
+    // now carries `tags` and `cpu_cores` fields per the Phase B wire contract.
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+    let (server_id, _token) = register_agent(&admin, &base_url).await;
+
+    // Seed tags via the REST endpoint.
+    let resp = admin
         .put(format!("{}/api/servers/{server_id}/tags", base_url))
         .json(&serde_json::json!({"tags": ["alpha", "beta"]}))
         .send()
         .await
         .unwrap();
+    assert_eq!(resp.status(), 200);
 
-    // Open the browser WS; use the existing session cookie from `admin`
-    // (extract cookie; copy the pattern used for other browser WS tests in this file).
-    // The first message should be `full_sync` and each server should include `tags`.
+    // Extract the session cookie from the admin reqwest client. reqwest's cookie jar
+    // is not directly accessible, so re-issue a GET and capture the Set-Cookie / Cookie
+    // header from a fresh login response.
+    //
+    // Simpler: login through a fresh client that exposes the raw Set-Cookie.
+    let raw_client = reqwest::Client::builder()
+        .cookie_store(false)
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap();
+    let login_resp = raw_client
+        .post(format!("{}/api/auth/login", base_url))
+        .json(&serde_json::json!({ "username": "admin", "password": "testpass" }))
+        .send()
+        .await
+        .unwrap();
+    let set_cookie = login_resp
+        .headers()
+        .get("set-cookie")
+        .expect("set-cookie header")
+        .to_str()
+        .unwrap()
+        .to_string();
+    // Take everything up to the first ';' — that's the cookie name=value pair.
+    let cookie_value = set_cookie.split(';').next().unwrap().to_string();
 
-    // ...copy-paste the pattern from an existing browser-ws test in this file and
-    // assert: json["servers"][0]["tags"] == ["alpha","beta"] and json["servers"][0]["cpu_cores"] is null or an integer.
+    // Build ws URL: http://127.0.0.1:PORT/api/ws/servers → ws://127.0.0.1:PORT/api/ws/servers
+    let ws_url = base_url.replace("http://", "ws://") + "/api/ws/servers";
+    let mut request = ws_url.into_client_request().unwrap();
+    request.headers_mut().insert(
+        "Cookie",
+        tokio_tungstenite::tungstenite::http::HeaderValue::from_str(&cookie_value).unwrap(),
+    );
+
+    let (mut ws, _resp) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("browser ws should connect");
+
+    // Read the first frame → must be FullSync.
+    use futures_util::StreamExt;
+    let msg = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next())
+        .await
+        .expect("ws recv timeout")
+        .expect("ws closed")
+        .expect("ws error");
+    let text = msg.to_text().unwrap().to_string();
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+    // FullSync shape: { "type": "full_sync", "servers": [ { ..., "tags": [...], "cpu_cores": null|int } ] }
+    let servers = json["servers"].as_array().expect("servers array present");
+    let ours = servers
+        .iter()
+        .find(|s| s["id"].as_str() == Some(&server_id))
+        .expect("our server present in full_sync");
+    assert_eq!(
+        ours["tags"].as_array().unwrap().iter().map(|t| t.as_str().unwrap()).collect::<Vec<_>>(),
+        vec!["alpha", "beta"],
+    );
+    // cpu_cores is Option<i32> — either JSON null or an integer. Both are accepted.
+    assert!(
+        ours.get("cpu_cores").map_or(false, |v| v.is_null() || v.is_i64()),
+        "cpu_cores field must be present (null or integer), got {:?}",
+        ours.get("cpu_cores"),
+    );
 }
 ```
 
-(The reason for splitting: integration.rs already has the browser-ws helpers; the new server_tags.rs only exercises REST. If browser-ws helpers are not already present in integration.rs, inline the `tokio_tungstenite::connect_async` call here with the session cookie header.)
+- [ ] **Step 3: Stub `server_tags.rs` (optional)**
 
-- [ ] **Step 2: Run**
+If the project convention prefers a per-feature integration test binary, create a minimal `crates/server/tests/server_tags.rs`:
 
-Run: `cargo test -p serverbee-server --test server_tags`
-Run: `cargo test -p serverbee-server --test integration browser_ws_full_sync_includes_tags_and_cpu_cores`
-Expected: all PASS.
+```rust
+// All tests for the /api/servers/:id/tags feature live in tests/integration.rs
+// so they can share the `start_test_server`, `login_admin`, `register_agent`, and
+// `register_member` helpers without duplication. This file is intentionally empty.
+```
 
-- [ ] **Step 3: Commit**
+Otherwise, omit the file entirely and update the chunk's File Map.
+
+- [ ] **Step 4: Run**
 
 ```bash
-git add crates/server/tests/server_tags.rs crates/server/tests/integration.rs
+cargo test -p serverbee-server --test integration unauthenticated_get_tags_returns_401
+cargo test -p serverbee-server --test integration unauthenticated_put_tags_returns_401
+cargo test -p serverbee-server --test integration admin_put_then_get_roundtrips
+cargo test -p serverbee-server --test integration admin_put_rejects_too_many_tags
+cargo test -p serverbee-server --test integration admin_put_rejects_invalid_char
+cargo test -p serverbee-server --test integration admin_put_rejects_too_long_tag
+cargo test -p serverbee-server --test integration member_get_tags_returns_200
+cargo test -p serverbee-server --test integration member_put_tags_returns_403
+cargo test -p serverbee-server --test integration browser_ws_full_sync_includes_tags_and_cpu_cores
+```
+
+Expected: all PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add crates/server/tests/integration.rs
+# if you created the stub:
+# git add crates/server/tests/server_tags.rs
 git commit -m "test(server): cover tags CRUD + RBAC and full_sync payload inclusion"
 ```
 
@@ -2097,39 +2315,41 @@ git commit -m "test(server): cover tags CRUD + RBAC and full_sync payload inclus
 
 **Files:**
 - Create: `apps/web/src/hooks/use-server-tags.ts`
-- Create: `apps/web/src/hooks/use-server-tags.test.ts`
+- Create: `apps/web/src/hooks/use-server-tags.test.tsx` (MUST use `.tsx` — the test body contains JSX for the `QueryClientProvider` wrapper)
+
+> **Dependency note:** `msw` is NOT listed in `apps/web/package.json`, and the existing test setup (`apps/web/src/test/setup.ts`) only registers `@testing-library/jest-dom`. Do NOT add `msw` for a single hook test — use `vi.spyOn(globalThis, 'fetch')` instead (same pattern used elsewhere in the repo's web tests).
 
 - [ ] **Step 1: Write failing tests**
 
-```ts
+Create `apps/web/src/hooks/use-server-tags.test.tsx` with the body below. Note the `.tsx` extension — required because of the JSX inside `wrapper`.
+
+```tsx
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
-import { http, HttpResponse } from 'msw'
-import { setupServer } from 'msw/node'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useServerTags, useUpdateServerTags } from './use-server-tags'
 
-const server = setupServer()
-beforeAll(() => server.listen())
-afterEach(() => server.resetHandlers())
-afterAll(() => server.close())
-
-function wrapper() {
+function harness() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return {
-    qc,
-    wrapper: ({ children }: { children: React.ReactNode }) => (
-      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-    )
-  }
+  const Wrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  )
+  return { qc, Wrapper }
 }
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('useServerTags', () => {
   it('fetches GET /api/servers/:id/tags', async () => {
-    server.use(
-      http.get('/api/servers/srv-1/tags', () => HttpResponse.json({ data: ['a', 'b'] }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: ['a', 'b'] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      })
     )
-    const { wrapper: Wrapper } = wrapper()
+    const { Wrapper } = harness()
     const { result } = renderHook(() => useServerTags('srv-1'), { wrapper: Wrapper })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data).toEqual(['a', 'b'])
@@ -2137,14 +2357,15 @@ describe('useServerTags', () => {
 })
 
 describe('useUpdateServerTags', () => {
-  it('PUTs tags and optimistically patches both caches', async () => {
-    server.use(
-      http.put('/api/servers/srv-1/tags', async ({ request }) => {
-        const body = (await request.json()) as { tags: string[] }
-        return HttpResponse.json({ data: body.tags.toSorted() })
+  it('PUTs tags and patches both caches on success', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementationOnce(async (_input, init) => {
+      const body = JSON.parse((init as RequestInit).body as string) as { tags: string[] }
+      return new Response(JSON.stringify({ data: [...body.tags].sort() }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
       })
-    )
-    const { qc, wrapper: Wrapper } = wrapper()
+    })
+    const { qc, Wrapper } = harness()
     qc.setQueryData(['server-tags', 'srv-1'], ['old'])
     qc.setQueryData(['servers'], [{ id: 'srv-1', tags: ['old'] }])
     const { result } = renderHook(() => useUpdateServerTags('srv-1'), { wrapper: Wrapper })
@@ -2155,12 +2376,10 @@ describe('useUpdateServerTags', () => {
 })
 ```
 
-- [ ] **Step 2: Run (fail — module missing; msw may also require setup)**
+- [ ] **Step 2: Run (fail — module missing)**
 
 Run: `bun run --cwd apps/web test use-server-tags`
-Expected: FAIL.
-
-If `msw/node` isn't installed, skip the MSW-based test and use a lightweight `vi.fn()` for `fetch` instead (the existing test setup probably uses this pattern — check `apps/web/src/test-setup.ts` and mirror it).
+Expected: FAIL (module not found).
 
 - [ ] **Step 3: Implement the hook**
 
@@ -2199,7 +2418,7 @@ export function useUpdateServerTags(serverId: string) {
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/web/src/hooks/use-server-tags.ts apps/web/src/hooks/use-server-tags.test.ts
+git add apps/web/src/hooks/use-server-tags.ts apps/web/src/hooks/use-server-tags.test.tsx
 git commit -m "feat(web): useServerTags + useUpdateServerTags with optimistic cache"
 ```
 
@@ -2361,7 +2580,8 @@ git commit -m "feat(web): ServerEditDialog tags editor with sequential save"
 - [ ] Name cell: flag + name + UpgradeBadge on line 1, tag chips on line 2 when tags are set.
 - [ ] Edit dialog: type `prod, db, web` → save → chips appear in the row.
 - [ ] Edit dialog validations: 9 tags / 17-char tag / `has space` → error toast, no PUT fires.
-- [ ] Edit dialog partial failure: set a name + invalid tags → only name change persists (expected because tags didn't change); set a name + valid tags but force PUT 500 (via browser devtools network throttling) → PATCH persists, tag input reverts, `tags_save_failed` toast fires.
+- [ ] Edit dialog client-validation blocks submit: set a name + client-invalid tags (e.g. `bad space` or 17-char tag) → a validation toast fires, **no PATCH and no PUT are issued** (verify in browser devtools Network tab), the dialog stays open.
+- [ ] Edit dialog partial failure (PATCH ok, PUT fails): set a name + valid tags, force `PUT /api/servers/:id/tags` to return 500 (e.g. via browser devtools "block request URL" or a mock worker) → PATCH persists (server list shows the new name after dialog closes), tag input reverts to the last-known tags, `tags_save_failed` toast fires, dialog stays open.
 - [ ] Breakpoints: network column hides below `lg:`, group/uptime hide below `xl:`.
 - [ ] Viewport 1920×963 screenshot matches spec mockup proportions.
 - [ ] `bun run test` green; `cargo test --workspace` green; `cargo clippy --workspace -- -D warnings` clean; `bun x ultracite check` clean; `bun run typecheck` clean.
