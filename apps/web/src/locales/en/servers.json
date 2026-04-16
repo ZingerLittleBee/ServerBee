@@ -197,5 +197,19 @@
   "upgrade_status_failed": "Upgrade failed",
   "upgrade_status_timeout": "Upgrade timed out",
   "upgrade_error_with_backup": "Backup saved at",
-  "upgrade_backup_path": "Backup location"
+  "upgrade_backup_path": "Backup location",
+
+  "recovery_merge_open": "Recover Agent",
+  "recovery_merge_resume": "View Recovery",
+  "recovery_merge_title": "Recover Offline Server",
+  "recovery_merge_description": "Pick the online replacement agent to rebind and merge back into this offline server.",
+  "recovery_merge_loading": "Loading recovery candidates…",
+  "recovery_merge_empty": "No online recovery candidates are available right now.",
+  "recovery_merge_existing_job": "A recovery job is already in progress.",
+  "recovery_merge_warning": "This keeps the original server record, asks the replacement agent to rebind, and continues the recovery flow from there.",
+  "recovery_merge_start": "Start Recovery",
+  "recovery_merge_starting": "Starting…",
+  "recovery_merge_started": "Recovery started",
+  "recovery_merge_failed": "Recovery failed",
+  "recovery_merge_candidates_failed": "Failed to load recovery candidates."
 }

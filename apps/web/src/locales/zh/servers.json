@@ -197,5 +197,19 @@
   "upgrade_status_failed": "升级失败",
   "upgrade_status_timeout": "升级超时",
   "upgrade_error_with_backup": "备份保存在",
-  "upgrade_backup_path": "备份位置"
+  "upgrade_backup_path": "备份位置",
+
+  "recovery_merge_open": "恢复 Agent",
+  "recovery_merge_resume": "查看恢复任务",
+  "recovery_merge_title": "恢复离线服务器",
+  "recovery_merge_description": "选择在线的替代 Agent，将其重新绑定并合并回当前离线服务器。",
+  "recovery_merge_loading": "正在加载恢复候选项…",
+  "recovery_merge_empty": "当前没有可用的在线恢复候选项。",
+  "recovery_merge_existing_job": "当前已有一个恢复任务正在进行。",
+  "recovery_merge_warning": "此操作会保留原服务器记录，要求替代 Agent 重新绑定，并继续后续恢复流程。",
+  "recovery_merge_start": "开始恢复",
+  "recovery_merge_starting": "启动中…",
+  "recovery_merge_started": "恢复任务已启动",
+  "recovery_merge_failed": "恢复失败",
+  "recovery_merge_candidates_failed": "加载恢复候选项失败。"
 }

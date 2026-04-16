@@ -7,6 +7,8 @@ import type {
   DockerContainerStats,
   DockerEventInfo
 } from '@/routes/_authed/servers/$serverId/docker/types'
+import type { RecoveryJobResponse } from '@/lib/api-schema'
+import { useRecoveryJobsStore } from '@/stores/recovery-jobs-store'
 import { type UpgradeJob, useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 
 const MAX_DOCKER_EVENTS = 100
@@ -49,8 +51,8 @@ interface ServerMetrics {
 }
 
 type WsMessage =
-  | { type: 'full_sync'; servers: ServerMetrics[]; upgrades?: UpgradeJob[] }
-  | { type: 'update'; servers: ServerMetrics[] }
+  | { type: 'full_sync'; servers: ServerMetrics[]; upgrades?: UpgradeJob[]; recoveries?: RecoveryJobResponse[] }
+  | { type: 'update'; servers: ServerMetrics[]; recoveries?: RecoveryJobResponse[] | null }
   | { type: 'server_online'; server_id: string }
   | { type: 'server_offline'; server_id: string }
   | {
@@ -196,10 +198,18 @@ function handleServerMetricsMessage(raw: { type: string } & Record<string, unkno
       if (Array.isArray(raw.upgrades)) {
         useUpgradeJobsStore.getState().setJobs(raw.upgrades as UpgradeJob[])
       }
+      if (Array.isArray(raw.recoveries)) {
+        useRecoveryJobsStore.getState().setJobs(raw.recoveries)
+      } else {
+        useRecoveryJobsStore.getState().setJobs([])
+      }
     } else {
       queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
         prev ? mergeServerUpdate(prev, msg.servers) : msg.servers
       )
+      if (Array.isArray(raw.recoveries)) {
+        useRecoveryJobsStore.getState().setJobs(raw.recoveries)
+      }
     }
     return
   }
