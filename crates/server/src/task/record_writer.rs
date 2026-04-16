@@ -43,6 +43,11 @@ pub async fn run(state: Arc<AppState>) {
 
         let mut count = 0;
         for (server_id, report) in &reports {
+            if !state.recovery_lock.writes_allowed_for(server_id) {
+                tracing::info!("Skipping recovery-frozen record write for {server_id}");
+                continue;
+            }
+
             // Save metrics record
             if let Err(e) = RecordService::save_report(&state.db, server_id, report).await {
                 tracing::error!("Failed to save record for {server_id}: {e}");
