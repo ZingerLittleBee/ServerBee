@@ -136,7 +136,7 @@ New persistent table:
 
 - `recovery_job`
 
-Suggested columns:
+Persistent columns:
 
 - `job_id`
 - `target_server_id`
@@ -145,20 +145,18 @@ Suggested columns:
 - `stage`
 - `checkpoint_json`
 - `error`
+- `started_at`
 - `created_at`
 - `updated_at`
+- `last_heartbeat_at`
 
-Tracked fields:
+Recommended indexes:
 
-- `job_id`
-- `target_server_id`
-- `source_server_id`
-- `status`
-- `stage`
-- `started_at`
-- `updated_at`
-- `error`
-- per-stage checkpoint metadata
+- unique primary key on `job_id`
+- index on `(target_server_id, status)`
+- index on `(source_server_id, status)`
+
+`checkpoint_json` stores per-stage metadata needed for restart-safe continuation.
 
 Suggested stages:
 
@@ -324,6 +322,7 @@ Rules:
 - replace every occurrence of `source_server_id` with `target_server_id`
 - deduplicate the final array while preserving order where practical
 - never leave a dangling `source_server_id` reference behind
+- apply the rewrite with a read-modify-write cycle scoped to rows that still contain `source_server_id`
 
 Because this is a replacement, not a removal, these updates do not create the empty-array semantics problems seen in orphan cleanup flows.
 
@@ -459,6 +458,12 @@ Reason:
 
 The job simply fails before merge and keeps `source` untouched. A retry issues a fresh target token and supersedes the prior unfinished attempt.
 
+Retry semantics after Stage 3 timeout or any other pre-rebind completion failure:
+
+- mark the existing recovery job as `failed`
+- create a new recovery job with a new `job_id`
+- issue a fresh target token for the new attempt
+
 ### Stage 4: Freezing Writes
 
 Enable recovery locks for both `target` and `source`.
@@ -485,10 +490,15 @@ Each group:
 ### Stage 6: Finalizing
 
 1. Update `servers(target)` runtime fields from `source`.
-2. Delete remaining source-owned rows that were not already moved.
-3. Delete the `source` server row.
-4. Clear job locks.
-5. Write audit log entries.
+2. Delete remaining source-owned rows that are intentionally not merged:
+   - `server_tag`
+   - `network_probe_config`
+3. Assert that no other source-owned rows remain in tables that should already have been moved or rewritten.
+4. Delete the `source` server row.
+5. Clear job locks.
+6. Write audit log entries.
+
+`source` deletion should not be used as the primary cleanup mechanism for historical rows. It is only the final removal of the now-obsolete server row after merge/rewrite work has already completed. Foreign-key cascade is acceptable as a safety net for tables that define it, but the merge engine must not depend on it for correctness.
 
 ### Stage 7: Terminal State
 
@@ -518,6 +528,12 @@ If the job fails after `target` is already online:
 - allow retry from the first incomplete merge stage
 
 The system does not attempt a full rollback after the live identity has already switched. That would be more fragile than completing the merge forward.
+
+Retry semantics after rebind has succeeded:
+
+- keep the same `job_id`
+- resume from the first incomplete stage using persisted checkpoints
+- do not issue another target token unless the retry is explicitly restarted from the beginning as a separate administrative action
 
 ### Failure During Final Cleanup
 
@@ -627,6 +643,13 @@ Recommended action names:
 - `recovery.source_deleted`
 - `recovery.failed`
 
+## Open Tradeoffs
+
+- The merge window intentionally drops some live writes due to the recovery lock. This is acceptable because monitoring-gap repair is out of scope.
+- The design chooses forward completion over full rollback after live identity rebind. This reduces failure complexity and matches the operational priority of restoring the server under the original identity.
+- The design does not try to infer recovery automatically. Admin confirmation remains mandatory to avoid silent mis-merges.
+- Shared `server_ids_json` rewrites are read-modify-write operations. If an admin edits the same row concurrently in the UI, last-writer-wins behavior may still occur. This is acceptable in v1 because the race is rare and bounded to recovery-time configuration edits.
+
 ## Testing Strategy
 
 ### Backend Integration Tests
@@ -675,9 +698,3 @@ Recommended rollout order:
 4. merge engine and tests
 5. UI workflow
 6. documentation
-
-## Open Tradeoffs
-
-- The merge window intentionally drops some live writes due to the recovery lock. This is acceptable because monitoring-gap repair is out of scope.
-- The design chooses forward completion over full rollback after live identity rebind. This reduces failure complexity and matches the operational priority of restoring the server under the original identity.
-- The design does not try to infer recovery automatically. Admin confirmation remains mandatory to avoid silent mis-merges.
