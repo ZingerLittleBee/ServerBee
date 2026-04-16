@@ -641,7 +641,6 @@ mod tests {
             .agent_manager
             .add_connection("source-1".into(), "Source".into(), tx, test_addr());
         state.agent_manager.set_protocol_version("source-1", 3);
-        state.agent_manager.set_protocol_version("source-1", 3);
 
         let before = server::Entity::find_by_id("target-1")
             .one(&db)

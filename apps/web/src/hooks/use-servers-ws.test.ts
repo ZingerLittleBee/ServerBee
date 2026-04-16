@@ -37,6 +37,18 @@ function makeServer(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
   }
 }
 
+function makeQueryClient() {
+  const cache = new Map<string, unknown>()
+  return {
+    setQueryData: (key: unknown[], value: unknown | ((prev: unknown) => unknown)) => {
+      const cacheKey = JSON.stringify(key)
+      const prev = cache.get(cacheKey)
+      const next = typeof value === 'function' ? (value as (prev: unknown) => unknown)(prev) : value
+      cache.set(cacheKey, next)
+    }
+  }
+}
+
 describe('mergeServerUpdate', () => {
   it('updates dynamic fields', () => {
     const prev = [makeServer({ cpu: 50 })]
@@ -110,18 +122,6 @@ describe('setServerCapabilities', () => {
 })
 
 describe('handleWsMessage upgrade messages', () => {
-  function makeQueryClient() {
-    const cache = new Map<string, unknown>()
-    return {
-      setQueryData: (key: unknown[], value: unknown | ((prev: unknown) => unknown)) => {
-        const cacheKey = JSON.stringify(key)
-        const prev = cache.get(cacheKey)
-        const next = typeof value === 'function' ? (value as (prev: unknown) => unknown)(prev) : value
-        cache.set(cacheKey, next)
-      }
-    }
-  }
-
   it('hydrates upgrade jobs from full_sync', () => {
     useUpgradeJobsStore.setState({ jobs: new Map() })
     const queryClient = makeQueryClient()
@@ -212,18 +212,6 @@ describe('handleWsMessage upgrade messages', () => {
 })
 
 describe('handleWsMessage recovery messages', () => {
-  function makeQueryClient() {
-    const cache = new Map<string, unknown>()
-    return {
-      setQueryData: (key: unknown[], value: unknown | ((prev: unknown) => unknown)) => {
-        const cacheKey = JSON.stringify(key)
-        const prev = cache.get(cacheKey)
-        const next = typeof value === 'function' ? (value as (prev: unknown) => unknown)(prev) : value
-        cache.set(cacheKey, next)
-      }
-    }
-  }
-
   it('hydrates recovery jobs from full_sync', () => {
     useRecoveryJobsStore.setState({ jobs: new Map() })
     const queryClient = makeQueryClient()

@@ -11,6 +11,7 @@ use sea_orm::{
 use crate::entity::{network_probe_config, recovery_job, server, server_tag};
 use crate::error::AppError;
 use crate::service::auth::AuthService;
+use crate::service::db_error::is_active_recovery_conflict;
 use crate::service::recovery_job::RecoveryJobService;
 use crate::service::traffic::TrafficService;
 use crate::state::AppState;
@@ -37,16 +38,6 @@ pub enum RecoveryFailurePhase {
 pub enum RecoveryRetryStrategy {
     StartNewJob,
     ResumeSameJob,
-}
-
-fn is_unique_violation(err: &sea_orm::DbErr) -> bool {
-    let message = err.to_string();
-    message.contains("UNIQUE constraint failed") || message.contains("UNIQUE")
-}
-
-fn is_active_recovery_conflict(err: &sea_orm::DbErr) -> bool {
-    let message = err.to_string();
-    is_unique_violation(err) || message.contains("recovery_job_active_conflict")
 }
 
 impl RecoveryMergeService {
@@ -805,21 +796,20 @@ impl RecoveryMergeService {
         C: ConnectionTrait,
     {
         let tables = [
-            ("alert_rules", "server_ids_json", true),
-            ("ping_tasks", "server_ids_json", false),
-            ("tasks", "server_ids_json", false),
-            ("service_monitor", "server_ids_json", true),
-            ("maintenance", "server_ids_json", true),
-            ("incident", "server_ids_json", true),
-            ("status_page", "server_ids_json", false),
+            ("alert_rules", "server_ids_json"),
+            ("ping_tasks", "server_ids_json"),
+            ("tasks", "server_ids_json"),
+            ("service_monitor", "server_ids_json"),
+            ("maintenance", "server_ids_json"),
+            ("incident", "server_ids_json"),
+            ("status_page", "server_ids_json"),
         ];
 
-        for (table, column, nullable) in tables {
+        for (table, column) in tables {
             Self::rewrite_server_ids_json_table_on_connection(
                 db,
                 table,
                 column,
-                nullable,
                 target_server_id,
                 source_server_id,
             )
@@ -834,7 +824,6 @@ impl RecoveryMergeService {
         db: &DatabaseConnection,
         table: &str,
         column: &str,
-        nullable: bool,
         target_server_id: &str,
         source_server_id: &str,
     ) -> Result<(), AppError> {
@@ -842,7 +831,6 @@ impl RecoveryMergeService {
             db,
             table,
             column,
-            nullable,
             target_server_id,
             source_server_id,
         )
@@ -853,7 +841,6 @@ impl RecoveryMergeService {
         db: &C,
         table: &str,
         column: &str,
-        nullable: bool,
         target_server_id: &str,
         source_server_id: &str,
     ) -> Result<(), AppError>
@@ -883,13 +870,7 @@ impl RecoveryMergeService {
                 continue;
             }
 
-            let value = if nullable {
-                rewritten.unwrap_or_else(|| "[]".to_string()).into()
-            } else {
-                rewritten
-                    .unwrap_or_else(|| "[]".to_string())
-                    .into()
-            };
+            let value = rewritten.unwrap_or_else(|| "[]".to_string()).into();
 
             db.execute(Statement::from_sql_and_values(
                 DatabaseBackend::Sqlite,

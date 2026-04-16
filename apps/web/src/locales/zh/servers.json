@@ -211,5 +211,14 @@
   "recovery_merge_starting": "启动中…",
   "recovery_merge_started": "恢复任务已启动",
   "recovery_merge_failed": "恢复失败",
-  "recovery_merge_candidates_failed": "加载恢复候选项失败。"
+  "recovery_merge_candidates_failed": "加载恢复候选项失败。",
+  "recovery_merge_read_only": "当前存在恢复任务时，此对话框为只读状态。",
+  "recovery_stage_validating": "校验中",
+  "recovery_stage_rebinding": "重新绑定中",
+  "recovery_stage_awaiting_target_online": "等待目标上线",
+  "recovery_stage_freezing_writes": "冻结写入",
+  "recovery_stage_merging_history": "合并历史",
+  "recovery_stage_finalizing": "收尾中",
+  "recovery_stage_failed": "失败",
+  "recovery_stage_succeeded": "完成"
 }

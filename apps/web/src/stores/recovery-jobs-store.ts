@@ -4,12 +4,15 @@ import type { RecoveryJobResponse } from '@/lib/api-schema'
 interface RecoveryJobsState {
   clearJob: (targetServerId: string) => void
   getJob: (targetServerId: string) => RecoveryJobResponse | undefined
+  hydrated: boolean
   jobs: Map<string, RecoveryJobResponse>
+  setHydrated: (hydrated: boolean) => void
   setJob: (targetServerId: string, job: RecoveryJobResponse) => void
   setJobs: (jobs: RecoveryJobResponse[]) => void
 }
 
 export const useRecoveryJobsStore = create<RecoveryJobsState>()((set, get) => ({
+  hydrated: false,
   jobs: new Map(),
 
   setJob: (targetServerId: string, job: RecoveryJobResponse) => {
@@ -33,8 +36,10 @@ export const useRecoveryJobsStore = create<RecoveryJobsState>()((set, get) => ({
     for (const job of jobs) {
       next.set(job.target_server_id, job)
     }
-    set({ jobs: next })
+    set({ jobs: next, hydrated: true })
   },
 
-  getJob: (targetServerId: string) => get().jobs.get(targetServerId)
+  getJob: (targetServerId: string) => get().jobs.get(targetServerId),
+
+  setHydrated: (hydrated: boolean) => set({ hydrated })
 }))

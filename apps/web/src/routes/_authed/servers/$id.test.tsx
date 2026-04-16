@@ -150,7 +150,11 @@ vi.mock('@/stores/upgrade-jobs-store', () => ({
 }))
 
 vi.mock('@/stores/recovery-jobs-store', () => ({
-  useRecoveryJobsStore: () => undefined
+  useRecoveryJobsStore: (selector: (state: { hydrated: boolean; jobs: Map<string, unknown> }) => unknown) =>
+    selector({
+      hydrated: true,
+      jobs: new Map()
+    })
 }))
 
 const { ServerDetailPage } = await import('./$id')
@@ -221,6 +225,6 @@ describe('ServerDetailPage', () => {
   it('shows recovery action for offline server when admin', () => {
     render(<ServerDetailPage />)
 
-    expect(screen.getByText('Recover Agent')).toBeDefined()
+    expect(screen.getByText('Recover Agent')).toBeInTheDocument()
   })
 })

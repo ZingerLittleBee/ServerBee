@@ -33,9 +33,9 @@ async fn browser_ws_handler(
     // Validate auth: try session cookie first, then API key, then Bearer token
     let auth = validate_browser_auth(&state, &headers).await;
     match auth {
-        Some((_user_id, mobile_expires)) => ws
+        Some((_user_id, is_admin, mobile_expires)) => ws
             .max_message_size(MAX_WS_MESSAGE_SIZE)
-            .on_upgrade(move |socket| handle_browser_ws(socket, state, mobile_expires)),
+            .on_upgrade(move |socket| handle_browser_ws(socket, state, is_admin, mobile_expires)),
         None => axum::http::StatusCode::UNAUTHORIZED.into_response(),
     }
 }
@@ -48,20 +48,20 @@ async fn browser_ws_handler(
 async fn validate_browser_auth(
     state: &Arc<AppState>,
     headers: &HeaderMap,
-) -> Option<(String, Option<chrono::DateTime<chrono::Utc>>)> {
+) -> Option<(String, bool, Option<chrono::DateTime<chrono::Utc>>)> {
     // Try session cookie (always web source → no mobile expiry)
     if let Some(token) = extract_session_cookie(headers)
         && let Ok(Some((user, _session))) =
             AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
     {
-        return Some((user.id, None));
+        return Some((user.id, user.role == "admin", None));
     }
 
     // Try API key header (no expiry)
     if let Some(key) = extract_api_key(headers)
         && let Ok(Some(user)) = AuthService::validate_api_key(&state.db, &key).await
     {
-        return Some((user.id, None));
+        return Some((user.id, user.role == "admin", None));
     }
 
     // Try Bearer token (may be a mobile session with a fixed expiry)
@@ -74,7 +74,7 @@ async fn validate_browser_auth(
         } else {
             None
         };
-        return Some((user.id, mobile_expires));
+        return Some((user.id, user.role == "admin", mobile_expires));
     }
 
     None
@@ -112,6 +112,7 @@ fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
 async fn handle_browser_ws(
     socket: WebSocket,
     state: Arc<AppState>,
+    is_admin: bool,
     mobile_expires: Option<chrono::DateTime<chrono::Utc>>,
 ) {
     let (mut ws_sink, mut ws_stream) = socket.split();
@@ -119,7 +120,7 @@ async fn handle_browser_ws(
     let connection_id = uuid::Uuid::new_v4().to_string();
 
     // Build FullSync message from DB servers + agent_manager online/report data
-    let full_sync = build_full_sync(&state).await;
+    let full_sync = build_full_sync(&state, is_admin).await;
     if let Err(e) = send_browser_message(&mut ws_sink, &full_sync).await {
         tracing::error!("Failed to send FullSync to browser: {e}");
         return;
@@ -136,7 +137,10 @@ async fn handle_browser_ws(
             msg = browser_rx.recv() => {
                 match msg {
                     Ok(browser_msg) => {
-                        if let Err(e) = send_browser_message(&mut ws_sink, &browser_msg).await {
+                        let filtered = filter_browser_message(browser_msg, is_admin);
+                        if let Some(filtered) = filtered
+                            && let Err(e) = send_browser_message(&mut ws_sink, &filtered).await
+                        {
                             tracing::debug!("Failed to send to browser WS: {e}");
                             break;
                         }
@@ -144,7 +148,7 @@ async fn handle_browser_ws(
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         tracing::warn!("Browser WS lagged by {n} messages, sending full resync");
                         // On lag, send a full resync
-                        let resync = build_full_sync(&state).await;
+                        let resync = build_full_sync(&state, is_admin).await;
                         if let Err(e) = send_browser_message(&mut ws_sink, &resync).await {
                             tracing::debug!("Failed to send resync to browser WS: {e}");
                             break;
@@ -253,8 +257,12 @@ async fn handle_browser_client_message(
     }
 }
 
-async fn build_full_sync(state: &Arc<AppState>) -> BrowserMessage {
-    let recoveries = recovery_snapshot(state).await;
+async fn build_full_sync(state: &Arc<AppState>, is_admin: bool) -> BrowserMessage {
+    let recoveries = if is_admin {
+        recovery_snapshot(state).await.unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     let servers = match ServerService::list_servers(&state.db).await {
         Ok(servers) => servers,
         Err(e) => {
@@ -366,21 +374,47 @@ async fn build_full_sync(state: &Arc<AppState>) -> BrowserMessage {
     }
 }
 
-pub(crate) async fn recovery_snapshot(state: &Arc<AppState>) -> Vec<RecoveryJobDto> {
+pub(crate) async fn recovery_snapshot(state: &Arc<AppState>) -> Option<Vec<RecoveryJobDto>> {
     match recovery_job::Entity::find().all(&state.db).await {
-        Ok(jobs) => jobs.into_iter().map(Into::into).collect(),
+        Ok(jobs) => Some(jobs.into_iter().map(Into::into).collect()),
         Err(e) => {
             tracing::error!("Failed to list recovery jobs for browser sync: {e}");
-            Vec::new()
+            None
         }
     }
 }
 
 pub(crate) async fn broadcast_recovery_update(state: &Arc<AppState>) {
+    let Some(recoveries) = recovery_snapshot(state).await else {
+        return;
+    };
     let _ = state.browser_tx.send(BrowserMessage::Update {
         servers: Vec::new(),
-        recoveries: Some(recovery_snapshot(state).await),
+        recoveries: Some(recoveries),
     });
+}
+
+fn filter_browser_message(msg: BrowserMessage, is_admin: bool) -> Option<BrowserMessage> {
+    if is_admin {
+        return Some(msg);
+    }
+
+    match msg {
+        BrowserMessage::FullSync {
+            servers,
+            upgrades,
+            ..
+        } => Some(BrowserMessage::FullSync {
+            servers,
+            upgrades,
+            recoveries: Vec::new(),
+        }),
+        BrowserMessage::Update { servers, .. } => Some(BrowserMessage::Update {
+            servers,
+            recoveries: None,
+        }),
+        other => Some(other),
+    }
 }
 
 async fn send_browser_message(
@@ -490,7 +524,7 @@ mod tests {
         .await
         .unwrap();
 
-        let message = build_full_sync(&state).await;
+        let message = build_full_sync(&state, true).await;
 
         match message {
             BrowserMessage::FullSync { recoveries, .. } => {
@@ -546,7 +580,7 @@ mod tests {
         .await
         .unwrap();
 
-        let message = build_full_sync(&state).await;
+        let message = build_full_sync(&state, true).await;
 
         match message {
             BrowserMessage::FullSync { recoveries, .. } => {
@@ -562,6 +596,41 @@ mod tests {
                         && job.stage == RecoveryJobStage::Succeeded
                 }));
             }
+            other => panic!("expected full sync, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn full_sync_hides_recoveries_for_non_admin() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "target-1", "Target").await;
+        insert_server(&db, "source-1", "Source").await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+
+        let now = Utc::now();
+        recovery_job::ActiveModel {
+            job_id: Set("job-1".to_string()),
+            target_server_id: Set("target-1".to_string()),
+            source_server_id: Set("source-1".to_string()),
+            status: Set("running".to_string()),
+            stage: Set("rebinding".to_string()),
+            checkpoint_json: Set(None),
+            error: Set(None),
+            started_at: Set(now),
+            created_at: Set(now),
+            updated_at: Set(now),
+            last_heartbeat_at: Set(Some(now)),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let message = build_full_sync(&state, false).await;
+
+        match message {
+            BrowserMessage::FullSync { recoveries, .. } => assert!(recoveries.is_empty()),
             other => panic!("expected full sync, got {other:?}"),
         }
     }
@@ -608,6 +677,41 @@ mod tests {
                 assert_eq!(recoveries[0].stage, RecoveryJobStage::Failed);
             }
             other => panic!("expected update with recoveries, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn full_sync_strips_recoveries_for_non_admin() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "target-1", "Target").await;
+        insert_server(&db, "source-1", "Source").await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+
+        let now = Utc::now();
+        recovery_job::ActiveModel {
+            job_id: Set("job-1".to_string()),
+            target_server_id: Set("target-1".to_string()),
+            source_server_id: Set("source-1".to_string()),
+            status: Set("running".to_string()),
+            stage: Set("rebinding".to_string()),
+            checkpoint_json: Set(None),
+            error: Set(None),
+            started_at: Set(now),
+            created_at: Set(now),
+            updated_at: Set(now),
+            last_heartbeat_at: Set(Some(now)),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let message = build_full_sync(&state, false).await;
+
+        match message {
+            BrowserMessage::FullSync { recoveries, .. } => assert!(recoveries.is_empty()),
+            other => panic!("expected full sync, got {other:?}"),
         }
     }
 }

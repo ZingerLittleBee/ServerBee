@@ -6,6 +6,7 @@ pub mod auth;
 pub mod checker;
 pub mod config;
 pub mod dashboard;
+pub mod db_error;
 pub mod docker;
 pub mod docker_viewer;
 pub mod file_transfer;

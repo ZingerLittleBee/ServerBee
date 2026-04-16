@@ -17,8 +17,19 @@ impl MigrationTrait for Migration {
                 job_id TEXT PRIMARY KEY NOT NULL,
                 target_server_id TEXT NOT NULL,
                 source_server_id TEXT NOT NULL,
-                status TEXT NOT NULL,
-                stage TEXT NOT NULL,
+                status TEXT NOT NULL CHECK (status IN ('running', 'failed', 'succeeded')),
+                stage TEXT NOT NULL CHECK (
+                    stage IN (
+                        'validating',
+                        'rebinding',
+                        'awaiting_target_online',
+                        'freezing_writes',
+                        'merging_history',
+                        'finalizing',
+                        'succeeded',
+                        'failed'
+                    )
+                ),
                 checkpoint_json TEXT NULL,
                 error TEXT NULL,
                 started_at DATETIME NOT NULL,

@@ -79,6 +79,17 @@ function formatCurrency(price: number, currency: string): string {
   }
 }
 
+function translateRecoveryStage(
+  t: (key: string, options?: { defaultValue?: string }) => string,
+  stage: string | undefined
+): string | null {
+  if (!stage) {
+    return null
+  }
+
+  return t(`recovery_stage_${stage}`, { defaultValue: stage })
+}
+
 function ServerInfoMeta({ server }: { server: ServerResponse }) {
   const { t } = useTranslation('servers')
   return (
@@ -132,6 +143,7 @@ function ServerActionButtons({
   id,
   isAdmin,
   isOnline,
+  recoveryHydrated,
   onEditOpen,
   onRecoveryOpen,
   serverWithCaps,
@@ -143,6 +155,7 @@ function ServerActionButtons({
   id: string
   isAdmin: boolean
   isOnline: boolean
+  recoveryHydrated: boolean
   onEditOpen: () => void
   onRecoveryOpen: () => void
   serverWithCaps: ServerResponse & ServerWithCaps
@@ -157,7 +170,7 @@ function ServerActionButtons({
       </Button>
       <CapabilitiesDialog server={serverWithCaps} />
       {isAdmin && !isOnline && (
-        <Button onClick={onRecoveryOpen} size="sm" variant="outline">
+        <Button disabled={!recoveryHydrated} onClick={onRecoveryOpen} size="sm" variant="outline">
           {currentRecoveryJob
             ? t('recovery_merge_resume', { defaultValue: 'View Recovery' })
             : t('recovery_merge_open', { defaultValue: 'Recover Agent' })}
@@ -418,8 +431,10 @@ export function ServerDetailPage() {
   })
   const liveData = liveServers?.find((s) => s.id === id)
   const upgradeJob = useUpgradeJobsStore((state) => state.jobs.get(id))
+  const recoveryHydrated = useRecoveryJobsStore((state) => state.hydrated)
   const recoveryJob = useRecoveryJobsStore((state) => state.jobs.get(id))
   const isAdmin = user?.role === 'admin'
+  const translatedRecoveryStage = translateRecoveryStage(t, recoveryJob?.stage)
 
   const chartData: Record<string, unknown>[] = useMemo(() => {
     if (isRealtime) {
@@ -587,7 +602,9 @@ export function ServerDetailPage() {
               <h1 className="font-bold text-2xl">{server.name}</h1>
               <StatusBadge online={isOnline} />
               <UpgradeJobBadge job={upgradeJob} />
-              {recoveryJob && <Badge variant="secondary">{recoveryJob.stage}</Badge>}
+              {recoveryHydrated && translatedRecoveryStage && (
+                <Badge variant="secondary">{translatedRecoveryStage}</Badge>
+              )}
             </div>
             <ServerInfoMeta server={server} />
           </div>
@@ -610,6 +627,7 @@ export function ServerDetailPage() {
               isOnline={isOnline}
               onEditOpen={() => setEditOpen(true)}
               onRecoveryOpen={() => setRecoveryOpen(true)}
+              recoveryHydrated={recoveryHydrated}
               serverWithCaps={serverWithCaps}
               terminalEnabled={terminalEnabled}
             />
