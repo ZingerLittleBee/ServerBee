@@ -430,6 +430,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     if state.recovery_lock.writes_allowed_for(server_id) {
                         if let Err(e) = AlertService::check_event_rules(
                             &state.db,
+                            &state.config,
                             &state.alert_state_manager,
                             server_id,
                             "ip_changed",
@@ -1159,6 +1160,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                         if state.recovery_lock.writes_allowed_for(server_id) {
                             if let Err(e) = AlertService::check_event_rules(
                                 &state.db,
+                                &state.config,
                                 &state.alert_state_manager,
                                 server_id,
                                 "ip_changed",

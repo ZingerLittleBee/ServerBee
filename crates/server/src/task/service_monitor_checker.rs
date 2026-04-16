@@ -205,7 +205,9 @@ async fn execute_check(state: &AppState, monitor: &crate::entity::service_monito
             ..Default::default()
         };
 
-        if let Err(e) = NotificationService::send_group(&state.db, group_id, &ctx).await {
+        if let Err(e) =
+            NotificationService::send_group(&state.db, &state.config, group_id, &ctx).await
+        {
             tracing::error!(
                 "Failed to send failure notification for {}: {e}",
                 monitor.name
@@ -231,7 +233,9 @@ async fn execute_check(state: &AppState, monitor: &crate::entity::service_monito
             ..Default::default()
         };
 
-        if let Err(e) = NotificationService::send_group(&state.db, group_id, &ctx).await {
+        if let Err(e) =
+            NotificationService::send_group(&state.db, &state.config, group_id, &ctx).await
+        {
             tracing::error!(
                 "Failed to send recovery notification for {}: {e}",
                 monitor.name

@@ -12,7 +12,7 @@ A lightweight, self-hosted VPS monitoring system built with Rust and React.
 - **iOS Mobile Companion** -- Native iOS app with QR pairing, push notifications, and real-time metrics
 - **Detailed Metrics** -- Real-time streaming charts + historical views (1h/6h/24h/7d/30d) for CPU, memory, disk, network, load, temperature, GPU, disk I/O
 - **Alert System** -- 14+ metric types, threshold/offline/traffic/expiration rules, AND logic, 70% sampling
-- **Notifications** -- Webhook, Telegram, Bark, Email (SMTP) channels with notification groups
+- **Notifications** -- Webhook, Telegram, Bark, Email (via Resend) channels with notification groups
 - **Network Quality Monitoring** -- Multi-target network probing (96 preset China 3-ISP + international nodes), real-time/historical latency charts, anomaly detection, per-server target assignment
 - **Ping Monitoring** -- ICMP, TCP, HTTP probes with latency charts and success rate
 - **Safer Agent Registration** -- Stable machine fingerprints reuse existing server records, `auth.max_servers` soft-caps auto-discovery growth, discovery keys can be regenerated from Settings, and unconnected placeholders can be cleaned up
