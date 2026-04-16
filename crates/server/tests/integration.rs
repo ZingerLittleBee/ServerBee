@@ -3810,8 +3810,9 @@ async fn test_recovery_candidates_rejects_online_or_busy_target() {
             .contains("must be offline")
     );
 
-    let (_source_sink, mut source_reader) = connect_agent(&base_url, &source_token).await;
+    let (mut source_sink, mut source_reader) = connect_agent(&base_url, &source_token).await;
     let _source_welcome = recv_agent_text(&mut source_reader).await;
+    send_system_info(&mut source_sink, &mut source_reader, "recovery-busy-source-info", None).await;
 
     let start_resp = admin_client
         .post(format!("{}/api/servers/{}/recover-merge", base_url, busy_target_id))
