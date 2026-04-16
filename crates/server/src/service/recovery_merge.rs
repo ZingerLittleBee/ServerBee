@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
-use sea_orm::DatabaseConnection;
-use sea_orm::EntityTrait;
+use chrono::Utc;
+use sea_orm::prelude::Expr;
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 use crate::entity::{recovery_job, server};
 use crate::error::AppError;
@@ -122,12 +123,6 @@ impl RecoveryMergeService {
                 ));
             }
 
-            if !is_pre_rebind_stage(job.stage.as_str()) {
-                return Err(AppError::Conflict(
-                    "Recovery job has already advanced past the rebind step".to_string(),
-                ));
-            }
-
             return Ok(Some(job));
         }
 
@@ -157,12 +152,33 @@ impl RecoveryMergeService {
         db: &DatabaseConnection,
         job: recovery_job::Model,
     ) -> Result<recovery_job::Model, AppError> {
-        if job.stage == RECOVERY_STAGE_REBINDING {
-            return Ok(job);
+        let now = Utc::now();
+        let result = recovery_job::Entity::update_many()
+            .col_expr(
+                recovery_job::Column::Stage,
+                Expr::value(RECOVERY_STAGE_REBINDING),
+            )
+            .col_expr(recovery_job::Column::CheckpointJson, Expr::value(None::<String>))
+            .col_expr(recovery_job::Column::Error, Expr::value(None::<String>))
+            .col_expr(recovery_job::Column::UpdatedAt, Expr::value(now))
+            .col_expr(recovery_job::Column::LastHeartbeatAt, Expr::value(Some(now)))
+            .filter(recovery_job::Column::JobId.eq(&job.job_id))
+            .filter(recovery_job::Column::Stage.is_in([
+                RECOVERY_STAGE_VALIDATING,
+                RECOVERY_STAGE_REBINDING,
+            ]))
+            .exec(db)
+            .await?;
+
+        if result.rows_affected == 0 {
+            return RecoveryJobService::get_job(db, &job.job_id)
+                .await?
+                .ok_or_else(|| AppError::NotFound("Recovery job not found".to_string()));
         }
 
-        RecoveryJobService::update_stage(db, &job.job_id, RECOVERY_STAGE_REBINDING, None, None)
-            .await
+        RecoveryJobService::get_job(db, &job.job_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Recovery job not found".to_string()))
     }
 
     async fn handle_rebind_ack_on_db(
@@ -520,5 +536,35 @@ mod tests {
 
         assert_eq!(reused.job_id, first.job_id);
         assert_eq!(reused.stage, RECOVERY_STAGE_REBINDING);
+    }
+
+    #[tokio::test]
+    async fn reusable_start_keeps_latest_stage_when_rebind_ack_wins_race() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let stale_job = RecoveryMergeService::start_on_db(&db, "target-1", "source-1")
+            .await
+            .unwrap();
+        let acknowledged = RecoveryMergeService::handle_rebind_ack_on_db(
+            &db,
+            &stale_job.job_id,
+            "source-1",
+        )
+        .await
+        .unwrap();
+        assert_eq!(acknowledged.stage, RECOVERY_STAGE_AWAITING_TARGET_ONLINE);
+
+        let advanced = RecoveryMergeService::advance_job_to_rebinding(&db, stale_job)
+            .await
+            .unwrap();
+
+        assert_eq!(advanced.job_id, acknowledged.job_id);
+        assert_eq!(advanced.stage, RECOVERY_STAGE_AWAITING_TARGET_ONLINE);
+
+        let loaded = RecoveryJobService::get_job(&db, &advanced.job_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.stage, RECOVERY_STAGE_AWAITING_TARGET_ONLINE);
     }
 }
