@@ -21,6 +21,7 @@ use crate::service::config::ConfigService;
 use crate::service::network_probe::NetworkProbeService;
 use crate::service::upgrade_release::LatestAgentVersionResponse;
 use crate::state::AppState;
+use serverbee_common::constants::CAP_DEFAULT;
 
 const CONFIG_KEY_AUTO_DISCOVERY: &str = "auto_discovery_key";
 const DEFAULT_SERVER_NAME: &str = "New Server";
@@ -208,7 +209,7 @@ async fn register(
         traffic_limit: Set(None),
         traffic_limit_type: Set(None),
         billing_start_day: Set(None),
-        capabilities: Set(56),
+        capabilities: Set(CAP_DEFAULT as i32),
         protocol_version: Set(1),
         features: Set("[]".to_string()),
         last_remote_addr: Set(Some(ip.clone())),
