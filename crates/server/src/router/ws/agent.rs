@@ -1103,22 +1103,22 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                             .get_remote_addr(server_id)
                             .map(|a| a.ip().to_string())
                             .unwrap_or_default();
-                        if let Err(e) = AuditService::log(
-                            &state.db,
-                            "system",
-                            "ip_changed",
-                            Some(&detail),
-                            &remote_ip,
-                        )
-                        .await
-                        {
-                            if writes_allowed {
+                        if writes_allowed {
+                            if let Err(e) = AuditService::log(
+                                &state.db,
+                                "system",
+                                "ip_changed",
+                                Some(&detail),
+                                &remote_ip,
+                            )
+                            .await
+                            {
                                 tracing::error!("Failed to write audit log for IP change: {e}");
-                            } else {
-                                tracing::info!(
-                                    "Skipping recovery-frozen IP-change audit write for {server_id}"
-                                );
                             }
+                        } else {
+                            tracing::info!(
+                                "Skipping recovery-frozen IP-change audit write for {server_id}"
+                            );
                         }
 
                         if writes_allowed {
