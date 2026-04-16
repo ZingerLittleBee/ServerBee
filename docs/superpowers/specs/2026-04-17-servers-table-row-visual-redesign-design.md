@@ -48,7 +48,7 @@ Two user needs drive this redesign:
 | `uptime` | 100px (stays `hidden xl:table-cell`) | Online: `<Clock />` + `formatUptime(uptime)` · Offline: `offline` | Online: `{osEmoji} {os}` · Offline: `last seen {relative(last_active)}` |
 | `actions` | 40px | edit button (unchanged) | — |
 
-Offline rows render `—` for metric cells' top lines (as today) and render a subdued sub-line where applicable (e.g. `last seen 2h ago` on Uptime). Tag chips on `name` still show, independent of online status.
+Offline rows render `—` for the **agent-live** metric cells (CPU / Memory / Disk) top lines, as today. The **Network cell is special**: because its top-line bar is sourced from server-level traffic quota data (`useTrafficOverview`, not the agent's live report), the traffic quota bar+% continues to render for offline rows — matching the grid `ServerCard` which always renders the quota ring regardless of online status. Only the sub-line's live `↓in ↑out` speeds collapse when offline (shown as `—` or simply hidden); `{used} / {limit}` on the sub-line remains visible. Tag chips on `name` still show, independent of online status. Uptime's sub-line gets the `last seen 2h ago` treatment on offline rows.
 
 The `status` data column defined in today's `index.tsx` is removed (the signal moves to the pulsing dot in the new `status-dot` column). Its filter (`status: online / offline`) migrates to the `status-dot` column, which must therefore carry both an `accessorFn: (row) => (row.online ? 'online' : 'offline')` (to drive `arrayIncludesFilter`) and the same `meta: { variant: 'select', options: statusOptions, icon: CircleDot, label: t('col_status') }` block the current `status` column has, so `DataTableToolbar` continues to offer the filter pill. The cell body is purely the pulsing dot — there is no header text (`header: () => null`) and `enableSorting: false` to match the intent of a glyph-only column.
 
@@ -100,9 +100,11 @@ The existing `MiniBar` component keeps its current signature (`{ pct: number; su
 - `tags: Vec<String>` with `#[serde(default)]` — added to `crates/common/src/types.rs::ServerStatus`.
 - `cpu_cores: Option<i32>` with `#[serde(default)]` — populated from `servers.cpu_cores` column (already exists in the DB).
 
-**Update-broadcast semantics (critical to prevent clobber).** `crates/server/src/service/agent_manager.rs::update_report` constructs a fresh `ServerStatus` for every metric update; it has no database access and therefore cannot populate `tags` or `cpu_cores`. We follow the existing `features` pattern:
+**`build_full_sync` fetch strategy** (to avoid N+1): a single query `server_tag::Entity::find().order_by_asc(server_tag::Column::ServerId).order_by_asc(server_tag::Column::Tag).all(&db).await?` is issued once per full-sync build; the result is grouped into a `HashMap<String, Vec<String>>` keyed by `server_id` and each server's `tags` field is filled via `map.remove(&server.id).unwrap_or_default()`. `cpu_cores` is read from `server.cpu_cores` inline (no extra query; it's already on the `servers` row). A unit test on `build_full_sync` is not required; the integration test `full_sync_includes_tags` covers the wire shape.
 
-- **`tags`**: populated in `build_full_sync` only. In `update_report` it is left at `Vec::new()` (the default). The frontend must treat an empty `tags` on an incremental `update` message as "no change" rather than "cleared". This is implemented by adding both `'tags'` and `'cpu_cores'` to `STATIC_FIELDS` in `apps/web/src/hooks/use-servers-ws.ts`, and extending the guard to also treat `[]` (empty array) as a default value that must not overwrite prior state. The guard check becomes: `isStaticDefault = STATIC_FIELDS.has(key) && (value === null || value === 0 || (Array.isArray(value) && value.length === 0))`.
+**Update-broadcast semantics (critical to prevent clobber).** `crates/server/src/service/agent_manager.rs::update_report` constructs a fresh `ServerStatus` for every metric update; it has no database access and therefore cannot populate `tags` or `cpu_cores`. We **generalize** the existing `features` backend default (`features: vec![]` in `update_report`) and pair it with a **stronger frontend static-fields guard** that also treats empty arrays as defaults. Note: today's `features` is *not* in the frontend `STATIC_FIELDS` set and is in fact clobbered on every incremental `update`; the damage is masked because `FullSync` re-hydrates and because `docker_availability_changed` is the authoritative side-channel. This spec fixes that drift for `tags` and opportunistically for `features`:
+
+- **`tags`**: populated in `build_full_sync` only. In `update_report` it is left at `Vec::new()` (the default). The frontend must treat an empty `tags` on an incremental `update` message as "no change" rather than "cleared". This is implemented by adding `'tags'`, `'cpu_cores'`, and `'features'` to `STATIC_FIELDS` in `apps/web/src/hooks/use-servers-ws.ts`, and extending the guard to also treat `[]` (empty array) as a default value that must not overwrite prior state. The guard check becomes: `isStaticDefault = STATIC_FIELDS.has(key) && (value === null || value === 0 || (Array.isArray(value) && value.length === 0))`. Adding `'features'` here is opportunistic hardening: today `features` also drops to `[]` on every `update` and is rescued only by `docker_availability_changed` + `full_sync`, which is fragile. The guard change unifies all three `[]`-valued static arrays under one rule.
 - **`cpu_cores`**: populated in `build_full_sync` from `servers.cpu_cores`. In `update_report` it is `None`, which serializes to `null` — already covered by the existing `value === null` branch of the static-fields guard.
 - **Authoritative source for tag mutations on the current tab** is the optimistic cache update after a successful `PUT /api/servers/:id/tags`, not the WS. Clearing all tags (going from `["prod"]` to `[]`) works because the `PUT` response + optimistic setter writes `[]` into `queryClient.setQueryData(['servers'], …)` directly; the subsequent incremental WS `update` carrying `tags: []` is ignored by the guard, which is fine because the cache is already correct. Cross-tab propagation (Tab A edits tags, Tab B should see it) is explicitly a Phase C concern.
 
@@ -137,8 +139,9 @@ A new block in the existing `ServerEditDialog` form:
 
 - Label: `t('servers:tags_label')` ("Tags" / "标签")
 - Input: shadcn `<Input />` with helper text `t('servers:tags_hint')` ("Comma or space separated, up to 8 tags, 16 chars each"). On blur, the string is split on `/[\s,]+/`, trimmed, deduped, and normalized against the same validation rules as the backend.
-- Submit: a separate PUT to `/api/servers/:id/tags` fires on save (not bundled into the existing server-update PATCH). Success toast; optimistic cache update as above.
 - Fetched on open via `useQuery(['server-tags', id])` → `GET /api/servers/:id/tags`. The initial form value is populated from this query.
+- **Save ordering with the existing server-update PATCH**: when the user clicks Save, the dialog's submit handler awaits the PATCH first (`PATCH /api/servers/:id` for name/remark/group/etc.), then, **only if PATCH succeeded and tags changed**, awaits the `PUT /api/servers/:id/tags`. Both requests show a single combined spinner on the Save button. On PATCH failure, no tag PUT is issued; on tag PUT failure after a successful PATCH, the tag-editor field reverts to its previous value (from the `['server-tags', id]` cache) and a distinct toast `t('servers:tags_save_failed')` fires — the rest of the PATCH stays committed. This keeps partial failures observable and avoids silently discarding the user's name/group edits when only the tag sub-request fails.
+- On PUT success, optimistic cache update as described above writes both `['servers']` (table row) and `['server-tags', id]` (editor re-open freshness).
 
 ### Phasing
 
@@ -179,7 +182,7 @@ Existing keys reused: `card_load`, `col_cpu`, `col_memory`, `col_disk`, `col_net
 
 `crates/server/tests/` integration coverage:
 
-- `server_tags_crud` — PUT then GET returns same list; dedup + trim; 400 on too many / too long / invalid chars; RBAC (member GET 200, member PUT 403).
+- `server_tags_crud` — PUT then GET returns same list; dedup + trim; 400 on too many / too long / invalid chars; RBAC: `unauthenticated GET 401`, `unauthenticated PUT 401`, `member GET 200`, `member PUT 403`, `admin PUT 200`.
 - `full_sync_includes_tags` — seed two servers each with two tags, open the browser WS, assert the first `full_sync` frame contains `tags: ["a","b"]` for each.
 
 No new unit test for `build_full_sync` shape beyond the integration test; existing WS tests cover the rest.
@@ -242,4 +245,8 @@ None at spec-approval time. All resolved during brainstorming:
 - `MiniBar` retains its public signature; it is refactored internally rather than reduced to a wrapper.
 - `PUT /api/servers/:id/tags` does not touch `servers.updated_at`, to keep `last_active` honest for offline rows.
 - `NetworkCell` must treat `traffic_limit <= 0` identically to `null`/`undefined` (both fall back to 1 TiB default).
-- `DEFAULT_TRAFFIC_LIMIT_BYTES` is hoisted to `apps/web/src/lib/traffic.ts` so `ServerCard` and `NetworkCell` share it.
+- `DEFAULT_TRAFFIC_LIMIT_BYTES` is hoisted to `apps/web/src/lib/traffic.ts`, and a `computeTrafficQuota({ entry, netInTransfer, netOutTransfer }) => { used, limit, pct }` helper is the single source of truth — `ServerCard` is updated to consume it so the grid and table cannot drift on rules like "prefer `cycle_in + cycle_out` when quota is configured, else fall back to `net_in_transfer + net_out_transfer`".
+- `features` is added to `STATIC_FIELDS` alongside `tags` and `cpu_cores`, closing a pre-existing clobber-on-update bug that was masked by `full_sync` hydration.
+- Offline Network cell keeps rendering its traffic quota bar (server-level data survives agent offline); only the live `↓in ↑out` sub-line speeds collapse.
+- `build_full_sync` fetches tags with a single ordered query grouped in memory (no N+1).
+- `ServerEditDialog` saves tags via a sequential PATCH-then-PUT flow with per-step error isolation so partial failures are surfaced to the user rather than silently dropped.
