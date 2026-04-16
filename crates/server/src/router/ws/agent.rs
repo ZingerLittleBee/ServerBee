@@ -844,6 +844,16 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         AgentMessage::Pong => {
             // Agent responded to our protocol-level Ping; already handled by WS Pong frames
         }
+        AgentMessage::RebindIdentityAck { job_id } => {
+            tracing::info!(
+                "Ignoring RebindIdentityAck from agent {server_id} for job_id={job_id}"
+            );
+        }
+        AgentMessage::RebindIdentityFailed { job_id, error } => {
+            tracing::warn!(
+                "Ignoring RebindIdentityFailed from agent {server_id} for job_id={job_id}: {error}"
+            );
+        }
 
         // Docker variants
         AgentMessage::DockerInfo {
