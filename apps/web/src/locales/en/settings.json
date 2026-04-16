@@ -68,6 +68,7 @@
   "notifications.recipient_placeholder": "someone@example.com",
   "notifications.recipients_label": "Recipients",
   "notifications.remove_recipient_aria": "Remove {{address}}",
+  "notifications.invalid_email": "Invalid email address: {{address}}",
   "notifications.apns_key_id": "Key ID",
   "notifications.apns_team_id": "Team ID",
   "notifications.apns_private_key": "Private Key (.p8 content)",
