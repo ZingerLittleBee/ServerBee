@@ -503,12 +503,45 @@ impl RecoveryMergeService {
         target_server_id: &str,
         source_server_id: &str,
     ) -> Result<(), AppError> {
-        Self::merge_raw_table(db, "records", "time", target_server_id, source_server_id).await?;
-        Self::merge_raw_table(db, "gpu_records", "time", target_server_id, source_server_id)
+        Self::merge_server_history_on_connection(db, target_server_id, source_server_id).await
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) async fn merge_server_history_on_txn(
+        txn: &DatabaseTransaction,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        Self::merge_server_history_on_connection(txn, target_server_id, source_server_id).await
+    }
+
+    async fn merge_server_history_on_connection<C>(
+        db: &C,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError>
+    where
+        C: ConnectionTrait,
+    {
+        Self::merge_raw_table_on_connection(db, "records", "time", target_server_id, source_server_id)
             .await?;
-        Self::merge_raw_table(db, "ping_records", "time", target_server_id, source_server_id)
-            .await?;
-        Self::merge_raw_table(
+        Self::merge_raw_table_on_connection(
+            db,
+            "gpu_records",
+            "time",
+            target_server_id,
+            source_server_id,
+        )
+        .await?;
+        Self::merge_raw_table_on_connection(
+            db,
+            "ping_records",
+            "time",
+            target_server_id,
+            source_server_id,
+        )
+        .await?;
+        Self::merge_raw_table_on_connection(
             db,
             "task_results",
             "finished_at",
@@ -516,7 +549,7 @@ impl RecoveryMergeService {
             source_server_id,
         )
         .await?;
-        Self::merge_raw_table(
+        Self::merge_raw_table_on_connection(
             db,
             "network_probe_record",
             "timestamp",
@@ -524,7 +557,7 @@ impl RecoveryMergeService {
             source_server_id,
         )
         .await?;
-        Self::merge_raw_table(
+        Self::merge_raw_table_on_connection(
             db,
             "docker_event",
             "timestamp",
@@ -533,7 +566,7 @@ impl RecoveryMergeService {
         )
         .await?;
 
-        Self::merge_unique_key_table(
+        Self::merge_unique_key_table_on_connection(
             db,
             "records_hourly",
             &["time"],
@@ -541,7 +574,7 @@ impl RecoveryMergeService {
             source_server_id,
         )
         .await?;
-        Self::merge_unique_key_table(
+        Self::merge_unique_key_table_on_connection(
             db,
             "network_probe_record_hourly",
             &["target_id", "hour"],
@@ -549,9 +582,13 @@ impl RecoveryMergeService {
             source_server_id,
         )
         .await?;
-        TrafficService::merge_recovered_server_history(db, target_server_id, source_server_id)
+        TrafficService::merge_recovered_server_history_on_connection(
+            db,
+            target_server_id,
+            source_server_id,
+        )
             .await?;
-        Self::merge_unique_key_table(
+        Self::merge_unique_key_table_on_connection(
             db,
             "uptime_daily",
             &["date"],
@@ -559,8 +596,9 @@ impl RecoveryMergeService {
             source_server_id,
         )
         .await?;
-        Self::merge_alert_states(db, target_server_id, source_server_id).await?;
-        Self::rewrite_server_ids_json_tables(db, target_server_id, source_server_id).await?;
+        Self::merge_alert_states_on_connection(db, target_server_id, source_server_id).await?;
+        Self::rewrite_server_ids_json_tables_on_connection(db, target_server_id, source_server_id)
+            .await?;
 
         Ok(())
     }
@@ -573,6 +611,44 @@ impl RecoveryMergeService {
         target_server_id: &str,
         source_server_id: &str,
     ) -> Result<(), AppError> {
+        Self::merge_raw_table_on_connection(
+            db,
+            table,
+            time_column,
+            target_server_id,
+            source_server_id,
+        )
+        .await
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) async fn merge_raw_table_on_txn(
+        txn: &DatabaseTransaction,
+        table: &str,
+        time_column: &str,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        Self::merge_raw_table_on_connection(
+            txn,
+            table,
+            time_column,
+            target_server_id,
+            source_server_id,
+        )
+        .await
+    }
+
+    async fn merge_raw_table_on_connection<C>(
+        db: &C,
+        table: &str,
+        time_column: &str,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError>
+    where
+        C: ConnectionTrait,
+    {
         db.execute(Statement::from_sql_and_values(
             db.get_database_backend(),
             format!(
@@ -604,7 +680,45 @@ impl RecoveryMergeService {
         target_server_id: &str,
         source_server_id: &str,
     ) -> Result<(), AppError> {
-        TrafficService::replace_unique_key_table_server_id(
+        Self::merge_unique_key_table_on_connection(
+            db,
+            table,
+            key_columns,
+            target_server_id,
+            source_server_id,
+        )
+        .await
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) async fn merge_unique_key_table_on_txn(
+        txn: &DatabaseTransaction,
+        table: &str,
+        key_columns: &[&str],
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        Self::merge_unique_key_table_on_connection(
+            txn,
+            table,
+            key_columns,
+            target_server_id,
+            source_server_id,
+        )
+        .await
+    }
+
+    async fn merge_unique_key_table_on_connection<C>(
+        db: &C,
+        table: &str,
+        key_columns: &[&str],
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError>
+    where
+        C: ConnectionTrait,
+    {
+        TrafficService::replace_unique_key_table_server_id_on_connection(
             db,
             table,
             key_columns,
@@ -620,6 +734,26 @@ impl RecoveryMergeService {
         target_server_id: &str,
         source_server_id: &str,
     ) -> Result<(), AppError> {
+        Self::merge_alert_states_on_connection(db, target_server_id, source_server_id).await
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) async fn merge_alert_states_on_txn(
+        txn: &DatabaseTransaction,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        Self::merge_alert_states_on_connection(txn, target_server_id, source_server_id).await
+    }
+
+    async fn merge_alert_states_on_connection<C>(
+        db: &C,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError>
+    where
+        C: ConnectionTrait,
+    {
         db.execute(Statement::from_sql_and_values(
             db.get_database_backend(),
             "DELETE FROM alert_states AS source \
@@ -648,6 +782,28 @@ impl RecoveryMergeService {
         target_server_id: &str,
         source_server_id: &str,
     ) -> Result<(), AppError> {
+        Self::rewrite_server_ids_json_tables_on_connection(db, target_server_id, source_server_id)
+            .await
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) async fn rewrite_server_ids_json_tables_on_txn(
+        txn: &DatabaseTransaction,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        Self::rewrite_server_ids_json_tables_on_connection(txn, target_server_id, source_server_id)
+            .await
+    }
+
+    async fn rewrite_server_ids_json_tables_on_connection<C>(
+        db: &C,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError>
+    where
+        C: ConnectionTrait,
+    {
         let tables = [
             ("alert_rules", "server_ids_json", true),
             ("ping_tasks", "server_ids_json", false),
@@ -659,7 +815,7 @@ impl RecoveryMergeService {
         ];
 
         for (table, column, nullable) in tables {
-            Self::rewrite_server_ids_json_table(
+            Self::rewrite_server_ids_json_table_on_connection(
                 db,
                 table,
                 column,
@@ -682,6 +838,28 @@ impl RecoveryMergeService {
         target_server_id: &str,
         source_server_id: &str,
     ) -> Result<(), AppError> {
+        Self::rewrite_server_ids_json_table_on_connection(
+            db,
+            table,
+            column,
+            nullable,
+            target_server_id,
+            source_server_id,
+        )
+        .await
+    }
+
+    async fn rewrite_server_ids_json_table_on_connection<C>(
+        db: &C,
+        table: &str,
+        column: &str,
+        nullable: bool,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError>
+    where
+        C: ConnectionTrait,
+    {
         let rows = db
             .query_all(Statement::from_sql_and_values(
                 DatabaseBackend::Sqlite,
@@ -761,6 +939,35 @@ impl RecoveryMergeService {
         target_server_id: &str,
         source: &server::Model,
     ) -> Result<(), AppError> {
+        Self::finalize_target_server_row_on_connection(db, target_server_id, source).await
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) async fn finalize_target_server_row_on_txn(
+        txn: &DatabaseTransaction,
+        target_server_id: &str,
+        source: &server::Model,
+    ) -> Result<(), AppError> {
+        Self::finalize_target_server_row_on_connection(txn, target_server_id, source).await
+    }
+
+    async fn finalize_target_server_row_on_connection<C>(
+        db: &C,
+        target_server_id: &str,
+        source: &server::Model,
+    ) -> Result<(), AppError>
+    where
+        C: ConnectionTrait,
+    {
+        if source.fingerprint.is_some() {
+            server::Entity::update_many()
+                .col_expr(server::Column::Fingerprint, Expr::value(None::<String>))
+                .col_expr(server::Column::UpdatedAt, Expr::value(Utc::now()))
+                .filter(server::Column::Id.eq(source.id.clone()))
+                .exec(db)
+                .await?;
+        }
+
         let target = server::Entity::find_by_id(target_server_id)
             .one(db)
             .await?
@@ -783,6 +990,8 @@ impl RecoveryMergeService {
         active.agent_version = sea_orm::Set(source.agent_version.clone());
         active.protocol_version = sea_orm::Set(source.protocol_version);
         active.features = sea_orm::Set(source.features.clone());
+        active.last_remote_addr = sea_orm::Set(source.last_remote_addr.clone());
+        active.fingerprint = sea_orm::Set(source.fingerprint.clone());
         active.updated_at = sea_orm::Set(Utc::now());
         active.update(db).await?;
 
@@ -794,6 +1003,24 @@ impl RecoveryMergeService {
         db: &DatabaseConnection,
         source_server_id: &str,
     ) -> Result<(), AppError> {
+        Self::delete_intentionally_unmerged_source_rows_on_connection(db, source_server_id).await
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) async fn delete_intentionally_unmerged_source_rows_on_txn(
+        txn: &DatabaseTransaction,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        Self::delete_intentionally_unmerged_source_rows_on_connection(txn, source_server_id).await
+    }
+
+    async fn delete_intentionally_unmerged_source_rows_on_connection<C>(
+        db: &C,
+        source_server_id: &str,
+    ) -> Result<(), AppError>
+    where
+        C: ConnectionTrait,
+    {
         server_tag::Entity::delete_many()
             .filter(server_tag::Column::ServerId.eq(source_server_id))
             .exec(db)
@@ -854,7 +1081,10 @@ mod tests {
     use crate::state::AppState;
     use crate::test_utils::setup_test_db;
     use chrono::{NaiveDate, Utc};
-    use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+    use sea_orm::{
+        ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
+        TransactionTrait,
+    };
     use serverbee_common::constants::CAP_DEFAULT;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::sync::Arc;
@@ -1419,6 +1649,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn merge_server_history_can_be_rolled_back_atomically() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "target-1", "Target").await;
+        insert_test_server(&db, "source-1", "Source").await;
+
+        let before_overlap = NaiveDate::from_ymd_opt(2026, 4, 16)
+            .unwrap()
+            .and_hms_opt(9, 0, 0)
+            .unwrap()
+            .and_utc();
+        let overlap = NaiveDate::from_ymd_opt(2026, 4, 16)
+            .unwrap()
+            .and_hms_opt(10, 0, 0)
+            .unwrap()
+            .and_utc();
+
+        insert_record(&db, "target-1", before_overlap, 10.0).await;
+        insert_record(&db, "target-1", overlap, 20.0).await;
+        insert_record(&db, "source-1", overlap, 200.0).await;
+
+        let txn = db.begin().await.unwrap();
+        RecoveryMergeService::merge_server_history_on_txn(&txn, "target-1", "source-1")
+            .await
+            .unwrap();
+        txn.rollback().await.unwrap();
+
+        let target_rows = record::Entity::find()
+            .filter(record::Column::ServerId.eq("target-1"))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(target_rows.len(), 2);
+        assert!(target_rows.iter().any(|row| row.time == before_overlap && row.cpu == 10.0));
+        assert!(target_rows.iter().any(|row| row.time == overlap && row.cpu == 20.0));
+
+        let source_rows = record::Entity::find()
+            .filter(record::Column::ServerId.eq("source-1"))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(source_rows.len(), 1);
+        assert_eq!(source_rows[0].time, overlap);
+        assert_eq!(source_rows[0].cpu, 200.0);
+    }
+
+    #[tokio::test]
     async fn rewrite_server_ids_json_replaces_source_with_target_once() {
         let (db, _tmp) = setup_test_db().await;
         insert_test_server(&db, "target-1", "Target").await;
@@ -1512,6 +1788,8 @@ mod tests {
         source.agent_version = Set(Some("1.2.3".to_string()));
         source.protocol_version = Set(4);
         source.features = Set(r#"["docker","process"]"#.to_string());
+        source.last_remote_addr = Set(Some("192.0.2.10:9527".to_string()));
+        source.fingerprint = Set(Some("fingerprint-123".to_string()));
         let source_model = source.update(&db).await.unwrap();
 
         server_tag::ActiveModel {
@@ -1566,6 +1844,8 @@ mod tests {
         assert_eq!(target.cpu_name.as_deref(), Some("Ryzen"));
         assert_eq!(target.protocol_version, 4);
         assert_eq!(target.features, r#"["docker","process"]"#);
+        assert_eq!(target.last_remote_addr.as_deref(), Some("192.0.2.10:9527"));
+        assert_eq!(target.fingerprint.as_deref(), Some("fingerprint-123"));
 
         let source_tags = server_tag::Entity::find()
             .filter(server_tag::Column::ServerId.eq("source-1"))
