@@ -32,13 +32,8 @@ pub enum ChannelConfig {
         device_key: String,
     },
     Email {
-        smtp_host: String,
-        #[serde(default = "default_smtp_port")]
-        smtp_port: u16,
-        username: String,
-        password: String,
         from: String,
-        to: String,
+        to: Vec<String>,
     },
     Apns {
         key_id: String,
@@ -52,10 +47,6 @@ pub enum ChannelConfig {
 
 fn default_method() -> String {
     "POST".to_string()
-}
-
-fn default_smtp_port() -> u16 {
-    587
 }
 
 /// Template context for notification messages.
@@ -87,6 +78,68 @@ impl NotifyContext {
 }
 
 const DEFAULT_TEMPLATE: &str = "[ServerBee] {{server_name}} {{event}}\n{{message}}\n时间: {{time}}";
+
+const EMAIL_TEXT_TEMPLATE: &str =
+    "[ServerBee] {{server_name}} {{event}}\n{{message}}\nTime: {{time}}";
+
+fn is_plausible_email(s: &str) -> bool {
+    let (local, domain) = match s.split_once('@') {
+        Some(pair) => pair,
+        None => return false,
+    };
+    !local.is_empty() && !domain.is_empty() && domain.contains('.')
+}
+
+fn email_header_color(event: &str) -> &'static str {
+    match event {
+        "triggered" => "#ea580c",
+        "resolved" | "recovered" => "#16a34a",
+        _ => "#6b7280",
+    }
+}
+
+fn render_html(ctx: &NotifyContext) -> String {
+    let color = email_header_color(&ctx.event);
+    let title = format!(
+        "[ServerBee] {} {}",
+        html_escape::encode_text(&ctx.server_name),
+        html_escape::encode_text(&ctx.event),
+    );
+
+    let mut rows = String::new();
+    let mut add_row = |label: &str, value: &str| {
+        if value.is_empty() {
+            return;
+        }
+        rows.push_str(&format!(
+            "<tr><td style=\"padding:6px 12px;color:#6b7280;font-size:13px;width:110px\">{}</td>\
+             <td style=\"padding:6px 12px;font-size:14px\">{}</td></tr>",
+            label,
+            html_escape::encode_text(value),
+        ));
+    };
+    add_row("Server", &ctx.server_name);
+    add_row("Rule", &ctx.rule_name);
+    add_row("Event", &ctx.event);
+    add_row("Time", &ctx.time);
+    add_row("CPU", &ctx.cpu);
+    add_row("Memory", &ctx.memory);
+    add_row("Message", &ctx.message);
+
+    format!(
+        r#"<!DOCTYPE html>
+<html><body style="margin:0;padding:24px;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+<table style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;border-collapse:collapse;width:100%">
+<tr><td style="background:{color};color:#ffffff;padding:16px 20px;font-size:16px;font-weight:600">{title}</td></tr>
+<tr><td style="padding:12px 8px"><table style="width:100%;border-collapse:collapse">{rows}</table></td></tr>
+<tr><td style="padding:12px 20px;color:#9ca3af;font-size:12px;text-align:center">Sent by ServerBee</td></tr>
+</table>
+</body></html>"#,
+        color = color,
+        title = title,
+        rows = rows,
+    )
+}
 
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateNotification {
@@ -161,18 +214,27 @@ impl NotificationService {
         input: UpdateNotification,
     ) -> Result<notification::Model, AppError> {
         let existing = Self::get(db, id).await?;
-        let mut model: notification::ActiveModel = existing.into();
 
+        let candidate_type = input
+            .notify_type
+            .clone()
+            .unwrap_or_else(|| existing.notify_type.clone());
+        let candidate_json = match &input.config_json {
+            Some(cj) => serde_json::to_string(cj)
+                .map_err(|e| AppError::Validation(format!("Invalid config: {e}")))?,
+            None => existing.config_json.clone(),
+        };
+        Self::parse_config(&candidate_type, &candidate_json)?;
+
+        let mut model: notification::ActiveModel = existing.into();
         if let Some(name) = input.name {
             model.name = Set(name);
         }
         if let Some(notify_type) = input.notify_type {
             model.notify_type = Set(notify_type);
         }
-        if let Some(config_json) = input.config_json {
-            let config_str = serde_json::to_string(&config_json)
-                .map_err(|e| AppError::Validation(format!("Invalid config: {e}")))?;
-            model.config_json = Set(config_str);
+        if input.config_json.is_some() {
+            model.config_json = Set(candidate_json);
         }
         if let Some(enabled) = input.enabled {
             model.enabled = Set(enabled);
@@ -260,6 +322,7 @@ impl NotificationService {
     /// Send notifications for a group, given a template context.
     pub async fn send_group(
         db: &DatabaseConnection,
+        config: &crate::config::AppConfig,
         group_id: &str,
         ctx: &NotifyContext,
     ) -> Result<(), AppError> {
@@ -270,7 +333,7 @@ impl NotificationService {
         for nid in ids {
             match Self::get(db, &nid).await {
                 Ok(n) if n.enabled => {
-                    if let Err(e) = Self::dispatch(db, &n, ctx).await {
+                    if let Err(e) = Self::dispatch(db, config, &n, ctx).await {
                         tracing::error!(
                             "Failed to send notification {} ({}): {e}",
                             n.name,
@@ -285,7 +348,11 @@ impl NotificationService {
     }
 
     /// Send a single notification (used for testing).
-    pub async fn test_notification(db: &DatabaseConnection, id: &str) -> Result<(), AppError> {
+    pub async fn test_notification(
+        db: &DatabaseConnection,
+        config: &crate::config::AppConfig,
+        id: &str,
+    ) -> Result<(), AppError> {
         let n = Self::get(db, id).await?;
         let ctx = NotifyContext {
             server_name: "Test Server".to_string(),
@@ -298,21 +365,22 @@ impl NotificationService {
             cpu: "50.0%".to_string(),
             memory: "60.0%".to_string(),
         };
-        Self::dispatch(db, &n, &ctx).await
+        Self::dispatch(db, config, &n, &ctx).await
     }
 
     async fn dispatch(
         db: &DatabaseConnection,
+        config: &crate::config::AppConfig,
         n: &notification::Model,
         ctx: &NotifyContext,
     ) -> Result<(), AppError> {
-        let config = Self::parse_config(&n.notify_type, &n.config_json)?;
+        let channel_config = Self::parse_config(&n.notify_type, &n.config_json)?;
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
             .build()
             .map_err(|e| AppError::Internal(format!("HTTP client error: {e}")))?;
 
-        match config {
+        match channel_config {
             ChannelConfig::Webhook {
                 url,
                 method,
@@ -397,46 +465,50 @@ impl NotificationService {
                     return Err(AppError::Internal(format!("Bark error: {text}")));
                 }
             }
-            ChannelConfig::Email {
-                smtp_host,
-                smtp_port,
-                username,
-                password,
-                from,
-                to,
-            } => {
-                use lettre::message::header::ContentType;
-                use lettre::transport::smtp::authentication::Credentials;
-                use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
+            ChannelConfig::Email { from, to } => {
+                let api_key = config.resend.api_key.trim();
+                if api_key.is_empty() {
+                    return Err(AppError::Validation(
+                        "Resend API key not configured (set SERVERBEE_RESEND__API_KEY)"
+                            .to_string(),
+                    ));
+                }
 
                 let subject = format!("[ServerBee] {} {}", ctx.server_name, ctx.event);
-                let body = ctx.render(DEFAULT_TEMPLATE);
+                let html_body = render_html(ctx);
+                let text_body = ctx.render(EMAIL_TEXT_TEMPLATE);
 
-                let email =
-                    Message::builder()
-                        .from(from.parse().map_err(|e| {
-                            AppError::Validation(format!("Invalid from address: {e}"))
-                        })?)
-                        .to(to.parse().map_err(|e| {
-                            AppError::Validation(format!("Invalid to address: {e}"))
-                        })?)
-                        .subject(subject)
-                        .header(ContentType::TEXT_PLAIN)
-                        .body(body)
-                        .map_err(|e| AppError::Internal(format!("Failed to build email: {e}")))?;
+                let body = serde_json::json!({
+                    "from": from,
+                    "to": to,
+                    "subject": subject,
+                    "html": html_body,
+                    "text": text_body,
+                });
 
-                let creds = Credentials::new(username, password);
-
-                let mailer = AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&smtp_host)
-                    .map_err(|e| AppError::Internal(format!("SMTP connection error: {e}")))?
-                    .port(smtp_port)
-                    .credentials(creds)
-                    .build();
-
-                mailer
-                    .send(email)
+                let resp = client
+                    .post("https://api.resend.com/emails")
+                    .bearer_auth(api_key)
+                    .json(&body)
+                    .send()
                     .await
-                    .map_err(|e| AppError::Internal(format!("Failed to send email: {e}")))?;
+                    .map_err(|e| AppError::Internal(format!("Resend request failed: {e}")))?;
+
+                if !resp.status().is_success() {
+                    let status = resp.status();
+                    let raw = resp.text().await.unwrap_or_default();
+                    let message = serde_json::from_str::<serde_json::Value>(&raw)
+                        .ok()
+                        .and_then(|v| {
+                            v.get("message")
+                                .and_then(|m| m.as_str())
+                                .map(|s| s.to_string())
+                        })
+                        .unwrap_or_else(|| raw.clone());
+                    return Err(AppError::Internal(format!(
+                        "Resend API error ({status}): {message}"
+                    )));
+                }
             }
             ChannelConfig::Apns {
                 key_id,
@@ -483,8 +555,30 @@ impl NotificationService {
             );
         }
 
-        serde_json::from_value(val)
-            .map_err(|e| AppError::Validation(format!("Invalid {notify_type} config: {e}")))
+        let config: ChannelConfig = serde_json::from_value(val)
+            .map_err(|e| AppError::Validation(format!("Invalid {notify_type} config: {e}")))?;
+
+        if let ChannelConfig::Email { from, to } = &config {
+            if to.is_empty() {
+                return Err(AppError::Validation(
+                    "Email notification requires at least one 'to' address".to_string(),
+                ));
+            }
+            if !is_plausible_email(from) {
+                return Err(AppError::Validation(format!(
+                    "Invalid 'from' address: {from}"
+                )));
+            }
+            for addr in to {
+                if !is_plausible_email(addr) {
+                    return Err(AppError::Validation(format!(
+                        "Invalid 'to' address: {addr}"
+                    )));
+                }
+            }
+        }
+
+        Ok(config)
     }
 }
 
@@ -646,49 +740,44 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_config_email() {
-        let config_json = r#"{
-            "smtp_host": "smtp.gmail.com",
-            "smtp_port": 587,
-            "username": "user@gmail.com",
-            "password": "secret",
-            "from": "user@gmail.com",
-            "to": "admin@example.com"
-        }"#;
-        let config = NotificationService::parse_config("email", config_json).expect("should parse");
+    fn test_parse_config_email_new_schema() {
+        let config_json = r#"{"from":"alerts@example.com","to":["a@x.com","b@y.com"]}"#;
+        let config =
+            NotificationService::parse_config("email", config_json).expect("should parse");
 
         match config {
-            ChannelConfig::Email {
-                smtp_host,
-                smtp_port,
-                from,
-                to,
-                ..
-            } => {
-                assert_eq!(smtp_host, "smtp.gmail.com");
-                assert_eq!(smtp_port, 587);
-                assert_eq!(from, "user@gmail.com");
-                assert_eq!(to, "admin@example.com");
+            ChannelConfig::Email { from, to } => {
+                assert_eq!(from, "alerts@example.com");
+                assert_eq!(to, vec!["a@x.com".to_string(), "b@y.com".to_string()]);
             }
             _ => panic!("expected Email variant"),
         }
     }
 
     #[test]
-    fn test_parse_config_email_default_port() {
-        let config_json = r#"{
-            "smtp_host": "smtp.example.com",
-            "username": "u",
-            "password": "p",
-            "from": "a@b.com",
-            "to": "c@d.com"
-        }"#;
-        let config = NotificationService::parse_config("email", config_json).expect("should parse");
+    fn test_parse_config_email_empty_to_rejected() {
+        let config_json = r#"{"from":"a@b.com","to":[]}"#;
+        let result = NotificationService::parse_config("email", config_json);
+        assert!(
+            matches!(result, Err(AppError::Validation(_))),
+            "empty to[] should be rejected"
+        );
+    }
 
+    #[test]
+    fn test_parse_config_email_missing_to_rejected() {
+        let config_json = r#"{"from":"a@b.com"}"#;
+        let result = NotificationService::parse_config("email", config_json);
+        assert!(result.is_err(), "missing to should be rejected");
+    }
+
+    #[test]
+    fn test_parse_config_email_single_recipient() {
+        let config_json = r#"{"from":"a@b.com","to":["only@x.com"]}"#;
+        let config =
+            NotificationService::parse_config("email", config_json).expect("should parse");
         match config {
-            ChannelConfig::Email { smtp_port, .. } => {
-                assert_eq!(smtp_port, 587, "default SMTP port should be 587");
-            }
+            ChannelConfig::Email { to, .. } => assert_eq!(to.len(), 1),
             _ => panic!("expected Email variant"),
         }
     }
@@ -778,6 +867,26 @@ mod tests {
     // ── T3-4: ChannelConfig serialization round-trip ──
 
     #[test]
+    fn test_update_candidate_email_empty_to_rejected() {
+        // Update path re-parses the effective (type, json) pair.
+        // Simulate: existing row is email, update sets config_json to {to:[]}.
+        let candidate_type = "email";
+        let candidate_json = r#"{"from":"a@b.com","to":[]}"#;
+        let result = NotificationService::parse_config(candidate_type, candidate_json);
+        assert!(matches!(result, Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    fn test_update_candidate_type_mismatch_rejected() {
+        // Simulate: existing row is email with valid email JSON.
+        // Update changes notify_type to "telegram" without updating config_json.
+        let candidate_type = "telegram";
+        let candidate_json = r#"{"from":"a@b.com","to":["c@d.com"]}"#;
+        let result = NotificationService::parse_config(candidate_type, candidate_json);
+        assert!(result.is_err(), "email json must not parse as telegram");
+    }
+
+    #[test]
     fn test_channel_config_webhook_roundtrip() {
         let config = ChannelConfig::Webhook {
             url: "https://example.com".to_string(),
@@ -802,6 +911,145 @@ mod tests {
                 assert_eq!(body_template.as_deref(), Some("{{message}}"));
             }
             _ => panic!("expected Webhook"),
+        }
+    }
+
+    #[test]
+    fn test_render_html_triggered_color() {
+        let ctx = NotifyContext {
+            server_name: "web-01".to_string(),
+            event: "triggered".to_string(),
+            ..Default::default()
+        };
+        let html = render_html(&ctx);
+        assert!(
+            html.contains("#ea580c"),
+            "triggered header should use orange-600 (#ea580c)"
+        );
+    }
+
+    #[test]
+    fn test_render_html_resolved_color() {
+        let ctx = NotifyContext {
+            event: "resolved".to_string(),
+            ..Default::default()
+        };
+        let html = render_html(&ctx);
+        assert!(
+            html.contains("#16a34a"),
+            "resolved header should use green-600 (#16a34a)"
+        );
+    }
+
+    #[test]
+    fn test_render_html_neutral_color_for_other_events() {
+        let ctx = NotifyContext {
+            event: "ip_changed".to_string(),
+            ..Default::default()
+        };
+        let html = render_html(&ctx);
+        assert!(html.contains("#6b7280"));
+    }
+
+    #[test]
+    fn test_render_html_escapes_user_input() {
+        let ctx = NotifyContext {
+            server_name: "<script>alert(1)</script>".to_string(),
+            event: "triggered".to_string(),
+            ..Default::default()
+        };
+        let html = render_html(&ctx);
+        assert!(
+            !html.contains("<script>alert(1)</script>"),
+            "raw script tag must not appear in output"
+        );
+        assert!(html.contains("&lt;script&gt;"));
+    }
+
+    #[test]
+    fn test_render_html_skips_empty_fields() {
+        let ctx = NotifyContext {
+            server_name: "web-01".to_string(),
+            event: "triggered".to_string(),
+            cpu: "".to_string(),
+            memory: "".to_string(),
+            ..Default::default()
+        };
+        let html = render_html(&ctx);
+        assert!(!html.contains(">CPU<"), "empty cpu should not render a CPU row");
+        assert!(
+            !html.contains(">Memory<"),
+            "empty memory should not render a Memory row"
+        );
+    }
+
+    #[test]
+    fn test_email_text_template_is_english() {
+        let ctx = NotifyContext {
+            server_name: "web-01".to_string(),
+            event: "triggered".to_string(),
+            message: "boom".to_string(),
+            time: "2026-04-16 12:00:00 UTC".to_string(),
+            ..Default::default()
+        };
+        let rendered = ctx.render(EMAIL_TEXT_TEMPLATE);
+        assert!(rendered.contains("Time:"), "english text template should say Time:");
+        assert!(!rendered.contains("时间"), "english text template must not contain Chinese");
+    }
+
+    #[test]
+    fn test_parse_config_email_invalid_from_rejected() {
+        let cj = r#"{"from":"not-an-email","to":["a@x.com"]}"#;
+        let result = NotificationService::parse_config("email", cj);
+        assert!(matches!(result, Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    fn test_parse_config_email_invalid_to_entry_rejected() {
+        let cj = r#"{"from":"a@x.com","to":["ok@x.com","bogus"]}"#;
+        let result = NotificationService::parse_config("email", cj);
+        assert!(matches!(result, Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    fn test_is_plausible_email_simple_cases() {
+        assert!(is_plausible_email("a@b.co"));
+        assert!(!is_plausible_email("no-at-sign"));
+        assert!(!is_plausible_email("@b.co"));
+        assert!(!is_plausible_email("a@"));
+        assert!(!is_plausible_email("a@nodot"));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_email_rejects_missing_api_key() {
+        use crate::config::AppConfig;
+        use sea_orm::{Database, DatabaseConnection};
+
+        let cfg = AppConfig::default(); // resend.api_key is ""
+        let db: DatabaseConnection = Database::connect("sqlite::memory:")
+            .await
+            .expect("in-memory sqlite");
+
+        let n = notification::Model {
+            id: "test-id".to_string(),
+            name: "test".to_string(),
+            notify_type: "email".to_string(),
+            config_json: r#"{"from":"a@b.com","to":["c@d.com"]}"#.to_string(),
+            enabled: true,
+            created_at: Utc::now(),
+        };
+        let ctx = NotifyContext {
+            server_name: "web-01".to_string(),
+            event: "triggered".to_string(),
+            ..Default::default()
+        };
+
+        let result = NotificationService::dispatch(&db, &cfg, &n, &ctx).await;
+        match result {
+            Err(AppError::Validation(msg)) => {
+                assert!(msg.contains("SERVERBEE_RESEND__API_KEY"));
+            }
+            other => panic!("expected Validation error, got {other:?}"),
         }
     }
 }

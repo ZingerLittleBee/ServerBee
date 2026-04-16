@@ -52,6 +52,8 @@
     "edit_server": "Edit server",
     "test_notification": "Test {{name}}",
     "delete_notification": "Delete {{name}}",
+    "edit_notification": "Edit {{name}}",
+    "edit_group": "Edit {{name}}",
     "delete_group": "Delete group {{name}}",
     "unlink_account": "Unlink {{provider}}",
     "revoke_device": "Revoke {{device}}",

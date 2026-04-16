@@ -189,18 +189,23 @@ ServerBee 支持以下通知渠道：
 | `server_url` | Bark 服务端地址 |
 | `device_key` | 设备 Key |
 
-### Email
+### 邮件（通过 Resend）
 
-通过 SMTP 发送邮件通知。
+邮件通知通过 [Resend](https://resend.com/) 发送。使用前两步准备：
 
-| 配置项 | 说明 |
-|--------|------|
-| `smtp_host` | SMTP 服务器地址 |
-| `port` | SMTP 端口 |
-| `username` | SMTP 用户名 |
-| `password` | SMTP 密码 |
-| `from` | 发件人地址 |
-| `to` | 收件人地址 |
+1. 在服务器设置 `SERVERBEE_RESEND__API_KEY`（参考[配置](/docs/cn/configuration)页面）。
+2. 在 [resend.com/domains](https://resend.com/domains) 添加并验证发件域名。各通道的 `from` 必须属于已验证的域名。
+
+通道配置：
+
+```json
+{
+  "from": "alerts@yourdomain.com",
+  "to": ["ops@example.com", "oncall@example.com"]
+}
+```
+
+`to` 是数组——单个通道可以一次投递给多个收件人。主题格式为 `[ServerBee] {server_name} {event}`，正文使用 HTML 并附纯文本兜底。
 
 ### 模板变量
 
