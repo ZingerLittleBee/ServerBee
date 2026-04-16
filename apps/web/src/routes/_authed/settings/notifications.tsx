@@ -35,6 +35,77 @@ function isPlausibleEmail(s: string): boolean {
 
 const SENSITIVE_FIELDS = new Set(['password', 'bot_token', 'device_key'])
 
+export interface EmailFormFieldsProps {
+  from: string
+  onAddRecipient: () => void
+  onFromChange: (value: string) => void
+  onRemoveRecipient: (address: string) => void
+  onToInputChange: (value: string) => void
+  toAddresses: string[]
+  toInput: string
+}
+
+export function EmailFormFields({
+  from,
+  onFromChange,
+  toAddresses,
+  toInput,
+  onToInputChange,
+  onAddRecipient,
+  onRemoveRecipient
+}: EmailFormFieldsProps) {
+  const { t } = useTranslation(['settings', 'common'])
+  return (
+    <>
+      <p className="text-muted-foreground text-xs">{t('notifications.email_help_text')}</p>
+      <Input
+        onChange={(e) => onFromChange(e.target.value)}
+        placeholder={t('notifications.from_address')}
+        required
+        type="email"
+        value={from}
+      />
+      <div className="space-y-2">
+        <Label className="text-sm">{t('notifications.recipients_label')}</Label>
+        <div className="flex gap-2">
+          <Input
+            onChange={(e) => onToInputChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                onAddRecipient()
+              }
+            }}
+            placeholder={t('notifications.recipient_placeholder')}
+            type="email"
+            value={toInput}
+          />
+          <Button onClick={onAddRecipient} size="sm" type="button">
+            {t('notifications.add_recipient')}
+          </Button>
+        </div>
+        {toAddresses.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {toAddresses.map((addr) => (
+              <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs" key={addr}>
+                {addr}
+                <button
+                  aria-label={t('notifications.remove_recipient_aria', { address: addr })}
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => onRemoveRecipient(addr)}
+                  type="button"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
 function NotificationsPage() {
   const { t } = useTranslation(['settings', 'common'])
   const queryClient = useQueryClient()
@@ -352,56 +423,15 @@ function NotificationsPage() {
                 </>
               )}
               {notifyType === 'email' && (
-                <>
-                  <p className="text-muted-foreground text-xs">{t('notifications.email_help_text')}</p>
-                  <Input
-                    onChange={(e) => setConfigFields((prev) => ({ ...prev, from: e.target.value }))}
-                    placeholder={t('notifications.from_address')}
-                    required
-                    type="email"
-                    value={configFields.from ?? ''}
-                  />
-                  <div className="space-y-2">
-                    <Label className="text-sm">{t('notifications.recipients_label')}</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        onChange={(e) => setToInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                            handleAddRecipient()
-                          }
-                        }}
-                        placeholder={t('notifications.recipient_placeholder')}
-                        type="email"
-                        value={toInput}
-                      />
-                      <Button onClick={handleAddRecipient} size="sm" type="button">
-                        {t('notifications.add_recipient')}
-                      </Button>
-                    </div>
-                    {toAddresses.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {toAddresses.map((addr) => (
-                          <span
-                            className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs"
-                            key={addr}
-                          >
-                            {addr}
-                            <button
-                              aria-label={t('notifications.remove_recipient_aria', { address: addr })}
-                              className="text-muted-foreground hover:text-foreground"
-                              onClick={() => handleRemoveRecipient(addr)}
-                              type="button"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </>
+                <EmailFormFields
+                  from={configFields.from ?? ''}
+                  onAddRecipient={handleAddRecipient}
+                  onFromChange={(value) => setConfigFields((prev) => ({ ...prev, from: value }))}
+                  onRemoveRecipient={handleRemoveRecipient}
+                  onToInputChange={setToInput}
+                  toAddresses={toAddresses}
+                  toInput={toInput}
+                />
               )}
               {notifyType !== 'apns' &&
                 notifyType !== 'email' &&
