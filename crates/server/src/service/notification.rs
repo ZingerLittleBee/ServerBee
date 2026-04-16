@@ -32,13 +32,8 @@ pub enum ChannelConfig {
         device_key: String,
     },
     Email {
-        smtp_host: String,
-        #[serde(default = "default_smtp_port")]
-        smtp_port: u16,
-        username: String,
-        password: String,
         from: String,
-        to: String,
+        to: Vec<String>,
     },
     Apns {
         key_id: String,
@@ -52,10 +47,6 @@ pub enum ChannelConfig {
 
 fn default_method() -> String {
     "POST".to_string()
-}
-
-fn default_smtp_port() -> u16 {
-    587
 }
 
 /// Template context for notification messages.
@@ -397,46 +388,10 @@ impl NotificationService {
                     return Err(AppError::Internal(format!("Bark error: {text}")));
                 }
             }
-            ChannelConfig::Email {
-                smtp_host,
-                smtp_port,
-                username,
-                password,
-                from,
-                to,
-            } => {
-                use lettre::message::header::ContentType;
-                use lettre::transport::smtp::authentication::Credentials;
-                use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
-
-                let subject = format!("[ServerBee] {} {}", ctx.server_name, ctx.event);
-                let body = ctx.render(DEFAULT_TEMPLATE);
-
-                let email =
-                    Message::builder()
-                        .from(from.parse().map_err(|e| {
-                            AppError::Validation(format!("Invalid from address: {e}"))
-                        })?)
-                        .to(to.parse().map_err(|e| {
-                            AppError::Validation(format!("Invalid to address: {e}"))
-                        })?)
-                        .subject(subject)
-                        .header(ContentType::TEXT_PLAIN)
-                        .body(body)
-                        .map_err(|e| AppError::Internal(format!("Failed to build email: {e}")))?;
-
-                let creds = Credentials::new(username, password);
-
-                let mailer = AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&smtp_host)
-                    .map_err(|e| AppError::Internal(format!("SMTP connection error: {e}")))?
-                    .port(smtp_port)
-                    .credentials(creds)
-                    .build();
-
-                mailer
-                    .send(email)
-                    .await
-                    .map_err(|e| AppError::Internal(format!("Failed to send email: {e}")))?;
+            ChannelConfig::Email { from: _, to: _ } => {
+                return Err(AppError::Internal(
+                    "Email dispatch not yet rewired (Task 7)".to_string(),
+                ));
             }
             ChannelConfig::Apns {
                 key_id,
@@ -483,8 +438,18 @@ impl NotificationService {
             );
         }
 
-        serde_json::from_value(val)
-            .map_err(|e| AppError::Validation(format!("Invalid {notify_type} config: {e}")))
+        let config: ChannelConfig = serde_json::from_value(val)
+            .map_err(|e| AppError::Validation(format!("Invalid {notify_type} config: {e}")))?;
+
+        if let ChannelConfig::Email { to, .. } = &config {
+            if to.is_empty() {
+                return Err(AppError::Validation(
+                    "Email notification requires at least one 'to' address".to_string(),
+                ));
+            }
+        }
+
+        Ok(config)
     }
 }
 
@@ -646,49 +611,44 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_config_email() {
-        let config_json = r#"{
-            "smtp_host": "smtp.gmail.com",
-            "smtp_port": 587,
-            "username": "user@gmail.com",
-            "password": "secret",
-            "from": "user@gmail.com",
-            "to": "admin@example.com"
-        }"#;
-        let config = NotificationService::parse_config("email", config_json).expect("should parse");
+    fn test_parse_config_email_new_schema() {
+        let config_json = r#"{"from":"alerts@example.com","to":["a@x.com","b@y.com"]}"#;
+        let config =
+            NotificationService::parse_config("email", config_json).expect("should parse");
 
         match config {
-            ChannelConfig::Email {
-                smtp_host,
-                smtp_port,
-                from,
-                to,
-                ..
-            } => {
-                assert_eq!(smtp_host, "smtp.gmail.com");
-                assert_eq!(smtp_port, 587);
-                assert_eq!(from, "user@gmail.com");
-                assert_eq!(to, "admin@example.com");
+            ChannelConfig::Email { from, to } => {
+                assert_eq!(from, "alerts@example.com");
+                assert_eq!(to, vec!["a@x.com".to_string(), "b@y.com".to_string()]);
             }
             _ => panic!("expected Email variant"),
         }
     }
 
     #[test]
-    fn test_parse_config_email_default_port() {
-        let config_json = r#"{
-            "smtp_host": "smtp.example.com",
-            "username": "u",
-            "password": "p",
-            "from": "a@b.com",
-            "to": "c@d.com"
-        }"#;
-        let config = NotificationService::parse_config("email", config_json).expect("should parse");
+    fn test_parse_config_email_empty_to_rejected() {
+        let config_json = r#"{"from":"a@b.com","to":[]}"#;
+        let result = NotificationService::parse_config("email", config_json);
+        assert!(
+            matches!(result, Err(AppError::Validation(_))),
+            "empty to[] should be rejected"
+        );
+    }
 
+    #[test]
+    fn test_parse_config_email_missing_to_rejected() {
+        let config_json = r#"{"from":"a@b.com"}"#;
+        let result = NotificationService::parse_config("email", config_json);
+        assert!(result.is_err(), "missing to should be rejected");
+    }
+
+    #[test]
+    fn test_parse_config_email_single_recipient() {
+        let config_json = r#"{"from":"a@b.com","to":["only@x.com"]}"#;
+        let config =
+            NotificationService::parse_config("email", config_json).expect("should parse");
         match config {
-            ChannelConfig::Email { smtp_port, .. } => {
-                assert_eq!(smtp_port, 587, "default SMTP port should be 587");
-            }
+            ChannelConfig::Email { to, .. } => assert_eq!(to.len(), 1),
             _ => panic!("expected Email variant"),
         }
     }
