@@ -347,8 +347,6 @@ async fn handle_current_connection_frame(
 }
 
 async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: AgentMessage) {
-    let writes_allowed = state.recovery_lock.writes_allowed_for(server_id);
-
     match msg {
         AgentMessage::SystemInfo {
             msg_id,
@@ -401,7 +399,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     tracing::info!(
                         "Server {server_id} remote address changed: {old_addr} -> {new_addr}"
                     );
-                    if writes_allowed {
+                    if state.recovery_lock.writes_allowed_for(server_id) {
                         if let Err(e) = AuditService::log(
                             &state.db,
                             "system",
@@ -428,7 +426,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 let remote_changed = old_remote_addr.as_ref() != current_remote_addr.as_ref();
 
                 if ipv4_changed || ipv6_changed || remote_changed {
-                    if writes_allowed {
+                    if state.recovery_lock.writes_allowed_for(server_id) {
                         if let Err(e) = AlertService::check_event_rules(
                             &state.db,
                             &state.alert_state_manager,
@@ -460,7 +458,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
 
                 // Always update last_remote_addr
                 if let Some(ref addr) = current_remote_addr {
-                    if writes_allowed {
+                    if state.recovery_lock.writes_allowed_for(server_id) {
                         if let Err(e) = update_last_remote_addr(&state.db, server_id, addr).await
                         {
                             tracing::error!(
@@ -475,7 +473,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 }
             }
 
-            if writes_allowed {
+            if state.recovery_lock.writes_allowed_for(server_id) {
                 if let Err(e) = ServerService::update_system_info(
                     &state.db,
                     server_id,
@@ -567,7 +565,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         AgentMessage::Report(report) => {
             // Save GPU records if present
             if let Some(ref gpu) = report.gpu {
-                if writes_allowed {
+                if state.recovery_lock.writes_allowed_for(server_id) {
                     if let Err(e) =
                         RecordService::save_gpu_records(&state.db, server_id, gpu).await
                     {
@@ -590,7 +588,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             );
             if !dispatched {
                 // No waiter — one-shot task, save directly
-                if writes_allowed {
+                if state.recovery_lock.writes_allowed_for(server_id) {
                     if let Err(e) = save_task_result(&state.db, server_id, &result).await {
                         tracing::error!("Failed to save task result for {server_id}: {e}");
                     }
@@ -598,7 +596,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     tracing::info!("Skipping recovery-frozen task-result write for {server_id}");
                 }
             }
-            if writes_allowed {
+            if state.recovery_lock.writes_allowed_for(server_id) {
                 if let Err(e) = audit_exec_finished(state, server_id, &result).await {
                     tracing::error!("Failed to write exec_finished audit log for {server_id}: {e}");
                 }
@@ -644,7 +642,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             }
         }
         AgentMessage::PingResult(result) => {
-            if writes_allowed {
+            if state.recovery_lock.writes_allowed_for(server_id) {
                 if let Err(e) = save_ping_result(&state.db, server_id, &result).await {
                     tracing::error!("Failed to save ping result for {server_id}: {e}");
                 }
@@ -701,7 +699,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     },
                 );
                 if !dispatched {
-                    if writes_allowed {
+                    if state.recovery_lock.writes_allowed_for(server_id) {
                         use crate::entity::task_result;
                         use sea_orm::{ActiveModelTrait, NotSet, Set};
                         let result = task_result::ActiveModel {
@@ -743,7 +741,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 server_id: server_id.to_string(),
                 results: results.clone(),
             });
-            if writes_allowed {
+            if state.recovery_lock.writes_allowed_for(server_id) {
                 if let Err(e) = NetworkProbeService::save_results(&state.db, server_id, results).await
                 {
                     tracing::error!("Failed to save network probe results for {server_id}: {e}");
@@ -983,7 +981,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             }
         }
         AgentMessage::DockerEvent { event } => {
-            if writes_allowed {
+            if state.recovery_lock.writes_allowed_for(server_id) {
                 let _ = crate::service::docker::DockerService::save_event(
                     &state.db,
                     server_id,
@@ -1010,7 +1008,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             }
         }
         AgentMessage::FeaturesUpdate { ref features } => {
-            if writes_allowed {
+            if state.recovery_lock.writes_allowed_for(server_id) {
                 let _ = crate::service::server::ServerService::update_features(
                     &state.db, server_id, features,
                 )
@@ -1049,7 +1047,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     let ipv6_changed = old_ipv6 != ipv6;
 
                     if ipv4_changed || ipv6_changed {
-                        if writes_allowed {
+                        if state.recovery_lock.writes_allowed_for(server_id) {
                             // Update ipv4/ipv6 in DB
                             if let Err(e) =
                                 update_server_ips(&state.db, server_id, &ipv4, &ipv6).await
@@ -1073,7 +1071,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                                 guard.as_ref().map(|g| g.lookup(ip))
                             };
                             if let Some(geo) = geo {
-                                if writes_allowed {
+                                if state.recovery_lock.writes_allowed_for(server_id) {
                                     if let Err(e) = update_server_geo(
                                         &state.db,
                                         server_id,
@@ -1103,7 +1101,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                             .get_remote_addr(server_id)
                             .map(|a| a.ip().to_string())
                             .unwrap_or_default();
-                        if writes_allowed {
+                        if state.recovery_lock.writes_allowed_for(server_id) {
                             if let Err(e) = AuditService::log(
                                 &state.db,
                                 "system",
@@ -1121,7 +1119,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                             );
                         }
 
-                        if writes_allowed {
+                        if state.recovery_lock.writes_allowed_for(server_id) {
                             if let Err(e) = AlertService::check_event_rules(
                                 &state.db,
                                 &state.alert_state_manager,
