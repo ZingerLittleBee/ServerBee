@@ -64,40 +64,6 @@ impl TrafficService {
         Ok(())
     }
 
-    pub(crate) async fn replace_unique_key_table_server_id(
-        db: &DatabaseConnection,
-        table: &str,
-        key_columns: &[&str],
-        target_server_id: &str,
-        source_server_id: &str,
-    ) -> Result<(), AppError> {
-        Self::replace_unique_key_table_server_id_on_connection(
-            db,
-            table,
-            key_columns,
-            target_server_id,
-            source_server_id,
-        )
-        .await
-    }
-
-    pub(crate) async fn replace_unique_key_table_server_id_on_txn(
-        txn: &DatabaseTransaction,
-        table: &str,
-        key_columns: &[&str],
-        target_server_id: &str,
-        source_server_id: &str,
-    ) -> Result<(), AppError> {
-        Self::replace_unique_key_table_server_id_on_connection(
-            txn,
-            table,
-            key_columns,
-            target_server_id,
-            source_server_id,
-        )
-        .await
-    }
-
     pub(crate) async fn replace_unique_key_table_server_id_on_connection<C>(
         db: &C,
         table: &str,
