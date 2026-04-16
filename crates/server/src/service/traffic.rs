@@ -10,6 +10,81 @@ use crate::error::AppError;
 pub struct TrafficService;
 
 impl TrafficService {
+    pub async fn merge_recovered_server_history(
+        db: &DatabaseConnection,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        Self::replace_unique_key_table_server_id(
+            db,
+            "traffic_hourly",
+            &["hour"],
+            target_server_id,
+            source_server_id,
+        )
+        .await?;
+        Self::replace_unique_key_table_server_id(
+            db,
+            "traffic_daily",
+            &["date"],
+            target_server_id,
+            source_server_id,
+        )
+        .await?;
+        Self::replace_unique_key_table_server_id(
+            db,
+            "traffic_state",
+            &[],
+            target_server_id,
+            source_server_id,
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    pub(crate) async fn replace_unique_key_table_server_id(
+        db: &DatabaseConnection,
+        table: &str,
+        key_columns: &[&str],
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        let join_predicate = if key_columns.is_empty() {
+            "1 = 1".to_string()
+        } else {
+            key_columns
+                .iter()
+                .map(|column| format!("source.{column} = target.{column}"))
+                .collect::<Vec<_>>()
+                .join(" AND ")
+        };
+
+        db.execute(Statement::from_sql_and_values(
+            db.get_database_backend(),
+            format!(
+                "DELETE FROM {table} AS target \
+                 WHERE target.server_id = $1 \
+                 AND EXISTS ( \
+                     SELECT 1 FROM {table} AS source \
+                     WHERE source.server_id = $2 \
+                     AND {join_predicate} \
+                 )"
+            ),
+            [target_server_id.into(), source_server_id.into()],
+        ))
+        .await?;
+
+        db.execute(Statement::from_sql_and_values(
+            db.get_database_backend(),
+            format!("UPDATE {table} SET server_id = $1 WHERE server_id = $2"),
+            [target_server_id.into(), source_server_id.into()],
+        ))
+        .await?;
+
+        Ok(())
+    }
+
     /// Upsert a traffic_hourly row, accumulating bytes_in/bytes_out on conflict.
     pub async fn upsert_hourly(
         db: &DatabaseConnection,
