@@ -428,15 +428,21 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 let remote_changed = old_remote_addr.as_ref() != current_remote_addr.as_ref();
 
                 if ipv4_changed || ipv6_changed || remote_changed {
-                    if let Err(e) = AlertService::check_event_rules(
-                        &state.db,
-                        &state.alert_state_manager,
-                        server_id,
-                        "ip_changed",
-                    )
-                    .await
-                    {
-                        tracing::error!("Failed to check event rules for IP change: {e}");
+                    if writes_allowed {
+                        if let Err(e) = AlertService::check_event_rules(
+                            &state.db,
+                            &state.alert_state_manager,
+                            server_id,
+                            "ip_changed",
+                        )
+                        .await
+                        {
+                            tracing::error!("Failed to check event rules for IP change: {e}");
+                        }
+                    } else {
+                        tracing::info!(
+                            "Skipping recovery-frozen alert evaluation for {server_id}"
+                        );
                     }
 
                     state
