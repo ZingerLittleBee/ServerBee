@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
+import type { RecoveryJobResponse } from '@/lib/api-schema'
 import type { NetworkProbeResultData } from '@/lib/network-types'
 import { WsClient } from '@/lib/ws-client'
 import type {
@@ -7,7 +8,6 @@ import type {
   DockerContainerStats,
   DockerEventInfo
 } from '@/routes/_authed/servers/$serverId/docker/types'
-import type { RecoveryJobResponse } from '@/lib/api-schema'
 import { useRecoveryJobsStore } from '@/stores/recovery-jobs-store'
 import { type UpgradeJob, useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 
@@ -187,6 +187,32 @@ function isWsMessageLike(raw: unknown): raw is { type: string } & Record<string,
   return typeof raw === 'object' && raw !== null && 'type' in raw && typeof (raw as { type: unknown }).type === 'string'
 }
 
+function hydrateRecoveryJobs(raw: WsMessage & { type: 'full_sync' | 'update' }, replaceMissing: boolean): void {
+  if (Array.isArray(raw.recoveries)) {
+    useRecoveryJobsStore.getState().setJobs(raw.recoveries)
+    return
+  }
+
+  if (replaceMissing) {
+    useRecoveryJobsStore.getState().setJobs([])
+  }
+}
+
+function handleFullSyncMessage(msg: WsMessage & { type: 'full_sync' | 'update' }, queryClient: QueryClient): void {
+  queryClient.setQueryData<ServerMetrics[]>(['servers'], msg.servers)
+  if (Array.isArray(msg.upgrades)) {
+    useUpgradeJobsStore.getState().setJobs(msg.upgrades as UpgradeJob[])
+  }
+  hydrateRecoveryJobs(msg, true)
+}
+
+function handleUpdateMessage(msg: WsMessage & { type: 'full_sync' | 'update' }, queryClient: QueryClient): void {
+  queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
+    prev ? mergeServerUpdate(prev, msg.servers) : msg.servers
+  )
+  hydrateRecoveryJobs(msg, false)
+}
+
 function handleServerMetricsMessage(raw: { type: string } & Record<string, unknown>, queryClient: QueryClient): void {
   if (raw.type === 'full_sync' || raw.type === 'update') {
     if (!Array.isArray(raw.servers) || raw.servers.some((s: unknown) => s == null || typeof s !== 'object')) {
@@ -194,22 +220,9 @@ function handleServerMetricsMessage(raw: { type: string } & Record<string, unkno
     }
     const msg = raw as WsMessage & { type: 'full_sync' | 'update' }
     if (raw.type === 'full_sync') {
-      queryClient.setQueryData<ServerMetrics[]>(['servers'], msg.servers)
-      if (Array.isArray(raw.upgrades)) {
-        useUpgradeJobsStore.getState().setJobs(raw.upgrades as UpgradeJob[])
-      }
-      if (Array.isArray(raw.recoveries)) {
-        useRecoveryJobsStore.getState().setJobs(raw.recoveries)
-      } else {
-        useRecoveryJobsStore.getState().setJobs([])
-      }
+      handleFullSyncMessage(msg, queryClient)
     } else {
-      queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
-        prev ? mergeServerUpdate(prev, msg.servers) : msg.servers
-      )
-      if (Array.isArray(raw.recoveries)) {
-        useRecoveryJobsStore.getState().setJobs(raw.recoveries)
-      }
+      handleUpdateMessage(msg, queryClient)
     }
     return
   }

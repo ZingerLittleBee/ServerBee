@@ -61,7 +61,7 @@ export function useRecoveryJob(jobId: string, enabled = true) {
   })
 }
 
-export async function startRecoveryMerge(targetId: string, payload: StartRecoveryRequest) {
+export function startRecoveryMerge(targetId: string, payload: StartRecoveryRequest) {
   return api.post<RecoveryJobResponse>(`/api/servers/${targetId}/recover-merge`, payload)
 }
 

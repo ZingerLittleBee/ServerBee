@@ -44,10 +44,7 @@ describe('RecoveryMergeDialog', () => {
       isLoading: false
     })
 
-    render(
-      <RecoveryMergeDialog onOpenChange={vi.fn()} open targetServerId="target-1" />,
-      { wrapper: Wrapper }
-    )
+    render(<RecoveryMergeDialog onOpenChange={vi.fn()} open targetServerId="target-1" />, { wrapper: Wrapper })
 
     expect(screen.getByText('Source')).toBeDefined()
     expect(screen.getByText('same remote address')).toBeDefined()
@@ -60,10 +57,7 @@ describe('RecoveryMergeDialog', () => {
       isLoading: false
     })
 
-    render(
-      <RecoveryMergeDialog onOpenChange={vi.fn()} open targetServerId="target-1" />,
-      { wrapper: Wrapper }
-    )
+    render(<RecoveryMergeDialog onOpenChange={vi.fn()} open targetServerId="target-1" />, { wrapper: Wrapper })
 
     const button = screen.getByText('Start Recovery').closest('button')
     expect(button?.getAttribute('disabled')).toBe('')

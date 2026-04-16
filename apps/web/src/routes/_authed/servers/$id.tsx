@@ -7,20 +7,20 @@ import { AgentVersionSection } from '@/components/server/agent-version-section'
 import { CapabilitiesDialog } from '@/components/server/capabilities-dialog'
 import { DiskIoChart } from '@/components/server/disk-io-chart'
 import { MetricsChart } from '@/components/server/metrics-chart'
+import { RecoveryMergeDialog } from '@/components/server/recovery-merge-dialog'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
 import { TrafficCard } from '@/components/server/traffic-card'
 import { TrafficProgress } from '@/components/server/traffic-progress'
 import { TrafficTab } from '@/components/server/traffic-tab'
 import { UpgradeJobBadge } from '@/components/server/upgrade-job-badge'
-import { RecoveryMergeDialog } from '@/components/server/recovery-merge-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { UptimeTimeline } from '@/components/uptime/uptime-timeline'
-import { useAuth } from '@/hooks/use-auth'
 import { useServer, useServerRecords, useUptimeDaily } from '@/hooks/use-api'
+import { useAuth } from '@/hooks/use-auth'
 import { useRealtimeMetrics } from '@/hooks/use-realtime-metrics'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
@@ -158,7 +158,9 @@ function ServerActionButtons({
       <CapabilitiesDialog server={serverWithCaps} />
       {isAdmin && !isOnline && (
         <Button onClick={onRecoveryOpen} size="sm" variant="outline">
-          {currentRecoveryJob ? t('recovery_merge_resume', { defaultValue: 'View Recovery' }) : t('recovery_merge_open', { defaultValue: 'Recover Agent' })}
+          {currentRecoveryJob
+            ? t('recovery_merge_resume', { defaultValue: 'View Recovery' })
+            : t('recovery_merge_open', { defaultValue: 'Recover Agent' })}
         </Button>
       )}
       {isOnline && terminalEnabled && (
@@ -670,7 +672,12 @@ export function ServerDetailPage() {
       </Tabs>
 
       <ServerEditDialog onClose={() => setEditOpen(false)} open={editOpen} server={server} />
-      <RecoveryMergeDialog currentJob={recoveryJob} onOpenChange={setRecoveryOpen} open={recoveryOpen} targetServerId={id} />
+      <RecoveryMergeDialog
+        currentJob={recoveryJob}
+        onOpenChange={setRecoveryOpen}
+        open={recoveryOpen}
+        targetServerId={id}
+      />
     </div>
   )
 }
