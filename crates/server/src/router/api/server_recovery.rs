@@ -249,6 +249,13 @@ async fn start_recovery_merge_with_sender(
 
     let txn = state.db.begin().await?;
     let job = RecoveryMergeService::start_on_txn(&txn, target_id, source_server_id).await?;
+    if let Err(error) =
+        RecoveryMergeService::validate_dispatch_preconditions(state, target_id, source_server_id)
+            .await
+    {
+        txn.rollback().await?;
+        return Err(error);
+    }
     let token = RecoveryMergeService::rotate_target_token_on_txn(&txn, target_id).await?;
 
     if let Err(error) = sender

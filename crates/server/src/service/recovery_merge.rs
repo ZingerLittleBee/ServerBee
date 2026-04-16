@@ -132,19 +132,27 @@ impl RecoveryMergeService {
             .await?
             .ok_or_else(|| AppError::NotFound("Server not found".to_string()))?;
 
-        if state.agent_manager.is_online(&target.id) {
-            return Err(AppError::Conflict(
-                "Target server must be offline before starting recovery".to_string(),
-            ));
-        }
+        Self::validate_connectivity_preconditions(
+            state,
+            &target.id,
+            &source.id,
+            "Target server must be offline before starting recovery",
+            "Source server must be online before starting recovery",
+        )
+    }
 
-        if !state.agent_manager.is_online(&source.id) {
-            return Err(AppError::Conflict(
-                "Source server must be online before starting recovery".to_string(),
-            ));
-        }
-
-        Ok(())
+    pub async fn validate_dispatch_preconditions(
+        state: &Arc<AppState>,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        Self::validate_connectivity_preconditions(
+            state,
+            target_server_id,
+            source_server_id,
+            "Recovery start aborted because target server came back online before dispatch",
+            "Recovery start aborted because source server went offline before dispatch",
+        )
     }
 
     async fn start_on_db(
@@ -349,6 +357,24 @@ impl RecoveryMergeService {
         C: ConnectionTrait,
     {
         Ok(recovery_job::Entity::find_by_id(job_id).one(db).await?)
+    }
+
+    fn validate_connectivity_preconditions(
+        state: &Arc<AppState>,
+        target_server_id: &str,
+        source_server_id: &str,
+        target_online_message: &str,
+        source_offline_message: &str,
+    ) -> Result<(), AppError> {
+        if state.agent_manager.is_online(target_server_id) {
+            return Err(AppError::Conflict(target_online_message.to_string()));
+        }
+
+        if !state.agent_manager.is_online(source_server_id) {
+            return Err(AppError::Conflict(source_offline_message.to_string()));
+        }
+
+        Ok(())
     }
 
     async fn handle_rebind_ack_on_db(
@@ -888,5 +914,25 @@ mod tests {
             .unwrap();
         assert_eq!(loaded.stage, RECOVERY_STAGE_AWAITING_TARGET_ONLINE);
         assert_eq!(loaded.status, "running");
+    }
+
+    #[tokio::test]
+    async fn dispatch_validation_rejects_stale_source_offline_state() {
+        let (state, _tmp) = test_state_with_servers().await;
+        mark_online(&state, "source-1");
+
+        RecoveryMergeService::validate_start_request(&state, "target-1", "source-1")
+            .await
+            .expect("initial start validation should succeed");
+
+        state.agent_manager.remove_connection("source-1");
+
+        let result =
+            RecoveryMergeService::validate_dispatch_preconditions(&state, "target-1", "source-1")
+                .await;
+
+        assert!(
+            matches!(result, Err(AppError::Conflict(message)) if message.contains("went offline before dispatch"))
+        );
     }
 }
