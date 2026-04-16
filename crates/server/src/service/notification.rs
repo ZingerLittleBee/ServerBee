@@ -152,18 +152,27 @@ impl NotificationService {
         input: UpdateNotification,
     ) -> Result<notification::Model, AppError> {
         let existing = Self::get(db, id).await?;
-        let mut model: notification::ActiveModel = existing.into();
 
+        let candidate_type = input
+            .notify_type
+            .clone()
+            .unwrap_or_else(|| existing.notify_type.clone());
+        let candidate_json = match &input.config_json {
+            Some(cj) => serde_json::to_string(cj)
+                .map_err(|e| AppError::Validation(format!("Invalid config: {e}")))?,
+            None => existing.config_json.clone(),
+        };
+        Self::parse_config(&candidate_type, &candidate_json)?;
+
+        let mut model: notification::ActiveModel = existing.into();
         if let Some(name) = input.name {
             model.name = Set(name);
         }
         if let Some(notify_type) = input.notify_type {
             model.notify_type = Set(notify_type);
         }
-        if let Some(config_json) = input.config_json {
-            let config_str = serde_json::to_string(&config_json)
-                .map_err(|e| AppError::Validation(format!("Invalid config: {e}")))?;
-            model.config_json = Set(config_str);
+        if input.config_json.is_some() {
+            model.config_json = Set(candidate_json);
         }
         if let Some(enabled) = input.enabled {
             model.enabled = Set(enabled);
@@ -742,6 +751,26 @@ mod tests {
     }
 
     // ── T3-4: ChannelConfig serialization round-trip ──
+
+    #[test]
+    fn test_update_candidate_email_empty_to_rejected() {
+        // Update path re-parses the effective (type, json) pair.
+        // Simulate: existing row is email, update sets config_json to {to:[]}.
+        let candidate_type = "email";
+        let candidate_json = r#"{"from":"a@b.com","to":[]}"#;
+        let result = NotificationService::parse_config(candidate_type, candidate_json);
+        assert!(matches!(result, Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    fn test_update_candidate_type_mismatch_rejected() {
+        // Simulate: existing row is email with valid email JSON.
+        // Update changes notify_type to "telegram" without updating config_json.
+        let candidate_type = "telegram";
+        let candidate_json = r#"{"from":"a@b.com","to":["c@d.com"]}"#;
+        let result = NotificationService::parse_config(candidate_type, candidate_json);
+        assert!(result.is_err(), "email json must not parse as telegram");
+    }
 
     #[test]
     fn test_channel_config_webhook_roundtrip() {
