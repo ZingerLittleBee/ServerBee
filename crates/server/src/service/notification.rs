@@ -251,6 +251,7 @@ impl NotificationService {
     /// Send notifications for a group, given a template context.
     pub async fn send_group(
         db: &DatabaseConnection,
+        config: &crate::config::AppConfig,
         group_id: &str,
         ctx: &NotifyContext,
     ) -> Result<(), AppError> {
@@ -261,7 +262,7 @@ impl NotificationService {
         for nid in ids {
             match Self::get(db, &nid).await {
                 Ok(n) if n.enabled => {
-                    if let Err(e) = Self::dispatch(db, &n, ctx).await {
+                    if let Err(e) = Self::dispatch(db, config, &n, ctx).await {
                         tracing::error!(
                             "Failed to send notification {} ({}): {e}",
                             n.name,
@@ -276,7 +277,11 @@ impl NotificationService {
     }
 
     /// Send a single notification (used for testing).
-    pub async fn test_notification(db: &DatabaseConnection, id: &str) -> Result<(), AppError> {
+    pub async fn test_notification(
+        db: &DatabaseConnection,
+        config: &crate::config::AppConfig,
+        id: &str,
+    ) -> Result<(), AppError> {
         let n = Self::get(db, id).await?;
         let ctx = NotifyContext {
             server_name: "Test Server".to_string(),
@@ -289,11 +294,12 @@ impl NotificationService {
             cpu: "50.0%".to_string(),
             memory: "60.0%".to_string(),
         };
-        Self::dispatch(db, &n, &ctx).await
+        Self::dispatch(db, config, &n, &ctx).await
     }
 
     async fn dispatch(
         db: &DatabaseConnection,
+        _config: &crate::config::AppConfig,
         n: &notification::Model,
         ctx: &NotifyContext,
     ) -> Result<(), AppError> {
