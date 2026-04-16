@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use sea_orm::DatabaseConnection;
+use sea_orm::EntityTrait;
 
-use crate::entity::recovery_job;
+use crate::entity::{recovery_job, server};
 use crate::error::AppError;
 use crate::service::recovery_job::RecoveryJobService;
 use crate::state::AppState;
@@ -31,21 +32,78 @@ impl RecoveryMergeService {
         target_server_id: &str,
         source_server_id: &str,
     ) -> Result<recovery_job::Model, AppError> {
+        Self::validate_start_request(state, target_server_id, source_server_id).await?;
         Self::start_on_db(&state.db, target_server_id, source_server_id).await
     }
 
     pub async fn handle_rebind_ack(
         state: &Arc<AppState>,
         job_id: &str,
+        acking_server_id: &str,
     ) -> Result<recovery_job::Model, AppError> {
-        Self::handle_rebind_ack_on_db(&state.db, job_id).await
+        Self::handle_rebind_ack_on_db(&state.db, job_id, acking_server_id).await
     }
 
-    pub async fn start_on_db(
+    async fn validate_start_request(
+        state: &Arc<AppState>,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        if source_server_id == target_server_id {
+            return Err(AppError::Validation(
+                "source_server_id must be different from target_id".to_string(),
+            ));
+        }
+
+        let target = server::Entity::find_by_id(target_server_id)
+            .one(&state.db)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Server not found".to_string()))?;
+        let source = server::Entity::find_by_id(source_server_id)
+            .one(&state.db)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Server not found".to_string()))?;
+
+        if state.agent_manager.is_online(&target.id) {
+            return Err(AppError::Conflict(
+                "Target server must be offline before starting recovery".to_string(),
+            ));
+        }
+
+        if !state.agent_manager.is_online(&source.id) {
+            return Err(AppError::Conflict(
+                "Source server must be online before starting recovery".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    async fn start_on_db(
         db: &DatabaseConnection,
         target_server_id: &str,
         source_server_id: &str,
     ) -> Result<recovery_job::Model, AppError> {
+        if let Some(existing) =
+            Self::find_reusable_start_job(db, target_server_id, source_server_id).await?
+        {
+            return Self::advance_job_to_rebinding(db, existing).await;
+        }
+
+        match RecoveryJobService::create_job(db, target_server_id, source_server_id).await {
+            Ok(job) => Self::advance_job_to_rebinding(db, job).await,
+            Err(AppError::Conflict(_)) => {
+                Self::recover_duplicate_start(db, target_server_id, source_server_id).await
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    async fn find_reusable_start_job(
+        db: &DatabaseConnection,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<Option<recovery_job::Model>, AppError> {
         let running_target = RecoveryJobService::running_for_target(db, target_server_id).await?;
         let running_source = RecoveryJobService::running_for_source(db, source_server_id).await?;
 
@@ -70,14 +128,7 @@ impl RecoveryMergeService {
                 ));
             }
 
-            return RecoveryJobService::update_stage(
-                db,
-                &job.job_id,
-                RECOVERY_STAGE_REBINDING,
-                None,
-                None,
-            )
-            .await;
+            return Ok(Some(job));
         }
 
         if running_source.is_some() {
@@ -86,18 +137,46 @@ impl RecoveryMergeService {
             ));
         }
 
-        let job = RecoveryJobService::create_job(db, target_server_id, source_server_id).await?;
+        Ok(None)
+    }
+
+    async fn recover_duplicate_start(
+        db: &DatabaseConnection,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<recovery_job::Model, AppError> {
+        match Self::find_reusable_start_job(db, target_server_id, source_server_id).await? {
+            Some(job) => Self::advance_job_to_rebinding(db, job).await,
+            None => Err(AppError::Conflict(
+                "A running recovery job already exists for this target or source".to_string(),
+            )),
+        }
+    }
+
+    async fn advance_job_to_rebinding(
+        db: &DatabaseConnection,
+        job: recovery_job::Model,
+    ) -> Result<recovery_job::Model, AppError> {
+        if job.stage == RECOVERY_STAGE_REBINDING {
+            return Ok(job);
+        }
+
         RecoveryJobService::update_stage(db, &job.job_id, RECOVERY_STAGE_REBINDING, None, None)
             .await
     }
 
-    pub async fn handle_rebind_ack_on_db(
+    async fn handle_rebind_ack_on_db(
         db: &DatabaseConnection,
         job_id: &str,
+        acking_server_id: &str,
     ) -> Result<recovery_job::Model, AppError> {
         let job = RecoveryJobService::get_job(db, job_id)
             .await?
             .ok_or_else(|| AppError::NotFound("Recovery job not found".to_string()))?;
+
+        if job.source_server_id != acking_server_id {
+            return Ok(job);
+        }
 
         if job.status != "running" {
             return Ok(job);
@@ -120,14 +199,19 @@ impl RecoveryMergeService {
 
 pub fn recovery_phase_for_stage(stage: &str) -> Option<RecoveryFailurePhase> {
     match stage {
-        RECOVERY_STAGE_VALIDATING | RECOVERY_STAGE_REBINDING => Some(RecoveryFailurePhase::PreRebind),
+        RECOVERY_STAGE_VALIDATING | RECOVERY_STAGE_REBINDING => {
+            Some(RecoveryFailurePhase::PreRebind)
+        }
         RECOVERY_STAGE_AWAITING_TARGET_ONLINE => Some(RecoveryFailurePhase::PostRebind),
         _ => None,
     }
 }
 
 pub fn is_pre_rebind_stage(stage: &str) -> bool {
-    matches!(recovery_phase_for_stage(stage), Some(RecoveryFailurePhase::PreRebind))
+    matches!(
+        recovery_phase_for_stage(stage),
+        Some(RecoveryFailurePhase::PreRebind)
+    )
 }
 
 pub fn retry_strategy_for_phase(phase: RecoveryFailurePhase) -> RecoveryRetryStrategy {
@@ -148,9 +232,66 @@ mod tests {
         RecoveryMergeService, RecoveryRetryStrategy, is_pre_rebind_stage, recovery_phase_for_stage,
         retry_strategy_for_phase, retry_strategy_for_stage,
     };
+    use crate::config::AppConfig;
+    use crate::entity::server;
     use crate::error::AppError;
+    use crate::service::auth::AuthService;
     use crate::service::recovery_job::RecoveryJobService;
+    use crate::state::AppState;
     use crate::test_utils::setup_test_db;
+    use chrono::Utc;
+    use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
+    use serverbee_common::constants::CAP_DEFAULT;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::sync::Arc;
+    use tempfile::TempDir;
+    use tokio::sync::mpsc;
+
+    async fn insert_test_server(db: &DatabaseConnection, id: &str, name: &str) {
+        let token_hash = AuthService::hash_password("test").expect("hash_password should succeed");
+        let now = Utc::now();
+        server::ActiveModel {
+            id: Set(id.to_string()),
+            token_hash: Set(token_hash),
+            token_prefix: Set("serverbee_test".to_string()),
+            name: Set(name.to_string()),
+            weight: Set(0),
+            hidden: Set(false),
+            capabilities: Set(CAP_DEFAULT as i32),
+            protocol_version: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert test server should succeed");
+    }
+
+    async fn test_state_with_servers() -> (Arc<AppState>, TempDir) {
+        let (db, tmp) = setup_test_db().await;
+        insert_test_server(&db, "target-1", "Target").await;
+        insert_test_server(&db, "source-1", "Source").await;
+        insert_test_server(&db, "source-2", "Source 2").await;
+        let state = AppState::new(db, AppConfig::default())
+            .await
+            .expect("app state should initialize");
+        (state, tmp)
+    }
+
+    fn test_addr() -> SocketAddr {
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9527)
+    }
+
+    fn mark_online(state: &Arc<AppState>, server_id: &str) {
+        let (tx, _) = mpsc::channel(1);
+        state.agent_manager.add_connection(
+            server_id.to_string(),
+            server_id.to_string(),
+            tx,
+            test_addr(),
+        );
+    }
 
     #[test]
     fn pre_rebind_phase_requires_new_job() {
@@ -251,7 +392,7 @@ mod tests {
             .await
             .unwrap();
 
-        let updated = RecoveryMergeService::handle_rebind_ack_on_db(&db, &job.job_id)
+        let updated = RecoveryMergeService::handle_rebind_ack_on_db(&db, &job.job_id, "source-1")
             .await
             .unwrap();
 
@@ -273,11 +414,11 @@ mod tests {
         let job = RecoveryMergeService::start_on_db(&db, "target-1", "source-1")
             .await
             .unwrap();
-        let _ = RecoveryMergeService::handle_rebind_ack_on_db(&db, &job.job_id)
+        let _ = RecoveryMergeService::handle_rebind_ack_on_db(&db, &job.job_id, "source-1")
             .await
             .unwrap();
 
-        let updated = RecoveryMergeService::handle_rebind_ack_on_db(&db, &job.job_id)
+        let updated = RecoveryMergeService::handle_rebind_ack_on_db(&db, &job.job_id, "source-1")
             .await
             .unwrap();
 
@@ -296,7 +437,7 @@ mod tests {
             .await
             .unwrap();
 
-        let updated = RecoveryMergeService::handle_rebind_ack_on_db(&db, &job.job_id)
+        let updated = RecoveryMergeService::handle_rebind_ack_on_db(&db, &job.job_id, "source-1")
             .await
             .unwrap();
 
@@ -307,5 +448,77 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(loaded.stage, "validating");
+    }
+
+    #[tokio::test]
+    async fn rebind_ack_from_wrong_source_is_ignored() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let job = RecoveryMergeService::start_on_db(&db, "target-1", "source-1")
+            .await
+            .unwrap();
+
+        let updated = RecoveryMergeService::handle_rebind_ack_on_db(&db, &job.job_id, "source-2")
+            .await
+            .unwrap();
+
+        assert_eq!(updated.job_id, job.job_id);
+        assert_eq!(updated.stage, RECOVERY_STAGE_REBINDING);
+
+        let loaded = RecoveryJobService::get_job(&db, &job.job_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.stage, RECOVERY_STAGE_REBINDING);
+    }
+
+    #[tokio::test]
+    async fn start_rejects_self_merge_at_service_boundary() {
+        let (state, _tmp) = test_state_with_servers().await;
+        mark_online(&state, "source-1");
+
+        let result = RecoveryMergeService::start(&state, "target-1", "target-1").await;
+
+        assert!(matches!(result, Err(AppError::Validation(_))));
+    }
+
+    #[tokio::test]
+    async fn start_rejects_online_target_at_service_boundary() {
+        let (state, _tmp) = test_state_with_servers().await;
+        mark_online(&state, "target-1");
+        mark_online(&state, "source-1");
+
+        let result = RecoveryMergeService::start(&state, "target-1", "source-1").await;
+
+        assert!(
+            matches!(result, Err(AppError::Conflict(message)) if message.contains("Target server must be offline"))
+        );
+    }
+
+    #[tokio::test]
+    async fn start_rejects_offline_source_at_service_boundary() {
+        let (state, _tmp) = test_state_with_servers().await;
+
+        let result = RecoveryMergeService::start(&state, "target-1", "source-1").await;
+
+        assert!(
+            matches!(result, Err(AppError::Conflict(message)) if message.contains("Source server must be online"))
+        );
+    }
+
+    #[tokio::test]
+    async fn duplicate_start_conflict_reuses_matching_pre_rebind_job() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let first = RecoveryJobService::create_job(&db, "target-1", "source-1")
+            .await
+            .unwrap();
+
+        let reused = RecoveryMergeService::recover_duplicate_start(&db, "target-1", "source-1")
+            .await
+            .unwrap();
+
+        assert_eq!(reused.job_id, first.job_id);
+        assert_eq!(reused.stage, RECOVERY_STAGE_REBINDING);
     }
 }
