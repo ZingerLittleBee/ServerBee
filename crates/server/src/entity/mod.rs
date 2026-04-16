@@ -21,6 +21,7 @@ pub mod notification_group;
 pub mod oauth_account;
 pub mod ping_record;
 pub mod ping_task;
+pub mod recovery_job;
 pub mod record;
 pub mod record_hourly;
 pub mod server;
