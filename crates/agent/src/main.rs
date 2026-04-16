@@ -7,6 +7,7 @@ mod fingerprint;
 mod network_prober;
 mod pinger;
 mod probe_utils;
+mod rebind;
 mod register;
 mod reporter;
 mod terminal;
@@ -74,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("No token found, registering...");
         let (_server_id, token) = register::register_agent(&config, &machine_fingerprint).await?;
         tracing::info!("Registration successful");
-        if let Err(e) = register::save_token(&token) {
+        if let Err(e) = rebind::persist_rebind_token(AgentConfig::config_path(), &token) {
             tracing::warn!("Failed to save token: {e}");
         }
         config.token = token;
