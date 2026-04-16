@@ -43,10 +43,8 @@ pub async fn run(state: Arc<AppState>) {
 
         let mut count = 0;
         for (server_id, report) in &reports {
-            let writes_allowed = state.recovery_lock.writes_allowed_for(server_id);
-
             // Save metrics record
-            if writes_allowed {
+            if state.recovery_lock.writes_allowed_for(server_id) {
                 if let Err(e) = RecordService::save_report(&state.db, server_id, report).await {
                     tracing::error!("Failed to save record for {server_id}: {e}");
                 } else {
@@ -71,7 +69,7 @@ pub async fn run(state: Arc<AppState>) {
                 } else {
                     // First observation: no previous state, skip delta (just record state)
                     transfer_cache.insert(server_id.clone(), (curr_in, curr_out));
-                    if writes_allowed {
+                    if state.recovery_lock.writes_allowed_for(server_id) {
                         if let Err(e) = TrafficService::upsert_state(
                             &state.db,
                             server_id,
@@ -93,7 +91,7 @@ pub async fn run(state: Arc<AppState>) {
 
             // Only write if there's actual traffic
             if delta_in > 0 || delta_out > 0 {
-                if writes_allowed {
+                if state.recovery_lock.writes_allowed_for(server_id) {
                     if let Err(e) = TrafficService::upsert_hourly(
                         &state.db,
                         server_id,
@@ -111,7 +109,7 @@ pub async fn run(state: Arc<AppState>) {
             }
 
             // Always update state
-            if writes_allowed {
+            if state.recovery_lock.writes_allowed_for(server_id) {
                 if let Err(e) =
                     TrafficService::upsert_state(&state.db, server_id, curr_in, curr_out).await
                 {
