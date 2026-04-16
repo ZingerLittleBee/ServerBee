@@ -250,6 +250,7 @@ function NotificationsPage() {
   })
   const [toAddresses, setToAddresses] = useState<string[]>([])
   const [toInput, setToInput] = useState('')
+  const [isEnabled, setIsEnabled] = useState(true)
   const apnsFileInputRef = useRef<HTMLInputElement>(null)
 
   const typeLabels: Record<NotifyType, string> = {
@@ -271,8 +272,12 @@ function NotificationsPage() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (input: { config_json: Record<string, string | string[]>; name: string; notify_type: string }) =>
-      api.post<Notification>('/api/notifications', input),
+    mutationFn: (input: {
+      config_json: Record<string, string | string[]>
+      enabled: boolean
+      name: string
+      notify_type: string
+    }) => api.post<Notification>('/api/notifications', input),
     onSuccess: () => {
       invalidate()
       resetForm()
@@ -298,6 +303,7 @@ function NotificationsPage() {
     }) => api.put<Notification>(`/api/notifications/${id}`, patch),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] }).catch(() => undefined)
+      queryClient.invalidateQueries({ queryKey: ['notification-groups'] }).catch(() => undefined)
       toast.success(t('notifications.toast_channel_updated'))
       resetForm()
     },
@@ -351,6 +357,7 @@ function NotificationsPage() {
       api.put<NotificationGroup>(`/api/notification-groups/${id}`, patch),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notification-groups'] }).catch(() => undefined)
+      queryClient.invalidateQueries({ queryKey: ['notifications'] }).catch(() => undefined)
       toast.success(t('notifications.toast_group_updated'))
       resetGroupForm()
     },
@@ -381,6 +388,7 @@ function NotificationsPage() {
     setConfigFields({ url: '' })
     setToAddresses([])
     setToInput('')
+    setIsEnabled(true)
     setShowForm(false)
     setEditingId(null)
   }
@@ -395,14 +403,16 @@ function NotificationsPage() {
   const startEditChannel = (n: Notification) => {
     setEditingId(n.id)
     setName(n.name)
+    setIsEnabled(n.enabled)
     setNotifyType(n.notify_type as NotifyType)
-    const parsed = parseConfigJson(n.config_json)
+    setToInput('')
+    setToAddresses([])
 
+    const parsed = parseConfigJson(n.config_json)
     if (n.notify_type === 'email') {
       const { from, to } = parseEmailConfig(parsed)
       setConfigFields({ from })
       setToAddresses(to)
-      setToInput('')
     } else {
       setConfigFields(flattenConfigFields(parsed))
     }
@@ -460,12 +470,16 @@ function NotificationsPage() {
   }
 
   const submitChannel = (payload: Record<string, string | string[]>) => {
-    const trimmedName = name.trim()
-    const body = { name: trimmedName, notify_type: notifyType, config_json: payload }
+    const basePayload = {
+      name: name.trim(),
+      notify_type: notifyType,
+      config_json: payload,
+      enabled: isEnabled
+    }
     if (editingId) {
-      updateMutation.mutate({ id: editingId, patch: body })
+      updateMutation.mutate({ id: editingId, patch: basePayload })
     } else {
-      createMutation.mutate(body)
+      createMutation.mutate(basePayload)
     }
   }
 
@@ -550,6 +564,7 @@ function NotificationsPage() {
                 value={name}
               />
               <Select
+                disabled={editingId !== null}
                 items={typeLabels}
                 onValueChange={(val) => handleTypeChange(val as NotifyType)}
                 value={notifyType}
@@ -565,6 +580,9 @@ function NotificationsPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {editingId !== null && (
+                <p className="text-muted-foreground text-xs">{t('notifications.type_locked_in_edit')}</p>
+              )}
               {notifyType === 'apns' && (
                 <ApnsFormFields
                   apnsFileInputRef={apnsFileInputRef}
@@ -596,6 +614,10 @@ function NotificationsPage() {
                     value={configFields[key] ?? ''}
                   />
                 ))}
+              <div className="flex items-center justify-between">
+                <Label className="text-sm">{t('notifications.enabled_label')}</Label>
+                <Switch checked={isEnabled} onCheckedChange={setIsEnabled} />
+              </div>
               <div className="flex gap-2">
                 <Button disabled={createMutation.isPending || updateMutation.isPending} size="sm" type="submit">
                   {editingId ? t('notifications.update_channel') : t('common:create')}
@@ -719,7 +741,7 @@ function NotificationsPage() {
           ) : (
             <div className="divide-y rounded-md border">
               {groups.map((g) => {
-                const ids: string[] = JSON.parse(g.notification_ids_json || '[]')
+                const ids = parseGroupIds(g.notification_ids_json)
                 return (
                   <div className="flex items-center justify-between px-4 py-3" key={g.id}>
                     <div>

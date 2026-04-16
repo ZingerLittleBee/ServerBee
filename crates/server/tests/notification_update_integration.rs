@@ -81,14 +81,24 @@ async fn update_accepts_valid_merged_payload() {
 }
 
 #[tokio::test]
-async fn update_reshape_email_config_keeps_row_enabled() {
+async fn update_reenables_disabled_email_row_after_reconfig() {
     let db = fresh_db().await;
-    let id = create_valid_email(&db).await;
 
-    // Simulate the post-migration "needs reconfiguration" flow: user re-fills
-    // the config_json and re-enables the row in one PUT.
-    let input = UpdateNotification {
-        name: Some("ops (fixed)".to_string()),
+    // Simulate the post-migration state: disabled email row with a legacy-ish name.
+    let input = CreateNotification {
+        name: "ops (needs reconfiguration)".to_string(),
+        notify_type: "email".to_string(),
+        config_json: json!({ "from": "alerts@example.com", "to": ["ops@example.com"] }),
+        enabled: false,
+    };
+    let id = NotificationService::create(&db, input)
+        .await
+        .expect("create disabled email")
+        .id;
+
+    // The user fills in new resend-shaped config and flips enabled=true in the UI.
+    let patch = UpdateNotification {
+        name: Some("ops".to_string()),
         notify_type: None,
         config_json: Some(json!({
             "from": "alerts@example.com",
@@ -97,11 +107,42 @@ async fn update_reshape_email_config_keeps_row_enabled() {
         enabled: Some(true),
     };
 
-    let updated = NotificationService::update(&db, &id, input)
+    let updated = NotificationService::update(&db, &id, patch)
         .await
         .expect("valid email re-config");
-    assert_eq!(updated.name, "ops (fixed)");
-    assert!(updated.enabled);
+    assert_eq!(updated.name, "ops");
+    assert!(updated.enabled, "disabled row should be re-enabled");
     let cfg: serde_json::Value = serde_json::from_str(&updated.config_json).unwrap();
     assert_eq!(cfg["to"].as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn update_can_toggle_enabled_alone() {
+    let db = fresh_db().await;
+    let id = NotificationService::create(
+        &db,
+        CreateNotification {
+            name: "ops".to_string(),
+            notify_type: "email".to_string(),
+            config_json: json!({ "from": "a@x.com", "to": ["b@x.com"] }),
+            enabled: false,
+        },
+    )
+    .await
+    .expect("create")
+    .id;
+
+    let updated = NotificationService::update(
+        &db,
+        &id,
+        UpdateNotification {
+            name: None,
+            notify_type: None,
+            config_json: None,
+            enabled: Some(true),
+        },
+    )
+    .await
+    .expect("toggle enabled");
+    assert!(updated.enabled);
 }
