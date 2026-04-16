@@ -87,6 +87,27 @@ async fn main() -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
+#[test]
+fn persist_rebind_token() {
+    use std::fs;
+
+    use tempfile::TempDir;
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let path = tempdir.path().join("agent.toml");
+    fs::write(&path, "server_url = \"http://127.0.0.1:9527\"\n").expect("seed file");
+
+    crate::rebind::persist_rebind_token(&path, "focused-token").expect("persist");
+
+    let content = fs::read_to_string(&path).expect("read file");
+    assert_eq!(
+        content,
+        r#"server_url = "http://127.0.0.1:9527"
+token = "focused-token""#
+    );
+}
+
+#[cfg(test)]
 mod tests {
     use super::install_rustls_crypto_provider;
 

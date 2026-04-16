@@ -101,7 +101,7 @@ log.level = "debug""#,
         )
         .expect("seed file");
 
-        persist_rebind_token(&path, "new-token").expect("persist");
+        super::persist_rebind_token(&path, "new-token").expect("persist");
 
         let content = fs::read_to_string(&path).expect("read file");
         assert_eq!(
@@ -118,7 +118,7 @@ log.level = "debug""#
         let path = tempdir.path().join("agent.toml");
         fs::write(&path, "server_url = \"http://127.0.0.1:9527\"\n").expect("seed file");
 
-        persist_rebind_token(&path, "fresh-token").expect("persist");
+        super::persist_rebind_token(&path, "fresh-token").expect("persist");
 
         let content = fs::read_to_string(&path).expect("read file");
         assert_eq!(
