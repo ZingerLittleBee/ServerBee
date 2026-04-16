@@ -485,8 +485,11 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 {
                     tracing::error!("Failed to update system info for {server_id}: {e}");
                 }
+            } else {
+                tracing::info!("Skipping recovery-frozen system-info write for {server_id}");
+            }
 
-                // Persist and cache features from SystemInfo
+            if state.recovery_lock.writes_allowed_for(server_id) {
                 let _ = crate::service::server::ServerService::update_features(
                     &state.db,
                     server_id,
@@ -1188,11 +1191,7 @@ async fn handle_docker_unavailable(state: &Arc<AppState>, server_id: &str) {
         .remove_docker_log_sessions_for_server(server_id);
 
     // Shared cleanup: viewer tracker, features, DB persist, browser broadcast.
-    if state.recovery_lock.writes_allowed_for(server_id) {
-        crate::service::agent_manager::cleanup_disconnected_docker_state(state, server_id).await;
-    } else {
-        tracing::info!("Skipping recovery-frozen docker unavailable write for {server_id}");
-    }
+    crate::service::agent_manager::cleanup_disconnected_docker_state(state, server_id).await;
 }
 
 async fn send_server_message(
