@@ -4016,8 +4016,9 @@ async fn test_recovery_job_get_requires_admin_and_start_creates_job() {
 
     let (target_id, _target_token) = register_agent(&auth_client, &base_url).await;
     let (source_id, source_token) = register_agent(&auth_client, &base_url).await;
-    let (_sink, mut reader) = connect_agent(&base_url, &source_token).await;
+    let (mut sink, mut reader) = connect_agent(&base_url, &source_token).await;
     let _welcome = recv_agent_text(&mut reader).await;
+    send_system_info(&mut sink, &mut reader, "recovery-source-info", None).await;
 
     let start_resp = auth_client
         .post(format!(
