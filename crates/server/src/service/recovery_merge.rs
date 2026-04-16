@@ -50,6 +50,12 @@ impl RecoveryMergeService {
         let running_source = RecoveryJobService::running_for_source(db, source_server_id).await?;
 
         if let Some(job) = running_target {
+            if job.source_server_id != source_server_id {
+                return Err(AppError::Conflict(
+                    "A running recovery job already exists for this target or source".to_string(),
+                ));
+            }
+
             if let Some(source_job) = &running_source
                 && source_job.job_id != job.job_id
             {
@@ -97,7 +103,7 @@ impl RecoveryMergeService {
             return Ok(job);
         }
 
-        if job.stage == RECOVERY_STAGE_AWAITING_TARGET_ONLINE {
+        if job.stage != RECOVERY_STAGE_REBINDING {
             return Ok(job);
         }
 
@@ -112,18 +118,16 @@ impl RecoveryMergeService {
     }
 }
 
-pub fn recovery_phase_for_stage(stage: &str) -> RecoveryFailurePhase {
+pub fn recovery_phase_for_stage(stage: &str) -> Option<RecoveryFailurePhase> {
     match stage {
-        RECOVERY_STAGE_VALIDATING | RECOVERY_STAGE_REBINDING => RecoveryFailurePhase::PreRebind,
-        _ => RecoveryFailurePhase::PostRebind,
+        RECOVERY_STAGE_VALIDATING | RECOVERY_STAGE_REBINDING => Some(RecoveryFailurePhase::PreRebind),
+        RECOVERY_STAGE_AWAITING_TARGET_ONLINE => Some(RecoveryFailurePhase::PostRebind),
+        _ => None,
     }
 }
 
 pub fn is_pre_rebind_stage(stage: &str) -> bool {
-    matches!(
-        recovery_phase_for_stage(stage),
-        RecoveryFailurePhase::PreRebind
-    )
+    matches!(recovery_phase_for_stage(stage), Some(RecoveryFailurePhase::PreRebind))
 }
 
 pub fn retry_strategy_for_phase(phase: RecoveryFailurePhase) -> RecoveryRetryStrategy {
@@ -133,8 +137,8 @@ pub fn retry_strategy_for_phase(phase: RecoveryFailurePhase) -> RecoveryRetryStr
     }
 }
 
-pub fn retry_strategy_for_stage(stage: &str) -> RecoveryRetryStrategy {
-    retry_strategy_for_phase(recovery_phase_for_stage(stage))
+pub fn retry_strategy_for_stage(stage: &str) -> Option<RecoveryRetryStrategy> {
+    recovery_phase_for_stage(stage).map(retry_strategy_for_phase)
 }
 
 #[cfg(test)]
@@ -144,6 +148,7 @@ mod tests {
         RecoveryMergeService, RecoveryRetryStrategy, is_pre_rebind_stage, recovery_phase_for_stage,
         retry_strategy_for_phase, retry_strategy_for_stage,
     };
+    use crate::error::AppError;
     use crate::service::recovery_job::RecoveryJobService;
     use crate::test_utils::setup_test_db;
 
@@ -155,12 +160,14 @@ mod tests {
         );
         assert_eq!(
             retry_strategy_for_stage(RECOVERY_STAGE_REBINDING),
-            RecoveryRetryStrategy::StartNewJob
+            Some(RecoveryRetryStrategy::StartNewJob)
         );
         assert_eq!(
             recovery_phase_for_stage(RECOVERY_STAGE_REBINDING),
-            RecoveryFailurePhase::PreRebind
+            Some(RecoveryFailurePhase::PreRebind)
         );
+        assert_eq!(retry_strategy_for_stage("unknown"), None);
+        assert_eq!(recovery_phase_for_stage("unknown"), None);
     }
 
     #[test]
@@ -171,11 +178,11 @@ mod tests {
         );
         assert_eq!(
             retry_strategy_for_stage(RECOVERY_STAGE_AWAITING_TARGET_ONLINE),
-            RecoveryRetryStrategy::ResumeSameJob
+            Some(RecoveryRetryStrategy::ResumeSameJob)
         );
         assert_eq!(
             recovery_phase_for_stage(RECOVERY_STAGE_AWAITING_TARGET_ONLINE),
-            RecoveryFailurePhase::PostRebind
+            Some(RecoveryFailurePhase::PostRebind)
         );
     }
 
@@ -218,6 +225,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn start_rejects_existing_target_job_for_different_source() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let first = RecoveryMergeService::start_on_db(&db, "target-1", "source-1")
+            .await
+            .unwrap();
+
+        let result = RecoveryMergeService::start_on_db(&db, "target-1", "source-2").await;
+        assert!(matches!(result, Err(AppError::Conflict(_))));
+
+        let loaded = RecoveryJobService::get_job(&db, &first.job_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.source_server_id, "source-1");
+        assert_eq!(loaded.stage, RECOVERY_STAGE_REBINDING);
+    }
+
+    #[tokio::test]
     async fn rebind_ack_advances_to_waiting_for_target_online() {
         let (db, _tmp) = setup_test_db().await;
 
@@ -257,5 +283,29 @@ mod tests {
 
         assert_eq!(updated.stage, RECOVERY_STAGE_AWAITING_TARGET_ONLINE);
         assert_eq!(updated.status, "running");
+    }
+
+    #[tokio::test]
+    async fn rebind_ack_ignores_wrong_stage() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let job = RecoveryMergeService::start_on_db(&db, "target-1", "source-1")
+            .await
+            .unwrap();
+        RecoveryJobService::update_stage(&db, &job.job_id, "validating", None, None)
+            .await
+            .unwrap();
+
+        let updated = RecoveryMergeService::handle_rebind_ack_on_db(&db, &job.job_id)
+            .await
+            .unwrap();
+
+        assert_eq!(updated.stage, "validating");
+
+        let loaded = RecoveryJobService::get_job(&db, &job.job_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.stage, "validating");
     }
 }
