@@ -24,7 +24,7 @@ impl MigrationTrait for Migration {
 
         let rows: Vec<EmailRow> = EmailRow::find_by_statement(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "SELECT id, name, config_json FROM notification WHERE notify_type = 'email'",
+            "SELECT id, name, config_json FROM notifications WHERE notify_type = 'email'",
             [],
         ))
         .all(db)
@@ -39,7 +39,7 @@ impl MigrationTrait for Migration {
                 Ok(new_json) => {
                     db.execute(Statement::from_sql_and_values(
                         DbBackend::Sqlite,
-                        "UPDATE notification SET config_json = ? WHERE id = ?",
+                        "UPDATE notifications SET config_json = ? WHERE id = ?",
                         [new_json.into(), row.id.clone().into()],
                     ))
                     .await?;
@@ -53,7 +53,7 @@ impl MigrationTrait for Migration {
                     let new_name = format!("{} (needs reconfiguration)", row.name);
                     db.execute(Statement::from_sql_and_values(
                         DbBackend::Sqlite,
-                        "UPDATE notification SET name = ?, enabled = 0 WHERE id = ?",
+                        "UPDATE notifications SET name = ?, enabled = 0 WHERE id = ?",
                         [new_name.into(), row.id.clone().into()],
                     ))
                     .await?;
