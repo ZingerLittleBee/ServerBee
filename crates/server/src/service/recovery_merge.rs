@@ -1,16 +1,18 @@
 use std::sync::Arc;
 
 use chrono::Utc;
+use sea_orm::DatabaseBackend;
 use sea_orm::prelude::Expr;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
-    EntityTrait, QueryFilter,
+    EntityTrait, QueryFilter, Statement,
 };
 
-use crate::entity::{recovery_job, server};
+use crate::entity::{network_probe_config, recovery_job, server, server_tag};
 use crate::error::AppError;
 use crate::service::auth::AuthService;
 use crate::service::recovery_job::RecoveryJobService;
+use crate::service::traffic::TrafficService;
 use crate::state::AppState;
 
 pub const RECOVERY_STAGE_VALIDATING: &str = "validating";
@@ -494,6 +496,315 @@ impl RecoveryMergeService {
             transitioned: true,
         })
     }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) async fn merge_server_history_on_db(
+        db: &DatabaseConnection,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        Self::merge_raw_table(db, "records", "time", target_server_id, source_server_id).await?;
+        Self::merge_raw_table(db, "gpu_records", "time", target_server_id, source_server_id)
+            .await?;
+        Self::merge_raw_table(db, "ping_records", "time", target_server_id, source_server_id)
+            .await?;
+        Self::merge_raw_table(
+            db,
+            "task_results",
+            "finished_at",
+            target_server_id,
+            source_server_id,
+        )
+        .await?;
+        Self::merge_raw_table(
+            db,
+            "network_probe_record",
+            "timestamp",
+            target_server_id,
+            source_server_id,
+        )
+        .await?;
+        Self::merge_raw_table(
+            db,
+            "docker_event",
+            "timestamp",
+            target_server_id,
+            source_server_id,
+        )
+        .await?;
+
+        Self::merge_unique_key_table(
+            db,
+            "records_hourly",
+            &["time"],
+            target_server_id,
+            source_server_id,
+        )
+        .await?;
+        Self::merge_unique_key_table(
+            db,
+            "network_probe_record_hourly",
+            &["target_id", "hour"],
+            target_server_id,
+            source_server_id,
+        )
+        .await?;
+        TrafficService::merge_recovered_server_history(db, target_server_id, source_server_id)
+            .await?;
+        Self::merge_unique_key_table(
+            db,
+            "uptime_daily",
+            &["date"],
+            target_server_id,
+            source_server_id,
+        )
+        .await?;
+        Self::merge_alert_states(db, target_server_id, source_server_id).await?;
+        Self::rewrite_server_ids_json_tables(db, target_server_id, source_server_id).await?;
+
+        Ok(())
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) async fn merge_raw_table(
+        db: &DatabaseConnection,
+        table: &str,
+        time_column: &str,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        db.execute(Statement::from_sql_and_values(
+            db.get_database_backend(),
+            format!(
+                "DELETE FROM {table} \
+                 WHERE server_id = $1 \
+                 AND (SELECT MIN({time_column}) FROM {table} WHERE server_id = $2) IS NOT NULL \
+                 AND {time_column} >= (SELECT MIN({time_column}) FROM {table} WHERE server_id = $2) \
+                 AND {time_column} <= (SELECT MAX({time_column}) FROM {table} WHERE server_id = $2)"
+            ),
+            [target_server_id.into(), source_server_id.into()],
+        ))
+        .await?;
+
+        db.execute(Statement::from_sql_and_values(
+            db.get_database_backend(),
+            format!("UPDATE {table} SET server_id = $1 WHERE server_id = $2"),
+            [target_server_id.into(), source_server_id.into()],
+        ))
+        .await?;
+
+        Ok(())
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) async fn merge_unique_key_table(
+        db: &DatabaseConnection,
+        table: &str,
+        key_columns: &[&str],
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        TrafficService::replace_unique_key_table_server_id(
+            db,
+            table,
+            key_columns,
+            target_server_id,
+            source_server_id,
+        )
+        .await
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) async fn merge_alert_states(
+        db: &DatabaseConnection,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        db.execute(Statement::from_sql_and_values(
+            db.get_database_backend(),
+            "DELETE FROM alert_states AS source \
+             WHERE source.server_id = $1 \
+             AND EXISTS ( \
+                 SELECT 1 FROM alert_states AS target \
+                 WHERE target.server_id = $2 AND target.rule_id = source.rule_id \
+             )",
+            [source_server_id.into(), target_server_id.into()],
+        ))
+        .await?;
+
+        db.execute(Statement::from_sql_and_values(
+            db.get_database_backend(),
+            "UPDATE alert_states SET server_id = $1 WHERE server_id = $2",
+            [target_server_id.into(), source_server_id.into()],
+        ))
+        .await?;
+
+        Ok(())
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) async fn rewrite_server_ids_json_tables(
+        db: &DatabaseConnection,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        let tables = [
+            ("alert_rules", "server_ids_json", true),
+            ("ping_tasks", "server_ids_json", false),
+            ("tasks", "server_ids_json", false),
+            ("service_monitor", "server_ids_json", true),
+            ("maintenance", "server_ids_json", true),
+            ("incident", "server_ids_json", true),
+            ("status_page", "server_ids_json", false),
+        ];
+
+        for (table, column, nullable) in tables {
+            Self::rewrite_server_ids_json_table(
+                db,
+                table,
+                column,
+                nullable,
+                target_server_id,
+                source_server_id,
+            )
+            .await?;
+        }
+
+        Ok(())
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    async fn rewrite_server_ids_json_table(
+        db: &DatabaseConnection,
+        table: &str,
+        column: &str,
+        nullable: bool,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        let rows = db
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                format!(
+                    "SELECT id, {column} FROM {table} WHERE {column} LIKE '%' || $1 || '%'"
+                ),
+                [source_server_id.into()],
+            ))
+            .await?;
+
+        for row in rows {
+            let id: String = row.try_get_by_index(0)?;
+            let current: Option<String> = row.try_get_by_index(1)?;
+            let Some(current) = current else {
+                continue;
+            };
+
+            let rewritten =
+                Self::rewrite_server_ids_json_value(&current, target_server_id, source_server_id)?;
+            if rewritten.as_deref() == Some(current.as_str()) {
+                continue;
+            }
+
+            let value = if nullable {
+                rewritten.unwrap_or_else(|| "[]".to_string()).into()
+            } else {
+                rewritten
+                    .unwrap_or_else(|| "[]".to_string())
+                    .into()
+            };
+
+            db.execute(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                format!("UPDATE {table} SET {column} = $1 WHERE id = $2"),
+                [value, id.into()],
+            ))
+            .await?;
+        }
+
+        Ok(())
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn rewrite_server_ids_json_value(
+        current: &str,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<Option<String>, AppError> {
+        let ids: Vec<String> = serde_json::from_str(current).map_err(|error| {
+            AppError::Internal(format!("Failed to parse server_ids_json during recovery merge: {error}"))
+        })?;
+
+        let mut rewritten = Vec::new();
+        for id in ids {
+            let next = if id == source_server_id {
+                target_server_id.to_string()
+            } else {
+                id
+            };
+            if !rewritten.iter().any(|existing| existing == &next) {
+                rewritten.push(next);
+            }
+        }
+
+        serde_json::to_string(&rewritten)
+            .map(Some)
+            .map_err(|error| {
+                AppError::Internal(format!(
+                    "Failed to serialize server_ids_json during recovery merge: {error}"
+                ))
+            })
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) async fn finalize_target_server_row(
+        db: &DatabaseConnection,
+        target_server_id: &str,
+        source: &server::Model,
+    ) -> Result<(), AppError> {
+        let target = server::Entity::find_by_id(target_server_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Server not found".to_string()))?;
+
+        let mut active: server::ActiveModel = target.into();
+        active.cpu_name = sea_orm::Set(source.cpu_name.clone());
+        active.cpu_cores = sea_orm::Set(source.cpu_cores);
+        active.cpu_arch = sea_orm::Set(source.cpu_arch.clone());
+        active.os = sea_orm::Set(source.os.clone());
+        active.kernel_version = sea_orm::Set(source.kernel_version.clone());
+        active.mem_total = sea_orm::Set(source.mem_total);
+        active.swap_total = sea_orm::Set(source.swap_total);
+        active.disk_total = sea_orm::Set(source.disk_total);
+        active.ipv4 = sea_orm::Set(source.ipv4.clone());
+        active.ipv6 = sea_orm::Set(source.ipv6.clone());
+        active.region = sea_orm::Set(source.region.clone());
+        active.country_code = sea_orm::Set(source.country_code.clone());
+        active.virtualization = sea_orm::Set(source.virtualization.clone());
+        active.agent_version = sea_orm::Set(source.agent_version.clone());
+        active.protocol_version = sea_orm::Set(source.protocol_version);
+        active.features = sea_orm::Set(source.features.clone());
+        active.updated_at = sea_orm::Set(Utc::now());
+        active.update(db).await?;
+
+        Ok(())
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) async fn delete_intentionally_unmerged_source_rows(
+        db: &DatabaseConnection,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        server_tag::Entity::delete_many()
+            .filter(server_tag::Column::ServerId.eq(source_server_id))
+            .exec(db)
+            .await?;
+        network_probe_config::Entity::delete_many()
+            .filter(network_probe_config::Column::ServerId.eq(source_server_id))
+            .exec(db)
+            .await?;
+
+        Ok(())
+    }
 }
 
 pub fn recovery_phase_for_stage(stage: &str) -> Option<RecoveryFailurePhase> {
@@ -527,19 +838,23 @@ pub fn retry_strategy_for_stage(stage: &str) -> Option<RecoveryRetryStrategy> {
 #[cfg(test)]
 mod tests {
     use super::{
-        RECOVERY_STAGE_AWAITING_TARGET_ONLINE, RECOVERY_STAGE_REBINDING, RecoveryFailurePhase,
-        RecoveryMergeService, RecoveryRetryStrategy, is_pre_rebind_stage, recovery_phase_for_stage,
+        REBIND_IDENTITY_MIN_PROTOCOL_VERSION, RECOVERY_STAGE_AWAITING_TARGET_ONLINE,
+        RECOVERY_STAGE_REBINDING, RecoveryFailurePhase, RecoveryMergeService,
+        RecoveryRetryStrategy, is_pre_rebind_stage, recovery_phase_for_stage,
         retry_strategy_for_phase, retry_strategy_for_stage,
     };
     use crate::config::AppConfig;
-    use crate::entity::server;
+    use crate::entity::{
+        alert_rule, alert_state, record, server, server_tag, service_monitor, traffic_daily,
+        traffic_hourly, traffic_state,
+    };
     use crate::error::AppError;
     use crate::service::auth::AuthService;
     use crate::service::recovery_job::RecoveryJobService;
     use crate::state::AppState;
     use crate::test_utils::setup_test_db;
-    use chrono::Utc;
-    use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
+    use chrono::{NaiveDate, Utc};
+    use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
     use serverbee_common::constants::CAP_DEFAULT;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::sync::Arc;
@@ -557,7 +872,7 @@ mod tests {
             weight: Set(0),
             hidden: Set(false),
             capabilities: Set(CAP_DEFAULT as i32),
-            protocol_version: Set(1),
+            protocol_version: Set(REBIND_IDENTITY_MIN_PROTOCOL_VERSION as i32),
             created_at: Set(now),
             updated_at: Set(now),
             ..Default::default()
@@ -590,6 +905,42 @@ mod tests {
             tx,
             test_addr(),
         );
+        state
+            .agent_manager
+            .set_protocol_version(server_id, REBIND_IDENTITY_MIN_PROTOCOL_VERSION);
+    }
+
+    async fn insert_record(
+        db: &DatabaseConnection,
+        server_id: &str,
+        time: chrono::DateTime<Utc>,
+        cpu: f64,
+    ) {
+        record::ActiveModel {
+            server_id: Set(server_id.to_string()),
+            time: Set(time),
+            cpu: Set(cpu),
+            mem_used: Set(1),
+            swap_used: Set(1),
+            disk_used: Set(1),
+            net_in_speed: Set(1),
+            net_out_speed: Set(1),
+            net_in_transfer: Set(1),
+            net_out_transfer: Set(1),
+            load1: Set(1.0),
+            load5: Set(1.0),
+            load15: Set(1.0),
+            tcp_conn: Set(1),
+            udp_conn: Set(1),
+            process_count: Set(1),
+            temperature: Set(None),
+            gpu_usage: Set(None),
+            disk_io_json: Set(None),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert record should succeed");
     }
 
     #[test]
@@ -957,5 +1308,270 @@ mod tests {
         assert!(
             matches!(result, Err(AppError::Conflict(message)) if message.contains("went offline before dispatch"))
         );
+    }
+
+    #[tokio::test]
+    async fn merge_raw_records_replaces_target_overlap_with_source() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "target-1", "Target").await;
+        insert_test_server(&db, "source-1", "Source").await;
+
+        let before_overlap = NaiveDate::from_ymd_opt(2026, 4, 16)
+            .unwrap()
+            .and_hms_opt(9, 0, 0)
+            .unwrap()
+            .and_utc();
+        let overlap_start = NaiveDate::from_ymd_opt(2026, 4, 16)
+            .unwrap()
+            .and_hms_opt(10, 0, 0)
+            .unwrap()
+            .and_utc();
+        let overlap_end = NaiveDate::from_ymd_opt(2026, 4, 16)
+            .unwrap()
+            .and_hms_opt(11, 0, 0)
+            .unwrap()
+            .and_utc();
+
+        insert_record(&db, "target-1", before_overlap, 10.0).await;
+        insert_record(&db, "target-1", overlap_start, 20.0).await;
+        insert_record(&db, "target-1", overlap_end, 30.0).await;
+        insert_record(&db, "source-1", overlap_start, 200.0).await;
+        insert_record(&db, "source-1", overlap_end, 300.0).await;
+
+        RecoveryMergeService::merge_server_history_on_db(&db, "target-1", "source-1")
+            .await
+            .unwrap();
+
+        let target_rows = record::Entity::find()
+            .filter(record::Column::ServerId.eq("target-1"))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(target_rows.len(), 3);
+        assert!(target_rows.iter().any(|row| row.time == before_overlap && row.cpu == 10.0));
+        assert!(target_rows.iter().any(|row| row.time == overlap_start && row.cpu == 200.0));
+        assert!(target_rows.iter().any(|row| row.time == overlap_end && row.cpu == 300.0));
+
+        let source_rows = record::Entity::find()
+            .filter(record::Column::ServerId.eq("source-1"))
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(source_rows.is_empty());
+    }
+
+    #[tokio::test]
+    async fn merge_alert_state_keeps_target_when_rule_conflicts() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "target-1", "Target").await;
+        insert_test_server(&db, "source-1", "Source").await;
+
+        let now = Utc::now();
+        alert_state::ActiveModel {
+            rule_id: Set("rule-1".to_string()),
+            server_id: Set("target-1".to_string()),
+            first_triggered_at: Set(now),
+            last_notified_at: Set(now),
+            count: Set(5),
+            resolved: Set(false),
+            resolved_at: Set(None),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        alert_state::ActiveModel {
+            rule_id: Set("rule-1".to_string()),
+            server_id: Set("source-1".to_string()),
+            first_triggered_at: Set(now),
+            last_notified_at: Set(now),
+            count: Set(1),
+            resolved: Set(true),
+            resolved_at: Set(Some(now)),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        RecoveryMergeService::merge_server_history_on_db(&db, "target-1", "source-1")
+            .await
+            .unwrap();
+
+        let target_states = alert_state::Entity::find()
+            .filter(alert_state::Column::ServerId.eq("target-1"))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(target_states.len(), 1);
+        assert_eq!(target_states[0].rule_id, "rule-1");
+        assert_eq!(target_states[0].count, 5);
+        assert!(!target_states[0].resolved);
+
+        let source_states = alert_state::Entity::find()
+            .filter(alert_state::Column::ServerId.eq("source-1"))
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(source_states.is_empty());
+    }
+
+    #[tokio::test]
+    async fn rewrite_server_ids_json_replaces_source_with_target_once() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "target-1", "Target").await;
+        insert_test_server(&db, "source-1", "Source").await;
+        let now = Utc::now();
+
+        alert_rule::ActiveModel {
+            id: Set("rule-1".to_string()),
+            name: Set("rule".to_string()),
+            enabled: Set(true),
+            rules_json: Set("[]".to_string()),
+            trigger_mode: Set("any".to_string()),
+            notification_group_id: Set(None),
+            fail_trigger_tasks: Set(None),
+            recover_trigger_tasks: Set(None),
+            cover_type: Set("include".to_string()),
+            server_ids_json: Set(Some(r#"["target-1","source-1","source-1"]"#.to_string())),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        service_monitor::ActiveModel {
+            id: Set("monitor-1".to_string()),
+            name: Set("monitor".to_string()),
+            monitor_type: Set("http".to_string()),
+            target: Set("https://example.com".to_string()),
+            interval: Set(60),
+            config_json: Set("{}".to_string()),
+            notification_group_id: Set(None),
+            retry_count: Set(0),
+            server_ids_json: Set(Some(r#"["source-1","target-1","source-1"]"#.to_string())),
+            enabled: Set(true),
+            last_status: Set(None),
+            consecutive_failures: Set(0),
+            last_checked_at: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        RecoveryMergeService::rewrite_server_ids_json_tables(&db, "target-1", "source-1")
+            .await
+            .unwrap();
+
+        let rule = alert_rule::Entity::find_by_id("rule-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(rule.server_ids_json.as_deref(), Some(r#"["target-1"]"#));
+
+        let monitor = service_monitor::Entity::find_by_id("monitor-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(monitor.server_ids_json.as_deref(), Some(r#"["target-1"]"#));
+    }
+
+    #[tokio::test]
+    async fn finalize_target_server_row_copies_runtime_fields_and_cleans_source_rows() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "target-1", "Target").await;
+        insert_test_server(&db, "source-1", "Source").await;
+        let now = Utc::now();
+
+        let mut source: server::ActiveModel = server::Entity::find_by_id("source-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap()
+            .into();
+        source.cpu_name = Set(Some("Ryzen".to_string()));
+        source.cpu_cores = Set(Some(16));
+        source.cpu_arch = Set(Some("x86_64".to_string()));
+        source.os = Set(Some("Linux".to_string()));
+        source.kernel_version = Set(Some("6.9.0".to_string()));
+        source.mem_total = Set(Some(64));
+        source.swap_total = Set(Some(32));
+        source.disk_total = Set(Some(1024));
+        source.ipv4 = Set(Some("1.2.3.4".to_string()));
+        source.ipv6 = Set(Some("::1".to_string()));
+        source.region = Set(Some("Taipei".to_string()));
+        source.country_code = Set(Some("TW".to_string()));
+        source.virtualization = Set(Some("kvm".to_string()));
+        source.agent_version = Set(Some("1.2.3".to_string()));
+        source.protocol_version = Set(4);
+        source.features = Set(r#"["docker","process"]"#.to_string());
+        let source_model = source.update(&db).await.unwrap();
+
+        server_tag::ActiveModel {
+            server_id: Set("source-1".to_string()),
+            tag: Set("temporary".to_string()),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        traffic_hourly::ActiveModel {
+            server_id: Set("source-1".to_string()),
+            hour: Set(now),
+            bytes_in: Set(10),
+            bytes_out: Set(20),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        traffic_daily::ActiveModel {
+            server_id: Set("source-1".to_string()),
+            date: Set(now.date_naive()),
+            bytes_in: Set(30),
+            bytes_out: Set(40),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        traffic_state::ActiveModel {
+            server_id: Set("source-1".to_string()),
+            last_in: Set(100),
+            last_out: Set(200),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        RecoveryMergeService::finalize_target_server_row(&db, "target-1", &source_model)
+            .await
+            .unwrap();
+        RecoveryMergeService::delete_intentionally_unmerged_source_rows(&db, "source-1")
+            .await
+            .unwrap();
+
+        let target = server::Entity::find_by_id("target-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(target.cpu_name.as_deref(), Some("Ryzen"));
+        assert_eq!(target.protocol_version, 4);
+        assert_eq!(target.features, r#"["docker","process"]"#);
+
+        let source_tags = server_tag::Entity::find()
+            .filter(server_tag::Column::ServerId.eq("source-1"))
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(source_tags.is_empty());
     }
 }
