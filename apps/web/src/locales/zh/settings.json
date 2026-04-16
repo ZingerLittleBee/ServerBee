@@ -63,7 +63,6 @@
   "notifications.bark_server": "服务器地址",
   "notifications.bark_device_key": "设备密钥",
   "notifications.from_address": "发件地址",
-  "notifications.to_address": "收件地址",
   "notifications.email_help_text": "邮件发送使用 Resend。发送前请在服务器上设置 SERVERBEE_RESEND__API_KEY，并在 resend.com/domains 验证发件域名。",
   "notifications.add_recipient": "添加",
   "notifications.recipient_placeholder": "someone@example.com",
