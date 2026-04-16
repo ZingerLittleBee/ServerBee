@@ -7,7 +7,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.8.8"
+version = "0.8.9"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/ZingerLittleBee/ServerBee"
