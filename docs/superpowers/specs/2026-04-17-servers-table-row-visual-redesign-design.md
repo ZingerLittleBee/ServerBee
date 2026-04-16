@@ -16,7 +16,7 @@ Two user needs drive this redesign:
 ## Goals
 
 1. Every metric cell (`CPU`, `Memory`, `Disk`, `Network`) becomes a consistent two-line cell: **line 1 = lucide icon + progress bar + percentage**, **line 2 = monospace sub-line with 1–3 datapoints**.
-2. The `status` column text badge collapses into a small pulsing dot in a new first column (36px wide). Total column count is unchanged: `status-dot · name · cpu · memory · disk · network · group · uptime · actions` (we drop the existing dedicated `status` column, because its signal is now in the dot).
+2. The `status` column text badge collapses into a small pulsing dot in a new `status-dot` column (36px wide) that slots in immediately after the existing `select` checkbox column. Total column count is unchanged: `select · status-dot · name · cpu · memory · disk · network · group · uptime · actions` (we drop the existing dedicated `status` text-badge column, because its signal is now in the dot).
 3. `Name` cell becomes two lines: flag + name on top, colored tag chips below. Rows with no tags render single-line naturally.
 4. `Network` cell's top line becomes a **traffic-quota** progress bar (cycle bytes / `traffic_limit`), matching the grid card's `useTrafficOverview` data, falling back to a 1 TiB default when no quota is configured. The bottom line carries `{used} / {limit} · ↓ {in_speed} ↑ {out_speed}`.
 5. `Uptime` cell gets a sub-line: online rows show the OS with its emoji (`🐧 Ubuntu 22.04`), offline rows show `last seen 2h ago` (relative time from `last_active`).
@@ -40,7 +40,7 @@ Two user needs drive this redesign:
 |---|---|---|---|
 | `status-dot` (new) | 36px (`w-9`) | 8px pulsing dot: green `bg-emerald-500` with `box-shadow` halo + CSS `pulse` when online; muted grey `bg-muted-foreground/60` when offline | — |
 | `name` | 260px | flag (if country_code) + server name (truncates, Link) + UpgradeBadge | `<TagChipRow tags>` — colored chips, wraps; absent when `tags` empty |
-| `cpu` | 160px | `<Cpu />` 14px + bar + `%` (monospace, right-aligned, colored by threshold) | `{cores} cores · load {load1.toFixed(2)}` |
+| `cpu` | 160px | `<Cpu />` 14px + bar + `%` (monospace, right-aligned, colored by threshold) | `{cores} cores · load {load1.toFixed(2)}` when `cpu_cores` present; `load {load1.toFixed(2)}` alone when `cpu_cores` is `null`/`undefined` (the Phase A state before the backend surfaces it) |
 | `memory` | 160px | `<MemoryStick />` + bar + `%` | `{formatBytes(used)} / {formatBytes(total)} · swap {swapPct}%` |
 | `disk` | 160px | `<HardDrive />` + bar + `%` | `<ArrowDown />{formatSpeed(read)} <ArrowUp />{formatSpeed(write)}` |
 | `network` | 160px (stays `hidden lg:table-cell`) | `<Network />` + **traffic quota** bar + `%` | `{formatBytes(used)} / {formatBytes(limit)} · <ArrowDown />{formatSpeed(in)} <ArrowUp />{formatSpeed(out)}` |
@@ -50,7 +50,7 @@ Two user needs drive this redesign:
 
 Offline rows render `—` for metric cells' top lines (as today) and render a subdued sub-line where applicable (e.g. `last seen 2h ago` on Uptime). Tag chips on `name` still show, independent of online status.
 
-The `status` data column defined in today's `index.tsx` is removed (the signal moves to the pulsing dot in the new first column). Its filter (`status: online / offline`) migrates to the new `status-dot` column's `meta.options` so `DataTableToolbar` continues to offer that filter pill.
+The `status` data column defined in today's `index.tsx` is removed (the signal moves to the pulsing dot in the new `status-dot` column). Its filter (`status: online / offline`) migrates to the `status-dot` column, which must therefore carry both an `accessorFn: (row) => (row.online ? 'online' : 'offline')` (to drive `arrayIncludesFilter`) and the same `meta: { variant: 'select', options: statusOptions, icon: CircleDot, label: t('col_status') }` block the current `status` column has, so `DataTableToolbar` continues to offer the filter pill. The cell body is purely the pulsing dot — there is no header text (`header: () => null`) and `enableSorting: false` to match the intent of a glyph-only column.
 
 ### Color & threshold rules
 
@@ -75,9 +75,9 @@ apps/web/src/routes/_authed/servers/
     <UptimeCell />         online vs offline branch
 ```
 
-`MetricBarRow` is the new primitive; it takes `{ icon: ReactNode; pct: number; label?: string; valueClassName?: string }`. It does NOT render any sub-line — each metric cell composes `<MetricBarRow />` with its own `<div className="sub-line">...`.
+`MetricBarRow` is the new primitive; its props are `{ icon: ReactNode; pct: number; valueClassName?: string; ariaLabel?: string }`. It renders only the icon + bar + percentage row and does NOT own the sub-line — each metric cell composes `<MetricBarRow />` and then renders its own sub-line underneath in the same flex column.
 
-The existing `MiniBar` component is retained for other callers (none today in `src/`, but it's exported) — we will leave it as a thin wrapper that calls `MetricBarRow` with an empty icon slot, for back-compat.
+The existing `MiniBar` component keeps its current signature (`{ pct: number; sub?: ReactNode }`) for back-compat. Internally it is refactored to render `<MetricBarRow icon={null} />` followed by its `sub` block when provided. No external caller changes.
 
 `TagChipRow` uses a deterministic palette: `tag.split('').reduce((h,c)=>h*31+c.charCodeAt(0),0) % N` to pick one of 6 muted colors (emerald, sky, amber, rose, violet, slate). Individual chips are truncated with `max-w-[80px]` plus `title={tag}`; the row allows wrap (`flex flex-wrap`).
 
@@ -93,14 +93,20 @@ The existing `MiniBar` component is retained for other callers (none today in `s
 
 **Already available via a separate query** — reused, no backend change:
 
-- `useTrafficOverview()` → `/api/traffic/overview` → `{ cycle_in, cycle_out, traffic_limit, days_remaining }` per server. The table view will call this query at the page level (once), then lookup per row. Fallback to `DEFAULT_TRAFFIC_LIMIT_BYTES = 1 TiB` when no quota is configured, identical to `ServerCard`.
+- `useTrafficOverview()` → `/api/traffic/overview` → `{ cycle_in, cycle_out, traffic_limit, days_remaining }` per server. The table view will call this query at the page level (once), then lookup per row. Fallback to `DEFAULT_TRAFFIC_LIMIT_BYTES = 1 TiB` when no quota is configured **or when `traffic_limit <= 0`**, identical to `ServerCard`. This constant is currently private to `components/server/server-card.tsx`; it is hoisted to `apps/web/src/lib/traffic.ts` (new file) exporting `DEFAULT_TRAFFIC_LIMIT_BYTES` and a `computeTrafficQuota({ entry, netInTransfer, netOutTransfer }) => { used: number; limit: number; pct: number }` helper, so both `ServerCard` and `NetworkCell` share one code path.
 
 **New on `ServerStatus` (backend work required)**:
 
-- `tags: Vec<String>` — `#[serde(default)]` empty vec; added to `crates/common/src/types.rs::ServerStatus` and populated in `crates/server/src/router/ws/browser.rs::build_full_sync` (single query: `server_tag::Entity::find().all(&db)` grouped by `server_id` in memory).
-- `cpu_cores: Option<i32>` — `#[serde(default)]`; populated from `servers.cpu_cores` column (already exists in the DB).
+- `tags: Vec<String>` with `#[serde(default)]` — added to `crates/common/src/types.rs::ServerStatus`.
+- `cpu_cores: Option<i32>` with `#[serde(default)]` — populated from `servers.cpu_cores` column (already exists in the DB).
 
-Both fields are static across most updates; they will be included on `full_sync` and on any `update` message where the underlying data changed. Because `STATIC_FIELDS` in `apps/web/src/hooks/use-servers-ws.ts` guards against overwriting static fields with `null`/`0`, we will add `cpu_cores` to that set. `tags` is an array and is not subject to the static-fields guard (an explicit `[]` from the server should overwrite local state).
+**Update-broadcast semantics (critical to prevent clobber).** `crates/server/src/service/agent_manager.rs::update_report` constructs a fresh `ServerStatus` for every metric update; it has no database access and therefore cannot populate `tags` or `cpu_cores`. We follow the existing `features` pattern:
+
+- **`tags`**: populated in `build_full_sync` only. In `update_report` it is left at `Vec::new()` (the default). The frontend must treat an empty `tags` on an incremental `update` message as "no change" rather than "cleared". This is implemented by adding both `'tags'` and `'cpu_cores'` to `STATIC_FIELDS` in `apps/web/src/hooks/use-servers-ws.ts`, and extending the guard to also treat `[]` (empty array) as a default value that must not overwrite prior state. The guard check becomes: `isStaticDefault = STATIC_FIELDS.has(key) && (value === null || value === 0 || (Array.isArray(value) && value.length === 0))`.
+- **`cpu_cores`**: populated in `build_full_sync` from `servers.cpu_cores`. In `update_report` it is `None`, which serializes to `null` — already covered by the existing `value === null` branch of the static-fields guard.
+- **Authoritative source for tag mutations on the current tab** is the optimistic cache update after a successful `PUT /api/servers/:id/tags`, not the WS. Clearing all tags (going from `["prod"]` to `[]`) works because the `PUT` response + optimistic setter writes `[]` into `queryClient.setQueryData(['servers'], …)` directly; the subsequent incremental WS `update` carrying `tags: []` is ignored by the guard, which is fine because the cache is already correct. Cross-tab propagation (Tab A edits tags, Tab B should see it) is explicitly a Phase C concern.
+
+Future cross-tab propagation in Phase C will use a dedicated `tags_changed` WS event (analogous to today's `capabilities_changed`) that bypasses the static-fields guard, so the guard strategy above is forward-compatible.
 
 ### Backend: tags API
 
@@ -114,10 +120,16 @@ Two new endpoints in `crates/server/src/router/api/server_tags.rs` (new file), m
 - Replaces the tag set atomically inside a transaction: delete all rows for `server_id`, insert the new ones.
 - Validation: `tags.len() <= 8`, each `tag.len() <= 16`, each tag matches `[A-Za-z0-9_.-]+` and is non-empty after trim. Duplicates are de-duplicated server-side (case-sensitive). Returns 400 with a `validation_error` on violation.
 - Returns the canonical (sorted, deduped) tag list.
+- Does **not** touch `servers.updated_at`. The `build_full_sync` path uses `server.updated_at.timestamp()` as `last_active` for offline rows, and we do not want editing tags to make an offline server appear to have just phoned home. Only the transaction against `server_tags` runs.
 
 Both endpoints are annotated with `#[utoipa::path]` and include a `ToSchema`-derived DTO for the request body.
 
-After a successful `PUT`, the server broadcasts no new WS event in Phase B; the frontend manually invalidates `['servers']` on success, which causes a refetch (there is no REST for the servers list — the list is WS-only). **However**, since no REST refetch exists, the table will only pick up the new tag when the next `update` or `full_sync` rolls in. To avoid the "I just edited the tags but my row hasn't updated" lag, the `PUT` response's `data: string[]` is used to optimistically patch `queryClient.setQueryData(['servers'], prev => prev.map(s => s.id === id ? { ...s, tags: data } : s))`.
+After a successful `PUT`, the server broadcasts no new WS event in Phase B. The frontend performs an optimistic cache update in two places using the response body (`data: string[]`):
+
+1. `queryClient.setQueryData<ServerMetrics[]>(['servers'], prev => prev?.map(s => s.id === id ? { ...s, tags: data } : s))` — updates the table view instantly.
+2. `queryClient.setQueryData<string[]>(['server-tags', id], data)` — keeps the editor's own query fresh so reopening the dialog without a refetch shows the saved state.
+
+This is the authoritative path for tag changes in the current tab. Because the WS incremental-update static-fields guard ignores empty `tags` payloads, clearing all tags via this `PUT` continues to work: the optimistic setter writes `[]` into the cache directly, and the subsequent WS `update` with `tags: []` harmlessly no-ops.
 
 ### Frontend: tag editor in `ServerEditDialog`
 
@@ -178,14 +190,16 @@ No new unit test for `build_full_sync` shape beyond the integration test; existi
 
 - `cells.test.tsx`
   - `MetricBarRow`: color threshold at 69/70/89/90/91; custom icon slot renders; `%` rounds to 0 decimals.
-  - `CpuCell`: renders `{cores} cores · load {1.23}` with `cpu_cores=8, load1=1.234`; hides sub when offline.
+  - `CpuCell`: with `cpu_cores=8, load1=1.234` renders `8 cores · load 1.23`; with `cpu_cores=null` renders `load 1.23` only (Phase A fallback); hides sub when offline.
   - `MemoryCell`: renders `7.2 GB / 16 GB · swap 3%`; swap color follows threshold.
   - `DiskCell`: renders read/write arrow row; hides I/O sub when offline (same as today's rule).
-  - `NetworkCell`: uses `trafficEntry.traffic_limit` when present; falls back to 1 TiB default when null; clamps pct to 100.
+  - `NetworkCell`: uses `trafficEntry.traffic_limit` when positive; falls back to 1 TiB default when `null`, `undefined`, or `<= 0` (guards against a `NaN%` render path); clamps `pct` to 100.
   - `UptimeCell`: online shows OS emoji + name; offline shows `last seen 2h ago` derived from `last_active` 2h in the past.
   - `NameCell`: 0 tags → single line, no tag row rendered; 3 tags → chips wrap; long tag truncates with `title` attr.
   - `TagChipRow`: same tag → same palette color (hash stability).
-- `index.test.tsx` already exists for `/servers`; extend the "renders online/offline rows" block to assert the pulsing dot and no text badge column.
+  - `StatusDot`: renders pulsing class when `online`; plain muted class when `!online`.
+  - Merge guard: `mergeServerUpdate` preserves prior `tags` when the incoming frame carries `tags: []` (regression test for the clobber issue flagged in spec review).
+- `index.test.tsx` (existing `/servers` tests): extend the "renders online/offline rows" block to (a) assert the pulsing dot appears where the text badge used to be, (b) assert `DataTableToolbar` still exposes the `status` filter pill sourced from the new `status-dot` column's `meta.options`.
 
 ### Manual QA checklist
 
@@ -218,3 +232,14 @@ None at spec-approval time. All resolved during brainstorming:
 - Sub-line data for Memory: `{used}/{total} · swap {pct}%`.
 - Name sub-line: `server_tags` (not `public_remark`, not group name).
 - Uptime sub-line: OS line for online, `last seen` for offline.
+
+## Resolved during spec review
+
+- `tags` on incremental `update` broadcasts must not clobber the cache: see the "Update-broadcast semantics" paragraph above. Summary: left empty in `update_report`, guarded in the frontend `STATIC_FIELDS` merge by extending the default-value check to also cover empty arrays.
+- `cpu_cores` also defaults in `update_report`; covered by the existing `value === null` branch of the static-fields guard once `cpu_cores` is added to `STATIC_FIELDS`.
+- Phase A sub-line for CPU must handle missing `cpu_cores` gracefully: falls back to `load {load1}` alone.
+- `status-dot` column keeps the filter pill by carrying both `accessorFn` and the existing `meta.options` block, even though its cell renders only a dot.
+- `MiniBar` retains its public signature; it is refactored internally rather than reduced to a wrapper.
+- `PUT /api/servers/:id/tags` does not touch `servers.updated_at`, to keep `last_active` honest for offline rows.
+- `NetworkCell` must treat `traffic_limit <= 0` identically to `null`/`undefined` (both fall back to 1 TiB default).
+- `DEFAULT_TRAFFIC_LIMIT_BYTES` is hoisted to `apps/web/src/lib/traffic.ts` so `ServerCard` and `NetworkCell` share it.
