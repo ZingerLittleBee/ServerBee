@@ -455,7 +455,7 @@ git commit -m "feat(web): guard static array fields in ServerMetrics merge"
 
 ---
 
-## Chunk 2: Cell primitives (Phase A rewrites)
+## Chunk 2: Cell primitives & CPU/Memory/Disk cells (Phase A)
 
 ### Task 5: `<StatusDot />` component (TDD)
 
@@ -1107,6 +1107,8 @@ git commit -m "feat(web): DiskCell shows usage + disk I/O with lucide icons"
 
 ---
 
+## Chunk 3: Network / Uptime / Name cells & page wiring (Phase A)
+
 ### Task 11: `<NetworkCell />` rewrite (TDD)
 
 **Design note:** this is the only cell that takes external data (`TrafficOverviewItem | undefined`). We lift `useTrafficOverview` to the page level (`index.tsx`) and pass the per-row entry through a prop.
@@ -1571,7 +1573,7 @@ git tag --annotate phase-a-complete -m "servers table visual refactor Phase A"
 
 ---
 
-## Chunk 3: Backend — tags and cpu_cores on the wire (Phase B)
+## Chunk 4: Backend — tags and cpu_cores on the wire (Phase B)
 
 ### Task 15: Add `tags` and `cpu_cores` to `ServerStatus`
 
@@ -2089,7 +2091,7 @@ git commit -m "test(server): cover tags CRUD + RBAC and full_sync payload inclus
 
 ---
 
-## Chunk 4: Frontend — tag editor in ServerEditDialog (Phase B)
+## Chunk 5: Frontend — tag editor in ServerEditDialog (Phase B)
 
 ### Task 21: `use-server-tags.ts` hook (TDD)
 
