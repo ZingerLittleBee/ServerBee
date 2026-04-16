@@ -24,6 +24,15 @@ export function buildEmailPayload(from: string, toAddresses: string[]): { from: 
   return { from, to: toAddresses }
 }
 
+function isPlausibleEmail(s: string): boolean {
+  const at = s.indexOf('@')
+  if (at <= 0 || at === s.length - 1) {
+    return false
+  }
+  const domain = s.slice(at + 1)
+  return domain.includes('.')
+}
+
 const SENSITIVE_FIELDS = new Set(['password', 'bot_token', 'device_key'])
 
 function NotificationsPage() {
@@ -187,6 +196,10 @@ function NotificationsPage() {
   const handleAddRecipient = () => {
     const trimmed = toInput.trim()
     if (trimmed === '' || toAddresses.includes(trimmed)) {
+      return
+    }
+    if (!isPlausibleEmail(trimmed)) {
+      toast.error(t('notifications.invalid_email', { address: trimmed }))
       return
     }
     setToAddresses((prev) => [...prev, trimmed])

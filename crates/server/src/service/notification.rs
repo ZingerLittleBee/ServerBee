@@ -82,6 +82,14 @@ const DEFAULT_TEMPLATE: &str = "[ServerBee] {{server_name}} {{event}}\n{{message
 const EMAIL_TEXT_TEMPLATE: &str =
     "[ServerBee] {{server_name}} {{event}}\n{{message}}\nTime: {{time}}";
 
+fn is_plausible_email(s: &str) -> bool {
+    let (local, domain) = match s.split_once('@') {
+        Some(pair) => pair,
+        None => return false,
+    };
+    !local.is_empty() && !domain.is_empty() && domain.contains('.')
+}
+
 fn email_header_color(event: &str) -> &'static str {
     match event {
         "triggered" => "#ea580c",
@@ -550,12 +558,24 @@ impl NotificationService {
         let config: ChannelConfig = serde_json::from_value(val)
             .map_err(|e| AppError::Validation(format!("Invalid {notify_type} config: {e}")))?;
 
-        if let ChannelConfig::Email { to, .. } = &config
-            && to.is_empty()
-        {
-            return Err(AppError::Validation(
-                "Email notification requires at least one 'to' address".to_string(),
-            ));
+        if let ChannelConfig::Email { from, to } = &config {
+            if to.is_empty() {
+                return Err(AppError::Validation(
+                    "Email notification requires at least one 'to' address".to_string(),
+                ));
+            }
+            if !is_plausible_email(from) {
+                return Err(AppError::Validation(format!(
+                    "Invalid 'from' address: {from}"
+                )));
+            }
+            for addr in to {
+                if !is_plausible_email(addr) {
+                    return Err(AppError::Validation(format!(
+                        "Invalid 'to' address: {addr}"
+                    )));
+                }
+            }
         }
 
         Ok(config)
@@ -975,6 +995,29 @@ mod tests {
         let rendered = ctx.render(EMAIL_TEXT_TEMPLATE);
         assert!(rendered.contains("Time:"), "english text template should say Time:");
         assert!(!rendered.contains("时间"), "english text template must not contain Chinese");
+    }
+
+    #[test]
+    fn test_parse_config_email_invalid_from_rejected() {
+        let cj = r#"{"from":"not-an-email","to":["a@x.com"]}"#;
+        let result = NotificationService::parse_config("email", cj);
+        assert!(matches!(result, Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    fn test_parse_config_email_invalid_to_entry_rejected() {
+        let cj = r#"{"from":"a@x.com","to":["ok@x.com","bogus"]}"#;
+        let result = NotificationService::parse_config("email", cj);
+        assert!(matches!(result, Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    fn test_is_plausible_email_simple_cases() {
+        assert!(is_plausible_email("a@b.co"));
+        assert!(!is_plausible_email("no-at-sign"));
+        assert!(!is_plausible_email("@b.co"));
+        assert!(!is_plausible_email("a@"));
+        assert!(!is_plausible_email("a@nodot"));
     }
 
     #[tokio::test]
