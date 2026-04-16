@@ -79,11 +79,9 @@ impl NotifyContext {
 
 const DEFAULT_TEMPLATE: &str = "[ServerBee] {{server_name}} {{event}}\n{{message}}\n时间: {{time}}";
 
-#[allow(dead_code)] // wired into email dispatch in Task 6
 const EMAIL_TEXT_TEMPLATE: &str =
     "[ServerBee] {{server_name}} {{event}}\n{{message}}\nTime: {{time}}";
 
-#[allow(dead_code)] // wired into email dispatch in Task 6
 fn email_header_color(event: &str) -> &'static str {
     match event {
         "triggered" => "#ea580c",
@@ -92,7 +90,6 @@ fn email_header_color(event: &str) -> &'static str {
     }
 }
 
-#[allow(dead_code)] // wired into email dispatch in Task 6
 fn render_html(ctx: &NotifyContext) -> String {
     let color = email_header_color(&ctx.event);
     let title = format!(
@@ -365,7 +362,7 @@ impl NotificationService {
 
     async fn dispatch(
         db: &DatabaseConnection,
-        _config: &crate::config::AppConfig,
+        config: &crate::config::AppConfig,
         n: &notification::Model,
         ctx: &NotifyContext,
     ) -> Result<(), AppError> {
@@ -460,10 +457,50 @@ impl NotificationService {
                     return Err(AppError::Internal(format!("Bark error: {text}")));
                 }
             }
-            ChannelConfig::Email { from: _, to: _ } => {
-                return Err(AppError::Internal(
-                    "Email dispatch not yet rewired (Task 6)".to_string(),
-                ));
+            ChannelConfig::Email { from, to } => {
+                let api_key = config.resend.api_key.trim();
+                if api_key.is_empty() {
+                    return Err(AppError::Validation(
+                        "Resend API key not configured (set SERVERBEE_RESEND__API_KEY)"
+                            .to_string(),
+                    ));
+                }
+
+                let subject = format!("[ServerBee] {} {}", ctx.server_name, ctx.event);
+                let html_body = render_html(ctx);
+                let text_body = ctx.render(EMAIL_TEXT_TEMPLATE);
+
+                let body = serde_json::json!({
+                    "from": from,
+                    "to": to,
+                    "subject": subject,
+                    "html": html_body,
+                    "text": text_body,
+                });
+
+                let resp = client
+                    .post("https://api.resend.com/emails")
+                    .bearer_auth(api_key)
+                    .json(&body)
+                    .send()
+                    .await
+                    .map_err(|e| AppError::Internal(format!("Resend request failed: {e}")))?;
+
+                if !resp.status().is_success() {
+                    let status = resp.status();
+                    let raw = resp.text().await.unwrap_or_default();
+                    let message = serde_json::from_str::<serde_json::Value>(&raw)
+                        .ok()
+                        .and_then(|v| {
+                            v.get("message")
+                                .and_then(|m| m.as_str())
+                                .map(|s| s.to_string())
+                        })
+                        .unwrap_or_else(|| raw.clone());
+                    return Err(AppError::Internal(format!(
+                        "Resend API error ({status}): {message}"
+                    )));
+                }
             }
             ChannelConfig::Apns {
                 key_id,
@@ -938,5 +975,38 @@ mod tests {
         let rendered = ctx.render(EMAIL_TEXT_TEMPLATE);
         assert!(rendered.contains("Time:"), "english text template should say Time:");
         assert!(!rendered.contains("时间"), "english text template must not contain Chinese");
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_email_rejects_missing_api_key() {
+        use crate::config::AppConfig;
+        use sea_orm::{Database, DatabaseConnection};
+
+        let cfg = AppConfig::default(); // resend.api_key is ""
+        let db: DatabaseConnection = Database::connect("sqlite::memory:")
+            .await
+            .expect("in-memory sqlite");
+
+        let n = notification::Model {
+            id: "test-id".to_string(),
+            name: "test".to_string(),
+            notify_type: "email".to_string(),
+            config_json: r#"{"from":"a@b.com","to":["c@d.com"]}"#.to_string(),
+            enabled: true,
+            created_at: Utc::now(),
+        };
+        let ctx = NotifyContext {
+            server_name: "web-01".to_string(),
+            event: "triggered".to_string(),
+            ..Default::default()
+        };
+
+        let result = NotificationService::dispatch(&db, &cfg, &n, &ctx).await;
+        match result {
+            Err(AppError::Validation(msg)) => {
+                assert!(msg.contains("SERVERBEE_RESEND__API_KEY"));
+            }
+            other => panic!("expected Validation error, got {other:?}"),
+        }
     }
 }
