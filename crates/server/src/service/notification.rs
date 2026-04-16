@@ -390,7 +390,7 @@ impl NotificationService {
             }
             ChannelConfig::Email { from: _, to: _ } => {
                 return Err(AppError::Internal(
-                    "Email dispatch not yet rewired (Task 7)".to_string(),
+                    "Email dispatch not yet rewired (Task 6)".to_string(),
                 ));
             }
             ChannelConfig::Apns {
@@ -441,12 +441,12 @@ impl NotificationService {
         let config: ChannelConfig = serde_json::from_value(val)
             .map_err(|e| AppError::Validation(format!("Invalid {notify_type} config: {e}")))?;
 
-        if let ChannelConfig::Email { to, .. } = &config {
-            if to.is_empty() {
-                return Err(AppError::Validation(
-                    "Email notification requires at least one 'to' address".to_string(),
-                ));
-            }
+        if let ChannelConfig::Email { to, .. } = &config
+            && to.is_empty()
+        {
+            return Err(AppError::Validation(
+                "Email notification requires at least one 'to' address".to_string(),
+            ));
         }
 
         Ok(config)
