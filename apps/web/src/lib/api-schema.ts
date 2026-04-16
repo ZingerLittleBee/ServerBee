@@ -25,6 +25,11 @@ export type ServerMetricRecord = S['ServerRecord']
 export type UpdateServerInput = S['UpdateServerInput']
 export type BatchDeleteRequest = S['BatchDeleteRequest']
 export type BatchDeleteResponse = S['BatchDeleteResponse']
+export type RecoveryCandidateResponse = S['RecoveryCandidateResponse']
+export type RecoveryJobResponse = S['RecoveryJobResponse']
+export type RecoveryJobStage = S['RecoveryJobStage']
+export type RecoveryJobStatus = S['RecoveryJobStatus']
+export type StartRecoveryRequest = S['StartRecoveryRequest']
 
 // Server groups
 export type ServerGroup = S['ServerGroup']

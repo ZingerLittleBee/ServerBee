@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::{Datelike, Duration, NaiveDate, SecondsFormat, Utc};
-use sea_orm::{ConnectionTrait, DatabaseConnection, EntityTrait, Statement};
+use sea_orm::{ConnectionTrait, DatabaseConnection, DatabaseTransaction, EntityTrait, Statement};
 use serde::Serialize;
 
 use crate::entity::{server, traffic_state};
@@ -10,6 +10,105 @@ use crate::error::AppError;
 pub struct TrafficService;
 
 impl TrafficService {
+    pub async fn merge_recovered_server_history(
+        db: &DatabaseConnection,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        Self::merge_recovered_server_history_on_connection(db, target_server_id, source_server_id)
+            .await
+    }
+
+    pub async fn merge_recovered_server_history_on_txn(
+        txn: &DatabaseTransaction,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        Self::merge_recovered_server_history_on_connection(txn, target_server_id, source_server_id)
+            .await
+    }
+
+    pub(crate) async fn merge_recovered_server_history_on_connection<C>(
+        db: &C,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError>
+    where
+        C: ConnectionTrait,
+    {
+        Self::replace_unique_key_table_server_id_on_connection(
+            db,
+            "traffic_hourly",
+            &["hour"],
+            target_server_id,
+            source_server_id,
+        )
+        .await?;
+        Self::replace_unique_key_table_server_id_on_connection(
+            db,
+            "traffic_daily",
+            &["date"],
+            target_server_id,
+            source_server_id,
+        )
+        .await?;
+        Self::replace_unique_key_table_server_id_on_connection(
+            db,
+            "traffic_state",
+            &[],
+            target_server_id,
+            source_server_id,
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    pub(crate) async fn replace_unique_key_table_server_id_on_connection<C>(
+        db: &C,
+        table: &str,
+        key_columns: &[&str],
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError>
+    where
+        C: ConnectionTrait,
+    {
+        let join_predicate = if key_columns.is_empty() {
+            "1 = 1".to_string()
+        } else {
+            key_columns
+                .iter()
+                .map(|column| format!("source.{column} = target.{column}"))
+                .collect::<Vec<_>>()
+                .join(" AND ")
+        };
+
+        db.execute(Statement::from_sql_and_values(
+            db.get_database_backend(),
+            format!(
+                "DELETE FROM {table} AS target \
+                 WHERE target.server_id = $1 \
+                 AND EXISTS ( \
+                     SELECT 1 FROM {table} AS source \
+                     WHERE source.server_id = $2 \
+                     AND {join_predicate} \
+                 )"
+            ),
+            [target_server_id.into(), source_server_id.into()],
+        ))
+        .await?;
+
+        db.execute(Statement::from_sql_and_values(
+            db.get_database_backend(),
+            format!("UPDATE {table} SET server_id = $1 WHERE server_id = $2"),
+            [target_server_id.into(), source_server_id.into()],
+        ))
+        .await?;
+
+        Ok(())
+    }
+
     /// Upsert a traffic_hourly row, accumulating bytes_in/bytes_out on conflict.
     pub async fn upsert_hourly(
         db: &DatabaseConnection,

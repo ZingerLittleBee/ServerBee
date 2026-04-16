@@ -16,6 +16,7 @@ pub mod oauth;
 pub mod ping;
 pub mod server;
 pub mod server_group;
+pub mod server_recovery;
 pub mod service_monitor;
 pub mod setting;
 pub mod status;
@@ -66,6 +67,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 .merge(
                     Router::new()
                         .merge(server::write_router())
+                        .merge(server_recovery::write_router())
                         .merge(server_group::write_router())
                         .merge(ping::write_router())
                         .merge(network_probe::write_router())

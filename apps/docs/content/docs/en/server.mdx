@@ -178,6 +178,19 @@ The full key is printed to the logs on first startup and can also be viewed or r
 
 To reduce duplicate placeholder servers, agents reuse the existing server row when they re-register with the same machine fingerprint. You can also set `auth.max_servers` to soft-cap new auto-registered servers, and use **Clean up unconnected** on the Servers page to remove offline placeholders that never finished initialization.
 
+## Recovering a Reinstalled Agent
+
+If an existing server was reinstalled and then re-registered as a new temporary online node, you can recover it from the original offline server detail page:
+
+1. Open the original offline server.
+2. Click **Recover Agent**.
+3. Choose the recommended online replacement candidate.
+4. Start the recovery job.
+
+The original server record is kept. The replacement agent is asked to rebind onto the original server identity, and the recovery flow continues from there.
+
+Recovery is designed for reinstalling the same logical machine. It is not intended for arbitrary record merges or hardware migrations to a different host.
+
 ## GeoIP Setup
 
 To enable geographic location detection for your agents:

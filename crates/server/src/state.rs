@@ -16,6 +16,7 @@ use crate::service::geoip::GeoIpService;
 use crate::service::high_risk_audit::{
     DockerLogsAuditContext, ExecAuditContext, TerminalAuditContext,
 };
+use crate::service::recovery_lock::RecoveryLockService;
 use crate::service::task_scheduler::TaskScheduler;
 use crate::service::upgrade_release::UpgradeReleaseService;
 use crate::service::upgrade_tracker::UpgradeJobTracker;
@@ -63,6 +64,8 @@ pub struct AppState {
     pub task_scheduler: Arc<TaskScheduler>,
     /// Shared alert state manager for dedup across poll-based and event-driven evaluation.
     pub alert_state_manager: AlertStateManager,
+    /// In-memory freeze gate for agent-originated writes during recovery.
+    pub recovery_lock: RecoveryLockService,
     /// Pending mobile pairing codes for QR login, keyed by code.
     pub pending_pairs: DashMap<String, PendingPair>,
     /// Terminal session audit contexts keyed by session_id.
@@ -180,6 +183,7 @@ impl AppState {
             docker_viewers: DockerViewerTracker::new(),
             task_scheduler,
             alert_state_manager,
+            recovery_lock: RecoveryLockService::new(),
             pending_pairs: DashMap::new(),
             terminal_audit_contexts: DashMap::new(),
             docker_logs_audit_contexts: DashMap::new(),

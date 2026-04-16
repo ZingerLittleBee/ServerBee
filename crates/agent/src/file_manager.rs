@@ -186,7 +186,7 @@ impl FileManager {
                 if entries.is_empty() {
                     anyhow::bail!("Path '{}' is outside allowed root paths", path);
                 }
-                entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+                entries.sort_by_key(|a| a.name.to_lowercase());
                 Ok(entries)
             }
         }

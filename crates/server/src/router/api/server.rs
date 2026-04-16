@@ -1080,6 +1080,7 @@ mod cleanup_tests {
     use crate::entity::server;
     use chrono::Utc;
     use std::collections::HashSet;
+    use serverbee_common::constants::CAP_DEFAULT;
 
     fn make_server(id: &str, name: &str, os: Option<&str>) -> server::Model {
         let now = Utc::now();
@@ -1114,7 +1115,7 @@ mod cleanup_tests {
             traffic_limit: None,
             traffic_limit_type: None,
             billing_start_day: None,
-            capabilities: 56,
+            capabilities: CAP_DEFAULT as i32,
             protocol_version: 1,
             features: "[]".to_string(),
             last_remote_addr: None,

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useServer, useServerRecords } from './use-api'
+import { startRecoveryMerge, useRecoveryCandidates, useRecoveryJob, useServer, useServerRecords } from './use-api'
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -179,5 +179,114 @@ describe('useServerRecords', () => {
     })
 
     expect(globalThis.fetch).not.toHaveBeenCalled()
+  })
+})
+
+describe('recovery hooks', () => {
+  it('fetches recovery candidates for a target server', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [{ server_id: 'source-1', name: 'Source', score: 42, reasons: ['same remote address'] }]
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      )
+    )
+
+    const { result } = renderHook(() => useRecoveryCandidates('target-1'), {
+      wrapper: createWrapper()
+    })
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true)
+    })
+
+    expect(result.current.data?.[0].server_id).toBe('source-1')
+    expect(result.current.data?.[0].reasons).toEqual(['same remote address'])
+  })
+
+  it('does not fetch recovery candidates when disabled', async () => {
+    const { result } = renderHook(() => useRecoveryCandidates('target-1', false), {
+      wrapper: createWrapper()
+    })
+
+    await waitFor(() => {
+      expect(result.current.fetchStatus).toBe('idle')
+    })
+
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+  })
+
+  it('fetches a recovery job by id', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            job_id: 'job-1',
+            target_server_id: 'target-1',
+            source_server_id: 'source-1',
+            status: 'running',
+            stage: 'rebinding',
+            error: null,
+            started_at: '2026-04-16T00:00:00Z',
+            created_at: '2026-04-16T00:00:00Z',
+            updated_at: '2026-04-16T00:00:00Z',
+            last_heartbeat_at: null
+          }
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      )
+    )
+
+    const { result } = renderHook(() => useRecoveryJob('job-1'), {
+      wrapper: createWrapper()
+    })
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true)
+    })
+
+    expect(result.current.data?.stage).toBe('rebinding')
+  })
+
+  it('starts a recovery merge', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            job_id: 'job-1',
+            target_server_id: 'target-1',
+            source_server_id: 'source-1',
+            status: 'running',
+            stage: 'rebinding',
+            error: null,
+            started_at: '2026-04-16T00:00:00Z',
+            created_at: '2026-04-16T00:00:00Z',
+            updated_at: '2026-04-16T00:00:00Z',
+            last_heartbeat_at: null
+          }
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      )
+    )
+
+    const job = await startRecoveryMerge('target-1', { source_server_id: 'source-1' })
+
+    expect(job.job_id).toBe('job-1')
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      '/api/servers/target-1/recover-merge',
+      expect.objectContaining({
+        method: 'POST'
+      })
+    )
   })
 })
