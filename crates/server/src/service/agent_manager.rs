@@ -235,6 +235,7 @@ impl AgentManager {
 
         let _ = self.browser_tx.send(BrowserMessage::Update {
             servers: vec![status],
+            recoveries: Vec::new(),
         });
 
         // Cache the report
