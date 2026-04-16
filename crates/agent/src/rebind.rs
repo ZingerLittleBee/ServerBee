@@ -1,0 +1,275 @@
+use std::ffi::OsStr;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::Path;
+
+use anyhow::Context;
+
+fn render_token_content(existing: &str, token: &str) -> String {
+    let token_line = format!("token = \"{token}\"");
+    let had_trailing_newline = existing.ends_with('\n');
+    let mut lines: Vec<String> = existing.lines().map(ToOwned::to_owned).collect();
+    let preamble_end = lines
+        .iter()
+        .position(|line| is_table_header(line))
+        .unwrap_or(lines.len());
+    let preamble = &mut lines[..preamble_end];
+
+    if let Some(pos) = preamble.iter().position(|line| is_token_line(line)) {
+        lines[pos] = token_line;
+    } else {
+        lines.insert(preamble_end, token_line);
+    }
+
+    let mut rendered = lines.join("\n");
+    if had_trailing_newline {
+        rendered.push('\n');
+    }
+    rendered
+}
+
+fn is_token_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    let Some(rest) = trimmed.strip_prefix("token") else {
+        return false;
+    };
+
+    rest.trim_start().starts_with('=')
+}
+
+fn is_table_header(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with('[') && trimmed.ends_with(']')
+}
+
+pub(crate) fn persist_rebind_token_impl(path: impl AsRef<Path>, token: &str) -> anyhow::Result<()> {
+    let path = path.as_ref();
+    let existing = if path.exists() {
+        fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?
+    } else {
+        String::new()
+    };
+    let rendered = render_token_content(&existing, token);
+
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = path.file_name().unwrap_or_else(|| OsStr::new("agent.toml"));
+    let temp_path = parent.join(format!(
+        ".{}.rebind.{}.tmp",
+        file_name.to_string_lossy(),
+        uuid::Uuid::new_v4()
+    ));
+
+    let write_result = (|| -> anyhow::Result<()> {
+        let mut temp_file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temp_path)
+            .with_context(|| format!("failed to create {}", temp_path.display()))?;
+        temp_file
+            .write_all(rendered.as_bytes())
+            .with_context(|| format!("failed to write {}", temp_path.display()))?;
+        temp_file
+            .sync_all()
+            .with_context(|| format!("failed to sync {}", temp_path.display()))?;
+        if path.exists() && let Ok(metadata) = fs::metadata(path) {
+            let _ = fs::set_permissions(&temp_path, metadata.permissions());
+        }
+        replace_file(&temp_path, path)?;
+
+        #[cfg(unix)]
+        {
+            if let Some(dir) = path.parent() && let Ok(dir_file) = fs::File::open(dir) {
+                let _ = dir_file.sync_all();
+            }
+        }
+
+        Ok(())
+    })();
+
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temp_path);
+    }
+
+    write_result
+}
+
+#[cfg(not(test))]
+pub(crate) use persist_rebind_token_impl as persist_rebind_token;
+
+#[cfg(unix)]
+fn replace_file(temp_path: &Path, path: &Path) -> anyhow::Result<()> {
+    fs::rename(temp_path, path).with_context(|| {
+        format!(
+            "failed to atomically replace {} with {}",
+            temp_path.display(),
+            path.display()
+        )
+    })
+}
+
+#[cfg(windows)]
+fn replace_file(temp_path: &Path, path: &Path) -> anyhow::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    use windows_sys::Win32::Storage::FileSystem::{
+        MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+    };
+
+    let mut temp_wide: Vec<u16> = temp_path.as_os_str().encode_wide().collect();
+    temp_wide.push(0);
+    let mut path_wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+    path_wide.push(0);
+
+    let ok = unsafe {
+        MoveFileExW(
+            temp_wide.as_ptr(),
+            path_wide.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+
+    if ok == 0 {
+        Err(std::io::Error::last_os_error()).with_context(|| {
+            format!(
+                "failed to atomically replace {} with {}",
+                temp_path.display(),
+                path.display()
+            )
+        })
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn assert_persist_rebind_token() {
+    let tempdir = tempfile::TempDir::new().expect("tempdir");
+    let path = tempdir.path().join("agent.toml");
+    fs::write(&path, "server_url = \"http://127.0.0.1:9527\"\n").expect("seed file");
+
+    persist_rebind_token_impl(&path, "focused-token").expect("persist");
+
+    let content = fs::read_to_string(&path).expect("read file");
+    assert_eq!(
+        content,
+        r#"server_url = "http://127.0.0.1:9527"
+token = "focused-token"
+"#
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn persist_rebind_token_replaces_existing_token_line_without_touching_other_lines() {
+        let tempdir = TempDir::new().expect("tempdir");
+        let path = tempdir.path().join("agent.toml");
+        fs::write(
+            &path,
+            r#"server_url = "http://127.0.0.1:9527"
+token = "old-token"
+log.level = "debug""#,
+        )
+        .expect("seed file");
+
+        super::persist_rebind_token_impl(&path, "new-token").expect("persist");
+
+        let content = fs::read_to_string(&path).expect("read file");
+        assert_eq!(
+            content,
+            r#"server_url = "http://127.0.0.1:9527"
+token = "new-token"
+log.level = "debug""#
+        );
+    }
+
+    #[test]
+    fn persist_rebind_token_appends_token_line_when_missing() {
+        let tempdir = TempDir::new().expect("tempdir");
+        let path = tempdir.path().join("agent.toml");
+        fs::write(&path, "server_url = \"http://127.0.0.1:9527\"\n").expect("seed file");
+
+        super::persist_rebind_token_impl(&path, "fresh-token").expect("persist");
+
+        let content = fs::read_to_string(&path).expect("read file");
+        assert_eq!(
+            content,
+            r#"server_url = "http://127.0.0.1:9527"
+token = "fresh-token"
+"#
+        );
+    }
+
+    #[test]
+    fn persist_rebind_token_inserts_before_first_table_header() {
+        let tempdir = TempDir::new().expect("tempdir");
+        let path = tempdir.path().join("agent.toml");
+        fs::write(
+            &path,
+            r#"server_url = "http://127.0.0.1:9527"
+[collector]
+interval = 3
+[log]
+level = "info""#,
+        )
+        .expect("seed file");
+
+        super::persist_rebind_token_impl(&path, "fresh-token").expect("persist");
+
+        let content = fs::read_to_string(&path).expect("read file");
+        assert_eq!(
+            content,
+            r#"server_url = "http://127.0.0.1:9527"
+token = "fresh-token"
+[collector]
+interval = 3
+[log]
+level = "info""#
+        );
+    }
+
+    #[test]
+    fn persist_rebind_token_preserves_trailing_newline() {
+        let tempdir = TempDir::new().expect("tempdir");
+        let path = tempdir.path().join("agent.toml");
+        fs::write(&path, "server_url = \"http://127.0.0.1:9527\"\n").expect("seed file");
+
+        super::persist_rebind_token_impl(&path, "fresh-token").expect("persist");
+
+        let content = fs::read_to_string(&path).expect("read file");
+        assert!(content.ends_with('\n'));
+    }
+
+    #[test]
+    fn persist_rebind_token_preserves_nested_token_and_inserts_top_level_token() {
+        let tempdir = TempDir::new().expect("tempdir");
+        let path = tempdir.path().join("agent.toml");
+        fs::write(
+            &path,
+            r#"server_url = "http://127.0.0.1:9527"
+[collector]
+token = "nested"
+interval = 3
+[log]
+level = "info""#,
+        )
+        .expect("seed file");
+
+        super::persist_rebind_token_impl(&path, "top-level").expect("persist");
+
+        let content = fs::read_to_string(&path).expect("read file");
+        assert_eq!(
+            content,
+            r#"server_url = "http://127.0.0.1:9527"
+token = "top-level"
+[collector]
+token = "nested"
+interval = 3
+[log]
+level = "info""#
+        );
+    }
+}

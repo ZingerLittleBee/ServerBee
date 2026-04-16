@@ -43,11 +43,17 @@ pub async fn run(state: Arc<AppState>) {
 
         let mut count = 0;
         for (server_id, report) in &reports {
+            let writes_allowed = state.recovery_lock.writes_allowed_for(server_id);
+
             // Save metrics record
-            if let Err(e) = RecordService::save_report(&state.db, server_id, report).await {
-                tracing::error!("Failed to save record for {server_id}: {e}");
+            if writes_allowed {
+                if let Err(e) = RecordService::save_report(&state.db, server_id, report).await {
+                    tracing::error!("Failed to save record for {server_id}: {e}");
+                } else {
+                    count += 1;
+                }
             } else {
-                count += 1;
+                tracing::info!("Skipping recovery-frozen record write for {server_id}");
             }
 
             // Compute traffic delta
@@ -65,10 +71,19 @@ pub async fn run(state: Arc<AppState>) {
                 } else {
                     // First observation: no previous state, skip delta (just record state)
                     transfer_cache.insert(server_id.clone(), (curr_in, curr_out));
-                    if let Err(e) =
-                        TrafficService::upsert_state(&state.db, server_id, curr_in, curr_out).await
-                    {
-                        tracing::error!("Failed to upsert traffic state for {server_id}: {e}");
+                    if writes_allowed {
+                        if let Err(e) = TrafficService::upsert_state(
+                            &state.db,
+                            server_id,
+                            curr_in,
+                            curr_out,
+                        )
+                        .await
+                        {
+                            tracing::error!("Failed to upsert traffic state for {server_id}: {e}");
+                        }
+                    } else {
+                        tracing::info!("Skipping recovery-frozen traffic state write for {server_id}");
                     }
                     continue;
                 };
@@ -77,19 +92,33 @@ pub async fn run(state: Arc<AppState>) {
             transfer_cache.insert(server_id.clone(), (curr_in, curr_out));
 
             // Only write if there's actual traffic
-            if (delta_in > 0 || delta_out > 0)
-                && let Err(e) =
-                    TrafficService::upsert_hourly(&state.db, server_id, hour, delta_in, delta_out)
-                        .await
-            {
-                tracing::error!("Failed to upsert traffic hourly for {server_id}: {e}");
+            if delta_in > 0 || delta_out > 0 {
+                if writes_allowed {
+                    if let Err(e) = TrafficService::upsert_hourly(
+                        &state.db,
+                        server_id,
+                        hour,
+                        delta_in,
+                        delta_out,
+                    )
+                    .await
+                    {
+                        tracing::error!("Failed to upsert traffic hourly for {server_id}: {e}");
+                    }
+                } else {
+                    tracing::info!("Skipping recovery-frozen traffic hourly write for {server_id}");
+                }
             }
 
             // Always update state
-            if let Err(e) =
-                TrafficService::upsert_state(&state.db, server_id, curr_in, curr_out).await
-            {
-                tracing::error!("Failed to upsert traffic state for {server_id}: {e}");
+            if writes_allowed {
+                if let Err(e) =
+                    TrafficService::upsert_state(&state.db, server_id, curr_in, curr_out).await
+                {
+                    tracing::error!("Failed to upsert traffic state for {server_id}: {e}");
+                }
+            } else {
+                tracing::info!("Skipping recovery-frozen traffic state write for {server_id}");
             }
         }
 
