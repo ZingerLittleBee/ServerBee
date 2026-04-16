@@ -14,6 +14,23 @@ use crate::error::{ApiResponse, AppError, ok};
 use crate::service::recovery_job::RecoveryJobService;
 use crate::state::AppState;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryJobStatus {
+    Running,
+    Failed,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryJobStage {
+    Validating,
+    MergingHistory,
+    Finalizing,
+    Unknown,
+}
+
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct RecoveryCandidateResponse {
     pub server_id: String,
@@ -32,9 +49,8 @@ pub struct RecoveryJobResponse {
     pub job_id: String,
     pub target_server_id: String,
     pub source_server_id: String,
-    pub status: String,
-    pub stage: String,
-    pub checkpoint_json: Option<String>,
+    pub status: RecoveryJobStatus,
+    pub stage: RecoveryJobStage,
     pub error: Option<String>,
     pub started_at: chrono::DateTime<chrono::Utc>,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -54,18 +70,19 @@ struct CandidateScoreInput {
 
 pub fn read_router() -> Router<Arc<AppState>> {
     Router::new()
+}
+
+pub fn write_router() -> Router<Arc<AppState>> {
+    Router::new()
         .route(
             "/servers/{target_id}/recovery-candidates",
             get(list_candidates),
         )
         .route("/servers/recovery-jobs/{job_id}", get(get_recovery_job))
-}
-
-pub fn write_router() -> Router<Arc<AppState>> {
-    Router::new().route(
-        "/servers/{target_id}/recover-merge",
-        post(start_recovery_merge),
-    )
+        .route(
+            "/servers/{target_id}/recover-merge",
+            post(start_recovery_merge),
+        )
 }
 
 #[utoipa::path(
@@ -77,11 +94,13 @@ pub fn write_router() -> Router<Arc<AppState>> {
     responses(
         (status = 200, description = "Recommended recovery candidates", body = Vec<RecoveryCandidateResponse>),
         (status = 401, description = "Authentication required", body = crate::error::ErrorBody),
+        (status = 403, description = "Admin required", body = crate::error::ErrorBody),
         (status = 404, description = "Target server not found", body = crate::error::ErrorBody),
     ),
     security(
         ("session_cookie" = []),
-        ("api_key" = [])
+        ("api_key" = []),
+        ("bearer_token" = [])
     ),
     tag = "server-recovery"
 )]
@@ -134,11 +153,13 @@ async fn list_candidates(
     responses(
         (status = 200, description = "Recovery job details", body = RecoveryJobResponse),
         (status = 401, description = "Authentication required", body = crate::error::ErrorBody),
+        (status = 403, description = "Admin required", body = crate::error::ErrorBody),
         (status = 404, description = "Recovery job not found", body = crate::error::ErrorBody),
     ),
     security(
         ("session_cookie" = []),
-        ("api_key" = [])
+        ("api_key" = []),
+        ("bearer_token" = [])
     ),
     tag = "server-recovery"
 )]
@@ -170,7 +191,8 @@ async fn get_recovery_job(
     ),
     security(
         ("session_cookie" = []),
-        ("api_key" = [])
+        ("api_key" = []),
+        ("bearer_token" = [])
     ),
     tag = "server-recovery"
 )]
@@ -323,14 +345,34 @@ impl From<recovery_job::Model> for RecoveryJobResponse {
             job_id: value.job_id,
             target_server_id: value.target_server_id,
             source_server_id: value.source_server_id,
-            status: value.status,
-            stage: value.stage,
-            checkpoint_json: value.checkpoint_json,
+            status: RecoveryJobStatus::from(value.status.as_str()),
+            stage: RecoveryJobStage::from(value.stage.as_str()),
             error: value.error,
             started_at: value.started_at,
             created_at: value.created_at,
             updated_at: value.updated_at,
             last_heartbeat_at: value.last_heartbeat_at,
+        }
+    }
+}
+
+impl From<&str> for RecoveryJobStatus {
+    fn from(value: &str) -> Self {
+        match value {
+            "running" => Self::Running,
+            "failed" => Self::Failed,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+impl From<&str> for RecoveryJobStage {
+    fn from(value: &str) -> Self {
+        match value {
+            "validating" => Self::Validating,
+            "merging_history" => Self::MergingHistory,
+            "finalizing" => Self::Finalizing,
+            _ => Self::Unknown,
         }
     }
 }

@@ -3781,13 +3781,38 @@ async fn test_security_headers_present() {
 }
 
 #[tokio::test]
-async fn test_recovery_candidates_requires_auth_and_filters_online_sources() {
+async fn test_recovery_candidates_requires_admin_and_filters_online_sources() {
     let (base_url, _tmp) = start_test_server().await;
     let auth_client = http_client();
 
     let (target_id, _target_token) = register_agent(&auth_client, &base_url).await;
     let (online_source_id, online_source_token) = register_agent(&auth_client, &base_url).await;
     let (offline_source_id, _offline_source_token) = register_agent(&auth_client, &base_url).await;
+    login_admin(&auth_client, &base_url).await;
+
+    let create_resp = auth_client
+        .post(format!("{}/api/users", base_url))
+        .json(&json!({
+            "username": "recoverymember",
+            "password": "memberpass123",
+            "role": "member"
+        }))
+        .send()
+        .await
+        .expect("POST /api/users failed");
+    assert_eq!(create_resp.status(), 200);
+
+    let member_client = http_client();
+    let member_login = member_client
+        .post(format!("{}/api/auth/login", base_url))
+        .json(&json!({
+            "username": "recoverymember",
+            "password": "memberpass123"
+        }))
+        .send()
+        .await
+        .expect("member login failed");
+    assert_eq!(member_login.status(), 200);
 
     let plain_client = reqwest::Client::new();
     let unauth_resp = plain_client
@@ -3800,7 +3825,16 @@ async fn test_recovery_candidates_requires_auth_and_filters_online_sources() {
         .expect("unauthenticated recovery candidates request failed");
     assert_eq!(unauth_resp.status(), 401);
 
-    login_admin(&auth_client, &base_url).await;
+    let member_resp = member_client
+        .get(format!(
+            "{}/api/servers/{}/recovery-candidates",
+            base_url, target_id
+        ))
+        .send()
+        .await
+        .expect("member recovery candidates request failed");
+    assert_eq!(member_resp.status(), 403);
+
     let (_sink, mut reader) = connect_agent(&base_url, &online_source_token).await;
     let _welcome = recv_agent_text(&mut reader).await;
 
@@ -3892,10 +3926,34 @@ async fn test_recovery_merge_start_requires_admin_and_validates_source_state() {
 }
 
 #[tokio::test]
-async fn test_recovery_job_get_requires_auth_and_start_creates_job() {
+async fn test_recovery_job_get_requires_admin_and_start_creates_job() {
     let (base_url, _tmp) = start_test_server().await;
     let auth_client = http_client();
     login_admin(&auth_client, &base_url).await;
+
+    let create_resp = auth_client
+        .post(format!("{}/api/users", base_url))
+        .json(&json!({
+            "username": "recoverymember",
+            "password": "memberpass123",
+            "role": "member"
+        }))
+        .send()
+        .await
+        .expect("POST /api/users failed");
+    assert_eq!(create_resp.status(), 200);
+
+    let member_client = http_client();
+    let member_login = member_client
+        .post(format!("{}/api/auth/login", base_url))
+        .json(&json!({
+            "username": "recoverymember",
+            "password": "memberpass123"
+        }))
+        .send()
+        .await
+        .expect("member login failed");
+    assert_eq!(member_login.status(), 200);
 
     let (target_id, _target_token) = register_agent(&auth_client, &base_url).await;
     let (source_id, source_token) = register_agent(&auth_client, &base_url).await;
@@ -3929,6 +3987,13 @@ async fn test_recovery_job_get_requires_auth_and_start_creates_job() {
         .expect("unauthenticated recovery job request failed");
     assert_eq!(unauth_resp.status(), 401);
 
+    let member_resp = member_client
+        .get(format!("{}/api/servers/recovery-jobs/{}", base_url, job_id))
+        .send()
+        .await
+        .expect("member recovery job request failed");
+    assert_eq!(member_resp.status(), 403);
+
     let get_resp = auth_client
         .get(format!("{}/api/servers/recovery-jobs/{}", base_url, job_id))
         .send()
@@ -3940,4 +4005,7 @@ async fn test_recovery_job_get_requires_auth_and_start_creates_job() {
     assert_eq!(get_body["data"]["job_id"], job_id);
     assert_eq!(get_body["data"]["target_server_id"], target_id);
     assert_eq!(get_body["data"]["source_server_id"], source_id);
+    assert!(get_body["data"].get("checkpoint_json").is_none());
+    assert_eq!(get_body["data"]["status"], "running");
+    assert_eq!(get_body["data"]["stage"], "validating");
 }
