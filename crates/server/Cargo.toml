@@ -57,3 +57,4 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 tempfile = "3"
 futures-util = "0.3"
+figment = { version = "0.10", features = ["toml", "env", "test"] }
