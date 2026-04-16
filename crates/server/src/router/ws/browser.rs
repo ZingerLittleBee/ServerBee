@@ -7,7 +7,7 @@ use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use futures_util::{SinkExt, StreamExt};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::EntityTrait;
 
 use crate::entity::recovery_job;
 use crate::service::agent_manager::aggregate_disk_io;
@@ -367,11 +367,7 @@ async fn build_full_sync(state: &Arc<AppState>) -> BrowserMessage {
 }
 
 pub(crate) async fn recovery_snapshot(state: &Arc<AppState>) -> Vec<RecoveryJobDto> {
-    match recovery_job::Entity::find()
-        .filter(recovery_job::Column::Status.eq("running"))
-        .all(&state.db)
-        .await
-    {
+    match recovery_job::Entity::find().all(&state.db).await {
         Ok(jobs) => jobs.into_iter().map(Into::into).collect(),
         Err(e) => {
             tracing::error!("Failed to list recovery jobs for browser sync: {e}");
@@ -504,6 +500,114 @@ mod tests {
                 assert_eq!(recoveries[0].status, RecoveryJobStatus::Running);
             }
             other => panic!("expected full sync, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn full_sync_includes_terminal_recovery_states() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "target-1", "Target").await;
+        insert_server(&db, "source-1", "Source").await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+
+        let now = Utc::now();
+        recovery_job::ActiveModel {
+            job_id: Set("job-failed".to_string()),
+            target_server_id: Set("target-1".to_string()),
+            source_server_id: Set("source-1".to_string()),
+            status: Set("failed".to_string()),
+            stage: Set("failed".to_string()),
+            checkpoint_json: Set(None),
+            error: Set(Some("boom".to_string())),
+            started_at: Set(now),
+            created_at: Set(now),
+            updated_at: Set(now),
+            last_heartbeat_at: Set(Some(now)),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        recovery_job::ActiveModel {
+            job_id: Set("job-succeeded".to_string()),
+            target_server_id: Set("target-1".to_string()),
+            source_server_id: Set("source-1".to_string()),
+            status: Set("succeeded".to_string()),
+            stage: Set("succeeded".to_string()),
+            checkpoint_json: Set(None),
+            error: Set(None),
+            started_at: Set(now),
+            created_at: Set(now),
+            updated_at: Set(now),
+            last_heartbeat_at: Set(Some(now)),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let message = build_full_sync(&state).await;
+
+        match message {
+            BrowserMessage::FullSync { recoveries, .. } => {
+                assert_eq!(recoveries.len(), 2);
+                assert!(recoveries.iter().any(|job| {
+                    job.job_id == "job-failed"
+                        && job.status == RecoveryJobStatus::Failed
+                        && job.stage == RecoveryJobStage::Failed
+                }));
+                assert!(recoveries.iter().any(|job| {
+                    job.job_id == "job-succeeded"
+                        && job.status == RecoveryJobStatus::Succeeded
+                        && job.stage == RecoveryJobStage::Succeeded
+                }));
+            }
+            other => panic!("expected full sync, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn broadcast_recovery_update_includes_terminal_recovery_states() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "target-1", "Target").await;
+        insert_server(&db, "source-1", "Source").await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+        let mut browser_rx = state.browser_tx.subscribe();
+
+        let now = Utc::now();
+        recovery_job::ActiveModel {
+            job_id: Set("job-failed".to_string()),
+            target_server_id: Set("target-1".to_string()),
+            source_server_id: Set("source-1".to_string()),
+            status: Set("failed".to_string()),
+            stage: Set("failed".to_string()),
+            checkpoint_json: Set(None),
+            error: Set(Some("boom".to_string())),
+            started_at: Set(now),
+            created_at: Set(now),
+            updated_at: Set(now),
+            last_heartbeat_at: Set(Some(now)),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        broadcast_recovery_update(&state).await;
+
+        let message = browser_rx.recv().await.unwrap();
+        match message {
+            BrowserMessage::Update {
+                recoveries: Some(recoveries),
+                ..
+            } => {
+                assert_eq!(recoveries.len(), 1);
+                assert_eq!(recoveries[0].job_id, "job-failed");
+                assert_eq!(recoveries[0].status, RecoveryJobStatus::Failed);
+                assert_eq!(recoveries[0].stage, RecoveryJobStage::Failed);
+            }
+            other => panic!("expected update with recoveries, got {other:?}"),
         }
     }
 }

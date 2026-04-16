@@ -6,9 +6,10 @@ use std::sync::Arc;
 use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use serverbee_common::protocol::ServerMessage;
+use tokio::sync::mpsc;
 
 use crate::entity::{recovery_job, server};
 use crate::error::{ApiResponse, AppError, ok};
@@ -226,26 +227,46 @@ async fn start_recovery_merge(
     Path(target_id): Path<String>,
     Json(request): Json<StartRecoveryRequest>,
 ) -> Result<Json<ApiResponse<RecoveryJobResponse>>, AppError> {
-    let job = RecoveryMergeService::start(&state, &target_id, &request.source_server_id).await?;
-    let token = RecoveryMergeService::rotate_target_token(&state, &target_id).await?;
-    let sender = state
-        .agent_manager
-        .get_sender(&request.source_server_id)
-        .ok_or_else(|| {
-            AppError::Conflict("Source server must be online before starting recovery".to_string())
-        })?;
-    sender
+    let sender = state.agent_manager.get_sender(&request.source_server_id);
+    let job =
+        start_recovery_merge_with_sender(&state, &target_id, &request.source_server_id, sender)
+            .await?;
+    broadcast_recovery_update(&state).await;
+    ok(job.into())
+}
+
+async fn start_recovery_merge_with_sender(
+    state: &Arc<AppState>,
+    target_id: &str,
+    source_server_id: &str,
+    sender: Option<mpsc::Sender<ServerMessage>>,
+) -> Result<recovery_job::Model, AppError> {
+    let sender = sender.ok_or_else(|| {
+        AppError::Conflict("Source server must be online before starting recovery".to_string())
+    })?;
+
+    RecoveryMergeService::validate_start_request(state, target_id, source_server_id).await?;
+
+    let txn = state.db.begin().await?;
+    let job = RecoveryMergeService::start_on_txn(&txn, target_id, source_server_id).await?;
+    let token = RecoveryMergeService::rotate_target_token_on_txn(&txn, target_id).await?;
+
+    if let Err(error) = sender
         .send(ServerMessage::RebindIdentity {
             job_id: job.job_id.clone(),
-            target_server_id: target_id.clone(),
+            target_server_id: target_id.to_string(),
             token,
         })
         .await
-        .map_err(|error| {
-            AppError::Internal(format!("Failed to dispatch RebindIdentity to source agent: {error}"))
-        })?;
-    broadcast_recovery_update(&state).await;
-    ok(job.into())
+    {
+        txn.rollback().await?;
+        return Err(AppError::Internal(format!(
+            "Failed to dispatch RebindIdentity to source agent: {error}"
+        )));
+    }
+
+    txn.commit().await?;
+    Ok(job)
 }
 
 fn build_candidate_response(
@@ -403,10 +424,11 @@ impl From<&str> for RecoveryJobStage {
 mod tests {
     use super::{
         CandidateScoreInput, RecoveryJobStage, StartRecoveryRequest, score_candidate,
-        start_recovery_merge,
+        start_recovery_merge, start_recovery_merge_with_sender,
     };
     use crate::config::AppConfig;
-    use crate::entity::server;
+    use crate::entity::{recovery_job, server};
+    use crate::error::AppError;
     use crate::service::auth::AuthService;
     use crate::state::AppState;
     use crate::test_utils::setup_test_db;
@@ -549,5 +571,90 @@ mod tests {
             .unwrap()
             .expect("target token should validate");
         assert_eq!(validated.id, "target-1");
+    }
+
+    #[tokio::test]
+    async fn start_recovery_merge_fails_safely_when_sender_missing() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "target-1", "Target").await;
+        insert_server(&db, "source-1", "Source").await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+
+        let before = server::Entity::find_by_id("target-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+
+        let error = start_recovery_merge_with_sender(&state, "target-1", "source-1", None)
+            .await
+            .expect_err("missing sender should fail safely");
+
+        assert!(
+            matches!(error, AppError::Conflict(message) if message.contains("Source server must be online"))
+        );
+
+        let after = server::Entity::find_by_id("target-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(after.token_prefix, before.token_prefix);
+        assert_eq!(after.token_hash, before.token_hash);
+
+        let jobs = recovery_job::Entity::find().all(&db).await.unwrap();
+        assert!(jobs.is_empty(), "no recovery job should be persisted");
+    }
+
+    #[tokio::test]
+    async fn start_recovery_merge_fails_safely_when_dispatch_fails() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "target-1", "Target").await;
+        insert_server(&db, "source-1", "Source").await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+
+        let (tx, rx) = mpsc::channel(1);
+        drop(rx);
+        state
+            .agent_manager
+            .add_connection("source-1".into(), "Source".into(), tx, test_addr());
+
+        let before = server::Entity::find_by_id("target-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+
+        let error = start_recovery_merge(
+            State(Arc::clone(&state)),
+            Path("target-1".to_string()),
+            Json(StartRecoveryRequest {
+                source_server_id: "source-1".to_string(),
+            }),
+        )
+        .await
+        .expect_err("dispatch failure should fail safely");
+
+        assert!(
+            matches!(error, AppError::Internal(message) if message.contains("Failed to dispatch RebindIdentity"))
+        );
+
+        let after = server::Entity::find_by_id("target-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(after.token_prefix, before.token_prefix);
+        assert_eq!(after.token_hash, before.token_hash);
+
+        let jobs = recovery_job::Entity::find().all(&db).await.unwrap();
+        assert!(
+            jobs.is_empty(),
+            "no recovery job should remain after failed dispatch"
+        );
     }
 }
