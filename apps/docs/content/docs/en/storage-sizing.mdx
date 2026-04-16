@@ -1,0 +1,153 @@
+---
+title: Storage & Sizing
+description: Database sizing formulas and 30-day storage estimates for common ServerBee deployments.
+icon: Database
+---
+
+This page explains how ServerBee grows its SQLite database over time and gives a 30-day estimate for common 20-server deployments.
+
+<Callout type="info">
+These numbers are based on the current schema and retention defaults, measured from temporary SQLite databases generated against the repository code in April 2026. They describe the main database file after 30 days from a fresh deployment. In production, reserve another 10% to 20% for SQLite WAL headroom and transient growth.
+</Callout>
+
+## Assumptions
+
+All estimates on this page use the same baseline:
+
+- **20 servers**
+- **30 days** from a fresh deployment
+- Agents connected continuously
+- Agent report interval of **3 seconds**
+- Server raw metric writer persisting one record per server every **60 seconds**
+- Default retention:
+  - Raw metrics: **7 days**
+  - Hourly aggregates: **90 days**
+  - GPU records: **7 days**
+  - Ping records: **7 days**
+  - Network probe raw records: **7 days**
+  - Network probe hourly records: **90 days**
+  - Service monitor records: **30 days**
+- Disk I/O enabled and temperature enabled
+- No extra growth from audit log bursts, large task output, or unusual Docker event churn unless called out explicitly
+
+## What Actually Changes Database Size
+
+Not every capability creates ongoing database growth.
+
+| Feature | Default cadence | Retention | Main table(s) | Notes |
+|---------|-----------------|-----------|---------------|-------|
+| Base monitoring | Agent reports every 3s, persisted every 60s | 7d raw, 90d hourly | `records`, `records_hourly`, `traffic_*`, `uptime_daily` | Always present for connected servers |
+| Ping tasks | 60s per task | 7d | `ping_records` | Scales with task count x server count |
+| Network probes | 60s per target | 7d raw, 90d hourly | `network_probe_record`, `network_probe_record_hourly` | Scales with server-target assignments |
+| Service monitors | 300s per monitor | 30d | `service_monitor_record` | Scales with monitor count |
+| GPU monitoring | 3s per GPU device | 7d | `gpu_records` | This is one of the largest multipliers |
+| Docker events | Event-driven | 7d | `docker_event` | Small unless containers churn frequently |
+| Terminal / Exec / File Manager | User-driven | mixed | `audit_logs`, `task_results` | Usually negligible compared with time-series data |
+
+<Callout type="info">
+Turning on a capability such as Terminal, Exec, File Manager, or Docker Management does not automatically create large time-series tables. Continuous growth comes from features that are actively writing sampled results.
+</Callout>
+
+## 30-Day Sizing Formula
+
+For the assumptions above, the 30-day database size can be estimated with:
+
+```text
+S_30d =
+70,541,312
++ 48,974,507 × P
++ 2,373,018 × T
++ 1,593,958 × M
++ 41,525,248 × G
++ 285 × E
+```
+
+Where:
+
+- `P` = number of **60-second ping tasks** applied to all 20 servers
+- `T` = total **server-target network probe assignments**
+  - If every server has the same number of targets, then `T = 20 × targets_per_server`
+- `M` = total **300-second service monitors**
+- `G` = total **GPU devices**
+- `E` = total **Docker events** written during the 30-day window
+
+## Feature Multipliers
+
+These coefficients come from measured SQLite files, not rough guesswork:
+
+| Component | Exact size contribution | Approx size |
+|-----------|-------------------------|-------------|
+| Base monitoring for 20 servers | `70,541,312 B` | `67.27 MiB` |
+| 1 ping task across all 20 servers | `48,974,507 B` | `46.71 MiB` |
+| 1 network probe assignment | `2,373,018 B` | `2.26 MiB` |
+| 1 service monitor | `1,593,958 B` | `1.52 MiB` |
+| 1 GPU device | `41,525,248 B` | `39.60 MiB` |
+| 1 Docker event | `285 B` | `0.28 KiB` |
+
+## Base Monitoring Breakdown
+
+With no extra ping tasks, network probes, service monitors, or GPUs, most of the 30-day footprint comes from the raw metrics table and its index:
+
+| Object | Exact size | Approx size |
+|--------|------------|-------------|
+| `records` | `48,701,440 B` | `46.45 MiB` |
+| `idx_records_server_id_time` | `16,482,304 B` | `15.72 MiB` |
+| `records_hourly` | `3,485,696 B` | `3.32 MiB` |
+| `idx_records_hourly_server_time` | `1,163,264 B` | `1.11 MiB` |
+| `traffic_hourly` + index | `512,000 B` | `0.49 MiB` |
+| `traffic_daily` + index | `90,112 B` | `0.09 MiB` |
+| `uptime_daily` + index | `86,016 B` | `0.08 MiB` |
+
+## Scenario Catalog
+
+The table below lists common 30-day scenarios for a 20-server deployment.
+
+| Scenario | Assumptions | Exact size | Approx size |
+|----------|-------------|------------|-------------|
+| Base monitoring only | No ping tasks, no network probes, no service monitors, no GPU | `70,541,312 B` | `67.27 MiB` |
+| Base + 1 ping task | 1 x 60s ping task across all 20 servers | `119,515,819 B` | `113.98 MiB` |
+| Base + 3 ping tasks | ICMP + TCP + HTTP across all 20 servers | `217,464,833 B` | `207.39 MiB` |
+| Base + 1 target per server | 20 total network probe assignments | `118,001,672 B` | `112.54 MiB` |
+| Base + 5 targets per server | 100 total network probe assignments | `307,843,112 B` | `293.58 MiB` |
+| Base + 20 targets per server | 400 total network probe assignments, which is the current max | `1,019,748,512 B` | `972.51 MiB` |
+| Base + 1 monitor per server | 20 total service monitors at 300s | `102,420,472 B` | `97.68 MiB` |
+| Base + 5 monitors per server | 100 total service monitors at 300s | `229,937,112 B` | `219.29 MiB` |
+| Base + 1 GPU per server | 20 total GPU devices | `901,046,272 B` | `859.30 MiB` |
+| Small production stack | 3 ping tasks + 1 target per server + 1 monitor per server | `296,804,353 B` | `283.05 MiB` |
+| Medium production stack | 3 ping tasks + 5 targets per server + 2 monitors per server | `518,524,953 B` | `494.50 MiB` |
+| Heavy stack without GPU | 3 ping tasks + 20 targets per server + 1 monitor per server | `1,198,551,193 B` | `1.12 GiB` |
+| Heavy stack with GPU | Heavy stack without GPU + 1 GPU per server | `2,029,056,153 B` | `1.89 GiB` |
+| Maxed practical stack | 3 ping tasks + 20 targets per server + 5 monitors per server + 1 GPU per server | `2,156,572,793 B` | `2.01 GiB` |
+
+## Disk Budget Recommendation
+
+If you are capacity-planning a real deployment, reserve more than the database file itself:
+
+- Use the table above for the **base database size**
+- Add **10% to 20%** for WAL growth and transient write bursts
+- Add extra space if you expect:
+  - large Docker event volume
+  - large task output retained in `task_results`
+  - unusually chatty service monitors with large `detail_json` payloads
+
+Examples:
+
+- A `494.50 MiB` medium stack should reserve about **550 MiB to 600 MiB**
+- A `1.89 GiB` heavy stack with GPU should reserve about **2.1 GiB to 2.3 GiB**
+- A `2.01 GiB` maxed practical stack should reserve about **2.2 GiB to 2.5 GiB**
+
+## Notes and Caveats
+
+- These estimates are for the **first 30 days** after a fresh deployment. Some hourly tables retain up to 90 days, so a long-running deployment will continue to grow beyond the 30-day numbers shown here.
+- The base monitoring estimate already includes `traffic_hourly`, `traffic_daily`, and `uptime_daily`.
+- GPU growth is per **device**, not per server. A server with 4 GPUs multiplies the GPU portion by 4.
+- Network probe growth is per **assignment**, not per target definition. A target shared by 20 servers counts as 20 assignments.
+- Docker growth is event-driven. Quiet fleets add almost nothing; container-heavy hosts can add a measurable amount.
+
+## Related Docs
+
+<Cards>
+  <Card title="Monitoring" href="/en/docs/monitoring" />
+  <Card title="Configuration" href="/en/docs/configuration" />
+  <Card title="Deployment" href="/en/docs/deployment" />
+</Cards>

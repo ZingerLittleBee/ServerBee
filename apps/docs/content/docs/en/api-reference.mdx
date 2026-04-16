@@ -80,6 +80,9 @@ API keys use the format `serverbee_` prefix + 43-character random string. The ke
 | POST/PUT/DELETE | `/api/servers/*` | Server management |
 | PUT | `/api/servers/batch-capabilities` | Batch update capabilities |
 | POST | `/api/servers/{id}/upgrade` | Trigger agent upgrade |
+| GET | `/api/servers/{target_id}/recovery-candidates` | List recommended recovery candidates |
+| GET | `/api/servers/recovery-jobs/{job_id}` | Get recovery job details |
+| POST | `/api/servers/{target_id}/recover-merge` | Start an agent recovery job |
 | CRUD | `/api/server-groups/*` | Server group management |
 | CRUD | `/api/notifications/*` | Notification channel management |
 | CRUD | `/api/notification-groups/*` | Notification group management |

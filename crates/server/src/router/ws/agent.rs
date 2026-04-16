@@ -18,6 +18,7 @@ use crate::service::auth::AuthService;
 use crate::service::network_probe::NetworkProbeService;
 use crate::service::ping::PingService;
 use crate::service::record::RecordService;
+use crate::service::recovery_merge::RecoveryMergeService;
 use crate::service::server::ServerService;
 use crate::service::upgrade_tracker::UpgradeLookup;
 use crate::state::AppState;
@@ -399,18 +400,24 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     tracing::info!(
                         "Server {server_id} remote address changed: {old_addr} -> {new_addr}"
                     );
-                    if let Err(e) = AuditService::log(
-                        &state.db,
-                        "system",
-                        "ip_changed",
-                        Some(&format!(
-                            "Remote address changed from {old_addr} to {new_addr} for server {server_id}"
-                        )),
-                        new_addr,
-                    )
-                    .await
-                    {
-                        tracing::error!("Failed to write audit log for IP change: {e}");
+                    if state.recovery_lock.writes_allowed_for(server_id) {
+                        if let Err(e) = AuditService::log(
+                            &state.db,
+                            "system",
+                            "ip_changed",
+                            Some(&format!(
+                                "Remote address changed from {old_addr} to {new_addr} for server {server_id}"
+                            )),
+                            new_addr,
+                        )
+                        .await
+                        {
+                            tracing::error!("Failed to write audit log for IP change: {e}");
+                        }
+                    } else {
+                        tracing::info!(
+                            "Skipping recovery-frozen IP-change audit write for {server_id}"
+                        );
                     }
                 }
 
@@ -420,16 +427,20 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 let remote_changed = old_remote_addr.as_ref() != current_remote_addr.as_ref();
 
                 if ipv4_changed || ipv6_changed || remote_changed {
-                    if let Err(e) = AlertService::check_event_rules(
-                        &state.db,
-                        &state.config,
-                        &state.alert_state_manager,
-                        server_id,
-                        "ip_changed",
-                    )
-                    .await
-                    {
-                        tracing::error!("Failed to check event rules for IP change: {e}");
+                    if state.recovery_lock.writes_allowed_for(server_id) {
+                        if let Err(e) = AlertService::check_event_rules(
+                            &state.db,
+                            &state.config,
+                            &state.alert_state_manager,
+                            server_id,
+                            "ip_changed",
+                        )
+                        .await
+                        {
+                            tracing::error!("Failed to check event rules for IP change: {e}");
+                        }
+                    } else {
+                        tracing::info!("Skipping recovery-frozen alert evaluation for {server_id}");
                     }
 
                     state
@@ -446,27 +457,47 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 }
 
                 // Always update last_remote_addr
-                if let Some(ref addr) = current_remote_addr
-                    && let Err(e) = update_last_remote_addr(&state.db, server_id, addr).await
-                {
-                    tracing::error!("Failed to update last_remote_addr for {server_id}: {e}");
+                if let Some(ref addr) = current_remote_addr {
+                    if state.recovery_lock.writes_allowed_for(server_id) {
+                        if let Err(e) = update_last_remote_addr(&state.db, server_id, addr).await {
+                            tracing::error!(
+                                "Failed to update last_remote_addr for {server_id}: {e}"
+                            );
+                        }
+                    } else {
+                        tracing::info!(
+                            "Skipping recovery-frozen system-info write for {server_id}"
+                        );
+                    }
                 }
             }
 
-            if let Err(e) =
-                ServerService::update_system_info(&state.db, server_id, &info, region, country_code)
-                    .await
-            {
-                tracing::error!("Failed to update system info for {server_id}: {e}");
+            if state.recovery_lock.writes_allowed_for(server_id) {
+                if let Err(e) = ServerService::update_system_info(
+                    &state.db,
+                    server_id,
+                    &info,
+                    region,
+                    country_code,
+                )
+                .await
+                {
+                    tracing::error!("Failed to update system info for {server_id}: {e}");
+                }
+            } else {
+                tracing::info!("Skipping recovery-frozen system-info write for {server_id}");
             }
 
-            // Persist and cache features from SystemInfo
-            let _ = crate::service::server::ServerService::update_features(
-                &state.db,
-                server_id,
-                &info.features,
-            )
-            .await;
+            if state.recovery_lock.writes_allowed_for(server_id) {
+                let _ = crate::service::server::ServerService::update_features(
+                    &state.db,
+                    server_id,
+                    &info.features,
+                )
+                .await;
+            } else {
+                tracing::info!("Skipping recovery-frozen system-info write for {server_id}");
+            }
             state
                 .agent_manager
                 .update_features(server_id, info.features.clone());
@@ -535,10 +566,15 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         }
         AgentMessage::Report(report) => {
             // Save GPU records if present
-            if let Some(ref gpu) = report.gpu
-                && let Err(e) = RecordService::save_gpu_records(&state.db, server_id, gpu).await
-            {
-                tracing::error!("Failed to save GPU records for {server_id}: {e}");
+            if let Some(ref gpu) = report.gpu {
+                if state.recovery_lock.writes_allowed_for(server_id) {
+                    if let Err(e) = RecordService::save_gpu_records(&state.db, server_id, gpu).await
+                    {
+                        tracing::error!("Failed to save GPU records for {server_id}: {e}");
+                    }
+                } else {
+                    tracing::info!("Skipping recovery-frozen report write for {server_id}");
+                }
             }
             state.agent_manager.update_report(server_id, report);
         }
@@ -553,12 +589,20 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             );
             if !dispatched {
                 // No waiter — one-shot task, save directly
-                if let Err(e) = save_task_result(&state.db, server_id, &result).await {
-                    tracing::error!("Failed to save task result for {server_id}: {e}");
+                if state.recovery_lock.writes_allowed_for(server_id) {
+                    if let Err(e) = save_task_result(&state.db, server_id, &result).await {
+                        tracing::error!("Failed to save task result for {server_id}: {e}");
+                    }
+                } else {
+                    tracing::info!("Skipping recovery-frozen task-result write for {server_id}");
                 }
             }
-            if let Err(e) = audit_exec_finished(state, server_id, &result).await {
-                tracing::error!("Failed to write exec_finished audit log for {server_id}: {e}");
+            if state.recovery_lock.writes_allowed_for(server_id) {
+                if let Err(e) = audit_exec_finished(state, server_id, &result).await {
+                    tracing::error!("Failed to write exec_finished audit log for {server_id}: {e}");
+                }
+            } else {
+                tracing::info!("Skipping recovery-frozen exec audit write for {server_id}");
             }
             // Send Ack
             if let Some(tx) = state.agent_manager.get_sender(server_id) {
@@ -599,8 +643,12 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             }
         }
         AgentMessage::PingResult(result) => {
-            if let Err(e) = save_ping_result(&state.db, server_id, &result).await {
-                tracing::error!("Failed to save ping result for {server_id}: {e}");
+            if state.recovery_lock.writes_allowed_for(server_id) {
+                if let Err(e) = save_ping_result(&state.db, server_id, &result).await {
+                    tracing::error!("Failed to save ping result for {server_id}: {e}");
+                }
+            } else {
+                tracing::info!("Skipping recovery-frozen ping write for {server_id}");
             }
         }
         AgentMessage::TerminalOutput { session_id, data } => {
@@ -652,21 +700,27 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     },
                 );
                 if !dispatched {
-                    use crate::entity::task_result;
-                    use sea_orm::{ActiveModelTrait, NotSet, Set};
-                    let result = task_result::ActiveModel {
-                        id: NotSet,
-                        task_id: Set(task_id.clone()),
-                        server_id: Set(server_id.to_string()),
-                        output: Set(capability_denied_output(&capability, reason)),
-                        exit_code: Set(-2),
-                        run_id: Set(None),
-                        attempt: Set(1),
-                        started_at: Set(None),
-                        finished_at: Set(chrono::Utc::now()),
-                    };
-                    if let Err(e) = result.insert(&state.db).await {
-                        tracing::error!("Failed to write CapabilityDenied task result: {e}");
+                    if state.recovery_lock.writes_allowed_for(server_id) {
+                        use crate::entity::task_result;
+                        use sea_orm::{ActiveModelTrait, NotSet, Set};
+                        let result = task_result::ActiveModel {
+                            id: NotSet,
+                            task_id: Set(task_id.clone()),
+                            server_id: Set(server_id.to_string()),
+                            output: Set(capability_denied_output(&capability, reason)),
+                            exit_code: Set(-2),
+                            run_id: Set(None),
+                            attempt: Set(1),
+                            started_at: Set(None),
+                            finished_at: Set(chrono::Utc::now()),
+                        };
+                        if let Err(e) = result.insert(&state.db).await {
+                            tracing::error!("Failed to write CapabilityDenied task result: {e}");
+                        }
+                    } else {
+                        tracing::info!(
+                            "Skipping recovery-frozen capability-denied write for {server_id}"
+                        );
                     }
                 }
             }
@@ -688,8 +742,14 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 server_id: server_id.to_string(),
                 results: results.clone(),
             });
-            if let Err(e) = NetworkProbeService::save_results(&state.db, server_id, results).await {
-                tracing::error!("Failed to save network probe results for {server_id}: {e}");
+            if state.recovery_lock.writes_allowed_for(server_id) {
+                if let Err(e) =
+                    NetworkProbeService::save_results(&state.db, server_id, results).await
+                {
+                    tracing::error!("Failed to save network probe results for {server_id}: {e}");
+                }
+            } else {
+                tracing::info!("Skipping recovery-frozen network probe write for {server_id}");
             }
         }
         // File management control responses — relay to pending HTTP requests
@@ -845,6 +905,53 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         AgentMessage::Pong => {
             // Agent responded to our protocol-level Ping; already handled by WS Pong frames
         }
+        AgentMessage::RebindIdentityAck { job_id } => {
+            match RecoveryMergeService::handle_rebind_ack(state, &job_id, server_id).await {
+                Ok(change) => {
+                    if change.transitioned {
+                        tracing::info!(
+                            "Applied RebindIdentityAck from agent {server_id} for job_id={job_id}, stage={}",
+                            change.job.stage
+                        );
+                        crate::router::ws::browser::broadcast_recovery_update(state).await;
+                    } else {
+                        tracing::info!(
+                            "Ignoring stale RebindIdentityAck from agent {server_id} for job_id={job_id}, stage={}",
+                            change.job.stage
+                        );
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        "Failed to apply RebindIdentityAck from agent {server_id} for job_id={job_id}: {error}"
+                    );
+                }
+            }
+        }
+        AgentMessage::RebindIdentityFailed { job_id, error } => {
+            match RecoveryMergeService::handle_rebind_failure(state, &job_id, server_id, &error)
+                .await
+            {
+                Ok(change) => {
+                    if change.transitioned {
+                        tracing::warn!(
+                            "Recorded RebindIdentityFailed from agent {server_id} for job_id={job_id}: {error}"
+                        );
+                        crate::router::ws::browser::broadcast_recovery_update(state).await;
+                    } else {
+                        tracing::info!(
+                            "Ignoring stale RebindIdentityFailed from agent {server_id} for job_id={job_id}, stage={}",
+                            change.job.stage
+                        );
+                    }
+                }
+                Err(mark_error) => {
+                    tracing::warn!(
+                        "Failed to record RebindIdentityFailed from agent {server_id} for job_id={job_id}: {mark_error}"
+                    );
+                }
+            }
+        }
 
         // Docker variants
         AgentMessage::DockerInfo {
@@ -913,8 +1020,13 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             }
         }
         AgentMessage::DockerEvent { event } => {
-            let _ = crate::service::docker::DockerService::save_event(&state.db, server_id, &event)
-                .await;
+            if state.recovery_lock.writes_allowed_for(server_id) {
+                let _ =
+                    crate::service::docker::DockerService::save_event(&state.db, server_id, &event)
+                        .await;
+            } else {
+                tracing::info!("Skipping recovery-frozen docker event write for {server_id}");
+            }
             state
                 .agent_manager
                 .broadcast_browser(BrowserMessage::DockerEvent {
@@ -932,10 +1044,14 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             }
         }
         AgentMessage::FeaturesUpdate { ref features } => {
-            let _ = crate::service::server::ServerService::update_features(
-                &state.db, server_id, features,
-            )
-            .await;
+            if state.recovery_lock.writes_allowed_for(server_id) {
+                let _ = crate::service::server::ServerService::update_features(
+                    &state.db, server_id, features,
+                )
+                .await;
+            } else {
+                tracing::info!("Skipping recovery-frozen features write for {server_id}");
+            }
             state
                 .agent_manager
                 .update_features(server_id, features.clone());
@@ -967,10 +1083,17 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     let ipv6_changed = old_ipv6 != ipv6;
 
                     if ipv4_changed || ipv6_changed {
-                        // Update ipv4/ipv6 in DB
-                        if let Err(e) = update_server_ips(&state.db, server_id, &ipv4, &ipv6).await
-                        {
-                            tracing::error!("Failed to update IPs for {server_id}: {e}");
+                        if state.recovery_lock.writes_allowed_for(server_id) {
+                            // Update ipv4/ipv6 in DB
+                            if let Err(e) =
+                                update_server_ips(&state.db, server_id, &ipv4, &ipv6).await
+                            {
+                                tracing::error!("Failed to update IPs for {server_id}: {e}");
+                            }
+                        } else {
+                            tracing::info!(
+                                "Skipping recovery-frozen IP update write for {server_id}"
+                            );
                         }
 
                         // Re-run GeoIP lookup based on the new IPs
@@ -983,16 +1106,25 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                                 let guard = state.geoip.read().unwrap();
                                 guard.as_ref().map(|g| g.lookup(ip))
                             };
-                            if let Some(geo) = geo
-                                && let Err(e) = update_server_geo(
-                                    &state.db,
-                                    server_id,
-                                    geo.region,
-                                    geo.country_code,
-                                )
-                                .await
-                            {
-                                tracing::error!("Failed to update GeoIP for {server_id}: {e}");
+                            if let Some(geo) = geo {
+                                if state.recovery_lock.writes_allowed_for(server_id) {
+                                    if let Err(e) = update_server_geo(
+                                        &state.db,
+                                        server_id,
+                                        geo.region,
+                                        geo.country_code,
+                                    )
+                                    .await
+                                    {
+                                        tracing::error!(
+                                            "Failed to update GeoIP for {server_id}: {e}"
+                                        );
+                                    }
+                                } else {
+                                    tracing::info!(
+                                        "Skipping recovery-frozen GeoIP write for {server_id}"
+                                    );
+                                }
                             }
                         }
 
@@ -1007,28 +1139,40 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                             .get_remote_addr(server_id)
                             .map(|a| a.ip().to_string())
                             .unwrap_or_default();
-                        if let Err(e) = AuditService::log(
-                            &state.db,
-                            "system",
-                            "ip_changed",
-                            Some(&detail),
-                            &remote_ip,
-                        )
-                        .await
-                        {
-                            tracing::error!("Failed to write audit log for IP change: {e}");
+                        if state.recovery_lock.writes_allowed_for(server_id) {
+                            if let Err(e) = AuditService::log(
+                                &state.db,
+                                "system",
+                                "ip_changed",
+                                Some(&detail),
+                                &remote_ip,
+                            )
+                            .await
+                            {
+                                tracing::error!("Failed to write audit log for IP change: {e}");
+                            }
+                        } else {
+                            tracing::info!(
+                                "Skipping recovery-frozen IP-change audit write for {server_id}"
+                            );
                         }
 
-                        if let Err(e) = AlertService::check_event_rules(
-                            &state.db,
-                            &state.config,
-                            &state.alert_state_manager,
-                            server_id,
-                            "ip_changed",
-                        )
-                        .await
-                        {
-                            tracing::error!("Failed to check event rules for IP change: {e}");
+                        if state.recovery_lock.writes_allowed_for(server_id) {
+                            if let Err(e) = AlertService::check_event_rules(
+                                &state.db,
+                                &state.config,
+                                &state.alert_state_manager,
+                                server_id,
+                                "ip_changed",
+                            )
+                            .await
+                            {
+                                tracing::error!("Failed to check event rules for IP change: {e}");
+                            }
+                        } else {
+                            tracing::info!(
+                                "Skipping recovery-frozen alert evaluation for {server_id}"
+                            );
                         }
 
                         state
@@ -1272,11 +1416,64 @@ async fn update_server_geo(
 mod tests {
     use super::*;
     use crate::config::AppConfig;
+    use crate::entity::{recovery_job, server};
+    use crate::service::auth::AuthService;
     use crate::test_utils::setup_test_db;
+    use chrono::Utc;
+    use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+    use serverbee_common::constants::CAP_DEFAULT;
+    use serverbee_common::protocol::{BrowserMessage, RecoveryJobStage};
     use std::net::{IpAddr, Ipv4Addr};
+    use tokio::time::{Duration, timeout};
 
     fn test_addr() -> SocketAddr {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080)
+    }
+
+    async fn insert_server(db: &sea_orm::DatabaseConnection, id: &str, name: &str) {
+        let now = Utc::now();
+        let token_hash = AuthService::hash_password("test").unwrap();
+        server::ActiveModel {
+            id: Set(id.to_string()),
+            token_hash: Set(token_hash),
+            token_prefix: Set("serverbee_test".to_string()),
+            name: Set(name.to_string()),
+            weight: Set(0),
+            hidden: Set(false),
+            capabilities: Set(CAP_DEFAULT as i32),
+            protocol_version: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+    }
+
+    async fn insert_recovery_job(
+        db: &sea_orm::DatabaseConnection,
+        job_id: &str,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) {
+        let now = Utc::now();
+        recovery_job::ActiveModel {
+            job_id: Set(job_id.to_string()),
+            target_server_id: Set(target_server_id.to_string()),
+            source_server_id: Set(source_server_id.to_string()),
+            status: Set("running".to_string()),
+            stage: Set("rebinding".to_string()),
+            checkpoint_json: Set(None),
+            error: Set(None),
+            started_at: Set(now),
+            created_at: Set(now),
+            updated_at: Set(now),
+            last_heartbeat_at: Set(Some(now)),
+        }
+        .insert(db)
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
@@ -1341,5 +1538,200 @@ mod tests {
                 .agent_manager
                 .is_current_connection("s1", second_connection_id)
         );
+    }
+
+    #[tokio::test]
+    async fn rebind_identity_ack_advances_job_and_broadcasts_recovery_update() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "target-1", "Target").await;
+        insert_server(&db, "source-1", "Source").await;
+        insert_recovery_job(&db, "job-1", "target-1", "source-1").await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+        let mut browser_rx = state.browser_tx.subscribe();
+
+        handle_agent_message(
+            &state,
+            "source-1",
+            AgentMessage::RebindIdentityAck {
+                job_id: "job-1".to_string(),
+            },
+        )
+        .await;
+
+        let job = recovery_job::Entity::find_by_id("job-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.stage, "awaiting_target_online");
+
+        let msg = browser_rx.recv().await.unwrap();
+        match msg {
+            BrowserMessage::Update {
+                recoveries: Some(recoveries),
+                ..
+            } => {
+                assert_eq!(recoveries.len(), 1);
+                assert_eq!(recoveries[0].job_id, "job-1");
+                assert_eq!(recoveries[0].stage, RecoveryJobStage::AwaitingTargetOnline);
+            }
+            other => panic!("expected recovery update, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn rebind_identity_failed_marks_job_failed_and_broadcasts_recovery_snapshot() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "target-1", "Target").await;
+        insert_server(&db, "source-1", "Source").await;
+        insert_recovery_job(&db, "job-1", "target-1", "source-1").await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+        let mut browser_rx = state.browser_tx.subscribe();
+
+        handle_agent_message(
+            &state,
+            "source-1",
+            AgentMessage::RebindIdentityFailed {
+                job_id: "job-1".to_string(),
+                error: "agent failed".to_string(),
+            },
+        )
+        .await;
+
+        let job = recovery_job::Entity::find_by_id("job-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.status, "failed");
+        assert_eq!(job.stage, "rebinding");
+        assert_eq!(job.error.as_deref(), Some("agent failed"));
+
+        let msg = browser_rx.recv().await.unwrap();
+        match msg {
+            BrowserMessage::Update {
+                recoveries: Some(recoveries),
+                ..
+            } => {
+                assert_eq!(recoveries.len(), 1);
+                assert_eq!(recoveries[0].job_id, "job-1");
+                assert_eq!(
+                    recoveries[0].status,
+                    serverbee_common::protocol::RecoveryJobStatus::Failed
+                );
+                assert_eq!(recoveries[0].stage, RecoveryJobStage::Rebinding);
+                assert_eq!(recoveries[0].error.as_deref(), Some("agent failed"));
+            }
+            other => panic!("expected recovery update, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn stale_rebind_identity_ack_does_not_broadcast_recovery_update() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "target-1", "Target").await;
+        insert_server(&db, "source-1", "Source").await;
+        insert_recovery_job(&db, "job-1", "target-1", "source-1").await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+        let mut browser_rx = state.browser_tx.subscribe();
+
+        RecoveryMergeService::handle_rebind_ack(&state, "job-1", "source-1")
+            .await
+            .unwrap();
+
+        handle_agent_message(
+            &state,
+            "source-1",
+            AgentMessage::RebindIdentityAck {
+                job_id: "job-1".to_string(),
+            },
+        )
+        .await;
+
+        let job = recovery_job::Entity::find_by_id("job-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.stage, "awaiting_target_online");
+
+        assert!(timeout(Duration::from_millis(50), browser_rx.recv()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn wrong_source_rebind_identity_failure_does_not_broadcast_recovery_update() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "target-1", "Target").await;
+        insert_server(&db, "source-1", "Source").await;
+        insert_server(&db, "source-2", "Other Source").await;
+        insert_recovery_job(&db, "job-1", "target-1", "source-1").await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+        let mut browser_rx = state.browser_tx.subscribe();
+
+        handle_agent_message(
+            &state,
+            "source-2",
+            AgentMessage::RebindIdentityFailed {
+                job_id: "job-1".to_string(),
+                error: "wrong source".to_string(),
+            },
+        )
+        .await;
+
+        let job = recovery_job::Entity::find_by_id("job-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.status, "running");
+        assert_eq!(job.stage, "rebinding");
+        assert_eq!(job.error, None);
+
+        assert!(timeout(Duration::from_millis(50), browser_rx.recv()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn stale_rebind_identity_failure_does_not_broadcast_recovery_update() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "target-1", "Target").await;
+        insert_server(&db, "source-1", "Source").await;
+        insert_recovery_job(&db, "job-1", "target-1", "source-1").await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+        let mut browser_rx = state.browser_tx.subscribe();
+
+        RecoveryMergeService::handle_rebind_failure(&state, "job-1", "source-1", "first failure")
+            .await
+            .unwrap();
+
+        handle_agent_message(
+            &state,
+            "source-1",
+            AgentMessage::RebindIdentityFailed {
+                job_id: "job-1".to_string(),
+                error: "stale failure".to_string(),
+            },
+        )
+        .await;
+
+        let job = recovery_job::Entity::find_by_id("job-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.status, "failed");
+        assert_eq!(job.stage, "rebinding");
+        assert_eq!(job.error.as_deref(), Some("first failure"));
+
+        assert!(timeout(Duration::from_millis(50), browser_rx.recv()).await.is_err());
     }
 }

@@ -7,25 +7,29 @@ import { AgentVersionSection } from '@/components/server/agent-version-section'
 import { CapabilitiesDialog } from '@/components/server/capabilities-dialog'
 import { DiskIoChart } from '@/components/server/disk-io-chart'
 import { MetricsChart } from '@/components/server/metrics-chart'
+import { RecoveryMergeDialog } from '@/components/server/recovery-merge-dialog'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
 import { TrafficCard } from '@/components/server/traffic-card'
 import { TrafficProgress } from '@/components/server/traffic-progress'
 import { TrafficTab } from '@/components/server/traffic-tab'
 import { UpgradeJobBadge } from '@/components/server/upgrade-job-badge'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { UptimeTimeline } from '@/components/uptime/uptime-timeline'
 import { useServer, useServerRecords, useUptimeDaily } from '@/hooks/use-api'
+import { useAuth } from '@/hooks/use-auth'
 import { useRealtimeMetrics } from '@/hooks/use-realtime-metrics'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
-import type { ServerResponse } from '@/lib/api-schema'
+import type { RecoveryJobResponse, ServerResponse } from '@/lib/api-schema'
 import { CAP_DOCKER, CAP_FILE, CAP_TERMINAL, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
 import { buildMergedDiskIoSeries, buildPerDiskIoSeries } from '@/lib/disk-io'
 import { cn, countryCodeToFlag, formatBytes } from '@/lib/utils'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
+import { useRecoveryJobsStore } from '@/stores/recovery-jobs-store'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 
 export const Route = createFileRoute('/_authed/servers/$id')({
@@ -75,6 +79,17 @@ function formatCurrency(price: number, currency: string): string {
   }
 }
 
+function translateRecoveryStage(
+  t: (key: string, options?: { defaultValue?: string }) => string,
+  stage: string | undefined
+): string | null {
+  if (!stage) {
+    return null
+  }
+
+  return t(`recovery_stage_${stage}`, { defaultValue: stage })
+}
+
 function ServerInfoMeta({ server }: { server: ServerResponse }) {
   const { t } = useTranslation('servers')
   return (
@@ -122,19 +137,27 @@ function ServerInfoMeta({ server }: { server: ServerResponse }) {
 }
 
 function ServerActionButtons({
+  currentRecoveryJob,
   dockerEnabled,
   fileEnabled,
   id,
+  isAdmin,
   isOnline,
+  recoveryHydrated,
   onEditOpen,
+  onRecoveryOpen,
   serverWithCaps,
   terminalEnabled
 }: {
+  currentRecoveryJob?: RecoveryJobResponse
   dockerEnabled: boolean
   fileEnabled: boolean
   id: string
+  isAdmin: boolean
   isOnline: boolean
+  recoveryHydrated: boolean
   onEditOpen: () => void
+  onRecoveryOpen: () => void
   serverWithCaps: ServerResponse & ServerWithCaps
   terminalEnabled: boolean
 }) {
@@ -146,6 +169,13 @@ function ServerActionButtons({
         {t('detail_edit')}
       </Button>
       <CapabilitiesDialog server={serverWithCaps} />
+      {isAdmin && !isOnline && (
+        <Button disabled={!recoveryHydrated} onClick={onRecoveryOpen} size="sm" variant="outline">
+          {currentRecoveryJob
+            ? t('recovery_merge_resume', { defaultValue: 'View Recovery' })
+            : t('recovery_merge_open', { defaultValue: 'Recover Agent' })}
+        </Button>
+      )}
       {isOnline && terminalEnabled && (
         <Link params={{ serverId: id }} to="/terminal/$serverId">
           <Button size="sm" variant="outline">
@@ -361,6 +391,8 @@ export function ServerDetailPage() {
   const { id } = Route.useParams()
   const { range: rangeParam } = Route.useSearch()
   const [editOpen, setEditOpen] = useState(false)
+  const [recoveryOpen, setRecoveryOpen] = useState(false)
+  const { user } = useAuth()
   const { data: latestAgentVersion } = useQuery<{ version?: string | null }>({
     queryKey: ['agent', 'latest-version'],
     queryFn: () => api.get<{ version?: string | null }>('/api/agent/latest-version'),
@@ -399,6 +431,10 @@ export function ServerDetailPage() {
   })
   const liveData = liveServers?.find((s) => s.id === id)
   const upgradeJob = useUpgradeJobsStore((state) => state.jobs.get(id))
+  const recoveryHydrated = useRecoveryJobsStore((state) => state.hydrated)
+  const recoveryJob = useRecoveryJobsStore((state) => state.jobs.get(id))
+  const isAdmin = user?.role === 'admin'
+  const translatedRecoveryStage = translateRecoveryStage(t, recoveryJob?.stage)
 
   const chartData: Record<string, unknown>[] = useMemo(() => {
     if (isRealtime) {
@@ -566,6 +602,9 @@ export function ServerDetailPage() {
               <h1 className="font-bold text-2xl">{server.name}</h1>
               <StatusBadge online={isOnline} />
               <UpgradeJobBadge job={upgradeJob} />
+              {recoveryHydrated && translatedRecoveryStage && (
+                <Badge variant="secondary">{translatedRecoveryStage}</Badge>
+              )}
             </div>
             <ServerInfoMeta server={server} />
           </div>
@@ -580,11 +619,15 @@ export function ServerDetailPage() {
           </div>
           <div className="sm:col-start-2 sm:row-start-1 sm:justify-self-end">
             <ServerActionButtons
+              currentRecoveryJob={recoveryJob}
               dockerEnabled={dockerEnabled}
               fileEnabled={fileEnabled}
               id={id}
+              isAdmin={isAdmin}
               isOnline={isOnline}
               onEditOpen={() => setEditOpen(true)}
+              onRecoveryOpen={() => setRecoveryOpen(true)}
+              recoveryHydrated={recoveryHydrated}
               serverWithCaps={serverWithCaps}
               terminalEnabled={terminalEnabled}
             />
@@ -647,6 +690,12 @@ export function ServerDetailPage() {
       </Tabs>
 
       <ServerEditDialog onClose={() => setEditOpen(false)} open={editOpen} server={server} />
+      <RecoveryMergeDialog
+        currentJob={recoveryJob}
+        onOpenChange={setRecoveryOpen}
+        open={recoveryOpen}
+        targetServerId={id}
+      />
     </div>
   )
 }

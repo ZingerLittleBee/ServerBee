@@ -140,13 +140,83 @@ impl AgentConfig {
         Ok(config)
     }
 
-    pub fn config_path() -> &'static str {
-        if std::path::Path::new("/etc/serverbee/agent.toml").exists() {
+    pub fn config_path_for_persistence() -> &'static str {
+        Self::select_config_path_for_persistence(
+            std::path::Path::new("agent.toml").exists(),
+            std::path::Path::new("/etc/serverbee/agent.toml").exists(),
+        )
+    }
+
+    pub(crate) fn select_config_path_for_persistence(
+        local_exists: bool,
+        system_exists: bool,
+    ) -> &'static str {
+        if local_exists {
+            "agent.toml"
+        } else if system_exists {
             "/etc/serverbee/agent.toml"
         } else {
             "agent.toml"
         }
     }
+
+    pub(crate) fn token_env_override_present() -> bool {
+        std::env::var_os("SERVERBEE_TOKEN").is_some()
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn with_serverbee_token_env<T>(value: Option<&str>, test: impl FnOnce() -> T) -> T {
+    use std::sync::{Mutex, OnceLock};
+
+    struct ServerbeeTokenEnvGuard {
+        original: Option<std::ffi::OsString>,
+    }
+
+    impl Drop for ServerbeeTokenEnvGuard {
+        fn drop(&mut self) {
+            match self.original.take() {
+                Some(value) => unsafe {
+                    std::env::set_var("SERVERBEE_TOKEN", value);
+                },
+                None => unsafe {
+                    std::env::remove_var("SERVERBEE_TOKEN");
+                },
+            }
+        }
+    }
+
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let _lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().expect("env lock");
+    let original = std::env::var_os("SERVERBEE_TOKEN");
+
+    match value {
+        Some(value) => unsafe {
+            std::env::set_var("SERVERBEE_TOKEN", value);
+        },
+        None => unsafe {
+            std::env::remove_var("SERVERBEE_TOKEN");
+        },
+    }
+
+    let _guard = ServerbeeTokenEnvGuard { original };
+    test()
+}
+
+#[cfg(test)]
+pub(crate) fn assert_config_path() {
+    assert_eq!(
+        AgentConfig::select_config_path_for_persistence(true, true),
+        "agent.toml"
+    );
+    assert_eq!(
+        AgentConfig::select_config_path_for_persistence(false, true),
+        "/etc/serverbee/agent.toml"
+    );
+    assert_eq!(
+        AgentConfig::select_config_path_for_persistence(false, false),
+        "agent.toml"
+    );
 }
 
 #[cfg(test)]
@@ -172,5 +242,12 @@ mod tests {
             config.external_ip_url, "https://api.ipify.org",
             "default external IP URL should be api.ipify.org"
         );
+    }
+
+    #[test]
+    fn token_env_override_present_detects_serverbee_token() {
+        super::with_serverbee_token_env(Some("env-token"), || {
+            assert!(AgentConfig::token_env_override_present());
+        });
     }
 }
