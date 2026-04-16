@@ -12,7 +12,11 @@ fn render_token_content(existing: &str, token: &str) -> String {
     if let Some(pos) = lines.iter().position(|line| is_token_line(line)) {
         lines[pos] = token_line;
     } else {
-        lines.push(token_line);
+        let insert_pos = lines
+            .iter()
+            .position(|line| is_table_header(line))
+            .unwrap_or(lines.len());
+        lines.insert(insert_pos, token_line);
     }
 
     lines.join("\n")
@@ -25,6 +29,11 @@ fn is_token_line(line: &str) -> bool {
     };
 
     rest.trim_start().starts_with('=')
+}
+
+fn is_table_header(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with('[') && trimmed.ends_with(']')
 }
 
 pub(crate) fn persist_rebind_token_impl(path: impl AsRef<Path>, token: &str) -> anyhow::Result<()> {
@@ -183,6 +192,34 @@ log.level = "debug""#
             content,
             r#"server_url = "http://127.0.0.1:9527"
 token = "fresh-token""#
+        );
+    }
+
+    #[test]
+    fn persist_rebind_token_inserts_before_first_table_header() {
+        let tempdir = TempDir::new().expect("tempdir");
+        let path = tempdir.path().join("agent.toml");
+        fs::write(
+            &path,
+            r#"server_url = "http://127.0.0.1:9527"
+[collector]
+interval = 3
+[log]
+level = "info""#,
+        )
+        .expect("seed file");
+
+        super::persist_rebind_token_impl(&path, "fresh-token").expect("persist");
+
+        let content = fs::read_to_string(&path).expect("read file");
+        assert_eq!(
+            content,
+            r#"server_url = "http://127.0.0.1:9527"
+token = "fresh-token"
+[collector]
+interval = 3
+[log]
+level = "info""#
         );
     }
 }
