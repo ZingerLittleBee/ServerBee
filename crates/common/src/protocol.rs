@@ -456,8 +456,8 @@ pub enum BrowserMessage {
     },
     Update {
         servers: Vec<crate::types::ServerStatus>,
-        #[serde(default)]
-        recoveries: Vec<RecoveryJobDto>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        recoveries: Option<Vec<RecoveryJobDto>>,
     },
     ServerOnline {
         server_id: String,
@@ -1560,44 +1560,22 @@ mod tests {
     }
 
     #[test]
-    fn test_browser_update_round_trip_with_recoveries() {
+    fn test_browser_update_omits_recoveries_when_none() {
         let msg = BrowserMessage::Update {
             servers: vec![],
-            recoveries: vec![RecoveryJobDto {
-                job_id: "recovery-2".to_string(),
-                target_server_id: "target-2".to_string(),
-                source_server_id: "source-2".to_string(),
-                status: RecoveryJobStatus::Succeeded,
-                stage: RecoveryJobStage::Succeeded,
-                error: None,
-                started_at: chrono::DateTime::parse_from_rfc3339("2026-04-16T02:00:00Z")
-                    .unwrap()
-                    .with_timezone(&chrono::Utc),
-                created_at: chrono::DateTime::parse_from_rfc3339("2026-04-16T01:59:00Z")
-                    .unwrap()
-                    .with_timezone(&chrono::Utc),
-                updated_at: chrono::DateTime::parse_from_rfc3339("2026-04-16T02:10:00Z")
-                    .unwrap()
-                    .with_timezone(&chrono::Utc),
-                last_heartbeat_at: None,
-            }],
+            recoveries: None,
         };
 
         let json = serde_json::to_string(&msg).unwrap();
-        let parsed: BrowserMessage = serde_json::from_str(&json).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["type"], "update");
+        assert_eq!(value["servers"], serde_json::json!([]));
+        assert!(value.get("recoveries").is_none());
 
-        match parsed {
-            BrowserMessage::Update {
-                servers,
-                recoveries,
-            } => {
+        match serde_json::from_str::<BrowserMessage>(&json).unwrap() {
+            BrowserMessage::Update { servers, recoveries } => {
                 assert!(servers.is_empty());
-                assert_eq!(recoveries.len(), 1);
-                assert_eq!(recoveries[0].job_id, "recovery-2");
-                assert_eq!(recoveries[0].status, RecoveryJobStatus::Succeeded);
-                assert_eq!(recoveries[0].stage, RecoveryJobStage::Succeeded);
-                assert!(recoveries[0].error.is_none());
-                assert!(recoveries[0].last_heartbeat_at.is_none());
+                assert!(recoveries.is_none());
             }
             _ => panic!("Expected Update"),
         }
