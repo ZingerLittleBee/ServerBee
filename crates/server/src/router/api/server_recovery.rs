@@ -8,6 +8,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
+use serverbee_common::protocol::ServerMessage;
 
 use crate::entity::{recovery_job, server};
 use crate::error::{ApiResponse, AppError, ok};
@@ -226,6 +227,23 @@ async fn start_recovery_merge(
     Json(request): Json<StartRecoveryRequest>,
 ) -> Result<Json<ApiResponse<RecoveryJobResponse>>, AppError> {
     let job = RecoveryMergeService::start(&state, &target_id, &request.source_server_id).await?;
+    let token = RecoveryMergeService::rotate_target_token(&state, &target_id).await?;
+    let sender = state
+        .agent_manager
+        .get_sender(&request.source_server_id)
+        .ok_or_else(|| {
+            AppError::Conflict("Source server must be online before starting recovery".to_string())
+        })?;
+    sender
+        .send(ServerMessage::RebindIdentity {
+            job_id: job.job_id.clone(),
+            target_server_id: target_id.clone(),
+            token,
+        })
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!("Failed to dispatch RebindIdentity to source agent: {error}"))
+        })?;
     broadcast_recovery_update(&state).await;
     ok(job.into())
 }
@@ -395,11 +413,13 @@ mod tests {
     use axum::Json;
     use axum::extract::{Path, State};
     use chrono::Utc;
-    use sea_orm::{ActiveModelTrait, Set};
+    use sea_orm::{ActiveModelTrait, EntityTrait, Set};
     use serverbee_common::constants::CAP_DEFAULT;
+    use serverbee_common::protocol::ServerMessage;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::sync::Arc;
     use tokio::sync::mpsc;
+    use tokio::time::{Duration, timeout};
 
     async fn insert_server(db: &sea_orm::DatabaseConnection, id: &str, name: &str) {
         let now = Utc::now();
@@ -455,7 +475,7 @@ mod tests {
         insert_server(&db, "source-1", "Source").await;
         let state = AppState::new(db, AppConfig::default()).await.unwrap();
 
-        let (tx, _) = mpsc::channel(1);
+        let (tx, mut rx) = mpsc::channel(1);
         state
             .agent_manager
             .add_connection("source-1".into(), "Source".into(), tx, test_addr());
@@ -471,5 +491,63 @@ mod tests {
         .unwrap();
 
         assert_eq!(response.data.stage, RecoveryJobStage::Rebinding);
+        let _message = timeout(Duration::from_secs(1), rx.recv())
+            .await
+            .expect("rebind command should be sent in time")
+            .expect("rebind command channel should stay open");
+    }
+
+    #[tokio::test]
+    async fn start_recovery_merge_sends_rebind_identity_command() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "target-1", "Target").await;
+        insert_server(&db, "source-1", "Source").await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+
+        let (tx, mut rx) = mpsc::channel(1);
+        state
+            .agent_manager
+            .add_connection("source-1".into(), "Source".into(), tx, test_addr());
+
+        let Json(response) = start_recovery_merge(
+            State(Arc::clone(&state)),
+            Path("target-1".to_string()),
+            Json(StartRecoveryRequest {
+                source_server_id: "source-1".to_string(),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let message = timeout(Duration::from_secs(1), rx.recv())
+            .await
+            .expect("rebind command should be sent in time")
+            .expect("rebind command channel should stay open");
+        let token = match message {
+            ServerMessage::RebindIdentity {
+                job_id,
+                target_server_id,
+                token,
+            } => {
+                assert_eq!(job_id, response.data.job_id);
+                assert_eq!(target_server_id, "target-1");
+                token
+            }
+            other => panic!("expected rebind command, got {other:?}"),
+        };
+
+        let target = server::Entity::find_by_id("target-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(target.token_prefix, token[..8.min(token.len())]);
+        let validated = AuthService::validate_agent_token(&db, &token)
+            .await
+            .unwrap()
+            .expect("target token should validate");
+        assert_eq!(validated.id, "target-1");
     }
 }
