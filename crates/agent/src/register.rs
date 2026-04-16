@@ -42,20 +42,5 @@ pub async fn register_agent(config: &AgentConfig, fingerprint: &str) -> Result<(
 }
 
 pub fn save_token(token: &str) -> Result<()> {
-    let path = AgentConfig::config_path();
-    let content = if std::path::Path::new(path).exists() {
-        std::fs::read_to_string(path)?
-    } else {
-        String::new()
-    };
-
-    let mut lines: Vec<String> = content.lines().map(String::from).collect();
-    let token_line = format!("token = \"{token}\"");
-    if let Some(pos) = lines.iter().position(|l| l.starts_with("token")) {
-        lines[pos] = token_line;
-    } else {
-        lines.push(token_line);
-    }
-    std::fs::write(path, lines.join("\n"))?;
-    Ok(())
+    crate::rebind::persist_rebind_token(AgentConfig::config_path_for_persistence(), token)
 }

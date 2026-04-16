@@ -75,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("No token found, registering...");
         let (_server_id, token) = register::register_agent(&config, &machine_fingerprint).await?;
         tracing::info!("Registration successful");
-        if let Err(e) = rebind::persist_rebind_token(AgentConfig::config_path(), &token) {
+        if let Err(e) = register::save_token(&token) {
             tracing::warn!("Failed to save token: {e}");
         }
         config.token = token;
@@ -104,6 +104,23 @@ fn persist_rebind_token() {
         content,
         r#"server_url = "http://127.0.0.1:9527"
 token = "focused-token""#
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn config_path() {
+    assert_eq!(
+        crate::config::AgentConfig::select_config_path_for_persistence(true, true),
+        "agent.toml"
+    );
+    assert_eq!(
+        crate::config::AgentConfig::select_config_path_for_persistence(false, true),
+        "/etc/serverbee/agent.toml"
+    );
+    assert_eq!(
+        crate::config::AgentConfig::select_config_path_for_persistence(false, false),
+        "agent.toml"
     );
 }
 

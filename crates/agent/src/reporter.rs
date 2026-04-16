@@ -21,7 +21,6 @@ use crate::config::AgentConfig;
 use crate::docker::DockerManager;
 use crate::file_manager::{FileEvent, FileManager};
 use crate::network_prober::NetworkProber;
-use crate::rebind;
 use crate::pinger::PingManager;
 use crate::register;
 use crate::terminal::{TerminalEvent, TerminalManager};
@@ -548,9 +547,7 @@ impl Reporter {
                     "Rebinding identity for job_id={job_id} to target_server_id={target_server_id}"
                 );
 
-                if let Err(write_err) =
-                    rebind::persist_rebind_token(AgentConfig::config_path(), &token)
-                {
+                if let Err(write_err) = register::save_token(&token) {
                     tracing::warn!(
                         "Failed to persist rebind token for job_id={job_id}: {write_err}"
                     );

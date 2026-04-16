@@ -140,8 +140,20 @@ impl AgentConfig {
         Ok(config)
     }
 
-    pub fn config_path() -> &'static str {
-        if std::path::Path::new("/etc/serverbee/agent.toml").exists() {
+    pub fn config_path_for_persistence() -> &'static str {
+        Self::select_config_path_for_persistence(
+            std::path::Path::new("agent.toml").exists(),
+            std::path::Path::new("/etc/serverbee/agent.toml").exists(),
+        )
+    }
+
+    pub(crate) fn select_config_path_for_persistence(
+        local_exists: bool,
+        system_exists: bool,
+    ) -> &'static str {
+        if local_exists {
+            "agent.toml"
+        } else if system_exists {
             "/etc/serverbee/agent.toml"
         } else {
             "agent.toml"
