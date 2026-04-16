@@ -36,10 +36,9 @@ describe('useRecoveryJobsStore', () => {
     useRecoveryJobsStore.setState({ jobs: new Map() })
     useRecoveryJobsStore.getState().setJob('old-target', makeJob({ target_server_id: 'old-target' }))
 
-    useRecoveryJobsStore.getState().setJobs([
-      makeJob(),
-      makeJob({ job_id: 'job-2', target_server_id: 'target-2', source_server_id: 'source-2' })
-    ])
+    useRecoveryJobsStore
+      .getState()
+      .setJobs([makeJob(), makeJob({ job_id: 'job-2', target_server_id: 'target-2', source_server_id: 'source-2' })])
 
     expect(useRecoveryJobsStore.getState().getJob('old-target')).toBeUndefined()
     expect(useRecoveryJobsStore.getState().getJob('target-2')?.job_id).toBe('job-2')
