@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::entity::{recovery_job, server};
 use crate::error::{ApiResponse, AppError, ok};
+use crate::router::ws::browser::broadcast_recovery_update;
 use crate::service::recovery_job::RecoveryJobService;
+use crate::service::recovery_merge::RecoveryMergeService;
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
@@ -19,6 +21,7 @@ use crate::state::AppState;
 pub enum RecoveryJobStatus {
     Running,
     Failed,
+    Succeeded,
     Unknown,
 }
 
@@ -26,8 +29,13 @@ pub enum RecoveryJobStatus {
 #[serde(rename_all = "snake_case")]
 pub enum RecoveryJobStage {
     Validating,
+    Rebinding,
+    AwaitingTargetOnline,
+    FreezingWrites,
     MergingHistory,
     Finalizing,
+    Succeeded,
+    Failed,
     Unknown,
 }
 
@@ -125,9 +133,10 @@ async fn list_candidates(
         .all(&state.db)
         .await?;
 
-    if running_jobs.iter().any(|job| {
-        job.target_server_id == target.id || job.source_server_id == target.id
-    }) {
+    if running_jobs
+        .iter()
+        .any(|job| job.target_server_id == target.id || job.source_server_id == target.id)
+    {
         return Err(AppError::Conflict(
             "Target server is already participating in a running recovery job".to_string(),
         ));
@@ -216,34 +225,8 @@ async fn start_recovery_merge(
     Path(target_id): Path<String>,
     Json(request): Json<StartRecoveryRequest>,
 ) -> Result<Json<ApiResponse<RecoveryJobResponse>>, AppError> {
-    if request.source_server_id == target_id {
-        return Err(AppError::Validation(
-            "source_server_id must be different from target_id".to_string(),
-        ));
-    }
-
-    let target = server::Entity::find_by_id(&target_id)
-        .one(&state.db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Server not found".to_string()))?;
-    let source = server::Entity::find_by_id(&request.source_server_id)
-        .one(&state.db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Server not found".to_string()))?;
-
-    if state.agent_manager.is_online(&target.id) {
-        return Err(AppError::Conflict(
-            "Target server must be offline before starting recovery".to_string(),
-        ));
-    }
-
-    if !state.agent_manager.is_online(&source.id) {
-        return Err(AppError::Conflict(
-            "Source server must be online before starting recovery".to_string(),
-        ));
-    }
-
-    let job = RecoveryJobService::create_job(&state.db, &target.id, &source.id).await?;
+    let job = RecoveryMergeService::start(&state, &target_id, &request.source_server_id).await?;
+    broadcast_recovery_update(&state).await;
     ok(job.into())
 }
 
@@ -376,6 +359,7 @@ impl From<&str> for RecoveryJobStatus {
         match value {
             "running" => Self::Running,
             "failed" => Self::Failed,
+            "succeeded" => Self::Succeeded,
             _ => Self::Unknown,
         }
     }
@@ -385,8 +369,13 @@ impl From<&str> for RecoveryJobStage {
     fn from(value: &str) -> Self {
         match value {
             "validating" => Self::Validating,
+            "rebinding" => Self::Rebinding,
+            "awaiting_target_online" => Self::AwaitingTargetOnline,
+            "freezing_writes" => Self::FreezingWrites,
             "merging_history" => Self::MergingHistory,
             "finalizing" => Self::Finalizing,
+            "succeeded" => Self::Succeeded,
+            "failed" => Self::Failed,
             _ => Self::Unknown,
         }
     }
@@ -394,7 +383,48 @@ impl From<&str> for RecoveryJobStage {
 
 #[cfg(test)]
 mod tests {
-    use super::{CandidateScoreInput, score_candidate};
+    use super::{
+        CandidateScoreInput, RecoveryJobStage, StartRecoveryRequest, score_candidate,
+        start_recovery_merge,
+    };
+    use crate::config::AppConfig;
+    use crate::entity::server;
+    use crate::service::auth::AuthService;
+    use crate::state::AppState;
+    use crate::test_utils::setup_test_db;
+    use axum::Json;
+    use axum::extract::{Path, State};
+    use chrono::Utc;
+    use sea_orm::{ActiveModelTrait, Set};
+    use serverbee_common::constants::CAP_DEFAULT;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::sync::Arc;
+    use tokio::sync::mpsc;
+
+    async fn insert_server(db: &sea_orm::DatabaseConnection, id: &str, name: &str) {
+        let now = Utc::now();
+        let token_hash = AuthService::hash_password("test").unwrap();
+        server::ActiveModel {
+            id: Set(id.to_string()),
+            token_hash: Set(token_hash),
+            token_prefix: Set("serverbee_test".to_string()),
+            name: Set(name.to_string()),
+            weight: Set(0),
+            hidden: Set(false),
+            capabilities: Set(CAP_DEFAULT as i32),
+            protocol_version: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+    }
+
+    fn test_addr() -> SocketAddr {
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9527)
+    }
 
     #[test]
     fn higher_score_when_ip_arch_and_created_at_match() {
@@ -416,5 +446,30 @@ mod tests {
         });
 
         assert!(strong > weak);
+    }
+
+    #[tokio::test]
+    async fn start_recovery_merge_returns_rebinding_stage() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "target-1", "Target").await;
+        insert_server(&db, "source-1", "Source").await;
+        let state = AppState::new(db, AppConfig::default()).await.unwrap();
+
+        let (tx, _) = mpsc::channel(1);
+        state
+            .agent_manager
+            .add_connection("source-1".into(), "Source".into(), tx, test_addr());
+
+        let Json(response) = start_recovery_merge(
+            State(Arc::clone(&state)),
+            Path("target-1".to_string()),
+            Json(StartRecoveryRequest {
+                source_server_id: "source-1".to_string(),
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(response.data.stage, RecoveryJobStage::Rebinding);
     }
 }
