@@ -302,7 +302,12 @@ async fn handle_agent_ws(
         .agent_manager
         .remove_connection_if_current(&server_id, connection_id)
     {
-        crate::service::agent_manager::cleanup_disconnected_docker_state(&state, &server_id).await;
+        if state.recovery_lock.writes_allowed_for(&server_id) {
+            crate::service::agent_manager::cleanup_disconnected_docker_state(&state, &server_id)
+                .await;
+        } else {
+            tracing::info!("Skipping recovery-frozen docker disconnect write for {server_id}");
+        }
     }
     write_task.abort();
     tracing::info!("Agent {server_id} disconnected");
