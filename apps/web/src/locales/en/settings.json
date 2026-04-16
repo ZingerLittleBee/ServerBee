@@ -63,7 +63,6 @@
   "notifications.bark_server": "Server URL",
   "notifications.bark_device_key": "Device Key",
   "notifications.from_address": "From Address",
-  "notifications.to_address": "To Address",
   "notifications.email_help_text": "Email delivery uses Resend. Set SERVERBEE_RESEND__API_KEY on the server and verify your sender domain at resend.com/domains before sending.",
   "notifications.add_recipient": "Add",
   "notifications.recipient_placeholder": "someone@example.com",
