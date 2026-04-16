@@ -241,11 +241,11 @@ async fn start_recovery_merge_with_sender(
     source_server_id: &str,
     sender: Option<mpsc::Sender<ServerMessage>>,
 ) -> Result<recovery_job::Model, AppError> {
+    RecoveryMergeService::validate_start_request(state, target_id, source_server_id).await?;
+
     let sender = sender.ok_or_else(|| {
         AppError::Conflict("Source server must be online before starting recovery".to_string())
     })?;
-
-    RecoveryMergeService::validate_start_request(state, target_id, source_server_id).await?;
 
     let txn = state.db.begin().await?;
     let job = RecoveryMergeService::start_on_txn(&txn, target_id, source_server_id).await?;

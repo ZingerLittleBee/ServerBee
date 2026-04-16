@@ -4036,7 +4036,7 @@ async fn test_recovery_job_get_requires_admin_and_start_creates_job() {
         .expect("job_id missing")
         .to_string();
     assert_eq!(start_body["data"]["status"], "running");
-    assert_eq!(start_body["data"]["stage"], "validating");
+    assert_eq!(start_body["data"]["stage"], "rebinding");
 
     let plain_client = reqwest::Client::new();
     let unauth_resp = plain_client
@@ -4066,5 +4066,5 @@ async fn test_recovery_job_get_requires_admin_and_start_creates_job() {
     assert_eq!(get_body["data"]["source_server_id"], source_id);
     assert!(get_body["data"].get("checkpoint_json").is_none());
     assert_eq!(get_body["data"]["status"], "running");
-    assert_eq!(get_body["data"]["stage"], "validating");
+    assert_eq!(get_body["data"]["stage"], "rebinding");
 }
