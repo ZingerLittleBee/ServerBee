@@ -96,6 +96,7 @@ pub fn write_router() -> Router<Arc<AppState>> {
         (status = 401, description = "Authentication required", body = crate::error::ErrorBody),
         (status = 403, description = "Admin required", body = crate::error::ErrorBody),
         (status = 404, description = "Target server not found", body = crate::error::ErrorBody),
+        (status = 409, description = "Target must be offline and not already in a running recovery job", body = crate::error::ErrorBody),
     ),
     security(
         ("session_cookie" = []),
@@ -113,10 +114,24 @@ async fn list_candidates(
         .await?
         .ok_or_else(|| AppError::NotFound("Server not found".to_string()))?;
 
+    if state.agent_manager.is_online(&target.id) {
+        return Err(AppError::Conflict(
+            "Target server must be offline before listing recovery candidates".to_string(),
+        ));
+    }
+
     let running_jobs = recovery_job::Entity::find()
         .filter(recovery_job::Column::Status.eq("running"))
         .all(&state.db)
         .await?;
+
+    if running_jobs.iter().any(|job| {
+        job.target_server_id == target.id || job.source_server_id == target.id
+    }) {
+        return Err(AppError::Conflict(
+            "Target server is already participating in a running recovery job".to_string(),
+        ));
+    }
 
     let active_server_ids: HashSet<String> = running_jobs
         .into_iter()
