@@ -303,13 +303,13 @@ impl NotificationService {
         n: &notification::Model,
         ctx: &NotifyContext,
     ) -> Result<(), AppError> {
-        let config = Self::parse_config(&n.notify_type, &n.config_json)?;
+        let channel_config = Self::parse_config(&n.notify_type, &n.config_json)?;
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
             .build()
             .map_err(|e| AppError::Internal(format!("HTTP client error: {e}")))?;
 
-        match config {
+        match channel_config {
             ChannelConfig::Webhook {
                 url,
                 method,
