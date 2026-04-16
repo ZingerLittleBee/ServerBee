@@ -12,6 +12,11 @@ fn is_unique_violation(err: &DbErr) -> bool {
     message.contains("UNIQUE constraint failed") || message.contains("UNIQUE")
 }
 
+fn is_active_recovery_conflict(err: &DbErr) -> bool {
+    let message = err.to_string();
+    is_unique_violation(err) || message.contains("recovery_job_active_conflict")
+}
+
 impl RecoveryJobService {
     pub async fn create_job(
         db: &DatabaseConnection,
@@ -35,9 +40,11 @@ impl RecoveryJobService {
 
         match active.insert(db).await {
             Ok(model) => Ok(model),
-            Err(err) if is_unique_violation(&err) => Err(AppError::Conflict(
-                "A running recovery job already exists for this target or source".to_string(),
-            )),
+            Err(err) if is_active_recovery_conflict(&err) => {
+                Err(AppError::Conflict(
+                    "A running recovery job already exists for this target or source".to_string(),
+                ))
+            }
             Err(err) => Err(err.into()),
         }
     }
@@ -283,6 +290,29 @@ mod tests {
                 assert!(message.contains("running recovery job"));
             }
             other => panic!("expected conflict for duplicate source, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn create_job_rejects_cross_role_active_collisions() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let _first = RecoveryJobService::create_job(&db, "target-a", "source-b")
+            .await
+            .unwrap();
+
+        match RecoveryJobService::create_job(&db, "target-c", "target-a").await {
+            Err(AppError::Conflict(message)) => {
+                assert!(message.contains("running recovery job"));
+            }
+            other => panic!("expected conflict for target/source crossover, got {other:?}"),
+        }
+
+        match RecoveryJobService::create_job(&db, "source-b", "target-c").await {
+            Err(AppError::Conflict(message)) => {
+                assert!(message.contains("running recovery job"));
+            }
+            other => panic!("expected conflict for source/target crossover, got {other:?}"),
         }
     }
 }
