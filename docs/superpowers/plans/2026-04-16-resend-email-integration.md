@@ -711,6 +711,25 @@ Expected: no matches.
 
 - [ ] **Step 2: Replace the placeholder Email branch**
 
+Rename the dispatch parameter from `_config` to `config` (currently prefixed due to Task 3 scope). After Task 3's follow-up refactor, the local `let channel_config = Self::parse_config(...)` and its subsequent `match channel_config { ... }` no longer shadow the parameter, so `config.resend.api_key` inside the Email arm will now refer to the `&AppConfig` parameter.
+
+For reference, the surrounding code should look like this after the rename:
+
+```rust
+    async fn dispatch(
+        db: &DatabaseConnection,
+        config: &crate::config::AppConfig,
+        n: &notification::Model,
+        ctx: &NotifyContext,
+    ) -> Result<(), AppError> {
+        let channel_config = Self::parse_config(&n.notify_type, &n.config_json)?;
+        // … client setup …
+        match channel_config {
+            // … other arms …
+        }
+    }
+```
+
 Replace the entire Email arm that Task 2 left as a placeholder:
 
 ```rust
