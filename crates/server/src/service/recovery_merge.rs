@@ -45,6 +45,15 @@ impl RecoveryMergeService {
         Self::handle_rebind_ack_on_db(&state.db, job_id, acking_server_id).await
     }
 
+    pub async fn handle_rebind_failure(
+        state: &Arc<AppState>,
+        job_id: &str,
+        source_server_id: &str,
+        error: &str,
+    ) -> Result<recovery_job::Model, AppError> {
+        Self::handle_rebind_failure_on_db(&state.db, job_id, source_server_id, error).await
+    }
+
     async fn validate_start_request(
         state: &Arc<AppState>,
         target_server_id: &str,
@@ -158,16 +167,22 @@ impl RecoveryMergeService {
                 recovery_job::Column::Stage,
                 Expr::value(RECOVERY_STAGE_REBINDING),
             )
-            .col_expr(recovery_job::Column::CheckpointJson, Expr::value(None::<String>))
+            .col_expr(
+                recovery_job::Column::CheckpointJson,
+                Expr::value(None::<String>),
+            )
             .col_expr(recovery_job::Column::Error, Expr::value(None::<String>))
             .col_expr(recovery_job::Column::UpdatedAt, Expr::value(now))
-            .col_expr(recovery_job::Column::LastHeartbeatAt, Expr::value(Some(now)))
+            .col_expr(
+                recovery_job::Column::LastHeartbeatAt,
+                Expr::value(Some(now)),
+            )
             .filter(recovery_job::Column::JobId.eq(&job.job_id))
             .filter(recovery_job::Column::Status.eq("running"))
-            .filter(recovery_job::Column::Stage.is_in([
-                RECOVERY_STAGE_VALIDATING,
-                RECOVERY_STAGE_REBINDING,
-            ]))
+            .filter(
+                recovery_job::Column::Stage
+                    .is_in([RECOVERY_STAGE_VALIDATING, RECOVERY_STAGE_REBINDING]),
+            )
             .exec(db)
             .await?;
 
@@ -193,12 +208,58 @@ impl RecoveryMergeService {
                 recovery_job::Column::Stage,
                 Expr::value(RECOVERY_STAGE_AWAITING_TARGET_ONLINE),
             )
-            .col_expr(recovery_job::Column::CheckpointJson, Expr::value(None::<String>))
+            .col_expr(
+                recovery_job::Column::CheckpointJson,
+                Expr::value(None::<String>),
+            )
             .col_expr(recovery_job::Column::Error, Expr::value(None::<String>))
             .col_expr(recovery_job::Column::UpdatedAt, Expr::value(now))
-            .col_expr(recovery_job::Column::LastHeartbeatAt, Expr::value(Some(now)))
+            .col_expr(
+                recovery_job::Column::LastHeartbeatAt,
+                Expr::value(Some(now)),
+            )
             .filter(recovery_job::Column::JobId.eq(job_id))
             .filter(recovery_job::Column::SourceServerId.eq(acking_server_id))
+            .filter(recovery_job::Column::Status.eq("running"))
+            .filter(recovery_job::Column::Stage.eq(RECOVERY_STAGE_REBINDING))
+            .exec(db)
+            .await?;
+
+        if result.rows_affected == 0 {
+            return RecoveryJobService::get_job(db, job_id)
+                .await?
+                .ok_or_else(|| AppError::NotFound("Recovery job not found".to_string()));
+        }
+
+        RecoveryJobService::get_job(db, job_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Recovery job not found".to_string()))
+    }
+
+    async fn handle_rebind_failure_on_db(
+        db: &DatabaseConnection,
+        job_id: &str,
+        source_server_id: &str,
+        error: &str,
+    ) -> Result<recovery_job::Model, AppError> {
+        let now = Utc::now();
+        let result = recovery_job::Entity::update_many()
+            .col_expr(recovery_job::Column::Status, Expr::value("failed"))
+            .col_expr(
+                recovery_job::Column::Stage,
+                Expr::value(RECOVERY_STAGE_REBINDING),
+            )
+            .col_expr(
+                recovery_job::Column::Error,
+                Expr::value(Some(error.to_string())),
+            )
+            .col_expr(recovery_job::Column::UpdatedAt, Expr::value(now))
+            .col_expr(
+                recovery_job::Column::LastHeartbeatAt,
+                Expr::value(Some(now)),
+            )
+            .filter(recovery_job::Column::JobId.eq(job_id))
+            .filter(recovery_job::Column::SourceServerId.eq(source_server_id))
             .filter(recovery_job::Column::Status.eq("running"))
             .filter(recovery_job::Column::Stage.eq(RECOVERY_STAGE_REBINDING))
             .exec(db)
@@ -492,6 +553,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rebind_failure_marks_job_failed() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let job = RecoveryMergeService::start_on_db(&db, "target-1", "source-1")
+            .await
+            .unwrap();
+
+        let failed = RecoveryMergeService::handle_rebind_failure_on_db(
+            &db,
+            &job.job_id,
+            "source-1",
+            "agent failed",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(failed.job_id, job.job_id);
+        assert_eq!(failed.status, "failed");
+        assert_eq!(failed.stage, RECOVERY_STAGE_REBINDING);
+        assert_eq!(failed.error.as_deref(), Some("agent failed"));
+    }
+
+    #[tokio::test]
     async fn start_rejects_self_merge_at_service_boundary() {
         let (state, _tmp) = test_state_with_servers().await;
         mark_online(&state, "source-1");
@@ -548,13 +632,10 @@ mod tests {
         let stale_job = RecoveryMergeService::start_on_db(&db, "target-1", "source-1")
             .await
             .unwrap();
-        let acknowledged = RecoveryMergeService::handle_rebind_ack_on_db(
-            &db,
-            &stale_job.job_id,
-            "source-1",
-        )
-        .await
-        .unwrap();
+        let acknowledged =
+            RecoveryMergeService::handle_rebind_ack_on_db(&db, &stale_job.job_id, "source-1")
+                .await
+                .unwrap();
         assert_eq!(acknowledged.stage, RECOVERY_STAGE_AWAITING_TARGET_ONLINE);
 
         let advanced = RecoveryMergeService::advance_job_to_rebinding(&db, stale_job)
@@ -604,9 +685,15 @@ mod tests {
         let job = RecoveryMergeService::start_on_db(&db, "target-1", "source-1")
             .await
             .unwrap();
-        RecoveryJobService::update_stage(&db, &job.job_id, RECOVERY_STAGE_AWAITING_TARGET_ONLINE, None, None)
-            .await
-            .unwrap();
+        RecoveryJobService::update_stage(
+            &db,
+            &job.job_id,
+            RECOVERY_STAGE_AWAITING_TARGET_ONLINE,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
         let updated = RecoveryMergeService::handle_rebind_ack_on_db(&db, &job.job_id, "source-1")
             .await
