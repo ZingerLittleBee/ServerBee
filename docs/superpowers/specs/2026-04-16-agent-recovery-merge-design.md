@@ -42,6 +42,7 @@ This is a targeted recovery flow only. It is not a general-purpose "merge any tw
 - No attempt to reverse the full workflow after the recovered agent has successfully rebound.
 - No new permanent "installation identity" entity in v1.
 - No merge behavior for data that is not keyed by `server_id` and is not semantically tied to one server record, such as `service_monitor_record`.
+- Not designed for machine migration to materially different hardware. Candidate ranking heuristics assume the same logical host was reinstalled and re-registered.
 
 ## User Workflow
 
@@ -62,9 +63,10 @@ The action opens a dialog showing candidate temporary server records. Candidates
 - currently online
 - not equal to the target server
 - not already participating in another recovery job
-- still plausibly a temporary auto-registered record
 
 Candidate ranking is recommendation-only. The admin must still explicitly confirm the selected source.
+
+There is no code-level `auto_registered` or `is_temporary` marker on `servers` in v1. "Temporary" is only a product description for the common case where a newly registered online source is the replacement agent after reinstall. The implementation therefore uses heuristics for ranking, not a hard temporary flag.
 
 Recommended ranking signals:
 
@@ -79,6 +81,8 @@ Recommended ranking signals:
 - matching `disk_total`
 - matching `cpu_cores`
 - matching `country_code` and `region`
+- still has default-like metadata such as recent `created_at` and unchanged default `name`
+- is not referenced, or is only lightly referenced, by shared `server_ids_json` configuration tables
 
 The dialog should show a short explanation for why a candidate was recommended.
 
@@ -124,7 +128,25 @@ The key design choice is to split "future writes go to the right identity" from 
 
 ### 1. Recovery Merge Job Tracker
 
-Add a server-local tracker for recovery jobs, similar in spirit to the upgrade job tracker.
+Add a recovery job tracker with database persistence plus an in-memory lock/cache layer.
+
+Unlike the existing upgrade tracker, recovery cannot be memory-only because failure and retry windows can span multiple DB transactions, WebSocket disconnects, and process restarts.
+
+New persistent table:
+
+- `recovery_job`
+
+Suggested columns:
+
+- `job_id`
+- `target_server_id`
+- `source_server_id`
+- `status`
+- `stage`
+- `checkpoint_json`
+- `error`
+- `created_at`
+- `updated_at`
 
 Tracked fields:
 
@@ -154,6 +176,9 @@ The tracker provides:
 - protection against concurrent recovery jobs involving the same server
 - visible progress for the frontend
 - a retry boundary after partial completion
+- restart-safe recovery state
+
+The in-memory layer is still useful for fast lock checks and live progress fan-out, but the database row is the source of truth.
 
 ### 2. Agent Rebind Protocol
 
@@ -171,12 +196,20 @@ New agent-to-server messages:
 Agent behavior:
 
 1. Receive `RebindIdentity`.
-2. Persist the new token locally.
-3. Acknowledge success or failure.
+2. Persist the new token locally using atomic file replacement semantics.
+3. Only after the token is durably written, acknowledge success or failure.
 4. Disconnect.
 5. Reconnect using the new token, which now authenticates as `target`.
 
 The target server row receives a newly generated token. The source row keeps its existing token until final cleanup so that failure before the rebind is easy to reason about.
+
+The agent-side token write must be implemented as:
+
+- write to a temporary file
+- flush and close
+- atomic rename over the old config file
+
+The current non-atomic "rewrite file in place" helper is not sufficient for this workflow and must be replaced or wrapped.
 
 ### 3. Write Freeze Guard
 
@@ -195,6 +228,12 @@ The guard should:
 - block or drop writes for both `target` and `source` during `freezing_writes`, `merging_history`, and `finalizing`
 - make the skip explicit in logs
 - be lifted immediately after the job completes or fails
+
+Implementation guidance:
+
+- the WebSocket handler should funnel agent-originated database writes through a unified `writes_allowed_for(server_id)` check
+- this check must cover at least `ping_record`, `task_result`, `network_probe_record`, `docker_event`, and agent-triggered audit side effects such as IP-change audit records
+- `record_writer` and traffic upsert paths must honor the same guard
 
 This intentionally allows a small monitoring gap during the merge window. That is acceptable because gap filling is out of scope and already accepted by the product requirements.
 
@@ -263,9 +302,30 @@ These tables or fields are treated as target-owned configuration and are not mer
 - `servers` user-managed fields listed above
 - `server_tag`
 - `network_probe_config`
-- any `server_ids_json` references already pointing at `target`
 
 Source-owned values in this category are discarded when `source` is deleted.
+
+### Category A2: Shared `server_ids_json` References
+
+The source server is allowed to appear in shared configuration JSON arrays. This is not a hard exclusion during candidate selection.
+
+When `source` is deleted, all references to `source.server_id` must be rewritten to `target.server_id` and deduplicated in the following tables:
+
+- `alert_rule.server_ids_json`
+- `ping_task.server_ids_json`
+- `task.server_ids_json`
+- `service_monitor.server_ids_json`
+- `maintenance.server_ids_json`
+- `incident.server_ids_json`
+- `status_page.server_ids_json`
+
+Rules:
+
+- replace every occurrence of `source_server_id` with `target_server_id`
+- deduplicate the final array while preserving order where practical
+- never leave a dangling `source_server_id` reference behind
+
+Because this is a replacement, not a removal, these updates do not create the empty-array semantics problems seen in orphan cleanup flows.
 
 ### Category B: Raw Time-Series Tables
 
@@ -320,13 +380,26 @@ Apply this policy to:
 - `traffic_hourly` with key `(server_id, hour)`
 - `traffic_daily` with key `(server_id, date)`
 - `uptime_daily` with key `(server_id, date)`
-- `alert_state` with key `(rule_id, server_id)`
 - `traffic_state` with key `server_id`
 
 Special notes:
 
-- `alert_state`: when both sides exist for the same `(rule_id, server_id)` pair, keep the source row and delete the target row.
 - `traffic_state`: always take the source row because it is the live baseline for future traffic deltas.
+
+### Category C2: Stateful Logical-Server Rows
+
+These rows represent state that semantically belongs to the logical target server, not the temporary replacement identity.
+
+Apply this policy to:
+
+- `alert_state` with key `(rule_id, server_id)`
+
+Rules:
+
+- if target has no row for the rule, move the source row to target
+- if both target and source have a row for the same rule, keep the target row and discard the source row
+
+This avoids resetting ongoing alert continuity on the original logical server.
 
 ### Category D: Not Merged
 
@@ -350,7 +423,7 @@ Checks:
 - `target` is offline
 - `source` is online
 - neither record is already in another recovery job
-- `source` still looks like a temporary auto-registered node
+- candidate ranking metadata is captured for the confirmation UI, but there is no hard `is_temporary` gate in v1
 
 If any check fails, the job fails without side effects.
 
@@ -362,6 +435,8 @@ If any check fails, the job fails without side effects.
 4. Wait for `RebindIdentityAck`.
 
 If the agent reports failure, the job fails here and no history is merged.
+
+The agent must not send `RebindIdentityAck` until the new token is durably written locally.
 
 ### Stage 3: Awaiting Target Online
 
@@ -375,7 +450,14 @@ Failure condition:
 
 - timeout
 
-Timeout does not roll back to the old identity. The job simply fails before merge and keeps `source` untouched.
+Timeout does not roll back the newly issued target token.
+
+Reason:
+
+- the agent may already have durably persisted the new token and may still reconnect late
+- rolling back the target token would risk turning a late reconnect into a guaranteed `401`
+
+The job simply fails before merge and keeps `source` untouched. A retry issues a fresh target token and supersedes the prior unfinished attempt.
 
 ### Stage 4: Freezing Writes
 
@@ -393,6 +475,7 @@ Recommended groups:
 - group 2: `records_hourly`, `uptime_daily`, `traffic_hourly`, `traffic_daily`, `traffic_state`
 - group 3: `ping_record`, `task_result`, `network_probe_record`, `network_probe_record_hourly`
 - group 4: `alert_state`
+- group 5: shared `server_ids_json` reference rewrites
 
 Each group:
 
@@ -535,6 +618,15 @@ Recommended detail payload:
 - `stage`
 - `error`
 
+Recommended action names:
+
+- `recovery.started`
+- `recovery.rebind_ok`
+- `recovery.rebind_failed`
+- `recovery.merge_group_done`
+- `recovery.source_deleted`
+- `recovery.failed`
+
 ## Testing Strategy
 
 ### Backend Integration Tests
@@ -547,18 +639,22 @@ Must cover:
 4. failure during one merge group with retryable checkpoint state
 5. successful retry after partial failure
 6. `source wins` for each unique-key table
-7. raw time-window replacement for each raw history table
-8. write-freeze behavior during merge
-9. final cleanup deleting the source record
+7. `target wins` conflict handling for `alert_state`
+8. raw time-window replacement for each raw history table
+9. shared `server_ids_json` rewrite and dedupe across all seven tables
+10. write-freeze behavior during merge
+11. process restart with a persisted recovery job
+12. final cleanup deleting the source record
 
 ### Agent Tests
 
 Must cover:
 
 1. receiving `RebindIdentity`
-2. persisting the new token
-3. reporting ack and failure
-4. reconnecting with the new identity
+2. persisting the new token with atomic replace semantics
+3. only acknowledging after durable local write
+4. reporting ack and failure
+5. reconnecting with the new identity
 
 ### Frontend Tests
 
