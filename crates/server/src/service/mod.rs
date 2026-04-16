@@ -19,6 +19,7 @@ pub mod notification;
 pub mod oauth;
 pub mod ping;
 pub mod record;
+pub mod recovery_job;
 pub mod server;
 pub mod service_monitor;
 pub mod status_page;
