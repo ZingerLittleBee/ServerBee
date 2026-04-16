@@ -20,6 +20,10 @@ export const Route = createFileRoute('/_authed/settings/notifications')({
 
 type NotifyType = 'apns' | 'bark' | 'email' | 'telegram' | 'webhook'
 
+export function buildEmailPayload(from: string, toAddresses: string[]): { from: string; to: string[] } {
+  return { from, to: toAddresses }
+}
+
 const SENSITIVE_FIELDS = new Set(['password', 'bot_token', 'device_key'])
 
 function NotificationsPage() {
@@ -31,6 +35,8 @@ function NotificationsPage() {
   const [configFields, setConfigFields] = useState<Record<string, string>>({
     url: ''
   })
+  const [toAddresses, setToAddresses] = useState<string[]>([])
+  const [toInput, setToInput] = useState('')
   const apnsFileInputRef = useRef<HTMLInputElement>(null)
 
   const typeLabels: Record<NotifyType, string> = {
@@ -52,7 +58,7 @@ function NotificationsPage() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (input: { config_json: Record<string, string>; name: string; notify_type: string }) =>
+    mutationFn: (input: { config_json: Record<string, string | string[]>; name: string; notify_type: string }) =>
       api.post<Notification>('/api/notifications', input),
     onSuccess: () => {
       invalidate()
@@ -81,7 +87,7 @@ function NotificationsPage() {
       toast.success(t('notifications.toast_test_sent'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : t('notifications.test_failed'))
+      toast.error(err instanceof Error ? err.message : t('notifications.test_failed'), { duration: 8000 })
     }
   })
 
@@ -125,6 +131,8 @@ function NotificationsPage() {
     setName('')
     setNotifyType('webhook')
     setConfigFields({ url: '' })
+    setToAddresses([])
+    setToInput('')
     setShowForm(false)
   }
 
@@ -141,7 +149,9 @@ function NotificationsPage() {
         setConfigFields({ server_url: '', device_key: '' })
         break
       case 'email':
-        setConfigFields({ smtp_host: '', smtp_port: '587', username: '', password: '', from: '', to: '' })
+        setConfigFields({ from: '' })
+        setToAddresses([])
+        setToInput('')
         break
       case 'apns':
         setConfigFields({
@@ -174,15 +184,35 @@ function NotificationsPage() {
     e.target.value = ''
   }
 
+  const handleAddRecipient = () => {
+    const trimmed = toInput.trim()
+    if (trimmed === '' || toAddresses.includes(trimmed)) {
+      return
+    }
+    setToAddresses((prev) => [...prev, trimmed])
+    setToInput('')
+  }
+
+  const handleRemoveRecipient = (addr: string) => {
+    setToAddresses((prev) => prev.filter((a) => a !== addr))
+  }
+
   const handleCreate = (e: FormEvent) => {
     e.preventDefault()
     if (name.trim().length === 0) {
       return
     }
+    let payload: Record<string, string | string[]> = configFields
+    if (notifyType === 'email') {
+      if (toAddresses.length === 0) {
+        return
+      }
+      payload = buildEmailPayload(configFields.from ?? '', toAddresses)
+    }
     createMutation.mutate({
       name: name.trim(),
       notify_type: notifyType,
-      config_json: configFields
+      config_json: payload
     })
   }
 
@@ -202,12 +232,7 @@ function NotificationsPage() {
     telegram: { bot_token: t('notifications.bot_token'), chat_id: t('notifications.chat_id') },
     bark: { server_url: t('notifications.bark_server'), device_key: t('notifications.bark_device_key') },
     email: {
-      smtp_host: t('notifications.smtp_host'),
-      smtp_port: t('notifications.smtp_port'),
-      username: t('notifications.smtp_username'),
-      password: t('notifications.smtp_password'),
-      from: t('notifications.from_address'),
-      to: t('notifications.to_address')
+      from: t('notifications.from_address')
     }
   }
 
@@ -251,7 +276,7 @@ function NotificationsPage() {
                   ))}
                 </SelectContent>
               </Select>
-              {notifyType === 'apns' ? (
+              {notifyType === 'apns' && (
                 <>
                   <Input
                     maxLength={10}
@@ -312,7 +337,61 @@ function NotificationsPage() {
                     {t('notifications.apns_sandbox')}
                   </Label>
                 </>
-              ) : (
+              )}
+              {notifyType === 'email' && (
+                <>
+                  <p className="text-muted-foreground text-xs">{t('notifications.email_help_text')}</p>
+                  <Input
+                    onChange={(e) => setConfigFields((prev) => ({ ...prev, from: e.target.value }))}
+                    placeholder={t('notifications.from_address')}
+                    required
+                    type="email"
+                    value={configFields.from ?? ''}
+                  />
+                  <div className="space-y-2">
+                    <Label className="text-sm">{t('notifications.recipients_label')}</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        onChange={(e) => setToInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            handleAddRecipient()
+                          }
+                        }}
+                        placeholder={t('notifications.recipient_placeholder')}
+                        type="email"
+                        value={toInput}
+                      />
+                      <Button onClick={handleAddRecipient} size="sm" type="button">
+                        {t('notifications.add_recipient')}
+                      </Button>
+                    </div>
+                    {toAddresses.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {toAddresses.map((addr) => (
+                          <span
+                            className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs"
+                            key={addr}
+                          >
+                            {addr}
+                            <button
+                              aria-label={t('notifications.remove_recipient_aria', { address: addr })}
+                              className="text-muted-foreground hover:text-foreground"
+                              onClick={() => handleRemoveRecipient(addr)}
+                              type="button"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+              {notifyType !== 'apns' &&
+                notifyType !== 'email' &&
                 Object.entries(configFieldLabels[notifyType] ?? {}).map(([key, label]) => (
                   <Input
                     key={key}
@@ -322,8 +401,7 @@ function NotificationsPage() {
                     type={SENSITIVE_FIELDS.has(key) ? 'password' : 'text'}
                     value={configFields[key] ?? ''}
                   />
-                ))
-              )}
+                ))}
               <div className="flex gap-2">
                 <Button disabled={createMutation.isPending} size="sm" type="submit">
                   {t('common:create')}
