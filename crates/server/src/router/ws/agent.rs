@@ -906,12 +906,19 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         }
         AgentMessage::RebindIdentityAck { job_id } => {
             match RecoveryMergeService::handle_rebind_ack(state, &job_id, server_id).await {
-                Ok(job) => {
-                    tracing::info!(
-                        "Applied RebindIdentityAck from agent {server_id} for job_id={job_id}, stage={}",
-                        job.stage
-                    );
-                    crate::router::ws::browser::broadcast_recovery_update(state).await;
+                Ok(change) => {
+                    if change.transitioned {
+                        tracing::info!(
+                            "Applied RebindIdentityAck from agent {server_id} for job_id={job_id}, stage={}",
+                            change.job.stage
+                        );
+                        crate::router::ws::browser::broadcast_recovery_update(state).await;
+                    } else {
+                        tracing::info!(
+                            "Ignoring stale RebindIdentityAck from agent {server_id} for job_id={job_id}, stage={}",
+                            change.job.stage
+                        );
+                    }
                 }
                 Err(error) => {
                     tracing::warn!(
@@ -924,11 +931,18 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             match RecoveryMergeService::handle_rebind_failure(state, &job_id, server_id, &error)
                 .await
             {
-                Ok(_) => {
-                    tracing::warn!(
-                        "Recorded RebindIdentityFailed from agent {server_id} for job_id={job_id}: {error}"
-                    );
-                    crate::router::ws::browser::broadcast_recovery_update(state).await;
+                Ok(change) => {
+                    if change.transitioned {
+                        tracing::warn!(
+                            "Recorded RebindIdentityFailed from agent {server_id} for job_id={job_id}: {error}"
+                        );
+                        crate::router::ws::browser::broadcast_recovery_update(state).await;
+                    } else {
+                        tracing::info!(
+                            "Ignoring stale RebindIdentityFailed from agent {server_id} for job_id={job_id}, stage={}",
+                            change.job.stage
+                        );
+                    }
                 }
                 Err(mark_error) => {
                     tracing::warn!(
@@ -1408,6 +1422,7 @@ mod tests {
     use serverbee_common::constants::CAP_DEFAULT;
     use serverbee_common::protocol::{BrowserMessage, RecoveryJobStage};
     use std::net::{IpAddr, Ipv4Addr};
+    use tokio::time::{Duration, timeout};
 
     fn test_addr() -> SocketAddr {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080)
@@ -1604,5 +1619,110 @@ mod tests {
             }
             other => panic!("expected recovery update, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn stale_rebind_identity_ack_does_not_broadcast_recovery_update() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "target-1", "Target").await;
+        insert_server(&db, "source-1", "Source").await;
+        insert_recovery_job(&db, "job-1", "target-1", "source-1").await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+        let mut browser_rx = state.browser_tx.subscribe();
+
+        RecoveryMergeService::handle_rebind_ack(&state, "job-1", "source-1")
+            .await
+            .unwrap();
+
+        handle_agent_message(
+            &state,
+            "source-1",
+            AgentMessage::RebindIdentityAck {
+                job_id: "job-1".to_string(),
+            },
+        )
+        .await;
+
+        let job = recovery_job::Entity::find_by_id("job-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.stage, "awaiting_target_online");
+
+        assert!(timeout(Duration::from_millis(50), browser_rx.recv()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn wrong_source_rebind_identity_failure_does_not_broadcast_recovery_update() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "target-1", "Target").await;
+        insert_server(&db, "source-1", "Source").await;
+        insert_server(&db, "source-2", "Other Source").await;
+        insert_recovery_job(&db, "job-1", "target-1", "source-1").await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+        let mut browser_rx = state.browser_tx.subscribe();
+
+        handle_agent_message(
+            &state,
+            "source-2",
+            AgentMessage::RebindIdentityFailed {
+                job_id: "job-1".to_string(),
+                error: "wrong source".to_string(),
+            },
+        )
+        .await;
+
+        let job = recovery_job::Entity::find_by_id("job-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.status, "running");
+        assert_eq!(job.stage, "rebinding");
+        assert_eq!(job.error, None);
+
+        assert!(timeout(Duration::from_millis(50), browser_rx.recv()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn stale_rebind_identity_failure_does_not_broadcast_recovery_update() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "target-1", "Target").await;
+        insert_server(&db, "source-1", "Source").await;
+        insert_recovery_job(&db, "job-1", "target-1", "source-1").await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+        let mut browser_rx = state.browser_tx.subscribe();
+
+        RecoveryMergeService::handle_rebind_failure(&state, "job-1", "source-1", "first failure")
+            .await
+            .unwrap();
+
+        handle_agent_message(
+            &state,
+            "source-1",
+            AgentMessage::RebindIdentityFailed {
+                job_id: "job-1".to_string(),
+                error: "stale failure".to_string(),
+            },
+        )
+        .await;
+
+        let job = recovery_job::Entity::find_by_id("job-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.status, "failed");
+        assert_eq!(job.stage, "rebinding");
+        assert_eq!(job.error.as_deref(), Some("first failure"));
+
+        assert!(timeout(Duration::from_millis(50), browser_rx.recv()).await.is_err());
     }
 }
