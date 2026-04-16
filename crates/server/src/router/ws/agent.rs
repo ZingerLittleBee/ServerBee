@@ -18,8 +18,7 @@ use crate::service::auth::AuthService;
 use crate::service::network_probe::NetworkProbeService;
 use crate::service::ping::PingService;
 use crate::service::record::RecordService;
-use crate::service::recovery_job::RecoveryJobService;
-use crate::service::recovery_merge::{RECOVERY_STAGE_REBINDING, RecoveryMergeService};
+use crate::service::recovery_merge::RecoveryMergeService;
 use crate::service::server::ServerService;
 use crate::service::upgrade_tracker::UpgradeLookup;
 use crate::state::AppState;
@@ -922,15 +921,10 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             }
         }
         AgentMessage::RebindIdentityFailed { job_id, error } => {
-            match RecoveryJobService::mark_failed(
-                &state.db,
-                &job_id,
-                RECOVERY_STAGE_REBINDING,
-                &error,
-            )
-            .await
+            match RecoveryMergeService::handle_rebind_failure(state, &job_id, server_id, &error)
+                .await
             {
-                Ok(()) => {
+                Ok(_) => {
                     tracing::warn!(
                         "Recorded RebindIdentityFailed from agent {server_id} for job_id={job_id}: {error}"
                     );
