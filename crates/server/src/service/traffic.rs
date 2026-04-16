@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::{Datelike, Duration, NaiveDate, SecondsFormat, Utc};
-use sea_orm::{ConnectionTrait, DatabaseConnection, EntityTrait, Statement};
+use sea_orm::{ConnectionTrait, DatabaseConnection, DatabaseTransaction, EntityTrait, Statement};
 use serde::Serialize;
 
 use crate::entity::{server, traffic_state};
@@ -15,7 +15,28 @@ impl TrafficService {
         target_server_id: &str,
         source_server_id: &str,
     ) -> Result<(), AppError> {
-        Self::replace_unique_key_table_server_id(
+        Self::merge_recovered_server_history_on_connection(db, target_server_id, source_server_id)
+            .await
+    }
+
+    pub async fn merge_recovered_server_history_on_txn(
+        txn: &DatabaseTransaction,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        Self::merge_recovered_server_history_on_connection(txn, target_server_id, source_server_id)
+            .await
+    }
+
+    pub(crate) async fn merge_recovered_server_history_on_connection<C>(
+        db: &C,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError>
+    where
+        C: ConnectionTrait,
+    {
+        Self::replace_unique_key_table_server_id_on_connection(
             db,
             "traffic_hourly",
             &["hour"],
@@ -23,7 +44,7 @@ impl TrafficService {
             source_server_id,
         )
         .await?;
-        Self::replace_unique_key_table_server_id(
+        Self::replace_unique_key_table_server_id_on_connection(
             db,
             "traffic_daily",
             &["date"],
@@ -31,7 +52,7 @@ impl TrafficService {
             source_server_id,
         )
         .await?;
-        Self::replace_unique_key_table_server_id(
+        Self::replace_unique_key_table_server_id_on_connection(
             db,
             "traffic_state",
             &[],
@@ -50,6 +71,43 @@ impl TrafficService {
         target_server_id: &str,
         source_server_id: &str,
     ) -> Result<(), AppError> {
+        Self::replace_unique_key_table_server_id_on_connection(
+            db,
+            table,
+            key_columns,
+            target_server_id,
+            source_server_id,
+        )
+        .await
+    }
+
+    pub(crate) async fn replace_unique_key_table_server_id_on_txn(
+        txn: &DatabaseTransaction,
+        table: &str,
+        key_columns: &[&str],
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError> {
+        Self::replace_unique_key_table_server_id_on_connection(
+            txn,
+            table,
+            key_columns,
+            target_server_id,
+            source_server_id,
+        )
+        .await
+    }
+
+    pub(crate) async fn replace_unique_key_table_server_id_on_connection<C>(
+        db: &C,
+        table: &str,
+        key_columns: &[&str],
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<(), AppError>
+    where
+        C: ConnectionTrait,
+    {
         let join_predicate = if key_columns.is_empty() {
             "1 = 1".to_string()
         } else {
