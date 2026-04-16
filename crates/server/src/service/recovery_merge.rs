@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use sea_orm::prelude::Expr;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
+    EntityTrait, QueryFilter,
+};
 
 use crate::entity::{recovery_job, server};
 use crate::error::AppError;
@@ -31,6 +34,16 @@ pub enum RecoveryFailurePhase {
 pub enum RecoveryRetryStrategy {
     StartNewJob,
     ResumeSameJob,
+}
+
+fn is_unique_violation(err: &sea_orm::DbErr) -> bool {
+    let message = err.to_string();
+    message.contains("UNIQUE constraint failed") || message.contains("UNIQUE")
+}
+
+fn is_active_recovery_conflict(err: &sea_orm::DbErr) -> bool {
+    let message = err.to_string();
+    is_unique_violation(err) || message.contains("recovery_job_active_conflict")
 }
 
 impl RecoveryMergeService {
@@ -64,8 +77,25 @@ impl RecoveryMergeService {
         state: &Arc<AppState>,
         target_server_id: &str,
     ) -> Result<String, AppError> {
+        Self::rotate_target_token_on_conn(&state.db, target_server_id).await
+    }
+
+    pub async fn rotate_target_token_on_txn(
+        txn: &DatabaseTransaction,
+        target_server_id: &str,
+    ) -> Result<String, AppError> {
+        Self::rotate_target_token_on_conn(txn, target_server_id).await
+    }
+
+    async fn rotate_target_token_on_conn<C>(
+        db: &C,
+        target_server_id: &str,
+    ) -> Result<String, AppError>
+    where
+        C: ConnectionTrait,
+    {
         let target = server::Entity::find_by_id(target_server_id)
-            .one(&state.db)
+            .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound("Server not found".to_string()))?;
 
@@ -77,12 +107,12 @@ impl RecoveryMergeService {
         active.token_hash = sea_orm::Set(token_hash);
         active.token_prefix = sea_orm::Set(token_prefix);
         active.updated_at = sea_orm::Set(Utc::now());
-        active.update(&state.db).await?;
+        active.update(db).await?;
 
         Ok(plaintext_token)
     }
 
-    async fn validate_start_request(
+    pub async fn validate_start_request(
         state: &Arc<AppState>,
         target_server_id: &str,
         source_server_id: &str,
@@ -122,13 +152,32 @@ impl RecoveryMergeService {
         target_server_id: &str,
         source_server_id: &str,
     ) -> Result<recovery_job::Model, AppError> {
+        Self::start_on_connection(db, target_server_id, source_server_id).await
+    }
+
+    pub async fn start_on_txn(
+        db: &DatabaseTransaction,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<recovery_job::Model, AppError> {
+        Self::start_on_connection(db, target_server_id, source_server_id).await
+    }
+
+    async fn start_on_connection<C>(
+        db: &C,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<recovery_job::Model, AppError>
+    where
+        C: ConnectionTrait,
+    {
         if let Some(existing) =
             Self::find_reusable_start_job(db, target_server_id, source_server_id).await?
         {
             return Self::advance_job_to_rebinding(db, existing).await;
         }
 
-        match RecoveryJobService::create_job(db, target_server_id, source_server_id).await {
+        match Self::create_job(db, target_server_id, source_server_id).await {
             Ok(job) => Self::advance_job_to_rebinding(db, job).await,
             Err(AppError::Conflict(_)) => {
                 Self::recover_duplicate_start(db, target_server_id, source_server_id).await
@@ -137,13 +186,16 @@ impl RecoveryMergeService {
         }
     }
 
-    async fn find_reusable_start_job(
-        db: &DatabaseConnection,
+    async fn find_reusable_start_job<C>(
+        db: &C,
         target_server_id: &str,
         source_server_id: &str,
-    ) -> Result<Option<recovery_job::Model>, AppError> {
-        let running_target = RecoveryJobService::running_for_target(db, target_server_id).await?;
-        let running_source = RecoveryJobService::running_for_source(db, source_server_id).await?;
+    ) -> Result<Option<recovery_job::Model>, AppError>
+    where
+        C: ConnectionTrait,
+    {
+        let running_target = Self::running_for_target(db, target_server_id).await?;
+        let running_source = Self::running_for_source(db, source_server_id).await?;
 
         if let Some(job) = running_target {
             if job.source_server_id != source_server_id {
@@ -172,11 +224,14 @@ impl RecoveryMergeService {
         Ok(None)
     }
 
-    async fn recover_duplicate_start(
-        db: &DatabaseConnection,
+    async fn recover_duplicate_start<C>(
+        db: &C,
         target_server_id: &str,
         source_server_id: &str,
-    ) -> Result<recovery_job::Model, AppError> {
+    ) -> Result<recovery_job::Model, AppError>
+    where
+        C: ConnectionTrait,
+    {
         match Self::find_reusable_start_job(db, target_server_id, source_server_id).await? {
             Some(job) => Self::advance_job_to_rebinding(db, job).await,
             None => Err(AppError::Conflict(
@@ -185,10 +240,13 @@ impl RecoveryMergeService {
         }
     }
 
-    async fn advance_job_to_rebinding(
-        db: &DatabaseConnection,
+    async fn advance_job_to_rebinding<C>(
+        db: &C,
         job: recovery_job::Model,
-    ) -> Result<recovery_job::Model, AppError> {
+    ) -> Result<recovery_job::Model, AppError>
+    where
+        C: ConnectionTrait,
+    {
         let now = Utc::now();
         let result = recovery_job::Entity::update_many()
             .col_expr(
@@ -215,14 +273,82 @@ impl RecoveryMergeService {
             .await?;
 
         if result.rows_affected == 0 {
-            return RecoveryJobService::get_job(db, &job.job_id)
+            return Self::get_job(db, &job.job_id)
                 .await?
                 .ok_or_else(|| AppError::NotFound("Recovery job not found".to_string()));
         }
 
-        RecoveryJobService::get_job(db, &job.job_id)
+        Self::get_job(db, &job.job_id)
             .await?
             .ok_or_else(|| AppError::NotFound("Recovery job not found".to_string()))
+    }
+
+    async fn create_job<C>(
+        db: &C,
+        target_server_id: &str,
+        source_server_id: &str,
+    ) -> Result<recovery_job::Model, AppError>
+    where
+        C: ConnectionTrait,
+    {
+        let active = recovery_job::ActiveModel {
+            job_id: sea_orm::Set(uuid::Uuid::new_v4().to_string()),
+            target_server_id: sea_orm::Set(target_server_id.to_string()),
+            source_server_id: sea_orm::Set(source_server_id.to_string()),
+            status: sea_orm::Set("running".to_string()),
+            stage: sea_orm::Set(RECOVERY_STAGE_VALIDATING.to_string()),
+            checkpoint_json: sea_orm::Set(None),
+            error: sea_orm::Set(None),
+            started_at: sea_orm::Set(Utc::now()),
+            created_at: sea_orm::Set(Utc::now()),
+            updated_at: sea_orm::Set(Utc::now()),
+            last_heartbeat_at: sea_orm::Set(None),
+        };
+
+        active.insert(db).await.map_err(|err| {
+            if is_active_recovery_conflict(&err) {
+                AppError::Conflict(
+                    "A running recovery job already exists for this target or source".to_string(),
+                )
+            } else {
+                err.into()
+            }
+        })
+    }
+
+    async fn running_for_target<C>(
+        db: &C,
+        target_server_id: &str,
+    ) -> Result<Option<recovery_job::Model>, AppError>
+    where
+        C: ConnectionTrait,
+    {
+        Ok(recovery_job::Entity::find()
+            .filter(recovery_job::Column::TargetServerId.eq(target_server_id))
+            .filter(recovery_job::Column::Status.eq("running"))
+            .one(db)
+            .await?)
+    }
+
+    async fn running_for_source<C>(
+        db: &C,
+        source_server_id: &str,
+    ) -> Result<Option<recovery_job::Model>, AppError>
+    where
+        C: ConnectionTrait,
+    {
+        Ok(recovery_job::Entity::find()
+            .filter(recovery_job::Column::SourceServerId.eq(source_server_id))
+            .filter(recovery_job::Column::Status.eq("running"))
+            .one(db)
+            .await?)
+    }
+
+    async fn get_job<C>(db: &C, job_id: &str) -> Result<Option<recovery_job::Model>, AppError>
+    where
+        C: ConnectionTrait,
+    {
+        Ok(recovery_job::Entity::find_by_id(job_id).one(db).await?)
     }
 
     async fn handle_rebind_ack_on_db(
@@ -686,7 +812,10 @@ mod tests {
                 .await
                 .unwrap();
         assert!(acknowledged.transitioned);
-        assert_eq!(acknowledged.job.stage, RECOVERY_STAGE_AWAITING_TARGET_ONLINE);
+        assert_eq!(
+            acknowledged.job.stage,
+            RECOVERY_STAGE_AWAITING_TARGET_ONLINE
+        );
 
         let advanced = RecoveryMergeService::advance_job_to_rebinding(&db, stale_job)
             .await
