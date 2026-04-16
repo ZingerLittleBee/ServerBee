@@ -3781,6 +3781,65 @@ async fn test_security_headers_present() {
 }
 
 #[tokio::test]
+async fn test_recovery_candidates_rejects_online_or_busy_target() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin_client = http_client();
+    login_admin(&admin_client, &base_url).await;
+
+    let (online_target_id, online_target_token) = register_agent(&admin_client, &base_url).await;
+    let (busy_target_id, _busy_target_token) = register_agent(&admin_client, &base_url).await;
+    let (source_id, source_token) = register_agent(&admin_client, &base_url).await;
+
+    let (_sink, mut reader) = connect_agent(&base_url, &online_target_token).await;
+    let _welcome = recv_agent_text(&mut reader).await;
+
+    let online_resp = admin_client
+        .get(format!(
+            "{}/api/servers/{}/recovery-candidates",
+            base_url, online_target_id
+        ))
+        .send()
+        .await
+        .expect("online target recovery candidates request failed");
+    assert_eq!(online_resp.status(), 409);
+    let online_body: serde_json::Value = online_resp.json().await.unwrap();
+    assert!(
+        online_body["error"]["message"]
+            .as_str()
+            .expect("error message should be a string")
+            .contains("must be offline")
+    );
+
+    let (_source_sink, mut source_reader) = connect_agent(&base_url, &source_token).await;
+    let _source_welcome = recv_agent_text(&mut source_reader).await;
+
+    let start_resp = admin_client
+        .post(format!("{}/api/servers/{}/recover-merge", base_url, busy_target_id))
+        .json(&json!({ "source_server_id": source_id }))
+        .send()
+        .await
+        .expect("start recovery request failed");
+    assert_eq!(start_resp.status(), 200);
+
+    let busy_resp = admin_client
+        .get(format!(
+            "{}/api/servers/{}/recovery-candidates",
+            base_url, busy_target_id
+        ))
+        .send()
+        .await
+        .expect("busy target recovery candidates request failed");
+    assert_eq!(busy_resp.status(), 409);
+    let busy_body: serde_json::Value = busy_resp.json().await.unwrap();
+    assert!(
+        busy_body["error"]["message"]
+            .as_str()
+            .expect("error message should be a string")
+            .contains("running recovery job")
+    );
+}
+
+#[tokio::test]
 async fn test_recovery_candidates_requires_admin_and_filters_online_sources() {
     let (base_url, _tmp) = start_test_server().await;
     let auth_client = http_client();
