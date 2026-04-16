@@ -8,15 +8,16 @@ use anyhow::Context;
 fn render_token_content(existing: &str, token: &str) -> String {
     let token_line = format!("token = \"{token}\"");
     let mut lines: Vec<String> = existing.lines().map(ToOwned::to_owned).collect();
+    let preamble_end = lines
+        .iter()
+        .position(|line| is_table_header(line))
+        .unwrap_or(lines.len());
+    let preamble = &mut lines[..preamble_end];
 
-    if let Some(pos) = lines.iter().position(|line| is_token_line(line)) {
+    if let Some(pos) = preamble.iter().position(|line| is_token_line(line)) {
         lines[pos] = token_line;
     } else {
-        let insert_pos = lines
-            .iter()
-            .position(|line| is_table_header(line))
-            .unwrap_or(lines.len());
-        lines.insert(insert_pos, token_line);
+        lines.insert(preamble_end, token_line);
     }
 
     lines.join("\n")
@@ -217,6 +218,36 @@ level = "info""#,
             r#"server_url = "http://127.0.0.1:9527"
 token = "fresh-token"
 [collector]
+interval = 3
+[log]
+level = "info""#
+        );
+    }
+
+    #[test]
+    fn persist_rebind_token_preserves_nested_token_and_inserts_top_level_token() {
+        let tempdir = TempDir::new().expect("tempdir");
+        let path = tempdir.path().join("agent.toml");
+        fs::write(
+            &path,
+            r#"server_url = "http://127.0.0.1:9527"
+[collector]
+token = "nested"
+interval = 3
+[log]
+level = "info""#,
+        )
+        .expect("seed file");
+
+        super::persist_rebind_token_impl(&path, "top-level").expect("persist");
+
+        let content = fs::read_to_string(&path).expect("read file");
+        assert_eq!(
+            content,
+            r#"server_url = "http://127.0.0.1:9527"
+token = "top-level"
+[collector]
+token = "nested"
 interval = 3
 [log]
 level = "info""#
