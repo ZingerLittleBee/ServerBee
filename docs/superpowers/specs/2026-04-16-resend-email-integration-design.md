@@ -32,13 +32,44 @@ Replace the current SMTP-based email notification implementation with Resend's H
   }
   ```
 
-  Read at dispatch time via `state.config.resend.api_key` (treat empty string as "not configured").
+  Read at dispatch time via `state.config.resend.api_key` (treat empty string as "not configured"). Propagating the config down to `dispatch()` requires threading a new parameter through the notification service and its callers — see **Config propagation** below.
 
 - **Per-channel** (`config_json` in the `notification` row):
   ```json
   { "from": "alerts@yourdomain.com", "to": ["a@x.com", "b@y.com"] }
   ```
   `from` stays per-channel so different alert contexts can use different sender addresses. It is not sensitive, so storing it in DB is fine.
+
+### Config propagation
+
+Today `NotificationService::send_group`, `NotificationService::test_notification`, and the private `dispatch` all take only `&DatabaseConnection`. The Email branch needs `resend.api_key` at dispatch time, so the signature must be extended. Three options were considered:
+
+- Pass `&str api_key` — narrowest, but intermediate callers that don't care about notification internals get a resend-shaped parameter in their signature.
+- Pass `&ResendConfig` — channel-specific; also infects unrelated intermediate callers.
+- Pass `&AppConfig` — service-boundary; intermediate callers forward an opaque reference, only the Email branch in `dispatch` reads `.resend.api_key`.
+
+**Chosen: `&AppConfig`.** It keeps notification-service signatures stable as more channels grow config-driven behaviour (e.g., default `base_url` for in-email links, future Telegram global proxy, etc.) and leaves intermediate callers unchanged in spirit — they just forward an existing reference.
+
+Required signature changes (all in `crates/server/src/service/notification.rs` and `alert.rs`):
+
+| Function | Current | After |
+|---|---|---|
+| `NotificationService::send_group` | `(db, group_id, ctx)` | `(db, config: &AppConfig, group_id, ctx)` |
+| `NotificationService::test_notification` | `(db, id)` | `(db, config: &AppConfig, id)` |
+| `NotificationService::dispatch` (private) | `(db, n, ctx)` | `(db, config: &AppConfig, n, ctx)` |
+| `AlertService::handle_triggered` | `(db, state_manager, rule, server_id, server_name)` | `(db, config, state_manager, rule, server_id, server_name)` |
+| `AlertService::evaluate_rule` | `(db, agent_manager, state_manager, rule)` | `(db, config, agent_manager, state_manager, rule)` |
+| `AlertService::evaluate_all` | `(db, agent_manager, state_manager)` | `(db, config, agent_manager, state_manager)` |
+| `AlertService::check_event_rules` | `(db, state_manager, server_id, event_type)` | `(db, config, state_manager, server_id, event_type)` |
+
+Required call-site changes (all callers already hold a reachable `&AppConfig` via `state.config`):
+
+- `crates/server/src/task/alert_evaluator.rs::run` — pass `&state.config` into `evaluate_all`.
+- `crates/server/src/task/service_monitor_checker.rs` (both `send_group` sites around lines 208 and 234) — pass `&state.config`.
+- `crates/server/src/router/api/notification.rs::test_notification` — pass `&state.config`.
+- `crates/server/src/router/ws/agent.rs` (both `check_event_rules` sites around lines 423 and 1021) — pass `&state.config`.
+
+**Non-goal**: do not introduce a service-level global or `OnceCell` for config. Explicit parameter threading keeps the service testable (tests can pass a fixture `AppConfig` without having to construct `AppState`) and keeps the call graph visible in `cargo check` output.
 
 ### HTTP client
 
@@ -156,7 +187,7 @@ Single English template. Recipients may not be ServerBee users, so we cannot pul
 
 Inside `dispatch()`'s `Email` branch:
 
-1. Read `resend.api_key` from `AppState.config`. If missing / empty, return `AppError::Validation("Resend API key not configured (set SERVERBEE_RESEND__API_KEY)")`.
+1. Read `resend.api_key` from the `&AppConfig` parameter passed into `dispatch()` (see Config propagation). If missing / empty, return `AppError::Validation("Resend API key not configured (set SERVERBEE_RESEND__API_KEY)")`.
 2. Build the JSON body, POST to `https://api.resend.com/emails` with a 10 s timeout (reuse the client built at the top of `dispatch`).
 3. On non-2xx, surface the Resend `message` (or raw body) as `AppError::Internal`.
 
