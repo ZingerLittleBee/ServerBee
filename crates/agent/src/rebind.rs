@@ -56,19 +56,15 @@ pub(crate) fn persist_rebind_token_impl(path: impl AsRef<Path>, token: &str) -> 
         temp_file
             .sync_all()
             .with_context(|| format!("failed to sync {}", temp_path.display()))?;
-        if path.exists() {
-            if let Ok(metadata) = fs::metadata(path) {
-                let _ = fs::set_permissions(&temp_path, metadata.permissions());
-            }
+        if path.exists() && let Ok(metadata) = fs::metadata(path) {
+            let _ = fs::set_permissions(&temp_path, metadata.permissions());
         }
         replace_file(&temp_path, path)?;
 
         #[cfg(unix)]
         {
-            if let Some(dir) = path.parent() {
-                if let Ok(dir_file) = fs::File::open(dir) {
-                    let _ = dir_file.sync_all();
-                }
+            if let Some(dir) = path.parent() && let Ok(dir_file) = fs::File::open(dir) {
+                let _ = dir_file.sync_all();
             }
         }
 
@@ -83,7 +79,7 @@ pub(crate) fn persist_rebind_token_impl(path: impl AsRef<Path>, token: &str) -> 
 }
 
 #[cfg(not(test))]
-pub use persist_rebind_token_impl as persist_rebind_token;
+pub(crate) use persist_rebind_token_impl as persist_rebind_token;
 
 #[cfg(unix)]
 fn replace_file(temp_path: &Path, path: &Path) -> anyhow::Result<()> {
