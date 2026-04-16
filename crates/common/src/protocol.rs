@@ -29,6 +29,31 @@ pub enum UpgradeStatus {
     Timeout,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub enum RecoveryJobStatus {
+    Running,
+    Failed,
+    Succeeded,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub enum RecoveryJobStage {
+    Validating,
+    Rebinding,
+    AwaitingTargetOnline,
+    FreezingWrites,
+    MergingHistory,
+    Finalizing,
+    Succeeded,
+    Failed,
+    Unknown,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct UpgradeJobDto {
@@ -44,6 +69,23 @@ pub struct UpgradeJobDto {
     pub started_at: DateTime<Utc>,
     #[serde(default)]
     pub finished_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct RecoveryJobDto {
+    pub job_id: String,
+    pub target_server_id: String,
+    pub source_server_id: String,
+    pub status: RecoveryJobStatus,
+    pub stage: RecoveryJobStage,
+    #[serde(default)]
+    pub error: Option<String>,
+    pub started_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    #[serde(default)]
+    pub last_heartbeat_at: Option<DateTime<Utc>>,
 }
 
 /// Agent -> Server messages
@@ -372,9 +414,13 @@ pub enum BrowserMessage {
         servers: Vec<crate::types::ServerStatus>,
         #[serde(default)]
         upgrades: Vec<UpgradeJobDto>,
+        #[serde(default)]
+        recoveries: Vec<RecoveryJobDto>,
     },
     Update {
         servers: Vec<crate::types::ServerStatus>,
+        #[serde(default)]
+        recoveries: Vec<RecoveryJobDto>,
     },
     ServerOnline {
         server_id: String,
@@ -1311,6 +1357,37 @@ mod tests {
     }
 
     #[test]
+    fn test_recovery_job_dto_round_trip() {
+        let dto = RecoveryJobDto {
+            job_id: "recovery-1".to_string(),
+            target_server_id: "target-1".to_string(),
+            source_server_id: "source-1".to_string(),
+            status: RecoveryJobStatus::Running,
+            stage: RecoveryJobStage::FreezingWrites,
+            error: Some("write freeze in progress".to_string()),
+            started_at: chrono::DateTime::parse_from_rfc3339("2026-04-16T01:02:03Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+            created_at: chrono::DateTime::parse_from_rfc3339("2026-04-16T01:00:00Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+            updated_at: chrono::DateTime::parse_from_rfc3339("2026-04-16T01:05:00Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+            last_heartbeat_at: Some(
+                chrono::DateTime::parse_from_rfc3339("2026-04-16T01:04:30Z")
+                    .unwrap()
+                    .with_timezone(&chrono::Utc),
+            ),
+        };
+
+        let json = serde_json::to_string(&dto).unwrap();
+        let parsed: RecoveryJobDto = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed, dto);
+    }
+
+    #[test]
     fn test_browser_full_sync_with_upgrades_round_trip() {
         let msg = BrowserMessage::FullSync {
             servers: vec![],
@@ -1325,13 +1402,39 @@ mod tests {
                 started_at: chrono::Utc::now(),
                 finished_at: None,
             }],
+            recoveries: vec![RecoveryJobDto {
+                job_id: "recovery-1".to_string(),
+                target_server_id: "target-1".to_string(),
+                source_server_id: "source-1".to_string(),
+                status: RecoveryJobStatus::Running,
+                stage: RecoveryJobStage::Rebinding,
+                error: Some("waiting for agent reconnect".to_string()),
+                started_at: chrono::DateTime::parse_from_rfc3339("2026-04-16T01:02:03Z")
+                    .unwrap()
+                    .with_timezone(&chrono::Utc),
+                created_at: chrono::DateTime::parse_from_rfc3339("2026-04-16T01:00:00Z")
+                    .unwrap()
+                    .with_timezone(&chrono::Utc),
+                updated_at: chrono::DateTime::parse_from_rfc3339("2026-04-16T01:05:00Z")
+                    .unwrap()
+                    .with_timezone(&chrono::Utc),
+                last_heartbeat_at: Some(
+                    chrono::DateTime::parse_from_rfc3339("2026-04-16T01:04:30Z")
+                        .unwrap()
+                        .with_timezone(&chrono::Utc),
+                ),
+            }],
         };
 
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: BrowserMessage = serde_json::from_str(&json).unwrap();
 
         match parsed {
-            BrowserMessage::FullSync { servers, upgrades } => {
+            BrowserMessage::FullSync {
+                servers,
+                upgrades,
+                recoveries,
+            } => {
                 assert!(servers.is_empty());
                 assert_eq!(upgrades.len(), 1);
                 assert_eq!(upgrades[0].server_id, "server-1");
@@ -1345,8 +1448,107 @@ mod tests {
                     Some("/backups/server-1.tar.gz".to_string())
                 );
                 assert!(upgrades[0].finished_at.is_none());
+                assert_eq!(recoveries.len(), 1);
+                assert_eq!(recoveries[0].job_id, "recovery-1");
+                assert_eq!(recoveries[0].target_server_id, "target-1");
+                assert_eq!(recoveries[0].source_server_id, "source-1");
+                assert_eq!(recoveries[0].status, RecoveryJobStatus::Running);
+                assert_eq!(recoveries[0].stage, RecoveryJobStage::Rebinding);
+                assert_eq!(
+                    recoveries[0].error,
+                    Some("waiting for agent reconnect".to_string())
+                );
+                assert_eq!(
+                    recoveries[0].started_at,
+                    chrono::DateTime::parse_from_rfc3339("2026-04-16T01:02:03Z")
+                        .unwrap()
+                        .with_timezone(&chrono::Utc)
+                );
+                assert_eq!(
+                    recoveries[0].created_at,
+                    chrono::DateTime::parse_from_rfc3339("2026-04-16T01:00:00Z")
+                        .unwrap()
+                        .with_timezone(&chrono::Utc)
+                );
+                assert_eq!(
+                    recoveries[0].updated_at,
+                    chrono::DateTime::parse_from_rfc3339("2026-04-16T01:05:00Z")
+                        .unwrap()
+                        .with_timezone(&chrono::Utc)
+                );
+                assert_eq!(
+                    recoveries[0].last_heartbeat_at,
+                    Some(
+                        chrono::DateTime::parse_from_rfc3339("2026-04-16T01:04:30Z")
+                            .unwrap()
+                            .with_timezone(&chrono::Utc)
+                    )
+                );
             }
             _ => panic!("Expected FullSync"),
+        }
+    }
+
+    #[test]
+    fn test_browser_full_sync_defaults_missing_recoveries_to_empty() {
+        let json = r#"{"type":"full_sync","servers":[],"upgrades":[]}"#;
+        let parsed: BrowserMessage = serde_json::from_str(json).unwrap();
+
+        match parsed {
+            BrowserMessage::FullSync {
+                servers,
+                upgrades,
+                recoveries,
+            } => {
+                assert!(servers.is_empty());
+                assert!(upgrades.is_empty());
+                assert!(recoveries.is_empty());
+            }
+            _ => panic!("Expected FullSync"),
+        }
+    }
+
+    #[test]
+    fn test_browser_update_round_trip_with_recoveries() {
+        let msg = BrowserMessage::Update {
+            servers: vec![],
+            recoveries: vec![RecoveryJobDto {
+                job_id: "recovery-2".to_string(),
+                target_server_id: "target-2".to_string(),
+                source_server_id: "source-2".to_string(),
+                status: RecoveryJobStatus::Succeeded,
+                stage: RecoveryJobStage::Succeeded,
+                error: None,
+                started_at: chrono::DateTime::parse_from_rfc3339("2026-04-16T02:00:00Z")
+                    .unwrap()
+                    .with_timezone(&chrono::Utc),
+                created_at: chrono::DateTime::parse_from_rfc3339("2026-04-16T01:59:00Z")
+                    .unwrap()
+                    .with_timezone(&chrono::Utc),
+                updated_at: chrono::DateTime::parse_from_rfc3339("2026-04-16T02:10:00Z")
+                    .unwrap()
+                    .with_timezone(&chrono::Utc),
+                last_heartbeat_at: None,
+            }],
+        };
+
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: BrowserMessage = serde_json::from_str(&json).unwrap();
+
+        match parsed {
+            BrowserMessage::Update {
+                servers,
+                recoveries,
+            } => {
+                assert!(servers.is_empty());
+                assert_eq!(recoveries.len(), 1);
+                assert_eq!(recoveries[0].job_id, "recovery-2");
+                assert_eq!(recoveries[0].status, RecoveryJobStatus::Succeeded);
+                assert_eq!(recoveries[0].stage, RecoveryJobStage::Succeeded);
+                assert!(recoveries[0].error.is_none());
+                assert!(recoveries[0].last_heartbeat_at.is_none());
+            }
+            _ => panic!("Expected Update"),
         }
     }
 
