@@ -422,6 +422,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 if ipv4_changed || ipv6_changed || remote_changed {
                     if let Err(e) = AlertService::check_event_rules(
                         &state.db,
+                        &state.config,
                         &state.alert_state_manager,
                         server_id,
                         "ip_changed",
@@ -1020,6 +1021,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
 
                         if let Err(e) = AlertService::check_event_rules(
                             &state.db,
+                            &state.config,
                             &state.alert_state_manager,
                             server_id,
                             "ip_changed",

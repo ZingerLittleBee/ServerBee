@@ -135,7 +135,7 @@ async fn test_notification(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
-    NotificationService::test_notification(&state.db, &id).await?;
+    NotificationService::test_notification(&state.db, &state.config, &id).await?;
     ok("ok")
 }
 
