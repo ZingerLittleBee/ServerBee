@@ -79,3 +79,29 @@ async fn update_accepts_valid_merged_payload() {
     assert_eq!(updated.name, "renamed");
     assert!(!updated.enabled);
 }
+
+#[tokio::test]
+async fn update_reshape_email_config_keeps_row_enabled() {
+    let db = fresh_db().await;
+    let id = create_valid_email(&db).await;
+
+    // Simulate the post-migration "needs reconfiguration" flow: user re-fills
+    // the config_json and re-enables the row in one PUT.
+    let input = UpdateNotification {
+        name: Some("ops (fixed)".to_string()),
+        notify_type: None,
+        config_json: Some(json!({
+            "from": "alerts@example.com",
+            "to": ["new@example.com", "oncall@example.com"],
+        })),
+        enabled: Some(true),
+    };
+
+    let updated = NotificationService::update(&db, &id, input)
+        .await
+        .expect("valid email re-config");
+    assert_eq!(updated.name, "ops (fixed)");
+    assert!(updated.enabled);
+    let cfg: serde_json::Value = serde_json::from_str(&updated.config_json).unwrap();
+    assert_eq!(cfg["to"].as_array().unwrap().len(), 2);
+}

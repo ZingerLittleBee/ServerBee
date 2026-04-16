@@ -71,6 +71,8 @@
     "edit_server": "编辑服务器",
     "test_notification": "测试 {{name}}",
     "delete_notification": "删除 {{name}}",
+    "edit_notification": "编辑 {{name}}",
+    "edit_group": "编辑 {{name}}",
     "delete_group": "删除组 {{name}}",
     "unlink_account": "取消关联 {{provider}}",
     "revoke_device": "撤销 {{device}}",

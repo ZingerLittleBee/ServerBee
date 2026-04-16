@@ -62,6 +62,11 @@ describe('buildEmailPayload', () => {
     const payload = buildEmailPayload('', ['ops@example.com'])
     expect(payload.from).toBe('')
   })
+
+  it('includes recipients in preserved order for multi-address edits', () => {
+    const payload = buildEmailPayload('alerts@example.com', ['z@x.com', 'a@x.com', 'm@x.com'])
+    expect(payload.to).toEqual(['z@x.com', 'a@x.com', 'm@x.com'])
+  })
 })
 
 describe('EmailFormFields', () => {

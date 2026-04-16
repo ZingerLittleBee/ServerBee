@@ -87,6 +87,12 @@
   "notifications.test_failed": "Failed to send test notification",
   "notifications.group_create_failed": "Failed to create notification group",
   "notifications.group_delete_failed": "Failed to delete notification group",
+  "notifications.update_channel": "Update channel",
+  "notifications.update_group": "Update group",
+  "notifications.toast_channel_updated": "Channel updated",
+  "notifications.toast_group_updated": "Group updated",
+  "notifications.channel_update_failed": "Failed to update channel",
+  "notifications.group_update_failed": "Failed to update group",
 
   "alerts.title": "Alert Rules",
   "alerts.rules": "Rules",
