@@ -21,6 +21,7 @@ use crate::config::AgentConfig;
 use crate::docker::DockerManager;
 use crate::file_manager::{FileEvent, FileManager};
 use crate::network_prober::NetworkProber;
+use crate::rebind;
 use crate::pinger::PingManager;
 use crate::register;
 use crate::terminal::{TerminalEvent, TerminalManager};
@@ -108,7 +109,7 @@ impl Reporter {
         }
     }
 
-    async fn connect_and_report(&self) -> anyhow::Result<()> {
+    async fn connect_and_report(&mut self) -> anyhow::Result<()> {
         use serverbee_common::constants::*;
 
         tracing::info!("Connecting to {}...", build_ws_url(&self.config)?);
@@ -440,7 +441,7 @@ impl Reporter {
 
     #[allow(clippy::too_many_arguments)]
     async fn handle_server_message<S>(
-        &self,
+        &mut self,
         text: &str,
         write: &mut S,
         ping_manager: &mut PingManager,
@@ -537,6 +538,41 @@ impl Reporter {
                         tracing::info!("TaskResult ready for task_id={task_id}");
                     }
                 });
+            }
+            ServerMessage::RebindIdentity {
+                job_id,
+                target_server_id,
+                token,
+            } => {
+                tracing::info!(
+                    "Rebinding identity for job_id={job_id} to target_server_id={target_server_id}"
+                );
+
+                if let Err(write_err) =
+                    rebind::persist_rebind_token(AgentConfig::config_path(), &token)
+                {
+                    tracing::warn!(
+                        "Failed to persist rebind token for job_id={job_id}: {write_err}"
+                    );
+                    let failed = AgentMessage::RebindIdentityFailed {
+                        job_id: job_id.clone(),
+                        error: write_err.to_string(),
+                    };
+                    let json = serde_json::to_string(&failed)?;
+                    if let Err(send_err) = write.send(Message::Text(json.into())).await {
+                        tracing::warn!(
+                            "Failed to send RebindIdentityFailed for job_id={job_id}: {send_err}"
+                        );
+                    }
+                    return Ok(());
+                }
+
+                self.config.token = token;
+                let ack = AgentMessage::RebindIdentityAck { job_id };
+                let json = serde_json::to_string(&ack)?;
+                write.send(Message::Text(json.into())).await?;
+                write.send(Message::Close(None)).await?;
+                return Ok(());
             }
             ServerMessage::Ack { msg_id } => {
                 tracing::debug!("Received Ack for msg_id={msg_id}");

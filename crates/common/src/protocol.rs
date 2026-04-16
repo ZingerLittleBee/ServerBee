@@ -81,6 +81,13 @@ pub enum AgentMessage {
         capability: String,
         reason: CapabilityDeniedReason,
     },
+    RebindIdentityAck {
+        job_id: String,
+    },
+    RebindIdentityFailed {
+        job_id: String,
+        error: String,
+    },
     NetworkProbeResults {
         results: Vec<NetworkProbeResultData>,
     },
@@ -347,6 +354,11 @@ pub enum ServerMessage {
         #[serde(default)]
         job_id: Option<String>,
     },
+    RebindIdentity {
+        job_id: String,
+        target_server_id: String,
+        token: String,
+    },
     CapabilitiesSync {
         capabilities: u32,
     },
@@ -474,6 +486,61 @@ mod tests {
                 assert_eq!(capabilities, 7);
             }
             _ => panic!("Expected CapabilitiesSync"),
+        }
+    }
+
+    #[test]
+    fn test_rebind_identity_round_trip() {
+        let msg = ServerMessage::RebindIdentity {
+            job_id: "job-1".to_string(),
+            target_server_id: "server-1".to_string(),
+            token: "token-123".to_string(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ServerMessage::RebindIdentity {
+                job_id,
+                target_server_id,
+                token,
+            } => {
+                assert_eq!(job_id, "job-1");
+                assert_eq!(target_server_id, "server-1");
+                assert_eq!(token, "token-123");
+            }
+            _ => panic!("Expected RebindIdentity"),
+        }
+    }
+
+    #[test]
+    fn test_rebind_identity_ack_round_trip() {
+        let msg = AgentMessage::RebindIdentityAck {
+            job_id: "job-1".to_string(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::RebindIdentityAck { job_id } => {
+                assert_eq!(job_id, "job-1");
+            }
+            _ => panic!("Expected RebindIdentityAck"),
+        }
+    }
+
+    #[test]
+    fn test_rebind_identity_failed_round_trip() {
+        let msg = AgentMessage::RebindIdentityFailed {
+            job_id: "job-1".to_string(),
+            error: "permission denied".to_string(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::RebindIdentityFailed { job_id, error } => {
+                assert_eq!(job_id, "job-1");
+                assert_eq!(error, "permission denied");
+            }
+            _ => panic!("Expected RebindIdentityFailed"),
         }
     }
 
