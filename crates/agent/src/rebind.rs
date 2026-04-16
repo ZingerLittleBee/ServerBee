@@ -61,9 +61,7 @@ pub fn persist_rebind_token(path: impl AsRef<Path>, token: &str) -> anyhow::Resu
                 let _ = fs::set_permissions(&temp_path, metadata.permissions());
             }
         }
-        fs::rename(&temp_path, path).with_context(|| {
-            format!("failed to atomically replace {} with {}", path.display(), temp_path.display())
-        })?;
+        replace_file(&temp_path, path)?;
 
         #[cfg(unix)]
         {
@@ -82,6 +80,51 @@ pub fn persist_rebind_token(path: impl AsRef<Path>, token: &str) -> anyhow::Resu
     }
 
     write_result
+}
+
+#[cfg(unix)]
+fn replace_file(temp_path: &Path, path: &Path) -> anyhow::Result<()> {
+    fs::rename(temp_path, path).with_context(|| {
+        format!(
+            "failed to atomically replace {} with {}",
+            path.display(),
+            temp_path.display()
+        )
+    })
+}
+
+#[cfg(windows)]
+fn replace_file(temp_path: &Path, path: &Path) -> anyhow::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    use windows_sys::Win32::Storage::FileSystem::{
+        MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+    };
+
+    let mut temp_wide: Vec<u16> = temp_path.as_os_str().encode_wide().collect();
+    temp_wide.push(0);
+    let mut path_wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+    path_wide.push(0);
+
+    let ok = unsafe {
+        MoveFileExW(
+            temp_wide.as_ptr(),
+            path_wide.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+
+    if ok == 0 {
+        Err(std::io::Error::last_os_error()).with_context(|| {
+            format!(
+                "failed to atomically replace {} with {}",
+                path.display(),
+                temp_path.display()
+            )
+        })
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
