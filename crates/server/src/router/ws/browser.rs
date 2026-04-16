@@ -256,6 +256,7 @@ async fn build_full_sync(state: &Arc<AppState>) -> BrowserMessage {
             return BrowserMessage::FullSync {
                 servers: Vec::new(),
                 upgrades: state.upgrade_tracker.snapshot(),
+                recoveries: Vec::new(),
             };
         }
     };
@@ -355,6 +356,7 @@ async fn build_full_sync(state: &Arc<AppState>) -> BrowserMessage {
     BrowserMessage::FullSync {
         servers: statuses,
         upgrades: state.upgrade_tracker.snapshot(),
+        recoveries: Vec::new(),
     }
 }
 
