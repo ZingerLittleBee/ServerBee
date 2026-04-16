@@ -29,7 +29,7 @@ pub enum UpgradeStatus {
     Timeout,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum RecoveryJobStatus {
@@ -39,7 +39,7 @@ pub enum RecoveryJobStatus {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum RecoveryJobStage {
@@ -52,6 +52,43 @@ pub enum RecoveryJobStage {
     Succeeded,
     Failed,
     Unknown,
+}
+
+impl<'de> Deserialize<'de> for RecoveryJobStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+
+        Ok(match value.as_str() {
+            "running" => Self::Running,
+            "failed" => Self::Failed,
+            "succeeded" => Self::Succeeded,
+            _ => Self::Unknown,
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for RecoveryJobStage {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+
+        Ok(match value.as_str() {
+            "validating" => Self::Validating,
+            "rebinding" => Self::Rebinding,
+            "awaiting_target_online" => Self::AwaitingTargetOnline,
+            "freezing_writes" => Self::FreezingWrites,
+            "merging_history" => Self::MergingHistory,
+            "finalizing" => Self::Finalizing,
+            "succeeded" => Self::Succeeded,
+            "failed" => Self::Failed,
+            _ => Self::Unknown,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1385,6 +1422,20 @@ mod tests {
         let parsed: RecoveryJobDto = serde_json::from_str(&json).unwrap();
 
         assert_eq!(parsed, dto);
+    }
+
+    #[test]
+    fn test_recovery_job_status_unknown_deserializes_to_unknown() {
+        let status: RecoveryJobStatus = serde_json::from_str(r#""paused""#).unwrap();
+
+        assert_eq!(status, RecoveryJobStatus::Unknown);
+    }
+
+    #[test]
+    fn test_recovery_job_stage_unknown_deserializes_to_unknown() {
+        let stage: RecoveryJobStage = serde_json::from_str(r#""reconciling""#).unwrap();
+
+        assert_eq!(stage, RecoveryJobStage::Unknown);
     }
 
     #[test]
