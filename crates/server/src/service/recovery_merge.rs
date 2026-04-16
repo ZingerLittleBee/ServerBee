@@ -16,6 +16,7 @@ use crate::state::AppState;
 pub const RECOVERY_STAGE_VALIDATING: &str = "validating";
 pub const RECOVERY_STAGE_REBINDING: &str = "rebinding";
 pub const RECOVERY_STAGE_AWAITING_TARGET_ONLINE: &str = "awaiting_target_online";
+pub const REBIND_IDENTITY_MIN_PROTOCOL_VERSION: u32 = 4;
 
 pub struct RecoveryMergeService;
 
@@ -138,7 +139,10 @@ impl RecoveryMergeService {
             &source.id,
             "Target server must be offline before starting recovery",
             "Source server must be online before starting recovery",
-        )
+        )?;
+
+        Self::validate_rebind_identity_protocol(state, &source)?;
+        Ok(())
     }
 
     pub async fn validate_dispatch_preconditions(
@@ -357,6 +361,25 @@ impl RecoveryMergeService {
         C: ConnectionTrait,
     {
         Ok(recovery_job::Entity::find_by_id(job_id).one(db).await?)
+    }
+
+    fn validate_rebind_identity_protocol(
+        state: &Arc<AppState>,
+        source: &server::Model,
+    ) -> Result<(), AppError> {
+        let protocol_version = state
+            .agent_manager
+            .get_protocol_version(&source.id)
+            .unwrap_or(source.protocol_version as u32);
+
+        if protocol_version < REBIND_IDENTITY_MIN_PROTOCOL_VERSION {
+            return Err(AppError::Conflict(format!(
+                "Source server must support RebindIdentity (protocol v{}+ required)",
+                REBIND_IDENTITY_MIN_PROTOCOL_VERSION
+            )));
+        }
+
+        Ok(())
     }
 
     fn validate_connectivity_preconditions(

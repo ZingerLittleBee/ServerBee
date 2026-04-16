@@ -15,7 +15,7 @@ use crate::entity::{recovery_job, server};
 use crate::error::{ApiResponse, AppError, ok};
 use crate::router::ws::browser::broadcast_recovery_update;
 use crate::service::recovery_job::RecoveryJobService;
-use crate::service::recovery_merge::RecoveryMergeService;
+use crate::service::recovery_merge::{RECOVERY_STAGE_REBINDING, RecoveryMergeService};
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
@@ -257,6 +257,7 @@ async fn start_recovery_merge_with_sender(
         return Err(error);
     }
     let token = RecoveryMergeService::rotate_target_token_on_txn(&txn, target_id).await?;
+    txn.commit().await?;
 
     if let Err(error) = sender
         .send(ServerMessage::RebindIdentity {
@@ -266,13 +267,13 @@ async fn start_recovery_merge_with_sender(
         })
         .await
     {
-        txn.rollback().await?;
+        let message = format!("Failed to dispatch RebindIdentity to source agent: {error}");
+        RecoveryJobService::mark_failed(&state.db, &job.job_id, RECOVERY_STAGE_REBINDING, &message)
+            .await?;
         return Err(AppError::Internal(format!(
             "Failed to dispatch RebindIdentity to source agent: {error}"
         )));
     }
-
-    txn.commit().await?;
     Ok(job)
 }
 
@@ -450,7 +451,12 @@ mod tests {
     use tokio::sync::mpsc;
     use tokio::time::{Duration, timeout};
 
-    async fn insert_server(db: &sea_orm::DatabaseConnection, id: &str, name: &str) {
+    async fn insert_server_with_protocol(
+        db: &sea_orm::DatabaseConnection,
+        id: &str,
+        name: &str,
+        protocol_version: i32,
+    ) {
         let now = Utc::now();
         let token_hash = AuthService::hash_password("test").unwrap();
         server::ActiveModel {
@@ -461,7 +467,7 @@ mod tests {
             weight: Set(0),
             hidden: Set(false),
             capabilities: Set(CAP_DEFAULT as i32),
-            protocol_version: Set(1),
+            protocol_version: Set(protocol_version),
             created_at: Set(now),
             updated_at: Set(now),
             ..Default::default()
@@ -469,6 +475,10 @@ mod tests {
         .insert(db)
         .await
         .unwrap();
+    }
+
+    async fn insert_server(db: &sea_orm::DatabaseConnection, id: &str, name: &str) {
+        insert_server_with_protocol(db, id, name, 4).await;
     }
 
     fn test_addr() -> SocketAddr {
@@ -508,6 +518,7 @@ mod tests {
         state
             .agent_manager
             .add_connection("source-1".into(), "Source".into(), tx, test_addr());
+        state.agent_manager.set_protocol_version("source-1", 4);
 
         let Json(response) = start_recovery_merge(
             State(Arc::clone(&state)),
@@ -539,6 +550,7 @@ mod tests {
         state
             .agent_manager
             .add_connection("source-1".into(), "Source".into(), tx, test_addr());
+        state.agent_manager.set_protocol_version("source-1", 4);
 
         let Json(response) = start_recovery_merge(
             State(Arc::clone(&state)),
@@ -616,7 +628,58 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn start_recovery_merge_fails_safely_when_dispatch_fails() {
+    async fn start_recovery_merge_rejects_unsupported_source_protocol() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "target-1", "Target").await;
+        insert_server_with_protocol(&db, "source-1", "Source", 3).await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+
+        let (tx, mut rx) = mpsc::channel(1);
+        state
+            .agent_manager
+            .add_connection("source-1".into(), "Source".into(), tx, test_addr());
+        state.agent_manager.set_protocol_version("source-1", 3);
+        state.agent_manager.set_protocol_version("source-1", 3);
+
+        let before = server::Entity::find_by_id("target-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+
+        let error = start_recovery_merge(
+            State(Arc::clone(&state)),
+            Path("target-1".to_string()),
+            Json(StartRecoveryRequest {
+                source_server_id: "source-1".to_string(),
+            }),
+        )
+        .await
+        .expect_err("protocol v3 source should be rejected");
+
+        assert!(
+            matches!(error, AppError::Conflict(message) if message.contains("protocol v4+"))
+        );
+
+        assert!(
+            timeout(Duration::from_millis(100), rx.recv()).await.is_err(),
+            "unsupported source should not receive a rebind dispatch"
+        );
+
+        let after = server::Entity::find_by_id("target-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(after.token_prefix, before.token_prefix);
+        assert_eq!(after.token_hash, before.token_hash);
+        assert!(recovery_job::Entity::find().all(&db).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn start_recovery_merge_persists_state_before_dispatch_failure() {
         let (db, _tmp) = setup_test_db().await;
         insert_server(&db, "target-1", "Target").await;
         insert_server(&db, "source-1", "Source").await;
@@ -629,6 +692,7 @@ mod tests {
         state
             .agent_manager
             .add_connection("source-1".into(), "Source".into(), tx, test_addr());
+        state.agent_manager.set_protocol_version("source-1", 4);
 
         let before = server::Entity::find_by_id("target-1")
             .one(&db)
@@ -647,7 +711,8 @@ mod tests {
         .expect_err("dispatch failure should fail safely");
 
         assert!(
-            matches!(error, AppError::Internal(message) if message.contains("Failed to dispatch RebindIdentity"))
+            matches!(error, AppError::Internal(ref message) if message.contains("Failed to dispatch RebindIdentity")),
+            "unexpected error: {error:?}"
         );
 
         let after = server::Entity::find_by_id("target-1")
@@ -655,13 +720,12 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(after.token_prefix, before.token_prefix);
-        assert_eq!(after.token_hash, before.token_hash);
+        assert_ne!(after.token_prefix, before.token_prefix);
+        assert_ne!(after.token_hash, before.token_hash);
 
         let jobs = recovery_job::Entity::find().all(&db).await.unwrap();
-        assert!(
-            jobs.is_empty(),
-            "no recovery job should remain after failed dispatch"
-        );
+        assert_eq!(jobs.len(), 1, "recovery job state should stay committed");
+        assert_eq!(jobs[0].target_server_id, "target-1");
+        assert_eq!(jobs[0].source_server_id, "source-1");
     }
 }
