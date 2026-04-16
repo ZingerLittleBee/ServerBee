@@ -142,12 +142,12 @@ Modify `NotificationService::parse_config` so that after the `serde_json::from_v
         let config: ChannelConfig = serde_json::from_value(val)
             .map_err(|e| AppError::Validation(format!("Invalid {notify_type} config: {e}")))?;
 
-        if let ChannelConfig::Email { to, .. } = &config {
-            if to.is_empty() {
-                return Err(AppError::Validation(
-                    "Email notification requires at least one 'to' address".to_string(),
-                ));
-            }
+        if let ChannelConfig::Email { to, .. } = &config
+            && to.is_empty()
+        {
+            return Err(AppError::Validation(
+                "Email notification requires at least one 'to' address".to_string(),
+            ));
         }
 
         Ok(config)
@@ -210,12 +210,12 @@ Add these four tests in the same location:
 
 - [ ] **Step 4: Temporarily stub the SMTP dispatch branch so the file compiles**
 
-The `dispatch()` function's `ChannelConfig::Email { smtp_host, smtp_port, username, password, from, to }` branch (inside the match block) no longer pattern-matches. Replace that entire arm with this placeholder (Task 7 will fill it in with the real Resend implementation):
+The `dispatch()` function's `ChannelConfig::Email { smtp_host, smtp_port, username, password, from, to }` branch (inside the match block) no longer pattern-matches. Replace that entire arm with this placeholder (Task 6 will fill it in with the real Resend implementation):
 
 ```rust
             ChannelConfig::Email { from: _, to: _ } => {
                 return Err(AppError::Internal(
-                    "Email dispatch not yet rewired (Task 7)".to_string(),
+                    "Email dispatch not yet rewired (Task 6)".to_string(),
                 ));
             }
 ```
@@ -716,7 +716,7 @@ Replace the entire Email arm that Task 2 left as a placeholder:
 ```rust
             ChannelConfig::Email { from: _, to: _ } => {
                 return Err(AppError::Internal(
-                    "Email dispatch not yet rewired (Task 7)".to_string(),
+                    "Email dispatch not yet rewired (Task 6)".to_string(),
                 ));
             }
 ```
