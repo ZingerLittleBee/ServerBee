@@ -61,6 +61,12 @@ These variables are for local repo tooling and development workflows. They are n
 |---------------------|----------|------|---------|-------------|
 | `SERVERBEE_GEOIP__MMDB_PATH` | `geoip.mmdb_path` | string | `""` | Path to MaxMind GeoLite2-City.mmdb file. Non-empty path enables GeoIP |
 
+### Resend (Email Notifications)
+
+| Environment Variable | TOML Key | Type | Default | Description |
+|---------------------|----------|------|---------|-------------|
+| `SERVERBEE_RESEND__API_KEY` | `resend.api_key` | string | `""` | Resend API key (https://resend.com/api-keys). Required to use the Email notification channel. The sender address (`from`) configured on each email channel must belong to a domain verified at https://resend.com/domains. |
+
 ### Data Retention (Tuning)
 
 | Environment Variable | TOML Key | Type | Default | Description |
