@@ -162,6 +162,22 @@ impl AgentConfig {
 }
 
 #[cfg(test)]
+pub(crate) fn assert_config_path() {
+    assert_eq!(
+        AgentConfig::select_config_path_for_persistence(true, true),
+        "agent.toml"
+    );
+    assert_eq!(
+        AgentConfig::select_config_path_for_persistence(false, true),
+        "/etc/serverbee/agent.toml"
+    );
+    assert_eq!(
+        AgentConfig::select_config_path_for_persistence(false, false),
+        "agent.toml"
+    );
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

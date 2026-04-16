@@ -3,6 +3,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::AgentConfig;
 
+#[cfg(test)]
+use crate::rebind::persist_rebind_token_impl as persist_rebind_token;
+#[cfg(not(test))]
+use crate::rebind::persist_rebind_token;
+
 #[derive(Serialize)]
 struct RegisterRequest {
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -42,5 +47,5 @@ pub async fn register_agent(config: &AgentConfig, fingerprint: &str) -> Result<(
 }
 
 pub fn save_token(token: &str) -> Result<()> {
-    crate::rebind::persist_rebind_token(AgentConfig::config_path_for_persistence(), token)
+    persist_rebind_token(AgentConfig::config_path_for_persistence(), token)
 }

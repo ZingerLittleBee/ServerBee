@@ -27,7 +27,7 @@ fn is_token_line(line: &str) -> bool {
     rest.trim_start().starts_with('=')
 }
 
-pub fn persist_rebind_token(path: impl AsRef<Path>, token: &str) -> anyhow::Result<()> {
+pub(crate) fn persist_rebind_token_impl(path: impl AsRef<Path>, token: &str) -> anyhow::Result<()> {
     let path = path.as_ref();
     let existing = if path.exists() {
         fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?
@@ -82,6 +82,9 @@ pub fn persist_rebind_token(path: impl AsRef<Path>, token: &str) -> anyhow::Resu
     write_result
 }
 
+#[cfg(not(test))]
+pub use persist_rebind_token_impl as persist_rebind_token;
+
 #[cfg(unix)]
 fn replace_file(temp_path: &Path, path: &Path) -> anyhow::Result<()> {
     fs::rename(temp_path, path).with_context(|| {
@@ -128,6 +131,22 @@ fn replace_file(temp_path: &Path, path: &Path) -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
+pub(crate) fn assert_persist_rebind_token() {
+    let tempdir = tempfile::TempDir::new().expect("tempdir");
+    let path = tempdir.path().join("agent.toml");
+    fs::write(&path, "server_url = \"http://127.0.0.1:9527\"\n").expect("seed file");
+
+    persist_rebind_token_impl(&path, "focused-token").expect("persist");
+
+    let content = fs::read_to_string(&path).expect("read file");
+    assert_eq!(
+        content,
+        r#"server_url = "http://127.0.0.1:9527"
+token = "focused-token""#
+    );
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
@@ -144,7 +163,7 @@ log.level = "debug""#,
         )
         .expect("seed file");
 
-        super::persist_rebind_token(&path, "new-token").expect("persist");
+        super::persist_rebind_token_impl(&path, "new-token").expect("persist");
 
         let content = fs::read_to_string(&path).expect("read file");
         assert_eq!(
@@ -161,7 +180,7 @@ log.level = "debug""#
         let path = tempdir.path().join("agent.toml");
         fs::write(&path, "server_url = \"http://127.0.0.1:9527\"\n").expect("seed file");
 
-        super::persist_rebind_token(&path, "fresh-token").expect("persist");
+        super::persist_rebind_token_impl(&path, "fresh-token").expect("persist");
 
         let content = fs::read_to_string(&path).expect("read file");
         assert_eq!(
