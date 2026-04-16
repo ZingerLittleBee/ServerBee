@@ -163,6 +163,7 @@ impl RecoveryMergeService {
             .col_expr(recovery_job::Column::UpdatedAt, Expr::value(now))
             .col_expr(recovery_job::Column::LastHeartbeatAt, Expr::value(Some(now)))
             .filter(recovery_job::Column::JobId.eq(&job.job_id))
+            .filter(recovery_job::Column::Status.eq("running"))
             .filter(recovery_job::Column::Stage.is_in([
                 RECOVERY_STAGE_VALIDATING,
                 RECOVERY_STAGE_REBINDING,
@@ -186,30 +187,32 @@ impl RecoveryMergeService {
         job_id: &str,
         acking_server_id: &str,
     ) -> Result<recovery_job::Model, AppError> {
-        let job = RecoveryJobService::get_job(db, job_id)
+        let now = Utc::now();
+        let result = recovery_job::Entity::update_many()
+            .col_expr(
+                recovery_job::Column::Stage,
+                Expr::value(RECOVERY_STAGE_AWAITING_TARGET_ONLINE),
+            )
+            .col_expr(recovery_job::Column::CheckpointJson, Expr::value(None::<String>))
+            .col_expr(recovery_job::Column::Error, Expr::value(None::<String>))
+            .col_expr(recovery_job::Column::UpdatedAt, Expr::value(now))
+            .col_expr(recovery_job::Column::LastHeartbeatAt, Expr::value(Some(now)))
+            .filter(recovery_job::Column::JobId.eq(job_id))
+            .filter(recovery_job::Column::SourceServerId.eq(acking_server_id))
+            .filter(recovery_job::Column::Status.eq("running"))
+            .filter(recovery_job::Column::Stage.eq(RECOVERY_STAGE_REBINDING))
+            .exec(db)
+            .await?;
+
+        if result.rows_affected == 0 {
+            return RecoveryJobService::get_job(db, job_id)
+                .await?
+                .ok_or_else(|| AppError::NotFound("Recovery job not found".to_string()));
+        }
+
+        RecoveryJobService::get_job(db, job_id)
             .await?
-            .ok_or_else(|| AppError::NotFound("Recovery job not found".to_string()))?;
-
-        if job.source_server_id != acking_server_id {
-            return Ok(job);
-        }
-
-        if job.status != "running" {
-            return Ok(job);
-        }
-
-        if job.stage != RECOVERY_STAGE_REBINDING {
-            return Ok(job);
-        }
-
-        RecoveryJobService::update_stage(
-            db,
-            job_id,
-            RECOVERY_STAGE_AWAITING_TARGET_ONLINE,
-            None,
-            None,
-        )
-        .await
+            .ok_or_else(|| AppError::NotFound("Recovery job not found".to_string()))
     }
 }
 
@@ -566,5 +569,57 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(loaded.stage, RECOVERY_STAGE_AWAITING_TARGET_ONLINE);
+    }
+
+    #[tokio::test]
+    async fn advance_job_to_rebinding_does_not_overwrite_failed_job() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let stale_job = RecoveryJobService::create_job(&db, "target-1", "source-1")
+            .await
+            .unwrap();
+        RecoveryJobService::mark_failed(&db, &stale_job.job_id, "validating", "boom")
+            .await
+            .unwrap();
+
+        let advanced = RecoveryMergeService::advance_job_to_rebinding(&db, stale_job)
+            .await
+            .unwrap();
+
+        assert_eq!(advanced.status, "failed");
+        assert_eq!(advanced.stage, "validating");
+
+        let loaded = RecoveryJobService::get_job(&db, &advanced.job_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.status, "failed");
+        assert_eq!(loaded.stage, "validating");
+    }
+
+    #[tokio::test]
+    async fn rebind_ack_does_not_overwrite_moved_job() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let job = RecoveryMergeService::start_on_db(&db, "target-1", "source-1")
+            .await
+            .unwrap();
+        RecoveryJobService::update_stage(&db, &job.job_id, RECOVERY_STAGE_AWAITING_TARGET_ONLINE, None, None)
+            .await
+            .unwrap();
+
+        let updated = RecoveryMergeService::handle_rebind_ack_on_db(&db, &job.job_id, "source-1")
+            .await
+            .unwrap();
+
+        assert_eq!(updated.stage, RECOVERY_STAGE_AWAITING_TARGET_ONLINE);
+        assert_eq!(updated.status, "running");
+
+        let loaded = RecoveryJobService::get_job(&db, &job.job_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.stage, RECOVERY_STAGE_AWAITING_TARGET_ONLINE);
+        assert_eq!(loaded.status, "running");
     }
 }
