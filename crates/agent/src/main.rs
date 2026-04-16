@@ -75,9 +75,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("No token found, registering...");
         let (_server_id, token) = register::register_agent(&config, &machine_fingerprint).await?;
         tracing::info!("Registration successful");
-        if let Err(e) = register::save_token(&token) {
-            tracing::warn!("Failed to save token: {e}");
-        }
+        register::save_token(&token)?;
         config.token = token;
     }
 

@@ -159,6 +159,48 @@ impl AgentConfig {
             "agent.toml"
         }
     }
+
+    pub(crate) fn token_env_override_present() -> bool {
+        std::env::var_os("SERVERBEE_TOKEN").is_some()
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn with_serverbee_token_env<T>(value: Option<&str>, test: impl FnOnce() -> T) -> T {
+    use std::sync::{Mutex, OnceLock};
+
+    struct ServerbeeTokenEnvGuard {
+        original: Option<std::ffi::OsString>,
+    }
+
+    impl Drop for ServerbeeTokenEnvGuard {
+        fn drop(&mut self) {
+            match self.original.take() {
+                Some(value) => unsafe {
+                    std::env::set_var("SERVERBEE_TOKEN", value);
+                },
+                None => unsafe {
+                    std::env::remove_var("SERVERBEE_TOKEN");
+                },
+            }
+        }
+    }
+
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let _lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().expect("env lock");
+    let original = std::env::var_os("SERVERBEE_TOKEN");
+
+    match value {
+        Some(value) => unsafe {
+            std::env::set_var("SERVERBEE_TOKEN", value);
+        },
+        None => unsafe {
+            std::env::remove_var("SERVERBEE_TOKEN");
+        },
+    }
+
+    let _guard = ServerbeeTokenEnvGuard { original };
+    test()
 }
 
 #[cfg(test)]
@@ -200,5 +242,12 @@ mod tests {
             config.external_ip_url, "https://api.ipify.org",
             "default external IP URL should be api.ipify.org"
         );
+    }
+
+    #[test]
+    fn token_env_override_present_detects_serverbee_token() {
+        super::with_serverbee_token_env(Some("env-token"), || {
+            assert!(AgentConfig::token_env_override_present());
+        });
     }
 }
