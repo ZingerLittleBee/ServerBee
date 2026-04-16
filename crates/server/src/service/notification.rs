@@ -79,6 +79,63 @@ impl NotifyContext {
 
 const DEFAULT_TEMPLATE: &str = "[ServerBee] {{server_name}} {{event}}\n{{message}}\n时间: {{time}}";
 
+#[allow(dead_code)] // wired into email dispatch in Task 6
+const EMAIL_TEXT_TEMPLATE: &str =
+    "[ServerBee] {{server_name}} {{event}}\n{{message}}\nTime: {{time}}";
+
+#[allow(dead_code)] // wired into email dispatch in Task 6
+fn email_header_color(event: &str) -> &'static str {
+    match event {
+        "triggered" => "#ea580c",
+        "resolved" | "recovered" => "#16a34a",
+        _ => "#6b7280",
+    }
+}
+
+#[allow(dead_code)] // wired into email dispatch in Task 6
+fn render_html(ctx: &NotifyContext) -> String {
+    let color = email_header_color(&ctx.event);
+    let title = format!(
+        "[ServerBee] {} {}",
+        html_escape::encode_text(&ctx.server_name),
+        html_escape::encode_text(&ctx.event),
+    );
+
+    let mut rows = String::new();
+    let mut add_row = |label: &str, value: &str| {
+        if value.is_empty() {
+            return;
+        }
+        rows.push_str(&format!(
+            "<tr><td style=\"padding:6px 12px;color:#6b7280;font-size:13px;width:110px\">{}</td>\
+             <td style=\"padding:6px 12px;font-size:14px\">{}</td></tr>",
+            label,
+            html_escape::encode_text(value),
+        ));
+    };
+    add_row("Server", &ctx.server_name);
+    add_row("Rule", &ctx.rule_name);
+    add_row("Event", &ctx.event);
+    add_row("Time", &ctx.time);
+    add_row("CPU", &ctx.cpu);
+    add_row("Memory", &ctx.memory);
+    add_row("Message", &ctx.message);
+
+    format!(
+        r#"<!DOCTYPE html>
+<html><body style="margin:0;padding:24px;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+<table style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;border-collapse:collapse;width:100%">
+<tr><td style="background:{color};color:#ffffff;padding:16px 20px;font-size:16px;font-weight:600">{title}</td></tr>
+<tr><td style="padding:12px 8px"><table style="width:100%;border-collapse:collapse">{rows}</table></td></tr>
+<tr><td style="padding:12px 20px;color:#9ca3af;font-size:12px;text-align:center">Sent by ServerBee</td></tr>
+</table>
+</body></html>"#,
+        color = color,
+        title = title,
+        rows = rows,
+    )
+}
+
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateNotification {
     pub name: String,
@@ -798,5 +855,88 @@ mod tests {
             }
             _ => panic!("expected Webhook"),
         }
+    }
+
+    #[test]
+    fn test_render_html_triggered_color() {
+        let ctx = NotifyContext {
+            server_name: "web-01".to_string(),
+            event: "triggered".to_string(),
+            ..Default::default()
+        };
+        let html = render_html(&ctx);
+        assert!(
+            html.contains("#ea580c"),
+            "triggered header should use orange-600 (#ea580c)"
+        );
+    }
+
+    #[test]
+    fn test_render_html_resolved_color() {
+        let ctx = NotifyContext {
+            event: "resolved".to_string(),
+            ..Default::default()
+        };
+        let html = render_html(&ctx);
+        assert!(
+            html.contains("#16a34a"),
+            "resolved header should use green-600 (#16a34a)"
+        );
+    }
+
+    #[test]
+    fn test_render_html_neutral_color_for_other_events() {
+        let ctx = NotifyContext {
+            event: "ip_changed".to_string(),
+            ..Default::default()
+        };
+        let html = render_html(&ctx);
+        assert!(html.contains("#6b7280"));
+    }
+
+    #[test]
+    fn test_render_html_escapes_user_input() {
+        let ctx = NotifyContext {
+            server_name: "<script>alert(1)</script>".to_string(),
+            event: "triggered".to_string(),
+            ..Default::default()
+        };
+        let html = render_html(&ctx);
+        assert!(
+            !html.contains("<script>alert(1)</script>"),
+            "raw script tag must not appear in output"
+        );
+        assert!(html.contains("&lt;script&gt;"));
+    }
+
+    #[test]
+    fn test_render_html_skips_empty_fields() {
+        let ctx = NotifyContext {
+            server_name: "web-01".to_string(),
+            event: "triggered".to_string(),
+            cpu: "".to_string(),
+            memory: "".to_string(),
+            ..Default::default()
+        };
+        let html = render_html(&ctx);
+        assert!(!html.contains(">CPU<"), "empty cpu should not render a CPU row");
+        assert!(
+            !html.contains(">Memory<"),
+            "empty memory should not render a Memory row"
+        );
+    }
+
+    #[test]
+    fn test_email_text_template_is_english() {
+        let ctx = NotifyContext {
+            server_name: "web-01".to_string(),
+            event: "triggered".to_string(),
+            message: "boom".to_string(),
+            time: "2026-04-16 12:00:00 UTC".to_string(),
+            ..Default::default()
+        };
+        let rendered = ctx.render(EMAIL_TEXT_TEMPLATE);
+        assert!(rendered.contains("Time:"), "english text template should say Time:");
+        assert!(!rendered.contains("时间"), "english text template must not contain Chinese");
     }
 }
