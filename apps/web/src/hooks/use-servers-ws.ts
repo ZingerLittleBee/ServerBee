@@ -182,12 +182,14 @@ function setServerDetailDockerAvailability(
 }
 
 type QueryClient = ReturnType<typeof useQueryClient>
+type FullSyncMessage = Extract<WsMessage, { type: 'full_sync' }>
+type UpdateMessage = Extract<WsMessage, { type: 'update' }>
 
 function isWsMessageLike(raw: unknown): raw is { type: string } & Record<string, unknown> {
   return typeof raw === 'object' && raw !== null && 'type' in raw && typeof (raw as { type: unknown }).type === 'string'
 }
 
-function hydrateRecoveryJobs(raw: WsMessage & { type: 'full_sync' | 'update' }, replaceMissing: boolean): void {
+function hydrateRecoveryJobs(raw: FullSyncMessage | UpdateMessage, replaceMissing: boolean): void {
   if (Array.isArray(raw.recoveries)) {
     useRecoveryJobsStore.getState().setJobs(raw.recoveries)
     return
@@ -198,7 +200,7 @@ function hydrateRecoveryJobs(raw: WsMessage & { type: 'full_sync' | 'update' }, 
   }
 }
 
-function handleFullSyncMessage(msg: WsMessage & { type: 'full_sync' | 'update' }, queryClient: QueryClient): void {
+function handleFullSyncMessage(msg: FullSyncMessage, queryClient: QueryClient): void {
   queryClient.setQueryData<ServerMetrics[]>(['servers'], msg.servers)
   if (Array.isArray(msg.upgrades)) {
     useUpgradeJobsStore.getState().setJobs(msg.upgrades as UpgradeJob[])
@@ -206,7 +208,7 @@ function handleFullSyncMessage(msg: WsMessage & { type: 'full_sync' | 'update' }
   hydrateRecoveryJobs(msg, true)
 }
 
-function handleUpdateMessage(msg: WsMessage & { type: 'full_sync' | 'update' }, queryClient: QueryClient): void {
+function handleUpdateMessage(msg: UpdateMessage, queryClient: QueryClient): void {
   queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
     prev ? mergeServerUpdate(prev, msg.servers) : msg.servers
   )
@@ -218,11 +220,11 @@ function handleServerMetricsMessage(raw: { type: string } & Record<string, unkno
     if (!Array.isArray(raw.servers) || raw.servers.some((s: unknown) => s == null || typeof s !== 'object')) {
       return
     }
-    const msg = raw as WsMessage & { type: 'full_sync' | 'update' }
+    const msg = raw as FullSyncMessage | UpdateMessage
     if (raw.type === 'full_sync') {
-      handleFullSyncMessage(msg, queryClient)
+      handleFullSyncMessage(msg as FullSyncMessage, queryClient)
     } else {
-      handleUpdateMessage(msg, queryClient)
+      handleUpdateMessage(msg as UpdateMessage, queryClient)
     }
     return
   }
