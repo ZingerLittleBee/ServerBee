@@ -34,6 +34,8 @@ pub struct AppConfig {
     pub file: FileConfig,
     #[serde(default)]
     pub mobile: MobileConfig,
+    #[serde(default)]
+    pub resend: ResendConfig,
 }
 
 impl Default for AppConfig {
@@ -52,6 +54,7 @@ impl Default for AppConfig {
             upgrade: UpgradeConfig::default(),
             file: FileConfig::default(),
             mobile: MobileConfig::default(),
+            resend: ResendConfig::default(),
         }
     }
 }
@@ -336,6 +339,12 @@ fn default_mobile_refresh_ttl() -> i64 {
     2_592_000
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ResendConfig {
+    #[serde(default)]
+    pub api_key: String,
+}
+
 fn default_utc() -> String {
     "UTC".to_string()
 }
@@ -462,5 +471,29 @@ mod tests {
         // Verify public IP is NOT covered
         let public_ip: std::net::IpAddr = "8.8.8.8".parse().unwrap();
         assert!(!proxies.iter().any(|net| net.contains(&public_ip)));
+    }
+
+    #[test]
+    fn test_resend_config_default_is_empty() {
+        let cfg = ResendConfig::default();
+        assert_eq!(cfg.api_key, "");
+    }
+
+    #[test]
+    fn test_resend_config_reads_env_var() {
+        figment::Jail::expect_with(|jail| {
+            jail.set_env("SERVERBEE_RESEND__API_KEY", "re_test_abc123");
+            let cfg: AppConfig = figment::Figment::new()
+                .merge(figment::providers::Env::prefixed("SERVERBEE_").split("__"))
+                .extract()?;
+            assert_eq!(cfg.resend.api_key, "re_test_abc123");
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn test_app_config_default_has_empty_resend() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.resend.api_key, "");
     }
 }

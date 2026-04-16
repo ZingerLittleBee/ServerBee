@@ -1212,8 +1212,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8cb01cd46b0cf372153850f4c6c272d9cbea2da513e07538405148f95bd789f3"
 dependencies = [
  "atomic",
+ "parking_lot",
  "pear",
  "serde",
+ "tempfile",
  "toml",
  "uncased",
  "version_check",
@@ -4015,7 +4017,7 @@ dependencies = [
 
 [[package]]
 name = "serverbee-agent"
-version = "0.8.6"
+version = "0.8.8"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4048,7 +4050,7 @@ dependencies = [
 
 [[package]]
 name = "serverbee-common"
-version = "0.8.6"
+version = "0.8.8"
 dependencies = [
  "chrono",
  "serde",
@@ -4059,7 +4061,7 @@ dependencies = [
 
 [[package]]
 name = "serverbee-server"
-version = "0.8.6"
+version = "0.8.8"
 dependencies = [
  "a2",
  "anyhow",
