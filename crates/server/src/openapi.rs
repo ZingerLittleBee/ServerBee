@@ -71,6 +71,9 @@ impl Modify for SecurityAddon {
         crate::router::api::server::trigger_upgrade,
         crate::router::api::server::batch_update_capabilities,
         crate::router::api::server::cleanup_orphaned_servers,
+        crate::router::api::server_recovery::list_candidates,
+        crate::router::api::server_recovery::get_recovery_job,
+        crate::router::api::server_recovery::start_recovery_merge,
         // server-groups
         crate::router::api::server_group::list_groups,
         crate::router::api::server_group::create_group,
@@ -232,6 +235,9 @@ impl Modify for SecurityAddon {
             crate::router::api::server::BatchCapabilitiesResponse,
             crate::router::api::server::CleanupResponse,
             crate::service::server::UpdateServerInput,
+            crate::router::api::server_recovery::RecoveryCandidateResponse,
+            crate::router::api::server_recovery::StartRecoveryRequest,
+            crate::router::api::server_recovery::RecoveryJobResponse,
             // server-groups
             crate::router::api::server_group::CreateGroupRequest,
             crate::router::api::server_group::UpdateGroupRequest,
