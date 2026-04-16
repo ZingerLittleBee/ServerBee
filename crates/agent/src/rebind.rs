@@ -7,6 +7,7 @@ use anyhow::Context;
 
 fn render_token_content(existing: &str, token: &str) -> String {
     let token_line = format!("token = \"{token}\"");
+    let had_trailing_newline = existing.ends_with('\n');
     let mut lines: Vec<String> = existing.lines().map(ToOwned::to_owned).collect();
     let preamble_end = lines
         .iter()
@@ -20,7 +21,11 @@ fn render_token_content(existing: &str, token: &str) -> String {
         lines.insert(preamble_end, token_line);
     }
 
-    lines.join("\n")
+    let mut rendered = lines.join("\n");
+    if had_trailing_newline {
+        rendered.push('\n');
+    }
+    rendered
 }
 
 fn is_token_line(line: &str) -> bool {
@@ -96,8 +101,8 @@ fn replace_file(temp_path: &Path, path: &Path) -> anyhow::Result<()> {
     fs::rename(temp_path, path).with_context(|| {
         format!(
             "failed to atomically replace {} with {}",
-            path.display(),
-            temp_path.display()
+            temp_path.display(),
+            path.display()
         )
     })
 }
@@ -127,8 +132,8 @@ fn replace_file(temp_path: &Path, path: &Path) -> anyhow::Result<()> {
         Err(std::io::Error::last_os_error()).with_context(|| {
             format!(
                 "failed to atomically replace {} with {}",
-                path.display(),
-                temp_path.display()
+                temp_path.display(),
+                path.display()
             )
         })
     } else {
@@ -148,7 +153,8 @@ pub(crate) fn assert_persist_rebind_token() {
     assert_eq!(
         content,
         r#"server_url = "http://127.0.0.1:9527"
-token = "focused-token""#
+token = "focused-token"
+"#
     );
 }
 
@@ -192,7 +198,8 @@ log.level = "debug""#
         assert_eq!(
             content,
             r#"server_url = "http://127.0.0.1:9527"
-token = "fresh-token""#
+token = "fresh-token"
+"#
         );
     }
 
@@ -222,6 +229,18 @@ interval = 3
 [log]
 level = "info""#
         );
+    }
+
+    #[test]
+    fn persist_rebind_token_preserves_trailing_newline() {
+        let tempdir = TempDir::new().expect("tempdir");
+        let path = tempdir.path().join("agent.toml");
+        fs::write(&path, "server_url = \"http://127.0.0.1:9527\"\n").expect("seed file");
+
+        super::persist_rebind_token_impl(&path, "fresh-token").expect("persist");
+
+        let content = fs::read_to_string(&path).expect("read file");
+        assert!(content.ends_with('\n'));
     }
 
     #[test]

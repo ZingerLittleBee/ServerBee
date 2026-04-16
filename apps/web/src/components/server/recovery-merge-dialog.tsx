@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { startRecoveryMerge, useRecoveryCandidates } from '@/hooks/use-api'
 import type { RecoveryJobResponse } from '@/lib/api-schema'
 
@@ -20,8 +21,9 @@ export function RecoveryMergeDialog({ currentJob, onOpenChange, open, targetServ
   const { t } = useTranslation('servers')
   const queryClient = useQueryClient()
   const [selectedSourceId, setSelectedSourceId] = useState('')
+  const readOnly = currentJob != null
 
-  const candidatesQuery = useRecoveryCandidates(targetServerId, open)
+  const candidatesQuery = useRecoveryCandidates(targetServerId, open && !readOnly)
 
   const startMutation = useMutation({
     mutationFn: (sourceServerId: string) => startRecoveryMerge(targetServerId, { source_server_id: sourceServerId }),
@@ -39,7 +41,7 @@ export function RecoveryMergeDialog({ currentJob, onOpenChange, open, targetServ
 
   const candidates = candidatesQuery.data ?? []
   const selectedCandidate = candidates.find((candidate) => candidate.server_id === selectedSourceId)
-  const canSubmit = selectedCandidate != null && !startMutation.isPending
+  const canSubmit = !readOnly && selectedCandidate != null && !startMutation.isPending
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -83,35 +85,46 @@ export function RecoveryMergeDialog({ currentJob, onOpenChange, open, targetServ
           </div>
         )}
 
-        {candidates.length > 0 && (
-          <div className="space-y-3">
-            {candidates.map((candidate) => {
-              const selected = candidate.server_id === selectedSourceId
-              return (
-                <button
-                  className={`w-full rounded-lg border p-3 text-left ${selected ? 'border-primary bg-primary/5' : 'border-border'}`}
-                  key={candidate.server_id}
-                  onClick={() => setSelectedSourceId(candidate.server_id)}
-                  type="button"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="font-medium">{candidate.name}</div>
-                      <div className="text-muted-foreground text-xs">{candidate.server_id}</div>
-                    </div>
-                    <Badge variant="secondary">{candidate.score}</Badge>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {candidate.reasons.map((reason) => (
-                      <Badge key={reason} variant="outline">
-                        {reason}
-                      </Badge>
-                    ))}
-                  </div>
-                </button>
-              )
+        {readOnly ? (
+          <div className="rounded-lg border bg-muted/30 p-3 text-muted-foreground text-sm">
+            {t('recovery_merge_read_only', {
+              defaultValue: 'This dialog is read-only while a recovery job is active.'
             })}
           </div>
+        ) : (
+          candidates.length > 0 && (
+            <ScrollArea className="max-h-[40vh] rounded-lg border">
+              <div className="space-y-3 p-3">
+                {candidates.map((candidate) => {
+                  const selected = candidate.server_id === selectedSourceId
+                  return (
+                    <button
+                      className={`w-full rounded-lg border p-3 text-left ${selected ? 'border-primary bg-primary/5' : 'border-border'}`}
+                      disabled={readOnly}
+                      key={candidate.server_id}
+                      onClick={() => setSelectedSourceId(candidate.server_id)}
+                      type="button"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <div className="font-medium">{candidate.name}</div>
+                          <div className="text-muted-foreground text-xs">{candidate.server_id}</div>
+                        </div>
+                        <Badge variant="secondary">{candidate.score}</Badge>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {candidate.reasons.map((reason) => (
+                          <Badge key={reason} variant="outline">
+                            {reason}
+                          </Badge>
+                        ))}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </ScrollArea>
+          )
         )}
 
         <div className="rounded-lg border bg-muted/30 p-3 text-muted-foreground text-sm">

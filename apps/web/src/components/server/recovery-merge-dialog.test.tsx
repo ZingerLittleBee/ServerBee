@@ -46,8 +46,8 @@ describe('RecoveryMergeDialog', () => {
 
     render(<RecoveryMergeDialog onOpenChange={vi.fn()} open targetServerId="target-1" />, { wrapper: Wrapper })
 
-    expect(screen.getByText('Source')).toBeDefined()
-    expect(screen.getByText('same remote address')).toBeDefined()
+    expect(screen.getByText('Source')).toBeInTheDocument()
+    expect(screen.getByText('same remote address')).toBeInTheDocument()
   })
 
   it('disables submit until a candidate is selected', () => {
@@ -60,9 +60,42 @@ describe('RecoveryMergeDialog', () => {
     render(<RecoveryMergeDialog onOpenChange={vi.fn()} open targetServerId="target-1" />, { wrapper: Wrapper })
 
     const button = screen.getByText('Start Recovery').closest('button')
-    expect(button?.getAttribute('disabled')).toBe('')
+    expect(button).toBeDisabled()
 
     fireEvent.click(screen.getByText('Source'))
-    expect(button?.hasAttribute('disabled')).toBe(false)
+    expect(button).toBeEnabled()
+  })
+
+  it('becomes read-only when a current job exists', () => {
+    mockUseRecoveryCandidates.mockReturnValue({
+      data: [{ server_id: 'source-1', name: 'Source', score: 42, reasons: ['same remote address'] }],
+      isError: false,
+      isLoading: false
+    })
+
+    render(
+      <RecoveryMergeDialog
+        currentJob={{
+          job_id: 'job-1',
+          target_server_id: 'target-1',
+          source_server_id: 'source-1',
+          status: 'running',
+          stage: 'rebinding',
+          error: null,
+          started_at: '2026-04-16T00:00:00Z',
+          created_at: '2026-04-16T00:00:00Z',
+          updated_at: '2026-04-16T00:00:00Z',
+          last_heartbeat_at: null
+        }}
+        onOpenChange={vi.fn()}
+        open
+        targetServerId="target-1"
+      />,
+      { wrapper: Wrapper }
+    )
+
+    expect(screen.getByText('This dialog is read-only while a recovery job is active.')).toBeInTheDocument()
+    expect(screen.queryByText('Source')).toBeNull()
+    expect(screen.getByText('Start Recovery').closest('button')).toBeDisabled()
   })
 })

@@ -211,5 +211,14 @@
   "recovery_merge_starting": "Starting…",
   "recovery_merge_started": "Recovery started",
   "recovery_merge_failed": "Recovery failed",
-  "recovery_merge_candidates_failed": "Failed to load recovery candidates."
+  "recovery_merge_candidates_failed": "Failed to load recovery candidates.",
+  "recovery_merge_read_only": "This dialog is read-only while a recovery job is active.",
+  "recovery_stage_validating": "Validating",
+  "recovery_stage_rebinding": "Rebinding",
+  "recovery_stage_awaiting_target_online": "Waiting for Target",
+  "recovery_stage_freezing_writes": "Freezing Writes",
+  "recovery_stage_merging_history": "Merging History",
+  "recovery_stage_finalizing": "Finalizing",
+  "recovery_stage_failed": "Failed",
+  "recovery_stage_succeeded": "Succeeded"
 }

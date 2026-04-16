@@ -164,23 +164,34 @@ Expected: FAIL with unresolved import or missing `persist_rebind_token`.
 ```rust
 // crates/agent/src/rebind.rs
 pub fn persist_rebind_token(path: &std::path::Path, token: &str) -> anyhow::Result<()> {
-    let content = if path.exists() {
-        std::fs::read_to_string(path)?
-    } else {
-        String::new()
-    };
-
-    let mut lines: Vec<String> = content.lines().map(str::to_owned).collect();
+    let content = if path.exists() { std::fs::read_to_string(path)? } else { String::new() };
     let token_line = format!("token = \"{token}\"");
-    if let Some(pos) = lines.iter().position(|line| line.starts_with("token")) {
+    let had_trailing_newline = content.ends_with('\n');
+    let mut lines: Vec<String> = content.lines().map(str::to_owned).collect();
+    let insert_pos = lines.iter().position(|line| line.trim_start().starts_with('[')).unwrap_or(lines.len());
+    if let Some(pos) = lines[..insert_pos].iter().position(|line| line.trim_start().starts_with("token")) {
         lines[pos] = token_line;
     } else {
-        lines.push(token_line);
+        lines.insert(insert_pos, token_line);
     }
 
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, lines.join("\n"))?;
-    std::fs::rename(&tmp, path)?;
+    let mut rendered = lines.join("\n");
+    if had_trailing_newline {
+        rendered.push('\n');
+    }
+
+    let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let temp_path = parent.join(format!(".agent.toml.rebind.{}.tmp", uuid::Uuid::new_v4()));
+    let mut temp_file = std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&temp_path)?;
+    use std::io::Write;
+    temp_file.write_all(rendered.as_bytes())?;
+    temp_file.sync_all()?;
+    std::fs::rename(&temp_path, path)?;
+    let dir_file = std::fs::File::open(parent)?;
+    dir_file.sync_all()?;
     Ok(())
 }
 

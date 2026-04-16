@@ -25,7 +25,7 @@ function buildJob() {
 
 describe('useRecoveryJobsStore', () => {
   it('stores jobs keyed by target server id', () => {
-    useRecoveryJobsStore.setState({ jobs: new Map() })
+    useRecoveryJobsStore.setState({ hydrated: false, jobs: new Map() })
 
     useRecoveryJobsStore.getState().setJob('target-1', makeJob())
 
@@ -33,7 +33,7 @@ describe('useRecoveryJobsStore', () => {
   })
 
   it('replaces the whole map on setJobs', () => {
-    useRecoveryJobsStore.setState({ jobs: new Map() })
+    useRecoveryJobsStore.setState({ hydrated: false, jobs: new Map() })
     useRecoveryJobsStore.getState().setJob('old-target', makeJob({ target_server_id: 'old-target' }))
 
     useRecoveryJobsStore
@@ -42,14 +42,23 @@ describe('useRecoveryJobsStore', () => {
 
     expect(useRecoveryJobsStore.getState().getJob('old-target')).toBeUndefined()
     expect(useRecoveryJobsStore.getState().getJob('target-2')?.job_id).toBe('job-2')
+    expect(useRecoveryJobsStore.getState().hydrated).toBe(true)
   })
 
   it('clears a job by target server id', () => {
-    useRecoveryJobsStore.setState({ jobs: new Map() })
+    useRecoveryJobsStore.setState({ hydrated: false, jobs: new Map() })
     useRecoveryJobsStore.getState().setJob('target-1', makeJob())
 
     useRecoveryJobsStore.getState().clearJob('target-1')
 
     expect(useRecoveryJobsStore.getState().getJob('target-1')).toBeUndefined()
+  })
+
+  it('can mark hydration explicitly', () => {
+    useRecoveryJobsStore.setState({ hydrated: false, jobs: new Map() })
+
+    useRecoveryJobsStore.getState().setHydrated(true)
+
+    expect(useRecoveryJobsStore.getState().hydrated).toBe(true)
   })
 })

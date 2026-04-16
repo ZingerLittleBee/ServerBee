@@ -4,18 +4,9 @@ use uuid::Uuid;
 
 use crate::entity::recovery_job;
 use crate::error::AppError;
+use crate::service::db_error::is_active_recovery_conflict;
 
 pub struct RecoveryJobService;
-
-fn is_unique_violation(err: &DbErr) -> bool {
-    let message = err.to_string();
-    message.contains("UNIQUE constraint failed") || message.contains("UNIQUE")
-}
-
-fn is_active_recovery_conflict(err: &DbErr) -> bool {
-    let message = err.to_string();
-    is_unique_violation(err) || message.contains("recovery_job_active_conflict")
-}
 
 impl RecoveryJobService {
     pub async fn create_job(
