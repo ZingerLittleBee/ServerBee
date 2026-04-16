@@ -28,7 +28,7 @@ vi.mock('@tanstack/react-query', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => key
+    t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key
   })
 }))
 
@@ -36,6 +36,10 @@ vi.mock('@/components/server/agent-version-section', () => ({
   AgentVersionSection: ({ latestVersion }: { latestVersion?: string | null }) => (
     <div data-testid="agent-version-section">{latestVersion ?? 'no-latest-version'}</div>
   )
+}))
+
+vi.mock('@/components/server/recovery-merge-dialog', () => ({
+  RecoveryMergeDialog: () => <div data-testid="recovery-dialog" />
 }))
 
 vi.mock('@/components/server/capabilities-dialog', () => ({
@@ -107,6 +111,12 @@ vi.mock('@/hooks/use-realtime-metrics', () => ({
   useRealtimeMetrics: () => []
 }))
 
+vi.mock('@/hooks/use-auth', () => ({
+  useAuth: () => ({
+    user: { role: 'admin' }
+  })
+}))
+
 vi.mock('@/lib/api-client', () => ({
   api: {
     get: vi.fn()
@@ -133,6 +143,14 @@ vi.mock('@/lib/utils', () => ({
 
 vi.mock('@/lib/widget-helpers', () => ({
   computeAggregateUptime: () => null
+}))
+
+vi.mock('@/stores/upgrade-jobs-store', () => ({
+  useUpgradeJobsStore: () => undefined
+}))
+
+vi.mock('@/stores/recovery-jobs-store', () => ({
+  useRecoveryJobsStore: () => undefined
 }))
 
 const { ServerDetailPage } = await import('./$id')
@@ -198,5 +216,11 @@ describe('ServerDetailPage', () => {
     expect(headerGrid?.children[0]).toContainElement(agentMeta)
     expect(headerGrid?.children[1]).toContainElement(upgradeCard)
     expect(headerGrid?.children[2]).toContainElement(editButton)
+  })
+
+  it('shows recovery action for offline server when admin', () => {
+    render(<ServerDetailPage />)
+
+    expect(screen.getByText('Recover Agent')).toBeDefined()
   })
 })

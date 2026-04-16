@@ -13,19 +13,23 @@ import { TrafficCard } from '@/components/server/traffic-card'
 import { TrafficProgress } from '@/components/server/traffic-progress'
 import { TrafficTab } from '@/components/server/traffic-tab'
 import { UpgradeJobBadge } from '@/components/server/upgrade-job-badge'
+import { RecoveryMergeDialog } from '@/components/server/recovery-merge-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { UptimeTimeline } from '@/components/uptime/uptime-timeline'
+import { useAuth } from '@/hooks/use-auth'
 import { useServer, useServerRecords, useUptimeDaily } from '@/hooks/use-api'
 import { useRealtimeMetrics } from '@/hooks/use-realtime-metrics'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
-import type { ServerResponse } from '@/lib/api-schema'
+import type { RecoveryJobResponse, ServerResponse } from '@/lib/api-schema'
 import { CAP_DOCKER, CAP_FILE, CAP_TERMINAL, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
 import { buildMergedDiskIoSeries, buildPerDiskIoSeries } from '@/lib/disk-io'
 import { cn, countryCodeToFlag, formatBytes } from '@/lib/utils'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
+import { useRecoveryJobsStore } from '@/stores/recovery-jobs-store'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 
 export const Route = createFileRoute('/_authed/servers/$id')({
@@ -122,19 +126,25 @@ function ServerInfoMeta({ server }: { server: ServerResponse }) {
 }
 
 function ServerActionButtons({
+  currentRecoveryJob,
   dockerEnabled,
   fileEnabled,
   id,
+  isAdmin,
   isOnline,
   onEditOpen,
+  onRecoveryOpen,
   serverWithCaps,
   terminalEnabled
 }: {
+  currentRecoveryJob?: RecoveryJobResponse
   dockerEnabled: boolean
   fileEnabled: boolean
   id: string
+  isAdmin: boolean
   isOnline: boolean
   onEditOpen: () => void
+  onRecoveryOpen: () => void
   serverWithCaps: ServerResponse & ServerWithCaps
   terminalEnabled: boolean
 }) {
@@ -146,6 +156,11 @@ function ServerActionButtons({
         {t('detail_edit')}
       </Button>
       <CapabilitiesDialog server={serverWithCaps} />
+      {isAdmin && !isOnline && (
+        <Button onClick={onRecoveryOpen} size="sm" variant="outline">
+          {currentRecoveryJob ? t('recovery_merge_resume', { defaultValue: 'View Recovery' }) : t('recovery_merge_open', { defaultValue: 'Recover Agent' })}
+        </Button>
+      )}
       {isOnline && terminalEnabled && (
         <Link params={{ serverId: id }} to="/terminal/$serverId">
           <Button size="sm" variant="outline">
@@ -361,6 +376,8 @@ export function ServerDetailPage() {
   const { id } = Route.useParams()
   const { range: rangeParam } = Route.useSearch()
   const [editOpen, setEditOpen] = useState(false)
+  const [recoveryOpen, setRecoveryOpen] = useState(false)
+  const { user } = useAuth()
   const { data: latestAgentVersion } = useQuery<{ version?: string | null }>({
     queryKey: ['agent', 'latest-version'],
     queryFn: () => api.get<{ version?: string | null }>('/api/agent/latest-version'),
@@ -399,6 +416,8 @@ export function ServerDetailPage() {
   })
   const liveData = liveServers?.find((s) => s.id === id)
   const upgradeJob = useUpgradeJobsStore((state) => state.jobs.get(id))
+  const recoveryJob = useRecoveryJobsStore((state) => state.jobs.get(id))
+  const isAdmin = user?.role === 'admin'
 
   const chartData: Record<string, unknown>[] = useMemo(() => {
     if (isRealtime) {
@@ -566,6 +585,7 @@ export function ServerDetailPage() {
               <h1 className="font-bold text-2xl">{server.name}</h1>
               <StatusBadge online={isOnline} />
               <UpgradeJobBadge job={upgradeJob} />
+              {recoveryJob && <Badge variant="secondary">{recoveryJob.stage}</Badge>}
             </div>
             <ServerInfoMeta server={server} />
           </div>
@@ -580,11 +600,14 @@ export function ServerDetailPage() {
           </div>
           <div className="sm:col-start-2 sm:row-start-1 sm:justify-self-end">
             <ServerActionButtons
+              currentRecoveryJob={recoveryJob}
               dockerEnabled={dockerEnabled}
               fileEnabled={fileEnabled}
               id={id}
+              isAdmin={isAdmin}
               isOnline={isOnline}
               onEditOpen={() => setEditOpen(true)}
+              onRecoveryOpen={() => setRecoveryOpen(true)}
               serverWithCaps={serverWithCaps}
               terminalEnabled={terminalEnabled}
             />
@@ -647,6 +670,7 @@ export function ServerDetailPage() {
       </Tabs>
 
       <ServerEditDialog onClose={() => setEditOpen(false)} open={editOpen} server={server} />
+      <RecoveryMergeDialog currentJob={recoveryJob} onOpenChange={setRecoveryOpen} open={recoveryOpen} targetServerId={id} />
     </div>
   )
 }

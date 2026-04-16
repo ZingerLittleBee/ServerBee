@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { useRecoveryJobsStore } from '@/stores/recovery-jobs-store'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import type { ServerMetrics } from './use-servers-ws'
 import { handleWsMessage, mergeServerUpdate, setServerCapabilities, setServerOnlineStatus } from './use-servers-ws'
@@ -207,5 +208,100 @@ describe('handleWsMessage upgrade messages', () => {
     expect(job?.error).toBe('install failed')
     expect(job?.backup_path).toBe('/tmp/backup')
     expect(job?.finished_at).not.toBeNull()
+  })
+})
+
+describe('handleWsMessage recovery messages', () => {
+  function makeQueryClient() {
+    const cache = new Map<string, unknown>()
+    return {
+      setQueryData: (key: unknown[], value: unknown | ((prev: unknown) => unknown)) => {
+        const cacheKey = JSON.stringify(key)
+        const prev = cache.get(cacheKey)
+        const next = typeof value === 'function' ? (value as (prev: unknown) => unknown)(prev) : value
+        cache.set(cacheKey, next)
+      }
+    }
+  }
+
+  it('hydrates recovery jobs from full_sync', () => {
+    useRecoveryJobsStore.setState({ jobs: new Map() })
+    const queryClient = makeQueryClient()
+
+    handleWsMessage(
+      {
+        type: 'full_sync',
+        servers: [],
+        recoveries: [
+          {
+            job_id: 'job-1',
+            target_server_id: 'target-1',
+            source_server_id: 'source-1',
+            status: 'running',
+            stage: 'rebinding',
+            error: null,
+            started_at: '2026-04-16T00:00:00Z',
+            created_at: '2026-04-16T00:00:00Z',
+            updated_at: '2026-04-16T00:00:00Z',
+            last_heartbeat_at: null
+          }
+        ]
+      },
+      queryClient as never
+    )
+
+    expect(useRecoveryJobsStore.getState().getJob('target-1')?.job_id).toBe('job-1')
+  })
+
+  it('updates recovery jobs only when update payload includes recoveries', () => {
+    useRecoveryJobsStore.setState({ jobs: new Map() })
+    useRecoveryJobsStore.getState().setJob('target-1', {
+      job_id: 'job-1',
+      target_server_id: 'target-1',
+      source_server_id: 'source-1',
+      status: 'running',
+      stage: 'rebinding',
+      error: null,
+      started_at: '2026-04-16T00:00:00Z',
+      created_at: '2026-04-16T00:00:00Z',
+      updated_at: '2026-04-16T00:00:00Z',
+      last_heartbeat_at: null
+    })
+
+    const queryClient = makeQueryClient()
+    handleWsMessage(
+      {
+        type: 'update',
+        servers: []
+      },
+      queryClient as never
+    )
+
+    expect(useRecoveryJobsStore.getState().getJob('target-1')?.job_id).toBe('job-1')
+
+    handleWsMessage(
+      {
+        type: 'update',
+        servers: [],
+        recoveries: [
+          {
+            job_id: 'job-2',
+            target_server_id: 'target-2',
+            source_server_id: 'source-2',
+            status: 'failed',
+            stage: 'failed',
+            error: 'boom',
+            started_at: '2026-04-16T00:00:00Z',
+            created_at: '2026-04-16T00:00:00Z',
+            updated_at: '2026-04-16T00:00:00Z',
+            last_heartbeat_at: null
+          }
+        ]
+      },
+      queryClient as never
+    )
+
+    expect(useRecoveryJobsStore.getState().getJob('target-1')).toBeUndefined()
+    expect(useRecoveryJobsStore.getState().getJob('target-2')?.job_id).toBe('job-2')
   })
 })

@@ -26,6 +26,43 @@ export type UpdateServerInput = S['UpdateServerInput']
 export type BatchDeleteRequest = S['BatchDeleteRequest']
 export type BatchDeleteResponse = S['BatchDeleteResponse']
 
+export interface RecoveryCandidateResponse {
+  name: string
+  reasons: string[]
+  score: number
+  server_id: string
+}
+
+export type RecoveryJobStatus = 'running' | 'failed' | 'succeeded' | 'unknown'
+
+export type RecoveryJobStage =
+  | 'validating'
+  | 'rebinding'
+  | 'awaiting_target_online'
+  | 'freezing_writes'
+  | 'merging_history'
+  | 'finalizing'
+  | 'succeeded'
+  | 'failed'
+  | 'unknown'
+
+export interface RecoveryJobResponse {
+  created_at: string
+  error: string | null
+  job_id: string
+  last_heartbeat_at: string | null
+  source_server_id: string
+  stage: RecoveryJobStage
+  started_at: string
+  status: RecoveryJobStatus
+  target_server_id: string
+  updated_at: string
+}
+
+export interface StartRecoveryRequest {
+  source_server_id: string
+}
+
 // Server groups
 export type ServerGroup = S['ServerGroup']
 export type CreateGroupRequest = S['CreateGroupRequest']
