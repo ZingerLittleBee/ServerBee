@@ -21,6 +21,19 @@ Replace the current SMTP-based email notification implementation with Resend's H
 ### Configuration split
 
 - **Global** (Figment / env): `SERVERBEE_RESEND__API_KEY` — sensitive credential, managed the same way as `admin.password`.
+
+  Requires a new `ResendConfig` struct in `crates/server/src/config.rs` and a `pub resend: ResendConfig` field on `AppConfig` (with `#[serde(default)]` and a matching `ResendConfig::default()` returning an empty key). Without this wiring, Figment silently ignores the env var and the dispatcher behaves as if the key is unset.
+
+  ```rust
+  #[derive(Debug, Clone, Deserialize, Default)]
+  pub struct ResendConfig {
+      #[serde(default)]
+      pub api_key: String,
+  }
+  ```
+
+  Read at dispatch time via `state.config.resend.api_key` (treat empty string as "not configured").
+
 - **Per-channel** (`config_json` in the `notification` row):
   ```json
   { "from": "alerts@yourdomain.com", "to": ["a@x.com", "b@y.com"] }
@@ -49,7 +62,7 @@ Use the existing `reqwest` client (already in `dispatch()`). Do **not** pull in 
   "to": ["<to1>", "<to2>"],
   "subject": "[ServerBee] {server_name} {event}",
   "html": "<rendered HTML template>",
-  "text": "<rendered plain text (DEFAULT_TEMPLATE)>"
+  "text": "<rendered plain text (EMAIL_TEXT_TEMPLATE)>"
 }
 ```
 
@@ -79,6 +92,22 @@ Email {
 
 Validation: parse-time check that `to` is non-empty; reject with `AppError::Validation` otherwise.
 
+### Update-path validation (closes a current gap)
+
+`NotificationService::update()` (in `crates/server/src/service/notification.rs`) currently writes `config_json` back to the DB without re-validating it — only `create()` calls `parse_config`. This design requires that `update()` re-parse the *effective* `(notify_type, config_json)` pair after merging the partial input, using the same `parse_config` path as `create()`. Without this, the `PUT /api/notifications/{id}` endpoint (wired in `crates/server/src/router/api/notification.rs`) would remain a hole that lets malformed or cross-type configs bypass validation and corrupt stored state.
+
+Implementation sketch:
+
+1. Load the existing row.
+2. Compute the candidate `notify_type` (updated value if provided, otherwise existing).
+3. Compute the candidate `config_json` (updated value if provided, otherwise existing).
+4. Call `parse_config(&candidate_type, &candidate_json)` and return `AppError::Validation` on failure.
+5. Only then mutate the `ActiveModel` and persist.
+
+Add unit tests covering:
+- Update of `config_json` alone with an invalid Email payload (empty `to`) → rejected.
+- Update of `notify_type` alone to a value that no longer matches the existing stored `config_json` → rejected.
+
 ## Data migration
 
 New sea-orm migration `m20260416_000001_migrate_email_to_resend.rs` (exact date/counter chosen at implementation time to follow the sequence already in `crates/server/src/migration/`):
@@ -97,8 +126,10 @@ Rationale for "disable + rename" over delete: notification configuration is stat
 
 New module `email_template` inside `crates/server/src/service/notification.rs` (or a sibling file if size warrants) exporting:
 
-- `DEFAULT_TEXT_TEMPLATE` — reuses the existing `DEFAULT_TEMPLATE` constant.
+- `EMAIL_TEXT_TEMPLATE` — a new English-only constant dedicated to the Email channel. Example: `"[ServerBee] {{server_name}} {{event}}\n{{message}}\nTime: {{time}}"`.
 - `render_html(ctx: &NotifyContext) -> String`.
+
+**Why a new constant instead of reusing `DEFAULT_TEMPLATE`**: the existing `DEFAULT_TEMPLATE` (`notification.rs:89`) contains the Chinese literal `时间:` and is already used by the Webhook and Telegram branches, which are out of scope for this change. Keeping those unchanged and introducing a separate English template for Email is the least-invasive way to satisfy the "single English email template" requirement.
 
 ### Style
 
@@ -138,7 +169,26 @@ Inside `dispatch()`'s `Email` branch:
   - `to` — multi-value tag input (at least one required).
 - Remove `smtp_host`, `smtp_port`, `username`, `password` rendering branches and i18n keys.
 - Update `zh/settings.json` and `en/settings.json` in lockstep.
-- When the "Test notification" API returns the "API key not configured" validation error, the form shows a hint linking to the Resend docs and mentioning the env var name.
+
+#### State-model change
+
+The current form uses `configFields: Record<string, string>` and sends it verbatim as `config_json`. `to: string[]` does not fit that shape. Change required:
+
+- Widen the state to `Record<string, string | string[]>` (or introduce a sibling `toAddresses: string[]` slot specifically for the Email path and merge it at submit time). The latter is preferred because the rest of the form already benefits from the string-only shape; narrowing email is less invasive than widening the whole form.
+- In the Email branch of `handleTypeChange`, seed `{ from: '' }` in `configFields` and `[]` in `toAddresses`.
+- In the Email branch of the render block, replace the generic `Object.entries(configFieldLabels[notifyType])` fallthrough with an explicit two-input block: one `Input` for `from`, one tag input for `to`.
+- In `handleCreate`, when `notifyType === 'email'`, build the payload as `{ ...configFields, to: toAddresses }` so the wire shape becomes `{from, to: string[]}`.
+- Reset `toAddresses` in `resetForm`.
+
+Tag input: use a simple controlled component (array + add/remove buttons + Enter key). No new dependency — the project already has the primitives (`Input` + shadcn badges can represent chips).
+
+#### UX for missing API key
+
+Since the "Test notification" action lives on **list rows** (not the form), it cannot scope a hint inside a form:
+
+- **Create form (Email branch)**: show a static help text directly above the `from` input explaining that delivery requires `SERVERBEE_RESEND__API_KEY` on the server and that the sender domain must be verified in Resend. Link to the relevant `alerts.mdx` section. This surfaces the requirement *before* submission.
+- **Test button**: when the test API returns an error, the existing error toast already renders `err.message`. The backend returns the Resend `message` field verbatim (see Error handling section), so no frontend parsing is needed. Ensure the toast variant has enough width to show the full Resend string, and use a longer duration (e.g. `duration: 8000`).
+
 - Rows disabled by the migration (` (needs reconfiguration)` suffix) use the existing "disabled" visual — no special-casing.
 
 ### Documentation
@@ -186,11 +236,12 @@ In `crates/server/tests/` (integration) or beside the migration module:
 
 Add a new checklist (`tests/notifications/email-resend.md` or matching location):
 
-1. With env var set and a verified Resend domain, click "Test notification" → receive a colour-coded HTML email.
-2. Env var unset → UI shows "API key not configured".
-3. `from` uses an unverified domain → UI shows Resend's `Domain not verified`.
-4. `to` contains two addresses → both recipients receive the same email (single API call).
-5. Upgrade from a DB that has the old SMTP email row → on server restart the row is disabled and renamed; new UI shows it as such.
+1. With env var set and a verified Resend domain, click "Test notification" on a saved Email channel → receive a colour-coded HTML email (and a plain-text fallback visible in "View raw").
+2. Env var unset → clicking "Test notification" produces an error toast containing the "Resend API key not configured (set SERVERBEE_RESEND__API_KEY)" message. The create-form help text is visible regardless of env var state.
+3. `from` uses an unverified domain → clicking "Test notification" produces an error toast containing Resend's `Domain not verified` message verbatim.
+4. `to` contains two addresses → both recipients receive the same email (confirm via a single Resend API call in the dashboard's Log view).
+5. Update path: PUT an existing Email channel with `config_json` that has `to: []` → `422` with validation error. Change `notify_type` from `email` to `telegram` without also updating `config_json` → `422`.
+6. Upgrade from a DB that has the old SMTP email row → on server restart the row is disabled and renamed; new UI shows it as such.
 
 ### Build / lint gates
 
