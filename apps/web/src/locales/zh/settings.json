@@ -87,6 +87,12 @@
   "notifications.test_failed": "发送测试通知失败",
   "notifications.group_create_failed": "创建通知组失败",
   "notifications.group_delete_failed": "删除通知组失败",
+  "notifications.update_channel": "更新通道",
+  "notifications.update_group": "更新通知组",
+  "notifications.toast_channel_updated": "通道已更新",
+  "notifications.toast_group_updated": "通知组已更新",
+  "notifications.channel_update_failed": "更新通道失败",
+  "notifications.group_update_failed": "更新通知组失败",
 
   "alerts.title": "告警规则",
   "alerts.rules": "规则",
