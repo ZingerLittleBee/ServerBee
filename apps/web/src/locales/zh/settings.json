@@ -93,6 +93,8 @@
   "notifications.toast_group_updated": "通知组已更新",
   "notifications.channel_update_failed": "更新通道失败",
   "notifications.group_update_failed": "更新通知组失败",
+  "notifications.enabled_label": "启用",
+  "notifications.type_locked_in_edit": "编辑时不能修改类型。",
 
   "alerts.title": "告警规则",
   "alerts.rules": "规则",

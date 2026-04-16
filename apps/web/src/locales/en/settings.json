@@ -93,6 +93,8 @@
   "notifications.toast_group_updated": "Group updated",
   "notifications.channel_update_failed": "Failed to update channel",
   "notifications.group_update_failed": "Failed to update group",
+  "notifications.enabled_label": "Enabled",
+  "notifications.type_locked_in_edit": "Type is locked while editing.",
 
   "alerts.title": "Alert Rules",
   "alerts.rules": "Rules",
