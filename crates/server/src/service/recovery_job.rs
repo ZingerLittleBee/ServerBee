@@ -7,6 +7,11 @@ use crate::error::AppError;
 
 pub struct RecoveryJobService;
 
+fn is_unique_violation(err: &DbErr) -> bool {
+    let message = err.to_string();
+    message.contains("UNIQUE constraint failed") || message.contains("UNIQUE")
+}
+
 impl RecoveryJobService {
     pub async fn create_job(
         db: &DatabaseConnection,
@@ -28,7 +33,13 @@ impl RecoveryJobService {
             last_heartbeat_at: Set(None),
         };
 
-        Ok(active.insert(db).await?)
+        match active.insert(db).await {
+            Ok(model) => Ok(model),
+            Err(err) if is_unique_violation(&err) => Err(AppError::Conflict(
+                "A running recovery job already exists for this target or source".to_string(),
+            )),
+            Err(err) => Err(err.into()),
+        }
     }
 
     pub async fn get_job(
@@ -89,11 +100,8 @@ impl RecoveryJobService {
         Ok(recovery_job::Entity::find()
             .filter(recovery_job::Column::TargetServerId.eq(target_server_id))
             .filter(recovery_job::Column::Status.eq("running"))
-            .limit(1)
-            .all(db)
-            .await?
-            .into_iter()
-            .next())
+            .one(db)
+            .await?)
     }
 
     pub async fn running_for_source(
@@ -103,18 +111,45 @@ impl RecoveryJobService {
         Ok(recovery_job::Entity::find()
             .filter(recovery_job::Column::SourceServerId.eq(source_server_id))
             .filter(recovery_job::Column::Status.eq("running"))
-            .limit(1)
-            .all(db)
-            .await?
-            .into_iter()
-            .next())
+            .one(db)
+            .await?)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::RecoveryJobService;
+    use crate::entity::recovery_job;
     use crate::test_utils::setup_test_db;
+    use crate::error::AppError;
+    use chrono::Utc;
+    use sea_orm::{ActiveModelTrait, Set};
+
+    async fn insert_job(
+        db: &sea_orm::DatabaseConnection,
+        job_id: &str,
+        target_server_id: &str,
+        source_server_id: &str,
+        status: &str,
+    ) -> recovery_job::Model {
+        let now = Utc::now();
+        recovery_job::ActiveModel {
+            job_id: Set(job_id.to_string()),
+            target_server_id: Set(target_server_id.to_string()),
+            source_server_id: Set(source_server_id.to_string()),
+            status: Set(status.to_string()),
+            stage: Set("validating".to_string()),
+            checkpoint_json: Set(None),
+            error: Set(None),
+            started_at: Set(now),
+            created_at: Set(now),
+            updated_at: Set(now),
+            last_heartbeat_at: Set(None),
+        }
+        .insert(db)
+        .await
+        .unwrap()
+    }
 
     #[tokio::test]
     async fn create_job_persists_running_row_for_target_and_source() {
@@ -193,6 +228,7 @@ mod tests {
         let job = RecoveryJobService::create_job(&db, "target-1", "source-1")
             .await
             .unwrap();
+        let _failed = insert_job(&db, "job-failed", "target-1", "source-1", "failed").await;
 
         let by_target = RecoveryJobService::running_for_target(&db, "target-1")
             .await
@@ -225,5 +261,28 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn create_job_rejects_duplicate_active_jobs_for_target_or_source() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let _first = RecoveryJobService::create_job(&db, "target-1", "source-1")
+            .await
+            .unwrap();
+
+        match RecoveryJobService::create_job(&db, "target-1", "source-2").await {
+            Err(AppError::Conflict(message)) => {
+                assert!(message.contains("running recovery job"));
+            }
+            other => panic!("expected conflict for duplicate target, got {other:?}"),
+        }
+
+        match RecoveryJobService::create_job(&db, "target-2", "source-1").await {
+            Err(AppError::Conflict(message)) => {
+                assert!(message.contains("running recovery job"));
+            }
+            other => panic!("expected conflict for duplicate source, got {other:?}"),
+        }
     }
 }

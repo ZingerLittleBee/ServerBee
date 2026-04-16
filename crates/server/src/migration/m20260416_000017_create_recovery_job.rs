@@ -29,11 +29,15 @@ impl MigrationTrait for Migration {
         )
         .await?;
         db.execute_unprepared(
-            "CREATE INDEX idx_recovery_job_target_status ON recovery_job(target_server_id, status)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_recovery_job_target_running
+                ON recovery_job(target_server_id)
+                WHERE status = 'running'",
         )
         .await?;
         db.execute_unprepared(
-            "CREATE INDEX idx_recovery_job_source_status ON recovery_job(source_server_id, status)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_recovery_job_source_running
+                ON recovery_job(source_server_id)
+                WHERE status = 'running'",
         )
         .await?;
         Ok(())
