@@ -50,7 +50,6 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 // Read-only routes accessible to all authenticated users
                 .merge(agent::read_router())
                 .merge(server::read_router())
-                .merge(server_recovery::read_router())
                 .merge(server_group::read_router())
                 .merge(ping::read_router())
                 .merge(network_probe::read_router())

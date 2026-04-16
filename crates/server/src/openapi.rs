@@ -235,6 +235,8 @@ impl Modify for SecurityAddon {
             crate::router::api::server::BatchCapabilitiesResponse,
             crate::router::api::server::CleanupResponse,
             crate::service::server::UpdateServerInput,
+            crate::router::api::server_recovery::RecoveryJobStatus,
+            crate::router::api::server_recovery::RecoveryJobStage,
             crate::router::api::server_recovery::RecoveryCandidateResponse,
             crate::router::api::server_recovery::StartRecoveryRequest,
             crate::router::api::server_recovery::RecoveryJobResponse,
