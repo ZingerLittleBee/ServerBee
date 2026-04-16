@@ -1580,7 +1580,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rebind_identity_failed_marks_job_failed_and_broadcasts_empty_recovery_update() {
+    async fn rebind_identity_failed_marks_job_failed_and_broadcasts_recovery_snapshot() {
         let (db, _tmp) = setup_test_db().await;
         insert_server(&db, "target-1", "Target").await;
         insert_server(&db, "source-1", "Source").await;
@@ -1615,7 +1615,14 @@ mod tests {
                 recoveries: Some(recoveries),
                 ..
             } => {
-                assert!(recoveries.is_empty());
+                assert_eq!(recoveries.len(), 1);
+                assert_eq!(recoveries[0].job_id, "job-1");
+                assert_eq!(
+                    recoveries[0].status,
+                    serverbee_common::protocol::RecoveryJobStatus::Failed
+                );
+                assert_eq!(recoveries[0].stage, RecoveryJobStage::Rebinding);
+                assert_eq!(recoveries[0].error.as_deref(), Some("agent failed"));
             }
             other => panic!("expected recovery update, got {other:?}"),
         }
