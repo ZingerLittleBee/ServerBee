@@ -81,3 +81,25 @@ describe('MetricBarRow', () => {
     expect(screen.getByTestId('cpu-icon')).toBeDefined()
   })
 })
+
+import { CpuCell } from './index.cells'
+
+describe('CpuCell', () => {
+  it('renders cores + load when cpu_cores is present', () => {
+    render(<CpuCell server={makeServer({ cpu: 12, cpu_cores: 8, load1: 1.234 })} />)
+    expect(screen.getByText('12%')).toBeDefined()
+    expect(screen.getByText(/8 cores · load 1\.23/)).toBeDefined()
+  })
+
+  it('falls back to load-only when cpu_cores is null (Phase A)', () => {
+    render(<CpuCell server={makeServer({ cpu: 12, cpu_cores: null, load1: 1.23 })} />)
+    expect(screen.queryByText(/cores/)).toBeNull()
+    expect(screen.getByText(/load 1\.23/)).toBeDefined()
+  })
+
+  it('hides sub-line when offline', () => {
+    render(<CpuCell server={makeServer({ online: false, cpu_cores: 8, load1: 1.23 })} />)
+    expect(screen.queryByText(/cores/)).toBeNull()
+    expect(screen.queryByText(/load/)).toBeNull()
+  })
+})
