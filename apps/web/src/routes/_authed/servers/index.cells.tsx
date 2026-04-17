@@ -71,21 +71,16 @@ export function MiniBar({ pct, sub }: { pct: number; sub?: ReactNode }) {
   )
 }
 
-interface MetricTextRowProps {
-  ariaLabel?: string
-  icon: ReactNode
-  pct: number
-  text: ReactNode
-}
-
-export function MetricTextRow({ icon, pct, text, ariaLabel }: MetricTextRowProps) {
+export function PositionIndicator({ pct }: { pct: number }) {
   const clamped = Math.min(100, Math.max(0, pct))
-  const colorText = getBarTextColor(clamped)
-  const imgProps = ariaLabel ? { role: 'img' as const, 'aria-label': ariaLabel } : {}
+  const barColor = getBarColor(clamped)
   return (
-    <div className="flex items-center gap-1.5" {...imgProps}>
-      {icon !== null && <span className="inline-flex size-3.5 flex-none text-muted-foreground">{icon}</span>}
-      <span className={cn('font-mono font-semibold text-xs tabular-nums', colorText)}>{text}</span>
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted" data-slot="position-indicator">
+      <div
+        className={cn('h-full rounded-full', barColor)}
+        data-slot="position-indicator-fill"
+        style={{ width: `${clamped}%` }}
+      />
     </div>
   )
 }
@@ -98,13 +93,16 @@ export function CpuCell({ server }: { server: ServerMetrics }) {
   const pct = Math.round(Math.min(100, Math.max(0, server.cpu)))
   const pctColor = getBarTextColor(pct)
   return (
-    <div className="flex flex-col gap-1">
-      <MetricBarRow icon={<Cpu aria-hidden="true" className="size-3.5" />} pct={server.cpu} showPct={false} />
-      <div className="flex items-center justify-between gap-2 pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
+    <div className="flex flex-col gap-0.5">
+      <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
+        <Cpu aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
         <span>
           {cores != null && `${cores} cores · `}load {server.load1.toFixed(2)}
         </span>
-        <span className={cn('font-semibold', pctColor)}>{pct}%</span>
+        <span className={cn('ml-auto font-semibold', pctColor)}>{pct}%</span>
+      </div>
+      <div className="flex h-4 items-center">
+        <PositionIndicator pct={pct} />
       </div>
     </div>
   )
@@ -117,13 +115,16 @@ export function MemoryCell({ server }: { server: ServerMetrics }) {
   const roundedPct = Math.round(Math.min(100, Math.max(0, pct)))
   const pctColor = getBarTextColor(roundedPct)
   return (
-    <div className="flex flex-col gap-1">
-      <MetricBarRow icon={<MemoryStick aria-hidden="true" className="size-3.5" />} pct={pct} showPct={false} />
-      <div className="flex items-center justify-between gap-2 pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
+    <div className="flex flex-col gap-0.5">
+      <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
+        <MemoryStick aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
         <span>
           {formatBytes(server.mem_used)} / {formatBytes(server.mem_total)}
         </span>
-        <span className={cn('font-semibold', pctColor)}>{roundedPct}%</span>
+        <span className={cn('ml-auto font-semibold', pctColor)}>{roundedPct}%</span>
+      </div>
+      <div className="flex h-4 items-center">
+        <PositionIndicator pct={pct} />
       </div>
     </div>
   )
@@ -132,15 +133,15 @@ export function DiskCell({ server }: { server: ServerMetrics }) {
   if (!server.online) {
     return <span className="text-muted-foreground">—</span>
   }
-  const pct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
   return (
-    <div className="flex flex-col gap-1">
-      <MetricTextRow
-        icon={<HardDrive aria-hidden="true" className="size-3.5" />}
-        pct={pct}
-        text={`${formatBytes(server.disk_used)} / ${formatBytes(server.disk_total)}`}
-      />
-      <div className="flex items-center gap-2 pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
+    <div className="flex flex-col gap-0.5">
+      <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
+        <HardDrive aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
+        <span>
+          {formatBytes(server.disk_used)} / {formatBytes(server.disk_total)}
+        </span>
+      </div>
+      <div className="flex h-4 items-center gap-2 pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
         <span className="inline-flex items-center gap-1">
           <ArrowDown aria-hidden="true" className="size-2.5" />
           {formatSpeed(server.disk_read_bytes_per_sec)}
@@ -159,20 +160,21 @@ interface NetworkCellProps {
 }
 
 export function NetworkCell({ server, entry }: NetworkCellProps) {
-  const { used, limit, pct } = computeTrafficQuota({
+  const { used, limit } = computeTrafficQuota({
     entry,
     netInTransfer: server.net_in_transfer,
     netOutTransfer: server.net_out_transfer
   })
   return (
-    <div className="flex flex-col gap-1">
-      <MetricTextRow
-        icon={<Network aria-hidden="true" className="size-3.5" />}
-        pct={pct}
-        text={`${formatBytes(used)} / ${formatBytes(limit)}`}
-      />
+    <div className="flex flex-col gap-0.5">
+      <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
+        <Network aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
+        <span>
+          {formatBytes(used)} / {formatBytes(limit)}
+        </span>
+      </div>
       {server.online && (
-        <div className="flex items-center gap-2 pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
+        <div className="flex h-4 items-center gap-2 pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
           <span className="inline-flex items-center gap-1">
             <ArrowDown aria-hidden="true" className="size-2.5" />
             {formatSpeed(server.net_in_speed)}

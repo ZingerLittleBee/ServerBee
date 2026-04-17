@@ -185,16 +185,16 @@ function ServersListPage() {
         id: 'cpu',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_cpu')} />,
         cell: ({ row }) => <CpuCell server={row.original} />,
-        size: 160,
-        meta: { className: 'w-[160px]' }
+        size: 130,
+        meta: { className: 'w-[130px] align-top' }
       },
       {
         accessorFn: (row) => (row.mem_total > 0 ? row.mem_used / row.mem_total : 0),
         id: 'memory',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_memory')} />,
         cell: ({ row }) => <MemoryCell server={row.original} />,
-        size: 160,
-        meta: { className: 'w-[160px]' }
+        size: 130,
+        meta: { className: 'w-[130px] align-top' }
       },
       {
         accessorFn: (row) => (row.disk_total > 0 ? row.disk_used / row.disk_total : 0),
@@ -202,7 +202,7 @@ function ServersListPage() {
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_disk')} />,
         cell: ({ row }) => <DiskCell server={row.original} />,
         size: 160,
-        meta: { className: 'w-[160px]' }
+        meta: { className: 'w-[160px] align-top' }
       },
       {
         id: 'network',
@@ -213,7 +213,7 @@ function ServersListPage() {
           return <NetworkCell entry={entry} server={row.original} />
         },
         size: 160,
-        meta: { className: 'hidden lg:table-cell lg:w-[160px]' }
+        meta: { className: 'hidden lg:table-cell lg:w-[160px] lg:align-top' }
       },
       {
         accessorKey: 'uptime',

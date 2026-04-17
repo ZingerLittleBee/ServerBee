@@ -2,7 +2,16 @@ import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
-import { CpuCell, DiskCell, MemoryCell, MetricBarRow, NameCell, NetworkCell, UptimeCell } from './index.cells'
+import {
+  CpuCell,
+  DiskCell,
+  MemoryCell,
+  MetricBarRow,
+  NameCell,
+  NetworkCell,
+  PositionIndicator,
+  UptimeCell
+} from './index.cells'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key })
@@ -114,6 +123,27 @@ describe('MetricBarRow', () => {
   it('renders the supplied icon slot', () => {
     render(<MetricBarRow icon={<span data-testid="cpu-icon" />} pct={10} />)
     expect(screen.getByTestId('cpu-icon')).toBeDefined()
+  })
+})
+
+describe('PositionIndicator', () => {
+  it('fills the bar to the correct percentage', () => {
+    const { container } = render(<PositionIndicator pct={42} />)
+    const fill = container.querySelector('[data-slot="position-indicator-fill"]') as HTMLElement | null
+    expect(fill?.style.width).toBe('42%')
+  })
+
+  it('clamps the fill width to [0, 100]', () => {
+    const { container: c1 } = render(<PositionIndicator pct={150} />)
+    expect((c1.querySelector('[data-slot="position-indicator-fill"]') as HTMLElement).style.width).toBe('100%')
+    const { container: c2 } = render(<PositionIndicator pct={-10} />)
+    expect((c2.querySelector('[data-slot="position-indicator-fill"]') as HTMLElement).style.width).toBe('0%')
+  })
+
+  it('colors the bar red above 90%', () => {
+    const { container } = render(<PositionIndicator pct={95} />)
+    const fill = container.querySelector('[data-slot="position-indicator-fill"]') as HTMLElement
+    expect(fill.className).toMatch(REGEX_BG_RED)
   })
 })
 
