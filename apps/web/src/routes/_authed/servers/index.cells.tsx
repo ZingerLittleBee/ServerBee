@@ -219,19 +219,22 @@ export function UptimeCell({ server }: { server: ServerMetrics }) {
   )
 }
 
-export function NameCell({ server }: { server: ServerMetrics }) {
+export function NameCell({ server, rightSlot }: { rightSlot?: ReactNode; server: ServerMetrics }) {
   const flag = countryCodeToFlag(server.country_code)
   return (
     <div className="flex min-w-0 flex-col">
-      <Link
-        className="group/link flex min-w-0 items-center gap-1.5"
-        params={{ id: server.id }}
-        search={{ range: 'realtime' }}
-        to="/servers/$id"
-      >
-        {flag && <span className="text-xs">{flag}</span>}
-        <span className="truncate font-medium group-hover/link:underline">{server.name}</span>
-      </Link>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <Link
+          className="group/link flex min-w-0 items-center gap-1.5"
+          params={{ id: server.id }}
+          search={{ range: 'realtime' }}
+          to="/servers/$id"
+        >
+          {flag && <span className="text-xs">{flag}</span>}
+          <span className="truncate font-medium group-hover/link:underline">{server.name}</span>
+        </Link>
+        {rightSlot}
+      </div>
       <TagChipRow tags={server.tags} />
     </div>
   )

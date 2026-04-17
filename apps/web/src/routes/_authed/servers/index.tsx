@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
 import { CircleDot, ExternalLink, LayoutGrid, Search, Table2, Tag, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -10,7 +10,7 @@ import { DataTableColumnHeader } from '@/components/data-table/data-table-column
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { ServerCard } from '@/components/server/server-card'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
-import { StatusBadge } from '@/components/server/status-badge'
+import { StatusDot } from '@/components/server/status-dot'
 import { UpgradeJobBadge } from '@/components/server/upgrade-job-badge'
 import {
   AlertDialog,
@@ -31,12 +31,12 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useServer } from '@/hooks/use-api'
 import { useDataTable } from '@/hooks/use-data-table'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import { useTrafficOverview } from '@/hooks/use-traffic-overview'
 import { api } from '@/lib/api-client'
 import type { ServerGroup } from '@/lib/api-schema'
 import { countCleanupCandidates } from '@/lib/orphan-server-utils'
-import { countryCodeToFlag, formatUptime } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
-import { CpuCell, DiskCell, MemoryCell, NetworkCell } from './index.cells'
+import { CpuCell, DiskCell, MemoryCell, NameCell, NetworkCell, UptimeCell } from './index.cells'
 
 function UpgradeBadgeCell({ serverId }: { serverId: string }) {
   const job = useUpgradeJobsStore((state) => state.jobs.get(serverId))
@@ -91,6 +91,8 @@ function ServersListPage() {
     queryFn: () => api.get<ServerGroup[]>('/api/server-groups'),
     staleTime: 60_000
   })
+
+  const { data: trafficOverview = [] } = useTrafficOverview()
 
   const setSearch = (value: string) => navigate({ search: (prev) => ({ ...prev, q: value }) })
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -152,45 +154,31 @@ function ServersListPage() {
         meta: { className: 'w-9' }
       },
       {
-        accessorKey: 'name',
-        id: 'name',
-        header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_name')} />,
-        cell: ({ row }) => {
-          const s = row.original
-          const flag = countryCodeToFlag(s.country_code)
-          return (
-            <div className="flex min-w-0 items-center gap-1.5">
-              <Link
-                className="group/link flex min-w-0 items-center gap-1.5"
-                params={{ id: s.id }}
-                search={{ range: 'realtime' }}
-                to="/servers/$id"
-              >
-                {flag && <span className="text-xs">{flag}</span>}
-                <span className="truncate font-medium group-hover/link:underline">{s.name}</span>
-              </Link>
-              <UpgradeBadgeCell serverId={s.id} />
-            </div>
-          )
-        },
-        size: 260,
-        meta: { className: 'min-w-[200px]' }
-      },
-      {
-        id: 'status',
+        id: 'status-dot',
         accessorFn: (row) => (row.online ? 'online' : 'offline'),
-        header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_status')} />,
-        cell: ({ row }) => <StatusBadge online={row.original.online} />,
+        enableSorting: false,
+        header: () => null,
+        cell: ({ row }) => <StatusDot online={row.original.online} />,
         filterFn: arrayIncludesFilter,
         enableColumnFilter: true,
-        size: 84,
+        size: 36,
         meta: {
-          className: 'w-[84px]',
+          className: 'w-9',
           label: t('col_status'),
           variant: 'select',
           options: statusOptions,
           icon: CircleDot
         }
+      },
+      {
+        accessorKey: 'name',
+        id: 'name',
+        header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_name')} />,
+        cell: ({ row }) => (
+          <NameCell rightSlot={<UpgradeBadgeCell serverId={row.original.id} />} server={row.original} />
+        ),
+        size: 260,
+        meta: { className: 'min-w-[200px]' }
       },
       {
         accessorKey: 'cpu',
@@ -220,7 +208,10 @@ function ServersListPage() {
         id: 'network',
         enableSorting: false,
         header: () => <span className="text-muted-foreground text-xs">{t('col_network')}</span>,
-        cell: ({ row }) => <NetworkCell server={row.original} />,
+        cell: ({ row }) => {
+          const entry = trafficOverview.find((e) => e.server_id === row.original.id)
+          return <NetworkCell entry={entry} server={row.original} />
+        },
         size: 160,
         meta: { className: 'hidden lg:table-cell lg:w-[160px]' }
       },
@@ -228,14 +219,7 @@ function ServersListPage() {
         accessorKey: 'uptime',
         id: 'uptime',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_uptime')} />,
-        cell: ({ row }) => {
-          const s = row.original
-          return (
-            <span className="font-mono text-muted-foreground text-xs tabular-nums">
-              {s.online ? formatUptime(s.uptime) : '-'}
-            </span>
-          )
-        },
+        cell: ({ row }) => <UptimeCell server={row.original} />,
         size: 100,
         meta: { className: 'hidden xl:table-cell xl:w-[100px]' }
       },
@@ -279,7 +263,7 @@ function ServersListPage() {
         meta: { className: 'w-10' }
       }
     ],
-    [t, groupMap, groupOptions, statusOptions]
+    [t, groupMap, groupOptions, statusOptions, trafficOverview]
   )
 
   const { table } = useDataTable({
