@@ -1,3 +1,4 @@
+import { Cpu } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { cn } from '@/lib/utils'
@@ -62,9 +63,19 @@ export function MiniBar({ pct, sub }: { pct: number; sub?: ReactNode }) {
   )
 }
 
-// Temporary stubs — replaced in Tasks 8–13.
-export function CpuCell(_: { server: ServerMetrics }) {
-  return <MetricBarRow icon={null} pct={0} />
+export function CpuCell({ server }: { server: ServerMetrics }) {
+  if (!server.online) {
+    return <span className="text-muted-foreground">—</span>
+  }
+  const cores = server.cpu_cores ?? null
+  return (
+    <div className="flex flex-col gap-1">
+      <MetricBarRow icon={<Cpu aria-hidden="true" className="size-3.5" />} pct={server.cpu} />
+      <div className="pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
+        {cores != null && `${cores} cores · `}load {server.load1.toFixed(2)}
+      </div>
+    </div>
+  )
 }
 export function MemoryCell(_: { server: ServerMetrics }) {
   return <MetricBarRow icon={null} pct={0} />
