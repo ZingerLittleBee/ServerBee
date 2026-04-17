@@ -496,8 +496,7 @@ impl AlertService {
                     );
                     continue;
                 }
-                Self::handle_triggered(db, config, state_manager, rule, &srv.id, &srv.name)
-                    .await?;
+                Self::handle_triggered(db, config, state_manager, rule, &srv.id, &srv.name).await?;
             } else if state_manager.is_triggered(&rule.id, &srv.id) {
                 // Recovered
                 state_manager.mark_resolved(db, &rule.id, &srv.id).await?;

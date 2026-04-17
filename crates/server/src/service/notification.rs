@@ -469,8 +469,7 @@ impl NotificationService {
                 let api_key = config.resend.api_key.trim();
                 if api_key.is_empty() {
                     return Err(AppError::Validation(
-                        "Resend API key not configured (set SERVERBEE_RESEND__API_KEY)"
-                            .to_string(),
+                        "Resend API key not configured (set SERVERBEE_RESEND__API_KEY)".to_string(),
                     ));
                 }
 
@@ -742,8 +741,7 @@ mod tests {
     #[test]
     fn test_parse_config_email_new_schema() {
         let config_json = r#"{"from":"alerts@example.com","to":["a@x.com","b@y.com"]}"#;
-        let config =
-            NotificationService::parse_config("email", config_json).expect("should parse");
+        let config = NotificationService::parse_config("email", config_json).expect("should parse");
 
         match config {
             ChannelConfig::Email { from, to } => {
@@ -774,8 +772,7 @@ mod tests {
     #[test]
     fn test_parse_config_email_single_recipient() {
         let config_json = r#"{"from":"a@b.com","to":["only@x.com"]}"#;
-        let config =
-            NotificationService::parse_config("email", config_json).expect("should parse");
+        let config = NotificationService::parse_config("email", config_json).expect("should parse");
         match config {
             ChannelConfig::Email { to, .. } => assert_eq!(to.len(), 1),
             _ => panic!("expected Email variant"),
@@ -976,7 +973,10 @@ mod tests {
             ..Default::default()
         };
         let html = render_html(&ctx);
-        assert!(!html.contains(">CPU<"), "empty cpu should not render a CPU row");
+        assert!(
+            !html.contains(">CPU<"),
+            "empty cpu should not render a CPU row"
+        );
         assert!(
             !html.contains(">Memory<"),
             "empty memory should not render a Memory row"
@@ -993,8 +993,14 @@ mod tests {
             ..Default::default()
         };
         let rendered = ctx.render(EMAIL_TEXT_TEMPLATE);
-        assert!(rendered.contains("Time:"), "english text template should say Time:");
-        assert!(!rendered.contains("时间"), "english text template must not contain Chinese");
+        assert!(
+            rendered.contains("Time:"),
+            "english text template should say Time:"
+        );
+        assert!(
+            !rendered.contains("时间"),
+            "english text template must not contain Chinese"
+        );
     }
 
     #[test]

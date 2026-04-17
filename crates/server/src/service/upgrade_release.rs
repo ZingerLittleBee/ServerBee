@@ -69,7 +69,11 @@ impl UpgradeReleaseService {
     pub fn new(config: &UpgradeConfig) -> Self {
         Self {
             client: reqwest::Client::builder()
-                .user_agent(concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")))
+                .user_agent(concat!(
+                    env!("CARGO_PKG_NAME"),
+                    "/",
+                    env!("CARGO_PKG_VERSION")
+                ))
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
             release_base_url: config.release_base_url.clone(),
@@ -165,7 +169,9 @@ impl UpgradeReleaseService {
                     return LatestAgentVersionResponse {
                         version: None,
                         released_at: None,
-                        error: Some("Unable to derive latest-version URL from release_base_url".into()),
+                        error: Some(
+                            "Unable to derive latest-version URL from release_base_url".into(),
+                        ),
                     };
                 }
             }
@@ -270,7 +276,10 @@ mod tests {
     fn github_release_api_url_is_derived_from_release_base_url() {
         assert_eq!(
             github_latest_release_api("https://github.com/ZingerLittleBee/ServerBee/releases"),
-            Some("https://api.github.com/repos/ZingerLittleBee/ServerBee/releases/latest".to_string())
+            Some(
+                "https://api.github.com/repos/ZingerLittleBee/ServerBee/releases/latest"
+                    .to_string()
+            )
         );
     }
 
