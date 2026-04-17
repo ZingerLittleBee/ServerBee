@@ -16,6 +16,7 @@ pub mod oauth;
 pub mod ping;
 pub mod server;
 pub mod server_group;
+pub mod server_tag;
 pub mod service_monitor;
 pub mod setting;
 pub mod status;
@@ -50,6 +51,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 .merge(agent::read_router())
                 .merge(server::read_router())
                 .merge(server_group::read_router())
+                .merge(server_tag::read_router())
                 .merge(ping::read_router())
                 .merge(network_probe::read_router())
                 .merge(file::read_router())
@@ -67,6 +69,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                     Router::new()
                         .merge(server::write_router())
                         .merge(server_group::write_router())
+                        .merge(server_tag::write_router())
                         .merge(ping::write_router())
                         .merge(network_probe::write_router())
                         .merge(file::write_router(
