@@ -11,9 +11,7 @@ export function StatusDot({ online, className }: StatusDotProps) {
       aria-label={online ? 'online' : 'offline'}
       className={cn(
         'inline-block size-2 rounded-full',
-        online
-          ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.18)] animate-pulse'
-          : 'bg-muted-foreground/60',
+        online ? 'animate-pulse bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.18)]' : 'bg-muted-foreground/60',
         className
       )}
       data-slot="status-dot"

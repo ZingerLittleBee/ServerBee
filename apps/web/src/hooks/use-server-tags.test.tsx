@@ -32,12 +32,14 @@ describe('useServerTags', () => {
 
 describe('useUpdateServerTags', () => {
   it('PUTs tags and patches both caches on success', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementationOnce(async (_input, init) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementationOnce((_input, init) => {
       const body = JSON.parse((init as RequestInit).body as string) as { tags: string[] }
-      return new Response(JSON.stringify({ data: [...body.tags].sort() }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
-      })
+      return Promise.resolve(
+        new Response(JSON.stringify({ data: [...body.tags].sort() }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      )
     })
     const { qc, Wrapper } = harness()
     qc.setQueryData(['server-tags', 'srv-1'], ['old'])
