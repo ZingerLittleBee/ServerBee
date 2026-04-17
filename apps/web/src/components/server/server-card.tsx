@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { type ComponentProps, memo, useMemo } from 'react'
+import { type ComponentProps, memo, useId, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Bar, BarChart } from 'recharts'
 import { CompactMetric } from '@/components/server/compact-metric'
@@ -185,6 +185,7 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
   const { data: realtimeData } = useNetworkRealtime(server.id)
   const { data: trafficOverview } = useTrafficOverview()
   const upgradeJob = useUpgradeJobsStore((state) => state.jobs.get(server.id))
+  const failPatternId = `${useId()}-fail-stripe`
 
   const memoryPct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
   const diskPct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
@@ -388,7 +389,7 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
                 <defs>
                   <pattern
                     height="5"
-                    id="latency-fail-stripe"
+                    id={failPatternId}
                     patternTransform="rotate(45)"
                     patternUnits="userSpaceOnUse"
                     width="5"
@@ -402,7 +403,7 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
                   background={{ fill: 'transparent' }}
                   dataKey="value"
                   isAnimationActive={false}
-                  shape={(shapeProps) => <SeverityBar {...shapeProps} failPatternId="latency-fail-stripe" />}
+                  shape={(shapeProps) => <SeverityBar {...shapeProps} failPatternId={failPatternId} />}
                 />
               </BarChart>
             </ChartContainer>
