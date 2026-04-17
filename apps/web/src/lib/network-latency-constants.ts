@@ -64,3 +64,58 @@ export function getLatencyBarColor(input: LatencyStatusInput): string {
       return LATENCY_UNKNOWN_BAR_COLOR
   }
 }
+
+export const LOSS_WARNING_THRESHOLD_RATIO = 0.01
+export const LOSS_SEVERE_THRESHOLD_RATIO = 0.05
+
+export type CombinedSeverity = 'unknown' | 'healthy' | 'warning' | 'severe' | 'failed'
+
+interface CombinedSeverityInput {
+  latencyMs: number | null | undefined
+  lossRatio: number | null | undefined
+}
+
+export function getCombinedSeverity({ latencyMs, lossRatio }: CombinedSeverityInput): CombinedSeverity {
+  if (lossRatio != null && lossRatio >= NETWORK_FAILURE_PACKET_LOSS_RATIO) {
+    return 'failed'
+  }
+  if (lossRatio != null && lossRatio >= LOSS_SEVERE_THRESHOLD_RATIO) {
+    return 'severe'
+  }
+  if (latencyMs == null && lossRatio == null) {
+    return 'unknown'
+  }
+  const latencyWarn = latencyMs != null && latencyMs >= LATENCY_HEALTHY_THRESHOLD_MS
+  const lossWarn = lossRatio != null && lossRatio >= LOSS_WARNING_THRESHOLD_RATIO
+  if (latencyWarn || lossWarn) {
+    return 'warning'
+  }
+  return 'healthy'
+}
+
+export function getCombinedBarColor(input: CombinedSeverityInput): string {
+  switch (getCombinedSeverity(input)) {
+    case 'healthy':
+      return LATENCY_HEALTHY_BAR_COLOR
+    case 'warning':
+      return LATENCY_WARNING_BAR_COLOR
+    case 'severe':
+    case 'failed':
+      return LATENCY_FAILED_BAR_COLOR
+    default:
+      return LATENCY_UNKNOWN_BAR_COLOR
+  }
+}
+
+export function getLossDotBgClass(lossRatio: number | null | undefined): string {
+  if (lossRatio == null) {
+    return 'bg-muted-foreground'
+  }
+  if (lossRatio < LOSS_WARNING_THRESHOLD_RATIO) {
+    return 'bg-emerald-500'
+  }
+  if (lossRatio < LOSS_SEVERE_THRESHOLD_RATIO) {
+    return 'bg-amber-500'
+  }
+  return 'bg-red-500'
+}
