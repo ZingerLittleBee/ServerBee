@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::Router;
@@ -7,7 +8,9 @@ use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use futures_util::{SinkExt, StreamExt};
+use sea_orm::{EntityTrait, QueryOrder};
 
+use crate::entity::server_tag;
 use crate::service::agent_manager::aggregate_disk_io;
 use crate::service::auth::AuthService;
 use crate::service::server::ServerService;
@@ -260,6 +263,17 @@ async fn build_full_sync(state: &Arc<AppState>) -> BrowserMessage {
         }
     };
 
+    let tags_rows = server_tag::Entity::find()
+        .order_by_asc(server_tag::Column::ServerId)
+        .order_by_asc(server_tag::Column::Tag)
+        .all(&state.db)
+        .await
+        .unwrap_or_default();
+    let mut tags_by_server: HashMap<String, Vec<String>> = HashMap::new();
+    for row in tags_rows {
+        tags_by_server.entry(row.server_id).or_default().push(row.tag);
+    }
+
     let statuses: Vec<ServerStatus> = servers
         .into_iter()
         .map(|server| {
@@ -348,6 +362,8 @@ async fn build_full_sync(state: &Arc<AppState>) -> BrowserMessage {
                 features: serde_json::from_str(&server.features).unwrap_or_default(),
                 disk_read_bytes_per_sec,
                 disk_write_bytes_per_sec,
+                tags: tags_by_server.remove(&server.id).unwrap_or_default(),
+                cpu_cores: server.cpu_cores,
             }
         })
         .collect();
