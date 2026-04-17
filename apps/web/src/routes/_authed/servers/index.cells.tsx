@@ -8,6 +8,13 @@ import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
 import { computeTrafficQuota } from '@/lib/traffic'
 import { cn, countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 
+function formatSpeedOrZero(bytesPerSec: number): string {
+  if (bytesPerSec <= 0) {
+    return '0'
+  }
+  return formatSpeed(bytesPerSec)
+}
+
 export function getBarColor(pct: number): string {
   if (pct > 90) {
     return 'bg-red-500'
@@ -146,13 +153,13 @@ export function DiskCell({ server }: { server: ServerMetrics }) {
           <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-foreground">
             R
           </span>
-          {formatSpeed(server.disk_read_bytes_per_sec)}
+          <span className="inline-block w-14">{formatSpeedOrZero(server.disk_read_bytes_per_sec)}</span>
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-foreground">
             W
           </span>
-          {formatSpeed(server.disk_write_bytes_per_sec)}
+          <span className="inline-block w-14">{formatSpeedOrZero(server.disk_write_bytes_per_sec)}</span>
         </span>
       </div>
     </div>
@@ -178,14 +185,18 @@ export function NetworkCell({ server, entry }: NetworkCellProps) {
         </span>
       </div>
       {server.online && (
-        <div className="flex h-4 items-center gap-2 pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
-          <span className="inline-flex items-center gap-1">
-            <ArrowDown aria-hidden="true" className="size-2.5" />
-            {formatSpeed(server.net_in_speed)}
+        <div className="flex h-4 items-center gap-2 font-mono text-[10px] text-muted-foreground tabular-nums">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted text-foreground">
+              <ArrowDown aria-hidden="true" className="size-2.5" />
+            </span>
+            <span className="inline-block w-14">{formatSpeedOrZero(server.net_in_speed)}</span>
           </span>
-          <span className="inline-flex items-center gap-1">
-            <ArrowUp aria-hidden="true" className="size-2.5" />
-            {formatSpeed(server.net_out_speed)}
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted text-foreground">
+              <ArrowUp aria-hidden="true" className="size-2.5" />
+            </span>
+            <span className="inline-block w-14">{formatSpeedOrZero(server.net_out_speed)}</span>
           </span>
         </div>
       )}
