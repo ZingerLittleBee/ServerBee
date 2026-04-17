@@ -5,7 +5,7 @@ interface CompactMetricProps {
   icon?: React.ReactNode
   label: React.ReactNode
   subValue?: string
-  value: string | number
+  value: React.ReactNode
 }
 
 export function CompactMetric({ label, value, subValue, icon, className }: CompactMetricProps) {

@@ -169,7 +169,7 @@ describe('CpuCell', () => {
 
 describe('MemoryCell', () => {
   it('renders used/total + pct on the second row', () => {
-    render(
+    const { container } = render(
       <MemoryCell
         server={makeServer({
           mem_used: 7.2 * 1024 ** 3,
@@ -177,19 +177,19 @@ describe('MemoryCell', () => {
         })}
       />
     )
-    expect(screen.getByText(REGEX_MEM_USED_TOTAL)).toBeDefined()
+    expect(container.textContent ?? '').toMatch(REGEX_MEM_USED_TOTAL)
     expect(screen.getByText(REGEX_45_PCT)).toBeDefined()
   })
 
   it('hides sub-line when offline', () => {
-    render(<MemoryCell server={makeServer({ online: false })} />)
-    expect(screen.queryByText(REGEX_MEM_USED_TOTAL)).toBeNull()
+    const { container } = render(<MemoryCell server={makeServer({ online: false })} />)
+    expect(container.textContent ?? '').not.toMatch(REGEX_MEM_USED_TOTAL)
   })
 })
 
 describe('DiskCell', () => {
   it('shows used/total text + r/w speeds when online', () => {
-    render(
+    const { container } = render(
       <DiskCell
         server={makeServer({
           online: true,
@@ -200,21 +200,22 @@ describe('DiskCell', () => {
         })}
       />
     )
-    expect(screen.getByText(REGEX_DISK_USED_TOTAL)).toBeDefined()
-    expect(screen.getByText(REGEX_DISK_READ)).toBeDefined()
-    expect(screen.getByText(REGEX_DISK_WRITE)).toBeDefined()
+    const text = container.textContent ?? ''
+    expect(text).toMatch(REGEX_DISK_USED_TOTAL)
+    expect(text).toMatch(REGEX_DISK_READ)
+    expect(text).toMatch(REGEX_DISK_WRITE)
   })
 
   it('hides r/w sub when offline', () => {
-    render(
+    const { container } = render(
       <DiskCell server={makeServer({ online: false, disk_read_bytes_per_sec: 999, disk_write_bytes_per_sec: 999 })} />
     )
-    expect(screen.queryByText(REGEX_KB_PER_SEC)).toBeNull()
+    expect(container.textContent ?? '').not.toMatch(REGEX_KB_PER_SEC)
   })
 
   it('renders 0 B / 0 B when disk_total is 0', () => {
-    render(<DiskCell server={makeServer({ disk_total: 0, disk_used: 0 })} />)
-    expect(screen.getByText(REGEX_DISK_ZERO)).toBeDefined()
+    const { container } = render(<DiskCell server={makeServer({ disk_total: 0, disk_used: 0 })} />)
+    expect(container.textContent ?? '').toMatch(REGEX_DISK_ZERO)
   })
 })
 
@@ -237,42 +238,46 @@ function makeEntry(overrides: Partial<TrafficOverviewItem>): TrafficOverviewItem
 
 describe('NetworkCell', () => {
   it('renders used/limit text + live ↓↑ when online', () => {
-    render(
+    const { container } = render(
       <NetworkCell
         entry={makeEntry({ cycle_in: 50 * GB, cycle_out: 43.2 * GB, traffic_limit: 1 * TB })}
         server={makeServer({ online: true, net_in_speed: 1_153_434, net_out_speed: 339_968 })}
       />
     )
-    expect(screen.getByText(REGEX_TRAFFIC_USED_LIMIT)).toBeDefined()
-    expect(screen.getByText(REGEX_TRAFFIC_DOWN)).toBeDefined()
-    expect(screen.getByText(REGEX_TRAFFIC_UP)).toBeDefined()
+    const text = container.textContent ?? ''
+    expect(text).toMatch(REGEX_TRAFFIC_USED_LIMIT)
+    expect(text).toMatch(REGEX_TRAFFIC_DOWN)
+    expect(text).toMatch(REGEX_TRAFFIC_UP)
   })
 
   it('falls back to net_in_transfer + 1 TiB default when entry is undefined', () => {
-    render(
+    const { container } = render(
       <NetworkCell
         entry={undefined}
         server={makeServer({ online: true, net_in_transfer: 2 * GB, net_out_transfer: 1 * GB })}
       />
     )
-    expect(screen.getByText(REGEX_TRAFFIC_FALLBACK)).toBeDefined()
+    expect(container.textContent ?? '').toMatch(REGEX_TRAFFIC_FALLBACK)
   })
 
   it('renders used/limit text and hides speeds when offline', () => {
-    render(
+    const { container } = render(
       <NetworkCell
         entry={makeEntry({ cycle_in: 50 * GB, cycle_out: 50 * GB, traffic_limit: 1 * TB })}
         server={makeServer({ online: false })}
       />
     )
-    expect(screen.getByText(REGEX_TRAFFIC_OFFLINE_USAGE)).toBeDefined()
-    expect(screen.queryByText(REGEX_MB_PER_SEC)).toBeNull()
-    expect(screen.queryByText(REGEX_KB_PER_SEC)).toBeNull()
+    const text = container.textContent ?? ''
+    expect(text).toMatch(REGEX_TRAFFIC_OFFLINE_USAGE)
+    expect(text).not.toMatch(REGEX_MB_PER_SEC)
+    expect(text).not.toMatch(REGEX_KB_PER_SEC)
   })
 
   it('treats traffic_limit <= 0 as fallback to default', () => {
-    render(<NetworkCell entry={makeEntry({ traffic_limit: 0 })} server={makeServer({ online: true })} />)
-    expect(screen.getByText(REGEX_LIMIT_DEFAULT)).toBeDefined()
+    const { container } = render(
+      <NetworkCell entry={makeEntry({ traffic_limit: 0 })} server={makeServer({ online: true })} />
+    )
+    expect(container.textContent ?? '').toMatch(REGEX_LIMIT_DEFAULT)
   })
 })
 

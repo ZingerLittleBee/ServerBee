@@ -106,6 +106,23 @@ function formatLoad(load: number): string {
   return load.toFixed(2)
 }
 
+function renderSpeedValue(bytesPerSec: number): React.ReactNode {
+  if (bytesPerSec <= 0) {
+    return '0'
+  }
+  const formatted = formatSpeed(bytesPerSec)
+  const lastSpace = formatted.lastIndexOf(' ')
+  if (lastSpace < 0) {
+    return formatted
+  }
+  return (
+    <>
+      {formatted.slice(0, lastSpace)}
+      <span className="ml-0.5 font-normal text-[10px] text-muted-foreground">{formatted.slice(lastSpace + 1)}</span>
+    </>
+  )
+}
+
 function averageLossRatio(point: ServerCardMetricPoint): number | null {
   if (point.targets.length === 0) {
     return null
@@ -266,12 +283,12 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
         <CompactMetric
           className="items-center"
           label={t('card_net_in_speed')}
-          value={formatSpeed(server.net_in_speed)}
+          value={renderSpeedValue(server.net_in_speed)}
         />
         <CompactMetric
           className="items-center"
           label={t('card_net_out_speed')}
-          value={formatSpeed(server.net_out_speed)}
+          value={renderSpeedValue(server.net_out_speed)}
         />
         <CompactMetric
           className="items-center"
@@ -284,7 +301,7 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
               R
             </span>
           }
-          value={formatSpeed(server.disk_read_bytes_per_sec)}
+          value={renderSpeedValue(server.disk_read_bytes_per_sec)}
         />
         <CompactMetric
           className="items-center"
@@ -297,7 +314,7 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
               W
             </span>
           }
-          value={formatSpeed(server.disk_write_bytes_per_sec)}
+          value={renderSpeedValue(server.disk_write_bytes_per_sec)}
         />
         <CompactMetric
           className="items-center"

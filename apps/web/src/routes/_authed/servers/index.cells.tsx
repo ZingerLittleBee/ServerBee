@@ -8,11 +8,43 @@ import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
 import { computeTrafficQuota } from '@/lib/traffic'
 import { cn, countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 
-function formatSpeedOrZero(bytesPerSec: number): string {
-  if (bytesPerSec <= 0) {
-    return '0'
+function splitValueUnit(formatted: string): { unit: string | null; value: string } {
+  const lastSpace = formatted.lastIndexOf(' ')
+  if (lastSpace < 0) {
+    return { unit: null, value: formatted }
   }
-  return formatSpeed(bytesPerSec)
+  return { unit: formatted.slice(lastSpace + 1), value: formatted.slice(0, lastSpace) }
+}
+
+function valueClassName(value: string): string {
+  return value === '0' ? 'text-xs' : 'font-semibold text-foreground text-xs'
+}
+
+export function renderBytesValue(bytes: number): ReactNode {
+  const { value, unit } = splitValueUnit(formatBytes(bytes))
+  if (unit == null) {
+    return <span className={valueClassName(value)}>{value}</span>
+  }
+  return (
+    <>
+      <span className={valueClassName(value)}>{value}</span> <span className="text-[9px]">{unit}</span>
+    </>
+  )
+}
+
+export function renderSpeedValue(bytesPerSec: number): ReactNode {
+  if (bytesPerSec <= 0) {
+    return <span className="text-xs">0</span>
+  }
+  const { value, unit } = splitValueUnit(formatSpeed(bytesPerSec))
+  if (unit == null) {
+    return <span className={valueClassName(value)}>{value}</span>
+  }
+  return (
+    <>
+      <span className={valueClassName(value)}>{value}</span> <span className="text-[9px]">{unit}</span>
+    </>
+  )
 }
 
 export function getBarColor(pct: number): string {
@@ -126,7 +158,7 @@ export function MemoryCell({ server }: { server: ServerMetrics }) {
       <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
         <MemoryStick aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
         <span>
-          {formatBytes(server.mem_used)} / {formatBytes(server.mem_total)}
+          {renderBytesValue(server.mem_used)} / {renderBytesValue(server.mem_total)}
         </span>
         <span className={cn('ml-auto font-semibold', pctColor)}>{roundedPct}%</span>
       </div>
@@ -145,7 +177,7 @@ export function DiskCell({ server }: { server: ServerMetrics }) {
       <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
         <HardDrive aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
         <span>
-          {formatBytes(server.disk_used)} / {formatBytes(server.disk_total)}
+          {renderBytesValue(server.disk_used)} / {renderBytesValue(server.disk_total)}
         </span>
       </div>
       <div className="flex h-4 items-center gap-2 font-mono text-[10px] text-muted-foreground tabular-nums">
@@ -153,13 +185,13 @@ export function DiskCell({ server }: { server: ServerMetrics }) {
           <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-foreground">
             R
           </span>
-          <span className="inline-block w-14">{formatSpeedOrZero(server.disk_read_bytes_per_sec)}</span>
+          <span className="inline-block w-14">{renderSpeedValue(server.disk_read_bytes_per_sec)}</span>
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-foreground">
             W
           </span>
-          <span className="inline-block w-14">{formatSpeedOrZero(server.disk_write_bytes_per_sec)}</span>
+          <span className="inline-block w-14">{renderSpeedValue(server.disk_write_bytes_per_sec)}</span>
         </span>
       </div>
     </div>
@@ -181,7 +213,7 @@ export function NetworkCell({ server, entry }: NetworkCellProps) {
       <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
         <Network aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
         <span>
-          {formatBytes(used)} / {formatBytes(limit)}
+          {renderBytesValue(used)} / {renderBytesValue(limit)}
         </span>
       </div>
       {server.online && (
@@ -190,13 +222,13 @@ export function NetworkCell({ server, entry }: NetworkCellProps) {
             <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted text-foreground">
               <ArrowDown aria-hidden="true" className="size-2.5" />
             </span>
-            <span className="inline-block w-14">{formatSpeedOrZero(server.net_in_speed)}</span>
+            <span className="inline-block w-14">{renderSpeedValue(server.net_in_speed)}</span>
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted text-foreground">
               <ArrowUp aria-hidden="true" className="size-2.5" />
             </span>
-            <span className="inline-block w-14">{formatSpeedOrZero(server.net_out_speed)}</span>
+            <span className="inline-block w-14">{renderSpeedValue(server.net_out_speed)}</span>
           </span>
         </div>
       )}
