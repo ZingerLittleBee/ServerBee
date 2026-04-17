@@ -1,9 +1,12 @@
-import { ArrowDown, ArrowUp, Cpu, HardDrive, MemoryStick, Network } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { ArrowDown, ArrowUp, Clock, Cpu, HardDrive, MemoryStick, Network } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
+import { TagChipRow } from '@/components/server/tag-chip'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
 import { computeTrafficQuota } from '@/lib/traffic'
-import { cn, formatBytes, formatSpeed } from '@/lib/utils'
+import { cn, countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 
 export function getBarColor(pct: number): string {
   if (pct > 90) {
@@ -149,6 +152,87 @@ export function NetworkCell({ server, entry }: NetworkCellProps) {
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+function osEmoji(os: string | null): string {
+  if (!os) {
+    return ''
+  }
+  const l = os.toLowerCase()
+  if (l.includes('ubuntu') || l.includes('debian') || l.includes('linux')) {
+    return '🐧'
+  }
+  if (l.includes('windows')) {
+    return '🪟'
+  }
+  if (l.includes('macos') || l.includes('darwin')) {
+    return '🍎'
+  }
+  if (l.includes('freebsd') || l.includes('openbsd')) {
+    return '😈'
+  }
+  return ''
+}
+
+function relativeTime(thenSec: number, nowMs = Date.now()): string {
+  const diffSec = Math.max(0, Math.floor(nowMs / 1000) - thenSec)
+  if (diffSec < 60) {
+    return `${diffSec}s ago`
+  }
+  if (diffSec < 3600) {
+    return `${Math.floor(diffSec / 60)}m ago`
+  }
+  if (diffSec < 86_400) {
+    return `${Math.floor(diffSec / 3600)}h ago`
+  }
+  return `${Math.floor(diffSec / 86_400)}d ago`
+}
+
+export function UptimeCell({ server }: { server: ServerMetrics }) {
+  const { t } = useTranslation(['servers'])
+  const emoji = osEmoji(server.os)
+  if (!server.online) {
+    return (
+      <div className="flex flex-col">
+        <span className="text-muted-foreground text-xs">{t('offline_label')}</span>
+        <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
+          {t('last_seen_ago', { time: relativeTime(server.last_active) })}
+        </span>
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col">
+      <span className="inline-flex items-center gap-1 font-mono text-muted-foreground text-xs tabular-nums">
+        <Clock aria-hidden="true" className="size-3" />
+        {formatUptime(server.uptime)}
+      </span>
+      {server.os && (
+        <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
+          {emoji && <span className="mr-1">{emoji}</span>}
+          {server.os}
+        </span>
+      )}
+    </div>
+  )
+}
+
+export function NameCell({ server }: { server: ServerMetrics }) {
+  const flag = countryCodeToFlag(server.country_code)
+  return (
+    <div className="flex min-w-0 flex-col">
+      <Link
+        className="group/link flex min-w-0 items-center gap-1.5"
+        params={{ id: server.id }}
+        search={{ range: 'realtime' }}
+        to="/servers/$id"
+      >
+        {flag && <span className="text-xs">{flag}</span>}
+        <span className="truncate font-medium group-hover/link:underline">{server.name}</span>
+      </Link>
+      <TagChipRow tags={server.tags} />
     </div>
   )
 }

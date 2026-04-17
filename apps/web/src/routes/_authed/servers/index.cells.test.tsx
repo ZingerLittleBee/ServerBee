@@ -1,10 +1,18 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { MetricBarRow } from './index.cells'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key })
+}))
+
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, ...props }: { children?: React.ReactNode; [k: string]: unknown }) => (
+    <a data-testid="server-link" href={`/servers/${props.params && (props.params as { id: string }).id}`}>
+      {children}
+    </a>
+  )
 }))
 
 export function makeServer(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
@@ -231,5 +239,52 @@ describe('NetworkCell', () => {
   it('treats traffic_limit <= 0 as fallback to default', () => {
     render(<NetworkCell entry={makeEntry({ traffic_limit: 0 })} server={makeServer({ online: true })} />)
     expect(screen.getByText(/1\.0 TB/)).toBeDefined()
+  })
+})
+
+import { NameCell, UptimeCell } from './index.cells'
+
+describe('UptimeCell', () => {
+  const NOW = 1_700_000_000
+  const _originalNow = Date.now
+  beforeEach(() => {
+    Date.now = () => NOW * 1000
+  })
+  afterEach(() => {
+    Date.now = _originalNow
+  })
+
+  it('shows uptime + OS line when online', () => {
+    render(
+      <UptimeCell
+        server={makeServer({ online: true, uptime: 23 * 86400, os: 'Ubuntu 22.04', last_active: NOW })}
+      />
+    )
+    expect(screen.getByText(/23d/)).toBeDefined()
+    expect(screen.getByText(/Ubuntu 22\.04/)).toBeDefined()
+  })
+
+  it('shows offline + last-seen relative when offline', () => {
+    render(
+      <UptimeCell
+        server={makeServer({ online: false, uptime: 0, os: 'Ubuntu 22.04', last_active: NOW - 7200 })}
+      />
+    )
+    expect(screen.getByText(/offline/i)).toBeDefined()
+    expect(screen.getByText(/last_seen_ago/)).toBeDefined()
+  })
+})
+
+describe('NameCell', () => {
+  it('renders single-line layout when no tags', () => {
+    const { container } = render(<NameCell server={makeServer({ name: 'tokyo-1', tags: [] })} />)
+    expect(screen.getByText('tokyo-1')).toBeDefined()
+    expect(container.querySelector('[data-slot="tag-chip"]')).toBeNull()
+  })
+
+  it('renders chips under the name when tags present', () => {
+    render(<NameCell server={makeServer({ name: 'tokyo-1', tags: ['prod', 'web'] })} />)
+    expect(screen.getByText('prod')).toBeDefined()
+    expect(screen.getByText('web')).toBeDefined()
   })
 })
