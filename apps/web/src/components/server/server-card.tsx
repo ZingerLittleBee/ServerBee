@@ -11,6 +11,7 @@ import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { useTrafficOverview } from '@/hooks/use-traffic-overview'
 import { getLatencyBarColor, isLatencyFailure } from '@/lib/network-latency-constants'
 import { latencyColorClass } from '@/lib/network-types'
+import { computeTrafficQuota } from '@/lib/traffic'
 import { countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import { buildServerCardNetworkState, type ServerCardMetricPoint } from './server-card-network-data'
@@ -105,8 +106,6 @@ function formatLoad(load: number): string {
   return load.toFixed(2)
 }
 
-const DEFAULT_TRAFFIC_LIMIT_BYTES = 1024 ** 4 // 1 TiB fallback when no quota configured
-
 function averageLossRatio(point: ServerCardMetricPoint): number | null {
   if (point.targets.length === 0) {
     return null
@@ -184,15 +183,15 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
   )
 
   const trafficEntry = trafficOverview?.find((entry) => entry.server_id === server.id)
-  const trafficUsed = trafficEntry
-    ? trafficEntry.cycle_in + trafficEntry.cycle_out
-    : server.net_in_transfer + server.net_out_transfer
-  const trafficLimit =
-    trafficEntry?.traffic_limit != null && trafficEntry.traffic_limit > 0
-      ? trafficEntry.traffic_limit
-      : DEFAULT_TRAFFIC_LIMIT_BYTES
-  const trafficRawPct = trafficLimit > 0 ? (trafficUsed / trafficLimit) * 100 : 0
-  const trafficRingPct = Math.min(trafficRawPct, 100)
+  const {
+    used: trafficUsed,
+    limit: trafficLimit,
+    pct: trafficRingPct
+  } = computeTrafficQuota({
+    entry: trafficEntry,
+    netInTransfer: server.net_in_transfer,
+    netOutTransfer: server.net_out_transfer
+  })
   const trafficDaysRemaining = trafficEntry?.days_remaining ?? null
 
   return (
