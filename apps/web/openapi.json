@@ -9,6 +9,35 @@
     "version": "0.2.1"
   },
   "paths": {
+    "/api/agent/latest-version": {
+      "get": {
+        "tags": ["agent"],
+        "operationId": "latest_version",
+        "responses": {
+          "200": {
+            "description": "Latest agent release metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LatestAgentVersionResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
     "/api/agent/register": {
       "post": {
         "tags": ["agent"],
@@ -3518,6 +3547,76 @@
         ]
       }
     },
+    "/api/servers/recovery-jobs/{job_id}": {
+      "get": {
+        "tags": ["server-recovery"],
+        "operationId": "get_recovery_job",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "description": "Recovery job id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recovery job details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryJobResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recovery job not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
     "/api/servers/{id}": {
       "get": {
         "tags": ["servers"],
@@ -4006,6 +4105,189 @@
           },
           "404": {
             "description": "Server not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/servers/{target_id}/recover-merge": {
+      "post": {
+        "tags": ["server-recovery"],
+        "operationId": "start_recovery_merge",
+        "parameters": [
+          {
+            "name": "target_id",
+            "in": "path",
+            "description": "Original offline server id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartRecoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Recovery job created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryJobResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Recovery cannot be started in the current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/servers/{target_id}/recovery-candidates": {
+      "get": {
+        "tags": ["server-recovery"],
+        "operationId": "list_candidates",
+        "parameters": [
+          {
+            "name": "target_id",
+            "in": "path",
+            "description": "Original offline server id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recommended recovery candidates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RecoveryCandidateResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Target server not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Target must be offline and not already in a running recovery job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -6764,6 +7046,21 @@
           }
         ]
       },
+      "LatestAgentVersionResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": ["string", "null"]
+          },
+          "released_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "version": {
+            "type": ["string", "null"]
+          }
+        }
+      },
       "ListFilesRequest": {
         "type": "object",
         "required": ["path"],
@@ -7356,6 +7653,95 @@
           }
         }
       },
+      "RecoveryCandidateResponse": {
+        "type": "object",
+        "required": ["server_id", "name", "score", "reasons"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "score": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "server_id": {
+            "type": "string"
+          }
+        }
+      },
+      "RecoveryJobResponse": {
+        "type": "object",
+        "required": [
+          "job_id",
+          "target_server_id",
+          "source_server_id",
+          "status",
+          "stage",
+          "started_at",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "error": {
+            "type": ["string", "null"]
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "last_heartbeat_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "source_server_id": {
+            "type": "string"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/RecoveryJobStage"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RecoveryJobStatus"
+          },
+          "target_server_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RecoveryJobStage": {
+        "type": "string",
+        "enum": [
+          "validating",
+          "rebinding",
+          "awaiting_target_online",
+          "freezing_writes",
+          "merging_history",
+          "finalizing",
+          "succeeded",
+          "failed",
+          "unknown"
+        ]
+      },
+      "RecoveryJobStatus": {
+        "type": "string",
+        "enum": ["running", "failed", "succeeded", "unknown"]
+      },
       "RegisterRequest": {
         "type": "object",
         "properties": {
@@ -7926,6 +8312,15 @@
           "time": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "StartRecoveryRequest": {
+        "type": "object",
+        "required": ["source_server_id"],
+        "properties": {
+          "source_server_id": {
+            "type": "string"
           }
         }
       },

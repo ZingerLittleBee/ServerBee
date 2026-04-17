@@ -54,3 +54,16 @@
 | 告警表单缺失字段 | 仅 12 种规则类型 + 仅 `max` 字段 | 扩展到 19 种 + 条件 min/duration/cycle 字段 |
 | 告警状态无 UI | 后端有 alert_state 但前端无展示 | 新增 API + 可展开 per-server 状态面板 (`a8defea`) |
 | Capabilities API 500 | `update_server`/`batch_capabilities` 使用 `Extension<(String,String,String)>` 无人注入 | 改为 `Extension<CurrentUser>` + `HeaderMap` |
+
+---
+
+## Resend email channel
+
+Prereqs: a Resend account with a verified domain; `SERVERBEE_RESEND__API_KEY` set on the dev server before startup.
+
+1. **Happy path** — create an Email channel (`from = alerts@<verified-domain>`, one recipient), click "Test notification". Receiving inbox shows an email with a colour-coded header row; "View raw" shows both HTML and plain-text parts.
+2. **Missing API key** — unset the env var, restart the server, click "Test notification" on the saved channel. Error toast contains `Resend API key not configured (set SERVERBEE_RESEND__API_KEY)`. The create-form help text is still visible regardless of env var state.
+3. **Unverified domain** — create a channel with `from` on an unverified domain, click "Test notification". Error toast surfaces Resend's `Domain not verified` message verbatim.
+4. **Multiple recipients** — create a channel with two recipients, click "Test notification". Both inboxes receive the email. In the Resend dashboard Log view, exactly one API call is recorded.
+5. **Update-path validation** — PUT `/api/notifications/{id}` with `config_json = {"from":"a@b.com","to":[]}`. Server returns `422` with a validation error. Change `notify_type` from `email` to `telegram` without updating `config_json` — also `422`.
+6. **Legacy migration** — start from a DB containing an old SMTP email row (pre-migration snapshot). On server restart, that row is disabled and renamed with ` (needs reconfiguration)` suffix. The notifications settings page reflects this.

@@ -7,6 +7,7 @@ mod fingerprint;
 mod network_prober;
 mod pinger;
 mod probe_utils;
+mod rebind;
 mod register;
 mod reporter;
 mod terminal;
@@ -83,6 +84,18 @@ async fn main() -> anyhow::Result<()> {
     let mut reporter = Reporter::new(config, machine_fingerprint, agent_local_capabilities);
     reporter.run().await;
     Ok(())
+}
+
+#[cfg(test)]
+#[test]
+fn persist_rebind_token() {
+    crate::rebind::assert_persist_rebind_token();
+}
+
+#[cfg(test)]
+#[test]
+fn config_path() {
+    crate::config::assert_config_path();
 }
 
 #[cfg(test)]

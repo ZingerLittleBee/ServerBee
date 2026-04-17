@@ -4047,3 +4047,294 @@ async fn browser_ws_full_sync_includes_tags_and_cpu_cores() {
         ours.get("cpu_cores"),
     );
 }
+
+#[tokio::test]
+async fn test_recovery_candidates_rejects_online_or_busy_target() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin_client = http_client();
+    login_admin(&admin_client, &base_url).await;
+
+    let (online_target_id, online_target_token) = register_agent(&admin_client, &base_url).await;
+    let (busy_target_id, _busy_target_token) = register_agent(&admin_client, &base_url).await;
+    let (source_id, source_token) = register_agent(&admin_client, &base_url).await;
+
+    let (_sink, mut reader) = connect_agent(&base_url, &online_target_token).await;
+    let _welcome = recv_agent_text(&mut reader).await;
+
+    let online_resp = admin_client
+        .get(format!(
+            "{}/api/servers/{}/recovery-candidates",
+            base_url, online_target_id
+        ))
+        .send()
+        .await
+        .expect("online target recovery candidates request failed");
+    assert_eq!(online_resp.status(), 409);
+    let online_body: serde_json::Value = online_resp.json().await.unwrap();
+    assert!(
+        online_body["error"]["message"]
+            .as_str()
+            .expect("error message should be a string")
+            .contains("must be offline")
+    );
+
+    let (mut source_sink, mut source_reader) = connect_agent(&base_url, &source_token).await;
+    let _source_welcome = recv_agent_text(&mut source_reader).await;
+    send_system_info(&mut source_sink, &mut source_reader, "recovery-busy-source-info", None).await;
+
+    let start_resp = admin_client
+        .post(format!("{}/api/servers/{}/recover-merge", base_url, busy_target_id))
+        .json(&json!({ "source_server_id": source_id }))
+        .send()
+        .await
+        .expect("start recovery request failed");
+    assert_eq!(start_resp.status(), 200);
+
+    let busy_resp = admin_client
+        .get(format!(
+            "{}/api/servers/{}/recovery-candidates",
+            base_url, busy_target_id
+        ))
+        .send()
+        .await
+        .expect("busy target recovery candidates request failed");
+    assert_eq!(busy_resp.status(), 409);
+    let busy_body: serde_json::Value = busy_resp.json().await.unwrap();
+    assert!(
+        busy_body["error"]["message"]
+            .as_str()
+            .expect("error message should be a string")
+            .contains("running recovery job")
+    );
+}
+
+#[tokio::test]
+async fn test_recovery_candidates_requires_admin_and_filters_online_sources() {
+    let (base_url, _tmp) = start_test_server().await;
+    let auth_client = http_client();
+
+    let (target_id, _target_token) = register_agent(&auth_client, &base_url).await;
+    let (online_source_id, online_source_token) = register_agent(&auth_client, &base_url).await;
+    let (offline_source_id, _offline_source_token) = register_agent(&auth_client, &base_url).await;
+    login_admin(&auth_client, &base_url).await;
+
+    let create_resp = auth_client
+        .post(format!("{}/api/users", base_url))
+        .json(&json!({
+            "username": "recoverymember",
+            "password": "memberpass123",
+            "role": "member"
+        }))
+        .send()
+        .await
+        .expect("POST /api/users failed");
+    assert_eq!(create_resp.status(), 200);
+
+    let member_client = http_client();
+    let member_login = member_client
+        .post(format!("{}/api/auth/login", base_url))
+        .json(&json!({
+            "username": "recoverymember",
+            "password": "memberpass123"
+        }))
+        .send()
+        .await
+        .expect("member login failed");
+    assert_eq!(member_login.status(), 200);
+
+    let plain_client = reqwest::Client::new();
+    let unauth_resp = plain_client
+        .get(format!(
+            "{}/api/servers/{}/recovery-candidates",
+            base_url, target_id
+        ))
+        .send()
+        .await
+        .expect("unauthenticated recovery candidates request failed");
+    assert_eq!(unauth_resp.status(), 401);
+
+    let member_resp = member_client
+        .get(format!(
+            "{}/api/servers/{}/recovery-candidates",
+            base_url, target_id
+        ))
+        .send()
+        .await
+        .expect("member recovery candidates request failed");
+    assert_eq!(member_resp.status(), 403);
+
+    let (_sink, mut reader) = connect_agent(&base_url, &online_source_token).await;
+    let _welcome = recv_agent_text(&mut reader).await;
+
+    let resp = auth_client
+        .get(format!(
+            "{}/api/servers/{}/recovery-candidates",
+            base_url, target_id
+        ))
+        .send()
+        .await
+        .expect("GET recovery candidates failed");
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let candidates = body["data"].as_array().expect("data should be an array");
+
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0]["server_id"], online_source_id);
+    assert_ne!(candidates[0]["server_id"], target_id);
+    assert!(
+        !candidates
+            .iter()
+            .any(|candidate| candidate["server_id"] == offline_source_id)
+    );
+}
+
+#[tokio::test]
+async fn test_recovery_merge_start_requires_admin_and_validates_source_state() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin_client = http_client();
+    login_admin(&admin_client, &base_url).await;
+
+    let create_resp = admin_client
+        .post(format!("{}/api/users", base_url))
+        .json(&json!({
+            "username": "recoverymember",
+            "password": "memberpass123",
+            "role": "member"
+        }))
+        .send()
+        .await
+        .expect("POST /api/users failed");
+    assert_eq!(create_resp.status(), 200);
+
+    let member_client = http_client();
+    let member_login = member_client
+        .post(format!("{}/api/auth/login", base_url))
+        .json(&json!({
+            "username": "recoverymember",
+            "password": "memberpass123"
+        }))
+        .send()
+        .await
+        .expect("member login failed");
+    assert_eq!(member_login.status(), 200);
+
+    let (target_id, _target_token) = register_agent(&admin_client, &base_url).await;
+    let (offline_source_id, _offline_source_token) = register_agent(&admin_client, &base_url).await;
+
+    let member_resp = member_client
+        .post(format!(
+            "{}/api/servers/{}/recover-merge",
+            base_url, target_id
+        ))
+        .json(&json!({ "source_server_id": offline_source_id }))
+        .send()
+        .await
+        .expect("member recover-merge request failed");
+    assert_eq!(member_resp.status(), 403);
+
+    let admin_resp = admin_client
+        .post(format!(
+            "{}/api/servers/{}/recover-merge",
+            base_url, target_id
+        ))
+        .json(&json!({ "source_server_id": offline_source_id }))
+        .send()
+        .await
+        .expect("admin recover-merge validation request failed");
+    assert_eq!(admin_resp.status(), 409);
+
+    let admin_body: serde_json::Value = admin_resp.json().await.unwrap();
+    assert!(
+        admin_body["error"]["message"]
+            .as_str()
+            .expect("error message should be a string")
+            .contains("Source server must be online")
+    );
+}
+
+#[tokio::test]
+async fn test_recovery_job_get_requires_admin_and_start_creates_job() {
+    let (base_url, _tmp) = start_test_server().await;
+    let auth_client = http_client();
+    login_admin(&auth_client, &base_url).await;
+
+    let create_resp = auth_client
+        .post(format!("{}/api/users", base_url))
+        .json(&json!({
+            "username": "recoverymember",
+            "password": "memberpass123",
+            "role": "member"
+        }))
+        .send()
+        .await
+        .expect("POST /api/users failed");
+    assert_eq!(create_resp.status(), 200);
+
+    let member_client = http_client();
+    let member_login = member_client
+        .post(format!("{}/api/auth/login", base_url))
+        .json(&json!({
+            "username": "recoverymember",
+            "password": "memberpass123"
+        }))
+        .send()
+        .await
+        .expect("member login failed");
+    assert_eq!(member_login.status(), 200);
+
+    let (target_id, _target_token) = register_agent(&auth_client, &base_url).await;
+    let (source_id, source_token) = register_agent(&auth_client, &base_url).await;
+    let (mut sink, mut reader) = connect_agent(&base_url, &source_token).await;
+    let _welcome = recv_agent_text(&mut reader).await;
+    send_system_info(&mut sink, &mut reader, "recovery-source-info", None).await;
+
+    let start_resp = auth_client
+        .post(format!(
+            "{}/api/servers/{}/recover-merge",
+            base_url, target_id
+        ))
+        .json(&json!({ "source_server_id": source_id }))
+        .send()
+        .await
+        .expect("start recovery request failed");
+    assert_eq!(start_resp.status(), 200);
+
+    let start_body: serde_json::Value = start_resp.json().await.unwrap();
+    let job_id = start_body["data"]["job_id"]
+        .as_str()
+        .expect("job_id missing")
+        .to_string();
+    assert_eq!(start_body["data"]["status"], "running");
+    assert_eq!(start_body["data"]["stage"], "rebinding");
+
+    let plain_client = reqwest::Client::new();
+    let unauth_resp = plain_client
+        .get(format!("{}/api/servers/recovery-jobs/{}", base_url, job_id))
+        .send()
+        .await
+        .expect("unauthenticated recovery job request failed");
+    assert_eq!(unauth_resp.status(), 401);
+
+    let member_resp = member_client
+        .get(format!("{}/api/servers/recovery-jobs/{}", base_url, job_id))
+        .send()
+        .await
+        .expect("member recovery job request failed");
+    assert_eq!(member_resp.status(), 403);
+
+    let get_resp = auth_client
+        .get(format!("{}/api/servers/recovery-jobs/{}", base_url, job_id))
+        .send()
+        .await
+        .expect("authenticated recovery job request failed");
+    assert_eq!(get_resp.status(), 200);
+
+    let get_body: serde_json::Value = get_resp.json().await.unwrap();
+    assert_eq!(get_body["data"]["job_id"], job_id);
+    assert_eq!(get_body["data"]["target_server_id"], target_id);
+    assert_eq!(get_body["data"]["source_server_id"], source_id);
+    assert!(get_body["data"].get("checkpoint_json").is_none());
+    assert_eq!(get_body["data"]["status"], "running");
+    assert_eq!(get_body["data"]["stage"], "rebinding");
+}

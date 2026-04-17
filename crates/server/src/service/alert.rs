@@ -435,6 +435,7 @@ impl AlertService {
     /// Evaluate all enabled alert rules against current data.
     pub async fn evaluate_all(
         db: &DatabaseConnection,
+        config: &crate::config::AppConfig,
         agent_manager: &AgentManager,
         state_manager: &AlertStateManager,
     ) -> Result<(), AppError> {
@@ -456,7 +457,9 @@ impl AlertService {
                 continue;
             }
 
-            if let Err(e) = Self::evaluate_rule(db, agent_manager, state_manager, &rule).await {
+            if let Err(e) =
+                Self::evaluate_rule(db, config, agent_manager, state_manager, &rule).await
+            {
                 tracing::error!("Error evaluating alert rule '{}': {e}", rule.name);
             }
         }
@@ -465,6 +468,7 @@ impl AlertService {
 
     async fn evaluate_rule(
         db: &DatabaseConnection,
+        config: &crate::config::AppConfig,
         agent_manager: &AgentManager,
         state_manager: &AlertStateManager,
         rule: &alert_rule::Model,
@@ -492,7 +496,8 @@ impl AlertService {
                     );
                     continue;
                 }
-                Self::handle_triggered(db, state_manager, rule, &srv.id, &srv.name).await?;
+                Self::handle_triggered(db, config, state_manager, rule, &srv.id, &srv.name)
+                    .await?;
             } else if state_manager.is_triggered(&rule.id, &srv.id) {
                 // Recovered
                 state_manager.mark_resolved(db, &rule.id, &srv.id).await?;
@@ -548,6 +553,7 @@ impl AlertService {
 
     async fn handle_triggered(
         db: &DatabaseConnection,
+        config: &crate::config::AppConfig,
         state_manager: &AlertStateManager,
         rule: &alert_rule::Model,
         server_id: &str,
@@ -582,7 +588,7 @@ impl AlertService {
                 time: Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
                 ..Default::default()
             };
-            if let Err(e) = NotificationService::send_group(db, group_id, &ctx).await {
+            if let Err(e) = NotificationService::send_group(db, config, group_id, &ctx).await {
                 tracing::error!("Failed to send alert notification: {e}");
             }
         }
@@ -594,6 +600,7 @@ impl AlertService {
     /// when an event occurs for a specific server.
     pub async fn check_event_rules(
         db: &DatabaseConnection,
+        config: &crate::config::AppConfig,
         state_manager: &AlertStateManager,
         server_id: &str,
         event_type: &str,
@@ -634,7 +641,8 @@ impl AlertService {
                 .map(|s| s.name)
                 .unwrap_or_else(|| "Unknown".to_string());
 
-            Self::handle_triggered(db, state_manager, rule, server_id, &server_name).await?;
+            Self::handle_triggered(db, config, state_manager, rule, server_id, &server_name)
+                .await?;
         }
 
         Ok(())

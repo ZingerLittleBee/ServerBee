@@ -12,9 +12,13 @@ pub async fn run(state: Arc<AppState>) {
     loop {
         interval.tick().await;
 
-        if let Err(e) =
-            AlertService::evaluate_all(&state.db, &state.agent_manager, &state.alert_state_manager)
-                .await
+        if let Err(e) = AlertService::evaluate_all(
+            &state.db,
+            &state.config,
+            &state.agent_manager,
+            &state.alert_state_manager,
+        )
+        .await
         {
             tracing::error!("Alert evaluation error: {e}");
         }
