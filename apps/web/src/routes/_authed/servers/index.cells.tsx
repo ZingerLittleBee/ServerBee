@@ -1,7 +1,7 @@
-import { Cpu, MemoryStick } from 'lucide-react'
+import { ArrowDown, ArrowUp, Cpu, HardDrive, MemoryStick } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { cn, formatBytes } from '@/lib/utils'
+import { cn, formatBytes, formatSpeed } from '@/lib/utils'
 
 export function getBarColor(pct: number): string {
   if (pct > 90) {
@@ -94,8 +94,26 @@ export function MemoryCell({ server }: { server: ServerMetrics }) {
     </div>
   )
 }
-export function DiskCell(_: { server: ServerMetrics }) {
-  return <MetricBarRow icon={null} pct={0} />
+export function DiskCell({ server }: { server: ServerMetrics }) {
+  if (!server.online) {
+    return <span className="text-muted-foreground">—</span>
+  }
+  const pct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
+  return (
+    <div className="flex flex-col gap-1">
+      <MetricBarRow icon={<HardDrive aria-hidden="true" className="size-3.5" />} pct={pct} />
+      <div className="flex items-center gap-2 pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
+        <span className="inline-flex items-center gap-1">
+          <ArrowDown aria-hidden="true" className="size-2.5" />
+          <span className="font-medium text-foreground">{formatSpeed(server.disk_read_bytes_per_sec)}</span>
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <ArrowUp aria-hidden="true" className="size-2.5" />
+          <span className="font-medium text-foreground">{formatSpeed(server.disk_write_bytes_per_sec)}</span>
+        </span>
+      </div>
+    </div>
+  )
 }
 export function NetworkCell(_: { server: ServerMetrics }) {
   return <MetricBarRow icon={null} pct={0} />
