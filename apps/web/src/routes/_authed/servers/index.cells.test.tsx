@@ -103,3 +103,33 @@ describe('CpuCell', () => {
     expect(screen.queryByText(/load/)).toBeNull()
   })
 })
+
+import { MemoryCell } from './index.cells'
+
+describe('MemoryCell', () => {
+  it('renders used/total + swap pct', () => {
+    render(
+      <MemoryCell
+        server={makeServer({
+          mem_used: 7.2 * 1024 ** 3,
+          mem_total: 16 * 1024 ** 3,
+          swap_used: 0.1 * 1024 ** 3,
+          swap_total: 4 * 1024 ** 3
+        })}
+      />
+    )
+    expect(screen.getByText(/7\.2 GB \/ 16\.0 GB/)).toBeDefined()
+    expect(screen.getByText(/swap/)).toBeDefined()
+    expect(screen.getByText(/3%/)).toBeDefined()
+  })
+
+  it('renders 0% swap when swap_total is 0', () => {
+    render(<MemoryCell server={makeServer({ mem_used: 100, mem_total: 200, swap_used: 0, swap_total: 0 })} />)
+    expect(screen.getByText(/swap 0%/)).toBeDefined()
+  })
+
+  it('hides sub-line when offline', () => {
+    render(<MemoryCell server={makeServer({ online: false })} />)
+    expect(screen.queryByText(/swap/)).toBeNull()
+  })
+})

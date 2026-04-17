@@ -1,7 +1,7 @@
-import { Cpu } from 'lucide-react'
+import { Cpu, MemoryStick } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { cn } from '@/lib/utils'
+import { cn, formatBytes } from '@/lib/utils'
 
 export function getBarColor(pct: number): string {
   if (pct > 90) {
@@ -77,8 +77,22 @@ export function CpuCell({ server }: { server: ServerMetrics }) {
     </div>
   )
 }
-export function MemoryCell(_: { server: ServerMetrics }) {
-  return <MetricBarRow icon={null} pct={0} />
+export function MemoryCell({ server }: { server: ServerMetrics }) {
+  if (!server.online) {
+    return <span className="text-muted-foreground">—</span>
+  }
+  const pct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
+  const swapPct = server.swap_total > 0 ? (server.swap_used / server.swap_total) * 100 : 0
+  const swapColor = getBarTextColor(swapPct)
+  return (
+    <div className="flex flex-col gap-1">
+      <MetricBarRow icon={<MemoryStick aria-hidden="true" className="size-3.5" />} pct={pct} />
+      <div className="pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
+        {formatBytes(server.mem_used)} / {formatBytes(server.mem_total)} ·{' '}
+        <span className={cn('font-medium', swapColor)}>swap {Math.round(swapPct)}%</span>
+      </div>
+    </div>
+  )
 }
 export function DiskCell(_: { server: ServerMetrics }) {
   return <MetricBarRow icon={null} pct={0} />
