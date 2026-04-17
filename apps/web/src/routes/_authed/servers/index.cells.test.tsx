@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { MetricBarRow } from './index.cells'
+import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
+import { CpuCell, DiskCell, MemoryCell, MetricBarRow, NameCell, NetworkCell, UptimeCell } from './index.cells'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key })
@@ -15,7 +16,34 @@ vi.mock('@tanstack/react-router', () => ({
   )
 }))
 
-export function makeServer(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
+const REGEX_BG_EMERALD = /bg-emerald-500/
+const REGEX_BG_AMBER = /bg-amber-500/
+const REGEX_BG_RED = /bg-red-500/
+const REGEX_CPU_CORES_LOAD = /8 cores · load 1\.23/
+const REGEX_CORES = /cores/
+const REGEX_LOAD_1_23 = /load 1\.23/
+const REGEX_LOAD = /load/
+const REGEX_MEM_USED_TOTAL = /7\.2 GB \/ 16\.0 GB/
+const REGEX_SWAP = /swap/
+const REGEX_3_PCT = /3%/
+const REGEX_SWAP_0_PCT = /swap 0%/
+const REGEX_DISK_READ = /2\.0 MB\/s/
+const REGEX_DISK_WRITE = /500\.0 KB\/s/
+const REGEX_KB_PER_SEC = /KB\/s/
+const REGEX_MB_PER_SEC = /MB\/s/
+const REGEX_TRAFFIC_USED_LIMIT = /93\.2 GB \/ 1\.0 TB/
+const REGEX_TRAFFIC_DOWN = /1\.1 MB\/s/
+const REGEX_TRAFFIC_UP = /332\.0 KB\/s/
+const REGEX_TRAFFIC_FALLBACK = /3\.0 GB \/ 1\.0 TB/
+const REGEX_TRAFFIC_OFFLINE_PCT = /10%/
+const REGEX_TRAFFIC_OFFLINE_USAGE = /100\.0 GB \/ 1\.0 TB/
+const REGEX_LIMIT_DEFAULT = /1\.0 TB/
+const REGEX_UPTIME_23D = /23d/
+const REGEX_OS_UBUNTU = /Ubuntu 22\.04/
+const REGEX_OFFLINE = /offline/i
+const REGEX_LAST_SEEN = /last_seen_ago/
+
+function makeServer(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
   return {
     id: 'srv-1',
     name: 'test-server',
@@ -57,19 +85,19 @@ describe('MetricBarRow', () => {
   it('renders green bar below 70%', () => {
     const { container } = render(<MetricBarRow icon={null} pct={50} />)
     const fill = container.querySelector('[data-slot="metric-bar-fill"]')
-    expect(fill?.className).toMatch(/bg-emerald-500/)
+    expect(fill?.className).toMatch(REGEX_BG_EMERALD)
   })
 
   it('renders amber bar at 70% and below 90%', () => {
     const { container } = render(<MetricBarRow icon={null} pct={70.5} />)
     const fill = container.querySelector('[data-slot="metric-bar-fill"]')
-    expect(fill?.className).toMatch(/bg-amber-500/)
+    expect(fill?.className).toMatch(REGEX_BG_AMBER)
   })
 
   it('renders red bar at 90%+', () => {
     const { container } = render(<MetricBarRow icon={null} pct={92} />)
     const fill = container.querySelector('[data-slot="metric-bar-fill"]')
-    expect(fill?.className).toMatch(/bg-red-500/)
+    expect(fill?.className).toMatch(REGEX_BG_RED)
   })
 
   it('rounds the percentage to 0 decimals', () => {
@@ -90,29 +118,25 @@ describe('MetricBarRow', () => {
   })
 })
 
-import { CpuCell } from './index.cells'
-
 describe('CpuCell', () => {
   it('renders cores + load when cpu_cores is present', () => {
     render(<CpuCell server={makeServer({ cpu: 12, cpu_cores: 8, load1: 1.234 })} />)
     expect(screen.getByText('12%')).toBeDefined()
-    expect(screen.getByText(/8 cores · load 1\.23/)).toBeDefined()
+    expect(screen.getByText(REGEX_CPU_CORES_LOAD)).toBeDefined()
   })
 
   it('falls back to load-only when cpu_cores is null (Phase A)', () => {
     render(<CpuCell server={makeServer({ cpu: 12, cpu_cores: null, load1: 1.23 })} />)
-    expect(screen.queryByText(/cores/)).toBeNull()
-    expect(screen.getByText(/load 1\.23/)).toBeDefined()
+    expect(screen.queryByText(REGEX_CORES)).toBeNull()
+    expect(screen.getByText(REGEX_LOAD_1_23)).toBeDefined()
   })
 
   it('hides sub-line when offline', () => {
     render(<CpuCell server={makeServer({ online: false, cpu_cores: 8, load1: 1.23 })} />)
-    expect(screen.queryByText(/cores/)).toBeNull()
-    expect(screen.queryByText(/load/)).toBeNull()
+    expect(screen.queryByText(REGEX_CORES)).toBeNull()
+    expect(screen.queryByText(REGEX_LOAD)).toBeNull()
   })
 })
-
-import { MemoryCell } from './index.cells'
 
 describe('MemoryCell', () => {
   it('renders used/total + swap pct', () => {
@@ -126,23 +150,21 @@ describe('MemoryCell', () => {
         })}
       />
     )
-    expect(screen.getByText(/7\.2 GB \/ 16\.0 GB/)).toBeDefined()
-    expect(screen.getByText(/swap/)).toBeDefined()
-    expect(screen.getByText(/3%/)).toBeDefined()
+    expect(screen.getByText(REGEX_MEM_USED_TOTAL)).toBeDefined()
+    expect(screen.getByText(REGEX_SWAP)).toBeDefined()
+    expect(screen.getByText(REGEX_3_PCT)).toBeDefined()
   })
 
   it('renders 0% swap when swap_total is 0', () => {
     render(<MemoryCell server={makeServer({ mem_used: 100, mem_total: 200, swap_used: 0, swap_total: 0 })} />)
-    expect(screen.getByText(/swap 0%/)).toBeDefined()
+    expect(screen.getByText(REGEX_SWAP_0_PCT)).toBeDefined()
   })
 
   it('hides sub-line when offline', () => {
     render(<MemoryCell server={makeServer({ online: false })} />)
-    expect(screen.queryByText(/swap/)).toBeNull()
+    expect(screen.queryByText(REGEX_SWAP)).toBeNull()
   })
 })
-
-import { DiskCell } from './index.cells'
 
 describe('DiskCell', () => {
   it('shows usage bar + r/w speeds when online', () => {
@@ -158,17 +180,15 @@ describe('DiskCell', () => {
       />
     )
     expect(screen.getByText('60%')).toBeDefined()
-    expect(screen.getByText(/2\.0 MB\/s/)).toBeDefined()
-    expect(screen.getByText(/500\.0 KB\/s/)).toBeDefined()
+    expect(screen.getByText(REGEX_DISK_READ)).toBeDefined()
+    expect(screen.getByText(REGEX_DISK_WRITE)).toBeDefined()
   })
 
   it('hides r/w sub when offline', () => {
     render(
-      <DiskCell
-        server={makeServer({ online: false, disk_read_bytes_per_sec: 999, disk_write_bytes_per_sec: 999 })}
-      />
+      <DiskCell server={makeServer({ online: false, disk_read_bytes_per_sec: 999, disk_write_bytes_per_sec: 999 })} />
     )
-    expect(screen.queryByText(/KB\/s/)).toBeNull()
+    expect(screen.queryByText(REGEX_KB_PER_SEC)).toBeNull()
   })
 
   it('renders 0% when disk_total is 0', () => {
@@ -176,9 +196,6 @@ describe('DiskCell', () => {
     expect(screen.getByText('0%')).toBeDefined()
   })
 })
-
-import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
-import { NetworkCell } from './index.cells'
 
 const GB = 1024 ** 3
 const TB = 1024 ** 4
@@ -206,9 +223,9 @@ describe('NetworkCell', () => {
       />
     )
     expect(screen.getByText('9%')).toBeDefined()
-    expect(screen.getByText(/93\.2 GB \/ 1\.0 TB/)).toBeDefined()
-    expect(screen.getByText(/1\.1 MB\/s/)).toBeDefined()
-    expect(screen.getByText(/332\.0 KB\/s/)).toBeDefined()
+    expect(screen.getByText(REGEX_TRAFFIC_USED_LIMIT)).toBeDefined()
+    expect(screen.getByText(REGEX_TRAFFIC_DOWN)).toBeDefined()
+    expect(screen.getByText(REGEX_TRAFFIC_UP)).toBeDefined()
   })
 
   it('falls back to net_in_transfer + 1 TiB default when entry is undefined', () => {
@@ -220,7 +237,7 @@ describe('NetworkCell', () => {
     )
     // 3 GB / 1 TiB ≈ 0.29% → rounds to 0%
     expect(screen.getByText('0%')).toBeDefined()
-    expect(screen.getByText(/3\.0 GB \/ 1\.0 TB/)).toBeDefined()
+    expect(screen.getByText(REGEX_TRAFFIC_FALLBACK)).toBeDefined()
   })
 
   it('renders traffic-quota bar even when offline (server-level data)', () => {
@@ -230,19 +247,17 @@ describe('NetworkCell', () => {
         server={makeServer({ online: false })}
       />
     )
-    expect(screen.getByText(/10%/)).toBeDefined()
-    expect(screen.getByText(/100\.0 GB \/ 1\.0 TB/)).toBeDefined()
-    expect(screen.queryByText(/MB\/s/)).toBeNull()
-    expect(screen.queryByText(/KB\/s/)).toBeNull()
+    expect(screen.getByText(REGEX_TRAFFIC_OFFLINE_PCT)).toBeDefined()
+    expect(screen.getByText(REGEX_TRAFFIC_OFFLINE_USAGE)).toBeDefined()
+    expect(screen.queryByText(REGEX_MB_PER_SEC)).toBeNull()
+    expect(screen.queryByText(REGEX_KB_PER_SEC)).toBeNull()
   })
 
   it('treats traffic_limit <= 0 as fallback to default', () => {
     render(<NetworkCell entry={makeEntry({ traffic_limit: 0 })} server={makeServer({ online: true })} />)
-    expect(screen.getByText(/1\.0 TB/)).toBeDefined()
+    expect(screen.getByText(REGEX_LIMIT_DEFAULT)).toBeDefined()
   })
 })
-
-import { NameCell, UptimeCell } from './index.cells'
 
 describe('UptimeCell', () => {
   const NOW = 1_700_000_000
@@ -256,22 +271,18 @@ describe('UptimeCell', () => {
 
   it('shows uptime + OS line when online', () => {
     render(
-      <UptimeCell
-        server={makeServer({ online: true, uptime: 23 * 86400, os: 'Ubuntu 22.04', last_active: NOW })}
-      />
+      <UptimeCell server={makeServer({ online: true, uptime: 23 * 86_400, os: 'Ubuntu 22.04', last_active: NOW })} />
     )
-    expect(screen.getByText(/23d/)).toBeDefined()
-    expect(screen.getByText(/Ubuntu 22\.04/)).toBeDefined()
+    expect(screen.getByText(REGEX_UPTIME_23D)).toBeDefined()
+    expect(screen.getByText(REGEX_OS_UBUNTU)).toBeDefined()
   })
 
   it('shows offline + last-seen relative when offline', () => {
     render(
-      <UptimeCell
-        server={makeServer({ online: false, uptime: 0, os: 'Ubuntu 22.04', last_active: NOW - 7200 })}
-      />
+      <UptimeCell server={makeServer({ online: false, uptime: 0, os: 'Ubuntu 22.04', last_active: NOW - 7200 })} />
     )
-    expect(screen.getByText(/offline/i)).toBeDefined()
-    expect(screen.getByText(/last_seen_ago/)).toBeDefined()
+    expect(screen.getByText(REGEX_OFFLINE)).toBeDefined()
+    expect(screen.getByText(REGEX_LAST_SEEN)).toBeDefined()
   })
 })
 
@@ -286,5 +297,13 @@ describe('NameCell', () => {
     render(<NameCell server={makeServer({ name: 'tokyo-1', tags: ['prod', 'web'] })} />)
     expect(screen.getByText('prod')).toBeDefined()
     expect(screen.getByText('web')).toBeDefined()
+  })
+})
+
+describe('NameCell rightSlot', () => {
+  it('renders the rightSlot next to the server name', () => {
+    render(<NameCell rightSlot={<span data-testid="slot" />} server={makeServer({ name: 'web-01' })} />)
+    expect(screen.getByTestId('slot')).toBeDefined()
+    expect(screen.getByText('web-01')).toBeDefined()
   })
 })
