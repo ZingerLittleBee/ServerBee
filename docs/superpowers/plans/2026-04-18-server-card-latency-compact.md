@@ -402,6 +402,7 @@ const severityPoints = useMemo(
       </defs>
       <ChartTooltip content={<NetworkChartTooltip t={t} />} cursor={false} />
       <Bar
+        background={{ fill: 'transparent' }}
         dataKey="value"
         isAnimationActive={false}
         shape={(shapeProps) => <SeverityBar {...shapeProps} failPatternId="latency-fail-stripe" />}
@@ -414,6 +415,7 @@ const severityPoints = useMemo(
 注意：
 - 高度从 `h-7` 改成 `h-8`。原本 `h-7 + mt-0.5 + h-1 ≈ 34px`，新版单个 `h-8 = 32px`，整体视觉高度接近。
 - Recharts 会给 `shape` 传 `payload`（即数据项），`SeverityBar` 从 `payload.combinedSeverity` 和 `payload.fillColor` 读取。
+- **`background={{ fill: 'transparent' }}` 是必需的**。Recharts 只有在 `<Bar>` 上显式设置 `background` 时才会计算并向 `shape` 透传 `background` 矩形几何。失败柱（value=null/0）需要这个 geometry 才能渲染成满格高度。透明填充保证视觉上无额外背景色。
 - 不再需要 `<Cell>` map——`shape` 负责每根柱的样式。后续清理 import 时 `Cell` 会被自动移除。
 
 - [ ] **Step 6: 清理未使用 import**
