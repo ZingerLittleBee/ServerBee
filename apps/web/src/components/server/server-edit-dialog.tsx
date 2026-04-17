@@ -1,11 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { CalendarIcon } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Calendar } from '@/components/ui/calendar'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useServerTags, useUpdateServerTags } from '@/hooks/use-server-tags'
 import { api } from '@/lib/api-client'
@@ -13,6 +16,13 @@ import type { ServerGroup, ServerResponse, UpdateServerInput } from '@/lib/api-s
 
 const TAG_SPLIT_RE = /[\s,]+/
 const TAG_VALID_RE = /^[A-Za-z0-9_.-]+$/
+
+function formatIsoDate(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 function parseTagsInput(raw: string): { tags: string[]; error: string | null } {
   const parts = raw
@@ -204,7 +214,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                 {/* biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element */}
                 <label className="flex cursor-pointer items-center gap-2 pt-1">
                   <Checkbox checked={hidden} onCheckedChange={(checked) => setHidden(!!checked)} />
-                  <span className="text-sm">{t('edit_hide_status')}</span>
+                  <span className="text-sm">{t('edit_hide_from_status')}</span>
                 </label>
               </Field>
             </div>
@@ -302,10 +312,10 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
               <Field label={t('edit_billing_cycle')}>
                 <Select
                   items={{
-                    __none__: t('edit_none'),
-                    monthly: t('edit_monthly'),
-                    quarterly: t('edit_quarterly'),
-                    yearly: t('edit_yearly')
+                    __none__: t('edit_cycle_none'),
+                    monthly: t('edit_cycle_monthly'),
+                    quarterly: t('edit_cycle_quarterly'),
+                    yearly: t('edit_cycle_yearly')
                   }}
                   onValueChange={(v) => setBillingCycle(v === '__none__' || v === null ? '' : v)}
                   value={billingCycle || '__none__'}
@@ -314,22 +324,16 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">{t('edit_none')}</SelectItem>
-                    <SelectItem value="monthly">{t('edit_monthly')}</SelectItem>
-                    <SelectItem value="quarterly">{t('edit_quarterly')}</SelectItem>
-                    <SelectItem value="yearly">{t('edit_yearly')}</SelectItem>
+                    <SelectItem value="__none__">{t('edit_cycle_none')}</SelectItem>
+                    <SelectItem value="monthly">{t('edit_cycle_monthly')}</SelectItem>
+                    <SelectItem value="quarterly">{t('edit_cycle_quarterly')}</SelectItem>
+                    <SelectItem value="yearly">{t('edit_cycle_yearly')}</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
             </div>
             <Field label={t('edit_expiration')}>
-              <Input
-                aria-label={t('edit_expiration')}
-                name="expiration"
-                onChange={(e) => setExpiredAt(e.target.value)}
-                type="date"
-                value={expiredAt}
-              />
+              <DatePickerField ariaLabel={t('edit_expiration')} onChange={setExpiredAt} value={expiredAt} />
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('edit_traffic_limit')}>
@@ -348,9 +352,9 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
               <Field label={t('edit_limit_type')}>
                 <Select
                   items={{
-                    sum: t('edit_total_in_out'),
-                    up: t('edit_upload_only'),
-                    down: t('edit_download_only')
+                    sum: t('edit_limit_total'),
+                    up: t('edit_limit_upload'),
+                    down: t('edit_limit_download')
                   }}
                   onValueChange={(v) => v !== null && setTrafficLimitType(v)}
                   value={trafficLimitType}
@@ -359,9 +363,9 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="sum">{t('edit_total_in_out')}</SelectItem>
-                    <SelectItem value="up">{t('edit_upload_only')}</SelectItem>
-                    <SelectItem value="down">{t('edit_download_only')}</SelectItem>
+                    <SelectItem value="sum">{t('edit_limit_total')}</SelectItem>
+                    <SelectItem value="up">{t('edit_limit_upload')}</SelectItem>
+                    <SelectItem value="down">{t('edit_limit_download')}</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
@@ -409,6 +413,46 @@ function Field({ label, children }: { children: React.ReactNode; label: string }
       {/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps child input via adjacent sibling pattern */}
       <label className="font-medium text-sm">{label}</label>
       {children}
+    </div>
+  )
+}
+
+interface DatePickerFieldProps {
+  ariaLabel: string
+  onChange: (value: string) => void
+  value: string
+}
+
+function DatePickerField({ ariaLabel, onChange, value }: DatePickerFieldProps) {
+  const { t } = useTranslation('servers')
+  const selected = value ? new Date(`${value}T00:00:00`) : undefined
+  return (
+    <div>
+      <Popover>
+        <PopoverTrigger
+          render={
+            <Button
+              aria-label={ariaLabel}
+              className="w-full justify-start font-normal"
+              type="button"
+              variant="outline"
+            />
+          }
+        >
+          <CalendarIcon className="size-4 text-muted-foreground" />
+          <span className={value ? '' : 'text-muted-foreground'}>
+            {value || t('edit_expiration_placeholder', { defaultValue: 'YYYY-MM-DD' })}
+          </span>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-auto p-0">
+          <Calendar
+            captionLayout="dropdown"
+            mode="single"
+            onSelect={(date) => onChange(date ? formatIsoDate(date) : '')}
+            selected={selected}
+          />
+        </PopoverContent>
+      </Popover>
     </div>
   )
 }
