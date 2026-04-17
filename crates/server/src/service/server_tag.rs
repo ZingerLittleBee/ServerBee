@@ -106,12 +106,7 @@ mod tests {
     #[test]
     fn validate_allows_underscore_dash_dot() {
         assert!(
-            validate_tags(&[
-                "db_primary".into(),
-                "db-secondary".into(),
-                "v1.0".into()
-            ])
-            .is_ok()
+            validate_tags(&["db_primary".into(), "db-secondary".into(), "v1.0".into()]).is_ok()
         );
     }
 }

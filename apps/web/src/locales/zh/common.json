@@ -80,5 +80,15 @@
     "delete_user": "删除 {{username}}",
     "latency_trend": "延迟趋势",
     "packet_loss_indicator": "丢包指示器"
+  },
+  "table": {
+    "view_options": "视图",
+    "toggle_columns": "切换列显示",
+    "search_columns": "搜索列\u2026",
+    "no_columns_found": "未找到列。",
+    "sort_asc": "升序",
+    "sort_desc": "降序",
+    "sort_reset": "重置排序",
+    "hide_column": "隐藏列"
   }
 }

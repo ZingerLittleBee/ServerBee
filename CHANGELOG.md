@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.10] - 2026-04-18
+
+### Added
+
+- **Server tags management** -- Admins can now assign validated tags to servers via the edit dialog, with a dedicated `/api/servers/{id}/tags` API on the backend. Tags are normalized, deduplicated, and pushed back into the live servers cache so the UI updates immediately after save
+- **Tags in the servers list** -- The servers table now renders server tags inline with the name cell, and the backend includes tags in the shared server status payload so the list stays in sync without extra page reloads
+
+### Changed
+
+- **Servers list density redesign** -- The `/servers` table now uses dedicated CPU, memory, disk, network, uptime, and name cells with denser metric presentation. Disk I/O, live network speeds, traffic quota usage, status dots, and core/load context now live directly in the row instead of forcing users to bounce between pages
+- **Compact latency hero on server cards** -- The dashboard server card now shows a tighter latency summary with a unified severity bar sparkline and inline packet-loss indicator, making network health readable at a glance without the old bulky header treatment
+- **Table controls and dialogs polish** -- Shared data-table controls gained better i18n coverage, and the server edit, recovery merge, and capabilities dialogs were tightened up to fit the denser admin workflow more cleanly
+
+### Fixed
+
+- **Per-card latency severity rendering** -- Each server card now uses a unique SVG pattern ID for failed latency bars, preventing one card's striped failure state from leaking into another card's chart
+- **Server edit dialog stability** -- Edit-dialog translation keys and date-picker layout were corrected so the form no longer shows stale copy or awkward layout shifts while editing billing fields
+
+### Testing
+
+- Expanded frontend coverage for the redesigned servers list, tag chips, status dots, scroll area behavior, and server edit dialog tag flow
+- Added backend integration coverage for server tag CRUD, RBAC enforcement, and tag propagation through the shared server status payload
+
 ## [0.8.9] - 2026-04-16
 
 ### Added

@@ -4008,10 +4008,9 @@ async fn browser_ws_full_sync_includes_tags_and_cpu_cores() {
 
     let ws_url = base_url.replace("http://", "ws://") + "/api/ws/servers";
     let mut request = ws_url.into_client_request().unwrap();
-    request.headers_mut().insert(
-        "Cookie",
-        HeaderValue::from_str(&cookie_value).unwrap(),
-    );
+    request
+        .headers_mut()
+        .insert("Cookie", HeaderValue::from_str(&cookie_value).unwrap());
 
     let (mut ws, _resp) = tokio_tungstenite::connect_async(request)
         .await
@@ -4080,10 +4079,19 @@ async fn test_recovery_candidates_rejects_online_or_busy_target() {
 
     let (mut source_sink, mut source_reader) = connect_agent(&base_url, &source_token).await;
     let _source_welcome = recv_agent_text(&mut source_reader).await;
-    send_system_info(&mut source_sink, &mut source_reader, "recovery-busy-source-info", None).await;
+    send_system_info(
+        &mut source_sink,
+        &mut source_reader,
+        "recovery-busy-source-info",
+        None,
+    )
+    .await;
 
     let start_resp = admin_client
-        .post(format!("{}/api/servers/{}/recover-merge", base_url, busy_target_id))
+        .post(format!(
+            "{}/api/servers/{}/recover-merge",
+            base_url, busy_target_id
+        ))
         .json(&json!({ "source_server_id": source_id }))
         .send()
         .await
