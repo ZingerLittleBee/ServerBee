@@ -15,7 +15,7 @@ export function DataTable<TData>({ table, actionBar, children, className, ...pro
     <div className={cn('flex w-full flex-col gap-2.5 overflow-auto', className)} {...props}>
       {children}
       <div className="overflow-hidden rounded-md border">
-        <Table className="table-fixed">
+        <Table className="table-fixed [&_td]:px-3 [&_th]:px-3">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -40,7 +40,7 @@ export function DataTable<TData>({ table, actionBar, children, className, ...pro
                 <TableRow data-state={row.getIsSelected() && 'selected'} key={row.id}>
                   {row.getVisibleCells().map((cell) => (
                     <TableCell
-                      className={cell.column.columnDef.meta?.className}
+                      className={cn(cell.column.columnDef.meta?.className, cell.column.columnDef.meta?.cellClassName)}
                       key={cell.id}
                       style={{
                         ...getColumnPinningStyle({ column: cell.column })
