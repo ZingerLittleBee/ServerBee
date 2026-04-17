@@ -133,3 +133,38 @@ describe('MemoryCell', () => {
     expect(screen.queryByText(/swap/)).toBeNull()
   })
 })
+
+import { DiskCell } from './index.cells'
+
+describe('DiskCell', () => {
+  it('shows usage bar + r/w speeds when online', () => {
+    render(
+      <DiskCell
+        server={makeServer({
+          online: true,
+          disk_used: 60_000_000_000,
+          disk_total: 100_000_000_000,
+          disk_read_bytes_per_sec: 2_100_000,
+          disk_write_bytes_per_sec: 512_000
+        })}
+      />
+    )
+    expect(screen.getByText('60%')).toBeDefined()
+    expect(screen.getByText(/2\.0 MB\/s/)).toBeDefined()
+    expect(screen.getByText(/500\.0 KB\/s/)).toBeDefined()
+  })
+
+  it('hides r/w sub when offline', () => {
+    render(
+      <DiskCell
+        server={makeServer({ online: false, disk_read_bytes_per_sec: 999, disk_write_bytes_per_sec: 999 })}
+      />
+    )
+    expect(screen.queryByText(/KB\/s/)).toBeNull()
+  })
+
+  it('renders 0% when disk_total is 0', () => {
+    render(<DiskCell server={makeServer({ disk_total: 0, disk_used: 0 })} />)
+    expect(screen.getByText('0%')).toBeDefined()
+  })
+})
