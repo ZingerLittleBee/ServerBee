@@ -24,9 +24,7 @@ const REGEX_CORES = /cores/
 const REGEX_LOAD_1_23 = /load 1\.23/
 const REGEX_LOAD = /load/
 const REGEX_MEM_USED_TOTAL = /7\.2 GB \/ 16\.0 GB/
-const REGEX_SWAP = /swap/
-const REGEX_3_PCT = /3%/
-const REGEX_SWAP_0_PCT = /swap 0%/
+const REGEX_45_PCT = /^45%$/
 const REGEX_DISK_READ = /2\.0 MB\/s/
 const REGEX_DISK_WRITE = /500\.0 KB\/s/
 const REGEX_DISK_USED_TOTAL = /55\.9 GB \/ 93\.1 GB/
@@ -140,30 +138,22 @@ describe('CpuCell', () => {
 })
 
 describe('MemoryCell', () => {
-  it('renders used/total + swap pct', () => {
+  it('renders used/total + pct on the second row', () => {
     render(
       <MemoryCell
         server={makeServer({
           mem_used: 7.2 * 1024 ** 3,
-          mem_total: 16 * 1024 ** 3,
-          swap_used: 0.1 * 1024 ** 3,
-          swap_total: 4 * 1024 ** 3
+          mem_total: 16 * 1024 ** 3
         })}
       />
     )
     expect(screen.getByText(REGEX_MEM_USED_TOTAL)).toBeDefined()
-    expect(screen.getByText(REGEX_SWAP)).toBeDefined()
-    expect(screen.getByText(REGEX_3_PCT)).toBeDefined()
-  })
-
-  it('renders 0% swap when swap_total is 0', () => {
-    render(<MemoryCell server={makeServer({ mem_used: 100, mem_total: 200, swap_used: 0, swap_total: 0 })} />)
-    expect(screen.getByText(REGEX_SWAP_0_PCT)).toBeDefined()
+    expect(screen.getByText(REGEX_45_PCT)).toBeDefined()
   })
 
   it('hides sub-line when offline', () => {
     render(<MemoryCell server={makeServer({ online: false })} />)
-    expect(screen.queryByText(REGEX_SWAP)).toBeNull()
+    expect(screen.queryByText(REGEX_MEM_USED_TOTAL)).toBeNull()
   })
 })
 

@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Activity, ArrowDown, ArrowUp, Clock, Cpu, HardDrive, MemoryStick, Network } from 'lucide-react'
+import { ArrowDown, ArrowUp, Clock, Cpu, HardDrive, MemoryStick, Network } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TagChipRow } from '@/components/server/tag-chip'
@@ -32,10 +32,11 @@ interface MetricBarRowProps {
   ariaLabel?: string
   icon: ReactNode
   pct: number
+  showPct?: boolean
   valueClassName?: string
 }
 
-export function MetricBarRow({ icon, pct, ariaLabel, valueClassName }: MetricBarRowProps) {
+export function MetricBarRow({ icon, pct, ariaLabel, valueClassName, showPct = true }: MetricBarRowProps) {
   const clamped = Math.min(100, Math.max(0, pct))
   const colorBg = getBarColor(clamped)
   const colorText = getBarTextColor(clamped)
@@ -51,9 +52,11 @@ export function MetricBarRow({ icon, pct, ariaLabel, valueClassName }: MetricBar
           style={{ width: `${clamped}%` }}
         />
       </div>
-      <span className={cn('w-10 text-right font-mono font-semibold text-xs tabular-nums', colorText, valueClassName)}>
-        {Math.round(clamped)}%
-      </span>
+      {showPct && (
+        <span className={cn('w-10 text-right font-mono font-semibold text-xs tabular-nums', colorText, valueClassName)}>
+          {Math.round(clamped)}%
+        </span>
+      )}
     </div>
   )
 }
@@ -92,11 +95,16 @@ export function CpuCell({ server }: { server: ServerMetrics }) {
     return <span className="text-muted-foreground">—</span>
   }
   const cores = server.cpu_cores ?? null
+  const pct = Math.round(Math.min(100, Math.max(0, server.cpu)))
+  const pctColor = getBarTextColor(pct)
   return (
     <div className="flex flex-col gap-1">
-      <MetricBarRow icon={<Cpu aria-hidden="true" className="size-3.5" />} pct={server.cpu} />
-      <div className="pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
-        {cores != null && `${cores} cores · `}load {server.load1.toFixed(2)}
+      <MetricBarRow icon={<Cpu aria-hidden="true" className="size-3.5" />} pct={server.cpu} showPct={false} />
+      <div className="flex items-center justify-between gap-2 pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
+        <span>
+          {cores != null && `${cores} cores · `}load {server.load1.toFixed(2)}
+        </span>
+        <span className={cn('font-semibold', pctColor)}>{pct}%</span>
       </div>
     </div>
   )
@@ -106,14 +114,16 @@ export function MemoryCell({ server }: { server: ServerMetrics }) {
     return <span className="text-muted-foreground">—</span>
   }
   const pct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
-  const swapPct = server.swap_total > 0 ? (server.swap_used / server.swap_total) * 100 : 0
-  const swapColor = getBarTextColor(swapPct)
+  const roundedPct = Math.round(Math.min(100, Math.max(0, pct)))
+  const pctColor = getBarTextColor(roundedPct)
   return (
     <div className="flex flex-col gap-1">
-      <MetricBarRow icon={<MemoryStick aria-hidden="true" className="size-3.5" />} pct={pct} />
-      <div className="pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
-        {formatBytes(server.mem_used)} / {formatBytes(server.mem_total)} ·{' '}
-        <span className={cn('font-medium', swapColor)}>swap {Math.round(swapPct)}%</span>
+      <MetricBarRow icon={<MemoryStick aria-hidden="true" className="size-3.5" />} pct={pct} showPct={false} />
+      <div className="flex items-center justify-between gap-2 pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
+        <span>
+          {formatBytes(server.mem_used)} / {formatBytes(server.mem_total)}
+        </span>
+        <span className={cn('font-semibold', pctColor)}>{roundedPct}%</span>
       </div>
     </div>
   )
@@ -130,17 +140,14 @@ export function DiskCell({ server }: { server: ServerMetrics }) {
         pct={pct}
         text={`${formatBytes(server.disk_used)} / ${formatBytes(server.disk_total)}`}
       />
-      <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
-        <span className="inline-flex size-3.5 flex-none items-center justify-center text-muted-foreground">
-          <Activity aria-hidden="true" className="size-3.5" />
-        </span>
+      <div className="flex items-center gap-2 pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
         <span className="inline-flex items-center gap-1">
           <ArrowDown aria-hidden="true" className="size-2.5" />
-          <span className="font-medium text-foreground">{formatSpeed(server.disk_read_bytes_per_sec)}</span>
+          {formatSpeed(server.disk_read_bytes_per_sec)}
         </span>
         <span className="inline-flex items-center gap-1">
           <ArrowUp aria-hidden="true" className="size-2.5" />
-          <span className="font-medium text-foreground">{formatSpeed(server.disk_write_bytes_per_sec)}</span>
+          {formatSpeed(server.disk_write_bytes_per_sec)}
         </span>
       </div>
     </div>
@@ -165,17 +172,14 @@ export function NetworkCell({ server, entry }: NetworkCellProps) {
         text={`${formatBytes(used)} / ${formatBytes(limit)}`}
       />
       {server.online && (
-        <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
-          <span className="inline-flex size-3.5 flex-none items-center justify-center text-muted-foreground">
-            <Activity aria-hidden="true" className="size-3.5" />
-          </span>
+        <div className="flex items-center gap-2 pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
           <span className="inline-flex items-center gap-1">
             <ArrowDown aria-hidden="true" className="size-2.5" />
-            <span className="font-medium text-foreground">{formatSpeed(server.net_in_speed)}</span>
+            {formatSpeed(server.net_in_speed)}
           </span>
           <span className="inline-flex items-center gap-1">
             <ArrowUp aria-hidden="true" className="size-2.5" />
-            <span className="font-medium text-foreground">{formatSpeed(server.net_out_speed)}</span>
+            {formatSpeed(server.net_out_speed)}
           </span>
         </div>
       )}
