@@ -168,3 +168,68 @@ describe('DiskCell', () => {
     expect(screen.getByText('0%')).toBeDefined()
   })
 })
+
+import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
+import { NetworkCell } from './index.cells'
+
+const GB = 1024 ** 3
+const TB = 1024 ** 4
+
+function makeEntry(overrides: Partial<TrafficOverviewItem>): TrafficOverviewItem {
+  return {
+    billing_cycle: null,
+    cycle_in: 0,
+    cycle_out: 0,
+    days_remaining: null,
+    name: 'srv',
+    percent_used: null,
+    server_id: 'srv-1',
+    traffic_limit: null,
+    ...overrides
+  }
+}
+
+describe('NetworkCell', () => {
+  it('renders traffic-quota bar + used/limit + live ↓↑ when online', () => {
+    render(
+      <NetworkCell
+        entry={makeEntry({ cycle_in: 50 * GB, cycle_out: 43.2 * GB, traffic_limit: 1 * TB })}
+        server={makeServer({ online: true, net_in_speed: 1_153_434, net_out_speed: 339_968 })}
+      />
+    )
+    expect(screen.getByText('9%')).toBeDefined()
+    expect(screen.getByText(/93\.2 GB \/ 1\.0 TB/)).toBeDefined()
+    expect(screen.getByText(/1\.1 MB\/s/)).toBeDefined()
+    expect(screen.getByText(/332\.0 KB\/s/)).toBeDefined()
+  })
+
+  it('falls back to net_in_transfer + 1 TiB default when entry is undefined', () => {
+    render(
+      <NetworkCell
+        entry={undefined}
+        server={makeServer({ online: true, net_in_transfer: 2 * GB, net_out_transfer: 1 * GB })}
+      />
+    )
+    // 3 GB / 1 TiB ≈ 0.29% → rounds to 0%
+    expect(screen.getByText('0%')).toBeDefined()
+    expect(screen.getByText(/3\.0 GB \/ 1\.0 TB/)).toBeDefined()
+  })
+
+  it('renders traffic-quota bar even when offline (server-level data)', () => {
+    render(
+      <NetworkCell
+        entry={makeEntry({ cycle_in: 50 * GB, cycle_out: 50 * GB, traffic_limit: 1 * TB })}
+        server={makeServer({ online: false })}
+      />
+    )
+    expect(screen.getByText(/10%/)).toBeDefined()
+    expect(screen.getByText(/100\.0 GB \/ 1\.0 TB/)).toBeDefined()
+    expect(screen.queryByText(/MB\/s/)).toBeNull()
+    expect(screen.queryByText(/KB\/s/)).toBeNull()
+  })
+
+  it('treats traffic_limit <= 0 as fallback to default', () => {
+    render(<NetworkCell entry={makeEntry({ traffic_limit: 0 })} server={makeServer({ online: true })} />)
+    expect(screen.getByText(/1\.0 TB/)).toBeDefined()
+  })
+})
