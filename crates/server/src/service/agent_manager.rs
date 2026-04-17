@@ -666,13 +666,12 @@ pub async fn cleanup_disconnected_docker_state(state: &AppState, server_id: &str
     state.agent_manager.update_features(server_id, features);
 
     if state.recovery_lock.writes_allowed_for(server_id) {
-        let _ =
-            crate::service::server::ServerService::update_features(
-                &state.db,
-                server_id,
-                &persisted_features,
-            )
-                .await;
+        let _ = crate::service::server::ServerService::update_features(
+            &state.db,
+            server_id,
+            &persisted_features,
+        )
+        .await;
     } else {
         tracing::info!("Skipping recovery-frozen docker feature write for {server_id}");
     }

@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { useAuth } from '@/hooks/use-auth'
@@ -84,7 +84,7 @@ export function CapabilitiesDialog({ server }: { server: ServerWithCaps }) {
 
       {open && (
         <Dialog onOpenChange={setOpen} open={open}>
-          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle>{t('cap_toggles')}</DialogTitle>
               <DialogDescription>
@@ -94,62 +94,64 @@ export function CapabilitiesDialog({ server }: { server: ServerWithCaps }) {
               </DialogDescription>
             </DialogHeader>
 
-            {server.protocol_version != null && server.protocol_version < 2 && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-amber-900 text-sm dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
-                {t('cap_upgrade_warning')}
-              </div>
-            )}
+            <DialogBody className="space-y-4">
+              {server.protocol_version != null && server.protocol_version < 2 && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-amber-900 text-sm dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+                  {t('cap_upgrade_warning')}
+                </div>
+              )}
 
-            <div className="grid gap-4 lg:grid-cols-2">
-              {capabilityGroups.map((group) => (
-                <Card key={group.key} size="sm">
-                  <CardHeader>
-                    <CardTitle>{group.title}</CardTitle>
-                    <CardDescription>{group.description}</CardDescription>
-                    <CardAction>
-                      <Badge variant={group.key === 'high' ? 'destructive' : 'secondary'}>{group.items.length}</Badge>
-                    </CardAction>
-                  </CardHeader>
-                  <CardContent className="flex flex-col gap-3">
-                    {group.items.map((capability, index) => {
-                      const isEnabled = getEffectiveCapabilityEnabled(
-                        server.effective_capabilities,
-                        caps,
-                        capability.bit
-                      )
-                      const isLocked = isClientCapabilityLocked(server.agent_local_capabilities, capability.bit)
+              <div className="grid gap-4 lg:grid-cols-2">
+                {capabilityGroups.map((group) => (
+                  <Card key={group.key} size="sm">
+                    <CardHeader>
+                      <CardTitle>{group.title}</CardTitle>
+                      <CardDescription>{group.description}</CardDescription>
+                      <CardAction>
+                        <Badge variant={group.key === 'high' ? 'destructive' : 'secondary'}>{group.items.length}</Badge>
+                      </CardAction>
+                    </CardHeader>
+                    <CardContent className="flex flex-col gap-3">
+                      {group.items.map((capability, index) => {
+                        const isEnabled = getEffectiveCapabilityEnabled(
+                          server.effective_capabilities,
+                          caps,
+                          capability.bit
+                        )
+                        const isLocked = isClientCapabilityLocked(server.agent_local_capabilities, capability.bit)
 
-                      return (
-                        <div className="flex flex-col gap-3" key={capability.bit}>
-                          {index > 0 && <Separator />}
-                          <div className="flex items-center justify-between gap-4">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-medium">{t(capability.labelKey)}</span>
-                                <Badge variant={capability.risk === 'high' ? 'destructive' : 'secondary'}>
-                                  {capability.risk === 'high' ? t('cap_high_risk') : t('cap_low_risk')}
-                                </Badge>
+                        return (
+                          <div className="flex flex-col gap-3" key={capability.bit}>
+                            {index > 0 && <Separator />}
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-medium">{t(capability.labelKey)}</span>
+                                  <Badge variant={capability.risk === 'high' ? 'destructive' : 'secondary'}>
+                                    {capability.risk === 'high' ? t('cap_high_risk') : t('cap_low_risk')}
+                                  </Badge>
+                                </div>
+                                <div className="mt-1 text-muted-foreground text-xs">
+                                  {isEnabled
+                                    ? t('cap_enabled', { defaultValue: 'Enabled' })
+                                    : t('cap_disabled', { defaultValue: 'Disabled' })}
+                                </div>
                               </div>
-                              <div className="mt-1 text-muted-foreground text-xs">
-                                {isEnabled
-                                  ? t('cap_enabled', { defaultValue: 'Enabled' })
-                                  : t('cap_disabled', { defaultValue: 'Disabled' })}
-                              </div>
+                              <Switch
+                                checked={isEnabled}
+                                disabled={mutation.isPending || isLocked}
+                                onCheckedChange={() => toggle(capability.bit)}
+                                title={isLocked ? '客户端关闭' : undefined}
+                              />
                             </div>
-                            <Switch
-                              checked={isEnabled}
-                              disabled={mutation.isPending || isLocked}
-                              onCheckedChange={() => toggle(capability.bit)}
-                              title={isLocked ? '客户端关闭' : undefined}
-                            />
                           </div>
-                        </div>
-                      )
-                    })}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                        )
+                      })}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </DialogBody>
           </DialogContent>
         </Dialog>
       )}

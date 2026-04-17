@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
-import { type ComponentProps, memo, useMemo } from 'react'
+import { type ComponentProps, memo, useId, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Bar, BarChart, Cell } from 'recharts'
+import { Bar, BarChart } from 'recharts'
 import { CompactMetric } from '@/components/server/compact-metric'
 import { type ChartConfig, ChartContainer, ChartTooltip } from '@/components/ui/chart'
 import { RingChart } from '@/components/ui/ring-chart'
@@ -9,12 +9,18 @@ import { useNetworkOverview } from '@/hooks/use-network-api'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { useTrafficOverview } from '@/hooks/use-traffic-overview'
-import { getLatencyBarColor, isLatencyFailure } from '@/lib/network-latency-constants'
+import {
+  getCombinedBarColor,
+  getCombinedSeverity,
+  getLossDotBgClass,
+  isLatencyFailure
+} from '@/lib/network-latency-constants'
 import { latencyColorClass } from '@/lib/network-types'
 import { computeTrafficQuota } from '@/lib/traffic'
 import { countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import { buildServerCardNetworkState, type ServerCardMetricPoint } from './server-card-network-data'
+import { SeverityBar, type SeverityBarDatum } from './severity-bar'
 import { StatusBadge } from './status-badge'
 import { UpgradeJobBadge } from './upgrade-job-badge'
 
@@ -22,12 +28,14 @@ interface ServerCardProps {
   server: ServerMetrics
 }
 
+type SeverityBarShapeProps = Omit<ComponentProps<typeof SeverityBar>, 'failPatternId'>
+
+function isSeverityBarShapeProps(value: unknown): value is SeverityBarShapeProps {
+  return typeof value === 'object' && value !== null
+}
+
 const LATENCY_CHART_CONFIG = {
   value: { label: 'Latency', color: 'var(--chart-4)' }
-} satisfies ChartConfig
-
-const LOSS_STRIP_CONFIG = {
-  value: { label: 'Packet Loss', color: 'var(--chart-5)' }
 } satisfies ChartConfig
 
 const CHART_BAR_GAP = 2
@@ -75,19 +83,6 @@ function getLossTextClassName(lossRatio: number | null): string {
   return 'text-red-600 dark:text-red-400'
 }
 
-function getLossStripColor(lossRatio: number | null): string {
-  if (lossRatio == null) {
-    return 'var(--color-muted)'
-  }
-  if (lossRatio < 0.01) {
-    return '#10b981'
-  }
-  if (lossRatio < 0.05) {
-    return '#f59e0b'
-  }
-  return '#ef4444'
-}
-
 function formatLatency(ms: number | null): string {
   if (ms == null) {
     return '-'
@@ -106,12 +101,39 @@ function formatLoad(load: number): string {
   return load.toFixed(2)
 }
 
+function renderSpeedValue(bytesPerSec: number): React.ReactNode {
+  if (bytesPerSec <= 0) {
+    return '0'
+  }
+  const formatted = formatSpeed(bytesPerSec)
+  const lastSpace = formatted.lastIndexOf(' ')
+  if (lastSpace < 0) {
+    return formatted
+  }
+  return (
+    <>
+      {formatted.slice(0, lastSpace)}
+      <span className="ml-0.5 font-normal text-[10px] text-muted-foreground">{formatted.slice(lastSpace + 1)}</span>
+    </>
+  )
+}
+
 function averageLossRatio(point: ServerCardMetricPoint): number | null {
   if (point.targets.length === 0) {
     return null
   }
 
   return point.targets.reduce((sum, target) => sum + target.lossRatio, 0) / point.targets.length
+}
+
+function getSeverityBarData(point: ServerCardMetricPoint): SeverityBarDatum {
+  const lossRatio = averageLossRatio(point)
+  return {
+    combinedSeverity: getCombinedSeverity({ latencyMs: point.value, lossRatio }),
+    fillColor: getCombinedBarColor({ latencyMs: point.value, lossRatio }),
+    lossRatio,
+    value: point.value
+  }
 }
 
 function formatTooltipLabel(point: ServerCardMetricPoint, t: (key: string) => string): string {
@@ -169,6 +191,7 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
   const { data: realtimeData } = useNetworkRealtime(server.id)
   const { data: trafficOverview } = useTrafficOverview()
   const upgradeJob = useUpgradeJobsStore((state) => state.jobs.get(server.id))
+  const failPatternId = `${useId()}-fail-stripe`
 
   const memoryPct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
   const diskPct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
@@ -180,6 +203,11 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
   const { currentAvgLatency, currentAvgLossRatio, latencyPoints } = useMemo(
     () => buildServerCardNetworkState(networkSummary, realtimeData),
     [networkSummary, realtimeData]
+  )
+
+  const severityPoints = useMemo(
+    () => latencyPoints.map((point) => ({ ...point, ...getSeverityBarData(point) })),
+    [latencyPoints]
   )
 
   const trafficEntry = trafficOverview?.find((entry) => entry.server_id === server.id)
@@ -266,22 +294,38 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
         <CompactMetric
           className="items-center"
           label={t('card_net_in_speed')}
-          value={formatSpeed(server.net_in_speed)}
+          value={renderSpeedValue(server.net_in_speed)}
         />
         <CompactMetric
           className="items-center"
           label={t('card_net_out_speed')}
-          value={formatSpeed(server.net_out_speed)}
+          value={renderSpeedValue(server.net_out_speed)}
         />
         <CompactMetric
           className="items-center"
-          label={t('card_disk_read')}
-          value={formatSpeed(server.disk_read_bytes_per_sec)}
+          label={
+            <span
+              aria-label={t('card_disk_read')}
+              className="inline-flex size-3 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-[9px] text-foreground leading-none"
+              role="img"
+            >
+              R
+            </span>
+          }
+          value={renderSpeedValue(server.disk_read_bytes_per_sec)}
         />
         <CompactMetric
           className="items-center"
-          label={t('card_disk_write')}
-          value={formatSpeed(server.disk_write_bytes_per_sec)}
+          label={
+            <span
+              aria-label={t('card_disk_write')}
+              className="inline-flex size-3 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-[9px] text-foreground leading-none"
+              role="img"
+            >
+              W
+            </span>
+          }
+          value={renderSpeedValue(server.disk_write_bytes_per_sec)}
         />
         <CompactMetric
           className="items-center"
@@ -321,60 +365,61 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
 
       {latencyPoints.length > 0 && (
         <div>
-          <div className="mb-1 flex items-center justify-between">
-            <span className="text-[10px] text-muted-foreground">{t('card_latency')}</span>
-            <div className="flex items-center gap-1 font-medium text-xs">
-              <span
-                className={latencyColorClass(currentAvgLatency, {
-                  failed: isLatencyFailure(currentAvgLossRatio)
-                })}
-              >
-                {formatLatency(currentAvgLatency)}
+          <div className="mb-1 flex items-baseline justify-between">
+            <span
+              className={`font-semibold text-lg tabular-nums leading-none ${latencyColorClass(currentAvgLatency, {
+                failed: isLatencyFailure(currentAvgLossRatio)
+              })}`}
+            >
+              {currentAvgLatency == null || isLatencyFailure(currentAvgLossRatio) ? '—' : currentAvgLatency.toFixed(0)}
+              <span className="ml-0.5 font-medium text-[10px] text-muted-foreground">ms</span>
+            </span>
+            <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span aria-hidden="true" className={`size-1.5 rounded-full ${getLossDotBgClass(currentAvgLossRatio)}`} />
+              <span>
+                {t('card_packet_loss')}{' '}
+                <strong className={`font-semibold tabular-nums ${getLossTextClassName(currentAvgLossRatio)}`}>
+                  {formatPacketLoss(currentAvgLossRatio)}
+                </strong>
               </span>
-              <span className="text-muted-foreground">·</span>
-              <span className={getLossTextClassName(currentAvgLossRatio)}>{formatPacketLoss(currentAvgLossRatio)}</span>
-            </div>
+            </span>
           </div>
           <figure aria-label={t('common:a11y.latency_trend')} className="relative z-10 m-0">
-            <ChartContainer className="aspect-auto h-7 w-full" config={LATENCY_CHART_CONFIG}>
+            <ChartContainer className="aspect-auto h-8 w-full" config={LATENCY_CHART_CONFIG}>
               <BarChart
                 accessibilityLayer
                 barCategoryGap={CHART_BAR_GAP}
-                data={latencyPoints}
+                data={severityPoints}
                 margin={{ bottom: 0, left: 0, right: 0, top: 0 }}
               >
+                <defs>
+                  <pattern
+                    height="5"
+                    id={failPatternId}
+                    patternTransform="rotate(45)"
+                    patternUnits="userSpaceOnUse"
+                    width="5"
+                  >
+                    <rect fill="#ef4444" height="5" width="5" />
+                    <line stroke="rgba(0,0,0,0.25)" strokeWidth="2" x1="0" x2="0" y1="0" y2="5" />
+                  </pattern>
+                </defs>
                 <ChartTooltip content={<NetworkChartTooltip t={t} />} cursor={false} />
-                <Bar dataKey="value" isAnimationActive={false} radius={2}>
-                  {latencyPoints.map((point) => (
-                    <Cell
-                      fill={getLatencyBarColor({
-                        latencyMs: point.value,
-                        failed: isLatencyFailure(averageLossRatio(point))
-                      })}
-                      key={point.timestamp}
-                    />
-                  ))}
-                </Bar>
+                <Bar
+                  background={{ fill: 'transparent' }}
+                  dataKey="value"
+                  isAnimationActive={false}
+                  shape={(shapeProps: unknown) =>
+                    isSeverityBarShapeProps(shapeProps) ? (
+                      <SeverityBar {...shapeProps} failPatternId={failPatternId} />
+                    ) : (
+                      <g />
+                    )
+                  }
+                />
               </BarChart>
             </ChartContainer>
           </figure>
-          <ChartContainer
-            aria-label={t('common:a11y.packet_loss_indicator')}
-            className="pointer-events-none mt-0.5 aspect-auto h-1 w-full"
-            config={LOSS_STRIP_CONFIG}
-          >
-            <BarChart
-              barCategoryGap={CHART_BAR_GAP}
-              data={latencyPoints}
-              margin={{ bottom: 0, left: 0, right: 0, top: 0 }}
-            >
-              <Bar dataKey={() => 1} isAnimationActive={false} radius={1}>
-                {latencyPoints.map((point) => (
-                  <Cell fill={getLossStripColor(averageLossRatio(point))} key={point.timestamp} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ChartContainer>
         </div>
       )}
     </div>

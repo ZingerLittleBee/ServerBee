@@ -1,6 +1,5 @@
 {
   "title": "Servers",
-  "card_latency": "Latency",
   "card_load": "Load",
   "card_net_total": "Total",
   "card_network_quality": "Network Quality",

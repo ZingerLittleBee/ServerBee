@@ -2,7 +2,16 @@ import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
-import { CpuCell, DiskCell, MemoryCell, MetricBarRow, NameCell, NetworkCell, UptimeCell } from './index.cells'
+import {
+  CpuCell,
+  DiskCell,
+  MemoryCell,
+  MetricBarRow,
+  NameCell,
+  NetworkCell,
+  PositionIndicator,
+  UptimeCell
+} from './index.cells'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key })
@@ -24,18 +33,17 @@ const REGEX_CORES = /cores/
 const REGEX_LOAD_1_23 = /load 1\.23/
 const REGEX_LOAD = /load/
 const REGEX_MEM_USED_TOTAL = /7\.2 GB \/ 16\.0 GB/
-const REGEX_SWAP = /swap/
-const REGEX_3_PCT = /3%/
-const REGEX_SWAP_0_PCT = /swap 0%/
+const REGEX_45_PCT = /^45%$/
 const REGEX_DISK_READ = /2\.0 MB\/s/
 const REGEX_DISK_WRITE = /500\.0 KB\/s/
+const REGEX_DISK_USED_TOTAL = /55\.9 GB \/ 93\.1 GB/
+const REGEX_DISK_ZERO = /0 B \/ 0 B/
 const REGEX_KB_PER_SEC = /KB\/s/
 const REGEX_MB_PER_SEC = /MB\/s/
 const REGEX_TRAFFIC_USED_LIMIT = /93\.2 GB \/ 1\.0 TB/
 const REGEX_TRAFFIC_DOWN = /1\.1 MB\/s/
 const REGEX_TRAFFIC_UP = /332\.0 KB\/s/
 const REGEX_TRAFFIC_FALLBACK = /3\.0 GB \/ 1\.0 TB/
-const REGEX_TRAFFIC_OFFLINE_PCT = /10%/
 const REGEX_TRAFFIC_OFFLINE_USAGE = /100\.0 GB \/ 1\.0 TB/
 const REGEX_LIMIT_DEFAULT = /1\.0 TB/
 const REGEX_UPTIME_23D = /23d/
@@ -118,6 +126,27 @@ describe('MetricBarRow', () => {
   })
 })
 
+describe('PositionIndicator', () => {
+  it('fills the bar to the correct percentage', () => {
+    const { container } = render(<PositionIndicator pct={42} />)
+    const fill = container.querySelector('[data-slot="position-indicator-fill"]') as HTMLElement | null
+    expect(fill?.style.width).toBe('42%')
+  })
+
+  it('clamps the fill width to [0, 100]', () => {
+    const { container: c1 } = render(<PositionIndicator pct={150} />)
+    expect((c1.querySelector('[data-slot="position-indicator-fill"]') as HTMLElement).style.width).toBe('100%')
+    const { container: c2 } = render(<PositionIndicator pct={-10} />)
+    expect((c2.querySelector('[data-slot="position-indicator-fill"]') as HTMLElement).style.width).toBe('0%')
+  })
+
+  it('colors the bar red above 90%', () => {
+    const { container } = render(<PositionIndicator pct={95} />)
+    const fill = container.querySelector('[data-slot="position-indicator-fill"]') as HTMLElement
+    expect(fill.className).toMatch(REGEX_BG_RED)
+  })
+})
+
 describe('CpuCell', () => {
   it('renders cores + load when cpu_cores is present', () => {
     render(<CpuCell server={makeServer({ cpu: 12, cpu_cores: 8, load1: 1.234 })} />)
@@ -139,36 +168,28 @@ describe('CpuCell', () => {
 })
 
 describe('MemoryCell', () => {
-  it('renders used/total + swap pct', () => {
-    render(
+  it('renders used/total + pct on the second row', () => {
+    const { container } = render(
       <MemoryCell
         server={makeServer({
           mem_used: 7.2 * 1024 ** 3,
-          mem_total: 16 * 1024 ** 3,
-          swap_used: 0.1 * 1024 ** 3,
-          swap_total: 4 * 1024 ** 3
+          mem_total: 16 * 1024 ** 3
         })}
       />
     )
-    expect(screen.getByText(REGEX_MEM_USED_TOTAL)).toBeDefined()
-    expect(screen.getByText(REGEX_SWAP)).toBeDefined()
-    expect(screen.getByText(REGEX_3_PCT)).toBeDefined()
-  })
-
-  it('renders 0% swap when swap_total is 0', () => {
-    render(<MemoryCell server={makeServer({ mem_used: 100, mem_total: 200, swap_used: 0, swap_total: 0 })} />)
-    expect(screen.getByText(REGEX_SWAP_0_PCT)).toBeDefined()
+    expect(container.textContent ?? '').toMatch(REGEX_MEM_USED_TOTAL)
+    expect(screen.getByText(REGEX_45_PCT)).toBeDefined()
   })
 
   it('hides sub-line when offline', () => {
-    render(<MemoryCell server={makeServer({ online: false })} />)
-    expect(screen.queryByText(REGEX_SWAP)).toBeNull()
+    const { container } = render(<MemoryCell server={makeServer({ online: false })} />)
+    expect(container.textContent ?? '').not.toMatch(REGEX_MEM_USED_TOTAL)
   })
 })
 
 describe('DiskCell', () => {
-  it('shows usage bar + r/w speeds when online', () => {
-    render(
+  it('shows used/total text + r/w speeds when online', () => {
+    const { container } = render(
       <DiskCell
         server={makeServer({
           online: true,
@@ -179,21 +200,22 @@ describe('DiskCell', () => {
         })}
       />
     )
-    expect(screen.getByText('60%')).toBeDefined()
-    expect(screen.getByText(REGEX_DISK_READ)).toBeDefined()
-    expect(screen.getByText(REGEX_DISK_WRITE)).toBeDefined()
+    const text = container.textContent ?? ''
+    expect(text).toMatch(REGEX_DISK_USED_TOTAL)
+    expect(text).toMatch(REGEX_DISK_READ)
+    expect(text).toMatch(REGEX_DISK_WRITE)
   })
 
   it('hides r/w sub when offline', () => {
-    render(
+    const { container } = render(
       <DiskCell server={makeServer({ online: false, disk_read_bytes_per_sec: 999, disk_write_bytes_per_sec: 999 })} />
     )
-    expect(screen.queryByText(REGEX_KB_PER_SEC)).toBeNull()
+    expect(container.textContent ?? '').not.toMatch(REGEX_KB_PER_SEC)
   })
 
-  it('renders 0% when disk_total is 0', () => {
-    render(<DiskCell server={makeServer({ disk_total: 0, disk_used: 0 })} />)
-    expect(screen.getByText('0%')).toBeDefined()
+  it('renders 0 B / 0 B when disk_total is 0', () => {
+    const { container } = render(<DiskCell server={makeServer({ disk_total: 0, disk_used: 0 })} />)
+    expect(container.textContent ?? '').toMatch(REGEX_DISK_ZERO)
   })
 })
 
@@ -215,47 +237,47 @@ function makeEntry(overrides: Partial<TrafficOverviewItem>): TrafficOverviewItem
 }
 
 describe('NetworkCell', () => {
-  it('renders traffic-quota bar + used/limit + live ↓↑ when online', () => {
-    render(
+  it('renders used/limit text + live ↓↑ when online', () => {
+    const { container } = render(
       <NetworkCell
         entry={makeEntry({ cycle_in: 50 * GB, cycle_out: 43.2 * GB, traffic_limit: 1 * TB })}
         server={makeServer({ online: true, net_in_speed: 1_153_434, net_out_speed: 339_968 })}
       />
     )
-    expect(screen.getByText('9%')).toBeDefined()
-    expect(screen.getByText(REGEX_TRAFFIC_USED_LIMIT)).toBeDefined()
-    expect(screen.getByText(REGEX_TRAFFIC_DOWN)).toBeDefined()
-    expect(screen.getByText(REGEX_TRAFFIC_UP)).toBeDefined()
+    const text = container.textContent ?? ''
+    expect(text).toMatch(REGEX_TRAFFIC_USED_LIMIT)
+    expect(text).toMatch(REGEX_TRAFFIC_DOWN)
+    expect(text).toMatch(REGEX_TRAFFIC_UP)
   })
 
   it('falls back to net_in_transfer + 1 TiB default when entry is undefined', () => {
-    render(
+    const { container } = render(
       <NetworkCell
         entry={undefined}
         server={makeServer({ online: true, net_in_transfer: 2 * GB, net_out_transfer: 1 * GB })}
       />
     )
-    // 3 GB / 1 TiB ≈ 0.29% → rounds to 0%
-    expect(screen.getByText('0%')).toBeDefined()
-    expect(screen.getByText(REGEX_TRAFFIC_FALLBACK)).toBeDefined()
+    expect(container.textContent ?? '').toMatch(REGEX_TRAFFIC_FALLBACK)
   })
 
-  it('renders traffic-quota bar even when offline (server-level data)', () => {
-    render(
+  it('renders used/limit text and hides speeds when offline', () => {
+    const { container } = render(
       <NetworkCell
         entry={makeEntry({ cycle_in: 50 * GB, cycle_out: 50 * GB, traffic_limit: 1 * TB })}
         server={makeServer({ online: false })}
       />
     )
-    expect(screen.getByText(REGEX_TRAFFIC_OFFLINE_PCT)).toBeDefined()
-    expect(screen.getByText(REGEX_TRAFFIC_OFFLINE_USAGE)).toBeDefined()
-    expect(screen.queryByText(REGEX_MB_PER_SEC)).toBeNull()
-    expect(screen.queryByText(REGEX_KB_PER_SEC)).toBeNull()
+    const text = container.textContent ?? ''
+    expect(text).toMatch(REGEX_TRAFFIC_OFFLINE_USAGE)
+    expect(text).not.toMatch(REGEX_MB_PER_SEC)
+    expect(text).not.toMatch(REGEX_KB_PER_SEC)
   })
 
   it('treats traffic_limit <= 0 as fallback to default', () => {
-    render(<NetworkCell entry={makeEntry({ traffic_limit: 0 })} server={makeServer({ online: true })} />)
-    expect(screen.getByText(REGEX_LIMIT_DEFAULT)).toBeDefined()
+    const { container } = render(
+      <NetworkCell entry={makeEntry({ traffic_limit: 0 })} server={makeServer({ online: true })} />
+    )
+    expect(container.textContent ?? '').toMatch(REGEX_LIMIT_DEFAULT)
   })
 })
 

@@ -3,6 +3,7 @@ import { XIcon } from 'lucide-react'
 import type * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
@@ -48,7 +49,7 @@ function DialogContent({
       <DialogOverlay />
       <DialogPrimitive.Popup
         className={cn(
-          'data-open:fade-in-0 data-open:zoom-in-95 data-closed:fade-out-0 data-closed:zoom-out-95 fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-background p-4 text-sm outline-none ring-1 ring-foreground/10 duration-100 data-closed:animate-out data-open:animate-in sm:max-w-sm',
+          'data-open:fade-in-0 data-open:zoom-in-95 data-closed:fade-out-0 data-closed:zoom-out-95 fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100vh-4rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-hidden rounded-xl bg-background p-4 text-sm outline-none ring-1 ring-foreground/10 duration-100 data-closed:animate-out data-open:animate-in sm:max-w-sm',
           className
         )}
         data-slot="dialog-content"
@@ -71,6 +72,16 @@ function DialogContent({
 
 function DialogHeader({ className, ...props }: React.ComponentProps<'div'>) {
   return <div className={cn('flex flex-col gap-2', className)} data-slot="dialog-header" {...props} />
+}
+
+function DialogBody({ className, children, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <ScrollArea className="-mx-4 max-h-[calc(100vh-14rem)] min-h-0 flex-1" data-slot="dialog-body">
+      <div className={cn('px-4', className)} {...props}>
+        {children}
+      </div>
+    </ScrollArea>
+  )
 }
 
 function DialogFooter({
@@ -124,6 +135,7 @@ function DialogDescription({ className, ...props }: DialogPrimitive.Description.
 
 export {
   Dialog,
+  DialogBody,
   DialogClose,
   DialogContent,
   DialogDescription,

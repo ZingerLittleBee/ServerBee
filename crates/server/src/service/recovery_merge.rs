@@ -514,8 +514,14 @@ impl RecoveryMergeService {
     where
         C: ConnectionTrait,
     {
-        Self::merge_raw_table_on_connection(db, "records", "time", target_server_id, source_server_id)
-            .await?;
+        Self::merge_raw_table_on_connection(
+            db,
+            "records",
+            "time",
+            target_server_id,
+            source_server_id,
+        )
+        .await?;
         Self::merge_raw_table_on_connection(
             db,
             "gpu_records",
@@ -578,7 +584,7 @@ impl RecoveryMergeService {
             target_server_id,
             source_server_id,
         )
-            .await?;
+        .await?;
         Self::merge_unique_key_table_on_connection(
             db,
             "uptime_daily",
@@ -592,42 +598,6 @@ impl RecoveryMergeService {
             .await?;
 
         Ok(())
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) async fn merge_raw_table(
-        db: &DatabaseConnection,
-        table: &str,
-        time_column: &str,
-        target_server_id: &str,
-        source_server_id: &str,
-    ) -> Result<(), AppError> {
-        Self::merge_raw_table_on_connection(
-            db,
-            table,
-            time_column,
-            target_server_id,
-            source_server_id,
-        )
-        .await
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) async fn merge_raw_table_on_txn(
-        txn: &DatabaseTransaction,
-        table: &str,
-        time_column: &str,
-        target_server_id: &str,
-        source_server_id: &str,
-    ) -> Result<(), AppError> {
-        Self::merge_raw_table_on_connection(
-            txn,
-            table,
-            time_column,
-            target_server_id,
-            source_server_id,
-        )
-        .await
     }
 
     async fn merge_raw_table_on_connection<C>(
@@ -663,42 +633,6 @@ impl RecoveryMergeService {
         Ok(())
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) async fn merge_unique_key_table(
-        db: &DatabaseConnection,
-        table: &str,
-        key_columns: &[&str],
-        target_server_id: &str,
-        source_server_id: &str,
-    ) -> Result<(), AppError> {
-        Self::merge_unique_key_table_on_connection(
-            db,
-            table,
-            key_columns,
-            target_server_id,
-            source_server_id,
-        )
-        .await
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) async fn merge_unique_key_table_on_txn(
-        txn: &DatabaseTransaction,
-        table: &str,
-        key_columns: &[&str],
-        target_server_id: &str,
-        source_server_id: &str,
-    ) -> Result<(), AppError> {
-        Self::merge_unique_key_table_on_connection(
-            txn,
-            table,
-            key_columns,
-            target_server_id,
-            source_server_id,
-        )
-        .await
-    }
-
     async fn merge_unique_key_table_on_connection<C>(
         db: &C,
         table: &str,
@@ -717,24 +651,6 @@ impl RecoveryMergeService {
             source_server_id,
         )
         .await
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) async fn merge_alert_states(
-        db: &DatabaseConnection,
-        target_server_id: &str,
-        source_server_id: &str,
-    ) -> Result<(), AppError> {
-        Self::merge_alert_states_on_connection(db, target_server_id, source_server_id).await
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) async fn merge_alert_states_on_txn(
-        txn: &DatabaseTransaction,
-        target_server_id: &str,
-        source_server_id: &str,
-    ) -> Result<(), AppError> {
-        Self::merge_alert_states_on_connection(txn, target_server_id, source_server_id).await
     }
 
     async fn merge_alert_states_on_connection<C>(
@@ -777,16 +693,6 @@ impl RecoveryMergeService {
             .await
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) async fn rewrite_server_ids_json_tables_on_txn(
-        txn: &DatabaseTransaction,
-        target_server_id: &str,
-        source_server_id: &str,
-    ) -> Result<(), AppError> {
-        Self::rewrite_server_ids_json_tables_on_connection(txn, target_server_id, source_server_id)
-            .await
-    }
-
     async fn rewrite_server_ids_json_tables_on_connection<C>(
         db: &C,
         target_server_id: &str,
@@ -819,24 +725,6 @@ impl RecoveryMergeService {
         Ok(())
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
-    async fn rewrite_server_ids_json_table(
-        db: &DatabaseConnection,
-        table: &str,
-        column: &str,
-        target_server_id: &str,
-        source_server_id: &str,
-    ) -> Result<(), AppError> {
-        Self::rewrite_server_ids_json_table_on_connection(
-            db,
-            table,
-            column,
-            target_server_id,
-            source_server_id,
-        )
-        .await
-    }
-
     async fn rewrite_server_ids_json_table_on_connection<C>(
         db: &C,
         table: &str,
@@ -850,9 +738,7 @@ impl RecoveryMergeService {
         let rows = db
             .query_all(Statement::from_sql_and_values(
                 DatabaseBackend::Sqlite,
-                format!(
-                    "SELECT id, {column} FROM {table} WHERE {column} LIKE '%' || $1 || '%'"
-                ),
+                format!("SELECT id, {column} FROM {table} WHERE {column} LIKE '%' || $1 || '%'"),
                 [source_server_id.into()],
             ))
             .await?;
@@ -890,7 +776,9 @@ impl RecoveryMergeService {
         source_server_id: &str,
     ) -> Result<Option<String>, AppError> {
         let ids: Vec<String> = serde_json::from_str(current).map_err(|error| {
-            AppError::Internal(format!("Failed to parse server_ids_json during recovery merge: {error}"))
+            AppError::Internal(format!(
+                "Failed to parse server_ids_json during recovery merge: {error}"
+            ))
         })?;
 
         let mut rewritten = Vec::new();
@@ -921,15 +809,6 @@ impl RecoveryMergeService {
         source: &server::Model,
     ) -> Result<(), AppError> {
         Self::finalize_target_server_row_on_connection(db, target_server_id, source).await
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) async fn finalize_target_server_row_on_txn(
-        txn: &DatabaseTransaction,
-        target_server_id: &str,
-        source: &server::Model,
-    ) -> Result<(), AppError> {
-        Self::finalize_target_server_row_on_connection(txn, target_server_id, source).await
     }
 
     async fn finalize_target_server_row_on_connection<C>(
@@ -985,14 +864,6 @@ impl RecoveryMergeService {
         source_server_id: &str,
     ) -> Result<(), AppError> {
         Self::delete_intentionally_unmerged_source_rows_on_connection(db, source_server_id).await
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) async fn delete_intentionally_unmerged_source_rows_on_txn(
-        txn: &DatabaseTransaction,
-        source_server_id: &str,
-    ) -> Result<(), AppError> {
-        Self::delete_intentionally_unmerged_source_rows_on_connection(txn, source_server_id).await
     }
 
     async fn delete_intentionally_unmerged_source_rows_on_connection<C>(
@@ -1559,9 +1430,21 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(target_rows.len(), 3);
-        assert!(target_rows.iter().any(|row| row.time == before_overlap && row.cpu == 10.0));
-        assert!(target_rows.iter().any(|row| row.time == overlap_start && row.cpu == 200.0));
-        assert!(target_rows.iter().any(|row| row.time == overlap_end && row.cpu == 300.0));
+        assert!(
+            target_rows
+                .iter()
+                .any(|row| row.time == before_overlap && row.cpu == 10.0)
+        );
+        assert!(
+            target_rows
+                .iter()
+                .any(|row| row.time == overlap_start && row.cpu == 200.0)
+        );
+        assert!(
+            target_rows
+                .iter()
+                .any(|row| row.time == overlap_end && row.cpu == 300.0)
+        );
 
         let source_rows = record::Entity::find()
             .filter(record::Column::ServerId.eq("source-1"))
@@ -1662,8 +1545,16 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(target_rows.len(), 2);
-        assert!(target_rows.iter().any(|row| row.time == before_overlap && row.cpu == 10.0));
-        assert!(target_rows.iter().any(|row| row.time == overlap && row.cpu == 20.0));
+        assert!(
+            target_rows
+                .iter()
+                .any(|row| row.time == before_overlap && row.cpu == 10.0)
+        );
+        assert!(
+            target_rows
+                .iter()
+                .any(|row| row.time == overlap && row.cpu == 20.0)
+        );
 
         let source_rows = record::Entity::find()
             .filter(record::Column::ServerId.eq("source-1"))

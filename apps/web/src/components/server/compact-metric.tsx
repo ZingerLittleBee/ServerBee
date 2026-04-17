@@ -3,9 +3,9 @@ import { cn } from '@/lib/utils'
 interface CompactMetricProps {
   className?: string
   icon?: React.ReactNode
-  label: string
+  label: React.ReactNode
   subValue?: string
-  value: string | number
+  value: React.ReactNode
 }
 
 export function CompactMetric({ label, value, subValue, icon, className }: CompactMetricProps) {

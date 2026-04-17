@@ -8,6 +8,45 @@ import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
 import { computeTrafficQuota } from '@/lib/traffic'
 import { cn, countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 
+function splitValueUnit(formatted: string): { unit: string | null; value: string } {
+  const lastSpace = formatted.lastIndexOf(' ')
+  if (lastSpace < 0) {
+    return { unit: null, value: formatted }
+  }
+  return { unit: formatted.slice(lastSpace + 1), value: formatted.slice(0, lastSpace) }
+}
+
+function valueClassName(value: string): string {
+  return value === '0' ? 'text-xs' : 'font-semibold text-foreground text-xs'
+}
+
+export function renderBytesValue(bytes: number): ReactNode {
+  const { value, unit } = splitValueUnit(formatBytes(bytes))
+  if (unit == null) {
+    return <span className={valueClassName(value)}>{value}</span>
+  }
+  return (
+    <>
+      <span className={valueClassName(value)}>{value}</span> <span className="text-[9px]">{unit}</span>
+    </>
+  )
+}
+
+export function renderSpeedValue(bytesPerSec: number): ReactNode {
+  if (bytesPerSec <= 0) {
+    return <span className="text-xs">0</span>
+  }
+  const { value, unit } = splitValueUnit(formatSpeed(bytesPerSec))
+  if (unit == null) {
+    return <span className={valueClassName(value)}>{value}</span>
+  }
+  return (
+    <>
+      <span className={valueClassName(value)}>{value}</span> <span className="text-[9px]">{unit}</span>
+    </>
+  )
+}
+
 export function getBarColor(pct: number): string {
   if (pct > 90) {
     return 'bg-red-500'
@@ -32,10 +71,11 @@ interface MetricBarRowProps {
   ariaLabel?: string
   icon: ReactNode
   pct: number
+  showPct?: boolean
   valueClassName?: string
 }
 
-export function MetricBarRow({ icon, pct, ariaLabel, valueClassName }: MetricBarRowProps) {
+export function MetricBarRow({ icon, pct, ariaLabel, valueClassName, showPct = true }: MetricBarRowProps) {
   const clamped = Math.min(100, Math.max(0, pct))
   const colorBg = getBarColor(clamped)
   const colorText = getBarTextColor(clamped)
@@ -51,9 +91,11 @@ export function MetricBarRow({ icon, pct, ariaLabel, valueClassName }: MetricBar
           style={{ width: `${clamped}%` }}
         />
       </div>
-      <span className={cn('w-10 text-right font-mono font-semibold text-xs tabular-nums', colorText, valueClassName)}>
-        {Math.round(clamped)}%
-      </span>
+      {showPct && (
+        <span className={cn('w-10 text-right font-mono font-semibold text-xs tabular-nums', colorText, valueClassName)}>
+          {Math.round(clamped)}%
+        </span>
+      )}
     </div>
   )
 }
@@ -68,16 +110,38 @@ export function MiniBar({ pct, sub }: { pct: number; sub?: ReactNode }) {
   )
 }
 
+export function PositionIndicator({ pct }: { pct: number }) {
+  const clamped = Math.min(100, Math.max(0, pct))
+  const barColor = getBarColor(clamped)
+  return (
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted" data-slot="position-indicator">
+      <div
+        className={cn('h-full rounded-full', barColor)}
+        data-slot="position-indicator-fill"
+        style={{ width: `${clamped}%` }}
+      />
+    </div>
+  )
+}
+
 export function CpuCell({ server }: { server: ServerMetrics }) {
   if (!server.online) {
     return <span className="text-muted-foreground">—</span>
   }
   const cores = server.cpu_cores ?? null
+  const pct = Math.round(Math.min(100, Math.max(0, server.cpu)))
+  const pctColor = getBarTextColor(pct)
   return (
-    <div className="flex flex-col gap-1">
-      <MetricBarRow icon={<Cpu aria-hidden="true" className="size-3.5" />} pct={server.cpu} />
-      <div className="pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
-        {cores != null && `${cores} cores · `}load {server.load1.toFixed(2)}
+    <div className="flex flex-col gap-0.5">
+      <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
+        <Cpu aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
+        <span>
+          {cores != null && `${cores} cores · `}load {server.load1.toFixed(2)}
+        </span>
+        <span className={cn('ml-auto font-semibold', pctColor)}>{pct}%</span>
+      </div>
+      <div className="flex h-4 items-center">
+        <PositionIndicator pct={pct} />
       </div>
     </div>
   )
@@ -87,14 +151,19 @@ export function MemoryCell({ server }: { server: ServerMetrics }) {
     return <span className="text-muted-foreground">—</span>
   }
   const pct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
-  const swapPct = server.swap_total > 0 ? (server.swap_used / server.swap_total) * 100 : 0
-  const swapColor = getBarTextColor(swapPct)
+  const roundedPct = Math.round(Math.min(100, Math.max(0, pct)))
+  const pctColor = getBarTextColor(roundedPct)
   return (
-    <div className="flex flex-col gap-1">
-      <MetricBarRow icon={<MemoryStick aria-hidden="true" className="size-3.5" />} pct={pct} />
-      <div className="pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
-        {formatBytes(server.mem_used)} / {formatBytes(server.mem_total)} ·{' '}
-        <span className={cn('font-medium', swapColor)}>swap {Math.round(swapPct)}%</span>
+    <div className="flex flex-col gap-0.5">
+      <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
+        <MemoryStick aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
+        <span>
+          {renderBytesValue(server.mem_used)} / {renderBytesValue(server.mem_total)}
+        </span>
+        <span className={cn('ml-auto font-semibold', pctColor)}>{roundedPct}%</span>
+      </div>
+      <div className="flex h-4 items-center">
+        <PositionIndicator pct={pct} />
       </div>
     </div>
   )
@@ -103,18 +172,26 @@ export function DiskCell({ server }: { server: ServerMetrics }) {
   if (!server.online) {
     return <span className="text-muted-foreground">—</span>
   }
-  const pct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
   return (
-    <div className="flex flex-col gap-1">
-      <MetricBarRow icon={<HardDrive aria-hidden="true" className="size-3.5" />} pct={pct} />
-      <div className="flex items-center gap-2 pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
-        <span className="inline-flex items-center gap-1">
-          <ArrowDown aria-hidden="true" className="size-2.5" />
-          <span className="font-medium text-foreground">{formatSpeed(server.disk_read_bytes_per_sec)}</span>
+    <div className="flex flex-col gap-0.5">
+      <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
+        <HardDrive aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
+        <span>
+          {renderBytesValue(server.disk_used)} / {renderBytesValue(server.disk_total)}
         </span>
-        <span className="inline-flex items-center gap-1">
-          <ArrowUp aria-hidden="true" className="size-2.5" />
-          <span className="font-medium text-foreground">{formatSpeed(server.disk_write_bytes_per_sec)}</span>
+      </div>
+      <div className="flex h-4 items-center gap-2 font-mono text-[10px] text-muted-foreground tabular-nums">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-foreground">
+            R
+          </span>
+          <span className="inline-block w-14">{renderSpeedValue(server.disk_read_bytes_per_sec)}</span>
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-foreground">
+            W
+          </span>
+          <span className="inline-block w-14">{renderSpeedValue(server.disk_write_bytes_per_sec)}</span>
         </span>
       </div>
     </div>
@@ -126,32 +203,35 @@ interface NetworkCellProps {
 }
 
 export function NetworkCell({ server, entry }: NetworkCellProps) {
-  const { used, limit, pct } = computeTrafficQuota({
+  const { used, limit } = computeTrafficQuota({
     entry,
     netInTransfer: server.net_in_transfer,
     netOutTransfer: server.net_out_transfer
   })
   return (
-    <div className="flex flex-col gap-1">
-      <MetricBarRow icon={<Network aria-hidden="true" className="size-3.5" />} pct={pct} />
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
+    <div className="flex flex-col gap-0.5">
+      <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
+        <Network aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
         <span>
-          {formatBytes(used)} / {formatBytes(limit)}
+          {renderBytesValue(used)} / {renderBytesValue(limit)}
         </span>
-        {server.online && (
-          <>
-            <span className="opacity-50">·</span>
-            <span className="inline-flex items-center gap-1">
-              <ArrowDown aria-hidden="true" className="size-2.5" />
-              <span className="font-medium text-foreground">{formatSpeed(server.net_in_speed)}</span>
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <ArrowUp aria-hidden="true" className="size-2.5" />
-              <span className="font-medium text-foreground">{formatSpeed(server.net_out_speed)}</span>
-            </span>
-          </>
-        )}
       </div>
+      {server.online && (
+        <div className="flex h-4 items-center gap-2 font-mono text-[10px] text-muted-foreground tabular-nums">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted text-foreground">
+              <ArrowDown aria-hidden="true" className="size-2.5" />
+            </span>
+            <span className="inline-block w-14">{renderSpeedValue(server.net_in_speed)}</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted text-foreground">
+              <ArrowUp aria-hidden="true" className="size-2.5" />
+            </span>
+            <span className="inline-block w-14">{renderSpeedValue(server.net_out_speed)}</span>
+          </span>
+        </div>
+      )}
     </div>
   )
 }

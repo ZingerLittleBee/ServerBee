@@ -658,12 +658,12 @@ mod tests {
         .await
         .expect_err("protocol v3 source should be rejected");
 
-        assert!(
-            matches!(error, AppError::Conflict(message) if message.contains("protocol v4+"))
-        );
+        assert!(matches!(error, AppError::Conflict(message) if message.contains("protocol v4+")));
 
         assert!(
-            timeout(Duration::from_millis(100), rx.recv()).await.is_err(),
+            timeout(Duration::from_millis(100), rx.recv())
+                .await
+                .is_err(),
             "unsupported source should not receive a rebind dispatch"
         );
 
@@ -674,7 +674,13 @@ mod tests {
             .unwrap();
         assert_eq!(after.token_prefix, before.token_prefix);
         assert_eq!(after.token_hash, before.token_hash);
-        assert!(recovery_job::Entity::find().all(&db).await.unwrap().is_empty());
+        assert!(
+            recovery_job::Entity::find()
+                .all(&db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]

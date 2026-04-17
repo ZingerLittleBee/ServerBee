@@ -8,6 +8,7 @@ declare module '@tanstack/react-table' {
   }
 
   interface ColumnMeta<TData extends RowData, TValue> {
+    cellClassName?: string
     className?: string
     icon?: React.FC<React.SVGProps<SVGSVGElement>>
     label?: string

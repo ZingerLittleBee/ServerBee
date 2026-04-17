@@ -1079,8 +1079,8 @@ mod cleanup_tests {
     use super::{DEFAULT_SERVER_NAME, collect_orphan_server_ids, remove_ids_from_json};
     use crate::entity::server;
     use chrono::Utc;
-    use std::collections::HashSet;
     use serverbee_common::constants::CAP_DEFAULT;
+    use std::collections::HashSet;
 
     fn make_server(id: &str, name: &str, os: Option<&str>) -> server::Model {
         let now = Utc::now();

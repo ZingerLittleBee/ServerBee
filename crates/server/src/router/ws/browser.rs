@@ -284,7 +284,10 @@ async fn build_full_sync(state: &Arc<AppState>, is_admin: bool) -> BrowserMessag
         .unwrap_or_default();
     let mut tags_by_server: HashMap<String, Vec<String>> = HashMap::new();
     for row in tags_rows {
-        tags_by_server.entry(row.server_id).or_default().push(row.tag);
+        tags_by_server
+            .entry(row.server_id)
+            .or_default()
+            .push(row.tag);
     }
 
     let statuses: Vec<ServerStatus> = servers
@@ -415,9 +418,7 @@ fn filter_browser_message(msg: BrowserMessage, is_admin: bool) -> Option<Browser
 
     match msg {
         BrowserMessage::FullSync {
-            servers,
-            upgrades,
-            ..
+            servers, upgrades, ..
         } => Some(BrowserMessage::FullSync {
             servers,
             upgrades,

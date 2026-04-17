@@ -178,42 +178,42 @@ function ServersListPage() {
           <NameCell rightSlot={<UpgradeBadgeCell serverId={row.original.id} />} server={row.original} />
         ),
         size: 260,
-        meta: { className: 'min-w-[200px]' }
+        meta: { className: 'min-w-[200px]', label: t('col_name') }
       },
       {
         accessorKey: 'cpu',
         id: 'cpu',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_cpu')} />,
         cell: ({ row }) => <CpuCell server={row.original} />,
-        size: 160,
-        meta: { className: 'w-[160px]' }
+        size: 130,
+        meta: { className: 'w-[130px]', cellClassName: 'align-top', label: t('col_cpu') }
       },
       {
         accessorFn: (row) => (row.mem_total > 0 ? row.mem_used / row.mem_total : 0),
         id: 'memory',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_memory')} />,
         cell: ({ row }) => <MemoryCell server={row.original} />,
-        size: 160,
-        meta: { className: 'w-[160px]' }
+        size: 130,
+        meta: { className: 'w-[130px]', cellClassName: 'align-top', label: t('col_memory') }
       },
       {
         accessorFn: (row) => (row.disk_total > 0 ? row.disk_used / row.disk_total : 0),
         id: 'disk',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_disk')} />,
         cell: ({ row }) => <DiskCell server={row.original} />,
-        size: 160,
-        meta: { className: 'w-[160px]' }
+        size: 150,
+        meta: { className: 'w-[150px]', cellClassName: 'align-top', label: t('col_disk') }
       },
       {
         id: 'network',
         enableSorting: false,
-        header: () => <span className="text-muted-foreground text-xs">{t('col_network')}</span>,
+        header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_network')} />,
         cell: ({ row }) => {
           const entry = trafficOverview.find((e) => e.server_id === row.original.id)
           return <NetworkCell entry={entry} server={row.original} />
         },
-        size: 160,
-        meta: { className: 'hidden lg:table-cell lg:w-[160px]' }
+        size: 150,
+        meta: { className: 'hidden lg:table-cell lg:w-[150px]', cellClassName: 'lg:align-top', label: t('col_network') }
       },
       {
         accessorKey: 'uptime',
@@ -221,7 +221,7 @@ function ServersListPage() {
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_uptime')} />,
         cell: ({ row }) => <UptimeCell server={row.original} />,
         size: 100,
-        meta: { className: 'hidden xl:table-cell xl:w-[100px]' }
+        meta: { className: 'hidden xl:table-cell xl:w-[100px]', label: t('col_uptime') }
       },
       {
         id: 'group',
