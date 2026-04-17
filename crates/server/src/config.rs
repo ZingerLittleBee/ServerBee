@@ -479,13 +479,18 @@ mod tests {
         assert_eq!(cfg.api_key, "");
     }
 
+    #[expect(
+        clippy::result_large_err,
+        reason = "figment::Jail::expect_with requires figment::Result"
+    )]
     #[test]
     fn test_resend_config_reads_env_var() {
         figment::Jail::expect_with(|jail| {
             jail.set_env("SERVERBEE_RESEND__API_KEY", "re_test_abc123");
             let cfg: AppConfig = figment::Figment::new()
                 .merge(figment::providers::Env::prefixed("SERVERBEE_").split("__"))
-                .extract()?;
+                .extract()
+                .expect("resend api key should deserialize from env");
             assert_eq!(cfg.resend.api_key, "re_test_abc123");
             Ok(())
         });
