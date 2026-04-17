@@ -29,13 +29,14 @@ const REGEX_3_PCT = /3%/
 const REGEX_SWAP_0_PCT = /swap 0%/
 const REGEX_DISK_READ = /2\.0 MB\/s/
 const REGEX_DISK_WRITE = /500\.0 KB\/s/
+const REGEX_DISK_USED_TOTAL = /55\.9 GB \/ 93\.1 GB/
+const REGEX_DISK_ZERO = /0 B \/ 0 B/
 const REGEX_KB_PER_SEC = /KB\/s/
 const REGEX_MB_PER_SEC = /MB\/s/
 const REGEX_TRAFFIC_USED_LIMIT = /93\.2 GB \/ 1\.0 TB/
 const REGEX_TRAFFIC_DOWN = /1\.1 MB\/s/
 const REGEX_TRAFFIC_UP = /332\.0 KB\/s/
 const REGEX_TRAFFIC_FALLBACK = /3\.0 GB \/ 1\.0 TB/
-const REGEX_TRAFFIC_OFFLINE_PCT = /10%/
 const REGEX_TRAFFIC_OFFLINE_USAGE = /100\.0 GB \/ 1\.0 TB/
 const REGEX_LIMIT_DEFAULT = /1\.0 TB/
 const REGEX_UPTIME_23D = /23d/
@@ -167,7 +168,7 @@ describe('MemoryCell', () => {
 })
 
 describe('DiskCell', () => {
-  it('shows usage bar + r/w speeds when online', () => {
+  it('shows used/total text + r/w speeds when online', () => {
     render(
       <DiskCell
         server={makeServer({
@@ -179,7 +180,7 @@ describe('DiskCell', () => {
         })}
       />
     )
-    expect(screen.getByText('60%')).toBeDefined()
+    expect(screen.getByText(REGEX_DISK_USED_TOTAL)).toBeDefined()
     expect(screen.getByText(REGEX_DISK_READ)).toBeDefined()
     expect(screen.getByText(REGEX_DISK_WRITE)).toBeDefined()
   })
@@ -191,9 +192,9 @@ describe('DiskCell', () => {
     expect(screen.queryByText(REGEX_KB_PER_SEC)).toBeNull()
   })
 
-  it('renders 0% when disk_total is 0', () => {
+  it('renders 0 B / 0 B when disk_total is 0', () => {
     render(<DiskCell server={makeServer({ disk_total: 0, disk_used: 0 })} />)
-    expect(screen.getByText('0%')).toBeDefined()
+    expect(screen.getByText(REGEX_DISK_ZERO)).toBeDefined()
   })
 })
 
@@ -215,14 +216,13 @@ function makeEntry(overrides: Partial<TrafficOverviewItem>): TrafficOverviewItem
 }
 
 describe('NetworkCell', () => {
-  it('renders traffic-quota bar + used/limit + live ↓↑ when online', () => {
+  it('renders used/limit text + live ↓↑ when online', () => {
     render(
       <NetworkCell
         entry={makeEntry({ cycle_in: 50 * GB, cycle_out: 43.2 * GB, traffic_limit: 1 * TB })}
         server={makeServer({ online: true, net_in_speed: 1_153_434, net_out_speed: 339_968 })}
       />
     )
-    expect(screen.getByText('9%')).toBeDefined()
     expect(screen.getByText(REGEX_TRAFFIC_USED_LIMIT)).toBeDefined()
     expect(screen.getByText(REGEX_TRAFFIC_DOWN)).toBeDefined()
     expect(screen.getByText(REGEX_TRAFFIC_UP)).toBeDefined()
@@ -235,19 +235,16 @@ describe('NetworkCell', () => {
         server={makeServer({ online: true, net_in_transfer: 2 * GB, net_out_transfer: 1 * GB })}
       />
     )
-    // 3 GB / 1 TiB ≈ 0.29% → rounds to 0%
-    expect(screen.getByText('0%')).toBeDefined()
     expect(screen.getByText(REGEX_TRAFFIC_FALLBACK)).toBeDefined()
   })
 
-  it('renders traffic-quota bar even when offline (server-level data)', () => {
+  it('renders used/limit text and hides speeds when offline', () => {
     render(
       <NetworkCell
         entry={makeEntry({ cycle_in: 50 * GB, cycle_out: 50 * GB, traffic_limit: 1 * TB })}
         server={makeServer({ online: false })}
       />
     )
-    expect(screen.getByText(REGEX_TRAFFIC_OFFLINE_PCT)).toBeDefined()
     expect(screen.getByText(REGEX_TRAFFIC_OFFLINE_USAGE)).toBeDefined()
     expect(screen.queryByText(REGEX_MB_PER_SEC)).toBeNull()
     expect(screen.queryByText(REGEX_KB_PER_SEC)).toBeNull()

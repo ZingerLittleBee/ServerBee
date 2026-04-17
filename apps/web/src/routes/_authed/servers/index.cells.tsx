@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { ArrowDown, ArrowUp, Clock, Cpu, HardDrive, MemoryStick, Network } from 'lucide-react'
+import { Activity, ArrowDown, ArrowUp, Clock, Cpu, HardDrive, MemoryStick, Network } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TagChipRow } from '@/components/server/tag-chip'
@@ -68,6 +68,25 @@ export function MiniBar({ pct, sub }: { pct: number; sub?: ReactNode }) {
   )
 }
 
+interface MetricTextRowProps {
+  ariaLabel?: string
+  icon: ReactNode
+  pct: number
+  text: ReactNode
+}
+
+export function MetricTextRow({ icon, pct, text, ariaLabel }: MetricTextRowProps) {
+  const clamped = Math.min(100, Math.max(0, pct))
+  const colorText = getBarTextColor(clamped)
+  const imgProps = ariaLabel ? { role: 'img' as const, 'aria-label': ariaLabel } : {}
+  return (
+    <div className="flex items-center gap-1.5" {...imgProps}>
+      {icon !== null && <span className="inline-flex size-3.5 flex-none text-muted-foreground">{icon}</span>}
+      <span className={cn('font-mono font-semibold text-xs tabular-nums', colorText)}>{text}</span>
+    </div>
+  )
+}
+
 export function CpuCell({ server }: { server: ServerMetrics }) {
   if (!server.online) {
     return <span className="text-muted-foreground">—</span>
@@ -106,8 +125,15 @@ export function DiskCell({ server }: { server: ServerMetrics }) {
   const pct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
   return (
     <div className="flex flex-col gap-1">
-      <MetricBarRow icon={<HardDrive aria-hidden="true" className="size-3.5" />} pct={pct} />
-      <div className="flex items-center gap-2 pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
+      <MetricTextRow
+        icon={<HardDrive aria-hidden="true" className="size-3.5" />}
+        pct={pct}
+        text={`${formatBytes(server.disk_used)} / ${formatBytes(server.disk_total)}`}
+      />
+      <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
+        <span className="inline-flex size-3.5 flex-none items-center justify-center text-muted-foreground">
+          <Activity aria-hidden="true" className="size-3.5" />
+        </span>
         <span className="inline-flex items-center gap-1">
           <ArrowDown aria-hidden="true" className="size-2.5" />
           <span className="font-medium text-foreground">{formatSpeed(server.disk_read_bytes_per_sec)}</span>
@@ -133,25 +159,26 @@ export function NetworkCell({ server, entry }: NetworkCellProps) {
   })
   return (
     <div className="flex flex-col gap-1">
-      <MetricBarRow icon={<Network aria-hidden="true" className="size-3.5" />} pct={pct} />
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
-        <span>
-          {formatBytes(used)} / {formatBytes(limit)}
-        </span>
-        {server.online && (
-          <>
-            <span className="opacity-50">·</span>
-            <span className="inline-flex items-center gap-1">
-              <ArrowDown aria-hidden="true" className="size-2.5" />
-              <span className="font-medium text-foreground">{formatSpeed(server.net_in_speed)}</span>
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <ArrowUp aria-hidden="true" className="size-2.5" />
-              <span className="font-medium text-foreground">{formatSpeed(server.net_out_speed)}</span>
-            </span>
-          </>
-        )}
-      </div>
+      <MetricTextRow
+        icon={<Network aria-hidden="true" className="size-3.5" />}
+        pct={pct}
+        text={`${formatBytes(used)} / ${formatBytes(limit)}`}
+      />
+      {server.online && (
+        <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
+          <span className="inline-flex size-3.5 flex-none items-center justify-center text-muted-foreground">
+            <Activity aria-hidden="true" className="size-3.5" />
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <ArrowDown aria-hidden="true" className="size-2.5" />
+            <span className="font-medium text-foreground">{formatSpeed(server.net_in_speed)}</span>
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <ArrowUp aria-hidden="true" className="size-2.5" />
+            <span className="font-medium text-foreground">{formatSpeed(server.net_out_speed)}</span>
+          </span>
+        </div>
+      )}
     </div>
   )
 }
