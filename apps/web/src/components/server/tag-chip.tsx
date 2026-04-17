@@ -12,7 +12,8 @@ const PALETTE = [
 function hashTag(tag: string): number {
   let h = 0
   for (let i = 0; i < tag.length; i++) {
-    h = (h * 31 + tag.charCodeAt(i)) | 0
+    h = Math.imul(h, 31) + tag.charCodeAt(i)
+    h = Math.trunc(h)
   }
   return Math.abs(h) % PALETTE.length
 }
@@ -31,7 +32,7 @@ export function TagChipRow({ tags, className }: TagChipRowProps) {
       {tags.map((tag) => (
         <span
           className={cn(
-            'inline-flex max-w-[80px] items-center truncate rounded px-1.5 py-0.5 text-[10px] font-medium leading-tight',
+            'inline-flex max-w-[80px] items-center truncate rounded px-1.5 py-0.5 font-medium text-[10px] leading-tight',
             PALETTE[hashTag(tag)]
           )}
           data-slot="tag-chip"

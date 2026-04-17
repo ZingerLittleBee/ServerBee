@@ -108,8 +108,7 @@ export function mergeServerUpdate(prev: ServerMetrics[], incoming: ServerMetrics
       const merged = { ...updated[idx] }
       for (const [key, value] of Object.entries(server)) {
         const isStaticDefault =
-          STATIC_FIELDS.has(key) &&
-          (value === null || value === 0 || (Array.isArray(value) && value.length === 0))
+          STATIC_FIELDS.has(key) && (value === null || value === 0 || (Array.isArray(value) && value.length === 0))
         if (!isStaticDefault) {
           ;(merged as Record<string, unknown>)[key] = value
         }

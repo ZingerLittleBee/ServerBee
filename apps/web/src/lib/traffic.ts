@@ -3,9 +3,9 @@ import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
 export const DEFAULT_TRAFFIC_LIMIT_BYTES = 1024 ** 4
 
 export interface TrafficQuota {
-  used: number
   limit: number
   pct: number
+  used: number
 }
 
 interface ComputeInput {
