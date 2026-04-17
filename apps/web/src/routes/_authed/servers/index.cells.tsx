@@ -1,6 +1,8 @@
-import { ArrowDown, ArrowUp, Cpu, HardDrive, MemoryStick } from 'lucide-react'
+import { ArrowDown, ArrowUp, Cpu, HardDrive, MemoryStick, Network } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
+import { computeTrafficQuota } from '@/lib/traffic'
 import { cn, formatBytes, formatSpeed } from '@/lib/utils'
 
 export function getBarColor(pct: number): string {
@@ -115,6 +117,38 @@ export function DiskCell({ server }: { server: ServerMetrics }) {
     </div>
   )
 }
-export function NetworkCell(_: { server: ServerMetrics }) {
-  return <MetricBarRow icon={null} pct={0} />
+interface NetworkCellProps {
+  entry: TrafficOverviewItem | undefined
+  server: ServerMetrics
+}
+
+export function NetworkCell({ server, entry }: NetworkCellProps) {
+  const { used, limit, pct } = computeTrafficQuota({
+    entry,
+    netInTransfer: server.net_in_transfer,
+    netOutTransfer: server.net_out_transfer
+  })
+  return (
+    <div className="flex flex-col gap-1">
+      <MetricBarRow icon={<Network aria-hidden="true" className="size-3.5" />} pct={pct} />
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
+        <span>
+          {formatBytes(used)} / {formatBytes(limit)}
+        </span>
+        {server.online && (
+          <>
+            <span className="opacity-50">·</span>
+            <span className="inline-flex items-center gap-1">
+              <ArrowDown aria-hidden="true" className="size-2.5" />
+              <span className="font-medium text-foreground">{formatSpeed(server.net_in_speed)}</span>
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <ArrowUp aria-hidden="true" className="size-2.5" />
+              <span className="font-medium text-foreground">{formatSpeed(server.net_out_speed)}</span>
+            </span>
+          </>
+        )}
+      </div>
+    </div>
+  )
 }
