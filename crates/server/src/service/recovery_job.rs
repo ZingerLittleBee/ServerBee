@@ -31,11 +31,9 @@ impl RecoveryJobService {
 
         match active.insert(db).await {
             Ok(model) => Ok(model),
-            Err(err) if is_active_recovery_conflict(&err) => {
-                Err(AppError::Conflict(
-                    "A running recovery job already exists for this target or source".to_string(),
-                ))
-            }
+            Err(err) if is_active_recovery_conflict(&err) => Err(AppError::Conflict(
+                "A running recovery job already exists for this target or source".to_string(),
+            )),
             Err(err) => Err(err.into()),
         }
     }
@@ -118,8 +116,8 @@ impl RecoveryJobService {
 mod tests {
     use super::RecoveryJobService;
     use crate::entity::recovery_job;
-    use crate::test_utils::setup_test_db;
     use crate::error::AppError;
+    use crate::test_utils::setup_test_db;
     use chrono::Utc;
     use sea_orm::{ActiveModelTrait, Set};
 
@@ -251,14 +249,18 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(RecoveryJobService::running_for_target(&db, "target-1")
-            .await
-            .unwrap()
-            .is_none());
-        assert!(RecoveryJobService::running_for_source(&db, "source-1")
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            RecoveryJobService::running_for_target(&db, "target-1")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            RecoveryJobService::running_for_source(&db, "source-1")
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]

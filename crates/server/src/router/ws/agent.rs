@@ -1661,7 +1661,11 @@ mod tests {
             .unwrap();
         assert_eq!(job.stage, "awaiting_target_online");
 
-        assert!(timeout(Duration::from_millis(50), browser_rx.recv()).await.is_err());
+        assert!(
+            timeout(Duration::from_millis(50), browser_rx.recv())
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]
@@ -1695,7 +1699,11 @@ mod tests {
         assert_eq!(job.stage, "rebinding");
         assert_eq!(job.error, None);
 
-        assert!(timeout(Duration::from_millis(50), browser_rx.recv()).await.is_err());
+        assert!(
+            timeout(Duration::from_millis(50), browser_rx.recv())
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]
@@ -1732,6 +1740,10 @@ mod tests {
         assert_eq!(job.stage, "rebinding");
         assert_eq!(job.error.as_deref(), Some("first failure"));
 
-        assert!(timeout(Duration::from_millis(50), browser_rx.recv()).await.is_err());
+        assert!(
+            timeout(Duration::from_millis(50), browser_rx.recv())
+                .await
+                .is_err()
+        );
     }
 }

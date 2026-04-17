@@ -12,9 +12,12 @@ async fn fresh_db() -> sea_orm::DatabaseConnection {
 }
 
 async fn exec(db: &sea_orm::DatabaseConnection, sql: &str) {
-    db.execute(Statement::from_string(DatabaseBackend::Sqlite, sql.to_string()))
-        .await
-        .expect("exec");
+    db.execute(Statement::from_string(
+        DatabaseBackend::Sqlite,
+        sql.to_string(),
+    ))
+    .await
+    .expect("exec");
 }
 
 async fn config_json_of(db: &sea_orm::DatabaseConnection, id: &str) -> String {
