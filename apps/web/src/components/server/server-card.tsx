@@ -28,6 +28,12 @@ interface ServerCardProps {
   server: ServerMetrics
 }
 
+type SeverityBarShapeProps = Omit<ComponentProps<typeof SeverityBar>, 'failPatternId'>
+
+function isSeverityBarShapeProps(value: unknown): value is SeverityBarShapeProps {
+  return typeof value === 'object' && value !== null
+}
+
 const LATENCY_CHART_CONFIG = {
   value: { label: 'Latency', color: 'var(--chart-4)' }
 } satisfies ChartConfig
@@ -403,7 +409,13 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
                   background={{ fill: 'transparent' }}
                   dataKey="value"
                   isAnimationActive={false}
-                  shape={(shapeProps) => <SeverityBar {...shapeProps} failPatternId={failPatternId} />}
+                  shape={(shapeProps: unknown) =>
+                    isSeverityBarShapeProps(shapeProps) ? (
+                      <SeverityBar {...shapeProps} failPatternId={failPatternId} />
+                    ) : (
+                      <g />
+                    )
+                  }
                 />
               </BarChart>
             </ChartContainer>
