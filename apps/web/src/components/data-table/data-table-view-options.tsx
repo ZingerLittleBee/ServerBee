@@ -3,6 +3,7 @@
 import type { Table } from '@tanstack/react-table'
 import { Check, Settings2 } from 'lucide-react'
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -14,6 +15,7 @@ interface DataTableViewOptionsProps<TData> extends React.ComponentProps<typeof P
 }
 
 export function DataTableViewOptions<TData>({ table, disabled, ...props }: DataTableViewOptionsProps<TData>) {
+  const { t } = useTranslation('common')
   const columns = React.useMemo(
     () => table.getAllColumns().filter((column) => typeof column.accessorFn !== 'undefined' && column.getCanHide()),
     [table]
@@ -24,7 +26,7 @@ export function DataTableViewOptions<TData>({ table, disabled, ...props }: DataT
       <PopoverTrigger
         render={
           <Button
-            aria-label="Toggle columns"
+            aria-label={t('table.toggle_columns')}
             className="ml-auto hidden h-8 font-normal lg:flex"
             disabled={disabled}
             role="combobox"
@@ -34,13 +36,13 @@ export function DataTableViewOptions<TData>({ table, disabled, ...props }: DataT
         }
       >
         <Settings2 className="text-muted-foreground" />
-        View
+        {t('table.view_options')}
       </PopoverTrigger>
       <PopoverContent className="w-44 p-0" {...props}>
         <Command>
-          <CommandInput placeholder="Search columns..." />
+          <CommandInput placeholder={t('table.search_columns')} />
           <CommandList>
-            <CommandEmpty>No columns found.</CommandEmpty>
+            <CommandEmpty>{t('table.no_columns_found')}</CommandEmpty>
             <CommandGroup>
               {columns.map((column) => (
                 <CommandItem key={column.id} onSelect={() => column.toggleVisibility(!column.getIsVisible())}>

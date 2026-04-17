@@ -5,8 +5,15 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog'
 import { startRecoveryMerge, useRecoveryCandidates } from '@/hooks/use-api'
 import type { RecoveryJobResponse } from '@/lib/api-schema'
 
@@ -55,46 +62,46 @@ export function RecoveryMergeDialog({ currentJob, onOpenChange, open, targetServ
           </DialogDescription>
         </DialogHeader>
 
-        {currentJob && (
-          <div className="rounded-lg border bg-muted/50 p-3 text-sm">
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary">{currentJob.stage}</Badge>
-              <span>
-                {t('recovery_merge_existing_job', { defaultValue: 'A recovery job is already in progress.' })}
-              </span>
+        <DialogBody className="space-y-4">
+          {currentJob && (
+            <div className="rounded-lg border bg-muted/50 p-3 text-sm">
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary">{currentJob.stage}</Badge>
+                <span>
+                  {t('recovery_merge_existing_job', { defaultValue: 'A recovery job is already in progress.' })}
+                </span>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {candidatesQuery.isLoading && (
-          <div className="flex items-center gap-2 rounded-lg border p-3 text-muted-foreground text-sm">
-            <Loader2 className="size-4 animate-spin" />
-            {t('recovery_merge_loading', { defaultValue: 'Loading recovery candidates…' })}
-          </div>
-        )}
+          {candidatesQuery.isLoading && (
+            <div className="flex items-center gap-2 rounded-lg border p-3 text-muted-foreground text-sm">
+              <Loader2 className="size-4 animate-spin" />
+              {t('recovery_merge_loading', { defaultValue: 'Loading recovery candidates…' })}
+            </div>
+          )}
 
-        {candidatesQuery.isError && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-destructive text-sm">
-            {t('recovery_merge_candidates_failed', { defaultValue: 'Failed to load recovery candidates.' })}
-          </div>
-        )}
+          {candidatesQuery.isError && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-destructive text-sm">
+              {t('recovery_merge_candidates_failed', { defaultValue: 'Failed to load recovery candidates.' })}
+            </div>
+          )}
 
-        {!(candidatesQuery.isLoading || candidatesQuery.isError) && candidates.length === 0 && (
-          <div className="rounded-lg border p-3 text-muted-foreground text-sm">
-            {t('recovery_merge_empty', { defaultValue: 'No online recovery candidates are available right now.' })}
-          </div>
-        )}
+          {!(candidatesQuery.isLoading || candidatesQuery.isError) && candidates.length === 0 && (
+            <div className="rounded-lg border p-3 text-muted-foreground text-sm">
+              {t('recovery_merge_empty', { defaultValue: 'No online recovery candidates are available right now.' })}
+            </div>
+          )}
 
-        {readOnly ? (
-          <div className="rounded-lg border bg-muted/30 p-3 text-muted-foreground text-sm">
-            {t('recovery_merge_read_only', {
-              defaultValue: 'This dialog is read-only while a recovery job is active.'
-            })}
-          </div>
-        ) : (
-          candidates.length > 0 && (
-            <ScrollArea className="max-h-[40vh] rounded-lg border">
-              <div className="space-y-3 p-3">
+          {readOnly ? (
+            <div className="rounded-lg border bg-muted/30 p-3 text-muted-foreground text-sm">
+              {t('recovery_merge_read_only', {
+                defaultValue: 'This dialog is read-only while a recovery job is active.'
+              })}
+            </div>
+          ) : (
+            candidates.length > 0 && (
+              <div className="space-y-3 rounded-lg border p-3">
                 {candidates.map((candidate) => {
                   const selected = candidate.server_id === selectedSourceId
                   return (
@@ -123,18 +130,18 @@ export function RecoveryMergeDialog({ currentJob, onOpenChange, open, targetServ
                   )
                 })}
               </div>
-            </ScrollArea>
-          )
-        )}
+            )
+          )}
 
-        <div className="rounded-lg border bg-muted/30 p-3 text-muted-foreground text-sm">
-          {t('recovery_merge_warning', {
-            defaultValue:
-              'This keeps the original server record, asks the replacement agent to rebind, and continues the recovery flow from there.'
-          })}
-        </div>
+          <div className="rounded-lg border bg-muted/30 p-3 text-muted-foreground text-sm">
+            {t('recovery_merge_warning', {
+              defaultValue:
+                'This keeps the original server record, asks the replacement agent to rebind, and continues the recovery flow from there.'
+            })}
+          </div>
+        </DialogBody>
 
-        <div className="flex justify-end gap-2">
+        <DialogFooter>
           <Button onClick={() => onOpenChange(false)} variant="outline">
             {t('common:cancel', { defaultValue: 'Cancel' })}
           </Button>
@@ -154,7 +161,7 @@ export function RecoveryMergeDialog({ currentJob, onOpenChange, open, targetServ
               </>
             )}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
