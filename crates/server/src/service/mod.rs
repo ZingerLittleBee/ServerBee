@@ -24,6 +24,7 @@ pub mod recovery_job;
 pub mod recovery_lock;
 pub mod recovery_merge;
 pub mod server;
+pub mod server_tag;
 pub mod service_monitor;
 pub mod status_page;
 pub mod task_scheduler;

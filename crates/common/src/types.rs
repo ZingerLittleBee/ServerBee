@@ -172,6 +172,10 @@ pub struct ServerStatus {
     pub disk_read_bytes_per_sec: u64,
     #[serde(default)]
     pub disk_write_bytes_per_sec: u64,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub cpu_cores: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

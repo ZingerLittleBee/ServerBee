@@ -42,6 +42,8 @@ function makeServer(id: string, overrides: Partial<ServerMetrics> = {}): ServerM
     swap_total: 0,
     disk_used: 20_000_000_000,
     disk_total: 40_000_000_000,
+    disk_read_bytes_per_sec: 0,
+    disk_write_bytes_per_sec: 0,
     net_in_speed: 1024,
     net_out_speed: 2048,
     net_in_transfer: 1,

@@ -18,11 +18,12 @@ interface ServerMetrics {
   capabilities?: number
   country_code: string | null
   cpu: number
+  cpu_cores?: number | null
   cpu_name: string | null
-  disk_read_bytes_per_sec?: number
+  disk_read_bytes_per_sec: number
   disk_total: number
   disk_used: number
-  disk_write_bytes_per_sec?: number
+  disk_write_bytes_per_sec: number
   effective_capabilities?: number | null
   features?: string[]
   group_id: string | null
@@ -45,6 +46,7 @@ interface ServerMetrics {
   region: string | null
   swap_total: number
   swap_used: number
+  tags?: string[]
   tcp_conn: number
   udp_conn: number
   uptime: number
@@ -91,10 +93,13 @@ const STATIC_FIELDS = new Set([
   'swap_total',
   'disk_total',
   'cpu_name',
+  'cpu_cores',
   'os',
   'region',
   'country_code',
-  'group_id'
+  'group_id',
+  'tags',
+  'features'
 ])
 
 export function mergeServerUpdate(prev: ServerMetrics[], incoming: ServerMetrics[]): ServerMetrics[] {
@@ -104,7 +109,8 @@ export function mergeServerUpdate(prev: ServerMetrics[], incoming: ServerMetrics
     if (idx >= 0) {
       const merged = { ...updated[idx] }
       for (const [key, value] of Object.entries(server)) {
-        const isStaticDefault = STATIC_FIELDS.has(key) && (value === null || value === 0)
+        const isStaticDefault =
+          STATIC_FIELDS.has(key) && (value === null || value === 0 || (Array.isArray(value) && value.length === 0))
         if (!isStaticDefault) {
           ;(merged as Record<string, unknown>)[key] = value
         }

@@ -63,6 +63,8 @@ function makeServer(overrides: Partial<Parameters<typeof ServerCard>[0]['server'
     mem_total: 8_589_934_592,
     disk_used: 21_474_836_480,
     disk_total: 53_687_091_200,
+    disk_read_bytes_per_sec: 0,
+    disk_write_bytes_per_sec: 0,
     swap_used: 536_870_912,
     swap_total: 2_147_483_648,
     load1: 0.72,

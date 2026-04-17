@@ -7,8 +7,38 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useServerTags, useUpdateServerTags } from '@/hooks/use-server-tags'
 import { api } from '@/lib/api-client'
 import type { ServerGroup, ServerResponse, UpdateServerInput } from '@/lib/api-schema'
+
+const TAG_SPLIT_RE = /[\s,]+/
+const TAG_VALID_RE = /^[A-Za-z0-9_.-]+$/
+
+function parseTagsInput(raw: string): { tags: string[]; error: string | null } {
+  const parts = raw
+    .split(TAG_SPLIT_RE)
+    .map((t) => t.trim())
+    .filter(Boolean)
+  const seen = new Set<string>()
+  const deduped: string[] = []
+  for (const tag of parts) {
+    if (tag.length > 16) {
+      return { tags: [], error: 'tags_validation_too_long' }
+    }
+    if (!TAG_VALID_RE.test(tag)) {
+      return { tags: [], error: 'tags_validation_invalid_char' }
+    }
+    if (seen.has(tag)) {
+      continue
+    }
+    seen.add(tag)
+    deduped.push(tag)
+  }
+  if (deduped.length > 8) {
+    return { tags: [], error: 'tags_validation_too_many' }
+  }
+  return { tags: deduped.sort(), error: null }
+}
 
 interface ServerEditDialogProps {
   onClose: () => void
@@ -34,6 +64,8 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
   )
   const [trafficLimitType, setTrafficLimitType] = useState(server.traffic_limit_type ?? 'sum')
   const [billingStartDay, setBillingStartDay] = useState(server.billing_start_day?.toString() ?? '')
+  const [tagsInput, setTagsInput] = useState('')
+  const [tagsDirty, setTagsDirty] = useState(false)
 
   const { data: groups } = useQuery<ServerGroup[]>({
     queryKey: ['server-groups'],
@@ -41,6 +73,9 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
     staleTime: 60_000,
     enabled: open
   })
+
+  const { data: initialTags } = useServerTags(server.id, open)
+  const tagsMutation = useUpdateServerTags(server.id)
 
   useEffect(() => {
     if (open) {
@@ -60,6 +95,13 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
     }
   }, [open, server])
 
+  useEffect(() => {
+    if (open && initialTags) {
+      setTagsInput(initialTags.join(', '))
+      setTagsDirty(false)
+    }
+  }, [open, initialTags])
+
   const mutation = useMutation({
     mutationFn: (payload: UpdateServerInput) => api.put<ServerResponse>(`/api/servers/${server.id}`, payload),
     onSuccess: (data) => {
@@ -68,32 +110,53 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
     }
   })
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault()
-    const payload: UpdateServerInput = {
-      name,
-      weight,
-      hidden,
-      group_id: groupId || null,
-      remark: remark || null,
-      public_remark: publicRemark || null,
-      price: price ? Number.parseFloat(price) : null,
-      billing_cycle: billingCycle || null,
-      currency: currency || null,
-      expired_at: expiredAt ? `${expiredAt}T00:00:00Z` : null,
-      traffic_limit: trafficLimit ? Math.round(Number.parseFloat(trafficLimit) * 1024 ** 3) : null,
-      traffic_limit_type: trafficLimitType || null,
-      billing_start_day: billingStartDay ? Number.parseInt(billingStartDay, 10) : null
-    }
-    mutation.mutate(payload, {
-      onSuccess: () => {
-        toast.success(t('edit_success', { defaultValue: 'Server updated successfully' }))
-        onClose()
-      },
-      onError: (err) => {
-        toast.error(err instanceof Error ? err.message : t('edit_failed'))
+  const buildPayload = (): UpdateServerInput => ({
+    name,
+    weight,
+    hidden,
+    group_id: groupId || null,
+    remark: remark || null,
+    public_remark: publicRemark || null,
+    price: price ? Number.parseFloat(price) : null,
+    billing_cycle: billingCycle || null,
+    currency: currency || null,
+    expired_at: expiredAt ? `${expiredAt}T00:00:00Z` : null,
+    traffic_limit: trafficLimit ? Math.round(Number.parseFloat(trafficLimit) * 1024 ** 3) : null,
+    traffic_limit_type: trafficLimitType || null,
+    billing_start_day: billingStartDay ? Number.parseInt(billingStartDay, 10) : null
+  })
+
+  const saveTags = async (tags: string[]): Promise<boolean> => {
+    try {
+      await tagsMutation.mutateAsync(tags)
+      return true
+    } catch (err) {
+      if (initialTags) {
+        setTagsInput(initialTags.join(', '))
       }
-    })
+      toast.error(err instanceof Error ? err.message : t('tags_save_failed'))
+      return false
+    }
+  }
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    const parsed = parseTagsInput(tagsInput)
+    if (parsed.error) {
+      toast.error(t(parsed.error))
+      return
+    }
+    try {
+      await mutation.mutateAsync(buildPayload())
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('edit_failed'))
+      return
+    }
+    if (tagsDirty && !(await saveTags(parsed.tags))) {
+      return
+    }
+    toast.success(t('edit_success', { defaultValue: 'Server updated successfully' }))
+    onClose()
   }
 
   return (
@@ -186,6 +249,20 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                 type="text"
                 value={publicRemark}
               />
+            </Field>
+            <Field label={t('tags_label')}>
+              <Input
+                aria-label={t('tags_label')}
+                name="tags"
+                onChange={(e) => {
+                  setTagsInput(e.target.value)
+                  setTagsDirty(true)
+                }}
+                placeholder={t('tags_placeholder')}
+                type="text"
+                value={tagsInput}
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">{t('tags_hint')}</p>
             </Field>
           </fieldset>
 
@@ -316,8 +393,8 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
             <Button onClick={onClose} type="button" variant="outline">
               {t('common:cancel')}
             </Button>
-            <Button disabled={mutation.isPending} type="submit">
-              {mutation.isPending ? t('common:saving') : t('common:save')}
+            <Button disabled={mutation.isPending || tagsMutation.isPending} type="submit">
+              {mutation.isPending || tagsMutation.isPending ? t('common:saving') : t('common:save')}
             </Button>
           </div>
         </form>
