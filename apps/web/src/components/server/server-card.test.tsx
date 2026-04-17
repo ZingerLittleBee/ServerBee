@@ -99,6 +99,17 @@ function makeSummary(overrides: Partial<NetworkServerSummary> = {}): NetworkServ
   }
 }
 
+function findHeroLatency(textContent: string) {
+  return screen.getByText((_content, element) => {
+    return (
+      element?.tagName === 'SPAN' &&
+      element.textContent === textContent &&
+      element.className.includes('text-lg') &&
+      element.className.includes('tabular-nums')
+    )
+  })
+}
+
 describe('ServerCard', () => {
   beforeEach(() => {
     mockNetworkOverview.mockReturnValue({ data: [] })
@@ -174,7 +185,7 @@ describe('ServerCard', () => {
 
     render(<ServerCard server={makeServer()} />)
 
-    expect(screen.getByText('60ms')).toBeDefined()
+    expect(findHeroLatency('60ms')).toBeDefined()
     expect(screen.getByLabelText('common:a11y.latency_trend')).toBeDefined()
     expect(screen.queryByLabelText('common:a11y.packet_loss_trend')).toBeNull()
     expect(screen.queryByText('Shanghai Telecom')).toBeNull()
@@ -261,7 +272,7 @@ describe('ServerCard', () => {
 
     render(<ServerCard server={makeServer()} />)
 
-    expect(screen.getByText('80ms')).toBeDefined()
+    expect(findHeroLatency('80ms')).toBeDefined()
   })
 
   it('uses warning styling for latency at or above 300ms', () => {
@@ -290,7 +301,7 @@ describe('ServerCard', () => {
       </div>
     )
 
-    expect(screen.getByText('320ms').className).toContain('text-amber-600')
+    expect(findHeroLatency('320ms').className).toContain('text-amber-600')
   })
 
   it('uses failure styling when packet loss indicates probe failure', () => {
@@ -319,7 +330,7 @@ describe('ServerCard', () => {
       </div>
     )
 
-    expect(screen.getByText('-').className).toContain('text-red-600')
+    expect(findHeroLatency('—ms').className).toContain('text-red-600')
   })
 
   it('renders StatusBadge', () => {
