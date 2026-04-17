@@ -186,22 +186,23 @@ Send push notifications to iOS devices via [Bark](https://github.com/Finb/Bark).
 }
 ```
 
-### Email
+### Email (via Resend)
 
-Send email notifications via SMTP.
+Email notifications are delivered through [Resend](https://resend.com/). Two steps before use:
+
+1. Set `SERVERBEE_RESEND__API_KEY` on the server (see the [Configuration](/docs/en/configuration) page).
+2. Add and verify your sender domain at [resend.com/domains](https://resend.com/domains). The `from` address on each channel must belong to a verified domain.
+
+Channel config:
 
 ```json
 {
-  "smtp_host": "smtp.gmail.com",
-  "smtp_port": 587,
-  "username": "your-email@gmail.com",
-  "password": "your-app-password",
-  "from": "your-email@gmail.com",
-  "to": "alerts@example.com"
+  "from": "alerts@yourdomain.com",
+  "to": ["ops@example.com", "oncall@example.com"]
 }
 ```
 
-The default SMTP port is 587 (STARTTLS). The email subject follows the format `[ServerBee] {server_name} {event}`.
+`to` is an array — a single channel can deliver to multiple recipients in one API call. The subject follows the format `[ServerBee] {server_name} {event}`; the body is HTML with a plain-text fallback.
 
 ## Notification Groups
 

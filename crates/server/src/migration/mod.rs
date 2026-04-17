@@ -16,6 +16,8 @@ mod m20260329_000013_add_server_fingerprint;
 mod m20260329_000014_create_mobile_session;
 mod m20260329_000015_add_session_source;
 mod m20260329_000016_create_device_token;
+mod m20260416_000017_create_recovery_job;
+mod m20260416_000018_migrate_email_to_resend;
 
 pub struct Migrator;
 
@@ -38,6 +40,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260329_000014_create_mobile_session::Migration),
             Box::new(m20260329_000015_add_session_source::Migration),
             Box::new(m20260329_000016_create_device_token::Migration),
+            Box::new(m20260416_000017_create_recovery_job::Migration),
+            Box::new(m20260416_000018_migrate_email_to_resend::Migration),
         ]
     }
 }

@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.9] - 2026-04-16
+
+### Added
+
+- **Resend email notifications** -- Email alerts are now delivered through Resend's HTTP API. Configure once per deployment via `SERVERBEE_RESEND__API_KEY`; each channel defines `from` and a `to` array so a single channel can fan out to multiple recipients in one call. The rendered email uses an inline-styled HTML body with event-coded header colours (triggered / resolved / neutral) plus a plain-text fallback. Existing SMTP rows are migrated automatically on startup — convertable ones are rewritten to the new `{from, to:[...]}` shape, unconvertable ones are disabled and suffixed with `(needs reconfiguration)` for in-UI repair
+- **Edit flow for notification channels and groups** -- The settings page now supports editing existing notification channels (all 5 types) and notification groups. Opening Edit prefills the form, locks the channel type to prevent accidental conversion, and exposes an `Enabled` switch so rows flagged by the migration can be re-enabled after reconfiguration
+- **Email address format validation** -- Recipient inputs now reject values missing `@` or a domain dot on both the backend `parse_config` and the frontend tag-input, surfacing the error as a toast before the row is saved
+- **Agent recovery merge workflow** -- Servers flagged as a recovered identity can now be merged into their original record from the UI. The merge is atomic, preserves server identity, folds traffic and disk-I/O history together, and gates concurrent writes with a recovery lock so partially-merged state is never observable. Traffic-cache updates continue during the freeze window
+
+### Changed
+
+- **Email channel schema** -- `ChannelConfig::Email` shrinks from the 6-field SMTP layout (`smtp_host`, `smtp_port`, `username`, `password`, `from`, `to`) to `{from, to: string[]}`. Storage is migrated automatically; the settings form collapses to a `from` field plus a tag-style recipients input
+- **Auto-upgrade reclassified as default capability** -- New servers now receive the full default capability set including `CAP_UPGRADE`, via the shared `CAP_DEFAULT` constant — no more manual toggling during registration
+- **Storage-sizing guide** -- Added a dedicated storage-sizing reference page (EN + CN) with a capacity planning calculator and retention guidance
+
+### Removed
+
+- **`lettre` SMTP dependency** -- The `lettre` crate is dropped from the server binary. Outbound email is now exclusively via Resend's REST API
+
+### Fixed
+
+- **Notification config re-validated on update** -- `PUT /api/notifications/{id}` now re-parses the effective `(notify_type, config_json)` pair, so partial updates that would produce an invalid shape (e.g. changing `notify_type` without supplying a matching `config_json`, or clearing `to` on an email row) are rejected with a 422
+
 ## [0.8.8] - 2026-04-15
 
 ### Added

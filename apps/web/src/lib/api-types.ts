@@ -4,6 +4,22 @@
  */
 
 export interface paths {
+  '/api/agent/latest-version': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['latest_version']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/agent/register': {
     parameters: {
       query?: never
@@ -1161,6 +1177,38 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/servers/{target_id}/recover-merge': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['start_recovery_merge']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/{target_id}/recovery-candidates': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_candidates']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/servers/batch-capabilities': {
     parameters: {
       query?: never
@@ -1204,6 +1252,22 @@ export interface paths {
     put?: never
     post?: never
     delete: operations['cleanup_orphaned_servers']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/recovery-jobs/{job_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_recovery_job']
+    put?: never
+    post?: never
+    delete?: never
     options?: never
     head?: never
     patch?: never
@@ -2007,6 +2071,12 @@ export interface components {
     IncidentWithUpdates: components['schemas']['Incident'] & {
       updates: components['schemas']['IncidentUpdate'][]
     }
+    LatestAgentVersionResponse: {
+      error?: string | null
+      /** Format: date-time */
+      released_at?: string | null
+      version?: string | null
+    }
     ListFilesRequest: {
       path: string
     }
@@ -2187,6 +2257,42 @@ export interface components {
     ReadResponse: {
       content: string
     }
+    RecoveryCandidateResponse: {
+      name: string
+      reasons: string[]
+      /** Format: int32 */
+      score: number
+      server_id: string
+    }
+    RecoveryJobResponse: {
+      /** Format: date-time */
+      created_at: string
+      error?: string | null
+      job_id: string
+      /** Format: date-time */
+      last_heartbeat_at?: string | null
+      source_server_id: string
+      stage: components['schemas']['RecoveryJobStage']
+      /** Format: date-time */
+      started_at: string
+      status: components['schemas']['RecoveryJobStatus']
+      target_server_id: string
+      /** Format: date-time */
+      updated_at: string
+    }
+    /** @enum {string} */
+    RecoveryJobStage:
+      | 'validating'
+      | 'rebinding'
+      | 'awaiting_target_online'
+      | 'freezing_writes'
+      | 'merging_history'
+      | 'finalizing'
+      | 'succeeded'
+      | 'failed'
+      | 'unknown'
+    /** @enum {string} */
+    RecoveryJobStatus: 'running' | 'failed' | 'succeeded' | 'unknown'
     RegisterRequest: {
       fingerprint?: string
     }
@@ -2398,6 +2504,9 @@ export interface components {
       success: boolean
       /** Format: date-time */
       time: string
+    }
+    StartRecoveryRequest: {
+      source_server_id: string
     }
     StatRequest: {
       path: string
@@ -4219,6 +4328,56 @@ export interface operations {
       }
     }
   }
+  get_recovery_job: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Recovery job id */
+        job_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Recovery job details */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RecoveryJobResponse']
+        }
+      }
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+      /** @description Admin required */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+      /** @description Recovery job not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+    }
+  }
   get_rule: {
     parameters: {
       query?: never
@@ -4654,6 +4813,26 @@ export interface operations {
       }
     }
   }
+  latest_version: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Latest agent release metadata */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['LatestAgentVersionResponse']
+        }
+      }
+    }
+  }
   list_alert_events: {
     parameters: {
       query?: {
@@ -4723,6 +4902,65 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
+      }
+    }
+  }
+  list_candidates: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Original offline server id */
+        target_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Recommended recovery candidates */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RecoveryCandidateResponse'][]
+        }
+      }
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+      /** @description Admin required */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+      /** @description Target server not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+      /** @description Target must be offline and not already in a running recovery job */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
       }
     }
   }
@@ -5922,6 +6160,78 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
+      }
+    }
+  }
+  start_recovery_merge: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Original offline server id */
+        target_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['StartRecoveryRequest']
+      }
+    }
+    responses: {
+      /** @description Recovery job created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RecoveryJobResponse']
+        }
+      }
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+      /** @description Admin required */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+      /** @description Server not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+      /** @description Recovery cannot be started in the current state */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+      /** @description Invalid request */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
       }
     }
   }
