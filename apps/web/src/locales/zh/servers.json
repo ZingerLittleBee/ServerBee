@@ -1,6 +1,5 @@
 {
   "title": "服务器",
-  "card_latency": "延迟",
   "card_load": "负载",
   "card_net_total": "总流量",
   "card_network_quality": "网络质量",
