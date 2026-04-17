@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
 import { CircleDot, ExternalLink, LayoutGrid, Search, Table2, Tag, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -10,7 +10,7 @@ import { DataTableColumnHeader } from '@/components/data-table/data-table-column
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { ServerCard } from '@/components/server/server-card'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
-import { StatusBadge } from '@/components/server/status-badge'
+import { StatusDot } from '@/components/server/status-dot'
 import { UpgradeJobBadge } from '@/components/server/upgrade-job-badge'
 import {
   AlertDialog,
@@ -31,11 +31,12 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useServer } from '@/hooks/use-api'
 import { useDataTable } from '@/hooks/use-data-table'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import { useTrafficOverview } from '@/hooks/use-traffic-overview'
 import { api } from '@/lib/api-client'
 import type { ServerGroup } from '@/lib/api-schema'
 import { countCleanupCandidates } from '@/lib/orphan-server-utils'
-import { cn, countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
+import { CpuCell, DiskCell, MemoryCell, NameCell, NetworkCell, UptimeCell } from './index.cells'
 
 function UpgradeBadgeCell({ serverId }: { serverId: string }) {
   const job = useUpgradeJobsStore((state) => state.jobs.get(serverId))
@@ -90,6 +91,8 @@ function ServersListPage() {
     queryFn: () => api.get<ServerGroup[]>('/api/server-groups'),
     staleTime: 60_000
   })
+
+  const { data: trafficOverview = [] } = useTrafficOverview()
 
   const setSearch = (value: string) => navigate({ search: (prev) => ({ ...prev, q: value }) })
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -151,40 +154,16 @@ function ServersListPage() {
         meta: { className: 'w-9' }
       },
       {
-        accessorKey: 'name',
-        id: 'name',
-        header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_name')} />,
-        cell: ({ row }) => {
-          const s = row.original
-          const flag = countryCodeToFlag(s.country_code)
-          return (
-            <div className="flex min-w-0 items-center gap-1.5">
-              <Link
-                className="group/link flex min-w-0 items-center gap-1.5"
-                params={{ id: s.id }}
-                search={{ range: 'realtime' }}
-                to="/servers/$id"
-              >
-                {flag && <span className="text-xs">{flag}</span>}
-                <span className="truncate font-medium group-hover/link:underline">{s.name}</span>
-              </Link>
-              <UpgradeBadgeCell serverId={s.id} />
-            </div>
-          )
-        },
-        size: 260,
-        meta: { className: 'min-w-[200px]' }
-      },
-      {
-        id: 'status',
+        id: 'status-dot',
         accessorFn: (row) => (row.online ? 'online' : 'offline'),
-        header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_status')} />,
-        cell: ({ row }) => <StatusBadge online={row.original.online} />,
+        enableSorting: false,
+        header: () => null,
+        cell: ({ row }) => <StatusDot online={row.original.online} />,
         filterFn: arrayIncludesFilter,
         enableColumnFilter: true,
-        size: 84,
+        size: 36,
         meta: {
-          className: 'w-[84px]',
+          className: 'w-9',
           label: t('col_status'),
           variant: 'select',
           options: statusOptions,
@@ -192,10 +171,20 @@ function ServersListPage() {
         }
       },
       {
+        accessorKey: 'name',
+        id: 'name',
+        header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_name')} />,
+        cell: ({ row }) => (
+          <NameCell rightSlot={<UpgradeBadgeCell serverId={row.original.id} />} server={row.original} />
+        ),
+        size: 260,
+        meta: { className: 'min-w-[200px]' }
+      },
+      {
         accessorKey: 'cpu',
         id: 'cpu',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_cpu')} />,
-        cell: ({ row }) => <MiniBar pct={row.original.cpu} />,
+        cell: ({ row }) => <CpuCell server={row.original} />,
         size: 160,
         meta: { className: 'w-[160px]' }
       },
@@ -203,11 +192,7 @@ function ServersListPage() {
         accessorFn: (row) => (row.mem_total > 0 ? row.mem_used / row.mem_total : 0),
         id: 'memory',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_memory')} />,
-        cell: ({ row }) => {
-          const s = row.original
-          const memPct = s.mem_total > 0 ? (s.mem_used / s.mem_total) * 100 : 0
-          return <MiniBar pct={memPct} sub={formatBytes(s.mem_used)} />
-        },
+        cell: ({ row }) => <MemoryCell server={row.original} />,
         size: 160,
         meta: { className: 'w-[160px]' }
       },
@@ -215,11 +200,7 @@ function ServersListPage() {
         accessorFn: (row) => (row.disk_total > 0 ? row.disk_used / row.disk_total : 0),
         id: 'disk',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_disk')} />,
-        cell: ({ row }) => {
-          const s = row.original
-          const diskPct = s.disk_total > 0 ? (s.disk_used / s.disk_total) * 100 : 0
-          return <MiniBar pct={diskPct} sub={formatBytes(s.disk_used)} />
-        },
+        cell: ({ row }) => <DiskCell server={row.original} />,
         size: 160,
         meta: { className: 'w-[160px]' }
       },
@@ -228,13 +209,8 @@ function ServersListPage() {
         enableSorting: false,
         header: () => <span className="text-muted-foreground text-xs">{t('col_network')}</span>,
         cell: ({ row }) => {
-          const s = row.original
-          return (
-            <span className="font-mono text-muted-foreground text-xs tabular-nums">
-              <span className="inline-block min-w-[64px]">↓{formatSpeed(s.net_in_speed)}</span>
-              <span className="ml-2 inline-block min-w-[64px]">↑{formatSpeed(s.net_out_speed)}</span>
-            </span>
-          )
+          const entry = trafficOverview.find((e) => e.server_id === row.original.id)
+          return <NetworkCell entry={entry} server={row.original} />
         },
         size: 160,
         meta: { className: 'hidden lg:table-cell lg:w-[160px]' }
@@ -243,14 +219,7 @@ function ServersListPage() {
         accessorKey: 'uptime',
         id: 'uptime',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_uptime')} />,
-        cell: ({ row }) => {
-          const s = row.original
-          return (
-            <span className="font-mono text-muted-foreground text-xs tabular-nums">
-              {s.online ? formatUptime(s.uptime) : '-'}
-            </span>
-          )
-        },
+        cell: ({ row }) => <UptimeCell server={row.original} />,
         size: 100,
         meta: { className: 'hidden xl:table-cell xl:w-[100px]' }
       },
@@ -294,7 +263,7 @@ function ServersListPage() {
         meta: { className: 'w-10' }
       }
     ],
-    [t, groupMap, groupOptions, statusOptions]
+    [t, groupMap, groupOptions, statusOptions, trafficOverview]
   )
 
   const { table } = useDataTable({
@@ -461,32 +430,6 @@ function ServersListPage() {
       )}
 
       {editingId !== null && <EditWrapper onClose={() => setEditingId(null)} serverId={editingId} />}
-    </div>
-  )
-}
-
-function getBarColor(p: number): string {
-  if (p > 90) {
-    return 'bg-red-500'
-  }
-  if (p > 70) {
-    return 'bg-amber-500'
-  }
-  return 'bg-emerald-500'
-}
-
-function MiniBar({ pct, sub }: { pct: number; sub?: string }) {
-  const p = Math.min(100, Math.max(0, pct))
-  const color = getBarColor(p)
-  return (
-    <div className="min-w-[80px]">
-      <div className="flex items-center gap-2">
-        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-          <div className={cn('h-full rounded-full', color)} style={{ width: `${p}%` }} />
-        </div>
-        <span className="w-10 text-right font-mono text-xs tabular-nums">{p.toFixed(0)}%</span>
-      </div>
-      {sub && <p className="mt-0.5 text-[10px] text-muted-foreground tabular-nums">{sub}</p>}
     </div>
   )
 }

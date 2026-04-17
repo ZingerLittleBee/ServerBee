@@ -97,15 +97,23 @@ export function DashboardSwitcher({ dashboards, currentId, onSelect, isAdmin }: 
         <SelectContent>
           {dashboards.map((d) => (
             <SelectItem key={d.id} value={d.id}>
-              {d.is_default && <Star className="mr-1 inline size-3 text-amber-500" />}
-              {d.name}
+              <span className="flex items-center gap-1.5">
+                {d.is_default && <Star className="size-3 shrink-0 text-amber-500" />}
+                <span>{d.name}</span>
+              </span>
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
 
       {isAdmin && !isDefault && (
-        <Button onClick={handleSetDefault} size="sm" title={t('set_default')} variant="ghost">
+        <Button
+          aria-label={t('set_default')}
+          onClick={handleSetDefault}
+          size="icon-sm"
+          title={t('set_default')}
+          variant="ghost"
+        >
           <Star className="size-4" />
         </Button>
       )}
@@ -125,7 +133,13 @@ export function DashboardSwitcher({ dashboards, currentId, onSelect, isAdmin }: 
       )}
 
       {isAdmin && !isDefault && (
-        <Button onClick={() => setDeleteDialogOpen(true)} size="sm" variant="ghost">
+        <Button
+          aria-label={t('delete_dashboard')}
+          onClick={() => setDeleteDialogOpen(true)}
+          size="icon-sm"
+          title={t('delete_dashboard')}
+          variant="ghost"
+        >
           <TrashIcon className="size-4 text-destructive" />
         </Button>
       )}

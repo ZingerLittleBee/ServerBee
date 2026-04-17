@@ -3780,6 +3780,274 @@ async fn test_security_headers_present() {
     );
 }
 
+// ── Server tags (Task 19) ────────────────────────────────────────────────────
+
+/// Admin creates a new member user and returns a fresh logged-in member client.
+/// Uses the admin-only POST /api/users endpoint because no public registration
+/// endpoint exists in this project (mirrors the pattern from `test_member_read_only`).
+async fn register_member(base_url: &str) -> reqwest::Client {
+    let admin = http_client();
+    login_admin(&admin, base_url).await;
+
+    let username = format!("member-{}", uuid::Uuid::new_v4().simple());
+    let create_resp = admin
+        .post(format!("{}/api/users", base_url))
+        .json(&json!({
+            "username": username,
+            "password": "memberpass",
+            "role": "member"
+        }))
+        .send()
+        .await
+        .expect("admin should create member user");
+    assert_eq!(
+        create_resp.status(),
+        200,
+        "admin-created member user should succeed"
+    );
+
+    let member = http_client();
+    let login_resp = member
+        .post(format!("{}/api/auth/login", base_url))
+        .json(&json!({ "username": username, "password": "memberpass" }))
+        .send()
+        .await
+        .expect("login member failed");
+    assert_eq!(login_resp.status(), 200, "member login should succeed");
+    member
+}
+
+#[tokio::test]
+async fn unauthenticated_get_tags_returns_401() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .expect("plain http client");
+    let resp = client
+        .get(format!("{}/api/servers/unknown/tags", base_url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401);
+}
+
+#[tokio::test]
+async fn unauthenticated_put_tags_returns_401() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .expect("plain http client");
+    let resp = client
+        .put(format!("{}/api/servers/unknown/tags", base_url))
+        .json(&json!({ "tags": ["a"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401);
+}
+
+#[tokio::test]
+async fn admin_put_then_get_roundtrips() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+
+    let (server_id, _token) = register_agent(&admin, &base_url).await;
+
+    let resp = admin
+        .put(format!("{}/api/servers/{server_id}/tags", base_url))
+        .json(&json!({ "tags": ["b", "a", "b", " c "] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let data: Vec<String> = serde_json::from_value(body["data"].clone()).unwrap();
+    assert_eq!(data, vec!["a", "b", "c"]);
+
+    let resp = admin
+        .get(format!("{}/api/servers/{server_id}/tags", base_url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let data: Vec<String> = serde_json::from_value(body["data"].clone()).unwrap();
+    assert_eq!(data, vec!["a", "b", "c"]);
+}
+
+#[tokio::test]
+async fn admin_put_rejects_too_many_tags() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+    let (server_id, _token) = register_agent(&admin, &base_url).await;
+    let many: Vec<String> = (0..9).map(|i| format!("t{i}")).collect();
+    let resp = admin
+        .put(format!("{}/api/servers/{server_id}/tags", base_url))
+        .json(&json!({ "tags": many }))
+        .send()
+        .await
+        .unwrap();
+    // AppError::Validation maps to 422 UNPROCESSABLE_ENTITY per crates/server/src/error.rs.
+    assert_eq!(resp.status(), 422);
+}
+
+#[tokio::test]
+async fn admin_put_rejects_invalid_char() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+    let (server_id, _token) = register_agent(&admin, &base_url).await;
+    let resp = admin
+        .put(format!("{}/api/servers/{server_id}/tags", base_url))
+        .json(&json!({ "tags": ["has space"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 422);
+}
+
+#[tokio::test]
+async fn admin_put_rejects_too_long_tag() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+    let (server_id, _token) = register_agent(&admin, &base_url).await;
+    let seventeen = "a".repeat(17);
+    let resp = admin
+        .put(format!("{}/api/servers/{server_id}/tags", base_url))
+        .json(&json!({ "tags": [seventeen] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 422);
+}
+
+#[tokio::test]
+async fn member_get_tags_returns_200() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+    let (server_id, _token) = register_agent(&admin, &base_url).await;
+    admin
+        .put(format!("{}/api/servers/{server_id}/tags", base_url))
+        .json(&json!({ "tags": ["prod"] }))
+        .send()
+        .await
+        .unwrap();
+
+    let member = register_member(&base_url).await;
+    let resp = member
+        .get(format!("{}/api/servers/{server_id}/tags", base_url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let data: Vec<String> = serde_json::from_value(body["data"].clone()).unwrap();
+    assert_eq!(data, vec!["prod"]);
+}
+
+#[tokio::test]
+async fn member_put_tags_returns_403() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+    let (server_id, _token) = register_agent(&admin, &base_url).await;
+
+    let member = register_member(&base_url).await;
+    let resp = member
+        .put(format!("{}/api/servers/{server_id}/tags", base_url))
+        .json(&json!({ "tags": ["prod"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 403);
+}
+
+#[tokio::test]
+async fn browser_ws_full_sync_includes_tags_and_cpu_cores() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+    let (server_id, _token) = register_agent(&admin, &base_url).await;
+
+    // Seed tags via the REST endpoint.
+    let resp = admin
+        .put(format!("{}/api/servers/{server_id}/tags", base_url))
+        .json(&json!({ "tags": ["alpha", "beta"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // Acquire a raw Set-Cookie header (reqwest's cookie jar isn't directly readable).
+    let raw_client = reqwest::Client::builder()
+        .cookie_store(false)
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .unwrap();
+    let login_resp = raw_client
+        .post(format!("{}/api/auth/login", base_url))
+        .json(&json!({ "username": "admin", "password": "testpass" }))
+        .send()
+        .await
+        .unwrap();
+    let set_cookie = login_resp
+        .headers()
+        .get("set-cookie")
+        .expect("set-cookie header")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let cookie_value = set_cookie.split(';').next().unwrap().to_string();
+
+    let ws_url = base_url.replace("http://", "ws://") + "/api/ws/servers";
+    let mut request = ws_url.into_client_request().unwrap();
+    request.headers_mut().insert(
+        "Cookie",
+        HeaderValue::from_str(&cookie_value).unwrap(),
+    );
+
+    let (mut ws, _resp) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("browser ws should connect");
+
+    let msg = tokio::time::timeout(Duration::from_secs(5), ws.next())
+        .await
+        .expect("ws recv timeout")
+        .expect("ws closed")
+        .expect("ws error");
+    let text = msg.to_text().unwrap().to_string();
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+    assert_eq!(json["type"], "full_sync");
+    let servers = json["servers"].as_array().expect("servers array present");
+    let ours = servers
+        .iter()
+        .find(|s| s["id"].as_str() == Some(&server_id))
+        .expect("our server present in full_sync");
+    assert_eq!(
+        ours["tags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t.as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["alpha", "beta"],
+    );
+    assert!(
+        ours.get("cpu_cores")
+            .is_some_and(|v| v.is_null() || v.is_i64()),
+        "cpu_cores field must be present (null or integer), got {:?}",
+        ours.get("cpu_cores"),
+    );
+}
+
 #[tokio::test]
 async fn test_recovery_candidates_rejects_online_or_busy_target() {
     let (base_url, _tmp) = start_test_server().await;
