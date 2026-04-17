@@ -186,7 +186,7 @@ function ServersListPage() {
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_cpu')} />,
         cell: ({ row }) => <CpuCell server={row.original} />,
         size: 130,
-        meta: { className: 'w-[130px] align-top' }
+        meta: { className: 'w-[130px]', cellClassName: 'align-top' }
       },
       {
         accessorFn: (row) => (row.mem_total > 0 ? row.mem_used / row.mem_total : 0),
@@ -194,26 +194,26 @@ function ServersListPage() {
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_memory')} />,
         cell: ({ row }) => <MemoryCell server={row.original} />,
         size: 130,
-        meta: { className: 'w-[130px] align-top' }
+        meta: { className: 'w-[130px]', cellClassName: 'align-top' }
       },
       {
         accessorFn: (row) => (row.disk_total > 0 ? row.disk_used / row.disk_total : 0),
         id: 'disk',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_disk')} />,
         cell: ({ row }) => <DiskCell server={row.original} />,
-        size: 160,
-        meta: { className: 'w-[160px] align-top' }
+        size: 150,
+        meta: { className: 'w-[150px]', cellClassName: 'align-top' }
       },
       {
         id: 'network',
         enableSorting: false,
-        header: () => <span className="text-muted-foreground text-xs">{t('col_network')}</span>,
+        header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_network')} />,
         cell: ({ row }) => {
           const entry = trafficOverview.find((e) => e.server_id === row.original.id)
           return <NetworkCell entry={entry} server={row.original} />
         },
-        size: 160,
-        meta: { className: 'hidden lg:table-cell lg:w-[160px] lg:align-top' }
+        size: 150,
+        meta: { className: 'hidden lg:table-cell lg:w-[150px]', cellClassName: 'lg:align-top' }
       },
       {
         accessorKey: 'uptime',

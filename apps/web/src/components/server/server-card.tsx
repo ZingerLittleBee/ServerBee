@@ -275,12 +275,28 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
         />
         <CompactMetric
           className="items-center"
-          label={t('card_disk_read')}
+          label={
+            <span
+              aria-label={t('card_disk_read')}
+              className="inline-flex size-3 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-[9px] text-foreground leading-none"
+              role="img"
+            >
+              R
+            </span>
+          }
           value={formatSpeed(server.disk_read_bytes_per_sec)}
         />
         <CompactMetric
           className="items-center"
-          label={t('card_disk_write')}
+          label={
+            <span
+              aria-label={t('card_disk_write')}
+              className="inline-flex size-3 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-[9px] text-foreground leading-none"
+              role="img"
+            >
+              W
+            </span>
+          }
           value={formatSpeed(server.disk_write_bytes_per_sec)}
         />
         <CompactMetric

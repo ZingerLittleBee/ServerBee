@@ -132,8 +132,8 @@ describe('ServerCard', () => {
     render(<ServerCard server={makeServer()} />)
     expect(screen.getByText('card_net_in_speed')).toBeDefined()
     expect(screen.getByText('card_net_out_speed')).toBeDefined()
-    expect(screen.getByText('card_disk_read')).toBeDefined()
-    expect(screen.getByText('card_disk_write')).toBeDefined()
+    expect(screen.getByLabelText('card_disk_read')).toBeDefined()
+    expect(screen.getByLabelText('card_disk_write')).toBeDefined()
     expect(screen.getByText('card_load_trend')).toBeDefined()
   })
 
