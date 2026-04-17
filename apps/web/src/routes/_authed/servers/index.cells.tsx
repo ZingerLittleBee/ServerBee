@@ -141,13 +141,17 @@ export function DiskCell({ server }: { server: ServerMetrics }) {
           {formatBytes(server.disk_used)} / {formatBytes(server.disk_total)}
         </span>
       </div>
-      <div className="flex h-4 items-center gap-2 pl-5 font-mono text-[10px] text-muted-foreground tabular-nums">
-        <span className="inline-flex items-center gap-1">
-          <span className="rounded-sm bg-muted px-1 font-semibold text-foreground">R</span>
+      <div className="flex h-4 items-center gap-2 font-mono text-[10px] text-muted-foreground tabular-nums">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-foreground">
+            R
+          </span>
           {formatSpeed(server.disk_read_bytes_per_sec)}
         </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="rounded-sm bg-muted px-1 font-semibold text-foreground">W</span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-foreground">
+            W
+          </span>
           {formatSpeed(server.disk_write_bytes_per_sec)}
         </span>
       </div>
