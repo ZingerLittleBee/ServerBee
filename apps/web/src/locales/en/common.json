@@ -81,5 +81,15 @@
   "errors": {
     "operation_failed": "Operation failed",
     "failed": "Failed"
+  },
+  "table": {
+    "view_options": "View",
+    "toggle_columns": "Toggle columns",
+    "search_columns": "Search columns\u2026",
+    "no_columns_found": "No columns found.",
+    "sort_asc": "Asc",
+    "sort_desc": "Desc",
+    "sort_reset": "Reset",
+    "hide_column": "Hide"
   }
 }

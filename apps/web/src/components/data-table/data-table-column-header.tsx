@@ -2,6 +2,7 @@
 
 import type { Column } from '@tanstack/react-table'
 import { ChevronDown, ChevronsUpDown, ChevronUp, EyeOff, X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 import {
   DropdownMenu,
@@ -23,6 +24,7 @@ export function DataTableColumnHeader<TData, TValue>({
   className,
   ...props
 }: DataTableColumnHeaderProps<TData, TValue>) {
+  const { t } = useTranslation('common')
   if (!(column.getCanSort() || column.getCanHide())) {
     return <div className={cn(className)}>{label}</div>
   }
@@ -46,7 +48,7 @@ export function DataTableColumnHeader<TData, TValue>({
             <ChevronsUpDown />
           ))}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-28">
+      <DropdownMenuContent align="start" className="min-w-28">
         {column.getCanSort() && (
           <>
             <DropdownMenuCheckboxItem
@@ -55,7 +57,7 @@ export function DataTableColumnHeader<TData, TValue>({
               onClick={() => column.toggleSorting(false)}
             >
               <ChevronUp />
-              Asc
+              {t('table.sort_asc')}
             </DropdownMenuCheckboxItem>
             <DropdownMenuCheckboxItem
               checked={column.getIsSorted() === 'desc'}
@@ -63,12 +65,12 @@ export function DataTableColumnHeader<TData, TValue>({
               onClick={() => column.toggleSorting(true)}
             >
               <ChevronDown />
-              Desc
+              {t('table.sort_desc')}
             </DropdownMenuCheckboxItem>
             {column.getIsSorted() && (
               <DropdownMenuItem className="pl-2 [&_svg]:text-muted-foreground" onClick={() => column.clearSorting()}>
                 <X />
-                Reset
+                {t('table.sort_reset')}
               </DropdownMenuItem>
             )}
           </>
@@ -80,7 +82,7 @@ export function DataTableColumnHeader<TData, TValue>({
             onClick={() => column.toggleVisibility(false)}
           >
             <EyeOff />
-            Hide
+            {t('table.hide_column')}
           </DropdownMenuCheckboxItem>
         )}
       </DropdownMenuContent>
