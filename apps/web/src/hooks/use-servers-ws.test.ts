@@ -17,6 +17,8 @@ function makeServer(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
     swap_total: 4_000_000_000,
     disk_used: 100_000_000_000,
     disk_total: 500_000_000_000,
+    disk_read_bytes_per_sec: 0,
+    disk_write_bytes_per_sec: 0,
     net_in_speed: 1000,
     net_out_speed: 500,
     net_in_transfer: 10_000,
