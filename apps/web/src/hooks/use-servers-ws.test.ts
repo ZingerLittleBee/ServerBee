@@ -209,3 +209,73 @@ describe('handleWsMessage upgrade messages', () => {
     expect(job?.finished_at).not.toBeNull()
   })
 })
+
+function baseServer(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
+  return {
+    id: 'srv-1',
+    name: 'srv',
+    online: true,
+    country_code: null,
+    cpu: 0,
+    cpu_name: null,
+    cpu_cores: null,
+    disk_read_bytes_per_sec: 0,
+    disk_total: 0,
+    disk_used: 0,
+    disk_write_bytes_per_sec: 0,
+    group_id: null,
+    last_active: 0,
+    load1: 0,
+    load5: 0,
+    load15: 0,
+    mem_total: 0,
+    mem_used: 0,
+    net_in_speed: 0,
+    net_in_transfer: 0,
+    net_out_speed: 0,
+    net_out_transfer: 0,
+    os: null,
+    process_count: 0,
+    region: null,
+    swap_total: 0,
+    swap_used: 0,
+    tags: [],
+    tcp_conn: 0,
+    udp_conn: 0,
+    uptime: 0,
+    features: [],
+    ...overrides
+  }
+}
+
+describe('mergeServerUpdate static-fields guard', () => {
+  it('preserves prior tags when incoming frame carries tags: []', () => {
+    const prev = [baseServer({ tags: ['prod', 'web'] })]
+    const incoming = [baseServer({ tags: [], cpu: 42 })]
+    const result = mergeServerUpdate(prev, incoming)
+    expect(result[0].tags).toEqual(['prod', 'web'])
+    expect(result[0].cpu).toBe(42)
+  })
+
+  it('preserves prior features when incoming frame carries features: []', () => {
+    const prev = [baseServer({ features: ['docker'] })]
+    const incoming = [baseServer({ features: [], cpu: 10 })]
+    const result = mergeServerUpdate(prev, incoming)
+    expect(result[0].features).toEqual(['docker'])
+    expect(result[0].cpu).toBe(10)
+  })
+
+  it('preserves prior cpu_cores when incoming frame carries cpu_cores: null', () => {
+    const prev = [baseServer({ cpu_cores: 8 })]
+    const incoming = [baseServer({ cpu_cores: null, cpu: 5 })]
+    const result = mergeServerUpdate(prev, incoming)
+    expect(result[0].cpu_cores).toBe(8)
+  })
+
+  it('overwrites prior tags with non-empty incoming array', () => {
+    const prev = [baseServer({ tags: ['old'] })]
+    const incoming = [baseServer({ tags: ['new-a', 'new-b'] })]
+    const result = mergeServerUpdate(prev, incoming)
+    expect(result[0].tags).toEqual(['new-a', 'new-b'])
+  })
+})
