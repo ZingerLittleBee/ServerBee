@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { type ActiveThemeResponse, useActiveTheme, useSetActiveTheme } from '@/api/themes'
 import { type ColorTheme, isColorTheme, loadThemeCSS } from '@/themes'
 
 type Theme = 'dark' | 'light' | 'system'
@@ -14,13 +15,17 @@ interface ThemeProviderProps {
 }
 
 interface ThemeProviderState {
+  activeTheme: ActiveThemeResponse | null
   colorTheme: ColorTheme
+  setActiveThemeRef: (ref: string) => void
   setColorTheme: (colorTheme: ColorTheme) => void
   setTheme: (theme: Theme) => void
   theme: Theme
 }
 
 const COLOR_SCHEME_QUERY = '(prefers-color-scheme: dark)'
+const ACTIVE_THEME_CACHE_KEY = 'active-theme-cache'
+const THEME_RUNTIME_STYLE_ID = 'theme-runtime-style'
 const THEME_VALUES: Theme[] = ['dark', 'light', 'system']
 
 const ThemeProviderContext = createContext<ThemeProviderState | undefined>(undefined)
@@ -31,6 +36,99 @@ function isTheme(value: string | null): value is Theme {
   }
 
   return THEME_VALUES.includes(value as Theme)
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+
+  return Object.values(value).every((entry) => typeof entry === 'string')
+}
+
+function isActiveThemeResponse(value: unknown): value is ActiveThemeResponse {
+  if (value === null || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as Partial<ActiveThemeResponse>
+  if (typeof candidate.ref !== 'string' || candidate.theme === null || typeof candidate.theme !== 'object') {
+    return false
+  }
+
+  if (candidate.theme.kind === 'preset') {
+    return typeof candidate.theme.id === 'string'
+  }
+
+  if (candidate.theme.kind === 'custom') {
+    return (
+      typeof candidate.theme.id === 'number' &&
+      typeof candidate.theme.name === 'string' &&
+      typeof candidate.theme.updated_at === 'string' &&
+      isStringRecord(candidate.theme.vars_light) &&
+      isStringRecord(candidate.theme.vars_dark)
+    )
+  }
+
+  return false
+}
+
+function readActiveThemeCache(): ActiveThemeResponse | null {
+  return parseActiveThemeCache(localStorage.getItem(ACTIVE_THEME_CACHE_KEY))
+}
+
+function parseActiveThemeCache(value: string | null): ActiveThemeResponse | null {
+  if (value === null) {
+    return null
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (isActiveThemeResponse(parsed)) {
+      return parsed
+    }
+  } catch {
+    return null
+  }
+
+  return null
+}
+
+function removeRuntimeStyle() {
+  document.getElementById(THEME_RUNTIME_STYLE_ID)?.remove()
+}
+
+function cssVariableName(key: string) {
+  return key.startsWith('--') ? key : `--${key}`
+}
+
+function serializeThemeVars(selector: string, vars: Record<string, string>) {
+  const declarations = Object.entries(vars)
+    .map(([key, value]) => `  ${cssVariableName(key)}: ${value};`)
+    .join('\n')
+
+  return `${selector} {\n${declarations}\n}`
+}
+
+function applyCustomTheme(activeTheme: ActiveThemeResponse) {
+  if (activeTheme.theme.kind !== 'custom') {
+    return
+  }
+
+  const style = document.createElement('style')
+  style.id = THEME_RUNTIME_STYLE_ID
+  style.textContent = [
+    serializeThemeVars(':root', activeTheme.theme.vars_light),
+    serializeThemeVars('.dark', activeTheme.theme.vars_dark)
+  ].join('\n\n')
+  document.head.appendChild(style)
+}
+
+function applyActiveThemeCacheStorageChange(
+  newValue: string | null,
+  setActiveThemeState: (theme: ActiveThemeResponse | null) => void
+) {
+  setActiveThemeState(parseActiveThemeCache(newValue))
 }
 
 function getSystemTheme(): ResolvedTheme {
@@ -89,10 +187,12 @@ export function ThemeProvider({
   children,
   defaultTheme = 'system',
   storageKey = 'theme',
-  colorThemeStorageKey = 'color-theme',
+  colorThemeStorageKey: _colorThemeStorageKey = 'color-theme',
   disableTransitionOnChange = true,
   ...props
 }: ThemeProviderProps) {
+  const activeThemeQuery = useActiveTheme()
+  const { mutate: setActiveTheme } = useSetActiveTheme()
   const [theme, setThemeState] = useState<Theme>(() => {
     const storedTheme = localStorage.getItem(storageKey)
     if (isTheme(storedTheme)) {
@@ -101,14 +201,7 @@ export function ThemeProvider({
 
     return defaultTheme
   })
-
-  const [colorTheme, setColorThemeState] = useState<ColorTheme>(() => {
-    const stored = localStorage.getItem(colorThemeStorageKey)
-    if (isColorTheme(stored)) {
-      return stored
-    }
-    return 'default'
-  })
+  const [activeTheme, setActiveThemeState] = useState<ActiveThemeResponse | null>(() => readActiveThemeCache())
 
   const setTheme = useCallback(
     (nextTheme: Theme) => {
@@ -118,12 +211,18 @@ export function ThemeProvider({
     [storageKey]
   )
 
+  const setActiveThemeRef = useCallback(
+    (ref: string) => {
+      setActiveTheme(ref)
+    },
+    [setActiveTheme]
+  )
+
   const setColorTheme = useCallback(
     (nextColorTheme: ColorTheme) => {
-      localStorage.setItem(colorThemeStorageKey, nextColorTheme)
-      setColorThemeState(nextColorTheme)
+      setActiveThemeRef(`preset:${nextColorTheme}`)
     },
-    [colorThemeStorageKey]
+    [setActiveThemeRef]
   )
 
   const applyTheme = useCallback(
@@ -141,6 +240,15 @@ export function ThemeProvider({
     },
     [disableTransitionOnChange]
   )
+
+  useEffect(() => {
+    if (activeThemeQuery.data === undefined) {
+      return
+    }
+
+    setActiveThemeState(activeThemeQuery.data)
+    localStorage.setItem(ACTIVE_THEME_CACHE_KEY, JSON.stringify(activeThemeQuery.data))
+  }, [activeThemeQuery.data])
 
   // Apply light/dark theme
   useEffect(() => {
@@ -162,19 +270,46 @@ export function ThemeProvider({
     }
   }, [theme, applyTheme])
 
-  // Apply color theme
+  // Apply resolved color theme
   useEffect(() => {
     const root = document.documentElement
+    let cancelled = false
 
-    if (colorTheme === 'default') {
-      root.removeAttribute('data-theme')
-      return
+    removeRuntimeStyle()
+
+    if (activeTheme === null) {
+      return undefined
     }
 
-    loadThemeCSS(colorTheme).then(() => {
-      root.setAttribute('data-theme', colorTheme)
+    if (activeTheme.theme.kind === 'custom') {
+      root.removeAttribute('data-theme')
+      applyCustomTheme(activeTheme)
+      return undefined
+    }
+
+    const presetId = activeTheme.theme.id
+    if (presetId === 'default') {
+      root.removeAttribute('data-theme')
+      return undefined
+    }
+
+    if (!isColorTheme(presetId)) {
+      root.removeAttribute('data-theme')
+      return undefined
+    }
+
+    loadThemeCSS(presetId).then(() => {
+      if (cancelled) {
+        return
+      }
+
+      root.setAttribute('data-theme', presetId)
     })
-  }, [colorTheme])
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeTheme])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -223,12 +358,8 @@ export function ThemeProvider({
         return
       }
 
-      if (event.key === colorThemeStorageKey) {
-        if (isColorTheme(event.newValue)) {
-          setColorThemeState(event.newValue)
-          return
-        }
-        setColorThemeState('default')
+      if (event.key === ACTIVE_THEME_CACHE_KEY) {
+        applyActiveThemeCacheStorageChange(event.newValue, setActiveThemeState)
       }
     }
 
@@ -237,16 +368,26 @@ export function ThemeProvider({
     return () => {
       window.removeEventListener('storage', handleStorageChange)
     }
-  }, [defaultTheme, storageKey, colorThemeStorageKey])
+  }, [defaultTheme, storageKey])
+
+  const colorTheme = useMemo<ColorTheme>(() => {
+    if (activeTheme?.theme.kind !== 'preset') {
+      return 'default'
+    }
+
+    return isColorTheme(activeTheme.theme.id) ? activeTheme.theme.id : 'default'
+  }, [activeTheme])
 
   const value = useMemo(
     () => ({
       theme,
       setTheme,
+      activeTheme,
       colorTheme,
-      setColorTheme
+      setColorTheme,
+      setActiveThemeRef
     }),
-    [theme, setTheme, colorTheme, setColorTheme]
+    [theme, setTheme, activeTheme, colorTheme, setColorTheme, setActiveThemeRef]
   )
 
   return (
