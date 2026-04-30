@@ -279,13 +279,13 @@ async fn resolve_public_status_page_theme(
         Ok(parsed) => parsed,
         Err(_) => return default_theme(db).await,
     };
-    let resolved_ref = if !feature_enabled && matches!(parsed, ThemeRef::Custom(_)) {
-        ThemeRef::Preset("default".to_string())
-    } else {
-        parsed
-    };
+    if !feature_enabled && matches!(parsed, ThemeRef::Custom(_)) {
+        return Ok(CustomThemeService::active_theme(db, feature_enabled)
+            .await?
+            .theme);
+    }
 
-    match CustomThemeService::resolve(db, resolved_ref).await {
+    match CustomThemeService::resolve(db, parsed).await {
         Ok(response) => Ok(response.theme),
         Err(AppError::NotFound(_)) => default_theme(db).await,
         Err(err) => Err(err),
@@ -357,8 +357,26 @@ pub async fn update_status_page(
     Path(id): Path<String>,
     Json(input): Json<UpdateStatusPage>,
 ) -> Result<Json<ApiResponse<status_page::Model>>, AppError> {
+    ensure_status_page_theme_ref_allowed(&input, state.config.feature.custom_themes)?;
     let page = StatusPageService::update(&state.db, &id, input).await?;
     ok(page)
+}
+
+fn ensure_status_page_theme_ref_allowed(
+    input: &UpdateStatusPage,
+    feature_enabled: bool,
+) -> Result<(), AppError> {
+    let Some(Some(raw_ref)) = input.theme_ref.as_ref() else {
+        return Ok(());
+    };
+    let parsed = ThemeRef::parse(raw_ref)?;
+    if !feature_enabled && matches!(parsed, ThemeRef::Custom(_)) {
+        return Err(AppError::Validation(
+            "custom theme feature disabled".to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 #[utoipa::path(
@@ -384,7 +402,7 @@ pub async fn delete_status_page(
 #[cfg(test)]
 mod tests {
     use axum::body::{Body, to_bytes};
-    use axum::http::{Request, StatusCode};
+    use axum::http::{Request, StatusCode, header};
     use sea_orm::{ActiveModelTrait, ConnectionTrait, EntityTrait, Set};
     use serde_json::{Value, json};
     use tower::ServiceExt;
@@ -392,6 +410,7 @@ mod tests {
     use crate::config::AppConfig;
     use crate::entity::status_page;
     use crate::router::create_router;
+    use crate::service::auth::{AuthService, LoginParams};
     use crate::service::custom_theme::{CreateThemeInput, CustomThemeService};
     use crate::service::status_page::{CreateStatusPage, StatusPageService, UpdateStatusPage};
     use crate::service::theme_validator::{REQUIRED_VARS, VarMap};
@@ -481,6 +500,63 @@ mod tests {
             .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()));
 
         (status, body)
+    }
+
+    async fn request_json(
+        app: axum::Router,
+        method: axum::http::Method,
+        uri: &str,
+        cookie: Option<&str>,
+        body: Option<Value>,
+    ) -> (StatusCode, Value) {
+        let mut builder = Request::builder().method(method).uri(uri);
+        if let Some(cookie) = cookie {
+            builder = builder.header(header::COOKIE, cookie);
+        }
+
+        let request_body = if let Some(value) = body {
+            builder = builder.header(header::CONTENT_TYPE, "application/json");
+            Body::from(serde_json::to_vec(&value).expect("body should serialize"))
+        } else {
+            Body::empty()
+        };
+        let response = app
+            .oneshot(builder.body(request_body).expect("request should build"))
+            .await
+            .expect("router should respond");
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body should be readable");
+        let body = if bytes.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_slice(&bytes)
+                .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()))
+        };
+
+        (status, body)
+    }
+
+    async fn session_cookie(db: &DatabaseConnection, username: &str) -> String {
+        AuthService::create_user(db, username, "password123", "admin")
+            .await
+            .expect("admin user should be created");
+        let (session, _) = AuthService::login(
+            db,
+            LoginParams {
+                username,
+                password: "password123",
+                totp_code: None,
+                ip: "127.0.0.1",
+                user_agent: "status-page-router-test",
+                session_ttl: 3600,
+            },
+        )
+        .await
+        .expect("login should create a session");
+
+        format!("session_token={}", session.token)
     }
 
     async fn set_status_page_theme_ref_direct(
@@ -584,7 +660,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn public_status_page_coerces_custom_theme_to_default_when_feature_is_disabled() {
+    async fn public_status_page_follows_global_theme_for_custom_page_ref_when_feature_is_disabled()
+    {
         let (db, _tmp) = setup_test_db().await;
         let page = StatusPageService::create(&db, create_page_input("disabled-feature"))
             .await
@@ -595,6 +672,9 @@ mod tests {
         StatusPageService::update(&db, &page.id, input)
             .await
             .expect("status page theme ref should update");
+        CustomThemeService::set_active_theme(&db, "preset:nord", true)
+            .await
+            .expect("active preset should update");
         let mut config = AppConfig::default();
         config.feature.custom_themes = false;
         let app = build_app(db, config).await;
@@ -606,8 +686,54 @@ mod tests {
             body["data"]["theme"],
             json!({
                 "kind": "preset",
-                "id": "default",
+                "id": "nord",
             })
         );
+    }
+
+    #[tokio::test]
+    async fn disabled_custom_themes_reject_custom_status_page_update_but_allow_null_and_preset() {
+        let (db, _tmp) = setup_test_db().await;
+        let cookie = session_cookie(&db, "status_page_disabled_admin").await;
+        let page = StatusPageService::create(&db, create_page_input("disabled-update"))
+            .await
+            .expect("status page should be created");
+        let theme_id = create_theme(&db, "Disabled write").await;
+        let mut config = AppConfig::default();
+        config.feature.custom_themes = false;
+        let app = build_app(db, config).await;
+
+        let (custom_status, custom_body) = request_json(
+            app.clone(),
+            axum::http::Method::PUT,
+            &format!("/api/status-pages/{}", page.id),
+            Some(&cookie),
+            Some(json!({ "theme_ref": format!("custom:{theme_id}") })),
+        )
+        .await;
+        let (preset_status, _) = request_json(
+            app.clone(),
+            axum::http::Method::PUT,
+            &format!("/api/status-pages/{}", page.id),
+            Some(&cookie),
+            Some(json!({ "theme_ref": "preset:nord" })),
+        )
+        .await;
+        let (null_status, _) = request_json(
+            app,
+            axum::http::Method::PUT,
+            &format!("/api/status-pages/{}", page.id),
+            Some(&cookie),
+            Some(json!({ "theme_ref": null })),
+        )
+        .await;
+
+        assert_eq!(custom_status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            custom_body["error"]["message"],
+            "Validation error: custom theme feature disabled"
+        );
+        assert_eq!(preset_status, StatusCode::OK);
+        assert_eq!(null_status, StatusCode::OK);
     }
 }

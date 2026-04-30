@@ -135,21 +135,7 @@ export interface UptimeDailyEntry {
   total_minutes: number
 }
 
-export type ThemeVars = Record<string, string>
-
-export type ThemeResolved =
-  | {
-      id: string
-      kind: 'preset'
-    }
-  | {
-      id: number
-      kind: 'custom'
-      name: string
-      updated_at: string
-      vars_dark: ThemeVars
-      vars_light: ThemeVars
-    }
+export type ThemeResolved = S['ThemeResolved']
 
 // Public status page (slug-based)
 export interface PublicStatusPageData {
