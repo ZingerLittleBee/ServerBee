@@ -170,7 +170,7 @@ impl CustomThemeService {
         Self::create(
             db,
             CreateThemeInput {
-                name: format!("{} (copy)", source.name),
+                name: duplicate_theme_name(&source.name),
                 description: source.description,
                 based_on: source.based_on,
                 vars_light: source.vars_light,
@@ -375,6 +375,13 @@ fn normalize_based_on(based_on: Option<String>) -> Result<Option<String>, AppErr
     }
 }
 
+fn duplicate_theme_name(name: &str) -> String {
+    const COPY_SUFFIX: &str = " (copy)";
+    let max_base_len = MAX_THEME_NAME_LEN.saturating_sub(COPY_SUFFIX.chars().count());
+    let base = name.chars().take(max_base_len).collect::<String>();
+    format!("{base}{COPY_SUFFIX}")
+}
+
 async fn list_references_in_connection<C>(
     db: &C,
     custom_id: i32,
@@ -459,6 +466,54 @@ mod tests {
         }
     }
 
+    async fn insert_status_page_with_theme_ref(
+        db: &DatabaseConnection,
+        id: &str,
+        theme_ref: Option<String>,
+    ) -> Result<status_page::Model, DbErr> {
+        let now = Utc::now();
+        status_page::ActiveModel {
+            id: Set(id.to_string()),
+            title: Set("Status".to_string()),
+            slug: Set(id.to_string()),
+            description: Set(None),
+            server_ids_json: Set("[]".to_string()),
+            group_by_server_group: Set(true),
+            show_values: Set(true),
+            custom_css: Set(None),
+            enabled: Set(true),
+            uptime_yellow_threshold: Set(100.0),
+            uptime_red_threshold: Set(95.0),
+            theme_ref: Set(theme_ref),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(db)
+        .await
+    }
+
+    async fn update_status_page_theme_ref(
+        db: &DatabaseConnection,
+        id: &str,
+        theme_ref: Option<String>,
+    ) -> Result<status_page::Model, DbErr> {
+        let page = status_page::Entity::find_by_id(id)
+            .one(db)
+            .await?
+            .expect("status page should exist");
+        let mut active: status_page::ActiveModel = page.into();
+        active.theme_ref = Set(theme_ref);
+        active.update(db).await
+    }
+
+    fn assert_db_err_contains(result: Result<impl std::fmt::Debug, DbErr>, needle: &str) {
+        let err = result.expect_err("operation should fail");
+        assert!(
+            err.to_string().contains(needle),
+            "expected DB error to contain {needle}, got {err}"
+        );
+    }
+
     #[tokio::test]
     async fn active_theme_falls_back_to_default_for_dangling_custom_ref() {
         let (db, _tmp) = setup_test_db().await;
@@ -475,6 +530,39 @@ mod tests {
         let response = CustomThemeService::active_theme(&db, true)
             .await
             .expect("dangling stored custom ref should fall back");
+
+        assert_eq!(response.r#ref, DEFAULT_REF);
+        assert!(matches!(
+            response.theme,
+            ThemeResolved::Preset { ref id } if id == "default"
+        ));
+    }
+
+    #[tokio::test]
+    async fn active_theme_falls_back_to_default_when_config_missing() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let response = CustomThemeService::active_theme(&db, true)
+            .await
+            .expect("missing config should fall back");
+
+        assert_eq!(response.r#ref, DEFAULT_REF);
+        assert!(matches!(
+            response.theme,
+            ThemeResolved::Preset { ref id } if id == "default"
+        ));
+    }
+
+    #[tokio::test]
+    async fn active_theme_falls_back_to_default_for_malformed_stored_ref() {
+        let (db, _tmp) = setup_test_db().await;
+        ConfigService::set(&db, ACTIVE_THEME_KEY, "not-a-theme-ref")
+            .await
+            .expect("malformed legacy config should be stored");
+
+        let response = CustomThemeService::active_theme(&db, true)
+            .await
+            .expect("malformed stored ref should fall back");
 
         assert_eq!(response.r#ref, DEFAULT_REF);
         assert!(matches!(
@@ -557,6 +645,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn duplicate_truncates_max_length_name_before_copy_suffix() {
+        let (db, _tmp) = setup_test_db().await;
+        let source = CustomThemeService::create(&db, create_input(&"x".repeat(120)), "user-1")
+            .await
+            .expect("max length theme should be created");
+
+        let copy = CustomThemeService::duplicate(&db, source.id, "user-1")
+            .await
+            .expect("duplicate should fit max name length");
+
+        assert_eq!(copy.name.chars().count(), 120);
+        assert!(copy.name.ends_with(" (copy)"));
+    }
+
+    #[tokio::test]
     async fn delete_rejects_in_use_active_theme() {
         let (db, _tmp) = setup_test_db().await;
         let theme = CustomThemeService::create(&db, create_input("Ocean"), "user-1")
@@ -581,26 +684,13 @@ mod tests {
         let theme = CustomThemeService::create(&db, create_input("Ocean"), "user-1")
             .await
             .expect("valid theme should be created");
-        let now = Utc::now();
-        let page = status_page::ActiveModel {
-            id: Set("status-page-1".to_string()),
-            title: Set("Status".to_string()),
-            slug: Set("status".to_string()),
-            description: Set(None),
-            server_ids_json: Set("[]".to_string()),
-            group_by_server_group: Set(true),
-            show_values: Set(true),
-            custom_css: Set(None),
-            enabled: Set(true),
-            uptime_yellow_threshold: Set(100.0),
-            uptime_red_threshold: Set(95.0),
-            theme_ref: Set(Some(format!("custom:{}", theme.id))),
-            created_at: Set(now),
-            updated_at: Set(now),
-        };
-        page.insert(&db)
-            .await
-            .expect("status page should be inserted");
+        insert_status_page_with_theme_ref(
+            &db,
+            "status-page-1",
+            Some(format!("custom:{}", theme.id)),
+        )
+        .await
+        .expect("status page should be inserted");
 
         let err = CustomThemeService::delete(&db, theme.id)
             .await
@@ -612,6 +702,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn delete_trigger_blocks_active_theme_ref_when_service_precheck_is_bypassed() {
+        let (db, _tmp) = setup_test_db().await;
+        let theme = CustomThemeService::create(&db, create_input("Ocean"), "user-1")
+            .await
+            .expect("valid theme should be created");
+        ConfigService::set(&db, ACTIVE_THEME_KEY, &format!("custom:{}", theme.id))
+            .await
+            .expect("config should be set");
+
+        let result = custom_theme::Entity::delete_by_id(theme.id).exec(&db).await;
+
+        assert_db_err_contains(result, "custom_theme_ref_in_use");
+    }
+
+    #[tokio::test]
+    async fn delete_trigger_blocks_status_page_ref_when_service_precheck_is_bypassed() {
+        let (db, _tmp) = setup_test_db().await;
+        let theme = CustomThemeService::create(&db, create_input("Ocean"), "user-1")
+            .await
+            .expect("valid theme should be created");
+        insert_status_page_with_theme_ref(
+            &db,
+            "status-page-1",
+            Some(format!("custom:{}", theme.id)),
+        )
+        .await
+        .expect("status page should be inserted");
+
+        let result = custom_theme::Entity::delete_by_id(theme.id).exec(&db).await;
+
+        assert_db_err_contains(result, "custom_theme_ref_in_use");
+    }
+
+    #[tokio::test]
     async fn config_trigger_blocks_dangling_active_custom_ref() {
         let (db, _tmp) = setup_test_db().await;
 
@@ -620,6 +744,31 @@ mod tests {
             .expect_err("dangling active theme ref should be blocked");
 
         assert!(matches!(err, AppError::Internal(_)));
+    }
+
+    #[tokio::test]
+    async fn status_page_insert_trigger_blocks_dangling_custom_ref() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let result =
+            insert_status_page_with_theme_ref(&db, "status-page-1", Some("custom:999".to_string()))
+                .await;
+
+        assert_db_err_contains(result, "custom_theme_ref_missing");
+    }
+
+    #[tokio::test]
+    async fn status_page_update_trigger_blocks_dangling_custom_ref() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_status_page_with_theme_ref(&db, "status-page-1", None)
+            .await
+            .expect("status page should be inserted");
+
+        let result =
+            update_status_page_theme_ref(&db, "status-page-1", Some("custom:999".to_string()))
+                .await;
+
+        assert_db_err_contains(result, "custom_theme_ref_missing");
     }
 
     #[tokio::test]
