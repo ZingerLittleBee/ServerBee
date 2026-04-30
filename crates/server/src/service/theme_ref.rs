@@ -137,6 +137,10 @@ pub async fn list_references(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
+    use sea_orm::{ActiveModelTrait, Set};
+
+    use crate::entity::status_page;
     use crate::test_utils::setup_test_db;
 
     #[test]
@@ -259,5 +263,101 @@ mod tests {
         assert!(
             matches!(err, AppError::Validation(message) if message == "unknown preset: nonsense")
         );
+    }
+
+    #[tokio::test]
+    async fn validate_theme_ref_rejects_directly_constructed_zero_custom_id() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let err = validate_theme_ref(&db, &ThemeRef::Custom(0))
+            .await
+            .expect_err("zero custom id should fail validation");
+
+        assert!(matches!(err, AppError::Validation(message) if message == "invalid custom id: 0"));
+    }
+
+    #[tokio::test]
+    async fn validate_theme_ref_rejects_directly_constructed_negative_custom_id() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let err = validate_theme_ref(&db, &ThemeRef::Custom(-1))
+            .await
+            .expect_err("negative custom id should fail validation");
+
+        assert!(matches!(err, AppError::Validation(message) if message == "invalid custom id: -1"));
+    }
+
+    #[tokio::test]
+    async fn list_references_rejects_zero_custom_id() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let err = list_references(&db, 0)
+            .await
+            .expect_err("zero custom id should fail");
+
+        assert!(matches!(err, AppError::Validation(message) if message == "invalid custom id: 0"));
+    }
+
+    #[tokio::test]
+    async fn list_references_rejects_negative_custom_id() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let err = list_references(&db, -1)
+            .await
+            .expect_err("negative custom id should fail");
+
+        assert!(matches!(err, AppError::Validation(message) if message == "invalid custom id: -1"));
+    }
+
+    #[tokio::test]
+    async fn list_references_orders_status_pages_by_title_then_id() {
+        let (db, _tmp) = setup_test_db().await;
+
+        insert_status_page(&db, "page-zulu", "Zulu", "custom:42").await;
+        insert_status_page(&db, "page-alpha-b", "Alpha", "custom:42").await;
+        insert_status_page(&db, "page-alpha-a", "Alpha", "custom:42").await;
+        insert_status_page(&db, "page-other", "Beta", "custom:43").await;
+
+        let refs = list_references(&db, 42)
+            .await
+            .expect("references should load");
+
+        let ordered_ids: Vec<String> = refs.status_pages.into_iter().map(|r| r.id).collect();
+        assert_eq!(
+            ordered_ids,
+            vec![
+                "page-alpha-a".to_string(),
+                "page-alpha-b".to_string(),
+                "page-zulu".to_string(),
+            ]
+        );
+    }
+
+    async fn insert_status_page(
+        db: &sea_orm::DatabaseConnection,
+        id: &str,
+        title: &str,
+        theme_ref: &str,
+    ) {
+        let now = Utc::now();
+        status_page::ActiveModel {
+            id: Set(id.to_string()),
+            title: Set(title.to_string()),
+            slug: Set(id.to_string()),
+            description: Set(None),
+            server_ids_json: Set("[]".to_string()),
+            group_by_server_group: Set(false),
+            show_values: Set(false),
+            custom_css: Set(None),
+            enabled: Set(true),
+            uptime_yellow_threshold: Set(99.0),
+            uptime_red_threshold: Set(95.0),
+            theme_ref: Set(Some(theme_ref.to_string())),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(db)
+        .await
+        .expect("status page insert should succeed");
     }
 }
