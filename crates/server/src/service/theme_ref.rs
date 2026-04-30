@@ -25,7 +25,7 @@ pub enum ThemeRef {
 impl ThemeRef {
     pub fn parse(s: &str) -> Result<Self, AppError> {
         if let Some(id) = s.strip_prefix("preset:") {
-            if PRESET_IDS.contains(&id) {
+            if is_preset_id(id) {
                 return Ok(Self::Preset(id.to_string()));
             }
 
@@ -67,7 +67,7 @@ fn parse_custom_id(rest: &str) -> Result<i32, AppError> {
 pub async fn validate_theme_ref(db: &DatabaseConnection, r: &ThemeRef) -> Result<(), AppError> {
     match r {
         ThemeRef::Preset(id) => {
-            if PRESET_IDS.contains(&id.as_str()) {
+            if is_preset_id(id) {
                 Ok(())
             } else {
                 Err(AppError::Validation(format!("unknown preset: {id}")))
@@ -89,6 +89,10 @@ pub async fn validate_theme_ref(db: &DatabaseConnection, r: &ThemeRef) -> Result
             }
         }
     }
+}
+
+pub fn is_preset_id(id: &str) -> bool {
+    PRESET_IDS.contains(&id)
 }
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]

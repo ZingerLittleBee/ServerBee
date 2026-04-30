@@ -1,8 +1,12 @@
 use chrono::{DateTime, Utc};
-use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, QueryOrder, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder, Set, TransactionTrait,
+};
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
-use crate::entity::custom_theme;
+use crate::entity::{config, custom_theme, status_page};
 use crate::error::AppError;
 use crate::service::config::ConfigService;
 use crate::service::theme_ref::{self, ThemeRef};
@@ -10,6 +14,7 @@ use crate::service::theme_validator::{self, VarMap};
 
 const ACTIVE_THEME_KEY: &str = "active_admin_theme";
 const DEFAULT_REF: &str = "preset:default";
+const MAX_THEME_NAME_LEN: usize = 120;
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ThemeSummary {
@@ -104,6 +109,8 @@ impl CustomThemeService {
         input: CreateThemeInput,
         user_id: &str,
     ) -> Result<Theme, AppError> {
+        let name = normalize_theme_name(input.name)?;
+        let based_on = normalize_based_on(input.based_on)?;
         theme_validator::validate_var_map(&input.vars_light)?;
         theme_validator::validate_var_map(&input.vars_dark)?;
 
@@ -112,9 +119,9 @@ impl CustomThemeService {
         let now = Utc::now();
         let model = custom_theme::ActiveModel {
             id: sea_orm::NotSet,
-            name: Set(input.name),
+            name: Set(name),
             description: Set(input.description),
-            based_on: Set(input.based_on),
+            based_on: Set(based_on),
             vars_light: Set(vars_light),
             vars_dark: Set(vars_dark),
             created_by: Set(user_id.to_string()),
@@ -132,6 +139,8 @@ impl CustomThemeService {
         id: i32,
         input: UpdateThemeInput,
     ) -> Result<Theme, AppError> {
+        let name = normalize_theme_name(input.name)?;
+        let based_on = normalize_based_on(input.based_on)?;
         theme_validator::validate_var_map(&input.vars_light)?;
         theme_validator::validate_var_map(&input.vars_dark)?;
 
@@ -141,9 +150,9 @@ impl CustomThemeService {
             .ok_or_else(|| AppError::NotFound(format!("theme {id}")))?;
 
         let mut active: custom_theme::ActiveModel = model.into();
-        active.name = Set(input.name);
+        active.name = Set(name);
         active.description = Set(input.description);
-        active.based_on = Set(input.based_on);
+        active.based_on = Set(based_on);
         active.vars_light = Set(encode_vars(&input.vars_light)?);
         active.vars_dark = Set(encode_vars(&input.vars_dark)?);
         active.updated_at = Set(Utc::now());
@@ -173,18 +182,20 @@ impl CustomThemeService {
     }
 
     pub async fn delete(db: &DatabaseConnection, id: i32) -> Result<(), AppError> {
-        let references = theme_ref::list_references(db, id).await?;
+        let txn = db.begin().await?;
+        let references = list_references_in_connection(&txn, id).await?;
         if references.admin || !references.status_pages.is_empty() {
             return Err(AppError::Conflict(
                 "Theme is in use by admin or one or more status pages; unbind it first.".into(),
             ));
         }
 
-        let result = custom_theme::Entity::delete_by_id(id).exec(db).await?;
+        let result = custom_theme::Entity::delete_by_id(id).exec(&txn).await?;
         if result.rows_affected == 0 {
             return Err(AppError::NotFound(format!("theme {id}")));
         }
 
+        txn.commit().await?;
         Ok(())
     }
 
@@ -206,7 +217,16 @@ impl CustomThemeService {
             }
         };
 
-        Self::resolve(db, theme_ref).await
+        match Self::resolve(db, theme_ref.clone()).await {
+            Ok(response) => Ok(response),
+            Err(AppError::NotFound(message)) if matches!(theme_ref, ThemeRef::Custom(_)) => {
+                warn!(
+                    "Stored active custom theme ref is dangling, falling back to default: {message}"
+                );
+                Self::resolve(db, default_theme_ref()).await
+            }
+            Err(err) => Err(err),
+        }
     }
 
     pub async fn set_active_theme(
@@ -277,6 +297,187 @@ fn decode_vars(raw: &str) -> Result<VarMap, AppError> {
         .map_err(|e| AppError::Internal(format!("theme JSON decode error: {e}")))
 }
 
+fn normalize_theme_name(name: String) -> Result<String, AppError> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err(AppError::Validation("theme name cannot be empty".into()));
+    }
+    if name.chars().count() > MAX_THEME_NAME_LEN {
+        return Err(AppError::Validation(format!(
+            "theme name cannot exceed {MAX_THEME_NAME_LEN} characters"
+        )));
+    }
+
+    Ok(name)
+}
+
+fn normalize_based_on(based_on: Option<String>) -> Result<Option<String>, AppError> {
+    let Some(id) = based_on
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty())
+    else {
+        return Ok(None);
+    };
+
+    if theme_ref::is_preset_id(&id) {
+        Ok(Some(id))
+    } else {
+        Err(AppError::Validation(format!("unknown preset: {id}")))
+    }
+}
+
+async fn list_references_in_connection<C>(
+    db: &C,
+    custom_id: i32,
+) -> Result<theme_ref::ThemeReferences, AppError>
+where
+    C: ConnectionTrait,
+{
+    if custom_id <= 0 {
+        return Err(AppError::Validation(format!(
+            "invalid custom id: {custom_id}"
+        )));
+    }
+
+    let urn = ThemeRef::Custom(custom_id).to_urn();
+    let active_admin_theme = config::Entity::find_by_id(ACTIVE_THEME_KEY)
+        .one(db)
+        .await?
+        .map(|m| m.value);
+    let status_pages = status_page::Entity::find()
+        .filter(status_page::Column::ThemeRef.eq(urn.clone()))
+        .order_by_asc(status_page::Column::Title)
+        .order_by_asc(status_page::Column::Id)
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|m| theme_ref::StatusPageRef {
+            id: m.id,
+            name: m.title,
+        })
+        .collect();
+
+    Ok(theme_ref::ThemeReferences {
+        admin: active_admin_theme.as_deref() == Some(urn.as_str()),
+        status_pages,
+    })
+}
+
 fn default_theme_ref() -> ThemeRef {
     ThemeRef::Preset(DEFAULT_REF.trim_start_matches("preset:").to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::service::theme_validator::REQUIRED_VARS;
+    use crate::test_utils::setup_test_db;
+
+    use super::*;
+
+    fn valid_vars() -> VarMap {
+        REQUIRED_VARS
+            .iter()
+            .map(|key| ((*key).to_string(), "oklch(0.5 0.1 180)".to_string()))
+            .collect()
+    }
+
+    fn create_input(name: &str) -> CreateThemeInput {
+        CreateThemeInput {
+            name: name.to_string(),
+            description: None,
+            based_on: Some("default".to_string()),
+            vars_light: valid_vars(),
+            vars_dark: valid_vars(),
+        }
+    }
+
+    fn validation_message(result: Result<Theme, AppError>) -> String {
+        match result {
+            Err(AppError::Validation(message)) => message,
+            other => panic!("expected validation error, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn active_theme_falls_back_to_default_for_dangling_custom_ref() {
+        let (db, _tmp) = setup_test_db().await;
+        ConfigService::set(&db, ACTIVE_THEME_KEY, "custom:999")
+            .await
+            .expect("config should be set");
+
+        let response = CustomThemeService::active_theme(&db, true)
+            .await
+            .expect("dangling stored custom ref should fall back");
+
+        assert_eq!(response.r#ref, DEFAULT_REF);
+        assert!(matches!(
+            response.theme,
+            ThemeResolved::Preset { ref id } if id == "default"
+        ));
+    }
+
+    #[tokio::test]
+    async fn create_rejects_whitespace_only_name() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let message = validation_message(
+            CustomThemeService::create(&db, create_input("   "), "user-1").await,
+        );
+
+        assert_eq!(message, "theme name cannot be empty");
+    }
+
+    #[tokio::test]
+    async fn create_trims_valid_name_before_storing() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let theme = CustomThemeService::create(&db, create_input("  Ocean  "), "user-1")
+            .await
+            .expect("valid theme should be created");
+
+        assert_eq!(theme.name, "Ocean");
+    }
+
+    #[tokio::test]
+    async fn create_rejects_unknown_based_on() {
+        let (db, _tmp) = setup_test_db().await;
+        let mut input = create_input("Ocean");
+        input.based_on = Some("not-real".to_string());
+
+        let message = validation_message(CustomThemeService::create(&db, input, "user-1").await);
+
+        assert_eq!(message, "unknown preset: not-real");
+    }
+
+    #[tokio::test]
+    async fn create_treats_blank_based_on_as_none() {
+        let (db, _tmp) = setup_test_db().await;
+        let mut input = create_input("Ocean");
+        input.based_on = Some("   ".to_string());
+
+        let theme = CustomThemeService::create(&db, input, "user-1")
+            .await
+            .expect("blank based_on should be normalized");
+
+        assert_eq!(theme.based_on, None);
+    }
+
+    #[tokio::test]
+    async fn delete_rejects_in_use_active_theme() {
+        let (db, _tmp) = setup_test_db().await;
+        let theme = CustomThemeService::create(&db, create_input("Ocean"), "user-1")
+            .await
+            .expect("valid theme should be created");
+        ConfigService::set(&db, ACTIVE_THEME_KEY, &format!("custom:{}", theme.id))
+            .await
+            .expect("config should be set");
+
+        let err = CustomThemeService::delete(&db, theme.id)
+            .await
+            .expect_err("active theme should not be deleted");
+
+        assert!(
+            matches!(err, AppError::Conflict(message) if message == "Theme is in use by admin or one or more status pages; unbind it first.")
+        );
+    }
 }
