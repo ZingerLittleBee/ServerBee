@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    QueryOrder, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
+    QueryFilter, QueryOrder, Set, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use tracing::warn;
@@ -190,7 +190,10 @@ impl CustomThemeService {
             ));
         }
 
-        let result = custom_theme::Entity::delete_by_id(id).exec(&txn).await?;
+        let result = custom_theme::Entity::delete_by_id(id)
+            .exec(&txn)
+            .await
+            .map_err(map_theme_ref_integrity_error)?;
         if result.rows_affected == 0 {
             return Err(AppError::NotFound(format!("theme {id}")));
         }
@@ -243,7 +246,7 @@ impl CustomThemeService {
 
         theme_ref::validate_theme_ref(db, &parsed).await?;
         let canonical = parsed.to_urn();
-        ConfigService::set(db, ACTIVE_THEME_KEY, &canonical).await?;
+        set_config_value(db, ACTIVE_THEME_KEY, &canonical).await?;
 
         Self::resolve(db, parsed).await
     }
@@ -295,6 +298,52 @@ fn encode_vars(vars: &VarMap) -> Result<String, AppError> {
 fn decode_vars(raw: &str) -> Result<VarMap, AppError> {
     serde_json::from_str(raw)
         .map_err(|e| AppError::Internal(format!("theme JSON decode error: {e}")))
+}
+
+async fn set_config_value<C>(db: &C, key: &str, value: &str) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let existing = config::Entity::find_by_id(key)
+        .one(db)
+        .await
+        .map_err(map_theme_ref_integrity_error)?;
+
+    match existing {
+        Some(model) => {
+            let mut active: config::ActiveModel = model.into();
+            active.value = Set(value.to_string());
+            active
+                .update(db)
+                .await
+                .map_err(map_theme_ref_integrity_error)?;
+        }
+        None => {
+            let new_config = config::ActiveModel {
+                key: Set(key.to_string()),
+                value: Set(value.to_string()),
+            };
+            new_config
+                .insert(db)
+                .await
+                .map_err(map_theme_ref_integrity_error)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn map_theme_ref_integrity_error(err: DbErr) -> AppError {
+    let message = err.to_string();
+    if message.contains("custom_theme_ref_in_use") {
+        AppError::Conflict(
+            "Theme is in use by admin or one or more status pages; unbind it first.".into(),
+        )
+    } else if message.contains("custom_theme_ref_missing") {
+        AppError::Validation("custom theme reference does not exist".into())
+    } else {
+        AppError::from(err)
+    }
 }
 
 fn normalize_theme_name(name: String) -> Result<String, AppError> {
@@ -369,6 +418,8 @@ fn default_theme_ref() -> ThemeRef {
 
 #[cfg(test)]
 mod tests {
+    use sea_orm::{ActiveModelTrait, ConnectionTrait, Set};
+
     use crate::service::theme_validator::REQUIRED_VARS;
     use crate::test_utils::setup_test_db;
 
@@ -398,9 +449,25 @@ mod tests {
         }
     }
 
+    fn update_input(name: &str) -> UpdateThemeInput {
+        UpdateThemeInput {
+            name: name.to_string(),
+            description: None,
+            based_on: Some("default".to_string()),
+            vars_light: valid_vars(),
+            vars_dark: valid_vars(),
+        }
+    }
+
     #[tokio::test]
     async fn active_theme_falls_back_to_default_for_dangling_custom_ref() {
         let (db, _tmp) = setup_test_db().await;
+        db.execute_unprepared("DROP TRIGGER IF EXISTS trg_custom_theme_config_insert_ref_exists")
+            .await
+            .expect("config insert trigger should be dropped");
+        db.execute_unprepared("DROP TRIGGER IF EXISTS trg_custom_theme_config_update_ref_exists")
+            .await
+            .expect("config update trigger should be dropped");
         ConfigService::set(&db, ACTIVE_THEME_KEY, "custom:999")
             .await
             .expect("config should be set");
@@ -414,6 +481,33 @@ mod tests {
             response.theme,
             ThemeResolved::Preset { ref id } if id == "default"
         ));
+    }
+
+    #[tokio::test]
+    async fn update_rejects_blank_name() {
+        let (db, _tmp) = setup_test_db().await;
+        let theme = CustomThemeService::create(&db, create_input("Ocean"), "user-1")
+            .await
+            .expect("valid theme should be created");
+
+        let message =
+            validation_message(CustomThemeService::update(&db, theme.id, update_input(" ")).await);
+
+        assert_eq!(message, "theme name cannot be empty");
+    }
+
+    #[tokio::test]
+    async fn update_rejects_overlong_name() {
+        let (db, _tmp) = setup_test_db().await;
+        let theme = CustomThemeService::create(&db, create_input("Ocean"), "user-1")
+            .await
+            .expect("valid theme should be created");
+
+        let message = validation_message(
+            CustomThemeService::update(&db, theme.id, update_input(&"x".repeat(121))).await,
+        );
+
+        assert_eq!(message, "theme name cannot exceed 120 characters");
     }
 
     #[tokio::test]
@@ -478,6 +572,66 @@ mod tests {
 
         assert!(
             matches!(err, AppError::Conflict(message) if message == "Theme is in use by admin or one or more status pages; unbind it first.")
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_rejects_in_use_status_page_theme() {
+        let (db, _tmp) = setup_test_db().await;
+        let theme = CustomThemeService::create(&db, create_input("Ocean"), "user-1")
+            .await
+            .expect("valid theme should be created");
+        let now = Utc::now();
+        let page = status_page::ActiveModel {
+            id: Set("status-page-1".to_string()),
+            title: Set("Status".to_string()),
+            slug: Set("status".to_string()),
+            description: Set(None),
+            server_ids_json: Set("[]".to_string()),
+            group_by_server_group: Set(true),
+            show_values: Set(true),
+            custom_css: Set(None),
+            enabled: Set(true),
+            uptime_yellow_threshold: Set(100.0),
+            uptime_red_threshold: Set(95.0),
+            theme_ref: Set(Some(format!("custom:{}", theme.id))),
+            created_at: Set(now),
+            updated_at: Set(now),
+        };
+        page.insert(&db)
+            .await
+            .expect("status page should be inserted");
+
+        let err = CustomThemeService::delete(&db, theme.id)
+            .await
+            .expect_err("referenced theme should not be deleted");
+
+        assert!(
+            matches!(err, AppError::Conflict(message) if message == "Theme is in use by admin or one or more status pages; unbind it first.")
+        );
+    }
+
+    #[tokio::test]
+    async fn config_trigger_blocks_dangling_active_custom_ref() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let err = ConfigService::set(&db, ACTIVE_THEME_KEY, "custom:999")
+            .await
+            .expect_err("dangling active theme ref should be blocked");
+
+        assert!(matches!(err, AppError::Internal(_)));
+    }
+
+    #[tokio::test]
+    async fn local_config_write_maps_missing_theme_ref_trigger() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let err = set_config_value(&db, ACTIVE_THEME_KEY, "custom:999")
+            .await
+            .expect_err("dangling active theme ref should be mapped");
+
+        assert!(
+            matches!(err, AppError::Validation(message) if message == "custom theme reference does not exist")
         );
     }
 }
