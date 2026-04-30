@@ -50,6 +50,7 @@ These variables are intentionally scoped to local tooling. `ALLOW_WRITES` is not
 | `SERVERBEE_ADMIN__USERNAME` | `admin` | Initial admin username (only used when no users exist) |
 | `SERVERBEE_SERVER__TRUSTED_PROXIES` | private/loopback CIDRs | CIDR list of trusted reverse proxies. Defaults to RFC 1918 + loopback. Set to `[]` to disable |
 | `SERVERBEE_SCHEDULER__TIMEZONE` | `UTC` | Timezone for daily traffic aggregation (e.g. `Asia/Shanghai`) |
+| `SERVERBEE_FEATURE__CUSTOM_THEMES` | `true` | Set `feature.custom_themes` to false to disable user-defined themes. Custom refs are read-coerced to `preset:default` |
 | `SERVERBEE_LOG__LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `SERVERBEE_LOG__FILE` | `""` | Log file path. Empty means stdout only |
 
@@ -216,6 +217,12 @@ Raw metric records are collected every 60 seconds and retained for 7 days by def
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `timezone` | string | `"UTC"` | Timezone for daily traffic aggregation and billing cycle computation. Use IANA timezone names (e.g. `Asia/Shanghai`, `US/Eastern`) |
+
+### `[feature]` -- Feature Flags
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `custom_themes` | bool | `true` | Disable user-defined themes when false. Custom refs are read-coerced to `preset:default` |
 
 ### `[rate_limit]` -- Rate Limiting
 

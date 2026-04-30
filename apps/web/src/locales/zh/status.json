@@ -43,5 +43,8 @@
   "uptime_operational": "\u6B63\u5E38\u8FD0\u884C",
   "uptime_degraded": "\u6027\u80FD\u4E0B\u964D",
   "uptime_down": "\u6545\u969C",
-  "uptime_no_data": "\u6682\u65E0\u6570\u636E"
+  "uptime_no_data": "\u6682\u65E0\u6570\u636E",
+
+  "theme.label": "\u4E3B\u9898",
+  "theme.follow_admin": "\u8DDF\u968F\u540E\u53F0\u9ED8\u8BA4"
 }

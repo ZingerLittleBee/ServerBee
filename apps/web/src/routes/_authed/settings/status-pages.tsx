@@ -4,6 +4,7 @@ import { ExternalLink, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { useCustomThemes } from '@/api/themes'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -17,6 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
@@ -24,6 +26,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api-client'
 import type { IncidentItem, MaintenanceItem, ServerResponse, StatusPageItem } from '@/lib/api-schema'
+import { themes } from '@/themes'
 
 export const Route = createFileRoute('/_authed/settings/status-pages')({
   component: StatusPagesManagement
@@ -47,6 +50,32 @@ function ServerCheckboxItem({ checked, name, onToggle }: { checked: boolean; nam
 // Status Pages Tab
 // ---------------------------------------------------------------------------
 
+const FOLLOW_ADMIN_THEME_VALUE = '__follow_admin__'
+
+interface StatusPagePayloadInput {
+  description: string
+  enabled: boolean
+  redThreshold: number
+  selectedServers: string[]
+  slug: string
+  themeRef: string | null
+  title: string
+  yellowThreshold: number
+}
+
+export function buildStatusPagePayload(input: StatusPagePayloadInput): Record<string, unknown> {
+  return {
+    title: input.title.trim(),
+    slug: input.slug.trim(),
+    description: input.description.trim() || null,
+    enabled: input.enabled,
+    server_ids: input.selectedServers,
+    theme_ref: input.themeRef,
+    uptime_yellow_threshold: input.yellowThreshold,
+    uptime_red_threshold: input.redThreshold
+  }
+}
+
 function StatusPageFormDialog({
   editing,
   onClose,
@@ -62,7 +91,8 @@ function StatusPageFormDialog({
   pending: boolean
   servers: ServerResponse[]
 }) {
-  const { t } = useTranslation('settings')
+  const { t } = useTranslation(['settings', 'status'])
+  const { data: customThemes } = useCustomThemes()
   const [title, setTitle] = useState('')
   const [slug, setSlug] = useState('')
   const [description, setDescription] = useState('')
@@ -70,6 +100,7 @@ function StatusPageFormDialog({
   const [selectedServers, setSelectedServers] = useState<string[]>([])
   const [yellowThreshold, setYellowThreshold] = useState(100)
   const [redThreshold, setRedThreshold] = useState(95)
+  const [themeRef, setThemeRef] = useState<string | null>(null)
 
   const handleOpenChange = (isOpen: boolean) => {
     if (isOpen && editing) {
@@ -80,6 +111,7 @@ function StatusPageFormDialog({
       setSelectedServers(editing.server_ids ?? [])
       setYellowThreshold(editing.uptime_yellow_threshold ?? 100)
       setRedThreshold(editing.uptime_red_threshold ?? 95)
+      setThemeRef(editing.theme_ref ?? null)
     } else if (isOpen) {
       setTitle('')
       setSlug('')
@@ -88,6 +120,7 @@ function StatusPageFormDialog({
       setSelectedServers([])
       setYellowThreshold(100)
       setRedThreshold(95)
+      setThemeRef(null)
     }
     if (!isOpen) {
       onClose()
@@ -99,15 +132,16 @@ function StatusPageFormDialog({
     if (!(title.trim() && slug.trim())) {
       return
     }
-    const payload: Record<string, unknown> = {
-      title: title.trim(),
-      slug: slug.trim(),
-      description: description.trim() || null,
+    const payload = buildStatusPagePayload({
+      title,
+      slug,
+      description,
       enabled,
-      server_ids: selectedServers,
-      uptime_yellow_threshold: yellowThreshold,
-      uptime_red_threshold: redThreshold
-    }
+      selectedServers,
+      themeRef,
+      yellowThreshold,
+      redThreshold
+    })
     onSubmit(payload, editing?.id)
   }
 
@@ -164,6 +198,34 @@ function StatusPageFormDialog({
               {t('status_pages.field_enabled')}
             </label>
           </div>
+          <div className="space-y-1">
+            <Label htmlFor="sp-theme">{t('status:theme.label')}</Label>
+            <Select
+              onValueChange={(value) => {
+                if (value !== null) {
+                  setThemeRef(value === FOLLOW_ADMIN_THEME_VALUE ? null : value)
+                }
+              }}
+              value={themeRef ?? FOLLOW_ADMIN_THEME_VALUE}
+            >
+              <SelectTrigger id="sp-theme">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={FOLLOW_ADMIN_THEME_VALUE}>{t('status:theme.follow_admin')}</SelectItem>
+                {themes.map((theme) => (
+                  <SelectItem key={theme.id} value={`preset:${theme.id}`}>
+                    Preset · {theme.name}
+                  </SelectItem>
+                ))}
+                {(customThemes ?? []).map((theme) => (
+                  <SelectItem key={theme.id} value={`custom:${theme.id}`}>
+                    Custom · {theme.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label htmlFor="sp-yellow">{t('status_pages.uptime_yellow_label')}</Label>
@@ -194,17 +256,21 @@ function StatusPageFormDialog({
           </div>
           <div className="space-y-2">
             <Label>{t('status_pages.field_servers')}</Label>
-            <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
-              {servers.map((s) => (
-                <ServerCheckboxItem
-                  checked={selectedServers.includes(s.id)}
-                  key={s.id}
-                  name={s.name}
-                  onToggle={() => toggleServer(s.id)}
-                />
-              ))}
-              {servers.length === 0 && <p className="text-muted-foreground text-xs">{t('status_pages.no_servers')}</p>}
-            </div>
+            <ScrollArea className="h-40 rounded-md border">
+              <div className="space-y-1 p-2">
+                {servers.map((s) => (
+                  <ServerCheckboxItem
+                    checked={selectedServers.includes(s.id)}
+                    key={s.id}
+                    name={s.name}
+                    onToggle={() => toggleServer(s.id)}
+                  />
+                ))}
+                {servers.length === 0 && (
+                  <p className="text-muted-foreground text-xs">{t('status_pages.no_servers')}</p>
+                )}
+              </div>
+            </ScrollArea>
           </div>
         </form>
         <DialogFooter>
@@ -497,16 +563,18 @@ function IncidentFormDialog({
           </div>
           <div className="space-y-2">
             <Label>{t('incidents.field_servers')}</Label>
-            <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border p-2">
-              {servers.map((s) => (
-                <ServerCheckboxItem
-                  checked={selectedServers.includes(s.id)}
-                  key={s.id}
-                  name={s.name}
-                  onToggle={() => toggleServer(s.id)}
-                />
-              ))}
-            </div>
+            <ScrollArea className="h-32 rounded-md border">
+              <div className="space-y-1 p-2">
+                {servers.map((s) => (
+                  <ServerCheckboxItem
+                    checked={selectedServers.includes(s.id)}
+                    key={s.id}
+                    name={s.name}
+                    onToggle={() => toggleServer(s.id)}
+                  />
+                ))}
+              </div>
+            </ScrollArea>
           </div>
         </form>
         <DialogFooter>
@@ -907,16 +975,18 @@ function MaintenanceFormDialog({
           </div>
           <div className="space-y-2">
             <Label>{t('maintenance.field_servers')}</Label>
-            <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border p-2">
-              {servers.map((s) => (
-                <ServerCheckboxItem
-                  checked={selectedServers.includes(s.id)}
-                  key={s.id}
-                  name={s.name}
-                  onToggle={() => toggleServer(s.id)}
-                />
-              ))}
-            </div>
+            <ScrollArea className="h-32 rounded-md border">
+              <div className="space-y-1 p-2">
+                {servers.map((s) => (
+                  <ServerCheckboxItem
+                    checked={selectedServers.includes(s.id)}
+                    key={s.id}
+                    name={s.name}
+                    onToggle={() => toggleServer(s.id)}
+                  />
+                ))}
+              </div>
+            </ScrollArea>
           </div>
         </form>
         <DialogFooter>

@@ -1353,6 +1353,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/settings/active-theme': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_active_theme']
+    put: operations['put_active_theme']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/settings/auto-discovery-key': {
     parameters: {
       query?: never
@@ -1449,6 +1465,102 @@ export interface paths {
      *     Note: request body is raw binary (application/octet-stream).
      */
     post: operations['restore_backup']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/themes': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_themes']
+    put?: never
+    post: operations['create_theme']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/themes/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_theme']
+    put: operations['update_theme']
+    post?: never
+    delete: operations['delete_theme']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/themes/{id}/duplicate': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['duplicate_theme']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/themes/{id}/export': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['export_theme']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/themes/{id}/references': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_references']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/themes/import': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['import_theme']
     delete?: never
     options?: never
     head?: never
@@ -1672,6 +1784,10 @@ export interface components {
   requestBodies: never
   responses: never
   schemas: {
+    ActiveThemeResponse: {
+      ref: string
+      theme: components['schemas']['ThemeResolved']
+    }
     AlertEventDetailResponse: {
       alert_key: string
       first_triggered_at: string
@@ -1961,6 +2077,13 @@ export interface components {
       /** Format: int32 */
       timeout?: number | null
     }
+    CreateThemeInput: {
+      based_on?: string | null
+      description?: string | null
+      name: string
+      vars_dark: components['schemas']['HashMap']
+      vars_light: components['schemas']['HashMap']
+    }
     CreateUserInput: {
       password: string
       role?: string
@@ -2007,6 +2130,15 @@ export interface components {
       code: string
       message: string
     }
+    ExportPayload: {
+      based_on?: string | null
+      description?: string | null
+      name: string
+      vars_dark: components['schemas']['HashMap']
+      vars_light: components['schemas']['HashMap']
+      /** Format: int32 */
+      version: number
+    }
     FileEntry: {
       file_type: components['schemas']['FileType']
       group?: string | null
@@ -2038,6 +2170,9 @@ export interface components {
       time: string
       /** Format: double */
       utilization: number
+    }
+    HashMap: {
+      [key: string]: string
     }
     HourlyTraffic: {
       /** Format: int64 */
@@ -2246,10 +2381,14 @@ export interface components {
       planned_maintenances: components['schemas']['Maintenance'][]
       recent_incidents: components['schemas']['IncidentWithUpdates'][]
       servers: components['schemas']['ServerStatusInfo'][]
+      theme: components['schemas']['ThemeResolved']
     }
     PushRegisterRequest: {
       /** @description The APNs device token obtained from the iOS device. */
       device_token: string
+    }
+    PutActiveThemeInput: {
+      ref: string
     }
     ReadRequest: {
       path: string
@@ -2553,6 +2692,7 @@ export interface components {
       server_ids_json: string
       show_values: boolean
       slug: string
+      theme_ref?: string | null
       title: string
       /** Format: date-time */
       updated_at: string
@@ -2573,6 +2713,10 @@ export interface components {
       uptime_red_threshold: number
       /** Format: double */
       uptime_yellow_threshold: number
+    }
+    StatusPageRef: {
+      id: string
+      name: string
     }
     StatusPageResponse: {
       groups: components['schemas']['StatusGroup'][]
@@ -2637,6 +2781,48 @@ export interface components {
       /** Format: date-time */
       started_at?: string | null
       task_id: string
+    }
+    Theme: {
+      based_on?: string | null
+      /** Format: date-time */
+      created_at: string
+      description?: string | null
+      /** Format: int32 */
+      id: number
+      name: string
+      /** Format: date-time */
+      updated_at: string
+      vars_dark: components['schemas']['HashMap']
+      vars_light: components['schemas']['HashMap']
+    }
+    ThemeReferences: {
+      admin: boolean
+      status_pages: components['schemas']['StatusPageRef'][]
+    }
+    ThemeResolved:
+      | {
+          id: string
+          /** @enum {string} */
+          kind: 'preset'
+        }
+      | {
+          /** Format: int32 */
+          id: number
+          /** @enum {string} */
+          kind: 'custom'
+          name: string
+          /** Format: date-time */
+          updated_at: string
+          vars_dark: components['schemas']['HashMap']
+          vars_light: components['schemas']['HashMap']
+        }
+    ThemeSummary: {
+      based_on?: string | null
+      /** Format: int32 */
+      id: number
+      name: string
+      /** Format: date-time */
+      updated_at: string
     }
     TotpDisableRequest: {
       password: string
@@ -2821,6 +3007,7 @@ export interface components {
       server_ids_json?: string[] | null
       show_values?: boolean | null
       slug?: string | null
+      theme_ref?: string | null
       title?: string | null
       /** Format: double */
       uptime_red_threshold?: number | null
@@ -2839,6 +3026,13 @@ export interface components {
       server_ids?: string[] | null
       /** Format: int32 */
       timeout?: number | null
+    }
+    UpdateThemeInput: {
+      based_on?: string | null
+      description?: string | null
+      name: string
+      vars_dark: components['schemas']['HashMap']
+      vars_light: components['schemas']['HashMap']
     }
     UpdateUserInput: {
       password?: string | null
@@ -3474,6 +3668,51 @@ export interface operations {
       }
     }
   }
+  create_theme: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateThemeInput']
+      }
+    }
+    responses: {
+      /** @description Custom theme created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Theme']
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Forbidden (non-admin) */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error or custom themes disabled */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   create_user: {
     parameters: {
       query?: never
@@ -3931,6 +4170,62 @@ export interface operations {
       }
     }
   }
+  delete_theme: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Theme ID */
+        id: number
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Custom theme deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Forbidden (non-admin) */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Theme not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Theme is referenced */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Custom themes disabled */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   delete_user: {
     parameters: {
       query?: never
@@ -4001,6 +4296,94 @@ export interface operations {
       }
     }
   }
+  duplicate_theme: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Theme ID */
+        id: number
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Custom theme duplicated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Theme']
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Forbidden (non-admin) */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Theme not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error or custom themes disabled */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  export_theme: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Theme ID */
+        id: number
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Exportable custom theme payload */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ExportPayload']
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Theme not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   generate_pair_code: {
     parameters: {
       query?: never
@@ -4020,6 +4403,33 @@ export interface operations {
         }
       }
       /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_active_theme: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Resolved active admin theme */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ActiveThemeResponse']
+        }
+      }
+      /** @description Unauthenticated */
       401: {
         headers: {
           [name: string]: unknown
@@ -4378,6 +4788,57 @@ export interface operations {
       }
     }
   }
+  get_references: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Theme ID */
+        id: number
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Theme references */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ThemeReferences']
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Forbidden (non-admin) */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Theme not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Invalid theme ID */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   get_rule: {
     parameters: {
       query?: never
@@ -4598,6 +5059,43 @@ export interface operations {
       }
     }
   }
+  get_theme: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Theme ID */
+        id: number
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Custom theme */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Theme']
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Theme not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   get_traceroute_result: {
     parameters: {
       query?: never
@@ -4806,6 +5304,51 @@ export interface operations {
       }
       /** @description Not found */
       404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  import_theme: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ExportPayload']
+      }
+    }
+    responses: {
+      /** @description Custom theme imported */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Theme']
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Forbidden (non-admin) */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error or custom themes disabled */
+      422: {
         headers: {
           [name: string]: unknown
         }
@@ -5350,6 +5893,33 @@ export interface operations {
       }
     }
   }
+  list_themes: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List custom themes */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ThemeSummary'][]
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   list_transfers: {
     parameters: {
       query?: never
@@ -5850,6 +6420,51 @@ export interface operations {
       }
       /** @description Unauthorized */
       401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  put_active_theme: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PutActiveThemeInput']
+      }
+    }
+    responses: {
+      /** @description Resolved active admin theme */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ActiveThemeResponse']
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Forbidden (non-admin) */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error or custom themes disabled */
+      422: {
         headers: {
           [name: string]: unknown
         }
@@ -7024,6 +7639,61 @@ export interface operations {
       }
       /** @description Task not found */
       404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_theme: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Theme ID */
+        id: number
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateThemeInput']
+      }
+    }
+    responses: {
+      /** @description Custom theme updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Theme']
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Forbidden (non-admin) */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Theme not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error or custom themes disabled */
+      422: {
         headers: {
           [name: string]: unknown
         }

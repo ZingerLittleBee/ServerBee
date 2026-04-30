@@ -1,0 +1,68 @@
+---
+title: Custom themes
+description: Build, share, and apply your own ServerBee theme variables.
+---
+
+ServerBee includes preset themes, and administrators can also create full custom themes. A custom theme stores OKLCH CSS variables for light and dark mode in the database, so the dashboard and public status pages can resolve the same theme everywhere.
+
+## Concepts
+
+- Preset themes are immutable and ship with the web app.
+- Custom themes are stored in the server database.
+- The active admin theme controls the dashboard theme for all users.
+- Each public status page can use its own theme or follow the active admin theme.
+
+## Create a theme
+
+1. Open **Settings → Appearance**.
+2. In **My themes**, click **New theme**.
+3. Enter a name and choose a preset to fork from.
+4. Edit the light and dark variables in the theme editor.
+5. Save the theme.
+
+## Apply a theme
+
+- Dashboard: click any preset or custom theme card on **Settings → Appearance**.
+- Status page: edit a status page and choose a theme from the **Theme** selector.
+- To inherit the dashboard theme on a status page, choose **Follow admin default**.
+
+## Import and export
+
+Use **Export** in the editor to download a theme JSON file. Use **Import** on the appearance page to upload one.
+
+The import format is:
+
+```json
+{
+  "version": 1,
+  "name": "Theme name",
+  "description": "Optional description",
+  "based_on": "default",
+  "vars_light": {},
+  "vars_dark": {}
+}
+```
+
+Only `version: 1` is accepted.
+
+## Validation
+
+- Every required variable must exist in both light and dark maps.
+- Values must use `oklch(L C H)` or `oklch(L C H / alpha)` syntax.
+- `L` must be between `0` and `1`.
+- `H` must be between `0` and `360`.
+- Alpha must be between `0` and `1`, or between `0%` and `100%`.
+- Chroma has no hard cap. Browsers may gamut-clip values that cannot be displayed.
+
+## Disable custom themes
+
+Set:
+
+```toml
+[feature]
+custom_themes = false
+```
+
+Or set `SERVERBEE_FEATURE__CUSTOM_THEMES=false`.
+
+When disabled, custom theme mutation endpoints reject writes, and any active `custom:*` reference is resolved as the default preset at read time. Stored themes are preserved.

@@ -135,6 +135,8 @@ export interface UptimeDailyEntry {
   total_minutes: number
 }
 
+export type ThemeResolved = S['ThemeResolved']
+
 // Public status page (slug-based)
 export interface PublicStatusPageData {
   active_incidents: Array<{
@@ -188,6 +190,7 @@ export interface PublicStatusPageData {
     uptime_daily: UptimeDailyEntry[]
     uptime_percent: number | null
   }>
+  theme: ThemeResolved
 }
 
 // Admin status page management
@@ -198,6 +201,7 @@ export interface StatusPageItem {
   id: string
   server_ids: string[]
   slug: string
+  theme_ref?: string | null
   title: string
   updated_at: string
   uptime_red_threshold: number

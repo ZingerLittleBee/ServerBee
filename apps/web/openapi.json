@@ -4697,6 +4697,84 @@
         ]
       }
     },
+    "/api/settings/active-theme": {
+      "get": {
+        "tags": ["themes"],
+        "operationId": "get_active_theme",
+        "responses": {
+          "200": {
+            "description": "Resolved active admin theme",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveThemeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      },
+      "put": {
+        "tags": ["themes"],
+        "operationId": "put_active_theme",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutActiveThemeInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Resolved active admin theme",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveThemeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden (non-admin)"
+          },
+          "422": {
+            "description": "Validation error or custom themes disabled"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
     "/api/settings/auto-discovery-key": {
       "get": {
         "tags": ["settings"],
@@ -4946,6 +5024,443 @@
           },
           "400": {
             "description": "Invalid backup file"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/settings/themes": {
+      "get": {
+        "tags": ["themes"],
+        "operationId": "list_themes",
+        "responses": {
+          "200": {
+            "description": "List custom themes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ThemeSummary"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      },
+      "post": {
+        "tags": ["themes"],
+        "operationId": "create_theme",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateThemeInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Custom theme created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Theme"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden (non-admin)"
+          },
+          "422": {
+            "description": "Validation error or custom themes disabled"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/settings/themes/import": {
+      "post": {
+        "tags": ["themes"],
+        "operationId": "import_theme",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Custom theme imported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Theme"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden (non-admin)"
+          },
+          "422": {
+            "description": "Validation error or custom themes disabled"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/settings/themes/{id}": {
+      "get": {
+        "tags": ["themes"],
+        "operationId": "get_theme",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Theme ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Custom theme",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Theme"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Theme not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      },
+      "put": {
+        "tags": ["themes"],
+        "operationId": "update_theme",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Theme ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateThemeInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Custom theme updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Theme"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden (non-admin)"
+          },
+          "404": {
+            "description": "Theme not found"
+          },
+          "422": {
+            "description": "Validation error or custom themes disabled"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["themes"],
+        "operationId": "delete_theme",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Theme ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Custom theme deleted"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden (non-admin)"
+          },
+          "404": {
+            "description": "Theme not found"
+          },
+          "409": {
+            "description": "Theme is referenced"
+          },
+          "422": {
+            "description": "Custom themes disabled"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/settings/themes/{id}/duplicate": {
+      "post": {
+        "tags": ["themes"],
+        "operationId": "duplicate_theme",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Theme ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Custom theme duplicated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Theme"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden (non-admin)"
+          },
+          "404": {
+            "description": "Theme not found"
+          },
+          "422": {
+            "description": "Validation error or custom themes disabled"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/settings/themes/{id}/export": {
+      "get": {
+        "tags": ["themes"],
+        "operationId": "export_theme",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Theme ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exportable custom theme payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportPayload"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Theme not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/settings/themes/{id}/references": {
+      "get": {
+        "tags": ["themes"],
+        "operationId": "get_references",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Theme ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Theme references",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemeReferences"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden (non-admin)"
+          },
+          "404": {
+            "description": "Theme not found"
+          },
+          "422": {
+            "description": "Invalid theme ID"
           }
         },
         "security": [
@@ -5818,6 +6333,18 @@
   },
   "components": {
     "schemas": {
+      "ActiveThemeResponse": {
+        "type": "object",
+        "required": ["ref", "theme"],
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "theme": {
+            "$ref": "#/components/schemas/ThemeResolved"
+          }
+        }
+      },
       "AlertEventDetailResponse": {
         "type": "object",
         "required": [
@@ -6715,6 +7242,27 @@
           }
         }
       },
+      "CreateThemeInput": {
+        "type": "object",
+        "required": ["name", "vars_light", "vars_dark"],
+        "properties": {
+          "based_on": {
+            "type": ["string", "null"]
+          },
+          "description": {
+            "type": ["string", "null"]
+          },
+          "name": {
+            "type": "string"
+          },
+          "vars_dark": {
+            "$ref": "#/components/schemas/HashMap"
+          },
+          "vars_light": {
+            "$ref": "#/components/schemas/HashMap"
+          }
+        }
+      },
       "CreateUserInput": {
         "type": "object",
         "required": ["username", "password"],
@@ -6858,6 +7406,32 @@
           }
         }
       },
+      "ExportPayload": {
+        "type": "object",
+        "required": ["version", "name", "vars_light", "vars_dark"],
+        "properties": {
+          "based_on": {
+            "type": ["string", "null"]
+          },
+          "description": {
+            "type": ["string", "null"]
+          },
+          "name": {
+            "type": "string"
+          },
+          "vars_dark": {
+            "$ref": "#/components/schemas/HashMap"
+          },
+          "vars_light": {
+            "$ref": "#/components/schemas/HashMap"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "FileEntry": {
         "type": "object",
         "required": ["name", "path", "file_type", "size", "modified"],
@@ -6943,6 +7517,15 @@
             "type": "number",
             "format": "double"
           }
+        }
+      },
+      "HashMap": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        },
+        "propertyNames": {
+          "type": "string"
         }
       },
       "HourlyTraffic": {
@@ -7590,6 +8173,7 @@
         "type": "object",
         "required": [
           "page",
+          "theme",
           "servers",
           "active_incidents",
           "planned_maintenances",
@@ -7622,6 +8206,9 @@
             "items": {
               "$ref": "#/components/schemas/ServerStatusInfo"
             }
+          },
+          "theme": {
+            "$ref": "#/components/schemas/ThemeResolved"
           }
         }
       },
@@ -7632,6 +8219,15 @@
           "device_token": {
             "type": "string",
             "description": "The APNs device token obtained from the iOS device."
+          }
+        }
+      },
+      "PutActiveThemeInput": {
+        "type": "object",
+        "required": ["ref"],
+        "properties": {
+          "ref": {
+            "type": "string"
           }
         }
       },
@@ -8461,6 +9057,9 @@
           "slug": {
             "type": "string"
           },
+          "theme_ref": {
+            "type": ["string", "null"]
+          },
           "title": {
             "type": "string"
           },
@@ -8518,6 +9117,18 @@
           "uptime_yellow_threshold": {
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "StatusPageRef": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
           }
         }
       },
@@ -8721,6 +9332,132 @@
           },
           "task_id": {
             "type": "string"
+          }
+        }
+      },
+      "Theme": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "vars_light",
+          "vars_dark",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "based_on": {
+            "type": ["string", "null"]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": ["string", "null"]
+          },
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "vars_dark": {
+            "$ref": "#/components/schemas/HashMap"
+          },
+          "vars_light": {
+            "$ref": "#/components/schemas/HashMap"
+          }
+        }
+      },
+      "ThemeReferences": {
+        "type": "object",
+        "required": ["admin", "status_pages"],
+        "properties": {
+          "admin": {
+            "type": "boolean"
+          },
+          "status_pages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StatusPageRef"
+            }
+          }
+        }
+      },
+      "ThemeResolved": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["id", "kind"],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["preset"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "vars_light",
+              "vars_dark",
+              "updated_at",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["custom"]
+              },
+              "name": {
+                "type": "string"
+              },
+              "updated_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "vars_dark": {
+                "$ref": "#/components/schemas/HashMap"
+              },
+              "vars_light": {
+                "$ref": "#/components/schemas/HashMap"
+              }
+            }
+          }
+        ]
+      },
+      "ThemeSummary": {
+        "type": "object",
+        "required": ["id", "name", "updated_at"],
+        "properties": {
+          "based_on": {
+            "type": ["string", "null"]
+          },
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -9271,6 +10008,9 @@
           "slug": {
             "type": ["string", "null"]
           },
+          "theme_ref": {
+            "type": ["string", "null"]
+          },
           "title": {
             "type": ["string", "null"]
           },
@@ -9316,6 +10056,27 @@
           "timeout": {
             "type": ["integer", "null"],
             "format": "int32"
+          }
+        }
+      },
+      "UpdateThemeInput": {
+        "type": "object",
+        "required": ["name", "vars_light", "vars_dark"],
+        "properties": {
+          "based_on": {
+            "type": ["string", "null"]
+          },
+          "description": {
+            "type": ["string", "null"]
+          },
+          "name": {
+            "type": "string"
+          },
+          "vars_dark": {
+            "$ref": "#/components/schemas/HashMap"
+          },
+          "vars_light": {
+            "$ref": "#/components/schemas/HashMap"
           }
         }
       },
@@ -9568,6 +10329,10 @@
     {
       "name": "settings",
       "description": "System settings"
+    },
+    {
+      "name": "themes",
+      "description": "Custom theme management"
     },
     {
       "name": "notifications",

@@ -38,6 +38,7 @@ vi.mock('@/hooks/use-auth', () => ({
 
 vi.mock('@/components/ui/dialog', () => ({
   Dialog: ({ children }: { children?: ReactNode }) => <div data-testid="dialog-root">{children}</div>,
+  DialogBody: ({ children }: { children?: ReactNode }) => <div data-testid="dialog-body">{children}</div>,
   DialogContent: ({ children }: { children?: ReactNode }) => <div data-testid="dialog-content">{children}</div>,
   DialogHeader: ({ children }: { children?: ReactNode }) => <div data-testid="dialog-header">{children}</div>,
   DialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,

@@ -3,6 +3,7 @@ pub mod alert_state;
 pub mod api_key;
 pub mod audit_log;
 pub mod config;
+pub mod custom_theme;
 pub mod dashboard;
 pub mod dashboard_widget;
 pub mod device_token;
