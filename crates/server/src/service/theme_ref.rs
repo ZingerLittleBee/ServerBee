@@ -144,7 +144,7 @@ mod tests {
     use chrono::Utc;
     use sea_orm::{ActiveModelTrait, Set};
 
-    use crate::entity::status_page;
+    use crate::entity::{custom_theme, status_page};
     use crate::test_utils::setup_test_db;
 
     #[test]
@@ -317,6 +317,8 @@ mod tests {
     async fn list_references_orders_status_pages_by_title_then_id() {
         let (db, _tmp) = setup_test_db().await;
 
+        insert_custom_theme(&db, 42).await;
+        insert_custom_theme(&db, 43).await;
         insert_status_page(&db, "page-zulu", "Zulu", "custom:42").await;
         insert_status_page(&db, "page-alpha-b", "Alpha", "custom:42").await;
         insert_status_page(&db, "page-alpha-a", "Alpha", "custom:42").await;
@@ -335,6 +337,24 @@ mod tests {
                 "page-zulu".to_string(),
             ]
         );
+    }
+
+    async fn insert_custom_theme(db: &sea_orm::DatabaseConnection, id: i32) {
+        let now = Utc::now();
+        custom_theme::ActiveModel {
+            id: Set(id),
+            name: Set(format!("Theme {id}")),
+            description: Set(None),
+            based_on: Set(Some("default".to_string())),
+            vars_light: Set("{}".to_string()),
+            vars_dark: Set("{}".to_string()),
+            created_by: Set("user-1".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(db)
+        .await
+        .expect("custom theme insert should succeed");
     }
 
     async fn insert_status_page(
