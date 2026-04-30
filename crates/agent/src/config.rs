@@ -187,7 +187,10 @@ pub(crate) fn with_serverbee_token_env<T>(value: Option<&str>, test: impl FnOnce
     }
 
     static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    let _lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().expect("env lock");
+    let _lock = ENV_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("env lock");
     let original = std::env::var_os("SERVERBEE_TOKEN");
 
     match value {

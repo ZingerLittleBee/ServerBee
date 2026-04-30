@@ -3,10 +3,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::AgentConfig;
 
-#[cfg(test)]
-use crate::rebind::persist_rebind_token_impl as persist_rebind_token;
 #[cfg(not(test))]
 use crate::rebind::persist_rebind_token;
+#[cfg(test)]
+use crate::rebind::persist_rebind_token_impl as persist_rebind_token;
 
 #[derive(Serialize)]
 struct RegisterRequest {
@@ -48,9 +48,7 @@ pub async fn register_agent(config: &AgentConfig, fingerprint: &str) -> Result<(
 
 pub fn save_token(token: &str) -> Result<()> {
     if AgentConfig::token_env_override_present() {
-        anyhow::bail!(
-            "SERVERBEE_TOKEN is set; refusing to persist token to agent.toml"
-        );
+        anyhow::bail!("SERVERBEE_TOKEN is set; refusing to persist token to agent.toml");
     }
 
     persist_rebind_token(AgentConfig::config_path_for_persistence(), token)

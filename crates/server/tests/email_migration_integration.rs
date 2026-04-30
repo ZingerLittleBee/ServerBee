@@ -2,13 +2,31 @@ use sea_orm::{ConnectionTrait, Database, DatabaseBackend, Statement};
 use sea_orm_migration::MigratorTrait;
 use serverbee_server::migration::Migrator;
 
+const EMAIL_MIGRATION_NAME: &str = "m20260416_000018_migrate_email_to_resend";
+
 async fn fresh_db() -> sea_orm::DatabaseConnection {
     let db = Database::connect("sqlite::memory:")
         .await
         .expect("connect sqlite");
-    // Run everything up through the email-resend migration.
     Migrator::up(&db, None).await.expect("run migrations");
     db
+}
+
+async fn migrate_until_before_email(db: &sea_orm::DatabaseConnection) {
+    let migration_count_before_email = Migrator::migrations()
+        .iter()
+        .position(|migration| migration.name() == EMAIL_MIGRATION_NAME)
+        .expect("email migration is registered");
+
+    Migrator::up(db, Some(migration_count_before_email as u32))
+        .await
+        .expect("run migrations before email migration");
+}
+
+async fn run_email_migration(db: &sea_orm::DatabaseConnection) {
+    Migrator::up(db, Some(1))
+        .await
+        .expect("run email migration");
 }
 
 async fn exec(db: &sea_orm::DatabaseConnection, sql: &str) {
@@ -82,14 +100,9 @@ async fn enabled_of(db: &sea_orm::DatabaseConnection, id: &str) -> bool {
 
 #[tokio::test]
 async fn migrates_valid_smtp_row_to_resend_schema() {
-    // Fresh DB with all migrations already run — insert a legacy-shaped row,
-    // then roll our migration back and re-apply to exercise it on the row.
     let db = Database::connect("sqlite::memory:").await.unwrap();
 
-    // Apply all migrations except the last one.
-    Migrator::up(&db, Some(Migrator::migrations().len() as u32 - 1))
-        .await
-        .unwrap();
+    migrate_until_before_email(&db).await;
 
     exec(
         &db,
@@ -100,8 +113,7 @@ async fn migrates_valid_smtp_row_to_resend_schema() {
     )
     .await;
 
-    // Run the final (email-resend) migration.
-    Migrator::up(&db, None).await.unwrap();
+    run_email_migration(&db).await;
 
     let new_json = config_json_of(&db, "row-1").await;
     let v: serde_json::Value = serde_json::from_str(&new_json).unwrap();
@@ -115,9 +127,7 @@ async fn migrates_valid_smtp_row_to_resend_schema() {
 #[tokio::test]
 async fn disables_unconvertable_email_row() {
     let db = Database::connect("sqlite::memory:").await.unwrap();
-    Migrator::up(&db, Some(Migrator::migrations().len() as u32 - 1))
-        .await
-        .unwrap();
+    migrate_until_before_email(&db).await;
 
     // Legacy row missing the `from` field.
     exec(
@@ -129,7 +139,7 @@ async fn disables_unconvertable_email_row() {
     )
     .await;
 
-    Migrator::up(&db, None).await.unwrap();
+    run_email_migration(&db).await;
 
     assert!(!enabled_of(&db, "row-2").await, "row should be disabled");
     assert_eq!(

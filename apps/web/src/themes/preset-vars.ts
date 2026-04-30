@@ -43,7 +43,7 @@ export interface PresetVars {
   light: VarMap
 }
 
-type PresetVarValues = { readonly [K in keyof typeof PRESET_VAR_KEYS]: string }
+type PresetVarValues = readonly string[]
 
 function createVarMap(values: PresetVarValues): VarMap {
   if (values.length !== PRESET_VAR_KEYS.length) {

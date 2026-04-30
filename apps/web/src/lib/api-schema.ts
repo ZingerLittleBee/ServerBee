@@ -201,6 +201,7 @@ export interface StatusPageItem {
   id: string
   server_ids: string[]
   slug: string
+  theme_ref?: string | null
   title: string
   updated_at: string
   uptime_red_threshold: number
