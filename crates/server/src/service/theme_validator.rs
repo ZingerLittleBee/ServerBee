@@ -48,12 +48,19 @@ pub type VarMap = HashMap<String, String>;
 
 pub fn validate_var_map(map: &VarMap) -> Result<(), AppError> {
     let required: HashSet<&str> = REQUIRED_VARS.iter().copied().collect();
-    let actual: HashSet<&str> = map.keys().map(|s| s.as_str()).collect();
 
-    if let Some(missing) = required.difference(&actual).next() {
+    if let Some(missing) = REQUIRED_VARS.iter().find(|key| !map.contains_key(**key)) {
         return Err(AppError::Validation(format!("missing variable: {missing}")));
     }
-    if let Some(extra) = actual.difference(&required).next() {
+
+    let mut unknown_keys = map
+        .keys()
+        .filter(|key| !required.contains(key.as_str()))
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    unknown_keys.sort_unstable();
+
+    if let Some(extra) = unknown_keys.first() {
         return Err(AppError::Validation(format!("unknown variable: {extra}")));
     }
 
@@ -74,9 +81,9 @@ fn validate_oklch_value(key: &str, value: &str) -> Result<(), AppError> {
         )));
     };
 
-    let lightness = parse_capture(key, value, captures.get(1), "lightness")?;
-    parse_capture(key, value, captures.get(2), "chroma")?;
-    let hue = parse_capture(key, value, captures.get(3), "hue")?;
+    let lightness = parse_finite_capture(key, value, captures.get(1), "lightness")?;
+    parse_finite_capture(key, value, captures.get(2), "chroma")?;
+    let hue = parse_finite_capture(key, value, captures.get(3), "hue")?;
 
     if !(0.0..=1.0).contains(&lightness) {
         return Err(AppError::Validation(format!(
@@ -91,7 +98,7 @@ fn validate_oklch_value(key: &str, value: &str) -> Result<(), AppError> {
     }
 
     if let Some(alpha_match) = captures.get(4) {
-        let alpha = parse_capture(key, value, Some(alpha_match), "alpha")?;
+        let alpha = parse_finite_capture(key, value, Some(alpha_match), "alpha")?;
         let has_percent = captures.get(5).is_some();
         let valid_alpha = if has_percent {
             (0.0..=100.0).contains(&alpha)
@@ -110,7 +117,7 @@ fn validate_oklch_value(key: &str, value: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-fn parse_capture(
+fn parse_finite_capture(
     key: &str,
     value: &str,
     capture: Option<regex::Match<'_>>,
@@ -122,10 +129,18 @@ fn parse_capture(
         )));
     };
 
-    capture
+    let value = capture
         .as_str()
         .parse::<f64>()
-        .map_err(|_| AppError::Validation(format!("{key} has invalid {component} in {value}")))
+        .map_err(|_| AppError::Validation(format!("{key} has invalid {component} in {value}")))?;
+
+    if !value.is_finite() {
+        return Err(AppError::Validation(format!(
+            "{key}: {component} not finite"
+        )));
+    }
+
+    Ok(value)
 }
 
 #[cfg(test)]
@@ -253,5 +268,89 @@ mod tests {
 
         assert!(message.contains("background"));
         assert!(message.contains("alpha"));
+    }
+
+    #[test]
+    fn rejects_malformed_numeric_component() {
+        let mut map = valid_map();
+        map.insert("background".to_string(), "oklch(0.5 1..2 180)".to_string());
+
+        let message = validation_message(validate_var_map(&map));
+
+        assert!(message.contains("background"));
+    }
+
+    #[test]
+    fn rejects_css_injection_attempt() {
+        let mut map = valid_map();
+        map.insert(
+            "background".to_string(),
+            "oklch(0.5 0.1 180); color:red".to_string(),
+        );
+
+        let message = validation_message(validate_var_map(&map));
+
+        assert!(message.contains("background"));
+    }
+
+    #[test]
+    fn rejects_negative_values() {
+        let mut map = valid_map();
+        map.insert("background".to_string(), "oklch(-0.1 0.1 180)".to_string());
+
+        let message = validation_message(validate_var_map(&map));
+
+        assert!(message.contains("background"));
+    }
+
+    #[test]
+    fn rejects_alpha_percent_below_zero() {
+        let mut map = valid_map();
+        map.insert(
+            "background".to_string(),
+            "oklch(0.5 0.1 180 / -1%)".to_string(),
+        );
+
+        let message = validation_message(validate_var_map(&map));
+
+        assert!(message.contains("background"));
+    }
+
+    #[test]
+    fn rejects_infinite_chroma() {
+        let mut map = valid_map();
+        let huge_chroma = "9".repeat(500);
+        map.insert(
+            "background".to_string(),
+            format!("oklch(0.5 {huge_chroma} 180)"),
+        );
+
+        let message = validation_message(validate_var_map(&map));
+
+        assert!(message.contains("background"));
+        assert!(message.contains("chroma"));
+        assert!(message.contains("finite"));
+    }
+
+    #[test]
+    fn rejects_first_required_missing_variable_deterministically() {
+        let mut map = valid_map();
+        map.remove("background");
+        map.remove("foreground");
+
+        let message = validation_message(validate_var_map(&map));
+
+        assert!(message.contains("missing variable: background"));
+    }
+
+    #[test]
+    fn rejects_alphabetically_first_unknown_variable_deterministically() {
+        let mut map = valid_map();
+        map.insert("z-unknown".to_string(), "oklch(0.5 0.1 180)".to_string());
+        map.insert("a-unknown".to_string(), "oklch(0.5 0.1 180)".to_string());
+
+        let message = validation_message(validate_var_map(&map));
+
+        assert!(message.contains("unknown variable: a-unknown"));
     }
 }
