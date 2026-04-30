@@ -36,7 +36,7 @@ P14 已经为前端引入了 8 套基于 OKLCH CSS 变量的预设主题(default
 | 变量集合 | `background / foreground / card / popover / primary / secondary / muted / accent / destructive / border / input / ring / chart-1~5 / sidebar-*` 约 25 个 |
 | 选择持久化 | `localStorage.color-theme`,纯前端 |
 | 切换机制 | `ThemeProvider` 通过 `loadThemeCSS()` 动态 import + 设置 `data-theme` 根属性 |
-| Brand 设置 | 已有服务端表 `brand`(logo / favicon / site_title / footer_text),`/api/settings/brand` |
+| Brand 设置 | 已有,以 `configs` 表里 `key="brand"` 的 KV 行存储(logo / favicon / site_title / footer_text),路由 `/api/settings/brand`,服务侧通过 `ConfigService` 读写 |
 | 状态页 | P15 多状态页架构,`status_page` 表已有 N 行,公开页面通过 `slug` 路由 |
 | RBAC | Admin 与 Member 两档,`require_admin` 中间件已就位 |
 
@@ -90,8 +90,8 @@ custom_theme
   vars_light    TEXT    NOT NULL                -- JSON 序列化的变量映射
   vars_dark     TEXT    NOT NULL                -- 同上
   created_by    TEXT    NOT NULL                -- 引用 users.id (String 主键),不建外键以便用户被删后保留审计字段
-  created_at    INTEGER NOT NULL
-  updated_at    INTEGER NOT NULL
+  created_at    TIMESTAMP NOT NULL              -- sea-orm 实体侧用 DateTimeUtc,与 status_page / incident / maintenance 等业务表一致
+  updated_at    TIMESTAMP NOT NULL
   INDEX idx_custom_theme_updated_at (updated_at DESC)
 ```
 
@@ -155,12 +155,12 @@ sidebar-accent, sidebar-accent-foreground, sidebar-border, sidebar-ring
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/settings/themes` | 已登录 | 列出所有自定义主题(摘要:`id, name, based_on, updated_at`,不含 `vars`) |
-| GET | `/api/settings/themes/:id` | 已登录 | 取单个完整主题 |
+| GET | `/api/settings/themes/{id}` | 已登录 | 取单个完整主题 |
 | POST | `/api/settings/themes` | Admin | 创建。Body: `{ name, description?, based_on?, vars_light, vars_dark }` |
-| PUT | `/api/settings/themes/:id` | Admin | 整体更新 |
-| DELETE | `/api/settings/themes/:id` | Admin | 删除。被引用时返回 `409 Conflict`,`message` 含简明提示("Theme is in use") |
-| GET | `/api/settings/themes/:id/references` | Admin | 查询本主题被谁引用(用于删除前置确认对话框) |
-| POST | `/api/settings/themes/:id/duplicate` | Admin | 复制为新主题(`name` 自动追加 `(copy)`) |
+| PUT | `/api/settings/themes/{id}` | Admin | 整体更新 |
+| DELETE | `/api/settings/themes/{id}` | Admin | 删除。被引用时返回 `409 Conflict`,`message` 含简明提示("Theme is in use") |
+| GET | `/api/settings/themes/{id}/references` | Admin | 查询本主题被谁引用(用于删除前置确认对话框) |
+| POST | `/api/settings/themes/{id}/duplicate` | Admin | 复制为新主题(`name` 自动追加 `(copy)`) |
 
 ### 6.2 激活与绑定
 
@@ -181,21 +181,23 @@ sidebar-accent, sidebar-accent-foreground, sidebar-border, sidebar-ring
       "name": "My Brand",
       "vars_light": { "...": "..." },
       "vars_dark":  { "...": "..." },
-      "updated_at": 1714000000
+      "updated_at": "2026-04-30T08:00:00Z"
     }
   }
 }
 ```
 
-如果 `ref` 是 `preset:*`,`theme.kind = "preset"` 且 `vars_light / vars_dark` 字段缺省(预设值已经在客户端代码里),只返回 `{ kind: "preset", id: "default" }`。这样客户端凭一次接口即可应用主题,不需要再请求 `GET /themes/:id`,首屏防闪缓存也能完整保存。
+时间字段统一为 ISO-8601 字符串(由 sea-orm `DateTimeUtc` 序列化得到),与现有 `status_page` / `incident` / `maintenance` 等接口风格一致;前端按 string 解析。
 
-状态页绑定走**已有的** `PUT /api/status-pages/:id`,在 body 里追加可选 `theme_ref` 字段,不开新接口。
+如果 `ref` 是 `preset:*`,`theme.kind = "preset"` 且 `vars_light / vars_dark` 字段缺省(预设值已经在客户端代码里),只返回 `{ kind: "preset", id: "default" }`。这样客户端凭一次接口即可应用主题,不需要再请求 `GET /themes/{id}`,首屏防闪缓存也能完整保存。
+
+状态页绑定走**已有的** `PUT /api/status-pages/{id}`,在 body 里追加可选 `theme_ref` 字段,不开新接口。
 
 ### 6.3 导入 / 导出
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/settings/themes/:id/export` | 已登录 | 返回完整 JSON,前端可下载或粘到剪贴板 |
+| GET | `/api/settings/themes/{id}/export` | 已登录 | 返回完整 JSON,前端可下载或粘到剪贴板(信息上等价于 `GET /themes/{id}`) |
 | POST | `/api/settings/themes/import` | Admin | Body 即 export 的 JSON,严格 schema 校验后落库 |
 
 导出 / 导入 JSON 形态:
@@ -228,7 +230,7 @@ sidebar-accent, sidebar-accent-foreground, sidebar-border, sidebar-ring
   }
   ```
 
-  前端在用户点 "删除" 前先调 `GET /api/settings/themes/:id/references`,响应是常规 `ApiResponse`:
+  前端在用户点 "删除" 前先调 `GET /api/settings/themes/{id}/references`,响应是常规 `ApiResponse`:
 
   ```json
   {
@@ -284,31 +286,77 @@ list_theme_references(db, ref) -> ReferenceList // 谁在用这个主题
 
 `crates/server/src/service/theme_validator.rs`:
 
-- 白名单 key 集合(常量)
-- OKLCH 字符串正则 `^oklch\(\s*[\d.]+\s+[\d.]+\s+[\d.]+\s*\)$`(留空格容错)
-- 缺 key / 多 key / 格式错误 → `AppError::Validation`
+- 白名单 key 集合(常量),与 §5.4 一致。
+- OKLCH 字符串正则与 §5.4 同步:`^oklch\(\s*[\d.]+\s+[\d.]+\s+[\d.]+(\s*/\s*[\d.]+%?)?\s*\)$`(允许可选 alpha,空白容错)。
+- 正则匹配后追加**数值范围校验**(正则不容易表达):
+  - L(lightness)∈ `[0.0, 1.0]`
+  - C(chroma)∈ `[0.0, 0.5]`(实际生效区间;超出依赖渲染裁剪,不算非法,但建议 lint 警告)
+  - H(hue)∈ `[0.0, 360.0]`
+  - α(alpha)若为数字则 ∈ `[0.0, 1.0]`,若为百分比则 ∈ `[0%, 100%]`
+- 缺 key / 多 key / 正则不匹配 / 数值越界 → `AppError::Validation`,message 指明第一个出错的 key 与原因。
 
 ### 7.5 router
 
 `crates/server/src/router/api/theme.rs`:`read_router()` + `write_router()` 拆分,`write_router()` 套 `require_admin` 中间件。
 
+**注意路由权限不能机械按 HTTP 方法分**:`GET /api/settings/themes/{id}/references` 是查询型(GET)但只对 Admin 开放(避免 Member 通过引用列表反推内部结构),它要挂在 `write_router()`(admin scope)而不是 `read_router()`,即便它是 GET。其余 admin GET 端点同理。
+
+具体路由分配:
+
+```text
+read_router()  (logged-in)
+  GET    /api/settings/themes
+  GET    /api/settings/themes/{id}
+  GET    /api/settings/themes/{id}/export
+  GET    /api/settings/active-theme
+
+write_router() (admin only, require_admin middleware)
+  POST   /api/settings/themes
+  PUT    /api/settings/themes/{id}
+  DELETE /api/settings/themes/{id}
+  GET    /api/settings/themes/{id}/references     <-- GET 但仅 Admin
+  POST   /api/settings/themes/{id}/duplicate
+  POST   /api/settings/themes/import
+  PUT    /api/settings/active-theme
+```
+
 ### 7.6 状态页扩展
 
 - `entity/status_page.rs` 加 `theme_ref: Option<String>`
 - `service/status_page.rs::update` 接受新字段,写库前调用 `validate_theme_ref`
-- 已有公开接口 `GET /api/status/{slug}`(在 `router/api/status_page.rs::public_router()`)的 `PublicStatusPageData` 响应体加一个 `theme: ThemeResolved` 字段:
+- 已有公开接口 `GET /api/status/{slug}`(在 `router/api/status_page.rs::public_router()`)的 `PublicStatusPageData` 响应体加一个 `theme: ThemeResolved` 字段。`ThemeResolved` 是带 tag 的 union,对应预设和自定义两种来源,**形态与 §6.2 active-theme 接口的 `theme` 字段完全一致,共用同一个 DTO**:
+
+  自定义形态:
 
   ```json
   {
     "theme": {
       "kind": "custom",
-      "vars_light": { "..." },
-      "vars_dark":  { "..." }
+      "id": 42,
+      "name": "My Brand",
+      "vars_light": { "...": "..." },
+      "vars_dark":  { "...": "..." }
     }
   }
   ```
 
-  这样公开页面无需另发一次请求即可应用主题。
+  预设形态(状态页绑了 `preset:tokyo-night` 或 `theme_ref` 为 `null` 时由后端 fallback 到全局后台主题):
+
+  ```json
+  {
+    "theme": {
+      "kind": "preset",
+      "id": "tokyo-night"
+    }
+  }
+  ```
+
+  前端在状态页根节点 `<div class="status-page-root">` 上做 scoped 渲染(详见 §8.5):
+
+  - `kind === 'custom'`:把 `vars_light` / `vars_dark` 注入到根节点的 scoped `<style>`(`.status-page-root { --background: ...; } .status-page-root.dark { --background: ...; }`)。
+  - `kind === 'preset'`:在根节点写 `data-theme={id}` 属性,并通过现有 `loadThemeCSS(id)` 异步加载预设 CSS(预设 CSS 文件本就基于 `[data-theme="..."]` 选择器,自然 scope 到根节点而非 `:root`,因为该选择器对任意祖先元素有效)。预设变量值在客户端代码里,不需后端再下发。
+
+  这样公开页面无需为预设 / 自定义两种来源走分叉逻辑,二者都通过同一个 root 元素的属性/style 切换;`ThemeResolved` 这个 union 同时被 `/api/settings/active-theme` 与 `/api/status/{slug}` 复用,DTO 单一来源。
 
 ### 7.7 迁移
 
@@ -362,7 +410,7 @@ _authed/settings/appearance/themes.$id.tsx     编辑器
 ### 8.3 关键交互
 
 - **拾取器**:OKLCH 三轴滑块(L / C / H)主输入,辅以 hex 双向同步。
-- **色彩转换**:`hex ↔ oklch`(及对 alpha 的处理)通过引入 `culori` 依赖完成 —— 它是社区维护良好的 OKLCH/CIE 色彩库,体积小、tree-shakable、覆盖 alpha 通道与 sRGB gamut 落界。**不自实现色彩数学**,色彩空间转换出错难以察觉、调试代价高。如果项目策略不允许新增依赖,退化为只支持 OKLCH 文本输入(无 hex 输入框),不做近似转换。
+- **色彩转换**:`hex ↔ oklch`(及对 alpha 的处理)通过引入 `culori` 依赖完成 —— 它是社区维护良好的 OKLCH/CIE 色彩库,体积小、tree-shakable、覆盖 alpha 通道与 sRGB gamut 落界。**不自实现色彩数学**,色彩空间转换出错难以察觉、调试代价高。**实现前(M5 起步)需按仓库流程提交一次依赖确认**(检查 license / 体积 / 维护活跃度,与项目其他 npm 依赖一致用 bun 安装并锁定 lockfile)。如果该确认未通过,退化方案是只支持 OKLCH 文本输入(无 hex 输入框),不做近似转换。
 - **预览隔离**:右栏挂在 `<div data-theme-preview>` 节点,变量通过 `style={{ '--background': ... }}` 注入到该节点 inline,**不影响外层应用**。
 - **Light/Dark 联动**:左右 tab 默认联动;勾选"与左栏联动 = off"时右栏可独立切换,便于对比。
 - **`isDirty` 拦截**:离开路由时弹确认。
@@ -399,7 +447,17 @@ type ColorThemeRef =
 
 ### 8.5 状态页渲染
 
-公开状态页路由(`/status/:slug` 等)在拿到接口附带的 `theme` 字段后,把变量注入到状态页根节点的 scoped class(如 `<div class="status-page-root">`),不污染外层(状态页内若嵌入了 `dashboard preview widget` 等其他部件)。优先级高于全局后台主题。
+公开状态页路由(`/status/{slug}` 等)在拿到接口附带的 `theme: ThemeResolved` 字段(§7.6)后,在状态页根节点 `<div class="status-page-root">` 上做 scoped 渲染,不污染外层应用。两种 `kind` 分支:
+
+- `kind === 'custom'`:把 `vars_light` / `vars_dark` 注入到一个**子作用域 `<style>` 标签**,内容形如:
+  ```css
+  .status-page-root { --background: oklch(...); /* ...其余变量... */ }
+  .status-page-root.dark { --background: oklch(...); /* ...暗色变量... */ }
+  ```
+  根节点根据当前 light/dark 模式 toggle `.dark` class。
+- `kind === 'preset'`:在根节点写 `data-theme={id}` 属性,并 `await loadThemeCSS(id)` 加载对应预设 CSS。预设 CSS 的 `[data-theme="..."]` 选择器会匹配根节点而非 `:root`,变量沿 DOM 树向下继承到子树,自然 scope。
+- 优先级:状态页自身 `theme_ref`(若非 `null`)> 全局后台 `active_admin_theme`(后端 fallback 已合并,前端拿到的 `theme` 字段就是最终结果)。
+- 暗黑模式:状态页是公开页,默认跟随浏览器 `prefers-color-scheme`,可在状态页右上角放一个 light/dark 切换按钮(可选,首版可省;按钮也仅 toggle 根节点 `.dark` class)。
 
 ### 8.6 状态页编辑表单
 
@@ -480,7 +538,7 @@ P14 用户首次升级后,Admin 进入外观页时一次性提示导入 `localSt
   1. 后端隐藏 `/api/settings/themes/*` 路由(返回 404),前端检测到入口接口 404 即自动隐藏"我的主题"区块,只剩 8 个预设。
   2. 后端 `GET /api/settings/active-theme` 在解析 `configs("active_admin_theme")` 时,如果 ref 形如 `custom:*`,**不返回错误**,而是 coerce 成 `preset:default` 后再 resolve,确保前台不会因 feature flag 关闭而白屏。注意:这是读时降级,**不写回 `configs`**,这样下次 flag 重新打开时,原 `custom:*` 激活值仍然恢复有效。
   3. 状态页响应同理:`status_page.theme_ref` 形如 `custom:*` 时被读时 coerce 成 `null`(= 跟随后台),不写回数据库。
-  4. `PUT /api/settings/active-theme` 与 `PUT /api/status-pages/:id` 的 `theme_ref` 字段在 flag 关闭时拒绝 `custom:*`(返回 422 "feature disabled"),仅允许 `preset:*` / `null`。
+  4. `PUT /api/settings/active-theme` 与 `PUT /api/status-pages/{id}` 的 `theme_ref` 字段在 flag 关闭时拒绝 `custom:*`(返回 422 "feature disabled"),仅允许 `preset:*` / `null`。
 
   这套语义保证 flag 切换是**真正可逆的开关**,而不是"关了之后用户的自定义激活值就丢失"。
 
