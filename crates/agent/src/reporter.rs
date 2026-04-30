@@ -668,7 +668,9 @@ impl Reporter {
                 tracing::info!("Upgrade requested: v{version} from {download_url}");
                 let tx = cmd_result_tx.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = perform_upgrade(&version, &download_url, &sha256, job_id, tx.clone()).await {
+                    if let Err(e) =
+                        perform_upgrade(&version, &download_url, &sha256, job_id, tx.clone()).await
+                    {
                         tracing::error!("Upgrade to v{version} failed: {e}");
                         UPGRADE_IN_PROGRESS.store(false, Ordering::SeqCst);
                     }
@@ -1922,7 +1924,9 @@ async fn perform_upgrade(
 
     tracing::info!("Downloading agent v{version} from {download_url}...");
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(UPGRADE_DOWNLOAD_TIMEOUT_SECS))
+        .timeout(std::time::Duration::from_secs(
+            UPGRADE_DOWNLOAD_TIMEOUT_SECS,
+        ))
         .build()?;
     let response = client
         .get(download_url)

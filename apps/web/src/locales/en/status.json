@@ -43,5 +43,8 @@
   "uptime_operational": "Operational",
   "uptime_degraded": "Degraded",
   "uptime_down": "Down",
-  "uptime_no_data": "No data"
+  "uptime_no_data": "No data",
+
+  "theme.label": "Theme",
+  "theme.follow_admin": "Follow admin default"
 }

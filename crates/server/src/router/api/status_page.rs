@@ -9,9 +9,11 @@ use serde::Serialize;
 
 use crate::entity::{incident, incident_update, maintenance, server, server_group, status_page};
 use crate::error::{ApiResponse, AppError, ok};
+use crate::service::custom_theme::{CustomThemeService, ThemeResolved};
 use crate::service::incident::IncidentService;
 use crate::service::maintenance::MaintenanceService;
 use crate::service::status_page::{CreateStatusPage, StatusPageService, UpdateStatusPage};
+use crate::service::theme_ref::ThemeRef;
 use crate::service::uptime::{UptimeDailyEntry, UptimeService};
 use crate::state::AppState;
 
@@ -60,6 +62,7 @@ pub struct IncidentWithUpdates {
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct PublicStatusPageData {
     pub page: StatusPageInfo,
+    pub theme: ThemeResolved,
     pub servers: Vec<ServerStatusInfo>,
     pub active_incidents: Vec<IncidentWithUpdates>,
     pub planned_maintenances: Vec<maintenance::Model>,
@@ -116,6 +119,12 @@ pub async fn get_public_status_page(
     }
 
     let page_id = page.id.clone();
+    let theme = resolve_public_status_page_theme(
+        &state.db,
+        page.theme_ref.as_deref(),
+        state.config.feature.custom_themes,
+    )
+    .await?;
 
     // Parse server IDs from the page
     let server_ids: Vec<String> = serde_json::from_str(&page.server_ids_json).unwrap_or_default();
@@ -247,11 +256,48 @@ pub async fn get_public_status_page(
 
     ok(PublicStatusPageData {
         page: page_info,
+        theme,
         servers: server_infos,
         active_incidents,
         planned_maintenances,
         recent_incidents,
     })
+}
+
+async fn resolve_public_status_page_theme(
+    db: &DatabaseConnection,
+    page_theme_ref: Option<&str>,
+    feature_enabled: bool,
+) -> Result<ThemeResolved, AppError> {
+    let Some(raw_ref) = page_theme_ref else {
+        return Ok(CustomThemeService::active_theme(db, feature_enabled)
+            .await?
+            .theme);
+    };
+
+    let parsed = match ThemeRef::parse(raw_ref) {
+        Ok(parsed) => parsed,
+        Err(_) => return default_theme(db).await,
+    };
+    if !feature_enabled && matches!(parsed, ThemeRef::Custom(_)) {
+        return Ok(CustomThemeService::active_theme(db, feature_enabled)
+            .await?
+            .theme);
+    }
+
+    match CustomThemeService::resolve(db, parsed).await {
+        Ok(response) => Ok(response.theme),
+        Err(AppError::NotFound(_)) => default_theme(db).await,
+        Err(err) => Err(err),
+    }
+}
+
+async fn default_theme(db: &DatabaseConnection) -> Result<ThemeResolved, AppError> {
+    Ok(
+        CustomThemeService::resolve(db, ThemeRef::Preset("default".to_string()))
+            .await?
+            .theme,
+    )
 }
 
 #[utoipa::path(
@@ -311,8 +357,26 @@ pub async fn update_status_page(
     Path(id): Path<String>,
     Json(input): Json<UpdateStatusPage>,
 ) -> Result<Json<ApiResponse<status_page::Model>>, AppError> {
+    ensure_status_page_theme_ref_allowed(&input, state.config.feature.custom_themes)?;
     let page = StatusPageService::update(&state.db, &id, input).await?;
     ok(page)
+}
+
+fn ensure_status_page_theme_ref_allowed(
+    input: &UpdateStatusPage,
+    feature_enabled: bool,
+) -> Result<(), AppError> {
+    let Some(Some(raw_ref)) = input.theme_ref.as_ref() else {
+        return Ok(());
+    };
+    let parsed = ThemeRef::parse(raw_ref)?;
+    if !feature_enabled && matches!(parsed, ThemeRef::Custom(_)) {
+        return Err(AppError::Validation(
+            "custom theme feature disabled".to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 #[utoipa::path(
@@ -333,4 +397,343 @@ pub async fn delete_status_page(
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     StatusPageService::delete(&state.db, &id).await?;
     ok("ok")
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::body::{Body, to_bytes};
+    use axum::http::{Request, StatusCode, header};
+    use sea_orm::{ActiveModelTrait, ConnectionTrait, EntityTrait, Set};
+    use serde_json::{Value, json};
+    use tower::ServiceExt;
+
+    use crate::config::AppConfig;
+    use crate::entity::status_page;
+    use crate::router::create_router;
+    use crate::service::auth::{AuthService, LoginParams};
+    use crate::service::custom_theme::{CreateThemeInput, CustomThemeService};
+    use crate::service::status_page::{CreateStatusPage, StatusPageService, UpdateStatusPage};
+    use crate::service::theme_validator::{REQUIRED_VARS, VarMap};
+    use crate::state::AppState;
+    use crate::test_utils::setup_test_db;
+
+    use super::*;
+
+    fn valid_vars() -> VarMap {
+        REQUIRED_VARS
+            .iter()
+            .map(|key| ((*key).to_string(), "oklch(0.5 0.1 180)".to_string()))
+            .collect()
+    }
+
+    fn create_page_input(slug: &str) -> CreateStatusPage {
+        CreateStatusPage {
+            title: "Status".to_string(),
+            slug: slug.to_string(),
+            description: None,
+            server_ids_json: Vec::new(),
+            group_by_server_group: None,
+            show_values: None,
+            custom_css: None,
+            enabled: None,
+            uptime_yellow_threshold: None,
+            uptime_red_threshold: None,
+        }
+    }
+
+    fn empty_update() -> UpdateStatusPage {
+        UpdateStatusPage {
+            title: None,
+            slug: None,
+            description: None,
+            server_ids_json: None,
+            group_by_server_group: None,
+            show_values: None,
+            custom_css: None,
+            enabled: None,
+            uptime_yellow_threshold: None,
+            uptime_red_threshold: None,
+            theme_ref: None,
+        }
+    }
+
+    async fn create_theme(db: &DatabaseConnection, name: &str) -> i32 {
+        CustomThemeService::create(
+            db,
+            CreateThemeInput {
+                name: name.to_string(),
+                description: None,
+                based_on: Some("default".to_string()),
+                vars_light: valid_vars(),
+                vars_dark: valid_vars(),
+            },
+            "status-page-router-test",
+        )
+        .await
+        .expect("theme should be created")
+        .id
+    }
+
+    async fn build_app(db: DatabaseConnection, config: AppConfig) -> axum::Router {
+        let state = AppState::new(db, config)
+            .await
+            .expect("app state should initialize");
+        create_router(state)
+    }
+
+    async fn get_json(app: axum::Router, uri: &str) -> (StatusCode, Value) {
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(axum::http::Method::GET)
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body should be readable");
+        let body = serde_json::from_slice(&bytes)
+            .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()));
+
+        (status, body)
+    }
+
+    async fn request_json(
+        app: axum::Router,
+        method: axum::http::Method,
+        uri: &str,
+        cookie: Option<&str>,
+        body: Option<Value>,
+    ) -> (StatusCode, Value) {
+        let mut builder = Request::builder().method(method).uri(uri);
+        if let Some(cookie) = cookie {
+            builder = builder.header(header::COOKIE, cookie);
+        }
+
+        let request_body = if let Some(value) = body {
+            builder = builder.header(header::CONTENT_TYPE, "application/json");
+            Body::from(serde_json::to_vec(&value).expect("body should serialize"))
+        } else {
+            Body::empty()
+        };
+        let response = app
+            .oneshot(builder.body(request_body).expect("request should build"))
+            .await
+            .expect("router should respond");
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body should be readable");
+        let body = if bytes.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_slice(&bytes)
+                .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()))
+        };
+
+        (status, body)
+    }
+
+    async fn session_cookie(db: &DatabaseConnection, username: &str) -> String {
+        AuthService::create_user(db, username, "password123", "admin")
+            .await
+            .expect("admin user should be created");
+        let (session, _) = AuthService::login(
+            db,
+            LoginParams {
+                username,
+                password: "password123",
+                totp_code: None,
+                ip: "127.0.0.1",
+                user_agent: "status-page-router-test",
+                session_ttl: 3600,
+            },
+        )
+        .await
+        .expect("login should create a session");
+
+        format!("session_token={}", session.token)
+    }
+
+    async fn set_status_page_theme_ref_direct(
+        db: &DatabaseConnection,
+        page_id: &str,
+        theme_ref: &str,
+    ) {
+        let page = status_page::Entity::find_by_id(page_id)
+            .one(db)
+            .await
+            .expect("status page lookup should succeed")
+            .expect("status page should exist");
+        let mut active: status_page::ActiveModel = page.into();
+        active.theme_ref = Set(Some(theme_ref.to_string()));
+        active
+            .update(db)
+            .await
+            .expect("status page theme ref should update directly");
+    }
+
+    #[tokio::test]
+    async fn public_status_page_returns_page_specific_custom_theme() {
+        let (db, _tmp) = setup_test_db().await;
+        let page = StatusPageService::create(&db, create_page_input("page-specific"))
+            .await
+            .expect("status page should be created");
+        let theme_id = create_theme(&db, "Ocean").await;
+        let mut input = empty_update();
+        input.theme_ref = Some(Some(format!("custom:{theme_id}")));
+        StatusPageService::update(&db, &page.id, input)
+            .await
+            .expect("status page theme ref should update");
+        let app = build_app(db, AppConfig::default()).await;
+
+        let (status, body) = get_json(app, "/api/status/page-specific").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body["data"]["theme"],
+            json!({
+                "kind": "custom",
+                "id": theme_id,
+                "name": "Ocean",
+                "vars_light": valid_vars(),
+                "vars_dark": valid_vars(),
+                "updated_at": body["data"]["theme"]["updated_at"],
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn public_status_page_falls_back_to_global_active_theme_when_page_theme_ref_is_null() {
+        let (db, _tmp) = setup_test_db().await;
+        StatusPageService::create(&db, create_page_input("global-theme"))
+            .await
+            .expect("status page should be created");
+        let theme_id = create_theme(&db, "Global").await;
+        CustomThemeService::set_active_theme(&db, &format!("custom:{theme_id}"), true)
+            .await
+            .expect("active theme should update");
+        let app = build_app(db, AppConfig::default()).await;
+
+        let (status, body) = get_json(app, "/api/status/global-theme").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["data"]["theme"]["kind"], "custom");
+        assert_eq!(body["data"]["theme"]["id"], theme_id);
+        assert_eq!(body["data"]["theme"]["name"], "Global");
+    }
+
+    #[tokio::test]
+    async fn public_status_page_falls_back_to_default_for_dangling_and_malformed_page_refs() {
+        let (db, _tmp) = setup_test_db().await;
+        db.execute_unprepared(
+            "DROP TRIGGER IF EXISTS trg_custom_theme_status_page_update_ref_exists",
+        )
+        .await
+        .expect("status page update trigger should be dropped");
+        let dangling = StatusPageService::create(&db, create_page_input("dangling-theme"))
+            .await
+            .expect("status page should be created");
+        let malformed = StatusPageService::create(&db, create_page_input("malformed-theme"))
+            .await
+            .expect("status page should be created");
+        set_status_page_theme_ref_direct(&db, &dangling.id, "custom:999").await;
+        set_status_page_theme_ref_direct(&db, &malformed.id, "theme:nope").await;
+        let app = build_app(db, AppConfig::default()).await;
+
+        for uri in ["/api/status/dangling-theme", "/api/status/malformed-theme"] {
+            let (status, body) = get_json(app.clone(), uri).await;
+            assert_eq!(status, StatusCode::OK, "{uri}");
+            assert_eq!(
+                body["data"]["theme"],
+                json!({
+                    "kind": "preset",
+                    "id": "default",
+                }),
+                "{uri}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn public_status_page_follows_global_theme_for_custom_page_ref_when_feature_is_disabled()
+    {
+        let (db, _tmp) = setup_test_db().await;
+        let page = StatusPageService::create(&db, create_page_input("disabled-feature"))
+            .await
+            .expect("status page should be created");
+        let theme_id = create_theme(&db, "Disabled").await;
+        let mut input = empty_update();
+        input.theme_ref = Some(Some(format!("custom:{theme_id}")));
+        StatusPageService::update(&db, &page.id, input)
+            .await
+            .expect("status page theme ref should update");
+        CustomThemeService::set_active_theme(&db, "preset:nord", true)
+            .await
+            .expect("active preset should update");
+        let mut config = AppConfig::default();
+        config.feature.custom_themes = false;
+        let app = build_app(db, config).await;
+
+        let (status, body) = get_json(app, "/api/status/disabled-feature").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body["data"]["theme"],
+            json!({
+                "kind": "preset",
+                "id": "nord",
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn disabled_custom_themes_reject_custom_status_page_update_but_allow_null_and_preset() {
+        let (db, _tmp) = setup_test_db().await;
+        let cookie = session_cookie(&db, "status_page_disabled_admin").await;
+        let page = StatusPageService::create(&db, create_page_input("disabled-update"))
+            .await
+            .expect("status page should be created");
+        let theme_id = create_theme(&db, "Disabled write").await;
+        let mut config = AppConfig::default();
+        config.feature.custom_themes = false;
+        let app = build_app(db, config).await;
+
+        let (custom_status, custom_body) = request_json(
+            app.clone(),
+            axum::http::Method::PUT,
+            &format!("/api/status-pages/{}", page.id),
+            Some(&cookie),
+            Some(json!({ "theme_ref": format!("custom:{theme_id}") })),
+        )
+        .await;
+        let (preset_status, _) = request_json(
+            app.clone(),
+            axum::http::Method::PUT,
+            &format!("/api/status-pages/{}", page.id),
+            Some(&cookie),
+            Some(json!({ "theme_ref": "preset:nord" })),
+        )
+        .await;
+        let (null_status, _) = request_json(
+            app,
+            axum::http::Method::PUT,
+            &format!("/api/status-pages/{}", page.id),
+            Some(&cookie),
+            Some(json!({ "theme_ref": null })),
+        )
+        .await;
+
+        assert_eq!(custom_status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            custom_body["error"]["message"],
+            "Validation error: custom theme feature disabled"
+        );
+        assert_eq!(preset_status, StatusCode::OK);
+        assert_eq!(null_status, StatusCode::OK);
+    }
 }

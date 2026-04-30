@@ -8,6 +8,7 @@ import { createDevProxy } from './vite/dev-proxy'
 
 const apiRuntimePattern = /^\/api\//
 const pwaRuntimePattern = /^\/pwa-/
+const routeFileIgnorePattern = 'components|hooks|types\\.ts|\\.test\\.(ts|tsx)$'
 
 function requireProdProxyEnv(env: Record<string, string>, name: string) {
   const value = env[name]?.trim()
@@ -37,7 +38,7 @@ export default defineConfig(({ mode }) => {
     return {
       plugins: [
         TanStackRouterVite({
-          routeFileIgnorePattern: 'components|hooks|types\\.ts'
+          routeFileIgnorePattern
         }),
         react(),
         tailwindcss(),
@@ -101,7 +102,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       TanStackRouterVite({
-        routeFileIgnorePattern: 'components|hooks|types\\.ts'
+        routeFileIgnorePattern
       }),
       react(),
       tailwindcss(),

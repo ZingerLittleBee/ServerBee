@@ -1,14 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Clock, Server, Wrench, XCircle } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { UptimeTimeline } from '@/components/uptime/uptime-timeline'
 import { api } from '@/lib/api-client'
-import type { PublicStatusPageData } from '@/lib/api-schema'
+import type { PublicStatusPageData, ThemeResolved } from '@/lib/api-schema'
 import { cn } from '@/lib/utils'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
+import { isColorTheme, loadThemeCSS } from '@/themes'
 
 export const Route = createFileRoute('/status/$slug')({
   component: PublicStatusPage
@@ -53,6 +54,51 @@ function formatRelative(iso: string, t: (key: string, options?: { count: number 
   }
   const days = Math.floor(hours / 24)
   return t('time_days_ago', { count: days })
+}
+
+function serializeScopedVars(selector: string, vars: Record<string, string>) {
+  const declarations = Object.entries(vars)
+    .map(([key, value]) => `  --${key}: ${value};`)
+    .join('\n')
+
+  return `${selector} {\n${declarations}\n}`
+}
+
+export function applyStatusPageTheme(root: HTMLElement, theme: ThemeResolved) {
+  root.removeAttribute('data-theme')
+  root.querySelector('style[data-status-theme]')?.remove()
+
+  if (theme.kind === 'preset') {
+    if (theme.id !== 'default' && isColorTheme(theme.id)) {
+      loadThemeCSS(theme.id).then(() => {
+        root.setAttribute('data-theme', theme.id)
+      })
+    }
+    return
+  }
+
+  const style = document.createElement('style')
+  style.dataset.statusTheme = '1'
+  style.textContent = [
+    serializeScopedVars('.status-page-root', theme.vars_light),
+    serializeScopedVars('.status-page-root.dark', theme.vars_dark)
+  ].join('\n\n')
+  root.appendChild(style)
+}
+
+function usePrefersDark() {
+  const [prefersDark, setPrefersDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    const handleChange = () => setPrefersDark(mediaQuery.matches)
+    mediaQuery.addEventListener('change', handleChange)
+    handleChange()
+
+    return () => mediaQuery.removeEventListener('change', handleChange)
+  }, [])
+
+  return prefersDark
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +249,8 @@ function PublicStatusPage() {
   const { slug } = Route.useParams()
   const { t, i18n } = useTranslation('status')
   const isZh = (i18n.resolvedLanguage ?? i18n.language).startsWith('zh')
+  const rootRef = useRef<HTMLDivElement>(null)
+  const prefersDark = usePrefersDark()
 
   const { data, isLoading, error } = useQuery<PublicStatusPageData>({
     queryKey: ['public-status', slug],
@@ -210,8 +258,14 @@ function PublicStatusPage() {
     refetchInterval: 30_000
   })
 
+  useEffect(() => {
+    if (rootRef.current && data?.theme) {
+      applyStatusPageTheme(rootRef.current, data.theme)
+    }
+  }, [data?.theme])
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className={cn('status-page-root min-h-screen bg-background', prefersDark && 'dark')} ref={rootRef}>
       <header className="border-b">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-4">
           <div className="flex items-center gap-2">

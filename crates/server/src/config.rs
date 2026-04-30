@@ -36,6 +36,8 @@ pub struct AppConfig {
     pub mobile: MobileConfig,
     #[serde(default)]
     pub resend: ResendConfig,
+    #[serde(default)]
+    pub feature: FeatureConfig,
 }
 
 impl Default for AppConfig {
@@ -55,6 +57,7 @@ impl Default for AppConfig {
             file: FileConfig::default(),
             mobile: MobileConfig::default(),
             resend: ResendConfig::default(),
+            feature: FeatureConfig::default(),
         }
     }
 }
@@ -345,6 +348,20 @@ pub struct ResendConfig {
     pub api_key: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct FeatureConfig {
+    #[serde(default = "default_true")]
+    pub custom_themes: bool,
+}
+
+impl Default for FeatureConfig {
+    fn default() -> Self {
+        Self {
+            custom_themes: default_true(),
+        }
+    }
+}
+
 fn default_utc() -> String {
     "UTC".to_string()
 }
@@ -479,10 +496,6 @@ mod tests {
         assert_eq!(cfg.api_key, "");
     }
 
-    #[expect(
-        clippy::result_large_err,
-        reason = "figment::Jail::expect_with requires figment::Result"
-    )]
     #[test]
     fn test_resend_config_reads_env_var() {
         figment::Jail::expect_with(|jail| {
@@ -500,5 +513,24 @@ mod tests {
     fn test_app_config_default_has_empty_resend() {
         let cfg = AppConfig::default();
         assert_eq!(cfg.resend.api_key, "");
+    }
+
+    #[test]
+    fn test_app_config_default_enables_custom_themes() {
+        let cfg = AppConfig::default();
+        assert!(cfg.feature.custom_themes);
+    }
+
+    #[test]
+    fn test_feature_config_reads_custom_themes_env_var() {
+        figment::Jail::expect_with(|jail| {
+            jail.set_env("SERVERBEE_FEATURE__CUSTOM_THEMES", "false");
+            let cfg: AppConfig = figment::Figment::new()
+                .merge(figment::providers::Env::prefixed("SERVERBEE_").split("__"))
+                .extract()
+                .expect("custom themes feature flag should deserialize from env");
+            assert!(!cfg.feature.custom_themes);
+            Ok(())
+        });
     }
 }
