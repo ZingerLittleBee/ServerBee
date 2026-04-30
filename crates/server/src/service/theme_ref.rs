@@ -1,4 +1,4 @@
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 use serde::Serialize;
 
 use crate::entity::{custom_theme, status_page};
@@ -33,9 +33,7 @@ impl ThemeRef {
         }
 
         if let Some(rest) = s.strip_prefix("custom:") {
-            let id = rest
-                .parse::<i32>()
-                .map_err(|_| AppError::Validation(format!("invalid custom id: {rest}")))?;
+            let id = parse_custom_id(rest)?;
             return Ok(Self::Custom(id));
         }
 
@@ -50,10 +48,36 @@ impl ThemeRef {
     }
 }
 
+fn parse_custom_id(rest: &str) -> Result<i32, AppError> {
+    if rest.is_empty() || !rest.bytes().all(|b| b.is_ascii_digit()) || rest.starts_with('0') {
+        return Err(AppError::Validation(format!("invalid custom id: {rest}")));
+    }
+
+    let id = rest
+        .parse::<i32>()
+        .map_err(|_| AppError::Validation(format!("invalid custom id: {rest}")))?;
+
+    if id > 0 {
+        Ok(id)
+    } else {
+        Err(AppError::Validation(format!("invalid custom id: {rest}")))
+    }
+}
+
 pub async fn validate_theme_ref(db: &DatabaseConnection, r: &ThemeRef) -> Result<(), AppError> {
     match r {
-        ThemeRef::Preset(_) => Ok(()),
+        ThemeRef::Preset(id) => {
+            if PRESET_IDS.contains(&id.as_str()) {
+                Ok(())
+            } else {
+                Err(AppError::Validation(format!("unknown preset: {id}")))
+            }
+        }
         ThemeRef::Custom(id) => {
+            if *id <= 0 {
+                return Err(AppError::Validation(format!("invalid custom id: {id}")));
+            }
+
             let exists = custom_theme::Entity::find_by_id(*id)
                 .one(db)
                 .await?
@@ -83,10 +107,18 @@ pub async fn list_references(
     db: &DatabaseConnection,
     custom_id: i32,
 ) -> Result<ThemeReferences, AppError> {
+    if custom_id <= 0 {
+        return Err(AppError::Validation(format!(
+            "invalid custom id: {custom_id}"
+        )));
+    }
+
     let urn = ThemeRef::Custom(custom_id).to_urn();
     let active_admin_theme = ConfigService::get(db, "active_admin_theme").await?;
     let status_pages = status_page::Entity::find()
         .filter(status_page::Column::ThemeRef.eq(urn.clone()))
+        .order_by_asc(status_page::Column::Title)
+        .order_by_asc(status_page::Column::Id)
         .all(db)
         .await?
         .into_iter()
@@ -105,6 +137,7 @@ pub async fn list_references(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::setup_test_db;
 
     #[test]
     fn parses_preset() {
@@ -131,11 +164,68 @@ mod tests {
     }
 
     #[test]
+    fn rejects_empty_preset() {
+        let err = ThemeRef::parse("preset:").expect_err("empty preset should fail");
+        assert!(matches!(err, AppError::Validation(message) if message == "unknown preset: "));
+    }
+
+    #[test]
     fn rejects_bad_custom_id() {
         let err = ThemeRef::parse("custom:nope").expect_err("bad custom id should fail");
         assert!(
             matches!(err, AppError::Validation(message) if message == "invalid custom id: nope")
         );
+    }
+
+    #[test]
+    fn rejects_empty_custom_id() {
+        let err = ThemeRef::parse("custom:").expect_err("empty custom id should fail");
+        assert!(matches!(err, AppError::Validation(message) if message == "invalid custom id: "));
+    }
+
+    #[test]
+    fn rejects_zero_custom_id() {
+        let err = ThemeRef::parse("custom:0").expect_err("zero custom id should fail");
+        assert!(matches!(err, AppError::Validation(message) if message == "invalid custom id: 0"));
+    }
+
+    #[test]
+    fn rejects_negative_custom_id() {
+        let err = ThemeRef::parse("custom:-1").expect_err("negative custom id should fail");
+        assert!(matches!(err, AppError::Validation(message) if message == "invalid custom id: -1"));
+    }
+
+    #[test]
+    fn rejects_plus_custom_id() {
+        let err = ThemeRef::parse("custom:+1").expect_err("plus custom id should fail");
+        assert!(matches!(err, AppError::Validation(message) if message == "invalid custom id: +1"));
+    }
+
+    #[test]
+    fn rejects_leading_zero_custom_id() {
+        let err = ThemeRef::parse("custom:001").expect_err("leading zero custom id should fail");
+        assert!(
+            matches!(err, AppError::Validation(message) if message == "invalid custom id: 001")
+        );
+    }
+
+    #[test]
+    fn rejects_overflow_custom_id() {
+        let err = ThemeRef::parse("custom:2147483648").expect_err("overflow custom id should fail");
+        assert!(
+            matches!(err, AppError::Validation(message) if message == "invalid custom id: 2147483648")
+        );
+    }
+
+    #[test]
+    fn rejects_whitespace_wrapped_ref() {
+        let err = ThemeRef::parse(" custom:1").expect_err("leading whitespace should fail");
+        assert!(
+            matches!(err, AppError::Validation(message) if message == "malformed theme ref:  custom:1")
+        );
+
+        let err = ThemeRef::parse("custom:1 ").expect_err("trailing whitespace should fail");
+        assert!(matches!(err, AppError::Validation(message) if message == "invalid custom id: 1 "));
     }
 
     #[test]
@@ -156,5 +246,18 @@ mod tests {
                 theme_ref
             );
         }
+    }
+
+    #[tokio::test]
+    async fn validate_theme_ref_rejects_directly_constructed_unknown_preset() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let err = validate_theme_ref(&db, &ThemeRef::Preset("nonsense".to_string()))
+            .await
+            .expect_err("unknown preset should fail validation");
+
+        assert!(
+            matches!(err, AppError::Validation(message) if message == "unknown preset: nonsense")
+        );
     }
 }
