@@ -94,6 +94,7 @@ impl StatusPageService {
             enabled: Set(input.enabled.unwrap_or(true)),
             uptime_yellow_threshold: Set(input.uptime_yellow_threshold.unwrap_or(100.0)),
             uptime_red_threshold: Set(input.uptime_red_threshold.unwrap_or(95.0)),
+            theme_ref: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         };
