@@ -28,6 +28,7 @@ pub mod server_tag;
 pub mod service_monitor;
 pub mod status_page;
 pub mod task_scheduler;
+pub mod theme_ref;
 pub mod theme_validator;
 pub mod traffic;
 pub mod upgrade_release;
