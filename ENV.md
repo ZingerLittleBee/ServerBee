@@ -37,6 +37,7 @@ These variables are for local repo tooling and development workflows. They are n
 | `SERVERBEE_AUTH__MAX_SERVERS` | `auth.max_servers` | u32 | `0` | Maximum servers allowed via auto-discovery (0 = no limit). Best-effort soft cap |
 | `SERVERBEE_ADMIN__USERNAME` | `admin.username` | string | `admin` | Default admin username (created on first startup if no users exist) |
 | `SERVERBEE_SCHEDULER__TIMEZONE` | `scheduler.timezone` | string | `UTC` | Timezone for daily traffic aggregation and cron scheduling (e.g. `Asia/Shanghai`) |
+| `SERVERBEE_FEATURE__CUSTOM_THEMES` | `feature.custom_themes` | bool | `true` | Disable user-defined themes when false. Custom refs are read-coerced to `preset:default` |
 | `SERVERBEE_LOG__LEVEL` | `log.level` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `SERVERBEE_LOG__FILE` | `log.file` | string | `""` | Log file path. Empty means stdout only |
 
