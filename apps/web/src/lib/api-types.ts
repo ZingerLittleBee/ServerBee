@@ -4,7903 +4,7914 @@
  */
 
 export interface paths {
-    "/api/agent/latest-version": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["latest_version"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/agent/register": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["register"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/alert-events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_alert_events"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/alert-events/{alert_key}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_alert_event_detail"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/alert-rules": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_rules"];
-        put?: never;
-        post: operations["create_rule"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/alert-rules/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_rule"];
-        put: operations["update_rule"];
-        post?: never;
-        delete: operations["delete_rule"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/alert-rules/{id}/states": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_states"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/audit-logs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_audit_logs"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/2fa/disable": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["totp_disable"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/2fa/enable": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["totp_enable"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/2fa/setup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["totp_setup"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/2fa/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["totp_status"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/api-keys": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_api_keys"];
-        put?: never;
-        post: operations["create_api_key"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/api-keys/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["delete_api_key"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/login": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["login"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/logout": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["logout"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/me": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["me"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/oauth/accounts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_oauth_accounts"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/oauth/accounts/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["unlink_oauth_account"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/oauth/providers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List configured OAuth providers. */
-        get: operations["list_providers"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/oauth/{provider}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Redirect user to the OAuth provider's authorization page. */
-        get: operations["oauth_authorize"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/oauth/{provider}/callback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Handle the OAuth callback from the provider. */
-        get: operations["oauth_callback"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/password": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["change_password"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/brand/favicon": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["serve_favicon"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/brand/logo": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["serve_logo"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dashboards": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_dashboards"];
-        put?: never;
-        post: operations["create_dashboard"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dashboards/default": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_default_dashboard"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dashboards/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_dashboard"];
-        put: operations["update_dashboard"];
-        post?: never;
-        delete: operations["delete_dashboard"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/files/download/{transfer_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["download_file"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/files/transfers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_transfers"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/files/transfers/{transfer_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["cancel_transfer"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/files/{server_id}/delete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["delete_file"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/files/{server_id}/download": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["start_download"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/files/{server_id}/list": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["list_files"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/files/{server_id}/mkdir": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["mkdir"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/files/{server_id}/move": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["move_file"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/files/{server_id}/read": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["read_file"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/files/{server_id}/stat": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["stat_file"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/files/{server_id}/upload": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["upload_file"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/files/{server_id}/write": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["write_file"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/incidents": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_incidents"];
-        put?: never;
-        post: operations["create_incident"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/incidents/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["update_incident"];
-        post?: never;
-        delete: operations["delete_incident"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/incidents/{id}/updates": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["add_incident_update"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/maintenances": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_maintenances"];
-        put?: never;
-        post: operations["create_maintenance"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/maintenances/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["update_maintenance"];
-        post?: never;
-        delete: operations["delete_maintenance"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mobile/auth/devices": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_devices"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mobile/auth/devices/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["revoke_device"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mobile/auth/login": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["mobile_login"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mobile/auth/logout": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["mobile_logout"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mobile/auth/pair": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["mobile_pair_redeem"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mobile/auth/refresh": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["mobile_refresh"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mobile/pair": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["generate_pair_code"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mobile/push/register": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["push_register"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mobile/push/unregister": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["push_unregister"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/notification-groups": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_notification_groups"];
-        put?: never;
-        post: operations["create_notification_group"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/notification-groups/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_group"];
-        put: operations["update_notification_group"];
-        post?: never;
-        delete: operations["delete_notification_group"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/notifications": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_notifications"];
-        put?: never;
-        post: operations["create_notification"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/notifications/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_notification"];
-        put: operations["update_notification"];
-        post?: never;
-        delete: operations["delete_notification"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/notifications/{id}/test": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["test_notification"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ping-tasks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_ping_tasks"];
-        put?: never;
-        post: operations["create_ping_task"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ping-tasks/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_ping_task"];
-        put: operations["update_ping_task"];
-        post?: never;
-        delete: operations["delete_ping_task"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ping-tasks/{id}/records": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_ping_records"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/server-groups": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_server_groups"];
-        put?: never;
-        post: operations["create_server_group"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/server-groups/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["update_server_group"];
-        post?: never;
-        delete: operations["delete_server_group"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/servers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_servers"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/servers/batch-capabilities": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["batch_update_capabilities"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/servers/batch-delete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["batch_delete"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/servers/cleanup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["cleanup_orphaned_servers"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/servers/recovery-jobs/{job_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_recovery_job"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/servers/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_server"];
-        put: operations["update_server"];
-        post?: never;
-        delete: operations["delete_server"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/servers/{id}/gpu-records": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_gpu_records"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/servers/{id}/records": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_server_records"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/servers/{id}/traceroute": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Trigger a traceroute to a target from the specified server's agent. */
-        post: operations["trigger_traceroute"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/servers/{id}/traceroute/{request_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Poll for the result of a previously triggered traceroute. */
-        get: operations["get_traceroute_result"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/servers/{id}/traffic": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_traffic"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/servers/{id}/upgrade": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["trigger_upgrade"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/servers/{server_id}/uptime-daily": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_uptime_daily"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/servers/{target_id}/recover-merge": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["start_recovery_merge"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/servers/{target_id}/recovery-candidates": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_candidates"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/service-monitors": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_monitors"];
-        put?: never;
-        post: operations["create_service_monitor"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/service-monitors/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_service_monitor"];
-        put: operations["update_service_monitor"];
-        post?: never;
-        delete: operations["delete_service_monitor"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/service-monitors/{id}/check": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["trigger_service_monitor_check"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/service-monitors/{id}/records": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_service_monitor_records"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_settings"];
-        put: operations["update_settings"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/active-theme": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_active_theme"];
-        put: operations["put_active_theme"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/auto-discovery-key": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_auto_discovery_key"];
-        put: operations["regenerate_auto_discovery_key"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/backup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Download a backup of the SQLite database. */
-        post: operations["create_backup"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/brand": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_brand_config"];
-        put: operations["update_brand_config"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/brand/favicon": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["upload_favicon"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/brand/logo": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["upload_logo"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/restore": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Restore the database from an uploaded backup file.
-         *     The server should be restarted after restore.
-         *     Note: request body is raw binary (application/octet-stream).
-         */
-        post: operations["restore_backup"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/themes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_themes"];
-        put?: never;
-        post: operations["create_theme"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/themes/import": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["import_theme"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/themes/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_theme"];
-        put: operations["update_theme"];
-        post?: never;
-        delete: operations["delete_theme"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/themes/{id}/duplicate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["duplicate_theme"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/themes/{id}/export": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["export_theme"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/themes/{id}/references": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_references"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["public_status"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/status-pages": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_status_pages"];
-        put?: never;
-        post: operations["create_status_page"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/status-pages/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["update_status_page"];
-        post?: never;
-        delete: operations["delete_status_page"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/status/{slug}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_public_status_page"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/tasks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_tasks"];
-        put?: never;
-        post: operations["create_task"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/tasks/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_task"];
-        put: operations["update_task"];
-        post?: never;
-        delete: operations["delete_task"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/tasks/{id}/results": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_task_results"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/tasks/{id}/run": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["run_task"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/traffic/overview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_traffic_overview"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/traffic/overview/daily": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_traffic_overview_daily"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/traffic/{server_id}/cycle": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_traffic_cycle"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/users": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_users"];
-        put?: never;
-        post: operations["create_user"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/users/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_user"];
-        put: operations["update_user"];
-        post?: never;
-        delete: operations["delete_user"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
+  '/api/agent/latest-version': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['latest_version']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/agent/register': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['register']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/alert-events': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_alert_events']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/alert-events/{alert_key}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_alert_event_detail']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/alert-rules': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_rules']
+    put?: never
+    post: operations['create_rule']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/alert-rules/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_rule']
+    put: operations['update_rule']
+    post?: never
+    delete: operations['delete_rule']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/alert-rules/{id}/states': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_states']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/audit-logs': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_audit_logs']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/auth/2fa/disable': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['totp_disable']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/auth/2fa/enable': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['totp_enable']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/auth/2fa/setup': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['totp_setup']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/auth/2fa/status': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['totp_status']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/auth/api-keys': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_api_keys']
+    put?: never
+    post: operations['create_api_key']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/auth/api-keys/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['delete_api_key']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/auth/login': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['login']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/auth/logout': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['logout']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/auth/me': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['me']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/auth/oauth/{provider}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Redirect user to the OAuth provider's authorization page. */
+    get: operations['oauth_authorize']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/auth/oauth/{provider}/callback': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Handle the OAuth callback from the provider. */
+    get: operations['oauth_callback']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/auth/oauth/accounts': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_oauth_accounts']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/auth/oauth/accounts/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['unlink_oauth_account']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/auth/oauth/providers': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List configured OAuth providers. */
+    get: operations['list_providers']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/auth/password': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['change_password']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/brand/favicon': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['serve_favicon']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/brand/logo': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['serve_logo']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/dashboards': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_dashboards']
+    put?: never
+    post: operations['create_dashboard']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/dashboards/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_dashboard']
+    put: operations['update_dashboard']
+    post?: never
+    delete: operations['delete_dashboard']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/dashboards/default': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_default_dashboard']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/{server_id}/delete': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['delete_file']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/{server_id}/download': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['start_download']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/{server_id}/list': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['list_files']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/{server_id}/mkdir': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['mkdir']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/{server_id}/move': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['move_file']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/{server_id}/read': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['read_file']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/{server_id}/stat': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['stat_file']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/{server_id}/upload': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['upload_file']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/{server_id}/write': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['write_file']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/download/{transfer_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['download_file']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/transfers': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_transfers']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/files/transfers/{transfer_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['cancel_transfer']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/incidents': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_incidents']
+    put?: never
+    post: operations['create_incident']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/incidents/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['update_incident']
+    post?: never
+    delete: operations['delete_incident']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/incidents/{id}/updates': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['add_incident_update']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/maintenances': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_maintenances']
+    put?: never
+    post: operations['create_maintenance']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/maintenances/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['update_maintenance']
+    post?: never
+    delete: operations['delete_maintenance']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mobile/auth/devices': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_devices']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mobile/auth/devices/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['revoke_device']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mobile/auth/login': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['mobile_login']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mobile/auth/logout': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['mobile_logout']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mobile/auth/pair': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['mobile_pair_redeem']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mobile/auth/refresh': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['mobile_refresh']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mobile/pair': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['generate_pair_code']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mobile/push/register': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['push_register']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mobile/push/unregister': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['push_unregister']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/notification-groups': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_notification_groups']
+    put?: never
+    post: operations['create_notification_group']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/notification-groups/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_group']
+    put: operations['update_notification_group']
+    post?: never
+    delete: operations['delete_notification_group']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/notifications': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_notifications']
+    put?: never
+    post: operations['create_notification']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/notifications/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_notification']
+    put: operations['update_notification']
+    post?: never
+    delete: operations['delete_notification']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/notifications/{id}/test': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['test_notification']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/ping-tasks': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_ping_tasks']
+    put?: never
+    post: operations['create_ping_task']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/ping-tasks/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_ping_task']
+    put: operations['update_ping_task']
+    post?: never
+    delete: operations['delete_ping_task']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/ping-tasks/{id}/records': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_ping_records']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/server-groups': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_server_groups']
+    put?: never
+    post: operations['create_server_group']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/server-groups/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['update_server_group']
+    post?: never
+    delete: operations['delete_server_group']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_servers']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_server']
+    put: operations['update_server']
+    post?: never
+    delete: operations['delete_server']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/{id}/gpu-records': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_gpu_records']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/{id}/records': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_server_records']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/{id}/traceroute': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Trigger a traceroute to a target from the specified server's agent. */
+    post: operations['trigger_traceroute']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/{id}/traceroute/{request_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Poll for the result of a previously triggered traceroute. */
+    get: operations['get_traceroute_result']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/{id}/traffic': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_traffic']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/{id}/upgrade': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['trigger_upgrade']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/{server_id}/uptime-daily': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_uptime_daily']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/{target_id}/recover-merge': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['start_recovery_merge']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/{target_id}/recovery-candidates': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_candidates']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/batch-capabilities': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['batch_update_capabilities']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/batch-delete': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['batch_delete']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/cleanup': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['cleanup_orphaned_servers']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/recovery-jobs/{job_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_recovery_job']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/service-monitors': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_monitors']
+    put?: never
+    post: operations['create_service_monitor']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/service-monitors/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_service_monitor']
+    put: operations['update_service_monitor']
+    post?: never
+    delete: operations['delete_service_monitor']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/service-monitors/{id}/check': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['trigger_service_monitor_check']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/service-monitors/{id}/records': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_service_monitor_records']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_settings']
+    put: operations['update_settings']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/active-theme': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_active_theme']
+    put: operations['put_active_theme']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/auto-discovery-key': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_auto_discovery_key']
+    put: operations['regenerate_auto_discovery_key']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/backup': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Download a backup of the SQLite database. */
+    post: operations['create_backup']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/brand': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_brand_config']
+    put: operations['update_brand_config']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/brand/favicon': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['upload_favicon']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/brand/logo': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['upload_logo']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/restore': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Restore the database from an uploaded backup file.
+     *     The server should be restarted after restore.
+     *     Note: request body is raw binary (application/octet-stream).
+     */
+    post: operations['restore_backup']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/themes': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_themes']
+    put?: never
+    post: operations['create_theme']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/themes/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_theme']
+    put: operations['update_theme']
+    post?: never
+    delete: operations['delete_theme']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/themes/{id}/duplicate': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['duplicate_theme']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/themes/{id}/export': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['export_theme']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/themes/{id}/references': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_references']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/settings/themes/import': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['import_theme']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/status': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['public_status']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/status-pages': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_status_pages']
+    put?: never
+    post: operations['create_status_page']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/status-pages/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['update_status_page']
+    post?: never
+    delete: operations['delete_status_page']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/status/{slug}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_public_status_page']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/tasks': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_tasks']
+    put?: never
+    post: operations['create_task']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/tasks/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_task']
+    put: operations['update_task']
+    post?: never
+    delete: operations['delete_task']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/tasks/{id}/results': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_task_results']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/tasks/{id}/run': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['run_task']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/traffic/{server_id}/cycle': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_traffic_cycle']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/traffic/overview': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_traffic_overview']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/traffic/overview/daily': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_traffic_overview_daily']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/users': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_users']
+    put?: never
+    post: operations['create_user']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/users/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_user']
+    put: operations['update_user']
+    post?: never
+    delete: operations['delete_user']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
 }
-export type webhooks = Record<string, never>;
+export type webhooks = Record<string, never>
 export interface components {
-    schemas: {
-        ActiveThemeResponse: {
-            ref: string;
-            theme: components["schemas"]["ThemeResolved"];
-        };
-        AlertEventDetailResponse: {
-            alert_key: string;
-            first_triggered_at: string;
-            message: string;
-            resolved_at?: string | null;
-            rule_enabled: boolean;
-            rule_id: string;
-            rule_name: string;
-            rule_trigger_mode: string;
-            server_id: string;
-            server_name: string;
-            status: string;
-            /** Format: int32 */
-            trigger_count: number;
-        };
-        AlertEventResponse: {
-            /** Format: int32 */
-            count: number;
-            /** @description first_triggered_at for firing, resolved_at for resolved */
-            event_at: string;
-            resolved_at?: string | null;
-            rule_id: string;
-            rule_name: string;
-            server_id: string;
-            server_name: string;
-            /** @description "firing" or "resolved" */
-            status: string;
-        };
-        AlertRule: {
-            cover_type: string;
-            /** Format: date-time */
-            created_at: string;
-            enabled: boolean;
-            fail_trigger_tasks?: string | null;
-            id: string;
-            name: string;
-            notification_group_id?: string | null;
-            recover_trigger_tasks?: string | null;
-            rules_json: string;
-            server_ids_json?: string | null;
-            trigger_mode: string;
-            /** Format: date-time */
-            updated_at: string;
-        };
-        AlertRuleItem: {
-            cycle_interval?: string | null;
-            /** Format: int64 */
-            cycle_limit?: number | null;
-            /** Format: int32 */
-            duration?: number | null;
-            /** Format: double */
-            max?: number | null;
-            /** Format: double */
-            min?: number | null;
-            rule_type: string;
-        };
-        AlertStateResponse: {
-            /** Format: int32 */
-            count: number;
-            /** Format: date-time */
-            first_triggered_at: string;
-            /** Format: date-time */
-            last_notified_at: string;
-            resolved: boolean;
-            /** Format: date-time */
-            resolved_at?: string | null;
-            server_id: string;
-            server_name: string;
-        };
-        ApiKeyResponse: {
-            created_at: string;
-            id: string;
-            key?: string | null;
-            key_prefix: string;
-            name: string;
-        };
-        ApiResponse_CycleResponse: {
-            data: {
-                current: components["schemas"]["CycleTraffic"];
-                history: components["schemas"]["CycleTraffic"][];
-            };
-        };
-        ApiResponse_TrafficResponse: {
-            data: {
-                /** Format: int64 */
-                bytes_in: number;
-                /** Format: int64 */
-                bytes_out: number;
-                /** Format: int64 */
-                bytes_total: number;
-                cycle_end: string;
-                cycle_start: string;
-                daily: components["schemas"]["DailyTraffic"][];
-                hourly: components["schemas"]["HourlyTraffic"][];
-                prediction?: null | components["schemas"]["TrafficPrediction"];
-                /** Format: int64 */
-                traffic_limit?: number | null;
-                traffic_limit_type?: string | null;
-                /** Format: double */
-                usage_percent?: number | null;
-            };
-        };
-        ApiResponse_Vec_DailyTraffic: {
-            data: {
-                /** Format: int64 */
-                bytes_in: number;
-                /** Format: int64 */
-                bytes_out: number;
-                date: string;
-            }[];
-        };
-        ApiResponse_Vec_ServerTrafficOverview: {
-            data: {
-                billing_cycle?: string | null;
-                /** Format: int64 */
-                cycle_in: number;
-                /** Format: int64 */
-                cycle_out: number;
-                /** Format: int64 */
-                days_remaining: number;
-                name: string;
-                /** Format: double */
-                percent_used?: number | null;
-                server_id: string;
-                /** Format: int64 */
-                traffic_limit?: number | null;
-            }[];
-        };
-        ApiResponse_Vec_UptimeDailyEntry: {
-            data: {
-                /** Format: date */
-                date: string;
-                /** Format: int32 */
-                downtime_incidents: number;
-                /** Format: int32 */
-                online_minutes: number;
-                /** Format: int32 */
-                total_minutes: number;
-            }[];
-        };
-        AuditListResponse: {
-            entries: components["schemas"]["AuditLogEntry"][];
-            /** Format: int64 */
-            total: number;
-        };
-        AuditLogEntry: {
-            action: string;
-            created_at: string;
-            detail?: string | null;
-            /** Format: int64 */
-            id: number;
-            ip: string;
-            user_id: string;
-        };
-        AutoDiscoveryKeyResponse: {
-            key: string;
-        };
-        BatchCapabilitiesRequest: {
-            server_ids: string[];
-            /** Format: int32 */
-            set?: number;
-            /** Format: int32 */
-            unset?: number;
-        };
-        BatchCapabilitiesResponse: {
-            /** Format: int64 */
-            updated: number;
-        };
-        BatchDeleteRequest: {
-            ids: string[];
-        };
-        BatchDeleteResponse: {
-            /** Format: int64 */
-            deleted: number;
-        };
-        BrandConfig: {
-            favicon_path?: string | null;
-            footer_text?: string | null;
-            logo_path?: string | null;
-            site_title?: string | null;
-        };
-        ChangePasswordRequest: {
-            new_password: string;
-            old_password: string;
-        };
-        CleanupResponse: {
-            /** Format: int64 */
-            deleted_count: number;
-        };
-        CreateAlertRule: {
-            cover_type?: string;
-            enabled?: boolean;
-            name: string;
-            notification_group_id?: string | null;
-            rules: components["schemas"]["AlertRuleItem"][];
-            server_ids?: string[] | null;
-            trigger_mode?: string;
-        };
-        CreateApiKeyRequest: {
-            name: string;
-        };
-        CreateDashboardInput: {
-            name: string;
-        };
-        CreateGroupRequest: {
-            name: string;
-        };
-        CreateIncident: {
-            server_ids_json?: string[] | null;
-            severity?: string;
-            status?: string;
-            status_page_ids_json?: string[] | null;
-            title: string;
-        };
-        CreateIncidentUpdate: {
-            message: string;
-            status: string;
-        };
-        CreateMaintenance: {
-            active?: boolean | null;
-            description?: string | null;
-            /** Format: date-time */
-            end_at: string;
-            server_ids_json?: string[] | null;
-            /** Format: date-time */
-            start_at: string;
-            status_page_ids_json?: string[] | null;
-            title: string;
-        };
-        CreateNotification: {
-            config_json: unknown;
-            enabled?: boolean;
-            name: string;
-            notify_type: string;
-        };
-        CreateNotificationGroup: {
-            name: string;
-            notification_ids: string[];
-        };
-        CreatePingTask: {
-            enabled?: boolean;
-            /** Format: int32 */
-            interval?: number;
-            name: string;
-            probe_type: string;
-            server_ids?: string[];
-            target: string;
-        };
-        CreateServiceMonitor: {
-            config_json?: unknown;
-            enabled?: boolean;
-            /** Format: int32 */
-            interval?: number;
-            monitor_type: string;
-            name: string;
-            notification_group_id?: string | null;
-            /** Format: int32 */
-            retry_count?: number;
-            server_ids_json?: string[] | null;
-            target: string;
-        };
-        CreateStatusPage: {
-            custom_css?: string | null;
-            description?: string | null;
-            enabled?: boolean | null;
-            group_by_server_group?: boolean | null;
-            server_ids_json: string[];
-            show_values?: boolean | null;
-            slug: string;
-            title: string;
-            /** Format: double */
-            uptime_red_threshold?: number | null;
-            /** Format: double */
-            uptime_yellow_threshold?: number | null;
-        };
-        CreateTaskRequest: {
-            command: string;
-            cron_expression?: string | null;
-            name?: string | null;
-            /** Format: int32 */
-            retry_count?: number | null;
-            /** Format: int32 */
-            retry_interval?: number | null;
-            server_ids: string[];
-            /** @description "oneshot" (default) or "scheduled" */
-            task_type?: string;
-            /** Format: int32 */
-            timeout?: number | null;
-        };
-        CreateThemeInput: {
-            based_on?: string | null;
-            description?: string | null;
-            name: string;
-            vars_dark: components["schemas"]["HashMap"];
-            vars_light: components["schemas"]["HashMap"];
-        };
-        CreateUserInput: {
-            password: string;
-            role?: string;
-            username: string;
-        };
-        CycleResponse: {
-            current: components["schemas"]["CycleTraffic"];
-            history: components["schemas"]["CycleTraffic"][];
-        };
-        CycleTraffic: {
-            /** Format: int64 */
-            bytes_in: number;
-            /** Format: int64 */
-            bytes_out: number;
-            end: string;
-            period: string;
-            start: string;
-        };
-        DailyTraffic: {
-            /** Format: int64 */
-            bytes_in: number;
-            /** Format: int64 */
-            bytes_out: number;
-            date: string;
-        };
-        DashboardWithWidgets: components["schemas"]["Model"] & {
-            widgets: components["schemas"]["Model"][];
-        };
-        DeleteRequest: {
-            path: string;
-            recursive?: boolean;
-        };
-        DownloadRequest: {
-            path: string;
-        };
-        DownloadResponse: {
-            status: string;
-            transfer_id: string;
-        };
-        ErrorBody: {
-            error: components["schemas"]["ErrorDetail"];
-        };
-        ErrorDetail: {
-            code: string;
-            message: string;
-        };
-        ExportPayload: {
-            based_on?: string | null;
-            description?: string | null;
-            name: string;
-            vars_dark: components["schemas"]["HashMap"];
-            vars_light: components["schemas"]["HashMap"];
-            /** Format: int32 */
-            version: number;
-        };
-        FileEntry: {
-            file_type: components["schemas"]["FileType"];
-            group?: string | null;
-            /** Format: int64 */
-            modified: number;
-            name: string;
-            owner?: string | null;
-            path: string;
-            permissions?: string | null;
-            /** Format: int64 */
-            size: number;
-        };
-        /** @enum {string} */
-        FileType: "File" | "Directory" | "Symlink";
-        GpuRecord: {
-            /** Format: int32 */
-            device_index: number;
-            device_name: string;
-            /** Format: int64 */
-            id: number;
-            /** Format: int64 */
-            mem_total: number;
-            /** Format: int64 */
-            mem_used: number;
-            server_id: string;
-            /** Format: double */
-            temperature: number;
-            /** Format: date-time */
-            time: string;
-            /** Format: double */
-            utilization: number;
-        };
-        HashMap: {
-            [key: string]: string;
-        };
-        HourlyTraffic: {
-            /** Format: int64 */
-            bytes_in: number;
-            /** Format: int64 */
-            bytes_out: number;
-            hour: string;
-        };
-        Incident: {
-            /** Format: date-time */
-            created_at: string;
-            id: string;
-            /** Format: date-time */
-            resolved_at?: string | null;
-            server_ids_json?: string | null;
-            severity: string;
-            status: string;
-            status_page_ids_json?: string | null;
-            title: string;
-            /** Format: date-time */
-            updated_at: string;
-        };
-        IncidentUpdate: {
-            /** Format: date-time */
-            created_at: string;
-            id: string;
-            incident_id: string;
-            message: string;
-            status: string;
-        };
-        IncidentWithUpdates: components["schemas"]["Incident"] & {
-            updates: components["schemas"]["IncidentUpdate"][];
-        };
-        LatestAgentVersionResponse: {
-            error?: string | null;
-            /** Format: date-time */
-            released_at?: string | null;
-            version?: string | null;
-        };
-        ListFilesRequest: {
-            path: string;
-        };
-        ListFilesResponse: {
-            entries: components["schemas"]["FileEntry"][];
-        };
-        LoginRequest: {
-            password: string;
-            totp_code?: string | null;
-            username: string;
-        };
-        LoginResponse: {
-            role: string;
-            user_id: string;
-            username: string;
-        };
-        Maintenance: {
-            active: boolean;
-            /** Format: date-time */
-            created_at: string;
-            description?: string | null;
-            /** Format: date-time */
-            end_at: string;
-            id: string;
-            server_ids_json?: string | null;
-            /** Format: date-time */
-            start_at: string;
-            status_page_ids_json?: string | null;
-            title: string;
-            /** Format: date-time */
-            updated_at: string;
-        };
-        MeResponse: {
-            role: string;
-            user_id: string;
-            username: string;
-        };
-        MkdirRequest: {
-            path: string;
-        };
-        MobileDeviceResponse: {
-            created_at: string;
-            device_name: string;
-            id: string;
-            installation_id: string;
-            last_used_at: string;
-        };
-        MobileLoginRequest: {
-            device_name: string;
-            installation_id: string;
-            password: string;
-            totp_code?: string | null;
-            username: string;
-        };
-        MobilePairCodeResponse: {
-            code: string;
-            /** Format: int64 */
-            expires_in_secs: number;
-        };
-        MobilePairRedeemRequest: {
-            code: string;
-            device_name: string;
-            installation_id: string;
-        };
-        MobileRefreshRequest: {
-            installation_id: string;
-            refresh_token: string;
-        };
-        /** @description Token pair returned after successful login or refresh. */
-        MobileTokenResponse: {
-            /** Format: int64 */
-            access_expires_in_secs: number;
-            access_token: string;
-            /** Format: int64 */
-            refresh_expires_in_secs: number;
-            refresh_token: string;
-            token_type: string;
-            user: components["schemas"]["MobileUserResponse"];
-        };
-        /** @description Minimal user info returned alongside tokens. */
-        MobileUserResponse: {
-            id: string;
-            role: string;
-            username: string;
-        };
-        Model: {
-            config_json: string;
-            created_at: string;
-            dashboard_id: string;
-            /** Format: int32 */
-            grid_h: number;
-            /** Format: int32 */
-            grid_w: number;
-            /** Format: int32 */
-            grid_x: number;
-            /** Format: int32 */
-            grid_y: number;
-            id: string;
-            /** Format: int32 */
-            sort_order: number;
-            title?: string | null;
-            widget_type: string;
-        };
-        MonitorWithRecord: components["schemas"]["ServiceMonitor"] & {
-            latest_record?: null | components["schemas"]["ServiceMonitorRecord"];
-        };
-        MoveRequest: {
-            from: string;
-            to: string;
-        };
-        Notification: {
-            config_json: string;
-            /** Format: date-time */
-            created_at: string;
-            enabled: boolean;
-            id: string;
-            name: string;
-            notify_type: string;
-        };
-        NotificationGroup: {
-            /** Format: date-time */
-            created_at: string;
-            id: string;
-            name: string;
-            notification_ids_json: string;
-        };
-        OAuthAccount: {
-            /** Format: date-time */
-            created_at: string;
-            display_name?: string | null;
-            email?: string | null;
-            id: string;
-            provider: string;
-            provider_user_id: string;
-            user_id: string;
-        };
-        OAuthProvidersResponse: {
-            providers: string[];
-        };
-        PingRecord: {
-            error?: string | null;
-            /** Format: int64 */
-            id: number;
-            /** Format: double */
-            latency: number;
-            server_id: string;
-            success: boolean;
-            task_id: string;
-            /** Format: date-time */
-            time: string;
-        };
-        PingTask: {
-            /** Format: date-time */
-            created_at: string;
-            enabled: boolean;
-            id: string;
-            /** Format: int32 */
-            interval: number;
-            name: string;
-            probe_type: string;
-            server_ids_json: string;
-            target: string;
-        };
-        PublicStatusPageData: {
-            active_incidents: components["schemas"]["IncidentWithUpdates"][];
-            page: components["schemas"]["StatusPageInfo"];
-            planned_maintenances: components["schemas"]["Maintenance"][];
-            recent_incidents: components["schemas"]["IncidentWithUpdates"][];
-            servers: components["schemas"]["ServerStatusInfo"][];
-            theme: components["schemas"]["ThemeResolved"];
-        };
-        PushRegisterRequest: {
-            /** @description The APNs device token obtained from the iOS device. */
-            device_token: string;
-        };
-        PutActiveThemeInput: {
-            ref: string;
-        };
-        ReadRequest: {
-            path: string;
-        };
-        ReadResponse: {
-            content: string;
-        };
-        RecoveryCandidateResponse: {
-            name: string;
-            reasons: string[];
-            /** Format: int32 */
-            score: number;
-            server_id: string;
-        };
-        RecoveryJobResponse: {
-            /** Format: date-time */
-            created_at: string;
-            error?: string | null;
-            job_id: string;
-            /** Format: date-time */
-            last_heartbeat_at?: string | null;
-            source_server_id: string;
-            stage: components["schemas"]["RecoveryJobStage"];
-            /** Format: date-time */
-            started_at: string;
-            status: components["schemas"]["RecoveryJobStatus"];
-            target_server_id: string;
-            /** Format: date-time */
-            updated_at: string;
-        };
-        /** @enum {string} */
-        RecoveryJobStage: "validating" | "rebinding" | "awaiting_target_online" | "freezing_writes" | "merging_history" | "finalizing" | "succeeded" | "failed" | "unknown";
-        /** @enum {string} */
-        RecoveryJobStatus: "running" | "failed" | "succeeded" | "unknown";
-        RegisterRequest: {
-            fingerprint?: string;
-        };
-        RegisterResponse: {
-            server_id: string;
-            token: string;
-        };
-        ServerGroup: {
-            /** Format: date-time */
-            created_at: string;
-            id: string;
-            name: string;
-            /** Format: int32 */
-            weight: number;
-        };
-        ServerRecord: {
-            /** Format: double */
-            cpu: number;
-            disk_io_json?: string | null;
-            /** Format: int64 */
-            disk_used: number;
-            /** Format: double */
-            gpu_usage?: number | null;
-            /** Format: int64 */
-            id: number;
-            /** Format: double */
-            load1: number;
-            /** Format: double */
-            load15: number;
-            /** Format: double */
-            load5: number;
-            /** Format: int64 */
-            mem_used: number;
-            /** Format: int64 */
-            net_in_speed: number;
-            /** Format: int64 */
-            net_in_transfer: number;
-            /** Format: int64 */
-            net_out_speed: number;
-            /** Format: int64 */
-            net_out_transfer: number;
-            /** Format: int32 */
-            process_count: number;
-            server_id: string;
-            /** Format: int64 */
-            swap_used: number;
-            /** Format: int32 */
-            tcp_conn: number;
-            /** Format: double */
-            temperature?: number | null;
-            /** Format: date-time */
-            time: string;
-            /** Format: int32 */
-            udp_conn: number;
-        };
-        ServerRecordHourly: {
-            /** Format: double */
-            cpu: number;
-            disk_io_json?: string | null;
-            /** Format: int64 */
-            disk_used: number;
-            /** Format: double */
-            gpu_usage?: number | null;
-            /** Format: int64 */
-            id: number;
-            /** Format: double */
-            load1: number;
-            /** Format: double */
-            load15: number;
-            /** Format: double */
-            load5: number;
-            /** Format: int64 */
-            mem_used: number;
-            /** Format: int64 */
-            net_in_speed: number;
-            /** Format: int64 */
-            net_in_transfer: number;
-            /** Format: int64 */
-            net_out_speed: number;
-            /** Format: int64 */
-            net_out_transfer: number;
-            /** Format: int32 */
-            process_count: number;
-            server_id: string;
-            /** Format: int64 */
-            swap_used: number;
-            /** Format: int32 */
-            tcp_conn: number;
-            /** Format: double */
-            temperature?: number | null;
-            /** Format: date-time */
-            time: string;
-            /** Format: int32 */
-            udp_conn: number;
-        };
-        /** @description Server response DTO — excludes sensitive fields (token_hash, token_prefix). */
-        ServerResponse: {
-            /** Format: int32 */
-            agent_local_capabilities?: number | null;
-            agent_version?: string | null;
-            billing_cycle?: string | null;
-            /** Format: int32 */
-            billing_start_day?: number | null;
-            /** Format: int32 */
-            capabilities: number;
-            country_code?: string | null;
-            cpu_arch?: string | null;
-            /** Format: int32 */
-            cpu_cores?: number | null;
-            cpu_name?: string | null;
-            /** Format: date-time */
-            created_at: string;
-            currency?: string | null;
-            /** Format: int64 */
-            disk_total?: number | null;
-            /** Format: int32 */
-            effective_capabilities?: number | null;
-            /** Format: date-time */
-            expired_at?: string | null;
-            features: string[];
-            group_id?: string | null;
-            hidden: boolean;
-            id: string;
-            ipv4?: string | null;
-            ipv6?: string | null;
-            kernel_version?: string | null;
-            /** Format: int64 */
-            mem_total?: number | null;
-            name: string;
-            os?: string | null;
-            /** Format: double */
-            price?: number | null;
-            /** Format: int32 */
-            protocol_version: number;
-            public_remark?: string | null;
-            region?: string | null;
-            remark?: string | null;
-            /** Format: int64 */
-            swap_total?: number | null;
-            /** Format: int64 */
-            traffic_limit?: number | null;
-            traffic_limit_type?: string | null;
-            /** Format: date-time */
-            updated_at: string;
-            virtualization?: string | null;
-            /** Format: int32 */
-            weight: number;
-        };
-        ServerStatusInfo: {
-            country_code?: string | null;
-            group_id?: string | null;
-            group_name?: string | null;
-            in_maintenance: boolean;
-            online: boolean;
-            os?: string | null;
-            region?: string | null;
-            server_id: string;
-            server_name: string;
-            uptime_daily: components["schemas"]["UptimeDailyEntry"][];
-            /** Format: double */
-            uptime_percent?: number | null;
-        };
-        ServerTrafficOverview: {
-            billing_cycle?: string | null;
-            /** Format: int64 */
-            cycle_in: number;
-            /** Format: int64 */
-            cycle_out: number;
-            /** Format: int64 */
-            days_remaining: number;
-            name: string;
-            /** Format: double */
-            percent_used?: number | null;
-            server_id: string;
-            /** Format: int64 */
-            traffic_limit?: number | null;
-        };
-        ServiceMonitor: {
-            config_json: string;
-            /** Format: int32 */
-            consecutive_failures: number;
-            /** Format: date-time */
-            created_at: string;
-            enabled: boolean;
-            id: string;
-            /** Format: int32 */
-            interval: number;
-            /** Format: date-time */
-            last_checked_at?: string | null;
-            last_status?: boolean | null;
-            monitor_type: string;
-            name: string;
-            notification_group_id?: string | null;
-            /** Format: int32 */
-            retry_count: number;
-            server_ids_json?: string | null;
-            target: string;
-            /** Format: date-time */
-            updated_at: string;
-        };
-        ServiceMonitorRecord: {
-            detail_json: string;
-            error?: string | null;
-            /** Format: int64 */
-            id: number;
-            /** Format: double */
-            latency?: number | null;
-            monitor_id: string;
-            success: boolean;
-            /** Format: date-time */
-            time: string;
-        };
-        StartRecoveryRequest: {
-            source_server_id: string;
-        };
-        StatRequest: {
-            path: string;
-        };
-        StatResponse: {
-            entry: components["schemas"]["FileEntry"];
-        };
-        StatusGroup: {
-            id: string;
-            name: string;
-        };
-        StatusMetrics: {
-            /** Format: double */
-            cpu: number;
-            /** Format: int64 */
-            disk_total: number;
-            /** Format: int64 */
-            disk_used: number;
-            /** Format: double */
-            load1: number;
-            /** Format: int64 */
-            mem_total: number;
-            /** Format: int64 */
-            mem_used: number;
-            /** Format: int64 */
-            net_in_speed: number;
-            /** Format: int64 */
-            net_in_transfer: number;
-            /** Format: int64 */
-            net_out_speed: number;
-            /** Format: int64 */
-            net_out_transfer: number;
-            /** Format: int64 */
-            uptime: number;
-        };
-        StatusPage: {
-            /** Format: date-time */
-            created_at: string;
-            custom_css?: string | null;
-            description?: string | null;
-            enabled: boolean;
-            group_by_server_group: boolean;
-            id: string;
-            server_ids_json: string;
-            show_values: boolean;
-            slug: string;
-            theme_ref?: string | null;
-            title: string;
-            /** Format: date-time */
-            updated_at: string;
-            /** Format: double */
-            uptime_red_threshold: number;
-            /** Format: double */
-            uptime_yellow_threshold: number;
-        };
-        StatusPageInfo: {
-            custom_css?: string | null;
-            description?: string | null;
-            group_by_server_group: boolean;
-            id: string;
-            show_values: boolean;
-            slug: string;
-            title: string;
-            /** Format: double */
-            uptime_red_threshold: number;
-            /** Format: double */
-            uptime_yellow_threshold: number;
-        };
-        StatusPageRef: {
-            id: string;
-            name: string;
-        };
-        StatusPageResponse: {
-            groups: components["schemas"]["StatusGroup"][];
-            online_count: number;
-            servers: components["schemas"]["StatusServer"][];
-            total_count: number;
-        };
-        /** @description Public status info for a single server. */
-        StatusServer: {
-            country_code?: string | null;
-            group_id?: string | null;
-            id: string;
-            metrics?: null | components["schemas"]["StatusMetrics"];
-            name: string;
-            online: boolean;
-            os?: string | null;
-            public_remark?: string | null;
-            region?: string | null;
-        };
-        SuccessResponse: {
-            success: boolean;
-        };
-        SystemSettings: {
-            custom_css?: string | null;
-            custom_js?: string | null;
-            site_description?: string | null;
-            site_name?: string | null;
-        };
-        TaskResponse: {
-            command: string;
-            /** Format: date-time */
-            created_at: string;
-            cron_expression?: string | null;
-            enabled: boolean;
-            id: string;
-            /** Format: date-time */
-            last_run_at?: string | null;
-            name?: string | null;
-            /** Format: date-time */
-            next_run_at?: string | null;
-            /** Format: int32 */
-            retry_count: number;
-            /** Format: int32 */
-            retry_interval: number;
-            server_ids: string[];
-            task_type: string;
-            /** Format: int32 */
-            timeout?: number | null;
-        };
-        TaskResult: {
-            /** Format: int32 */
-            attempt: number;
-            /** Format: int32 */
-            exit_code: number;
-            /** Format: date-time */
-            finished_at: string;
-            /** Format: int64 */
-            id: number;
-            output: string;
-            run_id?: string | null;
-            server_id: string;
-            /** Format: date-time */
-            started_at?: string | null;
-            task_id: string;
-        };
-        Theme: {
-            based_on?: string | null;
-            /** Format: date-time */
-            created_at: string;
-            description?: string | null;
-            /** Format: int32 */
-            id: number;
-            name: string;
-            /** Format: date-time */
-            updated_at: string;
-            vars_dark: components["schemas"]["HashMap"];
-            vars_light: components["schemas"]["HashMap"];
-        };
-        ThemeReferences: {
-            admin: boolean;
-            status_pages: components["schemas"]["StatusPageRef"][];
-        };
-        ThemeResolved: {
-            id: string;
-            /** @enum {string} */
-            kind: "preset";
-        } | {
-            /** Format: int32 */
-            id: number;
-            /** @enum {string} */
-            kind: "custom";
-            name: string;
-            /** Format: date-time */
-            updated_at: string;
-            vars_dark: components["schemas"]["HashMap"];
-            vars_light: components["schemas"]["HashMap"];
-        };
-        ThemeSummary: {
-            based_on?: string | null;
-            /** Format: int32 */
-            id: number;
-            name: string;
-            /** Format: date-time */
-            updated_at: string;
-        };
-        TotpDisableRequest: {
-            password: string;
-        };
-        TotpSetupResponse: {
-            otpauth_url: string;
-            qr_code_base64: string;
-            secret: string;
-        };
-        TotpStatusResponse: {
-            enabled: boolean;
-        };
-        TotpVerifyRequest: {
-            code: string;
-        };
-        TracerouteHop: {
-            asn?: string | null;
-            /** Format: int32 */
-            hop: number;
-            hostname?: string | null;
-            ip?: string | null;
-            /** Format: double */
-            rtt1?: number | null;
-            /** Format: double */
-            rtt2?: number | null;
-            /** Format: double */
-            rtt3?: number | null;
-        };
-        TracerouteResultResponse: {
-            completed: boolean;
-            error?: string | null;
-            hops: components["schemas"]["TracerouteHop"][];
-            target: string;
-        };
-        TrafficPrediction: {
-            /** Format: double */
-            estimated_percent: number;
-            /** Format: int64 */
-            estimated_total: number;
-            will_exceed: boolean;
-        };
-        TrafficResponse: {
-            /** Format: int64 */
-            bytes_in: number;
-            /** Format: int64 */
-            bytes_out: number;
-            /** Format: int64 */
-            bytes_total: number;
-            cycle_end: string;
-            cycle_start: string;
-            daily: components["schemas"]["DailyTraffic"][];
-            hourly: components["schemas"]["HourlyTraffic"][];
-            prediction?: null | components["schemas"]["TrafficPrediction"];
-            /** Format: int64 */
-            traffic_limit?: number | null;
-            traffic_limit_type?: string | null;
-            /** Format: double */
-            usage_percent?: number | null;
-        };
-        /** @description Serializable transfer info for API responses. */
-        TransferInfo: {
-            /** Format: int64 */
-            bytes_transferred: number;
-            /** Format: int64 */
-            created_at_secs_ago: number;
-            direction: string;
-            file_path: string;
-            /** Format: int64 */
-            file_size?: number | null;
-            server_id: string;
-            status: string;
-            transfer_id: string;
-        };
-        TransfersResponse: {
-            transfers: components["schemas"]["TransferInfo"][];
-        };
-        TriggerTracerouteRequest: {
-            /** @description Target host or IP (e.g. "1.2.3.4" or "example.com") */
-            target: string;
-        };
-        TriggerTracerouteResponse: {
-            /** @description Unique request ID used to poll for results */
-            request_id: string;
-        };
-        UpdateAlertRule: {
-            cover_type?: string | null;
-            enabled?: boolean | null;
-            name?: string | null;
-            notification_group_id?: string | null;
-            rules?: components["schemas"]["AlertRuleItem"][] | null;
-            server_ids?: string[] | null;
-            trigger_mode?: string | null;
-        };
-        UpdateDashboardInput: {
-            is_default?: boolean | null;
-            name?: string | null;
-            /** Format: int32 */
-            sort_order?: number | null;
-            widgets?: components["schemas"]["WidgetInput"][] | null;
-        };
-        UpdateGroupRequest: {
-            name?: string | null;
-            /** Format: int32 */
-            weight?: number | null;
-        };
-        UpdateIncident: {
-            server_ids_json?: string[] | null;
-            severity?: string | null;
-            status?: string | null;
-            status_page_ids_json?: string[] | null;
-            title?: string | null;
-        };
-        UpdateMaintenance: {
-            active?: boolean | null;
-            description?: string | null;
-            /** Format: date-time */
-            end_at?: string | null;
-            server_ids_json?: string[] | null;
-            /** Format: date-time */
-            start_at?: string | null;
-            status_page_ids_json?: string[] | null;
-            title?: string | null;
-        };
-        UpdateNotification: {
-            config_json?: unknown;
-            enabled?: boolean | null;
-            name?: string | null;
-            notify_type?: string | null;
-        };
-        UpdateNotificationGroup: {
-            name?: string | null;
-            notification_ids?: string[] | null;
-        };
-        UpdatePingTask: {
-            enabled?: boolean | null;
-            /** Format: int32 */
-            interval?: number | null;
-            name?: string | null;
-            probe_type?: string | null;
-            server_ids?: string[] | null;
-            target?: string | null;
-        };
-        UpdateServerInput: {
-            billing_cycle?: string | null;
-            /** Format: int32 */
-            billing_start_day?: number | null;
-            /** Format: int32 */
-            capabilities?: number | null;
-            currency?: string | null;
-            /** Format: date-time */
-            expired_at?: string | null;
-            group_id?: string | null;
-            hidden?: boolean | null;
-            name?: string | null;
-            /** Format: double */
-            price?: number | null;
-            public_remark?: string | null;
-            remark?: string | null;
-            /** Format: int64 */
-            traffic_limit?: number | null;
-            traffic_limit_type?: string | null;
-            /** Format: int32 */
-            weight?: number | null;
-        };
-        UpdateServiceMonitor: {
-            config_json?: unknown;
-            enabled?: boolean | null;
-            /** Format: int32 */
-            interval?: number | null;
-            name?: string | null;
-            notification_group_id?: string | null;
-            /** Format: int32 */
-            retry_count?: number | null;
-            server_ids_json?: string[] | null;
-            target?: string | null;
-        };
-        UpdateStatusPage: {
-            custom_css?: string | null;
-            description?: string | null;
-            enabled?: boolean | null;
-            group_by_server_group?: boolean | null;
-            server_ids_json?: string[] | null;
-            show_values?: boolean | null;
-            slug?: string | null;
-            theme_ref?: string | null;
-            title?: string | null;
-            /** Format: double */
-            uptime_red_threshold?: number | null;
-            /** Format: double */
-            uptime_yellow_threshold?: number | null;
-        };
-        UpdateTaskRequest: {
-            command?: string | null;
-            cron_expression?: string | null;
-            enabled?: boolean | null;
-            name?: string | null;
-            /** Format: int32 */
-            retry_count?: number | null;
-            /** Format: int32 */
-            retry_interval?: number | null;
-            server_ids?: string[] | null;
-            /** Format: int32 */
-            timeout?: number | null;
-        };
-        UpdateThemeInput: {
-            based_on?: string | null;
-            description?: string | null;
-            name: string;
-            vars_dark: components["schemas"]["HashMap"];
-            vars_light: components["schemas"]["HashMap"];
-        };
-        UpdateUserInput: {
-            password?: string | null;
-            role?: string | null;
-        };
-        UpgradeRequest: {
-            /** @description Target version string (e.g. "0.2.0" or "v0.2.0") */
-            version: string;
-        };
-        UploadResponse: {
-            path: string;
-        };
-        UptimeDaily: {
-            /** Format: date */
-            date: string;
-            /** Format: int32 */
-            downtime_incidents: number;
-            /** Format: int64 */
-            id: number;
-            /** Format: int32 */
-            online_minutes: number;
-            server_id: string;
-            /** Format: int32 */
-            total_minutes: number;
-        };
-        /** @description A single day's uptime data, with gap-filling for missing dates. */
-        UptimeDailyEntry: {
-            /** Format: date */
-            date: string;
-            /** Format: int32 */
-            downtime_incidents: number;
-            /** Format: int32 */
-            online_minutes: number;
-            /** Format: int32 */
-            total_minutes: number;
-        };
-        UserResponse: {
-            /** Format: date-time */
-            created_at: string;
-            has_2fa: boolean;
-            id: string;
-            role: string;
-            /** Format: date-time */
-            updated_at: string;
-            username: string;
-        };
-        WidgetInput: {
-            config_json: unknown;
-            /** Format: int32 */
-            grid_h: number;
-            /** Format: int32 */
-            grid_w: number;
-            /** Format: int32 */
-            grid_x: number;
-            /** Format: int32 */
-            grid_y: number;
-            id?: string | null;
-            /** Format: int32 */
-            sort_order: number;
-            title?: string | null;
-            widget_type: string;
-        };
-        WriteRequest: {
-            content: string;
-            path: string;
-        };
-    };
-    responses: never;
-    parameters: never;
-    requestBodies: never;
-    headers: never;
-    pathItems: never;
+  headers: never
+  parameters: never
+  pathItems: never
+  requestBodies: never
+  responses: never
+  schemas: {
+    ActiveThemeResponse: {
+      ref: string
+      theme: components['schemas']['ThemeResolved']
+    }
+    AlertEventDetailResponse: {
+      alert_key: string
+      first_triggered_at: string
+      message: string
+      resolved_at?: string | null
+      rule_enabled: boolean
+      rule_id: string
+      rule_name: string
+      rule_trigger_mode: string
+      server_id: string
+      server_name: string
+      status: string
+      /** Format: int32 */
+      trigger_count: number
+    }
+    AlertEventResponse: {
+      /** Format: int32 */
+      count: number
+      /** @description first_triggered_at for firing, resolved_at for resolved */
+      event_at: string
+      resolved_at?: string | null
+      rule_id: string
+      rule_name: string
+      server_id: string
+      server_name: string
+      /** @description "firing" or "resolved" */
+      status: string
+    }
+    AlertRule: {
+      cover_type: string
+      /** Format: date-time */
+      created_at: string
+      enabled: boolean
+      fail_trigger_tasks?: string | null
+      id: string
+      name: string
+      notification_group_id?: string | null
+      recover_trigger_tasks?: string | null
+      rules_json: string
+      server_ids_json?: string | null
+      trigger_mode: string
+      /** Format: date-time */
+      updated_at: string
+    }
+    AlertRuleItem: {
+      cycle_interval?: string | null
+      /** Format: int64 */
+      cycle_limit?: number | null
+      /** Format: int32 */
+      duration?: number | null
+      /** Format: double */
+      max?: number | null
+      /** Format: double */
+      min?: number | null
+      rule_type: string
+    }
+    AlertStateResponse: {
+      /** Format: int32 */
+      count: number
+      /** Format: date-time */
+      first_triggered_at: string
+      /** Format: date-time */
+      last_notified_at: string
+      resolved: boolean
+      /** Format: date-time */
+      resolved_at?: string | null
+      server_id: string
+      server_name: string
+    }
+    ApiKeyResponse: {
+      created_at: string
+      id: string
+      key?: string | null
+      key_prefix: string
+      name: string
+    }
+    ApiResponse_CycleResponse: {
+      data: {
+        current: components['schemas']['CycleTraffic']
+        history: components['schemas']['CycleTraffic'][]
+      }
+    }
+    ApiResponse_TrafficResponse: {
+      data: {
+        /** Format: int64 */
+        bytes_in: number
+        /** Format: int64 */
+        bytes_out: number
+        /** Format: int64 */
+        bytes_total: number
+        cycle_end: string
+        cycle_start: string
+        daily: components['schemas']['DailyTraffic'][]
+        hourly: components['schemas']['HourlyTraffic'][]
+        prediction?: null | components['schemas']['TrafficPrediction']
+        /** Format: int64 */
+        traffic_limit?: number | null
+        traffic_limit_type?: string | null
+        /** Format: double */
+        usage_percent?: number | null
+      }
+    }
+    ApiResponse_Vec_DailyTraffic: {
+      data: {
+        /** Format: int64 */
+        bytes_in: number
+        /** Format: int64 */
+        bytes_out: number
+        date: string
+      }[]
+    }
+    ApiResponse_Vec_ServerTrafficOverview: {
+      data: {
+        billing_cycle?: string | null
+        /** Format: int64 */
+        cycle_in: number
+        /** Format: int64 */
+        cycle_out: number
+        /** Format: int64 */
+        days_remaining: number
+        name: string
+        /** Format: double */
+        percent_used?: number | null
+        server_id: string
+        /** Format: int64 */
+        traffic_limit?: number | null
+      }[]
+    }
+    ApiResponse_Vec_UptimeDailyEntry: {
+      data: {
+        /** Format: date */
+        date: string
+        /** Format: int32 */
+        downtime_incidents: number
+        /** Format: int32 */
+        online_minutes: number
+        /** Format: int32 */
+        total_minutes: number
+      }[]
+    }
+    AuditListResponse: {
+      entries: components['schemas']['AuditLogEntry'][]
+      /** Format: int64 */
+      total: number
+    }
+    AuditLogEntry: {
+      action: string
+      created_at: string
+      detail?: string | null
+      /** Format: int64 */
+      id: number
+      ip: string
+      user_id: string
+    }
+    AutoDiscoveryKeyResponse: {
+      key: string
+    }
+    BatchCapabilitiesRequest: {
+      server_ids: string[]
+      /** Format: int32 */
+      set?: number
+      /** Format: int32 */
+      unset?: number
+    }
+    BatchCapabilitiesResponse: {
+      /** Format: int64 */
+      updated: number
+    }
+    BatchDeleteRequest: {
+      ids: string[]
+    }
+    BatchDeleteResponse: {
+      /** Format: int64 */
+      deleted: number
+    }
+    BrandConfig: {
+      favicon_path?: string | null
+      footer_text?: string | null
+      logo_path?: string | null
+      site_title?: string | null
+    }
+    ChangePasswordRequest: {
+      new_password: string
+      old_password: string
+    }
+    CleanupResponse: {
+      /** Format: int64 */
+      deleted_count: number
+    }
+    CreateAlertRule: {
+      cover_type?: string
+      enabled?: boolean
+      name: string
+      notification_group_id?: string | null
+      rules: components['schemas']['AlertRuleItem'][]
+      server_ids?: string[] | null
+      trigger_mode?: string
+    }
+    CreateApiKeyRequest: {
+      name: string
+    }
+    CreateDashboardInput: {
+      name: string
+    }
+    CreateGroupRequest: {
+      name: string
+    }
+    CreateIncident: {
+      server_ids_json?: string[] | null
+      severity?: string
+      status?: string
+      status_page_ids_json?: string[] | null
+      title: string
+    }
+    CreateIncidentUpdate: {
+      message: string
+      status: string
+    }
+    CreateMaintenance: {
+      active?: boolean | null
+      description?: string | null
+      /** Format: date-time */
+      end_at: string
+      server_ids_json?: string[] | null
+      /** Format: date-time */
+      start_at: string
+      status_page_ids_json?: string[] | null
+      title: string
+    }
+    CreateNotification: {
+      config_json: unknown
+      enabled?: boolean
+      name: string
+      notify_type: string
+    }
+    CreateNotificationGroup: {
+      name: string
+      notification_ids: string[]
+    }
+    CreatePingTask: {
+      enabled?: boolean
+      /** Format: int32 */
+      interval?: number
+      name: string
+      probe_type: string
+      server_ids?: string[]
+      target: string
+    }
+    CreateServiceMonitor: {
+      config_json?: unknown
+      enabled?: boolean
+      /** Format: int32 */
+      interval?: number
+      monitor_type: string
+      name: string
+      notification_group_id?: string | null
+      /** Format: int32 */
+      retry_count?: number
+      server_ids_json?: string[] | null
+      target: string
+    }
+    CreateStatusPage: {
+      custom_css?: string | null
+      description?: string | null
+      enabled?: boolean | null
+      group_by_server_group?: boolean | null
+      server_ids_json: string[]
+      show_values?: boolean | null
+      slug: string
+      title: string
+      /** Format: double */
+      uptime_red_threshold?: number | null
+      /** Format: double */
+      uptime_yellow_threshold?: number | null
+    }
+    CreateTaskRequest: {
+      command: string
+      cron_expression?: string | null
+      name?: string | null
+      /** Format: int32 */
+      retry_count?: number | null
+      /** Format: int32 */
+      retry_interval?: number | null
+      server_ids: string[]
+      /** @description "oneshot" (default) or "scheduled" */
+      task_type?: string
+      /** Format: int32 */
+      timeout?: number | null
+    }
+    CreateThemeInput: {
+      based_on?: string | null
+      description?: string | null
+      name: string
+      vars_dark: components['schemas']['HashMap']
+      vars_light: components['schemas']['HashMap']
+    }
+    CreateUserInput: {
+      password: string
+      role?: string
+      username: string
+    }
+    CycleResponse: {
+      current: components['schemas']['CycleTraffic']
+      history: components['schemas']['CycleTraffic'][]
+    }
+    CycleTraffic: {
+      /** Format: int64 */
+      bytes_in: number
+      /** Format: int64 */
+      bytes_out: number
+      end: string
+      period: string
+      start: string
+    }
+    DailyTraffic: {
+      /** Format: int64 */
+      bytes_in: number
+      /** Format: int64 */
+      bytes_out: number
+      date: string
+    }
+    DashboardWithWidgets: components['schemas']['Model'] & {
+      widgets: components['schemas']['Model'][]
+    }
+    DeleteRequest: {
+      path: string
+      recursive?: boolean
+    }
+    DownloadRequest: {
+      path: string
+    }
+    DownloadResponse: {
+      status: string
+      transfer_id: string
+    }
+    ErrorBody: {
+      error: components['schemas']['ErrorDetail']
+    }
+    ErrorDetail: {
+      code: string
+      message: string
+    }
+    ExportPayload: {
+      based_on?: string | null
+      description?: string | null
+      name: string
+      vars_dark: components['schemas']['HashMap']
+      vars_light: components['schemas']['HashMap']
+      /** Format: int32 */
+      version: number
+    }
+    FileEntry: {
+      file_type: components['schemas']['FileType']
+      group?: string | null
+      /** Format: int64 */
+      modified: number
+      name: string
+      owner?: string | null
+      path: string
+      permissions?: string | null
+      /** Format: int64 */
+      size: number
+    }
+    /** @enum {string} */
+    FileType: 'File' | 'Directory' | 'Symlink'
+    GpuRecord: {
+      /** Format: int32 */
+      device_index: number
+      device_name: string
+      /** Format: int64 */
+      id: number
+      /** Format: int64 */
+      mem_total: number
+      /** Format: int64 */
+      mem_used: number
+      server_id: string
+      /** Format: double */
+      temperature: number
+      /** Format: date-time */
+      time: string
+      /** Format: double */
+      utilization: number
+    }
+    HashMap: {
+      [key: string]: string
+    }
+    HourlyTraffic: {
+      /** Format: int64 */
+      bytes_in: number
+      /** Format: int64 */
+      bytes_out: number
+      hour: string
+    }
+    Incident: {
+      /** Format: date-time */
+      created_at: string
+      id: string
+      /** Format: date-time */
+      resolved_at?: string | null
+      server_ids_json?: string | null
+      severity: string
+      status: string
+      status_page_ids_json?: string | null
+      title: string
+      /** Format: date-time */
+      updated_at: string
+    }
+    IncidentUpdate: {
+      /** Format: date-time */
+      created_at: string
+      id: string
+      incident_id: string
+      message: string
+      status: string
+    }
+    IncidentWithUpdates: components['schemas']['Incident'] & {
+      updates: components['schemas']['IncidentUpdate'][]
+    }
+    LatestAgentVersionResponse: {
+      error?: string | null
+      /** Format: date-time */
+      released_at?: string | null
+      version?: string | null
+    }
+    ListFilesRequest: {
+      path: string
+    }
+    ListFilesResponse: {
+      entries: components['schemas']['FileEntry'][]
+    }
+    LoginRequest: {
+      password: string
+      totp_code?: string | null
+      username: string
+    }
+    LoginResponse: {
+      role: string
+      user_id: string
+      username: string
+    }
+    Maintenance: {
+      active: boolean
+      /** Format: date-time */
+      created_at: string
+      description?: string | null
+      /** Format: date-time */
+      end_at: string
+      id: string
+      server_ids_json?: string | null
+      /** Format: date-time */
+      start_at: string
+      status_page_ids_json?: string | null
+      title: string
+      /** Format: date-time */
+      updated_at: string
+    }
+    MeResponse: {
+      role: string
+      user_id: string
+      username: string
+    }
+    MkdirRequest: {
+      path: string
+    }
+    MobileDeviceResponse: {
+      created_at: string
+      device_name: string
+      id: string
+      installation_id: string
+      last_used_at: string
+    }
+    MobileLoginRequest: {
+      device_name: string
+      installation_id: string
+      password: string
+      totp_code?: string | null
+      username: string
+    }
+    MobilePairCodeResponse: {
+      code: string
+      /** Format: int64 */
+      expires_in_secs: number
+    }
+    MobilePairRedeemRequest: {
+      code: string
+      device_name: string
+      installation_id: string
+    }
+    MobileRefreshRequest: {
+      installation_id: string
+      refresh_token: string
+    }
+    /** @description Token pair returned after successful login or refresh. */
+    MobileTokenResponse: {
+      /** Format: int64 */
+      access_expires_in_secs: number
+      access_token: string
+      /** Format: int64 */
+      refresh_expires_in_secs: number
+      refresh_token: string
+      token_type: string
+      user: components['schemas']['MobileUserResponse']
+    }
+    /** @description Minimal user info returned alongside tokens. */
+    MobileUserResponse: {
+      id: string
+      role: string
+      username: string
+    }
+    Model: {
+      config_json: string
+      created_at: string
+      dashboard_id: string
+      /** Format: int32 */
+      grid_h: number
+      /** Format: int32 */
+      grid_w: number
+      /** Format: int32 */
+      grid_x: number
+      /** Format: int32 */
+      grid_y: number
+      id: string
+      /** Format: int32 */
+      sort_order: number
+      title?: string | null
+      widget_type: string
+    }
+    MonitorWithRecord: components['schemas']['ServiceMonitor'] & {
+      latest_record?: null | components['schemas']['ServiceMonitorRecord']
+    }
+    MoveRequest: {
+      from: string
+      to: string
+    }
+    Notification: {
+      config_json: string
+      /** Format: date-time */
+      created_at: string
+      enabled: boolean
+      id: string
+      name: string
+      notify_type: string
+    }
+    NotificationGroup: {
+      /** Format: date-time */
+      created_at: string
+      id: string
+      name: string
+      notification_ids_json: string
+    }
+    OAuthAccount: {
+      /** Format: date-time */
+      created_at: string
+      display_name?: string | null
+      email?: string | null
+      id: string
+      provider: string
+      provider_user_id: string
+      user_id: string
+    }
+    OAuthProvidersResponse: {
+      providers: string[]
+    }
+    PingRecord: {
+      error?: string | null
+      /** Format: int64 */
+      id: number
+      /** Format: double */
+      latency: number
+      server_id: string
+      success: boolean
+      task_id: string
+      /** Format: date-time */
+      time: string
+    }
+    PingTask: {
+      /** Format: date-time */
+      created_at: string
+      enabled: boolean
+      id: string
+      /** Format: int32 */
+      interval: number
+      name: string
+      probe_type: string
+      server_ids_json: string
+      target: string
+    }
+    PublicStatusPageData: {
+      active_incidents: components['schemas']['IncidentWithUpdates'][]
+      page: components['schemas']['StatusPageInfo']
+      planned_maintenances: components['schemas']['Maintenance'][]
+      recent_incidents: components['schemas']['IncidentWithUpdates'][]
+      servers: components['schemas']['ServerStatusInfo'][]
+      theme: components['schemas']['ThemeResolved']
+    }
+    PushRegisterRequest: {
+      /** @description The APNs device token obtained from the iOS device. */
+      device_token: string
+    }
+    PutActiveThemeInput: {
+      ref: string
+    }
+    ReadRequest: {
+      path: string
+    }
+    ReadResponse: {
+      content: string
+    }
+    RecoveryCandidateResponse: {
+      name: string
+      reasons: string[]
+      /** Format: int32 */
+      score: number
+      server_id: string
+    }
+    RecoveryJobResponse: {
+      /** Format: date-time */
+      created_at: string
+      error?: string | null
+      job_id: string
+      /** Format: date-time */
+      last_heartbeat_at?: string | null
+      source_server_id: string
+      stage: components['schemas']['RecoveryJobStage']
+      /** Format: date-time */
+      started_at: string
+      status: components['schemas']['RecoveryJobStatus']
+      target_server_id: string
+      /** Format: date-time */
+      updated_at: string
+    }
+    /** @enum {string} */
+    RecoveryJobStage:
+      | 'validating'
+      | 'rebinding'
+      | 'awaiting_target_online'
+      | 'freezing_writes'
+      | 'merging_history'
+      | 'finalizing'
+      | 'succeeded'
+      | 'failed'
+      | 'unknown'
+    /** @enum {string} */
+    RecoveryJobStatus: 'running' | 'failed' | 'succeeded' | 'unknown'
+    RegisterRequest: {
+      fingerprint?: string
+    }
+    RegisterResponse: {
+      server_id: string
+      token: string
+    }
+    ServerGroup: {
+      /** Format: date-time */
+      created_at: string
+      id: string
+      name: string
+      /** Format: int32 */
+      weight: number
+    }
+    ServerRecord: {
+      /** Format: double */
+      cpu: number
+      disk_io_json?: string | null
+      /** Format: int64 */
+      disk_used: number
+      /** Format: double */
+      gpu_usage?: number | null
+      /** Format: int64 */
+      id: number
+      /** Format: double */
+      load1: number
+      /** Format: double */
+      load15: number
+      /** Format: double */
+      load5: number
+      /** Format: int64 */
+      mem_used: number
+      /** Format: int64 */
+      net_in_speed: number
+      /** Format: int64 */
+      net_in_transfer: number
+      /** Format: int64 */
+      net_out_speed: number
+      /** Format: int64 */
+      net_out_transfer: number
+      /** Format: int32 */
+      process_count: number
+      server_id: string
+      /** Format: int64 */
+      swap_used: number
+      /** Format: int32 */
+      tcp_conn: number
+      /** Format: double */
+      temperature?: number | null
+      /** Format: date-time */
+      time: string
+      /** Format: int32 */
+      udp_conn: number
+    }
+    ServerRecordHourly: {
+      /** Format: double */
+      cpu: number
+      disk_io_json?: string | null
+      /** Format: int64 */
+      disk_used: number
+      /** Format: double */
+      gpu_usage?: number | null
+      /** Format: int64 */
+      id: number
+      /** Format: double */
+      load1: number
+      /** Format: double */
+      load15: number
+      /** Format: double */
+      load5: number
+      /** Format: int64 */
+      mem_used: number
+      /** Format: int64 */
+      net_in_speed: number
+      /** Format: int64 */
+      net_in_transfer: number
+      /** Format: int64 */
+      net_out_speed: number
+      /** Format: int64 */
+      net_out_transfer: number
+      /** Format: int32 */
+      process_count: number
+      server_id: string
+      /** Format: int64 */
+      swap_used: number
+      /** Format: int32 */
+      tcp_conn: number
+      /** Format: double */
+      temperature?: number | null
+      /** Format: date-time */
+      time: string
+      /** Format: int32 */
+      udp_conn: number
+    }
+    /** @description Server response DTO — excludes sensitive fields (token_hash, token_prefix). */
+    ServerResponse: {
+      /** Format: int32 */
+      agent_local_capabilities?: number | null
+      agent_version?: string | null
+      billing_cycle?: string | null
+      /** Format: int32 */
+      billing_start_day?: number | null
+      /** Format: int32 */
+      capabilities: number
+      country_code?: string | null
+      cpu_arch?: string | null
+      /** Format: int32 */
+      cpu_cores?: number | null
+      cpu_name?: string | null
+      /** Format: date-time */
+      created_at: string
+      currency?: string | null
+      /** Format: int64 */
+      disk_total?: number | null
+      /** Format: int32 */
+      effective_capabilities?: number | null
+      /** Format: date-time */
+      expired_at?: string | null
+      features: string[]
+      group_id?: string | null
+      hidden: boolean
+      id: string
+      ipv4?: string | null
+      ipv6?: string | null
+      kernel_version?: string | null
+      /** Format: int64 */
+      mem_total?: number | null
+      name: string
+      os?: string | null
+      /** Format: double */
+      price?: number | null
+      /** Format: int32 */
+      protocol_version: number
+      public_remark?: string | null
+      region?: string | null
+      remark?: string | null
+      /** Format: int64 */
+      swap_total?: number | null
+      /** Format: int64 */
+      traffic_limit?: number | null
+      traffic_limit_type?: string | null
+      /** Format: date-time */
+      updated_at: string
+      virtualization?: string | null
+      /** Format: int32 */
+      weight: number
+    }
+    ServerStatusInfo: {
+      country_code?: string | null
+      group_id?: string | null
+      group_name?: string | null
+      in_maintenance: boolean
+      online: boolean
+      os?: string | null
+      region?: string | null
+      server_id: string
+      server_name: string
+      uptime_daily: components['schemas']['UptimeDailyEntry'][]
+      /** Format: double */
+      uptime_percent?: number | null
+    }
+    ServerTrafficOverview: {
+      billing_cycle?: string | null
+      /** Format: int64 */
+      cycle_in: number
+      /** Format: int64 */
+      cycle_out: number
+      /** Format: int64 */
+      days_remaining: number
+      name: string
+      /** Format: double */
+      percent_used?: number | null
+      server_id: string
+      /** Format: int64 */
+      traffic_limit?: number | null
+    }
+    ServiceMonitor: {
+      config_json: string
+      /** Format: int32 */
+      consecutive_failures: number
+      /** Format: date-time */
+      created_at: string
+      enabled: boolean
+      id: string
+      /** Format: int32 */
+      interval: number
+      /** Format: date-time */
+      last_checked_at?: string | null
+      last_status?: boolean | null
+      monitor_type: string
+      name: string
+      notification_group_id?: string | null
+      /** Format: int32 */
+      retry_count: number
+      server_ids_json?: string | null
+      target: string
+      /** Format: date-time */
+      updated_at: string
+    }
+    ServiceMonitorRecord: {
+      detail_json: string
+      error?: string | null
+      /** Format: int64 */
+      id: number
+      /** Format: double */
+      latency?: number | null
+      monitor_id: string
+      success: boolean
+      /** Format: date-time */
+      time: string
+    }
+    StartRecoveryRequest: {
+      source_server_id: string
+    }
+    StatRequest: {
+      path: string
+    }
+    StatResponse: {
+      entry: components['schemas']['FileEntry']
+    }
+    StatusGroup: {
+      id: string
+      name: string
+    }
+    StatusMetrics: {
+      /** Format: double */
+      cpu: number
+      /** Format: int64 */
+      disk_total: number
+      /** Format: int64 */
+      disk_used: number
+      /** Format: double */
+      load1: number
+      /** Format: int64 */
+      mem_total: number
+      /** Format: int64 */
+      mem_used: number
+      /** Format: int64 */
+      net_in_speed: number
+      /** Format: int64 */
+      net_in_transfer: number
+      /** Format: int64 */
+      net_out_speed: number
+      /** Format: int64 */
+      net_out_transfer: number
+      /** Format: int64 */
+      uptime: number
+    }
+    StatusPage: {
+      /** Format: date-time */
+      created_at: string
+      custom_css?: string | null
+      description?: string | null
+      enabled: boolean
+      group_by_server_group: boolean
+      id: string
+      server_ids_json: string
+      show_values: boolean
+      slug: string
+      theme_ref?: string | null
+      title: string
+      /** Format: date-time */
+      updated_at: string
+      /** Format: double */
+      uptime_red_threshold: number
+      /** Format: double */
+      uptime_yellow_threshold: number
+    }
+    StatusPageInfo: {
+      custom_css?: string | null
+      description?: string | null
+      group_by_server_group: boolean
+      id: string
+      show_values: boolean
+      slug: string
+      title: string
+      /** Format: double */
+      uptime_red_threshold: number
+      /** Format: double */
+      uptime_yellow_threshold: number
+    }
+    StatusPageRef: {
+      id: string
+      name: string
+    }
+    StatusPageResponse: {
+      groups: components['schemas']['StatusGroup'][]
+      online_count: number
+      servers: components['schemas']['StatusServer'][]
+      total_count: number
+    }
+    /** @description Public status info for a single server. */
+    StatusServer: {
+      country_code?: string | null
+      group_id?: string | null
+      id: string
+      metrics?: null | components['schemas']['StatusMetrics']
+      name: string
+      online: boolean
+      os?: string | null
+      public_remark?: string | null
+      region?: string | null
+    }
+    SuccessResponse: {
+      success: boolean
+    }
+    SystemSettings: {
+      custom_css?: string | null
+      custom_js?: string | null
+      site_description?: string | null
+      site_name?: string | null
+    }
+    TaskResponse: {
+      command: string
+      /** Format: date-time */
+      created_at: string
+      cron_expression?: string | null
+      enabled: boolean
+      id: string
+      /** Format: date-time */
+      last_run_at?: string | null
+      name?: string | null
+      /** Format: date-time */
+      next_run_at?: string | null
+      /** Format: int32 */
+      retry_count: number
+      /** Format: int32 */
+      retry_interval: number
+      server_ids: string[]
+      task_type: string
+      /** Format: int32 */
+      timeout?: number | null
+    }
+    TaskResult: {
+      /** Format: int32 */
+      attempt: number
+      /** Format: int32 */
+      exit_code: number
+      /** Format: date-time */
+      finished_at: string
+      /** Format: int64 */
+      id: number
+      output: string
+      run_id?: string | null
+      server_id: string
+      /** Format: date-time */
+      started_at?: string | null
+      task_id: string
+    }
+    Theme: {
+      based_on?: string | null
+      /** Format: date-time */
+      created_at: string
+      description?: string | null
+      /** Format: int32 */
+      id: number
+      name: string
+      /** Format: date-time */
+      updated_at: string
+      vars_dark: components['schemas']['HashMap']
+      vars_light: components['schemas']['HashMap']
+    }
+    ThemeReferences: {
+      admin: boolean
+      status_pages: components['schemas']['StatusPageRef'][]
+    }
+    ThemeResolved:
+      | {
+          id: string
+          /** @enum {string} */
+          kind: 'preset'
+        }
+      | {
+          /** Format: int32 */
+          id: number
+          /** @enum {string} */
+          kind: 'custom'
+          name: string
+          /** Format: date-time */
+          updated_at: string
+          vars_dark: components['schemas']['HashMap']
+          vars_light: components['schemas']['HashMap']
+        }
+    ThemeSummary: {
+      based_on?: string | null
+      /** Format: int32 */
+      id: number
+      name: string
+      /** Format: date-time */
+      updated_at: string
+    }
+    TotpDisableRequest: {
+      password: string
+    }
+    TotpSetupResponse: {
+      otpauth_url: string
+      qr_code_base64: string
+      secret: string
+    }
+    TotpStatusResponse: {
+      enabled: boolean
+    }
+    TotpVerifyRequest: {
+      code: string
+    }
+    TracerouteHop: {
+      asn?: string | null
+      /** Format: int32 */
+      hop: number
+      hostname?: string | null
+      ip?: string | null
+      /** Format: double */
+      rtt1?: number | null
+      /** Format: double */
+      rtt2?: number | null
+      /** Format: double */
+      rtt3?: number | null
+    }
+    TracerouteResultResponse: {
+      completed: boolean
+      error?: string | null
+      hops: components['schemas']['TracerouteHop'][]
+      target: string
+    }
+    TrafficPrediction: {
+      /** Format: double */
+      estimated_percent: number
+      /** Format: int64 */
+      estimated_total: number
+      will_exceed: boolean
+    }
+    TrafficResponse: {
+      /** Format: int64 */
+      bytes_in: number
+      /** Format: int64 */
+      bytes_out: number
+      /** Format: int64 */
+      bytes_total: number
+      cycle_end: string
+      cycle_start: string
+      daily: components['schemas']['DailyTraffic'][]
+      hourly: components['schemas']['HourlyTraffic'][]
+      prediction?: null | components['schemas']['TrafficPrediction']
+      /** Format: int64 */
+      traffic_limit?: number | null
+      traffic_limit_type?: string | null
+      /** Format: double */
+      usage_percent?: number | null
+    }
+    /** @description Serializable transfer info for API responses. */
+    TransferInfo: {
+      /** Format: int64 */
+      bytes_transferred: number
+      /** Format: int64 */
+      created_at_secs_ago: number
+      direction: string
+      file_path: string
+      /** Format: int64 */
+      file_size?: number | null
+      server_id: string
+      status: string
+      transfer_id: string
+    }
+    TransfersResponse: {
+      transfers: components['schemas']['TransferInfo'][]
+    }
+    TriggerTracerouteRequest: {
+      /** @description Target host or IP (e.g. "1.2.3.4" or "example.com") */
+      target: string
+    }
+    TriggerTracerouteResponse: {
+      /** @description Unique request ID used to poll for results */
+      request_id: string
+    }
+    UpdateAlertRule: {
+      cover_type?: string | null
+      enabled?: boolean | null
+      name?: string | null
+      notification_group_id?: string | null
+      rules?: components['schemas']['AlertRuleItem'][] | null
+      server_ids?: string[] | null
+      trigger_mode?: string | null
+    }
+    UpdateDashboardInput: {
+      is_default?: boolean | null
+      name?: string | null
+      /** Format: int32 */
+      sort_order?: number | null
+      widgets?: components['schemas']['WidgetInput'][] | null
+    }
+    UpdateGroupRequest: {
+      name?: string | null
+      /** Format: int32 */
+      weight?: number | null
+    }
+    UpdateIncident: {
+      server_ids_json?: string[] | null
+      severity?: string | null
+      status?: string | null
+      status_page_ids_json?: string[] | null
+      title?: string | null
+    }
+    UpdateMaintenance: {
+      active?: boolean | null
+      description?: string | null
+      /** Format: date-time */
+      end_at?: string | null
+      server_ids_json?: string[] | null
+      /** Format: date-time */
+      start_at?: string | null
+      status_page_ids_json?: string[] | null
+      title?: string | null
+    }
+    UpdateNotification: {
+      config_json?: unknown
+      enabled?: boolean | null
+      name?: string | null
+      notify_type?: string | null
+    }
+    UpdateNotificationGroup: {
+      name?: string | null
+      notification_ids?: string[] | null
+    }
+    UpdatePingTask: {
+      enabled?: boolean | null
+      /** Format: int32 */
+      interval?: number | null
+      name?: string | null
+      probe_type?: string | null
+      server_ids?: string[] | null
+      target?: string | null
+    }
+    UpdateServerInput: {
+      billing_cycle?: string | null
+      /** Format: int32 */
+      billing_start_day?: number | null
+      /** Format: int32 */
+      capabilities?: number | null
+      currency?: string | null
+      /** Format: date-time */
+      expired_at?: string | null
+      group_id?: string | null
+      hidden?: boolean | null
+      name?: string | null
+      /** Format: double */
+      price?: number | null
+      public_remark?: string | null
+      remark?: string | null
+      /** Format: int64 */
+      traffic_limit?: number | null
+      traffic_limit_type?: string | null
+      /** Format: int32 */
+      weight?: number | null
+    }
+    UpdateServiceMonitor: {
+      config_json?: unknown
+      enabled?: boolean | null
+      /** Format: int32 */
+      interval?: number | null
+      name?: string | null
+      notification_group_id?: string | null
+      /** Format: int32 */
+      retry_count?: number | null
+      server_ids_json?: string[] | null
+      target?: string | null
+    }
+    UpdateStatusPage: {
+      custom_css?: string | null
+      description?: string | null
+      enabled?: boolean | null
+      group_by_server_group?: boolean | null
+      server_ids_json?: string[] | null
+      show_values?: boolean | null
+      slug?: string | null
+      theme_ref?: string | null
+      title?: string | null
+      /** Format: double */
+      uptime_red_threshold?: number | null
+      /** Format: double */
+      uptime_yellow_threshold?: number | null
+    }
+    UpdateTaskRequest: {
+      command?: string | null
+      cron_expression?: string | null
+      enabled?: boolean | null
+      name?: string | null
+      /** Format: int32 */
+      retry_count?: number | null
+      /** Format: int32 */
+      retry_interval?: number | null
+      server_ids?: string[] | null
+      /** Format: int32 */
+      timeout?: number | null
+    }
+    UpdateThemeInput: {
+      based_on?: string | null
+      description?: string | null
+      name: string
+      vars_dark: components['schemas']['HashMap']
+      vars_light: components['schemas']['HashMap']
+    }
+    UpdateUserInput: {
+      password?: string | null
+      role?: string | null
+    }
+    UpgradeRequest: {
+      /** @description Target version string (e.g. "0.2.0" or "v0.2.0") */
+      version: string
+    }
+    UploadResponse: {
+      path: string
+    }
+    UptimeDaily: {
+      /** Format: date */
+      date: string
+      /** Format: int32 */
+      downtime_incidents: number
+      /** Format: int64 */
+      id: number
+      /** Format: int32 */
+      online_minutes: number
+      server_id: string
+      /** Format: int32 */
+      total_minutes: number
+    }
+    /** @description A single day's uptime data, with gap-filling for missing dates. */
+    UptimeDailyEntry: {
+      /** Format: date */
+      date: string
+      /** Format: int32 */
+      downtime_incidents: number
+      /** Format: int32 */
+      online_minutes: number
+      /** Format: int32 */
+      total_minutes: number
+    }
+    UserResponse: {
+      /** Format: date-time */
+      created_at: string
+      has_2fa: boolean
+      id: string
+      role: string
+      /** Format: date-time */
+      updated_at: string
+      username: string
+    }
+    WidgetInput: {
+      config_json: unknown
+      /** Format: int32 */
+      grid_h: number
+      /** Format: int32 */
+      grid_w: number
+      /** Format: int32 */
+      grid_x: number
+      /** Format: int32 */
+      grid_y: number
+      id?: string | null
+      /** Format: int32 */
+      sort_order: number
+      title?: string | null
+      widget_type: string
+    }
+    WriteRequest: {
+      content: string
+      path: string
+    }
+  }
 }
-export type $defs = Record<string, never>;
+export type $defs = Record<string, never>
 export interface operations {
-    latest_version: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Latest agent release metadata */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LatestAgentVersionResponse"];
-                };
-            };
-        };
-    };
-    register: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["RegisterRequest"];
-            };
-        };
-        responses: {
-            /** @description Agent registered */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RegisterResponse"];
-                };
-            };
-            /** @description Auto-discovery key not configured or server limit reached */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid auto-discovery key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_alert_events: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Recent alert events */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AlertEventResponse"][];
-                };
-            };
-        };
-    };
-    get_alert_event_detail: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Alert key in the format `rule_id:server_id` */
-                alert_key: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Alert event detail */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AlertEventDetailResponse"];
-                };
-            };
-            /** @description Invalid alert_key format */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Alert state or rule not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_rules: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List all alert rules */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AlertRule"][];
-                };
-            };
-        };
-    };
-    create_rule: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateAlertRule"];
-            };
-        };
-        responses: {
-            /** @description Alert rule created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AlertRule"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_rule: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Alert rule ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Alert rule details */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AlertRule"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_rule: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Alert rule ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateAlertRule"];
-            };
-        };
-        responses: {
-            /** @description Alert rule updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AlertRule"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_rule: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Alert rule ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Alert rule deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_states: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Alert rule ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Alert states for this rule */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AlertStateResponse"][];
-                };
-            };
-        };
-    };
-    list_audit_logs: {
-        parameters: {
-            query?: {
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Audit log entries */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AuditListResponse"];
-                };
-            };
-            /** @description Forbidden — admin only */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    totp_disable: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TotpDisableRequest"];
-            };
-        };
-        responses: {
-            /** @description 2FA disabled */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid password */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    totp_enable: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TotpVerifyRequest"];
-            };
-        };
-        responses: {
-            /** @description 2FA enabled */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid TOTP code */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    totp_setup: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description TOTP setup data */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TotpSetupResponse"];
-                };
-            };
-        };
-    };
-    totp_status: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 2FA status */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TotpStatusResponse"];
-                };
-            };
-        };
-    };
-    list_api_keys: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List of API keys */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiKeyResponse"][];
-                };
-            };
-        };
-    };
-    create_api_key: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateApiKeyRequest"];
-            };
-        };
-        responses: {
-            /** @description API key created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiKeyResponse"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_api_key: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description API key ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description API key deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description API key not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    login: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LoginRequest"];
-            };
-        };
-        responses: {
-            /** @description Login successful */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LoginResponse"];
-                };
-            };
-            /** @description Invalid credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description 2FA code required (code: 2fa_required) */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    logout: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Logout successful */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    me: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Current user info */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MeResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_oauth_accounts: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List linked OAuth accounts */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OAuthAccount"][];
-                };
-            };
-        };
-    };
-    unlink_oauth_account: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description OAuth account ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OAuth account unlinked */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_providers: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List of configured OAuth providers */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OAuthProvidersResponse"];
-                };
-            };
-        };
-    };
-    oauth_authorize: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description OAuth provider (github, google) */
-                provider: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Redirect to provider */
-            302: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Provider not configured */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    oauth_callback: {
-        parameters: {
-            query: {
-                /** @description Authorization code */
-                code: string;
-                /** @description CSRF state token */
-                state: string;
-            };
-            header?: never;
-            path: {
-                /** @description OAuth provider */
-                provider: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Redirect to frontend after login */
-            302: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid callback */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    change_password: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChangePasswordRequest"];
-            };
-        };
-        responses: {
-            /** @description Password changed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    serve_favicon: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Favicon image */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description No favicon uploaded */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    serve_logo: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Logo image */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description No logo uploaded */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_dashboards: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List all dashboards */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Model"][];
-                };
-            };
-        };
-    };
-    create_dashboard: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateDashboardInput"];
-            };
-        };
-        responses: {
-            /** @description Dashboard created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Model"];
-                };
-            };
-        };
-    };
-    get_default_dashboard: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Default dashboard with widgets (auto-creates if none exists) */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DashboardWithWidgets"];
-                };
-            };
-        };
-    };
-    get_dashboard: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Dashboard ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Dashboard with widgets */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DashboardWithWidgets"];
-                };
-            };
-            /** @description Dashboard not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_dashboard: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Dashboard ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateDashboardInput"];
-            };
-        };
-        responses: {
-            /** @description Dashboard updated with widgets */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DashboardWithWidgets"];
-                };
-            };
-            /** @description Validation error (e.g. cannot unset default, unknown widget type) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Dashboard not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_dashboard: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Dashboard ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Dashboard deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Cannot delete default or last dashboard */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Dashboard not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    download_file: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Transfer ID */
-                transfer_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description File download stream */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Transfer not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_transfers: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Active file transfers */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TransfersResponse"];
-                };
-            };
-        };
-    };
-    cancel_transfer: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Transfer ID */
-                transfer_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Transfer cancelled */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SuccessResponse"];
-                };
-            };
-            /** @description Transfer not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_file: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server ID */
-                server_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DeleteRequest"];
-            };
-        };
-        responses: {
-            /** @description File/directory deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SuccessResponse"];
-                };
-            };
-            /** @description File capability disabled */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Server not found or offline */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Agent timeout */
-            408: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    start_download: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server ID */
-                server_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DownloadRequest"];
-            };
-        };
-        responses: {
-            /** @description Download transfer started */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DownloadResponse"];
-                };
-            };
-            /** @description File capability disabled */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Server not found or offline */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Too many concurrent transfers */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_files: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server ID */
-                server_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ListFilesRequest"];
-            };
-        };
-        responses: {
-            /** @description Directory listing */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ListFilesResponse"];
-                };
-            };
-            /** @description File capability disabled */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Server not found or offline */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Agent timeout */
-            408: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    mkdir: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server ID */
-                server_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MkdirRequest"];
-            };
-        };
-        responses: {
-            /** @description Directory created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SuccessResponse"];
-                };
-            };
-            /** @description File capability disabled */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Server not found or offline */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Agent timeout */
-            408: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    move_file: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server ID */
-                server_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MoveRequest"];
-            };
-        };
-        responses: {
-            /** @description File/directory moved */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SuccessResponse"];
-                };
-            };
-            /** @description File capability disabled */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Server not found or offline */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Agent timeout */
-            408: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    read_file: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server ID */
-                server_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ReadRequest"];
-            };
-        };
-        responses: {
-            /** @description File content (UTF-8) */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReadResponse"];
-                };
-            };
-            /** @description File capability disabled */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Server not found or offline */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Agent timeout */
-            408: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    stat_file: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server ID */
-                server_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["StatRequest"];
-            };
-        };
-        responses: {
-            /** @description File metadata */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StatResponse"];
-                };
-            };
-            /** @description File capability disabled */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Server not found or offline */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Agent timeout */
-            408: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    upload_file: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server ID */
-                server_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": string;
-            };
-        };
-        responses: {
-            /** @description File uploaded */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SuccessResponse"];
-                };
-            };
-            /** @description File capability disabled */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Server not found or offline */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Too many concurrent transfers */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    write_file: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server ID */
-                server_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WriteRequest"];
-            };
-        };
-        responses: {
-            /** @description File written */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SuccessResponse"];
-                };
-            };
-            /** @description File capability disabled */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Server not found or offline */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Agent timeout */
-            408: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_incidents: {
-        parameters: {
-            query?: {
-                /** @description Filter by status (investigating, identified, monitoring, resolved). */
-                status?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List all incidents */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Incident"][];
-                };
-            };
-        };
-    };
-    create_incident: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateIncident"];
-            };
-        };
-        responses: {
-            /** @description Incident created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Incident"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_incident: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Incident ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateIncident"];
-            };
-        };
-        responses: {
-            /** @description Incident updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Incident"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_incident: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Incident ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Incident deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    add_incident_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Incident ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateIncidentUpdate"];
-            };
-        };
-        responses: {
-            /** @description Incident update added */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["IncidentUpdate"];
-                };
-            };
-            /** @description Incident not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_maintenances: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List all maintenance windows */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Maintenance"][];
-                };
-            };
-        };
-    };
-    create_maintenance: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateMaintenance"];
-            };
-        };
-        responses: {
-            /** @description Maintenance window created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Maintenance"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_maintenance: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Maintenance ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateMaintenance"];
-            };
-        };
-        responses: {
-            /** @description Maintenance window updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Maintenance"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_maintenance: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Maintenance ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Maintenance window deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_devices: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List of mobile devices */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MobileDeviceResponse"][];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    revoke_device: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Mobile session ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Device revoked */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Cannot revoke another user's device */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Mobile session not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    mobile_login: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MobileLoginRequest"];
-            };
-        };
-        responses: {
-            /** @description Mobile login successful */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MobileTokenResponse"];
-                };
-            };
-            /** @description Invalid credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description 2FA code required (code: 2fa_required) */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Too many login attempts */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    mobile_logout: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Logged out */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    mobile_pair_redeem: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MobilePairRedeemRequest"];
-            };
-        };
-        responses: {
-            /** @description Pairing successful */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MobileTokenResponse"];
-                };
-            };
-            /** @description Invalid or expired pairing code */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    mobile_refresh: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MobileRefreshRequest"];
-            };
-        };
-        responses: {
-            /** @description Token refreshed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MobileTokenResponse"];
-                };
-            };
-            /** @description Invalid or expired refresh token */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    generate_pair_code: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Pairing code generated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MobilePairCodeResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    push_register: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PushRegisterRequest"];
-            };
-        };
-        responses: {
-            /** @description Device token registered */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    push_unregister: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Device token unregistered */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_notification_groups: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List all notification groups */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NotificationGroup"][];
-                };
-            };
-        };
-    };
-    create_notification_group: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateNotificationGroup"];
-            };
-        };
-        responses: {
-            /** @description Notification group created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NotificationGroup"];
-                };
-            };
-        };
-    };
-    get_group: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Notification group ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Notification group details */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NotificationGroup"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_notification_group: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Notification group ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateNotificationGroup"];
-            };
-        };
-        responses: {
-            /** @description Notification group updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NotificationGroup"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_notification_group: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Notification group ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Notification group deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_notifications: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List all notifications */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Notification"][];
-                };
-            };
-        };
-    };
-    create_notification: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateNotification"];
-            };
-        };
-        responses: {
-            /** @description Notification created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Notification"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_notification: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Notification ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Notification details */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Notification"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_notification: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Notification ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateNotification"];
-            };
-        };
-        responses: {
-            /** @description Notification updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Notification"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_notification: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Notification ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Notification deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    test_notification: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Notification ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Test notification sent */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_ping_tasks: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List all ping tasks */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PingTask"][];
-                };
-            };
-        };
-    };
-    create_ping_task: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreatePingTask"];
-            };
-        };
-        responses: {
-            /** @description Ping task created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PingTask"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_ping_task: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Ping task ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Ping task details */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PingTask"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_ping_task: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Ping task ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdatePingTask"];
-            };
-        };
-        responses: {
-            /** @description Ping task updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PingTask"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_ping_task: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Ping task ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Ping task deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_ping_records: {
-        parameters: {
-            query: {
-                from: string;
-                to: string;
-                server_id?: string | null;
-            };
-            header?: never;
-            path: {
-                /** @description Ping task ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Ping records */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PingRecord"][];
-                };
-            };
-        };
-    };
-    list_server_groups: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List all server groups */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ServerGroup"][];
-                };
-            };
-        };
-    };
-    create_server_group: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateGroupRequest"];
-            };
-        };
-        responses: {
-            /** @description Group created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ServerGroup"];
-                };
-            };
-            /** @description Group name already exists */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_server_group: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server group ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateGroupRequest"];
-            };
-        };
-        responses: {
-            /** @description Group updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ServerGroup"];
-                };
-            };
-            /** @description Group not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_server_group: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server group ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Group deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Group not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_servers: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List all servers */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ServerResponse"][];
-                };
-            };
-        };
-    };
-    batch_update_capabilities: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BatchCapabilitiesRequest"];
-            };
-        };
-        responses: {
-            /** @description Batch capabilities update result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BatchCapabilitiesResponse"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    batch_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BatchDeleteRequest"];
-            };
-        };
-        responses: {
-            /** @description Batch delete result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BatchDeleteResponse"];
-                };
-            };
-        };
-    };
-    cleanup_orphaned_servers: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Orphaned servers cleaned up */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CleanupResponse"];
-                };
-            };
-        };
-    };
-    get_recovery_job: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Recovery job id */
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Recovery job details */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RecoveryJobResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Admin required */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Recovery job not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    get_server: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Server details */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ServerResponse"];
-                };
-            };
-            /** @description Server not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_server: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateServerInput"];
-            };
-        };
-        responses: {
-            /** @description Server updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ServerResponse"];
-                };
-            };
-            /** @description Server not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_server: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Server deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Server not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_gpu_records: {
-        parameters: {
-            query: {
-                from: string;
-                to: string;
-            };
-            header?: never;
-            path: {
-                /** @description Server ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description GPU metric records */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GpuRecord"][];
-                };
-            };
-        };
-    };
-    get_server_records: {
-        parameters: {
-            query: {
-                from: string;
-                to: string;
-                interval?: string;
-            };
-            header?: never;
-            path: {
-                /** @description Server ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Server metric records */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ServerRecord"][];
-                };
-            };
-        };
-    };
-    trigger_traceroute: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TriggerTracerouteRequest"];
-            };
-        };
-        responses: {
-            /** @description Traceroute triggered */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TriggerTracerouteResponse"];
-                };
-            };
-            /** @description Server not found or offline */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid target */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_traceroute_result: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server ID */
-                id: string;
-                /** @description Traceroute request ID */
-                request_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Traceroute result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TracerouteResultResponse"];
-                };
-            };
-            /** @description Result not found or server mismatch */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_traffic: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Traffic statistics */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_TrafficResponse"];
-                };
-            };
-            /** @description Server not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    trigger_upgrade: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpgradeRequest"];
-            };
-        };
-        responses: {
-            /** @description Upgrade command sent to agent */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Server not found or not online */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_uptime_daily: {
-        parameters: {
-            query?: {
-                /** @description Number of days to include (default: 90, min: 1, max: 365). */
-                days?: number | null;
-            };
-            header?: never;
-            path: {
-                /** @description Server ID */
-                server_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Daily uptime entries */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_Vec_UptimeDailyEntry"];
-                };
-            };
-            /** @description Invalid days parameter */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Server not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    start_recovery_merge: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Original offline server id */
-                target_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["StartRecoveryRequest"];
-            };
-        };
-        responses: {
-            /** @description Recovery job created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RecoveryJobResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Admin required */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Server not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Recovery cannot be started in the current state */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Invalid request */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    list_candidates: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Original offline server id */
-                target_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Recommended recovery candidates */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RecoveryCandidateResponse"][];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Admin required */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Target server not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Target must be offline and not already in a running recovery job */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    list_monitors: {
-        parameters: {
-            query?: {
-                /** @description Filter by monitor type (ssl, dns, http_keyword, tcp, whois). */
-                type?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List all service monitors */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ServiceMonitor"][];
-                };
-            };
-        };
-    };
-    create_service_monitor: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateServiceMonitor"];
-            };
-        };
-        responses: {
-            /** @description Service monitor created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ServiceMonitor"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_service_monitor: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Service monitor ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Service monitor with latest record */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MonitorWithRecord"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_service_monitor: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Service monitor ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateServiceMonitor"];
-            };
-        };
-        responses: {
-            /** @description Service monitor updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ServiceMonitor"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_service_monitor: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Service monitor ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Service monitor deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    trigger_service_monitor_check: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Service monitor ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Check result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ServiceMonitorRecord"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_service_monitor_records: {
-        parameters: {
-            query?: {
-                /** @description Start of time range (inclusive). */
-                from?: string | null;
-                /** @description End of time range (inclusive). */
-                to?: string | null;
-                /** @description Maximum number of records to return. */
-                limit?: number | null;
-            };
-            header?: never;
-            path: {
-                /** @description Service monitor ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Service monitor records */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ServiceMonitorRecord"][];
-                };
-            };
-        };
-    };
-    get_settings: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description System settings */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SystemSettings"];
-                };
-            };
-        };
-    };
-    update_settings: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SystemSettings"];
-            };
-        };
-        responses: {
-            /** @description Settings updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SystemSettings"];
-                };
-            };
-        };
-    };
-    get_active_theme: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Resolved active admin theme */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ActiveThemeResponse"];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    put_active_theme: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PutActiveThemeInput"];
-            };
-        };
-        responses: {
-            /** @description Resolved active admin theme */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ActiveThemeResponse"];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden (non-admin) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error or custom themes disabled */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_auto_discovery_key: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Auto-discovery key */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AutoDiscoveryKeyResponse"];
-                };
-            };
-        };
-    };
-    regenerate_auto_discovery_key: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Key regenerated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AutoDiscoveryKeyResponse"];
-                };
-            };
-        };
-    };
-    create_backup: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Database backup file (SQLite) */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_brand_config: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Brand config */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BrandConfig"];
-                };
-            };
-        };
-    };
-    update_brand_config: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BrandConfig"];
-            };
-        };
-        responses: {
-            /** @description Brand config updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BrandConfig"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    upload_favicon: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": string;
-            };
-        };
-        responses: {
-            /** @description Favicon uploaded */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UploadResponse"];
-                };
-            };
-            /** @description Invalid file */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    upload_logo: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": string;
-            };
-        };
-        responses: {
-            /** @description Logo uploaded */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UploadResponse"];
-                };
-            };
-            /** @description Invalid file */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    restore_backup: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description SQLite backup file */
-        requestBody: {
-            content: {
-                "application/octet-stream": string;
-            };
-        };
-        responses: {
-            /** @description Database restored, restart required */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid backup file */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_themes: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List custom themes */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ThemeSummary"][];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    create_theme: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateThemeInput"];
-            };
-        };
-        responses: {
-            /** @description Custom theme created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Theme"];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden (non-admin) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error or custom themes disabled */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    import_theme: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ExportPayload"];
-            };
-        };
-        responses: {
-            /** @description Custom theme imported */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Theme"];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden (non-admin) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error or custom themes disabled */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_theme: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Theme ID */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Custom theme */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Theme"];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Theme not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_theme: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Theme ID */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateThemeInput"];
-            };
-        };
-        responses: {
-            /** @description Custom theme updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Theme"];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden (non-admin) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Theme not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error or custom themes disabled */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_theme: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Theme ID */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Custom theme deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden (non-admin) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Theme not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Theme is referenced */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Custom themes disabled */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    duplicate_theme: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Theme ID */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Custom theme duplicated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Theme"];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden (non-admin) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Theme not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error or custom themes disabled */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    export_theme: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Theme ID */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Exportable custom theme payload */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ExportPayload"];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Theme not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_references: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Theme ID */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Theme references */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ThemeReferences"];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden (non-admin) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Theme not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid theme ID */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    public_status: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Public server status page data */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StatusPageResponse"];
-                };
-            };
-        };
-    };
-    list_status_pages: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List all status pages */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StatusPage"][];
-                };
-            };
-        };
-    };
-    create_status_page: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateStatusPage"];
-            };
-        };
-        responses: {
-            /** @description Status page created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StatusPage"];
-                };
-            };
-            /** @description Slug conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_status_page: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Status page ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateStatusPage"];
-            };
-        };
-        responses: {
-            /** @description Status page updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StatusPage"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Slug conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_status_page: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Status page ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Status page deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_public_status_page: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Status page URL slug */
-                slug: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Public status page data */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicStatusPageData"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_tasks: {
-        parameters: {
-            query?: {
-                type?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List tasks */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"][];
-                };
-            };
-        };
-    };
-    create_task: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateTaskRequest"];
-            };
-        };
-        responses: {
-            /** @description Task created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_task: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Task ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Task details */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"];
-                };
-            };
-            /** @description Task not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_task: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Task ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateTaskRequest"];
-            };
-        };
-        responses: {
-            /** @description Task updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"];
-                };
-            };
-            /** @description Task not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_task: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Task ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Task deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_task_results: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Task ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Task results */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResult"][];
-                };
-            };
-        };
-    };
-    run_task: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Task ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Task triggered */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"];
-                };
-            };
-            /** @description Task already running */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_traffic_overview: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Traffic overview for all servers with billing cycles */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_Vec_ServerTrafficOverview"];
-                };
-            };
-        };
-    };
-    get_traffic_overview_daily: {
-        parameters: {
-            query?: {
-                /** @description Number of days to include (default: 30). */
-                days?: number | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Global daily traffic aggregation across all servers */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_Vec_DailyTraffic"];
-                };
-            };
-        };
-    };
-    get_traffic_cycle: {
-        parameters: {
-            query?: {
-                /** @description Number of historical billing cycles to return (default: 6). */
-                history?: number | null;
-            };
-            header?: never;
-            path: {
-                /** @description Server ID */
-                server_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Current cycle and historical cycle traffic */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_CycleResponse"];
-                };
-            };
-            /** @description Server not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_users: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List all users */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserResponse"][];
-                };
-            };
-            /** @description Forbidden — admin only */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    create_user: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateUserInput"];
-            };
-        };
-        responses: {
-            /** @description User created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserResponse"];
-                };
-            };
-            /** @description Forbidden — admin only */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Username already exists */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_user: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description User ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description User details */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserResponse"];
-                };
-            };
-            /** @description Forbidden — admin only */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_user: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description User ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateUserInput"];
-            };
-        };
-        responses: {
-            /** @description User updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserResponse"];
-                };
-            };
-            /** @description Forbidden — admin only */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_user: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description User ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description User deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Cannot delete last admin */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden — admin only */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
+  add_incident_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Incident ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateIncidentUpdate']
+      }
+    }
+    responses: {
+      /** @description Incident update added */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['IncidentUpdate']
+        }
+      }
+      /** @description Incident not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  batch_delete: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BatchDeleteRequest']
+      }
+    }
+    responses: {
+      /** @description Batch delete result */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['BatchDeleteResponse']
+        }
+      }
+    }
+  }
+  batch_update_capabilities: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BatchCapabilitiesRequest']
+      }
+    }
+    responses: {
+      /** @description Batch capabilities update result */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['BatchCapabilitiesResponse']
+        }
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  cancel_transfer: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Transfer ID */
+        transfer_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Transfer cancelled */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SuccessResponse']
+        }
+      }
+      /** @description Transfer not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  change_password: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ChangePasswordRequest']
+      }
+    }
+    responses: {
+      /** @description Password changed */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  cleanup_orphaned_servers: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Orphaned servers cleaned up */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CleanupResponse']
+        }
+      }
+    }
+  }
+  create_api_key: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateApiKeyRequest']
+      }
+    }
+    responses: {
+      /** @description API key created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ApiKeyResponse']
+        }
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  create_backup: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Database backup file (SQLite) */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  create_dashboard: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateDashboardInput']
+      }
+    }
+    responses: {
+      /** @description Dashboard created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Model']
+        }
+      }
+    }
+  }
+  create_incident: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateIncident']
+      }
+    }
+    responses: {
+      /** @description Incident created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Incident']
+        }
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  create_maintenance: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateMaintenance']
+      }
+    }
+    responses: {
+      /** @description Maintenance window created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Maintenance']
+        }
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  create_notification: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateNotification']
+      }
+    }
+    responses: {
+      /** @description Notification created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Notification']
+        }
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  create_notification_group: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateNotificationGroup']
+      }
+    }
+    responses: {
+      /** @description Notification group created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['NotificationGroup']
+        }
+      }
+    }
+  }
+  create_ping_task: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreatePingTask']
+      }
+    }
+    responses: {
+      /** @description Ping task created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PingTask']
+        }
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  create_rule: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateAlertRule']
+      }
+    }
+    responses: {
+      /** @description Alert rule created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AlertRule']
+        }
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  create_server_group: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateGroupRequest']
+      }
+    }
+    responses: {
+      /** @description Group created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServerGroup']
+        }
+      }
+      /** @description Group name already exists */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  create_service_monitor: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateServiceMonitor']
+      }
+    }
+    responses: {
+      /** @description Service monitor created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServiceMonitor']
+        }
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  create_status_page: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateStatusPage']
+      }
+    }
+    responses: {
+      /** @description Status page created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['StatusPage']
+        }
+      }
+      /** @description Slug conflict */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  create_task: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateTaskRequest']
+      }
+    }
+    responses: {
+      /** @description Task created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TaskResponse']
+        }
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  create_theme: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateThemeInput']
+      }
+    }
+    responses: {
+      /** @description Custom theme created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Theme']
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Forbidden (non-admin) */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error or custom themes disabled */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  create_user: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateUserInput']
+      }
+    }
+    responses: {
+      /** @description User created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['UserResponse']
+        }
+      }
+      /** @description Forbidden — admin only */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Username already exists */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_api_key: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description API key ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description API key deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description API key not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_dashboard: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Dashboard ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Dashboard deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Cannot delete default or last dashboard */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Dashboard not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_file: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DeleteRequest']
+      }
+    }
+    responses: {
+      /** @description File/directory deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SuccessResponse']
+        }
+      }
+      /** @description File capability disabled */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Agent timeout */
+      408: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_incident: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Incident ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Incident deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_maintenance: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Maintenance ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Maintenance window deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_notification: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Notification ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Notification deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_notification_group: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Notification group ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Notification group deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_ping_task: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Ping task ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Ping task deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_rule: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Alert rule ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Alert rule deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_server: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Server deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_server_group: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server group ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Group deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Group not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_service_monitor: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Service monitor ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Service monitor deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_status_page: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Status page ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Status page deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_task: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Task ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Task deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_theme: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Theme ID */
+        id: number
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Custom theme deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Forbidden (non-admin) */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Theme not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Theme is referenced */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Custom themes disabled */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_user: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description User ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description User deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Cannot delete last admin */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Forbidden — admin only */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  download_file: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Transfer ID */
+        transfer_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description File download stream */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Transfer not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  duplicate_theme: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Theme ID */
+        id: number
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Custom theme duplicated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Theme']
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Forbidden (non-admin) */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Theme not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error or custom themes disabled */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  export_theme: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Theme ID */
+        id: number
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Exportable custom theme payload */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ExportPayload']
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Theme not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  generate_pair_code: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Pairing code generated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MobilePairCodeResponse']
+        }
+      }
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_active_theme: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Resolved active admin theme */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ActiveThemeResponse']
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_alert_event_detail: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Alert key in the format `rule_id:server_id` */
+        alert_key: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Alert event detail */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AlertEventDetailResponse']
+        }
+      }
+      /** @description Invalid alert_key format */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Alert state or rule not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_auto_discovery_key: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Auto-discovery key */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AutoDiscoveryKeyResponse']
+        }
+      }
+    }
+  }
+  get_brand_config: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Brand config */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['BrandConfig']
+        }
+      }
+    }
+  }
+  get_dashboard: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Dashboard ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Dashboard with widgets */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DashboardWithWidgets']
+        }
+      }
+      /** @description Dashboard not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_default_dashboard: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Default dashboard with widgets (auto-creates if none exists) */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DashboardWithWidgets']
+        }
+      }
+    }
+  }
+  get_gpu_records: {
+    parameters: {
+      query: {
+        from: string
+        to: string
+      }
+      header?: never
+      path: {
+        /** @description Server ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description GPU metric records */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['GpuRecord'][]
+        }
+      }
+    }
+  }
+  get_group: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Notification group ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Notification group details */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['NotificationGroup']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_notification: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Notification ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Notification details */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Notification']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_ping_records: {
+    parameters: {
+      query: {
+        from: string
+        to: string
+        server_id?: string | null
+      }
+      header?: never
+      path: {
+        /** @description Ping task ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Ping records */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PingRecord'][]
+        }
+      }
+    }
+  }
+  get_ping_task: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Ping task ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Ping task details */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PingTask']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_public_status_page: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Status page URL slug */
+        slug: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Public status page data */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PublicStatusPageData']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_recovery_job: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Recovery job id */
+        job_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Recovery job details */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RecoveryJobResponse']
+        }
+      }
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+      /** @description Admin required */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+      /** @description Recovery job not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+    }
+  }
+  get_references: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Theme ID */
+        id: number
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Theme references */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ThemeReferences']
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Forbidden (non-admin) */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Theme not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Invalid theme ID */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_rule: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Alert rule ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Alert rule details */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AlertRule']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_server: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Server details */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServerResponse']
+        }
+      }
+      /** @description Server not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_server_records: {
+    parameters: {
+      query: {
+        from: string
+        to: string
+        interval?: string
+      }
+      header?: never
+      path: {
+        /** @description Server ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Server metric records */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServerRecord'][]
+        }
+      }
+    }
+  }
+  get_service_monitor: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Service monitor ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Service monitor with latest record */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MonitorWithRecord']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_service_monitor_records: {
+    parameters: {
+      query?: {
+        /** @description Start of time range (inclusive). */
+        from?: string | null
+        /** @description End of time range (inclusive). */
+        to?: string | null
+        /** @description Maximum number of records to return. */
+        limit?: number | null
+      }
+      header?: never
+      path: {
+        /** @description Service monitor ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Service monitor records */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServiceMonitorRecord'][]
+        }
+      }
+    }
+  }
+  get_settings: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description System settings */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SystemSettings']
+        }
+      }
+    }
+  }
+  get_task: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Task ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Task details */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TaskResponse']
+        }
+      }
+      /** @description Task not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_task_results: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Task ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Task results */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TaskResult'][]
+        }
+      }
+    }
+  }
+  get_theme: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Theme ID */
+        id: number
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Custom theme */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Theme']
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Theme not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_traceroute_result: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        id: string
+        /** @description Traceroute request ID */
+        request_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Traceroute result */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TracerouteResultResponse']
+        }
+      }
+      /** @description Result not found or server mismatch */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_traffic: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Traffic statistics */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ApiResponse_TrafficResponse']
+        }
+      }
+      /** @description Server not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_traffic_cycle: {
+    parameters: {
+      query?: {
+        /** @description Number of historical billing cycles to return (default: 6). */
+        history?: number | null
+      }
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Current cycle and historical cycle traffic */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ApiResponse_CycleResponse']
+        }
+      }
+      /** @description Server not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_traffic_overview: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Traffic overview for all servers with billing cycles */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ApiResponse_Vec_ServerTrafficOverview']
+        }
+      }
+    }
+  }
+  get_traffic_overview_daily: {
+    parameters: {
+      query?: {
+        /** @description Number of days to include (default: 30). */
+        days?: number | null
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Global daily traffic aggregation across all servers */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ApiResponse_Vec_DailyTraffic']
+        }
+      }
+    }
+  }
+  get_uptime_daily: {
+    parameters: {
+      query?: {
+        /** @description Number of days to include (default: 90, min: 1, max: 365). */
+        days?: number | null
+      }
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Daily uptime entries */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ApiResponse_Vec_UptimeDailyEntry']
+        }
+      }
+      /** @description Invalid days parameter */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_user: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description User ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description User details */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['UserResponse']
+        }
+      }
+      /** @description Forbidden — admin only */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  import_theme: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ExportPayload']
+      }
+    }
+    responses: {
+      /** @description Custom theme imported */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Theme']
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Forbidden (non-admin) */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error or custom themes disabled */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  latest_version: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Latest agent release metadata */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['LatestAgentVersionResponse']
+        }
+      }
+    }
+  }
+  list_alert_events: {
+    parameters: {
+      query?: {
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Recent alert events */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AlertEventResponse'][]
+        }
+      }
+    }
+  }
+  list_api_keys: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List of API keys */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ApiKeyResponse'][]
+        }
+      }
+    }
+  }
+  list_audit_logs: {
+    parameters: {
+      query?: {
+        limit?: number
+        offset?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Audit log entries */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AuditListResponse']
+        }
+      }
+      /** @description Forbidden — admin only */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  list_candidates: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Original offline server id */
+        target_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Recommended recovery candidates */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RecoveryCandidateResponse'][]
+        }
+      }
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+      /** @description Admin required */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+      /** @description Target server not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+      /** @description Target must be offline and not already in a running recovery job */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+    }
+  }
+  list_dashboards: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all dashboards */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Model'][]
+        }
+      }
+    }
+  }
+  list_devices: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List of mobile devices */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MobileDeviceResponse'][]
+        }
+      }
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  list_files: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ListFilesRequest']
+      }
+    }
+    responses: {
+      /** @description Directory listing */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ListFilesResponse']
+        }
+      }
+      /** @description File capability disabled */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Agent timeout */
+      408: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  list_incidents: {
+    parameters: {
+      query?: {
+        /** @description Filter by status (investigating, identified, monitoring, resolved). */
+        status?: string | null
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all incidents */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Incident'][]
+        }
+      }
+    }
+  }
+  list_maintenances: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all maintenance windows */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Maintenance'][]
+        }
+      }
+    }
+  }
+  list_monitors: {
+    parameters: {
+      query?: {
+        /** @description Filter by monitor type (ssl, dns, http_keyword, tcp, whois). */
+        type?: string | null
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all service monitors */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServiceMonitor'][]
+        }
+      }
+    }
+  }
+  list_notification_groups: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all notification groups */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['NotificationGroup'][]
+        }
+      }
+    }
+  }
+  list_notifications: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all notifications */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Notification'][]
+        }
+      }
+    }
+  }
+  list_oauth_accounts: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List linked OAuth accounts */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['OAuthAccount'][]
+        }
+      }
+    }
+  }
+  list_ping_tasks: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all ping tasks */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PingTask'][]
+        }
+      }
+    }
+  }
+  list_providers: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List of configured OAuth providers */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['OAuthProvidersResponse']
+        }
+      }
+    }
+  }
+  list_rules: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all alert rules */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AlertRule'][]
+        }
+      }
+    }
+  }
+  list_server_groups: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all server groups */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServerGroup'][]
+        }
+      }
+    }
+  }
+  list_servers: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all servers */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServerResponse'][]
+        }
+      }
+    }
+  }
+  list_states: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Alert rule ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Alert states for this rule */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AlertStateResponse'][]
+        }
+      }
+    }
+  }
+  list_status_pages: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all status pages */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['StatusPage'][]
+        }
+      }
+    }
+  }
+  list_tasks: {
+    parameters: {
+      query?: {
+        type?: string | null
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List tasks */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TaskResponse'][]
+        }
+      }
+    }
+  }
+  list_themes: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List custom themes */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ThemeSummary'][]
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  list_transfers: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Active file transfers */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TransfersResponse']
+        }
+      }
+    }
+  }
+  list_users: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all users */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['UserResponse'][]
+        }
+      }
+      /** @description Forbidden — admin only */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  login: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['LoginRequest']
+      }
+    }
+    responses: {
+      /** @description Login successful */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['LoginResponse']
+        }
+      }
+      /** @description Invalid credentials */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description 2FA code required (code: 2fa_required) */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  logout: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Logout successful */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  me: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Current user info */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MeResponse']
+        }
+      }
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  mkdir: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MkdirRequest']
+      }
+    }
+    responses: {
+      /** @description Directory created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SuccessResponse']
+        }
+      }
+      /** @description File capability disabled */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Agent timeout */
+      408: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  mobile_login: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MobileLoginRequest']
+      }
+    }
+    responses: {
+      /** @description Mobile login successful */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MobileTokenResponse']
+        }
+      }
+      /** @description Invalid credentials */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description 2FA code required (code: 2fa_required) */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Too many login attempts */
+      429: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  mobile_logout: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Logged out */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  mobile_pair_redeem: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MobilePairRedeemRequest']
+      }
+    }
+    responses: {
+      /** @description Pairing successful */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MobileTokenResponse']
+        }
+      }
+      /** @description Invalid or expired pairing code */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  mobile_refresh: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MobileRefreshRequest']
+      }
+    }
+    responses: {
+      /** @description Token refreshed */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MobileTokenResponse']
+        }
+      }
+      /** @description Invalid or expired refresh token */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  move_file: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MoveRequest']
+      }
+    }
+    responses: {
+      /** @description File/directory moved */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SuccessResponse']
+        }
+      }
+      /** @description File capability disabled */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Agent timeout */
+      408: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  oauth_authorize: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description OAuth provider (github, google) */
+        provider: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Redirect to provider */
+      302: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Provider not configured */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  oauth_callback: {
+    parameters: {
+      query: {
+        /** @description Authorization code */
+        code: string
+        /** @description CSRF state token */
+        state: string
+      }
+      header?: never
+      path: {
+        /** @description OAuth provider */
+        provider: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Redirect to frontend after login */
+      302: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Invalid callback */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  public_status: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Public server status page data */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['StatusPageResponse']
+        }
+      }
+    }
+  }
+  push_register: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PushRegisterRequest']
+      }
+    }
+    responses: {
+      /** @description Device token registered */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  push_unregister: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Device token unregistered */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  put_active_theme: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PutActiveThemeInput']
+      }
+    }
+    responses: {
+      /** @description Resolved active admin theme */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ActiveThemeResponse']
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Forbidden (non-admin) */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error or custom themes disabled */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  read_file: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReadRequest']
+      }
+    }
+    responses: {
+      /** @description File content (UTF-8) */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ReadResponse']
+        }
+      }
+      /** @description File capability disabled */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Agent timeout */
+      408: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  regenerate_auto_discovery_key: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Key regenerated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AutoDiscoveryKeyResponse']
+        }
+      }
+    }
+  }
+  register: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['RegisterRequest']
+      }
+    }
+    responses: {
+      /** @description Agent registered */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RegisterResponse']
+        }
+      }
+      /** @description Auto-discovery key not configured or server limit reached */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Invalid auto-discovery key */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  restore_backup: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** @description SQLite backup file */
+    requestBody: {
+      content: {
+        'application/octet-stream': string
+      }
+    }
+    responses: {
+      /** @description Database restored, restart required */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Invalid backup file */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  revoke_device: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Mobile session ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Device revoked */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Cannot revoke another user's device */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Mobile session not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  run_task: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Task ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Task triggered */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TaskResponse']
+        }
+      }
+      /** @description Task already running */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  serve_favicon: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Favicon image */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description No favicon uploaded */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  serve_logo: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Logo image */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description No logo uploaded */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  start_download: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DownloadRequest']
+      }
+    }
+    responses: {
+      /** @description Download transfer started */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DownloadResponse']
+        }
+      }
+      /** @description File capability disabled */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Too many concurrent transfers */
+      429: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  start_recovery_merge: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Original offline server id */
+        target_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['StartRecoveryRequest']
+      }
+    }
+    responses: {
+      /** @description Recovery job created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RecoveryJobResponse']
+        }
+      }
+      /** @description Authentication required */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+      /** @description Admin required */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+      /** @description Server not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+      /** @description Recovery cannot be started in the current state */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+      /** @description Invalid request */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorBody']
+        }
+      }
+    }
+  }
+  stat_file: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['StatRequest']
+      }
+    }
+    responses: {
+      /** @description File metadata */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['StatResponse']
+        }
+      }
+      /** @description File capability disabled */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Agent timeout */
+      408: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  test_notification: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Notification ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Test notification sent */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  totp_disable: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TotpDisableRequest']
+      }
+    }
+    responses: {
+      /** @description 2FA disabled */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Invalid password */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  totp_enable: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TotpVerifyRequest']
+      }
+    }
+    responses: {
+      /** @description 2FA enabled */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Invalid TOTP code */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  totp_setup: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description TOTP setup data */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TotpSetupResponse']
+        }
+      }
+    }
+  }
+  totp_status: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description 2FA status */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TotpStatusResponse']
+        }
+      }
+    }
+  }
+  trigger_service_monitor_check: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Service monitor ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Check result */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServiceMonitorRecord']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  trigger_traceroute: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TriggerTracerouteRequest']
+      }
+    }
+    responses: {
+      /** @description Traceroute triggered */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TriggerTracerouteResponse']
+        }
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Invalid target */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  trigger_upgrade: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpgradeRequest']
+      }
+    }
+    responses: {
+      /** @description Upgrade command sent to agent */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or not online */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  unlink_oauth_account: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description OAuth account ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description OAuth account unlinked */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_brand_config: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BrandConfig']
+      }
+    }
+    responses: {
+      /** @description Brand config updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['BrandConfig']
+        }
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_dashboard: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Dashboard ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateDashboardInput']
+      }
+    }
+    responses: {
+      /** @description Dashboard updated with widgets */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DashboardWithWidgets']
+        }
+      }
+      /** @description Validation error (e.g. cannot unset default, unknown widget type) */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Dashboard not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_incident: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Incident ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateIncident']
+      }
+    }
+    responses: {
+      /** @description Incident updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Incident']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_maintenance: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Maintenance ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateMaintenance']
+      }
+    }
+    responses: {
+      /** @description Maintenance window updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Maintenance']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_notification: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Notification ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateNotification']
+      }
+    }
+    responses: {
+      /** @description Notification updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Notification']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_notification_group: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Notification group ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateNotificationGroup']
+      }
+    }
+    responses: {
+      /** @description Notification group updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['NotificationGroup']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_ping_task: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Ping task ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdatePingTask']
+      }
+    }
+    responses: {
+      /** @description Ping task updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PingTask']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_rule: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Alert rule ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateAlertRule']
+      }
+    }
+    responses: {
+      /** @description Alert rule updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AlertRule']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_server: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateServerInput']
+      }
+    }
+    responses: {
+      /** @description Server updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServerResponse']
+        }
+      }
+      /** @description Server not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_server_group: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server group ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateGroupRequest']
+      }
+    }
+    responses: {
+      /** @description Group updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServerGroup']
+        }
+      }
+      /** @description Group not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_service_monitor: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Service monitor ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateServiceMonitor']
+      }
+    }
+    responses: {
+      /** @description Service monitor updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServiceMonitor']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_settings: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SystemSettings']
+      }
+    }
+    responses: {
+      /** @description Settings updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SystemSettings']
+        }
+      }
+    }
+  }
+  update_status_page: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Status page ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateStatusPage']
+      }
+    }
+    responses: {
+      /** @description Status page updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['StatusPage']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Slug conflict */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_task: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Task ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateTaskRequest']
+      }
+    }
+    responses: {
+      /** @description Task updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TaskResponse']
+        }
+      }
+      /** @description Task not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_theme: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Theme ID */
+        id: number
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateThemeInput']
+      }
+    }
+    responses: {
+      /** @description Custom theme updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Theme']
+        }
+      }
+      /** @description Unauthenticated */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Forbidden (non-admin) */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Theme not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error or custom themes disabled */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_user: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description User ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateUserInput']
+      }
+    }
+    responses: {
+      /** @description User updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['UserResponse']
+        }
+      }
+      /** @description Forbidden — admin only */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  upload_favicon: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'multipart/form-data': string
+      }
+    }
+    responses: {
+      /** @description Favicon uploaded */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['UploadResponse']
+        }
+      }
+      /** @description Invalid file */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  upload_file: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'multipart/form-data': string
+      }
+    }
+    responses: {
+      /** @description File uploaded */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SuccessResponse']
+        }
+      }
+      /** @description File capability disabled */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Too many concurrent transfers */
+      429: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  upload_logo: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'multipart/form-data': string
+      }
+    }
+    responses: {
+      /** @description Logo uploaded */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['UploadResponse']
+        }
+      }
+      /** @description Invalid file */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  write_file: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['WriteRequest']
+      }
+    }
+    responses: {
+      /** @description File written */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SuccessResponse']
+        }
+      }
+      /** @description File capability disabled */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found or offline */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Agent timeout */
+      408: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
 }

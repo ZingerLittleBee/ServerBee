@@ -11,9 +11,7 @@
   "paths": {
     "/api/agent/latest-version": {
       "get": {
-        "tags": [
-          "agent"
-        ],
+        "tags": ["agent"],
         "operationId": "latest_version",
         "responses": {
           "200": {
@@ -42,9 +40,7 @@
     },
     "/api/agent/register": {
       "post": {
-        "tags": [
-          "agent"
-        ],
+        "tags": ["agent"],
         "operationId": "register",
         "requestBody": {
           "content": {
@@ -82,9 +78,7 @@
     },
     "/api/alert-events": {
       "get": {
-        "tags": [
-          "alert-rules"
-        ],
+        "tags": ["alert-rules"],
         "operationId": "list_alert_events",
         "parameters": [
           {
@@ -128,9 +122,7 @@
     },
     "/api/alert-events/{alert_key}": {
       "get": {
-        "tags": [
-          "alert-rules"
-        ],
+        "tags": ["alert-rules"],
         "operationId": "get_alert_event_detail",
         "parameters": [
           {
@@ -176,9 +168,7 @@
     },
     "/api/alert-rules": {
       "get": {
-        "tags": [
-          "alert-rules"
-        ],
+        "tags": ["alert-rules"],
         "operationId": "list_rules",
         "responses": {
           "200": {
@@ -208,9 +198,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "alert-rules"
-        ],
+        "tags": ["alert-rules"],
         "operationId": "create_rule",
         "requestBody": {
           "content": {
@@ -252,9 +240,7 @@
     },
     "/api/alert-rules/{id}": {
       "get": {
-        "tags": [
-          "alert-rules"
-        ],
+        "tags": ["alert-rules"],
         "operationId": "get_rule",
         "parameters": [
           {
@@ -295,9 +281,7 @@
         ]
       },
       "put": {
-        "tags": [
-          "alert-rules"
-        ],
+        "tags": ["alert-rules"],
         "operationId": "update_rule",
         "parameters": [
           {
@@ -348,9 +332,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "alert-rules"
-        ],
+        "tags": ["alert-rules"],
         "operationId": "delete_rule",
         "parameters": [
           {
@@ -386,9 +368,7 @@
     },
     "/api/alert-rules/{id}/states": {
       "get": {
-        "tags": [
-          "alert-rules"
-        ],
+        "tags": ["alert-rules"],
         "operationId": "list_states",
         "parameters": [
           {
@@ -431,9 +411,7 @@
     },
     "/api/audit-logs": {
       "get": {
-        "tags": [
-          "audit"
-        ],
+        "tags": ["audit"],
         "operationId": "list_audit_logs",
         "parameters": [
           {
@@ -487,9 +465,7 @@
     },
     "/api/auth/2fa/disable": {
       "post": {
-        "tags": [
-          "2fa"
-        ],
+        "tags": ["2fa"],
         "operationId": "totp_disable",
         "requestBody": {
           "content": {
@@ -524,9 +500,7 @@
     },
     "/api/auth/2fa/enable": {
       "post": {
-        "tags": [
-          "2fa"
-        ],
+        "tags": ["2fa"],
         "operationId": "totp_enable",
         "requestBody": {
           "content": {
@@ -561,9 +535,7 @@
     },
     "/api/auth/2fa/setup": {
       "post": {
-        "tags": [
-          "2fa"
-        ],
+        "tags": ["2fa"],
         "operationId": "totp_setup",
         "responses": {
           "200": {
@@ -592,9 +564,7 @@
     },
     "/api/auth/2fa/status": {
       "get": {
-        "tags": [
-          "2fa"
-        ],
+        "tags": ["2fa"],
         "operationId": "totp_status",
         "responses": {
           "200": {
@@ -623,9 +593,7 @@
     },
     "/api/auth/api-keys": {
       "get": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "operationId": "list_api_keys",
         "responses": {
           "200": {
@@ -655,9 +623,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "operationId": "create_api_key",
         "requestBody": {
           "content": {
@@ -699,9 +665,7 @@
     },
     "/api/auth/api-keys/{id}": {
       "delete": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "operationId": "delete_api_key",
         "parameters": [
           {
@@ -737,9 +701,7 @@
     },
     "/api/auth/login": {
       "post": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "operationId": "login",
         "requestBody": {
           "content": {
@@ -773,9 +735,7 @@
     },
     "/api/auth/logout": {
       "post": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "operationId": "logout",
         "responses": {
           "200": {
@@ -791,9 +751,7 @@
     },
     "/api/auth/me": {
       "get": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "operationId": "me",
         "responses": {
           "200": {
@@ -825,9 +783,7 @@
     },
     "/api/auth/oauth/accounts": {
       "get": {
-        "tags": [
-          "oauth"
-        ],
+        "tags": ["oauth"],
         "operationId": "list_oauth_accounts",
         "responses": {
           "200": {
@@ -859,9 +815,7 @@
     },
     "/api/auth/oauth/accounts/{id}": {
       "delete": {
-        "tags": [
-          "oauth"
-        ],
+        "tags": ["oauth"],
         "operationId": "unlink_oauth_account",
         "parameters": [
           {
@@ -897,9 +851,7 @@
     },
     "/api/auth/oauth/providers": {
       "get": {
-        "tags": [
-          "oauth"
-        ],
+        "tags": ["oauth"],
         "summary": "List configured OAuth providers.",
         "operationId": "list_providers",
         "responses": {
@@ -918,9 +870,7 @@
     },
     "/api/auth/oauth/{provider}": {
       "get": {
-        "tags": [
-          "oauth"
-        ],
+        "tags": ["oauth"],
         "summary": "Redirect user to the OAuth provider's authorization page.",
         "operationId": "oauth_authorize",
         "parameters": [
@@ -946,9 +896,7 @@
     },
     "/api/auth/oauth/{provider}/callback": {
       "get": {
-        "tags": [
-          "oauth"
-        ],
+        "tags": ["oauth"],
         "summary": "Handle the OAuth callback from the provider.",
         "operationId": "oauth_callback",
         "parameters": [
@@ -992,9 +940,7 @@
     },
     "/api/auth/password": {
       "put": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "operationId": "change_password",
         "requestBody": {
           "content": {
@@ -1029,9 +975,7 @@
     },
     "/api/brand/favicon": {
       "get": {
-        "tags": [
-          "brand"
-        ],
+        "tags": ["brand"],
         "operationId": "serve_favicon",
         "responses": {
           "200": {
@@ -1045,9 +989,7 @@
     },
     "/api/brand/logo": {
       "get": {
-        "tags": [
-          "brand"
-        ],
+        "tags": ["brand"],
         "operationId": "serve_logo",
         "responses": {
           "200": {
@@ -1061,9 +1003,7 @@
     },
     "/api/dashboards": {
       "get": {
-        "tags": [
-          "dashboards"
-        ],
+        "tags": ["dashboards"],
         "operationId": "list_dashboards",
         "responses": {
           "200": {
@@ -1093,9 +1033,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "dashboards"
-        ],
+        "tags": ["dashboards"],
         "operationId": "create_dashboard",
         "requestBody": {
           "content": {
@@ -1134,9 +1072,7 @@
     },
     "/api/dashboards/default": {
       "get": {
-        "tags": [
-          "dashboards"
-        ],
+        "tags": ["dashboards"],
         "operationId": "get_default_dashboard",
         "responses": {
           "200": {
@@ -1165,9 +1101,7 @@
     },
     "/api/dashboards/{id}": {
       "get": {
-        "tags": [
-          "dashboards"
-        ],
+        "tags": ["dashboards"],
         "operationId": "get_dashboard",
         "parameters": [
           {
@@ -1208,9 +1142,7 @@
         ]
       },
       "put": {
-        "tags": [
-          "dashboards"
-        ],
+        "tags": ["dashboards"],
         "operationId": "update_dashboard",
         "parameters": [
           {
@@ -1264,9 +1196,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "dashboards"
-        ],
+        "tags": ["dashboards"],
         "operationId": "delete_dashboard",
         "parameters": [
           {
@@ -1305,9 +1235,7 @@
     },
     "/api/files/download/{transfer_id}": {
       "get": {
-        "tags": [
-          "files"
-        ],
+        "tags": ["files"],
         "operationId": "download_file",
         "parameters": [
           {
@@ -1343,9 +1271,7 @@
     },
     "/api/files/transfers": {
       "get": {
-        "tags": [
-          "files"
-        ],
+        "tags": ["files"],
         "operationId": "list_transfers",
         "responses": {
           "200": {
@@ -1374,9 +1300,7 @@
     },
     "/api/files/transfers/{transfer_id}": {
       "delete": {
-        "tags": [
-          "files"
-        ],
+        "tags": ["files"],
         "operationId": "cancel_transfer",
         "parameters": [
           {
@@ -1419,9 +1343,7 @@
     },
     "/api/files/{server_id}/delete": {
       "post": {
-        "tags": [
-          "files"
-        ],
+        "tags": ["files"],
         "operationId": "delete_file",
         "parameters": [
           {
@@ -1480,9 +1402,7 @@
     },
     "/api/files/{server_id}/download": {
       "post": {
-        "tags": [
-          "files"
-        ],
+        "tags": ["files"],
         "operationId": "start_download",
         "parameters": [
           {
@@ -1541,9 +1461,7 @@
     },
     "/api/files/{server_id}/list": {
       "post": {
-        "tags": [
-          "files"
-        ],
+        "tags": ["files"],
         "operationId": "list_files",
         "parameters": [
           {
@@ -1602,9 +1520,7 @@
     },
     "/api/files/{server_id}/mkdir": {
       "post": {
-        "tags": [
-          "files"
-        ],
+        "tags": ["files"],
         "operationId": "mkdir",
         "parameters": [
           {
@@ -1663,9 +1579,7 @@
     },
     "/api/files/{server_id}/move": {
       "post": {
-        "tags": [
-          "files"
-        ],
+        "tags": ["files"],
         "operationId": "move_file",
         "parameters": [
           {
@@ -1724,9 +1638,7 @@
     },
     "/api/files/{server_id}/read": {
       "post": {
-        "tags": [
-          "files"
-        ],
+        "tags": ["files"],
         "operationId": "read_file",
         "parameters": [
           {
@@ -1785,9 +1697,7 @@
     },
     "/api/files/{server_id}/stat": {
       "post": {
-        "tags": [
-          "files"
-        ],
+        "tags": ["files"],
         "operationId": "stat_file",
         "parameters": [
           {
@@ -1846,9 +1756,7 @@
     },
     "/api/files/{server_id}/upload": {
       "post": {
-        "tags": [
-          "files"
-        ],
+        "tags": ["files"],
         "operationId": "upload_file",
         "parameters": [
           {
@@ -1907,9 +1815,7 @@
     },
     "/api/files/{server_id}/write": {
       "post": {
-        "tags": [
-          "files"
-        ],
+        "tags": ["files"],
         "operationId": "write_file",
         "parameters": [
           {
@@ -1968,9 +1874,7 @@
     },
     "/api/incidents": {
       "get": {
-        "tags": [
-          "incidents"
-        ],
+        "tags": ["incidents"],
         "operationId": "list_incidents",
         "parameters": [
           {
@@ -1979,10 +1883,7 @@
             "description": "Filter by status (investigating, identified, monitoring, resolved).",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             }
           }
         ],
@@ -2014,9 +1915,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "incidents"
-        ],
+        "tags": ["incidents"],
         "operationId": "create_incident",
         "requestBody": {
           "content": {
@@ -2058,9 +1957,7 @@
     },
     "/api/incidents/{id}": {
       "put": {
-        "tags": [
-          "incidents"
-        ],
+        "tags": ["incidents"],
         "operationId": "update_incident",
         "parameters": [
           {
@@ -2114,9 +2011,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "incidents"
-        ],
+        "tags": ["incidents"],
         "operationId": "delete_incident",
         "parameters": [
           {
@@ -2152,9 +2047,7 @@
     },
     "/api/incidents/{id}/updates": {
       "post": {
-        "tags": [
-          "incidents"
-        ],
+        "tags": ["incidents"],
         "operationId": "add_incident_update",
         "parameters": [
           {
@@ -2210,9 +2103,7 @@
     },
     "/api/maintenances": {
       "get": {
-        "tags": [
-          "maintenances"
-        ],
+        "tags": ["maintenances"],
         "operationId": "list_maintenances",
         "responses": {
           "200": {
@@ -2242,9 +2133,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "maintenances"
-        ],
+        "tags": ["maintenances"],
         "operationId": "create_maintenance",
         "requestBody": {
           "content": {
@@ -2286,9 +2175,7 @@
     },
     "/api/maintenances/{id}": {
       "put": {
-        "tags": [
-          "maintenances"
-        ],
+        "tags": ["maintenances"],
         "operationId": "update_maintenance",
         "parameters": [
           {
@@ -2339,9 +2226,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "maintenances"
-        ],
+        "tags": ["maintenances"],
         "operationId": "delete_maintenance",
         "parameters": [
           {
@@ -2377,9 +2262,7 @@
     },
     "/api/mobile/auth/devices": {
       "get": {
-        "tags": [
-          "mobile-auth"
-        ],
+        "tags": ["mobile-auth"],
         "operationId": "list_devices",
         "responses": {
           "200": {
@@ -2414,9 +2297,7 @@
     },
     "/api/mobile/auth/devices/{id}": {
       "delete": {
-        "tags": [
-          "mobile-auth"
-        ],
+        "tags": ["mobile-auth"],
         "operationId": "revoke_device",
         "parameters": [
           {
@@ -2458,9 +2339,7 @@
     },
     "/api/mobile/auth/login": {
       "post": {
-        "tags": [
-          "mobile-auth"
-        ],
+        "tags": ["mobile-auth"],
         "operationId": "mobile_login",
         "requestBody": {
           "content": {
@@ -2497,9 +2376,7 @@
     },
     "/api/mobile/auth/logout": {
       "post": {
-        "tags": [
-          "mobile-auth"
-        ],
+        "tags": ["mobile-auth"],
         "operationId": "mobile_logout",
         "responses": {
           "200": {
@@ -2518,9 +2395,7 @@
     },
     "/api/mobile/auth/pair": {
       "post": {
-        "tags": [
-          "mobile-auth"
-        ],
+        "tags": ["mobile-auth"],
         "operationId": "mobile_pair_redeem",
         "requestBody": {
           "content": {
@@ -2554,9 +2429,7 @@
     },
     "/api/mobile/auth/refresh": {
       "post": {
-        "tags": [
-          "mobile-auth"
-        ],
+        "tags": ["mobile-auth"],
         "operationId": "mobile_refresh",
         "requestBody": {
           "content": {
@@ -2587,9 +2460,7 @@
     },
     "/api/mobile/pair": {
       "post": {
-        "tags": [
-          "mobile-auth"
-        ],
+        "tags": ["mobile-auth"],
         "operationId": "generate_pair_code",
         "responses": {
           "200": {
@@ -2621,9 +2492,7 @@
     },
     "/api/mobile/push/register": {
       "post": {
-        "tags": [
-          "mobile-auth"
-        ],
+        "tags": ["mobile-auth"],
         "operationId": "push_register",
         "requestBody": {
           "content": {
@@ -2655,9 +2524,7 @@
     },
     "/api/mobile/push/unregister": {
       "post": {
-        "tags": [
-          "mobile-auth"
-        ],
+        "tags": ["mobile-auth"],
         "operationId": "push_unregister",
         "responses": {
           "200": {
@@ -2676,9 +2543,7 @@
     },
     "/api/notification-groups": {
       "get": {
-        "tags": [
-          "notification-groups"
-        ],
+        "tags": ["notification-groups"],
         "operationId": "list_notification_groups",
         "responses": {
           "200": {
@@ -2708,9 +2573,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "notification-groups"
-        ],
+        "tags": ["notification-groups"],
         "operationId": "create_notification_group",
         "requestBody": {
           "content": {
@@ -2749,9 +2612,7 @@
     },
     "/api/notification-groups/{id}": {
       "get": {
-        "tags": [
-          "notification-groups"
-        ],
+        "tags": ["notification-groups"],
         "operationId": "get_group",
         "parameters": [
           {
@@ -2792,9 +2653,7 @@
         ]
       },
       "put": {
-        "tags": [
-          "notification-groups"
-        ],
+        "tags": ["notification-groups"],
         "operationId": "update_notification_group",
         "parameters": [
           {
@@ -2845,9 +2704,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "notification-groups"
-        ],
+        "tags": ["notification-groups"],
         "operationId": "delete_notification_group",
         "parameters": [
           {
@@ -2883,9 +2740,7 @@
     },
     "/api/notifications": {
       "get": {
-        "tags": [
-          "notifications"
-        ],
+        "tags": ["notifications"],
         "operationId": "list_notifications",
         "responses": {
           "200": {
@@ -2915,9 +2770,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "notifications"
-        ],
+        "tags": ["notifications"],
         "operationId": "create_notification",
         "requestBody": {
           "content": {
@@ -2959,9 +2812,7 @@
     },
     "/api/notifications/{id}": {
       "get": {
-        "tags": [
-          "notifications"
-        ],
+        "tags": ["notifications"],
         "operationId": "get_notification",
         "parameters": [
           {
@@ -3002,9 +2853,7 @@
         ]
       },
       "put": {
-        "tags": [
-          "notifications"
-        ],
+        "tags": ["notifications"],
         "operationId": "update_notification",
         "parameters": [
           {
@@ -3055,9 +2904,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "notifications"
-        ],
+        "tags": ["notifications"],
         "operationId": "delete_notification",
         "parameters": [
           {
@@ -3093,9 +2940,7 @@
     },
     "/api/notifications/{id}/test": {
       "post": {
-        "tags": [
-          "notifications"
-        ],
+        "tags": ["notifications"],
         "operationId": "test_notification",
         "parameters": [
           {
@@ -3131,9 +2976,7 @@
     },
     "/api/ping-tasks": {
       "get": {
-        "tags": [
-          "ping-tasks"
-        ],
+        "tags": ["ping-tasks"],
         "operationId": "list_ping_tasks",
         "responses": {
           "200": {
@@ -3163,9 +3006,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "ping-tasks"
-        ],
+        "tags": ["ping-tasks"],
         "operationId": "create_ping_task",
         "requestBody": {
           "content": {
@@ -3207,9 +3048,7 @@
     },
     "/api/ping-tasks/{id}": {
       "get": {
-        "tags": [
-          "ping-tasks"
-        ],
+        "tags": ["ping-tasks"],
         "operationId": "get_ping_task",
         "parameters": [
           {
@@ -3250,9 +3089,7 @@
         ]
       },
       "put": {
-        "tags": [
-          "ping-tasks"
-        ],
+        "tags": ["ping-tasks"],
         "operationId": "update_ping_task",
         "parameters": [
           {
@@ -3303,9 +3140,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "ping-tasks"
-        ],
+        "tags": ["ping-tasks"],
         "operationId": "delete_ping_task",
         "parameters": [
           {
@@ -3341,9 +3176,7 @@
     },
     "/api/ping-tasks/{id}/records": {
       "get": {
-        "tags": [
-          "ping-tasks"
-        ],
+        "tags": ["ping-tasks"],
         "operationId": "get_ping_records",
         "parameters": [
           {
@@ -3378,10 +3211,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             }
           }
         ],
@@ -3415,9 +3245,7 @@
     },
     "/api/server-groups": {
       "get": {
-        "tags": [
-          "server-groups"
-        ],
+        "tags": ["server-groups"],
         "operationId": "list_server_groups",
         "responses": {
           "200": {
@@ -3447,9 +3275,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "server-groups"
-        ],
+        "tags": ["server-groups"],
         "operationId": "create_server_group",
         "requestBody": {
           "content": {
@@ -3494,9 +3320,7 @@
     },
     "/api/server-groups/{id}": {
       "put": {
-        "tags": [
-          "server-groups"
-        ],
+        "tags": ["server-groups"],
         "operationId": "update_server_group",
         "parameters": [
           {
@@ -3550,9 +3374,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "server-groups"
-        ],
+        "tags": ["server-groups"],
         "operationId": "delete_server_group",
         "parameters": [
           {
@@ -3588,9 +3410,7 @@
     },
     "/api/servers": {
       "get": {
-        "tags": [
-          "servers"
-        ],
+        "tags": ["servers"],
         "operationId": "list_servers",
         "responses": {
           "200": {
@@ -3622,9 +3442,7 @@
     },
     "/api/servers/batch-capabilities": {
       "put": {
-        "tags": [
-          "servers"
-        ],
+        "tags": ["servers"],
         "operationId": "batch_update_capabilities",
         "requestBody": {
           "content": {
@@ -3666,9 +3484,7 @@
     },
     "/api/servers/batch-delete": {
       "post": {
-        "tags": [
-          "servers"
-        ],
+        "tags": ["servers"],
         "operationId": "batch_delete",
         "requestBody": {
           "content": {
@@ -3707,9 +3523,7 @@
     },
     "/api/servers/cleanup": {
       "delete": {
-        "tags": [
-          "servers"
-        ],
+        "tags": ["servers"],
         "operationId": "cleanup_orphaned_servers",
         "responses": {
           "200": {
@@ -3735,9 +3549,7 @@
     },
     "/api/servers/recovery-jobs/{job_id}": {
       "get": {
-        "tags": [
-          "server-recovery"
-        ],
+        "tags": ["server-recovery"],
         "operationId": "get_recovery_job",
         "parameters": [
           {
@@ -3807,9 +3619,7 @@
     },
     "/api/servers/{id}": {
       "get": {
-        "tags": [
-          "servers"
-        ],
+        "tags": ["servers"],
         "operationId": "get_server",
         "parameters": [
           {
@@ -3850,9 +3660,7 @@
         ]
       },
       "put": {
-        "tags": [
-          "servers"
-        ],
+        "tags": ["servers"],
         "operationId": "update_server",
         "parameters": [
           {
@@ -3903,9 +3711,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "servers"
-        ],
+        "tags": ["servers"],
         "operationId": "delete_server",
         "parameters": [
           {
@@ -3941,9 +3747,7 @@
     },
     "/api/servers/{id}/gpu-records": {
       "get": {
-        "tags": [
-          "servers"
-        ],
+        "tags": ["servers"],
         "operationId": "get_gpu_records",
         "parameters": [
           {
@@ -4004,9 +3808,7 @@
     },
     "/api/servers/{id}/records": {
       "get": {
-        "tags": [
-          "servers"
-        ],
+        "tags": ["servers"],
         "operationId": "get_server_records",
         "parameters": [
           {
@@ -4075,9 +3877,7 @@
     },
     "/api/servers/{id}/traceroute": {
       "post": {
-        "tags": [
-          "traceroute"
-        ],
+        "tags": ["traceroute"],
         "summary": "Trigger a traceroute to a target from the specified server's agent.",
         "operationId": "trigger_traceroute",
         "parameters": [
@@ -4134,9 +3934,7 @@
     },
     "/api/servers/{id}/traceroute/{request_id}": {
       "get": {
-        "tags": [
-          "traceroute"
-        ],
+        "tags": ["traceroute"],
         "summary": "Poll for the result of a previously triggered traceroute.",
         "operationId": "get_traceroute_result",
         "parameters": [
@@ -4189,9 +3987,7 @@
     },
     "/api/servers/{id}/traffic": {
       "get": {
-        "tags": [
-          "servers"
-        ],
+        "tags": ["servers"],
         "operationId": "get_traffic",
         "parameters": [
           {
@@ -4223,9 +4019,7 @@
     },
     "/api/servers/{id}/upgrade": {
       "post": {
-        "tags": [
-          "servers"
-        ],
+        "tags": ["servers"],
         "operationId": "trigger_upgrade",
         "parameters": [
           {
@@ -4271,9 +4065,7 @@
     },
     "/api/servers/{server_id}/uptime-daily": {
       "get": {
-        "tags": [
-          "servers"
-        ],
+        "tags": ["servers"],
         "operationId": "get_uptime_daily",
         "parameters": [
           {
@@ -4291,10 +4083,7 @@
             "description": "Number of days to include (default: 90, min: 1, max: 365).",
             "required": false,
             "schema": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": ["integer", "null"],
               "format": "int32",
               "minimum": 0
             }
@@ -4333,9 +4122,7 @@
     },
     "/api/servers/{target_id}/recover-merge": {
       "post": {
-        "tags": [
-          "server-recovery"
-        ],
+        "tags": ["server-recovery"],
         "operationId": "start_recovery_merge",
         "parameters": [
           {
@@ -4435,9 +4222,7 @@
     },
     "/api/servers/{target_id}/recovery-candidates": {
       "get": {
-        "tags": [
-          "server-recovery"
-        ],
+        "tags": ["server-recovery"],
         "operationId": "list_candidates",
         "parameters": [
           {
@@ -4520,9 +4305,7 @@
     },
     "/api/service-monitors": {
       "get": {
-        "tags": [
-          "service-monitors"
-        ],
+        "tags": ["service-monitors"],
         "operationId": "list_monitors",
         "parameters": [
           {
@@ -4531,10 +4314,7 @@
             "description": "Filter by monitor type (ssl, dns, http_keyword, tcp, whois).",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             }
           }
         ],
@@ -4566,9 +4346,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "service-monitors"
-        ],
+        "tags": ["service-monitors"],
         "operationId": "create_service_monitor",
         "requestBody": {
           "content": {
@@ -4610,9 +4388,7 @@
     },
     "/api/service-monitors/{id}": {
       "get": {
-        "tags": [
-          "service-monitors"
-        ],
+        "tags": ["service-monitors"],
         "operationId": "get_service_monitor",
         "parameters": [
           {
@@ -4653,9 +4429,7 @@
         ]
       },
       "put": {
-        "tags": [
-          "service-monitors"
-        ],
+        "tags": ["service-monitors"],
         "operationId": "update_service_monitor",
         "parameters": [
           {
@@ -4706,9 +4480,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "service-monitors"
-        ],
+        "tags": ["service-monitors"],
         "operationId": "delete_service_monitor",
         "parameters": [
           {
@@ -4744,9 +4516,7 @@
     },
     "/api/service-monitors/{id}/check": {
       "post": {
-        "tags": [
-          "service-monitors"
-        ],
+        "tags": ["service-monitors"],
         "operationId": "trigger_service_monitor_check",
         "parameters": [
           {
@@ -4789,9 +4559,7 @@
     },
     "/api/service-monitors/{id}/records": {
       "get": {
-        "tags": [
-          "service-monitors"
-        ],
+        "tags": ["service-monitors"],
         "operationId": "get_service_monitor_records",
         "parameters": [
           {
@@ -4809,10 +4577,7 @@
             "description": "Start of time range (inclusive).",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ],
+              "type": ["string", "null"],
               "format": "date-time"
             }
           },
@@ -4822,10 +4587,7 @@
             "description": "End of time range (inclusive).",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ],
+              "type": ["string", "null"],
               "format": "date-time"
             }
           },
@@ -4835,10 +4597,7 @@
             "description": "Maximum number of records to return.",
             "required": false,
             "schema": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": ["integer", "null"],
               "format": "int64",
               "minimum": 0
             }
@@ -4874,9 +4633,7 @@
     },
     "/api/settings": {
       "get": {
-        "tags": [
-          "settings"
-        ],
+        "tags": ["settings"],
         "operationId": "get_settings",
         "responses": {
           "200": {
@@ -4903,9 +4660,7 @@
         ]
       },
       "put": {
-        "tags": [
-          "settings"
-        ],
+        "tags": ["settings"],
         "operationId": "update_settings",
         "requestBody": {
           "content": {
@@ -4944,9 +4699,7 @@
     },
     "/api/settings/active-theme": {
       "get": {
-        "tags": [
-          "themes"
-        ],
+        "tags": ["themes"],
         "operationId": "get_active_theme",
         "responses": {
           "200": {
@@ -4976,9 +4729,7 @@
         ]
       },
       "put": {
-        "tags": [
-          "themes"
-        ],
+        "tags": ["themes"],
         "operationId": "put_active_theme",
         "requestBody": {
           "content": {
@@ -5026,9 +4777,7 @@
     },
     "/api/settings/auto-discovery-key": {
       "get": {
-        "tags": [
-          "settings"
-        ],
+        "tags": ["settings"],
         "operationId": "get_auto_discovery_key",
         "responses": {
           "200": {
@@ -5055,9 +4804,7 @@
         ]
       },
       "put": {
-        "tags": [
-          "settings"
-        ],
+        "tags": ["settings"],
         "operationId": "regenerate_auto_discovery_key",
         "responses": {
           "200": {
@@ -5086,9 +4833,7 @@
     },
     "/api/settings/backup": {
       "post": {
-        "tags": [
-          "settings"
-        ],
+        "tags": ["settings"],
         "summary": "Download a backup of the SQLite database.",
         "operationId": "create_backup",
         "responses": {
@@ -5111,9 +4856,7 @@
     },
     "/api/settings/brand": {
       "get": {
-        "tags": [
-          "brand"
-        ],
+        "tags": ["brand"],
         "operationId": "get_brand_config",
         "responses": {
           "200": {
@@ -5129,9 +4872,7 @@
         }
       },
       "put": {
-        "tags": [
-          "brand"
-        ],
+        "tags": ["brand"],
         "operationId": "update_brand_config",
         "requestBody": {
           "content": {
@@ -5173,9 +4914,7 @@
     },
     "/api/settings/brand/favicon": {
       "post": {
-        "tags": [
-          "brand"
-        ],
+        "tags": ["brand"],
         "operationId": "upload_favicon",
         "requestBody": {
           "content": {
@@ -5220,9 +4959,7 @@
     },
     "/api/settings/brand/logo": {
       "post": {
-        "tags": [
-          "brand"
-        ],
+        "tags": ["brand"],
         "operationId": "upload_logo",
         "requestBody": {
           "content": {
@@ -5267,9 +5004,7 @@
     },
     "/api/settings/restore": {
       "post": {
-        "tags": [
-          "settings"
-        ],
+        "tags": ["settings"],
         "summary": "Restore the database from an uploaded backup file.\nThe server should be restarted after restore.\nNote: request body is raw binary (application/octet-stream).",
         "operationId": "restore_backup",
         "requestBody": {
@@ -5306,9 +5041,7 @@
     },
     "/api/settings/themes": {
       "get": {
-        "tags": [
-          "themes"
-        ],
+        "tags": ["themes"],
         "operationId": "list_themes",
         "responses": {
           "200": {
@@ -5341,9 +5074,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "themes"
-        ],
+        "tags": ["themes"],
         "operationId": "create_theme",
         "requestBody": {
           "content": {
@@ -5391,9 +5122,7 @@
     },
     "/api/settings/themes/import": {
       "post": {
-        "tags": [
-          "themes"
-        ],
+        "tags": ["themes"],
         "operationId": "import_theme",
         "requestBody": {
           "content": {
@@ -5441,9 +5170,7 @@
     },
     "/api/settings/themes/{id}": {
       "get": {
-        "tags": [
-          "themes"
-        ],
+        "tags": ["themes"],
         "operationId": "get_theme",
         "parameters": [
           {
@@ -5488,9 +5215,7 @@
         ]
       },
       "put": {
-        "tags": [
-          "themes"
-        ],
+        "tags": ["themes"],
         "operationId": "update_theme",
         "parameters": [
           {
@@ -5551,9 +5276,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "themes"
-        ],
+        "tags": ["themes"],
         "operationId": "delete_theme",
         "parameters": [
           {
@@ -5602,9 +5325,7 @@
     },
     "/api/settings/themes/{id}/duplicate": {
       "post": {
-        "tags": [
-          "themes"
-        ],
+        "tags": ["themes"],
         "operationId": "duplicate_theme",
         "parameters": [
           {
@@ -5657,9 +5378,7 @@
     },
     "/api/settings/themes/{id}/export": {
       "get": {
-        "tags": [
-          "themes"
-        ],
+        "tags": ["themes"],
         "operationId": "export_theme",
         "parameters": [
           {
@@ -5706,9 +5425,7 @@
     },
     "/api/settings/themes/{id}/references": {
       "get": {
-        "tags": [
-          "themes"
-        ],
+        "tags": ["themes"],
         "operationId": "get_references",
         "parameters": [
           {
@@ -5761,9 +5478,7 @@
     },
     "/api/status": {
       "get": {
-        "tags": [
-          "status"
-        ],
+        "tags": ["status"],
         "operationId": "public_status",
         "responses": {
           "200": {
@@ -5781,9 +5496,7 @@
     },
     "/api/status-pages": {
       "get": {
-        "tags": [
-          "status-pages"
-        ],
+        "tags": ["status-pages"],
         "operationId": "list_status_pages",
         "responses": {
           "200": {
@@ -5813,9 +5526,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "status-pages"
-        ],
+        "tags": ["status-pages"],
         "operationId": "create_status_page",
         "requestBody": {
           "content": {
@@ -5860,9 +5571,7 @@
     },
     "/api/status-pages/{id}": {
       "put": {
-        "tags": [
-          "status-pages"
-        ],
+        "tags": ["status-pages"],
         "operationId": "update_status_page",
         "parameters": [
           {
@@ -5916,9 +5625,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "status-pages"
-        ],
+        "tags": ["status-pages"],
         "operationId": "delete_status_page",
         "parameters": [
           {
@@ -5954,9 +5661,7 @@
     },
     "/api/status/{slug}": {
       "get": {
-        "tags": [
-          "status-pages"
-        ],
+        "tags": ["status-pages"],
         "operationId": "get_public_status_page",
         "parameters": [
           {
@@ -5988,9 +5693,7 @@
     },
     "/api/tasks": {
       "get": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "list_tasks",
         "parameters": [
           {
@@ -5998,10 +5701,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             }
           }
         ],
@@ -6033,9 +5733,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "create_task",
         "requestBody": {
           "content": {
@@ -6077,9 +5775,7 @@
     },
     "/api/tasks/{id}": {
       "get": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "get_task",
         "parameters": [
           {
@@ -6120,9 +5816,7 @@
         ]
       },
       "put": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "update_task",
         "parameters": [
           {
@@ -6173,9 +5867,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "delete_task",
         "parameters": [
           {
@@ -6208,9 +5900,7 @@
     },
     "/api/tasks/{id}/results": {
       "get": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "get_task_results",
         "parameters": [
           {
@@ -6253,9 +5943,7 @@
     },
     "/api/tasks/{id}/run": {
       "post": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "run_task",
         "parameters": [
           {
@@ -6298,9 +5986,7 @@
     },
     "/api/traffic/overview": {
       "get": {
-        "tags": [
-          "traffic"
-        ],
+        "tags": ["traffic"],
         "operationId": "get_traffic_overview",
         "responses": {
           "200": {
@@ -6329,9 +6015,7 @@
     },
     "/api/traffic/overview/daily": {
       "get": {
-        "tags": [
-          "traffic"
-        ],
+        "tags": ["traffic"],
         "operationId": "get_traffic_overview_daily",
         "parameters": [
           {
@@ -6340,10 +6024,7 @@
             "description": "Number of days to include (default: 30).",
             "required": false,
             "schema": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": ["integer", "null"],
               "format": "int32",
               "minimum": 0
             }
@@ -6376,9 +6057,7 @@
     },
     "/api/traffic/{server_id}/cycle": {
       "get": {
-        "tags": [
-          "traffic"
-        ],
+        "tags": ["traffic"],
         "operationId": "get_traffic_cycle",
         "parameters": [
           {
@@ -6396,10 +6075,7 @@
             "description": "Number of historical billing cycles to return (default: 6).",
             "required": false,
             "schema": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": ["integer", "null"],
               "format": "int32",
               "minimum": 0
             }
@@ -6435,9 +6111,7 @@
     },
     "/api/users": {
       "get": {
-        "tags": [
-          "users"
-        ],
+        "tags": ["users"],
         "operationId": "list_users",
         "responses": {
           "200": {
@@ -6470,9 +6144,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "users"
-        ],
+        "tags": ["users"],
         "operationId": "create_user",
         "requestBody": {
           "content": {
@@ -6520,9 +6192,7 @@
     },
     "/api/users/{id}": {
       "get": {
-        "tags": [
-          "users"
-        ],
+        "tags": ["users"],
         "operationId": "get_user",
         "parameters": [
           {
@@ -6566,9 +6236,7 @@
         ]
       },
       "put": {
-        "tags": [
-          "users"
-        ],
+        "tags": ["users"],
         "operationId": "update_user",
         "parameters": [
           {
@@ -6622,9 +6290,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "users"
-        ],
+        "tags": ["users"],
         "operationId": "delete_user",
         "parameters": [
           {
@@ -6669,10 +6335,7 @@
     "schemas": {
       "ActiveThemeResponse": {
         "type": "object",
-        "required": [
-          "ref",
-          "theme"
-        ],
+        "required": ["ref", "theme"],
         "properties": {
           "ref": {
             "type": "string"
@@ -6708,10 +6371,7 @@
             "type": "string"
           },
           "resolved_at": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "rule_enabled": {
             "type": "boolean"
@@ -6761,10 +6421,7 @@
             "description": "first_triggered_at for firing, resolved_at for resolved"
           },
           "resolved_at": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "rule_id": {
             "type": "string"
@@ -6808,10 +6465,7 @@
             "type": "boolean"
           },
           "fail_trigger_tasks": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "id": {
             "type": "string"
@@ -6820,25 +6474,16 @@
             "type": "string"
           },
           "notification_group_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "recover_trigger_tasks": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "rules_json": {
             "type": "string"
           },
           "server_ids_json": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "trigger_mode": {
             "type": "string"
@@ -6851,43 +6496,26 @@
       },
       "AlertRuleItem": {
         "type": "object",
-        "required": [
-          "rule_type"
-        ],
+        "required": ["rule_type"],
         "properties": {
           "cycle_interval": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "cycle_limit": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "duration": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "minimum": 0
           },
           "max": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           },
           "min": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           },
           "rule_type": {
@@ -6922,10 +6550,7 @@
             "type": "boolean"
           },
           "resolved_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "server_id": {
@@ -6938,12 +6563,7 @@
       },
       "ApiKeyResponse": {
         "type": "object",
-        "required": [
-          "id",
-          "name",
-          "key_prefix",
-          "created_at"
-        ],
+        "required": ["id", "name", "key_prefix", "created_at"],
         "properties": {
           "created_at": {
             "type": "string"
@@ -6952,10 +6572,7 @@
             "type": "string"
           },
           "key": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "key_prefix": {
             "type": "string"
@@ -6967,16 +6584,11 @@
       },
       "ApiResponse_CycleResponse": {
         "type": "object",
-        "required": [
-          "data"
-        ],
+        "required": ["data"],
         "properties": {
           "data": {
             "type": "object",
-            "required": [
-              "current",
-              "history"
-            ],
+            "required": ["current", "history"],
             "properties": {
               "current": {
                 "$ref": "#/components/schemas/CycleTraffic"
@@ -6993,9 +6605,7 @@
       },
       "ApiResponse_TrafficResponse": {
         "type": "object",
-        "required": [
-          "data"
-        ],
+        "required": ["data"],
         "properties": {
           "data": {
             "type": "object",
@@ -7050,23 +6660,14 @@
                 ]
               },
               "traffic_limit": {
-                "type": [
-                  "integer",
-                  "null"
-                ],
+                "type": ["integer", "null"],
                 "format": "int64"
               },
               "traffic_limit_type": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "usage_percent": {
-                "type": [
-                  "number",
-                  "null"
-                ],
+                "type": ["number", "null"],
                 "format": "double"
               }
             }
@@ -7075,19 +6676,13 @@
       },
       "ApiResponse_Vec_DailyTraffic": {
         "type": "object",
-        "required": [
-          "data"
-        ],
+        "required": ["data"],
         "properties": {
           "data": {
             "type": "array",
             "items": {
               "type": "object",
-              "required": [
-                "date",
-                "bytes_in",
-                "bytes_out"
-              ],
+              "required": ["date", "bytes_in", "bytes_out"],
               "properties": {
                 "bytes_in": {
                   "type": "integer",
@@ -7107,9 +6702,7 @@
       },
       "ApiResponse_Vec_ServerTrafficOverview": {
         "type": "object",
-        "required": [
-          "data"
-        ],
+        "required": ["data"],
         "properties": {
           "data": {
             "type": "array",
@@ -7124,10 +6717,7 @@
               ],
               "properties": {
                 "billing_cycle": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": ["string", "null"]
                 },
                 "cycle_in": {
                   "type": "integer",
@@ -7145,20 +6735,14 @@
                   "type": "string"
                 },
                 "percent_used": {
-                  "type": [
-                    "number",
-                    "null"
-                  ],
+                  "type": ["number", "null"],
                   "format": "double"
                 },
                 "server_id": {
                   "type": "string"
                 },
                 "traffic_limit": {
-                  "type": [
-                    "integer",
-                    "null"
-                  ],
+                  "type": ["integer", "null"],
                   "format": "int64"
                 }
               }
@@ -7168,9 +6752,7 @@
       },
       "ApiResponse_Vec_UptimeDailyEntry": {
         "type": "object",
-        "required": [
-          "data"
-        ],
+        "required": ["data"],
         "properties": {
           "data": {
             "type": "array",
@@ -7207,10 +6789,7 @@
       },
       "AuditListResponse": {
         "type": "object",
-        "required": [
-          "entries",
-          "total"
-        ],
+        "required": ["entries", "total"],
         "properties": {
           "entries": {
             "type": "array",
@@ -7227,13 +6806,7 @@
       },
       "AuditLogEntry": {
         "type": "object",
-        "required": [
-          "id",
-          "user_id",
-          "action",
-          "ip",
-          "created_at"
-        ],
+        "required": ["id", "user_id", "action", "ip", "created_at"],
         "properties": {
           "action": {
             "type": "string"
@@ -7242,10 +6815,7 @@
             "type": "string"
           },
           "detail": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "id": {
             "type": "integer",
@@ -7261,9 +6831,7 @@
       },
       "AutoDiscoveryKeyResponse": {
         "type": "object",
-        "required": [
-          "key"
-        ],
+        "required": ["key"],
         "properties": {
           "key": {
             "type": "string"
@@ -7272,9 +6840,7 @@
       },
       "BatchCapabilitiesRequest": {
         "type": "object",
-        "required": [
-          "server_ids"
-        ],
+        "required": ["server_ids"],
         "properties": {
           "server_ids": {
             "type": "array",
@@ -7296,9 +6862,7 @@
       },
       "BatchCapabilitiesResponse": {
         "type": "object",
-        "required": [
-          "updated"
-        ],
+        "required": ["updated"],
         "properties": {
           "updated": {
             "type": "integer",
@@ -7309,9 +6873,7 @@
       },
       "BatchDeleteRequest": {
         "type": "object",
-        "required": [
-          "ids"
-        ],
+        "required": ["ids"],
         "properties": {
           "ids": {
             "type": "array",
@@ -7323,9 +6885,7 @@
       },
       "BatchDeleteResponse": {
         "type": "object",
-        "required": [
-          "deleted"
-        ],
+        "required": ["deleted"],
         "properties": {
           "deleted": {
             "type": "integer",
@@ -7338,37 +6898,22 @@
         "type": "object",
         "properties": {
           "favicon_path": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "footer_text": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "logo_path": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "site_title": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
       "ChangePasswordRequest": {
         "type": "object",
-        "required": [
-          "old_password",
-          "new_password"
-        ],
+        "required": ["old_password", "new_password"],
         "properties": {
           "new_password": {
             "type": "string"
@@ -7380,9 +6925,7 @@
       },
       "CleanupResponse": {
         "type": "object",
-        "required": [
-          "deleted_count"
-        ],
+        "required": ["deleted_count"],
         "properties": {
           "deleted_count": {
             "type": "integer",
@@ -7393,10 +6936,7 @@
       },
       "CreateAlertRule": {
         "type": "object",
-        "required": [
-          "name",
-          "rules"
-        ],
+        "required": ["name", "rules"],
         "properties": {
           "cover_type": {
             "type": "string"
@@ -7408,10 +6948,7 @@
             "type": "string"
           },
           "notification_group_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "rules": {
             "type": "array",
@@ -7420,10 +6957,7 @@
             }
           },
           "server_ids": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
@@ -7435,9 +6969,7 @@
       },
       "CreateApiKeyRequest": {
         "type": "object",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "name": {
             "type": "string"
@@ -7446,9 +6978,7 @@
       },
       "CreateDashboardInput": {
         "type": "object",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "name": {
             "type": "string"
@@ -7457,9 +6987,7 @@
       },
       "CreateGroupRequest": {
         "type": "object",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "name": {
             "type": "string"
@@ -7468,15 +6996,10 @@
       },
       "CreateIncident": {
         "type": "object",
-        "required": [
-          "title"
-        ],
+        "required": ["title"],
         "properties": {
           "server_ids_json": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
@@ -7488,10 +7011,7 @@
             "type": "string"
           },
           "status_page_ids_json": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
@@ -7503,10 +7023,7 @@
       },
       "CreateIncidentUpdate": {
         "type": "object",
-        "required": [
-          "status",
-          "message"
-        ],
+        "required": ["status", "message"],
         "properties": {
           "message": {
             "type": "string"
@@ -7518,33 +7035,20 @@
       },
       "CreateMaintenance": {
         "type": "object",
-        "required": [
-          "title",
-          "start_at",
-          "end_at"
-        ],
+        "required": ["title", "start_at", "end_at"],
         "properties": {
           "active": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "end_at": {
             "type": "string",
             "format": "date-time"
           },
           "server_ids_json": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
@@ -7554,10 +7058,7 @@
             "format": "date-time"
           },
           "status_page_ids_json": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
@@ -7569,11 +7070,7 @@
       },
       "CreateNotification": {
         "type": "object",
-        "required": [
-          "name",
-          "notify_type",
-          "config_json"
-        ],
+        "required": ["name", "notify_type", "config_json"],
         "properties": {
           "config_json": {},
           "enabled": {
@@ -7589,10 +7086,7 @@
       },
       "CreateNotificationGroup": {
         "type": "object",
-        "required": [
-          "name",
-          "notification_ids"
-        ],
+        "required": ["name", "notification_ids"],
         "properties": {
           "name": {
             "type": "string"
@@ -7607,11 +7101,7 @@
       },
       "CreatePingTask": {
         "type": "object",
-        "required": [
-          "name",
-          "probe_type",
-          "target"
-        ],
+        "required": ["name", "probe_type", "target"],
         "properties": {
           "enabled": {
             "type": "boolean"
@@ -7639,11 +7129,7 @@
       },
       "CreateServiceMonitor": {
         "type": "object",
-        "required": [
-          "name",
-          "monitor_type",
-          "target"
-        ],
+        "required": ["name", "monitor_type", "target"],
         "properties": {
           "config_json": {},
           "enabled": {
@@ -7660,20 +7146,14 @@
             "type": "string"
           },
           "notification_group_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "retry_count": {
             "type": "integer",
             "format": "int32"
           },
           "server_ids_json": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
@@ -7685,35 +7165,19 @@
       },
       "CreateStatusPage": {
         "type": "object",
-        "required": [
-          "title",
-          "slug",
-          "server_ids_json"
-        ],
+        "required": ["title", "slug", "server_ids_json"],
         "properties": {
           "custom_css": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "enabled": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "group_by_server_group": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "server_ids_json": {
             "type": "array",
@@ -7722,10 +7186,7 @@
             }
           },
           "show_values": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "slug": {
             "type": "string"
@@ -7734,55 +7195,34 @@
             "type": "string"
           },
           "uptime_red_threshold": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           },
           "uptime_yellow_threshold": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           }
         }
       },
       "CreateTaskRequest": {
         "type": "object",
-        "required": [
-          "command",
-          "server_ids"
-        ],
+        "required": ["command", "server_ids"],
         "properties": {
           "command": {
             "type": "string"
           },
           "cron_expression": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "retry_count": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           },
           "retry_interval": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           },
           "server_ids": {
@@ -7796,10 +7236,7 @@
             "description": "\"oneshot\" (default) or \"scheduled\""
           },
           "timeout": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "minimum": 0
           }
@@ -7807,23 +7244,13 @@
       },
       "CreateThemeInput": {
         "type": "object",
-        "required": [
-          "name",
-          "vars_light",
-          "vars_dark"
-        ],
+        "required": ["name", "vars_light", "vars_dark"],
         "properties": {
           "based_on": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "name": {
             "type": "string"
@@ -7838,10 +7265,7 @@
       },
       "CreateUserInput": {
         "type": "object",
-        "required": [
-          "username",
-          "password"
-        ],
+        "required": ["username", "password"],
         "properties": {
           "password": {
             "type": "string"
@@ -7856,10 +7280,7 @@
       },
       "CycleResponse": {
         "type": "object",
-        "required": [
-          "current",
-          "history"
-        ],
+        "required": ["current", "history"],
         "properties": {
           "current": {
             "$ref": "#/components/schemas/CycleTraffic"
@@ -7874,13 +7295,7 @@
       },
       "CycleTraffic": {
         "type": "object",
-        "required": [
-          "period",
-          "start",
-          "end",
-          "bytes_in",
-          "bytes_out"
-        ],
+        "required": ["period", "start", "end", "bytes_in", "bytes_out"],
         "properties": {
           "bytes_in": {
             "type": "integer",
@@ -7903,11 +7318,7 @@
       },
       "DailyTraffic": {
         "type": "object",
-        "required": [
-          "date",
-          "bytes_in",
-          "bytes_out"
-        ],
+        "required": ["date", "bytes_in", "bytes_out"],
         "properties": {
           "bytes_in": {
             "type": "integer",
@@ -7929,9 +7340,7 @@
           },
           {
             "type": "object",
-            "required": [
-              "widgets"
-            ],
+            "required": ["widgets"],
             "properties": {
               "widgets": {
                 "type": "array",
@@ -7945,9 +7354,7 @@
       },
       "DeleteRequest": {
         "type": "object",
-        "required": [
-          "path"
-        ],
+        "required": ["path"],
         "properties": {
           "path": {
             "type": "string"
@@ -7959,9 +7366,7 @@
       },
       "DownloadRequest": {
         "type": "object",
-        "required": [
-          "path"
-        ],
+        "required": ["path"],
         "properties": {
           "path": {
             "type": "string"
@@ -7970,10 +7375,7 @@
       },
       "DownloadResponse": {
         "type": "object",
-        "required": [
-          "transfer_id",
-          "status"
-        ],
+        "required": ["transfer_id", "status"],
         "properties": {
           "status": {
             "type": "string"
@@ -7985,9 +7387,7 @@
       },
       "ErrorBody": {
         "type": "object",
-        "required": [
-          "error"
-        ],
+        "required": ["error"],
         "properties": {
           "error": {
             "$ref": "#/components/schemas/ErrorDetail"
@@ -7996,10 +7396,7 @@
       },
       "ErrorDetail": {
         "type": "object",
-        "required": [
-          "code",
-          "message"
-        ],
+        "required": ["code", "message"],
         "properties": {
           "code": {
             "type": "string"
@@ -8011,24 +7408,13 @@
       },
       "ExportPayload": {
         "type": "object",
-        "required": [
-          "version",
-          "name",
-          "vars_light",
-          "vars_dark"
-        ],
+        "required": ["version", "name", "vars_light", "vars_dark"],
         "properties": {
           "based_on": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "name": {
             "type": "string"
@@ -8048,22 +7434,13 @@
       },
       "FileEntry": {
         "type": "object",
-        "required": [
-          "name",
-          "path",
-          "file_type",
-          "size",
-          "modified"
-        ],
+        "required": ["name", "path", "file_type", "size", "modified"],
         "properties": {
           "file_type": {
             "$ref": "#/components/schemas/FileType"
           },
           "group": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "modified": {
             "type": "integer",
@@ -8073,19 +7450,13 @@
             "type": "string"
           },
           "owner": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "path": {
             "type": "string"
           },
           "permissions": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "size": {
             "type": "integer",
@@ -8096,11 +7467,7 @@
       },
       "FileType": {
         "type": "string",
-        "enum": [
-          "File",
-          "Directory",
-          "Symlink"
-        ]
+        "enum": ["File", "Directory", "Symlink"]
       },
       "GpuRecord": {
         "type": "object",
@@ -8163,11 +7530,7 @@
       },
       "HourlyTraffic": {
         "type": "object",
-        "required": [
-          "hour",
-          "bytes_in",
-          "bytes_out"
-        ],
+        "required": ["hour", "bytes_in", "bytes_out"],
         "properties": {
           "bytes_in": {
             "type": "integer",
@@ -8201,17 +7564,11 @@
             "type": "string"
           },
           "resolved_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "server_ids_json": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "severity": {
             "type": "string"
@@ -8220,10 +7577,7 @@
             "type": "string"
           },
           "status_page_ids_json": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "title": {
             "type": "string"
@@ -8236,13 +7590,7 @@
       },
       "IncidentUpdate": {
         "type": "object",
-        "required": [
-          "id",
-          "incident_id",
-          "status",
-          "message",
-          "created_at"
-        ],
+        "required": ["id", "incident_id", "status", "message", "created_at"],
         "properties": {
           "created_at": {
             "type": "string",
@@ -8269,9 +7617,7 @@
           },
           {
             "type": "object",
-            "required": [
-              "updates"
-            ],
+            "required": ["updates"],
             "properties": {
               "updates": {
                 "type": "array",
@@ -8287,31 +7633,20 @@
         "type": "object",
         "properties": {
           "error": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "released_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "version": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
       "ListFilesRequest": {
         "type": "object",
-        "required": [
-          "path"
-        ],
+        "required": ["path"],
         "properties": {
           "path": {
             "type": "string"
@@ -8320,9 +7655,7 @@
       },
       "ListFilesResponse": {
         "type": "object",
-        "required": [
-          "entries"
-        ],
+        "required": ["entries"],
         "properties": {
           "entries": {
             "type": "array",
@@ -8334,19 +7667,13 @@
       },
       "LoginRequest": {
         "type": "object",
-        "required": [
-          "username",
-          "password"
-        ],
+        "required": ["username", "password"],
         "properties": {
           "password": {
             "type": "string"
           },
           "totp_code": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "username": {
             "type": "string"
@@ -8355,11 +7682,7 @@
       },
       "LoginResponse": {
         "type": "object",
-        "required": [
-          "user_id",
-          "username",
-          "role"
-        ],
+        "required": ["user_id", "username", "role"],
         "properties": {
           "role": {
             "type": "string"
@@ -8392,10 +7715,7 @@
             "format": "date-time"
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "end_at": {
             "type": "string",
@@ -8405,20 +7725,14 @@
             "type": "string"
           },
           "server_ids_json": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "start_at": {
             "type": "string",
             "format": "date-time"
           },
           "status_page_ids_json": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "title": {
             "type": "string"
@@ -8431,11 +7745,7 @@
       },
       "MeResponse": {
         "type": "object",
-        "required": [
-          "user_id",
-          "username",
-          "role"
-        ],
+        "required": ["user_id", "username", "role"],
         "properties": {
           "role": {
             "type": "string"
@@ -8450,9 +7760,7 @@
       },
       "MkdirRequest": {
         "type": "object",
-        "required": [
-          "path"
-        ],
+        "required": ["path"],
         "properties": {
           "path": {
             "type": "string"
@@ -8488,12 +7796,7 @@
       },
       "MobileLoginRequest": {
         "type": "object",
-        "required": [
-          "username",
-          "password",
-          "installation_id",
-          "device_name"
-        ],
+        "required": ["username", "password", "installation_id", "device_name"],
         "properties": {
           "device_name": {
             "type": "string"
@@ -8505,10 +7808,7 @@
             "type": "string"
           },
           "totp_code": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "username": {
             "type": "string"
@@ -8517,10 +7817,7 @@
       },
       "MobilePairCodeResponse": {
         "type": "object",
-        "required": [
-          "code",
-          "expires_in_secs"
-        ],
+        "required": ["code", "expires_in_secs"],
         "properties": {
           "code": {
             "type": "string"
@@ -8533,11 +7830,7 @@
       },
       "MobilePairRedeemRequest": {
         "type": "object",
-        "required": [
-          "code",
-          "installation_id",
-          "device_name"
-        ],
+        "required": ["code", "installation_id", "device_name"],
         "properties": {
           "code": {
             "type": "string"
@@ -8552,10 +7845,7 @@
       },
       "MobileRefreshRequest": {
         "type": "object",
-        "required": [
-          "refresh_token",
-          "installation_id"
-        ],
+        "required": ["refresh_token", "installation_id"],
         "properties": {
           "installation_id": {
             "type": "string"
@@ -8602,11 +7892,7 @@
       "MobileUserResponse": {
         "type": "object",
         "description": "Minimal user info returned alongside tokens.",
-        "required": [
-          "id",
-          "username",
-          "role"
-        ],
+        "required": ["id", "username", "role"],
         "properties": {
           "id": {
             "type": "string"
@@ -8667,10 +7953,7 @@
             "format": "int32"
           },
           "title": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "widget_type": {
             "type": "string"
@@ -8701,10 +7984,7 @@
       },
       "MoveRequest": {
         "type": "object",
-        "required": [
-          "from",
-          "to"
-        ],
+        "required": ["from", "to"],
         "properties": {
           "from": {
             "type": "string"
@@ -8748,12 +8028,7 @@
       },
       "NotificationGroup": {
         "type": "object",
-        "required": [
-          "id",
-          "name",
-          "notification_ids_json",
-          "created_at"
-        ],
+        "required": ["id", "name", "notification_ids_json", "created_at"],
         "properties": {
           "created_at": {
             "type": "string",
@@ -8785,16 +8060,10 @@
             "format": "date-time"
           },
           "display_name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "email": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "id": {
             "type": "string"
@@ -8812,9 +8081,7 @@
       },
       "OAuthProvidersResponse": {
         "type": "object",
-        "required": [
-          "providers"
-        ],
+        "required": ["providers"],
         "properties": {
           "providers": {
             "type": "array",
@@ -8836,10 +8103,7 @@
         ],
         "properties": {
           "error": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "id": {
             "type": "integer",
@@ -8950,9 +8214,7 @@
       },
       "PushRegisterRequest": {
         "type": "object",
-        "required": [
-          "device_token"
-        ],
+        "required": ["device_token"],
         "properties": {
           "device_token": {
             "type": "string",
@@ -8962,9 +8224,7 @@
       },
       "PutActiveThemeInput": {
         "type": "object",
-        "required": [
-          "ref"
-        ],
+        "required": ["ref"],
         "properties": {
           "ref": {
             "type": "string"
@@ -8973,9 +8233,7 @@
       },
       "ReadRequest": {
         "type": "object",
-        "required": [
-          "path"
-        ],
+        "required": ["path"],
         "properties": {
           "path": {
             "type": "string"
@@ -8984,9 +8242,7 @@
       },
       "ReadResponse": {
         "type": "object",
-        "required": [
-          "content"
-        ],
+        "required": ["content"],
         "properties": {
           "content": {
             "type": "string"
@@ -8995,12 +8251,7 @@
       },
       "RecoveryCandidateResponse": {
         "type": "object",
-        "required": [
-          "server_id",
-          "name",
-          "score",
-          "reasons"
-        ],
+        "required": ["server_id", "name", "score", "reasons"],
         "properties": {
           "name": {
             "type": "string"
@@ -9038,19 +8289,13 @@
             "format": "date-time"
           },
           "error": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "job_id": {
             "type": "string"
           },
           "last_heartbeat_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "source_server_id": {
@@ -9091,12 +8336,7 @@
       },
       "RecoveryJobStatus": {
         "type": "string",
-        "enum": [
-          "running",
-          "failed",
-          "succeeded",
-          "unknown"
-        ]
+        "enum": ["running", "failed", "succeeded", "unknown"]
       },
       "RegisterRequest": {
         "type": "object",
@@ -9108,10 +8348,7 @@
       },
       "RegisterResponse": {
         "type": "object",
-        "required": [
-          "server_id",
-          "token"
-        ],
+        "required": ["server_id", "token"],
         "properties": {
           "server_id": {
             "type": "string"
@@ -9123,12 +8360,7 @@
       },
       "ServerGroup": {
         "type": "object",
-        "required": [
-          "id",
-          "name",
-          "weight",
-          "created_at"
-        ],
+        "required": ["id", "name", "weight", "created_at"],
         "properties": {
           "created_at": {
             "type": "string",
@@ -9173,20 +8405,14 @@
             "format": "double"
           },
           "disk_io_json": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "disk_used": {
             "type": "integer",
             "format": "int64"
           },
           "gpu_usage": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           },
           "id": {
@@ -9241,10 +8467,7 @@
             "format": "int32"
           },
           "temperature": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           },
           "time": {
@@ -9284,20 +8507,14 @@
             "format": "double"
           },
           "disk_io_json": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "disk_used": {
             "type": "integer",
             "format": "int64"
           },
           "gpu_usage": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           },
           "id": {
@@ -9352,10 +8569,7 @@
             "format": "int32"
           },
           "temperature": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           },
           "time": {
@@ -9384,29 +8598,17 @@
         ],
         "properties": {
           "agent_local_capabilities": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           },
           "agent_version": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "billing_cycle": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "billing_start_day": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           },
           "capabilities": {
@@ -9414,59 +8616,35 @@
             "format": "int32"
           },
           "country_code": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "cpu_arch": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "cpu_cores": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           },
           "cpu_name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "created_at": {
             "type": "string",
             "format": "date-time"
           },
           "currency": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "disk_total": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "effective_capabilities": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           },
           "expired_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "features": {
@@ -9476,10 +8654,7 @@
             }
           },
           "group_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "hidden": {
             "type": "boolean"
@@ -9488,44 +8663,26 @@
             "type": "string"
           },
           "ipv4": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "ipv6": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "kernel_version": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "mem_total": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "name": {
             "type": "string"
           },
           "os": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "price": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           },
           "protocol_version": {
@@ -9533,52 +8690,31 @@
             "format": "int32"
           },
           "public_remark": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "region": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "remark": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "swap_total": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "traffic_limit": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "traffic_limit_type": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "updated_at": {
             "type": "string",
             "format": "date-time"
           },
           "virtualization": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "weight": {
             "type": "integer",
@@ -9597,22 +8733,13 @@
         ],
         "properties": {
           "country_code": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "group_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "group_name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "in_maintenance": {
             "type": "boolean"
@@ -9621,16 +8748,10 @@
             "type": "boolean"
           },
           "os": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "region": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "server_id": {
             "type": "string"
@@ -9645,10 +8766,7 @@
             }
           },
           "uptime_percent": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           }
         }
@@ -9664,10 +8782,7 @@
         ],
         "properties": {
           "billing_cycle": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "cycle_in": {
             "type": "integer",
@@ -9685,20 +8800,14 @@
             "type": "string"
           },
           "percent_used": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           },
           "server_id": {
             "type": "string"
           },
           "traffic_limit": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           }
         }
@@ -9741,17 +8850,11 @@
             "format": "int32"
           },
           "last_checked_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "last_status": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "monitor_type": {
             "type": "string"
@@ -9760,20 +8863,14 @@
             "type": "string"
           },
           "notification_group_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "retry_count": {
             "type": "integer",
             "format": "int32"
           },
           "server_ids_json": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "target": {
             "type": "string"
@@ -9786,32 +8883,20 @@
       },
       "ServiceMonitorRecord": {
         "type": "object",
-        "required": [
-          "id",
-          "monitor_id",
-          "success",
-          "detail_json",
-          "time"
-        ],
+        "required": ["id", "monitor_id", "success", "detail_json", "time"],
         "properties": {
           "detail_json": {
             "type": "string"
           },
           "error": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "id": {
             "type": "integer",
             "format": "int64"
           },
           "latency": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           },
           "monitor_id": {
@@ -9828,9 +8913,7 @@
       },
       "StartRecoveryRequest": {
         "type": "object",
-        "required": [
-          "source_server_id"
-        ],
+        "required": ["source_server_id"],
         "properties": {
           "source_server_id": {
             "type": "string"
@@ -9839,9 +8922,7 @@
       },
       "StatRequest": {
         "type": "object",
-        "required": [
-          "path"
-        ],
+        "required": ["path"],
         "properties": {
           "path": {
             "type": "string"
@@ -9850,9 +8931,7 @@
       },
       "StatResponse": {
         "type": "object",
-        "required": [
-          "entry"
-        ],
+        "required": ["entry"],
         "properties": {
           "entry": {
             "$ref": "#/components/schemas/FileEntry"
@@ -9861,10 +8940,7 @@
       },
       "StatusGroup": {
         "type": "object",
-        "required": [
-          "id",
-          "name"
-        ],
+        "required": ["id", "name"],
         "properties": {
           "id": {
             "type": "string"
@@ -9958,16 +9034,10 @@
             "format": "date-time"
           },
           "custom_css": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "enabled": {
             "type": "boolean"
@@ -9988,10 +9058,7 @@
             "type": "string"
           },
           "theme_ref": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "title": {
             "type": "string"
@@ -10023,16 +9090,10 @@
         ],
         "properties": {
           "custom_css": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "group_by_server_group": {
             "type": "boolean"
@@ -10061,10 +9122,7 @@
       },
       "StatusPageRef": {
         "type": "object",
-        "required": [
-          "id",
-          "name"
-        ],
+        "required": ["id", "name"],
         "properties": {
           "id": {
             "type": "string"
@@ -10076,12 +9134,7 @@
       },
       "StatusPageResponse": {
         "type": "object",
-        "required": [
-          "servers",
-          "groups",
-          "online_count",
-          "total_count"
-        ],
+        "required": ["servers", "groups", "online_count", "total_count"],
         "properties": {
           "groups": {
             "type": "array",
@@ -10108,23 +9161,13 @@
       "StatusServer": {
         "type": "object",
         "description": "Public status info for a single server.",
-        "required": [
-          "id",
-          "name",
-          "online"
-        ],
+        "required": ["id", "name", "online"],
         "properties": {
           "country_code": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "group_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "id": {
             "type": "string"
@@ -10147,30 +9190,19 @@
             "type": "boolean"
           },
           "os": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "public_remark": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "region": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
       "SuccessResponse": {
         "type": "object",
-        "required": [
-          "success"
-        ],
+        "required": ["success"],
         "properties": {
           "success": {
             "type": "boolean"
@@ -10181,28 +9213,16 @@
         "type": "object",
         "properties": {
           "custom_css": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "custom_js": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "site_description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "site_name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
@@ -10227,10 +9247,7 @@
             "format": "date-time"
           },
           "cron_expression": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "enabled": {
             "type": "boolean"
@@ -10239,23 +9256,14 @@
             "type": "string"
           },
           "last_run_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "next_run_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "retry_count": {
@@ -10276,10 +9284,7 @@
             "type": "string"
           },
           "timeout": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           }
         }
@@ -10316,19 +9321,13 @@
             "type": "string"
           },
           "run_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "server_id": {
             "type": "string"
           },
           "started_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "task_id": {
@@ -10348,20 +9347,14 @@
         ],
         "properties": {
           "based_on": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "created_at": {
             "type": "string",
             "format": "date-time"
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "id": {
             "type": "integer",
@@ -10384,10 +9377,7 @@
       },
       "ThemeReferences": {
         "type": "object",
-        "required": [
-          "admin",
-          "status_pages"
-        ],
+        "required": ["admin", "status_pages"],
         "properties": {
           "admin": {
             "type": "boolean"
@@ -10404,19 +9394,14 @@
         "oneOf": [
           {
             "type": "object",
-            "required": [
-              "id",
-              "kind"
-            ],
+            "required": ["id", "kind"],
             "properties": {
               "id": {
                 "type": "string"
               },
               "kind": {
                 "type": "string",
-                "enum": [
-                  "preset"
-                ]
+                "enum": ["preset"]
               }
             }
           },
@@ -10437,9 +9422,7 @@
               },
               "kind": {
                 "type": "string",
-                "enum": [
-                  "custom"
-                ]
+                "enum": ["custom"]
               },
               "name": {
                 "type": "string"
@@ -10460,17 +9443,10 @@
       },
       "ThemeSummary": {
         "type": "object",
-        "required": [
-          "id",
-          "name",
-          "updated_at"
-        ],
+        "required": ["id", "name", "updated_at"],
         "properties": {
           "based_on": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "id": {
             "type": "integer",
@@ -10487,9 +9463,7 @@
       },
       "TotpDisableRequest": {
         "type": "object",
-        "required": [
-          "password"
-        ],
+        "required": ["password"],
         "properties": {
           "password": {
             "type": "string"
@@ -10498,11 +9472,7 @@
       },
       "TotpSetupResponse": {
         "type": "object",
-        "required": [
-          "secret",
-          "otpauth_url",
-          "qr_code_base64"
-        ],
+        "required": ["secret", "otpauth_url", "qr_code_base64"],
         "properties": {
           "otpauth_url": {
             "type": "string"
@@ -10517,9 +9487,7 @@
       },
       "TotpStatusResponse": {
         "type": "object",
-        "required": [
-          "enabled"
-        ],
+        "required": ["enabled"],
         "properties": {
           "enabled": {
             "type": "boolean"
@@ -10528,9 +9496,7 @@
       },
       "TotpVerifyRequest": {
         "type": "object",
-        "required": [
-          "code"
-        ],
+        "required": ["code"],
         "properties": {
           "code": {
             "type": "string"
@@ -10539,15 +9505,10 @@
       },
       "TracerouteHop": {
         "type": "object",
-        "required": [
-          "hop"
-        ],
+        "required": ["hop"],
         "properties": {
           "asn": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "hop": {
             "type": "integer",
@@ -10555,56 +9516,34 @@
             "minimum": 0
           },
           "hostname": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "ip": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "rtt1": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           },
           "rtt2": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           },
           "rtt3": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           }
         }
       },
       "TracerouteResultResponse": {
         "type": "object",
-        "required": [
-          "target",
-          "hops",
-          "completed"
-        ],
+        "required": ["target", "hops", "completed"],
         "properties": {
           "completed": {
             "type": "boolean"
           },
           "error": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "hops": {
             "type": "array",
@@ -10619,11 +9558,7 @@
       },
       "TrafficPrediction": {
         "type": "object",
-        "required": [
-          "estimated_total",
-          "estimated_percent",
-          "will_exceed"
-        ],
+        "required": ["estimated_total", "estimated_percent", "will_exceed"],
         "properties": {
           "estimated_percent": {
             "type": "number",
@@ -10691,23 +9626,14 @@
             ]
           },
           "traffic_limit": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "traffic_limit_type": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "usage_percent": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           }
         }
@@ -10742,10 +9668,7 @@
             "type": "string"
           },
           "file_size": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64",
             "minimum": 0
           },
@@ -10762,9 +9685,7 @@
       },
       "TransfersResponse": {
         "type": "object",
-        "required": [
-          "transfers"
-        ],
+        "required": ["transfers"],
         "properties": {
           "transfers": {
             "type": "array",
@@ -10776,9 +9697,7 @@
       },
       "TriggerTracerouteRequest": {
         "type": "object",
-        "required": [
-          "target"
-        ],
+        "required": ["target"],
         "properties": {
           "target": {
             "type": "string",
@@ -10788,9 +9707,7 @@
       },
       "TriggerTracerouteResponse": {
         "type": "object",
-        "required": [
-          "request_id"
-        ],
+        "required": ["request_id"],
         "properties": {
           "request_id": {
             "type": "string",
@@ -10802,52 +9719,31 @@
         "type": "object",
         "properties": {
           "cover_type": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "enabled": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "notification_group_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "rules": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "$ref": "#/components/schemas/AlertRuleItem"
             }
           },
           "server_ids": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
           },
           "trigger_mode": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
@@ -10855,29 +9751,17 @@
         "type": "object",
         "properties": {
           "is_default": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "sort_order": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           },
           "widgets": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "$ref": "#/components/schemas/WidgetInput"
             }
@@ -10888,16 +9772,10 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "weight": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           }
         }
@@ -10906,40 +9784,25 @@
         "type": "object",
         "properties": {
           "server_ids_json": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
           },
           "severity": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "status": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "status_page_ids_json": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
           },
           "title": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
@@ -10947,54 +9810,33 @@
         "type": "object",
         "properties": {
           "active": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "end_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "server_ids_json": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
           },
           "start_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "status_page_ids_json": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
           },
           "title": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
@@ -11003,22 +9845,13 @@
         "properties": {
           "config_json": {},
           "enabled": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "notify_type": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
@@ -11026,16 +9859,10 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "notification_ids": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
@@ -11046,44 +9873,26 @@
         "type": "object",
         "properties": {
           "enabled": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "interval": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           },
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "probe_type": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "server_ids": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
           },
           "target": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
@@ -11091,93 +9900,51 @@
         "type": "object",
         "properties": {
           "billing_cycle": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "billing_start_day": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           },
           "capabilities": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           },
           "currency": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "expired_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "group_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "hidden": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "price": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           },
           "public_remark": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "remark": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "traffic_limit": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64"
           },
           "traffic_limit_type": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "weight": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           }
         }
@@ -11187,51 +9954,30 @@
         "properties": {
           "config_json": {},
           "enabled": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "interval": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           },
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "notification_group_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "retry_count": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           },
           "server_ids_json": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
           },
           "target": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
@@ -11239,74 +9985,41 @@
         "type": "object",
         "properties": {
           "custom_css": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "enabled": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "group_by_server_group": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "server_ids_json": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
           },
           "show_values": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "slug": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "theme_ref": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "title": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "uptime_red_threshold": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           },
           "uptime_yellow_threshold": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double"
           }
         }
@@ -11315,80 +10028,46 @@
         "type": "object",
         "properties": {
           "command": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "cron_expression": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "enabled": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "retry_count": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           },
           "retry_interval": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           },
           "server_ids": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
           },
           "timeout": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           }
         }
       },
       "UpdateThemeInput": {
         "type": "object",
-        "required": [
-          "name",
-          "vars_light",
-          "vars_dark"
-        ],
+        "required": ["name", "vars_light", "vars_dark"],
         "properties": {
           "based_on": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "name": {
             "type": "string"
@@ -11405,24 +10084,16 @@
         "type": "object",
         "properties": {
           "password": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "role": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
       "UpgradeRequest": {
         "type": "object",
-        "required": [
-          "version"
-        ],
+        "required": ["version"],
         "properties": {
           "version": {
             "type": "string",
@@ -11432,9 +10103,7 @@
       },
       "UploadResponse": {
         "type": "object",
-        "required": [
-          "path"
-        ],
+        "required": ["path"],
         "properties": {
           "path": {
             "type": "string"
@@ -11568,20 +10237,14 @@
             "format": "int32"
           },
           "id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "sort_order": {
             "type": "integer",
             "format": "int32"
           },
           "title": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "widget_type": {
             "type": "string"
@@ -11590,10 +10253,7 @@
       },
       "WriteRequest": {
         "type": "object",
-        "required": [
-          "path",
-          "content"
-        ],
+        "required": ["path", "content"],
         "properties": {
           "content": {
             "type": "string"

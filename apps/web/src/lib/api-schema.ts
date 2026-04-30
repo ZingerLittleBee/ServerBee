@@ -152,7 +152,6 @@ export interface PublicStatusPageData {
       status: string
     }>
   }>
-  theme: ThemeResolved
   page: {
     custom_css: string | null
     description: string | null
@@ -191,6 +190,7 @@ export interface PublicStatusPageData {
     uptime_daily: UptimeDailyEntry[]
     uptime_percent: number | null
   }>
+  theme: ThemeResolved
 }
 
 // Admin status page management
