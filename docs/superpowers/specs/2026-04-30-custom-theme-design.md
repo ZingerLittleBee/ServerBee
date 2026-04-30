@@ -89,7 +89,7 @@ custom_theme
   based_on      TEXT                            -- fork 自哪个预设的 id,展示用,可空
   vars_light    TEXT    NOT NULL                -- JSON 序列化的变量映射
   vars_dark     TEXT    NOT NULL                -- 同上
-  created_by    INTEGER NOT NULL                -- 引用 user.id,删除用户时不级联,记录保留
+  created_by    TEXT    NOT NULL                -- 引用 users.id (String 主键),不建外键以便用户被删后保留审计字段
   created_at    INTEGER NOT NULL
   updated_at    INTEGER NOT NULL
   INDEX idx_custom_theme_updated_at (updated_at DESC)
@@ -138,7 +138,13 @@ sidebar, sidebar-foreground, sidebar-primary, sidebar-primary-foreground,
 sidebar-accent, sidebar-accent-foreground, sidebar-border, sidebar-ring
 ```
 
-**所有 key 都必须出现**(必填,缺一个返回 422),保证一份主题永远是"完整可应用"的。值必须匹配 `^oklch\([0-9.]+\s+[0-9.]+\s+[0-9.]+\)$` 正则。
+**所有 key 都必须出现**(必填,缺一个返回 422),保证一份主题永远是"完整可应用"的。值必须匹配下列允许 alpha 通道的 OKLCH 正则:
+
+```text
+^oklch\(\s*[\d.]+\s+[\d.]+\s+[\d.]+(\s*/\s*[\d.]+%?)?\s*\)$
+```
+
+即 `oklch(L C H)` 或 `oklch(L C H / α)`(α 为 `0.0~1.0` 数字或 `0%~100%` 百分号);多余的空白容错。这一允许 alpha 的形式覆盖了当前 `apps/web/src/index.css` 中已存在的 `oklch(1 0 0 / 10%)` / `oklch(1 0 0 / 15%)` 用法,避免"导入自家默认主题反被校验拒绝"的回环。
 
 ## 6. API 设计
 
@@ -152,15 +158,36 @@ sidebar-accent, sidebar-accent-foreground, sidebar-border, sidebar-ring
 | GET | `/api/settings/themes/:id` | 已登录 | 取单个完整主题 |
 | POST | `/api/settings/themes` | Admin | 创建。Body: `{ name, description?, based_on?, vars_light, vars_dark }` |
 | PUT | `/api/settings/themes/:id` | Admin | 整体更新 |
-| DELETE | `/api/settings/themes/:id` | Admin | 删除。被引用时返回 `409 + DeleteConflict` |
+| DELETE | `/api/settings/themes/:id` | Admin | 删除。被引用时返回 `409 Conflict`,`message` 含简明提示("Theme is in use") |
+| GET | `/api/settings/themes/:id/references` | Admin | 查询本主题被谁引用(用于删除前置确认对话框) |
 | POST | `/api/settings/themes/:id/duplicate` | Admin | 复制为新主题(`name` 自动追加 `(copy)`) |
 
 ### 6.2 激活与绑定
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/settings/active-theme` | 已登录 | 返回 `{ active_admin_theme: "preset:default" }` |
-| PUT | `/api/settings/active-theme` | Admin | 切换。Body: `{ ref: "preset:default" \| "custom:42" }` |
+| GET | `/api/settings/active-theme` | 已登录 | 返回 **resolved payload**,见下 |
+| PUT | `/api/settings/active-theme` | Admin | 切换。Body: `{ ref: "preset:default" \| "custom:42" }`。返回与 GET 同形 |
+
+`GET /api/settings/active-theme` 响应:
+
+```json
+{
+  "data": {
+    "ref": "custom:42",
+    "theme": {
+      "kind": "custom",
+      "id": 42,
+      "name": "My Brand",
+      "vars_light": { "...": "..." },
+      "vars_dark":  { "...": "..." },
+      "updated_at": 1714000000
+    }
+  }
+}
+```
+
+如果 `ref` 是 `preset:*`,`theme.kind = "preset"` 且 `vars_light / vars_dark` 字段缺省(预设值已经在客户端代码里),只返回 `{ kind: "preset", id: "default" }`。这样客户端凭一次接口即可应用主题,不需要再请求 `GET /themes/:id`,首屏防闪缓存也能完整保存。
 
 状态页绑定走**已有的** `PUT /api/status-pages/:id`,在 body 里追加可选 `theme_ref` 字段,不开新接口。
 
@@ -188,18 +215,31 @@ sidebar-accent, sidebar-accent-foreground, sidebar-border, sidebar-ring
 
 ### 6.4 错误响应
 
+沿用项目现有的 `AppError` → `{ error: { code, message } }` 包络,不引入额外结构化错误体。
+
 - `409 Conflict`(删除被引用的主题):
 
   ```json
   {
-    "data": {
-      "referenced_by": {
-        "admin": true,
-        "status_pages": [{ "id": 3, "name": "Public Status" }]
-      }
+    "error": {
+      "code": "CONFLICT",
+      "message": "Theme is in use by admin or one or more status pages; unbind it first."
     }
   }
   ```
+
+  前端在用户点 "删除" 前先调 `GET /api/settings/themes/:id/references`,响应是常规 `ApiResponse`:
+
+  ```json
+  {
+    "data": {
+      "admin": true,
+      "status_pages": [{ "id": 3, "name": "Public Status" }]
+    }
+  }
+  ```
+
+  UI 据此弹"主题被以下位置使用,请先解绑"对话框,而不是把结构化引用列表硬塞到错误响应里。
 
 - `422 Unprocessable Entity`(变量校验失败):列出第一个不合法的 key 与原因。
 
@@ -272,14 +312,14 @@ list_theme_references(db, ref) -> ReferenceList // 谁在用这个主题
 
 ### 7.7 迁移
 
-沿用项目命名 `m20260YYMM_NNNNNN_<topic>.rs`,当前最新是 `m20260416_000018_*`,本次新增三个连号文件:
+沿用项目命名 `mYYYYMMDD_NNNNNN_<topic>.rs`,当前最新是 `m20260416_000018_*`,本次新增两个连号文件:
 
 | 文件 | 内容 |
 |---|---|
 | `m20260430_000019_create_custom_theme.rs` | 建表 `custom_theme` + 索引 `idx_custom_theme_updated_at` |
 | `m20260430_000020_add_status_page_theme_ref.rs` | `ALTER TABLE status_page ADD COLUMN theme_ref TEXT NULL` |
 
-无需 seed 迁移:`active_admin_theme` 通过 `ConfigService::get_or_default("active_admin_theme", "preset:default")` 在读取时按需返回默认值,首次写入由 `PUT /api/settings/active-theme` 触发。
+无需 seed 迁移:`active_admin_theme` 在 Service 层用 `ConfigService::get(db, "active_admin_theme").await?.unwrap_or_else(|| "preset:default".into())` 按需取默认值,首次写入由 `PUT /api/settings/active-theme` 触发。`ConfigService` 当前仅暴露 `get / set / get_typed / set_typed`,不引入新 helper。
 
 均**只实现 `up()`**,`down()` 留 `Ok(())`。
 
@@ -321,11 +361,22 @@ _authed/settings/appearance/themes.$id.tsx     编辑器
 
 ### 8.3 关键交互
 
-- **拾取器**:OKLCH 三轴滑块(L / C / H)主输入,辅以 hex 双向同步(hex ↔ oklch 转换在前端实现)。
+- **拾取器**:OKLCH 三轴滑块(L / C / H)主输入,辅以 hex 双向同步。
+- **色彩转换**:`hex ↔ oklch`(及对 alpha 的处理)通过引入 `culori` 依赖完成 —— 它是社区维护良好的 OKLCH/CIE 色彩库,体积小、tree-shakable、覆盖 alpha 通道与 sRGB gamut 落界。**不自实现色彩数学**,色彩空间转换出错难以察觉、调试代价高。如果项目策略不允许新增依赖,退化为只支持 OKLCH 文本输入(无 hex 输入框),不做近似转换。
 - **预览隔离**:右栏挂在 `<div data-theme-preview>` 节点,变量通过 `style={{ '--background': ... }}` 注入到该节点 inline,**不影响外层应用**。
 - **Light/Dark 联动**:左右 tab 默认联动;勾选"与左栏联动 = off"时右栏可独立切换,便于对比。
 - **`isDirty` 拦截**:离开路由时弹确认。
 - **fork 来源**:顶部展示 `Based on: <preset name>`,提供"高亮变更"开关(改动过的变量行加灰底)。
+
+### 8.3.1 预设变量来源
+
+当前 8 个预设的真实变量值只存在于 `apps/web/src/themes/*.css` 与 `apps/web/src/index.css`,`apps/web/src/themes/index.ts` 只持有 `previewColors`(4 色卡片预览),fork / 重置 / 比对都需要拿到完整变量 map。
+
+**选用方案:** 在 `apps/web/src/themes/` 新增一个手写的 `preset-vars.ts`(导出 `presetVars: Record<PresetThemeId, { light: VarMap; dark: VarMap }>`),把 8 个预设的全部变量值落到 TS 源码中。
+
+为保证 TS 表与 CSS 文件不漂移,新增一个 vitest 用例 `preset-vars.test.ts`:运行时读取每个 CSS 文件文本,用一个最小化的 CSS 变量 parser 抽取规则,逐 key 与 `presetVars` 对比;不一致即测试失败,提示开发者同步双方。该测试是**唯一的真值同步保险**。
+
+后续若要做"用脚本从 CSS 自动生成 preset-vars.ts",可在 P17+ 再加,首版让作者一次性人工对齐(8 个预设 × 25 变量 × 2 模式,总量可控)。
 
 ### 8.4 ThemeProvider 重构
 
@@ -367,17 +418,19 @@ CN + EN 双语补齐。
 
 ### 8.8 localStorage 迁移
 
-P14 用户的 `localStorage.color-theme` 旧值在新版本首次登录后:
+P14 时代,`localStorage.color-theme` 是**每个浏览器自己的偏好**(连同 `theme = light/dark/system` 一起),不是全局设置。新版本里"全局激活主题"由 Admin 在服务端唯一决定,语义不同 —— 不能把任意客户端的 localStorage 旧值悄悄上推到服务端,因为:
 
-```text
-if (localStorage.color-theme && server.active === 'preset:default') {
-  PUT /api/settings/active-theme { ref: `preset:${localStorage.color-theme}` }
-  localStorage.removeItem('color-theme')
-  localStorage.setItem('active-theme-ref', `preset:${...}`)
-}
-```
+- Member 调 `PUT /api/settings/active-theme` 会被 403 拒绝;
+- 任何成员浏览器的旧偏好都可能覆盖 Admin 在服务端选过的值,造成"我同事打开一次浏览器,后台主题就被改了"。
 
-确保升级无感。
+**采用的策略:**
+
+1. 客户端启动时,读 `localStorage.color-theme`(若存在)只用作**首屏防闪的本地兜底**,与新键 `localStorage.active-theme-ref` 并行;然后调 `GET /api/settings/active-theme`,以服务端为准并写入新键 `active-theme-ref`,**不向服务端写**。
+2. 若服务端 `active_admin_theme` 仍为缺省值 `preset:default`,且当前用户是 **Admin**,且 Admin **首次进入** `/settings/appearance` 页面时,弹出一次性提示卡片:"检测到你浏览器之前选过 *Tokyo Night* 主题,要不要把它设为后台默认?"用户点"应用"才发起 `PUT /api/settings/active-theme`;点"忽略"则清掉旧 key,以后不再提示。Member 进入该页面不出现该提示。
+3. 提示状态本身写在 `localStorage.theme-migration-prompted = "1"` 防止重复弹出。
+4. 旧 `localStorage.color-theme` 在用户做出明确选择(应用 / 忽略)后清除;之前一直保留,不会丢失意图。
+
+这条迁移仅一次性,后续版本可移除该提示逻辑。
 
 ## 9. 测试策略
 
@@ -417,13 +470,19 @@ if (localStorage.color-theme && server.active === 'preset:default') {
 
 ### 10.2 客户端
 
-P14 用户首次升级后,`localStorage.color-theme` 自动迁移到服务端激活值并清理(详见 8.8)。
+P14 用户首次升级后,Admin 进入外观页时一次性提示导入 `localStorage.color-theme` 旧偏好(详见 8.8);Member 浏览器仅以服务端激活值为准,不写服务端。
 
 ### 10.3 回滚路径
 
 - 后端二进制回滚到 P14:旧代码不读 `status_page.theme_ref` 列、不读 `configs("active_admin_theme")`,系统回到"全局只看 localStorage"行为;自定义主题数据在数据库里沉睡,不丢失。
 - 前端单独回滚:同上。
-- 紧急关闭开关:Figment 配置 `feature.custom_themes` 默认 `true`;设为 `false` 时后端隐藏 `/api/settings/themes/*` 路由(返回 404),前端检测到入口接口 404 时自动隐藏"我的主题"区块,只剩 8 个预设(等价 P14 行为)。
+- **紧急关闭开关**:Figment 配置 `feature.custom_themes` 默认 `true`;设为 `false` 时:
+  1. 后端隐藏 `/api/settings/themes/*` 路由(返回 404),前端检测到入口接口 404 即自动隐藏"我的主题"区块,只剩 8 个预设。
+  2. 后端 `GET /api/settings/active-theme` 在解析 `configs("active_admin_theme")` 时,如果 ref 形如 `custom:*`,**不返回错误**,而是 coerce 成 `preset:default` 后再 resolve,确保前台不会因 feature flag 关闭而白屏。注意:这是读时降级,**不写回 `configs`**,这样下次 flag 重新打开时,原 `custom:*` 激活值仍然恢复有效。
+  3. 状态页响应同理:`status_page.theme_ref` 形如 `custom:*` 时被读时 coerce 成 `null`(= 跟随后台),不写回数据库。
+  4. `PUT /api/settings/active-theme` 与 `PUT /api/status-pages/:id` 的 `theme_ref` 字段在 flag 关闭时拒绝 `custom:*`(返回 422 "feature disabled"),仅允许 `preset:*` / `null`。
+
+  这套语义保证 flag 切换是**真正可逆的开关**,而不是"关了之后用户的自定义激活值就丢失"。
 
 ## 11. 实现里程碑
 
