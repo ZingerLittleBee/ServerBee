@@ -1573,7 +1573,10 @@ mod tests {
         assert!(value.get("recoveries").is_none());
 
         match serde_json::from_str::<BrowserMessage>(&json).unwrap() {
-            BrowserMessage::Update { servers, recoveries } => {
+            BrowserMessage::Update {
+                servers,
+                recoveries,
+            } => {
                 assert!(servers.is_empty());
                 assert!(recoveries.is_none());
             }

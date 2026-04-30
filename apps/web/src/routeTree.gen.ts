@@ -38,6 +38,8 @@ import { Route as AuthedServersIdRouteImport } from './routes/_authed/servers/$i
 import { Route as AuthedNetworkServerIdRouteImport } from './routes/_authed/network/$serverId'
 import { Route as AuthedFilesServerIdRouteImport } from './routes/_authed/files.$serverId'
 import { Route as AuthedServersServerIdDockerIndexRouteImport } from './routes/_authed/servers/$serverId/docker/index'
+import { Route as AuthedSettingsAppearanceThemesNewRouteImport } from './routes/_authed/settings/appearance/themes.new'
+import { Route as AuthedSettingsAppearanceThemesIdRouteImport } from './routes/_authed/settings/appearance/themes/$id'
 
 const StatusRoute = StatusRouteImport.update({
   id: '/status',
@@ -191,6 +193,18 @@ const AuthedServersServerIdDockerIndexRoute =
     path: '/servers/$serverId/docker/',
     getParentRoute: () => AuthedRoute,
   } as any)
+const AuthedSettingsAppearanceThemesNewRoute =
+  AuthedSettingsAppearanceThemesNewRouteImport.update({
+    id: '/themes/new',
+    path: '/themes/new',
+    getParentRoute: () => AuthedSettingsAppearanceRoute,
+  } as any)
+const AuthedSettingsAppearanceThemesIdRoute =
+  AuthedSettingsAppearanceThemesIdRouteImport.update({
+    id: '/themes/$id',
+    path: '/themes/$id',
+    getParentRoute: () => AuthedSettingsAppearanceRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
@@ -203,7 +217,7 @@ export interface FileRoutesByFullPath {
   '/service-monitors/$id': typeof AuthedServiceMonitorsIdRoute
   '/settings/alerts': typeof AuthedSettingsAlertsRoute
   '/settings/api-keys': typeof AuthedSettingsApiKeysRoute
-  '/settings/appearance': typeof AuthedSettingsAppearanceRoute
+  '/settings/appearance': typeof AuthedSettingsAppearanceRouteWithChildren
   '/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
   '/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
   '/settings/mobile-devices': typeof AuthedSettingsMobileDevicesRoute
@@ -220,6 +234,8 @@ export interface FileRoutesByFullPath {
   '/servers/': typeof AuthedServersIndexRoute
   '/settings/': typeof AuthedSettingsIndexRoute
   '/traffic/': typeof AuthedTrafficIndexRoute
+  '/settings/appearance/themes/$id': typeof AuthedSettingsAppearanceThemesIdRoute
+  '/settings/appearance/themes/new': typeof AuthedSettingsAppearanceThemesNewRoute
   '/servers/$serverId/docker/': typeof AuthedServersServerIdDockerIndexRoute
 }
 export interface FileRoutesByTo {
@@ -233,7 +249,7 @@ export interface FileRoutesByTo {
   '/service-monitors/$id': typeof AuthedServiceMonitorsIdRoute
   '/settings/alerts': typeof AuthedSettingsAlertsRoute
   '/settings/api-keys': typeof AuthedSettingsApiKeysRoute
-  '/settings/appearance': typeof AuthedSettingsAppearanceRoute
+  '/settings/appearance': typeof AuthedSettingsAppearanceRouteWithChildren
   '/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
   '/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
   '/settings/mobile-devices': typeof AuthedSettingsMobileDevicesRoute
@@ -250,6 +266,8 @@ export interface FileRoutesByTo {
   '/servers': typeof AuthedServersIndexRoute
   '/settings': typeof AuthedSettingsIndexRoute
   '/traffic': typeof AuthedTrafficIndexRoute
+  '/settings/appearance/themes/$id': typeof AuthedSettingsAppearanceThemesIdRoute
+  '/settings/appearance/themes/new': typeof AuthedSettingsAppearanceThemesNewRoute
   '/servers/$serverId/docker': typeof AuthedServersServerIdDockerIndexRoute
 }
 export interface FileRoutesById {
@@ -265,7 +283,7 @@ export interface FileRoutesById {
   '/_authed/service-monitors/$id': typeof AuthedServiceMonitorsIdRoute
   '/_authed/settings/alerts': typeof AuthedSettingsAlertsRoute
   '/_authed/settings/api-keys': typeof AuthedSettingsApiKeysRoute
-  '/_authed/settings/appearance': typeof AuthedSettingsAppearanceRoute
+  '/_authed/settings/appearance': typeof AuthedSettingsAppearanceRouteWithChildren
   '/_authed/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
   '/_authed/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
   '/_authed/settings/mobile-devices': typeof AuthedSettingsMobileDevicesRoute
@@ -282,6 +300,8 @@ export interface FileRoutesById {
   '/_authed/servers/': typeof AuthedServersIndexRoute
   '/_authed/settings/': typeof AuthedSettingsIndexRoute
   '/_authed/traffic/': typeof AuthedTrafficIndexRoute
+  '/_authed/settings/appearance/themes/$id': typeof AuthedSettingsAppearanceThemesIdRoute
+  '/_authed/settings/appearance/themes/new': typeof AuthedSettingsAppearanceThemesNewRoute
   '/_authed/servers/$serverId/docker/': typeof AuthedServersServerIdDockerIndexRoute
 }
 export interface FileRouteTypes {
@@ -314,6 +334,8 @@ export interface FileRouteTypes {
     | '/servers/'
     | '/settings/'
     | '/traffic/'
+    | '/settings/appearance/themes/$id'
+    | '/settings/appearance/themes/new'
     | '/servers/$serverId/docker/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -344,6 +366,8 @@ export interface FileRouteTypes {
     | '/servers'
     | '/settings'
     | '/traffic'
+    | '/settings/appearance/themes/$id'
+    | '/settings/appearance/themes/new'
     | '/servers/$serverId/docker'
   id:
     | '__root__'
@@ -375,6 +399,8 @@ export interface FileRouteTypes {
     | '/_authed/servers/'
     | '/_authed/settings/'
     | '/_authed/traffic/'
+    | '/_authed/settings/appearance/themes/$id'
+    | '/_authed/settings/appearance/themes/new'
     | '/_authed/servers/$serverId/docker/'
   fileRoutesById: FileRoutesById
 }
@@ -589,8 +615,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedServersServerIdDockerIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/settings/appearance/themes/new': {
+      id: '/_authed/settings/appearance/themes/new'
+      path: '/themes/new'
+      fullPath: '/settings/appearance/themes/new'
+      preLoaderRoute: typeof AuthedSettingsAppearanceThemesNewRouteImport
+      parentRoute: typeof AuthedSettingsAppearanceRoute
+    }
+    '/_authed/settings/appearance/themes/$id': {
+      id: '/_authed/settings/appearance/themes/$id'
+      path: '/themes/$id'
+      fullPath: '/settings/appearance/themes/$id'
+      preLoaderRoute: typeof AuthedSettingsAppearanceThemesIdRouteImport
+      parentRoute: typeof AuthedSettingsAppearanceRoute
+    }
   }
 }
+
+interface AuthedSettingsAppearanceRouteChildren {
+  AuthedSettingsAppearanceThemesIdRoute: typeof AuthedSettingsAppearanceThemesIdRoute
+  AuthedSettingsAppearanceThemesNewRoute: typeof AuthedSettingsAppearanceThemesNewRoute
+}
+
+const AuthedSettingsAppearanceRouteChildren: AuthedSettingsAppearanceRouteChildren =
+  {
+    AuthedSettingsAppearanceThemesIdRoute:
+      AuthedSettingsAppearanceThemesIdRoute,
+    AuthedSettingsAppearanceThemesNewRoute:
+      AuthedSettingsAppearanceThemesNewRoute,
+  }
+
+const AuthedSettingsAppearanceRouteWithChildren =
+  AuthedSettingsAppearanceRoute._addFileChildren(
+    AuthedSettingsAppearanceRouteChildren,
+  )
 
 interface AuthedRouteChildren {
   AuthedIndexRoute: typeof AuthedIndexRoute
@@ -600,7 +658,7 @@ interface AuthedRouteChildren {
   AuthedServiceMonitorsIdRoute: typeof AuthedServiceMonitorsIdRoute
   AuthedSettingsAlertsRoute: typeof AuthedSettingsAlertsRoute
   AuthedSettingsApiKeysRoute: typeof AuthedSettingsApiKeysRoute
-  AuthedSettingsAppearanceRoute: typeof AuthedSettingsAppearanceRoute
+  AuthedSettingsAppearanceRoute: typeof AuthedSettingsAppearanceRouteWithChildren
   AuthedSettingsAuditLogsRoute: typeof AuthedSettingsAuditLogsRoute
   AuthedSettingsCapabilitiesRoute: typeof AuthedSettingsCapabilitiesRoute
   AuthedSettingsMobileDevicesRoute: typeof AuthedSettingsMobileDevicesRoute
@@ -628,7 +686,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedServiceMonitorsIdRoute: AuthedServiceMonitorsIdRoute,
   AuthedSettingsAlertsRoute: AuthedSettingsAlertsRoute,
   AuthedSettingsApiKeysRoute: AuthedSettingsApiKeysRoute,
-  AuthedSettingsAppearanceRoute: AuthedSettingsAppearanceRoute,
+  AuthedSettingsAppearanceRoute: AuthedSettingsAppearanceRouteWithChildren,
   AuthedSettingsAuditLogsRoute: AuthedSettingsAuditLogsRoute,
   AuthedSettingsCapabilitiesRoute: AuthedSettingsCapabilitiesRoute,
   AuthedSettingsMobileDevicesRoute: AuthedSettingsMobileDevicesRoute,
