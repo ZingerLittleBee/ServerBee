@@ -1,0 +1,171 @@
+---
+title: Service Monitors
+description: Monitor SSL certificates, DNS records, HTTP keywords, TCP ports, and WHOIS expiry from the ServerBee server.
+icon: Radar
+---
+
+Service Monitors are synthetic checks that run from the ServerBee server. They are useful for monitoring public-facing services even when those services are not running on a ServerBee agent host.
+
+Unlike Ping Monitoring, which asks agents to probe network targets, Service Monitors are evaluated by the central server process. Results are stored in SQLite, displayed in the dashboard, and can send notifications through notification groups.
+
+## Supported Monitor Types
+
+| Type | Target format | What it checks |
+|------|---------------|----------------|
+| `ssl` | `example.com` or `example.com:443` | TLS handshake, certificate validity period, issuer/subject, SHA-256 fingerprint |
+| `dns` | `example.com` | DNS records for `A`, `AAAA`, `CNAME`, `MX`, or `TXT`, optionally compared against expected values |
+| `http_keyword` | `https://example.com/health` | HTTP status code and optional keyword presence/absence in the response body |
+| `tcp` | `host:port` | TCP connection success and connection latency |
+| `whois` | `example.com` or URL | Domain expiration date and registrar, using WHOIS lookup with a system-command fallback |
+
+## Creating a Monitor
+
+1. Open **Settings → Service Monitors**.
+2. Click **New Monitor**.
+3. Choose a monitor type and enter the target.
+4. Set the check interval in seconds.
+5. Configure type-specific options.
+6. Optionally select a notification group.
+7. Save the monitor.
+
+The background checker wakes every 10 seconds, schedules due monitors based on their `interval`, and runs up to 20 checks concurrently.
+
+## Type-Specific Configuration
+
+### SSL Certificate
+
+```json
+{
+  "port": 443,
+  "warning_days": 14,
+  "critical_days": 7,
+  "timeout": 10
+}
+```
+
+- `port` defaults to `443` unless the target already includes a port.
+- The check fails when remaining certificate lifetime is less than or equal to `critical_days`.
+- A warning is included in the detail payload when remaining lifetime is less than or equal to `warning_days`.
+
+### DNS Record
+
+```json
+{
+  "record_type": "A",
+  "expected_values": ["203.0.113.10"],
+  "nameserver": "8.8.8.8"
+}
+```
+
+- `record_type` defaults to `A` and supports `A`, `AAAA`, `CNAME`, `MX`, and `TXT`.
+- If `expected_values` is omitted, the check passes when resolution returns at least one value.
+- If `expected_values` is present, the sorted returned values must exactly match the sorted expected values.
+- `nameserver` is optional. When omitted, the system resolver is used.
+
+### HTTP Keyword
+
+```json
+{
+  "method": "GET",
+  "expected_status": [200],
+  "keyword": "ok",
+  "keyword_exists": true,
+  "headers": {
+    "User-Agent": "ServerBee"
+  },
+  "body": null,
+  "timeout": 10
+}
+```
+
+- `method` supports `GET` and `POST`.
+- `expected_status` defaults to `[200]`.
+- If `keyword` is set, `keyword_exists: true` requires it to appear; `false` requires it to be absent.
+- `headers` values must be strings.
+- `body` is used for `POST` requests.
+
+### TCP Port
+
+```json
+{
+  "timeout": 10
+}
+```
+
+The target must be `host:port`. The check succeeds if a TCP connection can be established before timeout.
+
+### WHOIS Expiry
+
+```json
+{
+  "warning_days": 30,
+  "critical_days": 7
+}
+```
+
+- The target is normalized to a domain name, so `https://example.com/path` becomes `example.com`.
+- The check fails when the domain expires within `critical_days`.
+- Some TLDs such as `.app`, `.dev`, and `.page` do not expose a standard WHOIS service for this monitor. Use an SSL monitor for those domains instead.
+
+## Notifications and Retries
+
+Each monitor can link to a notification group. On every check:
+
+1. A record is written with `success`, `latency`, `detail_json`, `error`, and `time`.
+2. The monitor updates `last_status`, `last_checked_at`, and `consecutive_failures`.
+3. Failure notifications are sent only after `consecutive_failures > retry_count`.
+4. Recovery notifications are sent when a monitor was failing and the next check succeeds.
+
+If a monitor is associated with servers and any of those servers is currently in an active maintenance window, notifications are skipped for that check. The check record is still stored.
+
+## History and Retention
+
+Open a monitor detail page to view:
+
+- Latest status and latency
+- Recent success/failure history
+- Latency chart over time
+- Raw detail payload and error message per check
+
+Service monitor records are retained for 30 days by default (`retention.service_monitor_days`).
+
+## API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/service-monitors` | List monitors; optional `?type=ssl` filter |
+| GET | `/api/service-monitors/{id}` | Get one monitor with its latest record |
+| POST | `/api/service-monitors` | Create a monitor |
+| PUT | `/api/service-monitors/{id}` | Update a monitor |
+| DELETE | `/api/service-monitors/{id}` | Delete a monitor and its records |
+| GET | `/api/service-monitors/{id}/records` | Query records with optional `from`, `to`, and `limit` |
+| POST | `/api/service-monitors/{id}/check` | Trigger an immediate check |
+
+Create request example:
+
+```json
+{
+  "name": "Website SSL",
+  "monitor_type": "ssl",
+  "target": "example.com",
+  "interval": 300,
+  "config_json": {
+    "warning_days": 14,
+    "critical_days": 7
+  },
+  "notification_group_id": "notification-group-id",
+  "retry_count": 1,
+  "server_ids_json": ["server-id"],
+  "enabled": true
+}
+```
+
+<Callout type="info">
+`server_ids_json` is used to associate a service monitor with servers, mainly for maintenance-window suppression and dashboard context. The monitor itself still runs from the central ServerBee server.
+</Callout>
+
+<Cards>
+  <Card title="Alerts & Notifications" href="/en/docs/alerts" />
+  <Card title="Status Page" href="/en/docs/status-page" />
+  <Card title="API Reference" href="/en/docs/api-reference" />
+</Cards>
