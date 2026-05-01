@@ -87,8 +87,11 @@ ServerBee 采用纵深防御（defense in depth）策略，在 Server 端和 Age
 ### Server 端拦截
 
 - **Terminal**：WebSocket 升级请求被 403 拦截
-- **Exec**：`POST /api/tasks` 过滤无权限服务器，写入合成结果（`exit_code = -2`，提示 "Capability 'exec' is disabled"）
-- **Ping**：按 capability 过滤任务，不向无权限 Agent 同步相关探测任务
+- **Exec**：`POST /api/tasks` 和计划任务运行会过滤无权限服务器，写入合成结果（`exit_code = -2`，提示 "Capability 'exec' is disabled"）
+- **Auto Upgrade**：`POST /api/servers/{id}/upgrade` 在未启用 `CAP_UPGRADE` 时返回 403
+- **Ping 和 Traceroute**：按 capability 过滤探测任务；Traceroute 需要 effective `CAP_PING_ICMP`
+- **File Manager**：文件端点在下发前检查 `CAP_FILE`，未启用时直接拒绝
+- **Docker**：Docker 读取/操作端点和 Docker 日志 WebSocket 需要 `CAP_DOCKER`，并要求 Agent 运行时支持 Docker
 
 ### Agent 端拒绝
 
@@ -129,6 +132,7 @@ ServerBee 采用纵深防御（defense in depth）策略，在 Server 端和 Age
 
 <Cards>
   <Card title="Web 终端" href="/cn/docs/terminal" />
+  <Card title="文件管理器" href="/cn/docs/file-manager" />
   <Card title="Ping 探测" href="/cn/docs/ping" />
   <Card title="管理员指南" href="/cn/docs/admin" />
 </Cards>
