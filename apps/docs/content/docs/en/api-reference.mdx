@@ -1,111 +1,36 @@
 ---
 title: API Reference
-description: ServerBee REST API overview, authentication, and Swagger UI interactive docs.
+description: ServerBee REST API overview, authentication, WebSocket endpoints, and Swagger UI interactive docs.
 icon: FileCode
 ---
 
-ServerBee provides a complete REST API for programmatic access to all Dashboard features. All endpoints are documented via OpenAPI 3.0.
+ServerBee exposes the same capabilities used by the web dashboard through REST and WebSocket APIs. The authoritative, schema-level reference is generated from OpenAPI annotations in the server binary.
 
 ## Swagger UI
 
-ServerBee includes a built-in Swagger UI for interactive API exploration:
+Open the built-in interactive documentation at:
 
-```
+```text
 https://your-server/swagger-ui/
 ```
 
-You can browse all 50+ API endpoints, inspect request/response schemas, and send test requests directly.
+Swagger UI lets you inspect request/response schemas, authentication requirements, and test requests against your own deployment. The raw OpenAPI document is available at:
 
-## Authentication
-
-The ServerBee API supports two authentication methods:
-
-### Session Cookie
-
-Used automatically after browser login. Call `/api/auth/login` to obtain a session:
-
-```bash
-curl -X POST https://your-server/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "your-password"}' \
-  -c cookies.txt
-
-# Use the cookie for subsequent requests
-curl https://your-server/api/servers -b cookies.txt
+```text
+https://your-server/api-docs/openapi.json
 ```
 
-### API Key
+## Response Format
 
-Suitable for automation. Create one in Settings → API Keys:
+Successful REST responses are wrapped as:
 
-```bash
-curl https://your-server/api/servers \
-  -H "X-API-Key: serverbee_your-api-key-here"
+```json
+{
+  "data": {}
+}
 ```
 
-API keys use the format `serverbee_` prefix + 43-character random string. The key is shown only once at creation time.
-
-## Endpoint Overview
-
-### Public Endpoints (No Auth Required)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/auth/login` | User login |
-| GET | `/api/auth/oauth/{provider}` | OAuth authorization redirect |
-| GET | `/api/auth/oauth/{provider}/callback` | OAuth callback |
-| GET | `/api/status` | Public status page data |
-
-### Authenticated Endpoints (Session or API Key)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/auth/logout` | User logout |
-| GET | `/api/auth/me` | Get current user info |
-| POST | `/api/auth/change-password` | Change password |
-| GET/POST | `/api/auth/2fa/*` | 2FA management |
-| GET/DELETE | `/api/auth/oauth/accounts` | OAuth account management |
-| GET | `/api/servers` | List servers |
-| GET | `/api/servers/{id}` | Get server details |
-| GET | `/api/servers/{id}/records` | Get metric records |
-| GET | `/api/servers/{id}/gpu-records` | Get GPU records |
-| GET | `/api/server-groups` | List server groups |
-| GET | `/api/ping-tasks` | List ping tasks |
-| GET | `/api/ping-tasks/{id}/records` | Get ping records |
-
-### Admin Endpoints (Admin Role Required)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST/PUT/DELETE | `/api/servers/*` | Server management |
-| PUT | `/api/servers/batch-capabilities` | Batch update capabilities |
-| POST | `/api/servers/{id}/upgrade` | Trigger agent upgrade |
-| GET | `/api/servers/{target_id}/recovery-candidates` | List recommended recovery candidates |
-| GET | `/api/servers/recovery-jobs/{job_id}` | Get recovery job details |
-| POST | `/api/servers/{target_id}/recover-merge` | Start an agent recovery job |
-| CRUD | `/api/server-groups/*` | Server group management |
-| CRUD | `/api/notifications/*` | Notification channel management |
-| CRUD | `/api/notification-groups/*` | Notification group management |
-| CRUD | `/api/alert-rules/*` | Alert rule management |
-| CRUD | `/api/ping-tasks/*` | Ping task management |
-| POST | `/api/tasks` | Create a remote command task |
-| GET | `/api/tasks/{id}` | Get task details and results |
-| CRUD | `/api/users/*` | User management |
-| GET | `/api/audit-logs` | Audit logs |
-| GET/PUT | `/api/settings/*` | System settings |
-| POST | `/api/settings/backup` | Database backup |
-| POST | `/api/settings/restore` | Database restore |
-
-### WebSocket Endpoints
-
-| Path | Description |
-|------|-------------|
-| `/api/ws/browser` | Browser real-time data push |
-| `/api/ws/terminal/{server_id}` | Web terminal proxy |
-
-## Error Responses
-
-All API errors use a consistent format:
+Errors use:
 
 ```json
 {
@@ -113,15 +38,129 @@ All API errors use a consistent format:
 }
 ```
 
-Common status codes:
+## Authentication
 
-| Code | Description |
-|------|-------------|
-| 400 | Bad request / invalid parameters |
+### Session Cookie
+
+Used by the web dashboard after login:
+
+```bash
+curl -X POST https://your-server/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"your-password"}' \
+  -c cookies.txt
+
+curl https://your-server/api/servers -b cookies.txt
+```
+
+### API Key
+
+Use API keys for automation. Create them in Settings → API Keys.
+
+```bash
+curl https://your-server/api/servers \
+  -H "X-API-Key: serverbee_your-api-key-here"
+```
+
+API keys use the `serverbee_` prefix and are shown only once when created.
+
+### Bearer Session Token
+
+Mobile flows use Bearer tokens for selected REST and WebSocket endpoints:
+
+```bash
+curl https://your-server/api/auth/me \
+  -H "Authorization: Bearer <session-token>"
+```
+
+## Public Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/auth/login` | Web login |
+| GET | `/api/auth/oauth/providers` | List enabled OAuth providers |
+| GET | `/api/auth/oauth/{provider}` | OAuth authorization redirect |
+| GET | `/api/auth/oauth/{provider}/callback` | OAuth callback |
+| POST | `/api/mobile/auth/login` | Mobile login |
+| POST | `/api/mobile/auth/refresh` | Refresh a mobile session |
+| POST | `/api/mobile/auth/pair` | Redeem a mobile pairing code |
+| POST | `/api/agent/register` | Agent auto-registration using discovery key |
+| GET | `/api/status` | Default public status page data |
+| GET | `/api/status/{slug}` | Configurable public status page data |
+| GET | `/api/settings/brand` | Public brand settings |
+| GET | `/api/brand/logo` | Serve uploaded logo |
+| GET | `/api/brand/favicon` | Serve uploaded favicon |
+
+## Authenticated Read Endpoints
+
+Read endpoints are available to Admin and Member users unless noted otherwise.
+
+| Family | Representative endpoints |
+|--------|--------------------------|
+| Current user and API keys | `GET /api/auth/me`, `PUT /api/auth/password`, `GET/POST /api/auth/api-keys`, `DELETE /api/auth/api-keys/{id}` |
+| 2FA and OAuth accounts | `/api/auth/2fa/*`, `GET/DELETE /api/auth/oauth/accounts/*` |
+| Mobile devices | `POST /api/mobile/auth/logout`, `GET /api/mobile/auth/devices`, `DELETE /api/mobile/auth/devices/{id}` |
+| Servers | `GET /api/servers`, `GET /api/servers/{id}`, `GET /api/servers/{id}/records`, `GET /api/servers/{id}/gpu-records` |
+| Groups and tags | `GET /api/server-groups`, `GET /api/server-tags` |
+| Uptime and traffic | `GET /api/servers/{id}/uptime-daily`, `GET /api/servers/{id}/traffic` |
+| GeoIP | `GET /api/geoip/status` |
+| Ping tasks | `GET /api/ping-tasks`, `GET /api/ping-tasks/{id}/records` |
+| Network probes | `/api/network-probes/*`, `/api/servers/{id}/network-probes/*` |
+| Traceroute results | `GET /api/servers/{id}/traceroute/{request_id}` |
+| Files, read-only | `POST /api/files/{server_id}/list`, `stat`, `read`, `GET /api/files/transfers`, `GET /api/files/download/{transfer_id}` |
+| Docker, read-only | `GET /api/servers/{id}/docker/containers`, `stats`, `info`, `events`, `networks`, `volumes` |
+| Service monitors | `GET /api/service-monitors`, `GET /api/service-monitors/{id}`, `GET /api/service-monitors/{id}/records` |
+| Status page config | `GET /api/status-pages` |
+| Dashboards | `GET /api/dashboards`, `GET /api/dashboards/default`, `GET /api/dashboards/{id}` |
+| Themes | `GET /api/themes/*` |
+| Alert events | alert event read endpoints used by the dashboard |
+
+## Admin Write and Management Endpoints
+
+Admin role is required for write operations and system management.
+
+| Family | Representative endpoints |
+|--------|--------------------------|
+| Server management | `POST/PUT/DELETE /api/servers/*`, `PUT /api/servers/batch-capabilities`, `POST /api/servers/{id}/upgrade` |
+| Agent recovery | `GET /api/servers/{target_id}/recovery-candidates`, `GET /api/servers/recovery-jobs/{job_id}`, `POST /api/servers/{target_id}/recover-merge` |
+| Groups and tags | CRUD `/api/server-groups/*`, CRUD `/api/server-tags/*` |
+| Ping and network probes | CRUD `/api/ping-tasks/*`, write endpoints under `/api/network-probes/*` |
+| Traceroute | `POST /api/servers/{id}/traceroute` |
+| Files | `POST /api/files/{server_id}/write`, `delete`, `mkdir`, `move`, `download`, `upload`, `DELETE /api/files/transfers/{transfer_id}` |
+| Docker actions | `POST /api/servers/{id}/docker/containers/{cid}/action` |
+| Service monitors | CRUD `/api/service-monitors/*`, `POST /api/service-monitors/{id}/check` |
+| Dashboards | `POST /api/dashboards`, `PUT/DELETE /api/dashboards/{id}` |
+| Themes and appearance | theme write endpoints, `PUT /api/settings/brand`, `POST /api/settings/brand/logo`, `POST /api/settings/brand/favicon` |
+| Status pages | CRUD `/api/status-pages/*` |
+| Incidents | CRUD `/api/incidents/*`, `POST /api/incidents/{id}/updates` |
+| Maintenance windows | CRUD `/api/maintenances/*` |
+| Alerts and notifications | CRUD `/api/alert-rules/*`, `/api/notifications/*`, `/api/notification-groups/*` |
+| Tasks | `GET/POST /api/tasks`, `GET/PUT/DELETE /api/tasks/{id}`, `GET /api/tasks/{id}/results`, `POST /api/tasks/{id}/run` |
+| Users | CRUD `/api/users/*` |
+| Audit and settings | `GET /api/audit-logs`, `/api/settings/*`, backup/restore endpoints |
+| GeoIP | `POST /api/geoip/download` |
+| Mobile push | `POST /api/mobile/pair`, `POST /api/mobile/push/register`, `POST /api/mobile/push/unregister` |
+
+## WebSocket Endpoints
+
+| Path | Auth | Description |
+|------|------|-------------|
+| `/api/agent/ws?token=<agent_token>` | Agent token query parameter | Agent metrics, commands, pings, files, Docker, traceroute |
+| `/api/ws/servers` | Session cookie, API key, or Bearer token | Browser/mobile real-time server updates |
+| `/api/ws/terminal/{server_id}` | Authenticated Admin + `CAP_TERMINAL` | Web terminal proxy; terminal payloads use binary frames |
+| `/api/ws/docker/logs/{server_id}` | Authenticated + `CAP_DOCKER` | Per-container Docker log streaming |
+
+## Common Status Codes
+
+| Code | Meaning |
+|------|---------|
+| 400 | Bad request or invalid operation |
 | 401 | Not authenticated |
-| 403 | Forbidden (insufficient role or capability disabled) |
-| 404 | Resource not found |
-| 429 | Too many requests (rate limited) |
+| 403 | Forbidden: role, capability, or local agent policy blocks the operation |
+| 404 | Resource not found, server offline, or disabled public page |
+| 409 | Conflict, such as duplicate slug/name |
+| 422 | Validation error |
+| 429 | Rate limited |
 | 500 | Internal server error |
 
 <Cards>
