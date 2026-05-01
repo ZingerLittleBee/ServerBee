@@ -106,7 +106,7 @@ Administrators can dispatch commands to online servers and retrieve execution re
 | `/api/tasks/{id}` | GET | Get task details |
 | `/api/tasks/{id}/results` | GET | Get execution results |
 
-Request body for creating a task:
+Request body for creating a one-shot task:
 
 ```json
 {
@@ -115,6 +115,75 @@ Request body for creating a task:
   "timeout": 60
 }
 ```
+
+## Scheduled Tasks
+
+Scheduled tasks extend remote commands with cron-based execution, retries, and run history.
+
+### Creating a Scheduled Task
+
+1. Go to **Settings → Tasks**.
+2. Switch to the scheduled task section.
+3. Enter a name, command, cron expression, target servers, timeout, retry count, and retry interval.
+4. Save the task. Enabled tasks are registered with the server-side scheduler immediately.
+
+Scheduled tasks use the server's `scheduler.timezone` setting when calculating `next_run_at`.
+
+### Fields
+
+| Field | Description |
+|-------|-------------|
+| `name` | Display name for the scheduled task |
+| `task_type` | Use `scheduled` for cron tasks; omitted/default is `oneshot` |
+| `cron_expression` | Cron expression parsed by the server scheduler |
+| `command` | Shell command sent to each target agent |
+| `server_ids` | Target servers |
+| `timeout` | Per-attempt command timeout in seconds; default execution timeout is 300 seconds |
+| `retry_count` | Number of retry attempts after the first attempt; must be 0-10 |
+| `retry_interval` | Seconds to wait between retries; must be at least 1 |
+| `enabled` | Disabled tasks are removed from the scheduler and do not run automatically |
+
+### Execution Behavior
+
+- Each scheduled trigger creates a `run_id` used to group results from all target servers and retry attempts.
+- ServerBee prevents overlapping runs of the same scheduled task. If the previous run is still active, the new trigger is skipped.
+- `POST /api/tasks/{id}/run` starts a manual run and skips retry logic.
+- Disabling or deleting a task cancels its active run.
+- Results include an `attempt` number so you can distinguish retries.
+
+Synthetic exit codes:
+
+| Exit code | Meaning |
+|-----------|---------|
+| `-2` | `CAP_EXEC` disabled or blocked by agent-local capability policy |
+| `-3` | Server offline or dispatch failed |
+| `-4` | No agent response before timeout |
+
+### API Example
+
+```json
+{
+  "task_type": "scheduled",
+  "name": "Daily disk check",
+  "command": "df -h",
+  "server_ids": ["server-id-1"],
+  "cron_expression": "0 0 8 * * *",
+  "timeout": 120,
+  "retry_count": 2,
+  "retry_interval": 60
+}
+```
+
+Relevant endpoints:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/tasks?type=scheduled` | GET | List scheduled tasks |
+| `/api/tasks` | POST | Create one-shot or scheduled task |
+| `/api/tasks/{id}` | PUT | Update task fields, enable/disable, and scheduler registration |
+| `/api/tasks/{id}` | DELETE | Delete a task and cancel active execution |
+| `/api/tasks/{id}/run` | POST | Manually run a task |
+| `/api/tasks/{id}/results` | GET | Fetch task results grouped by task/run/attempt |
 
 ## Billing Information
 
