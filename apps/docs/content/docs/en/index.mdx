@@ -8,14 +8,18 @@ ServerBee is a lightweight, self-hosted VPS monitoring probe system built from t
 
 ## Key Features
 
-- **Real-time monitoring** -- CPU, memory, disk, network, load average, temperature, and GPU metrics streamed over WebSocket
-- **Alert rules** -- Flexible threshold-based alerts with support for 14+ metric types, debounce logic, and multiple notification channels
-- **Web terminal** -- Secure browser-based shell access to your servers through a full PTY session
-- **Ping monitoring** -- ICMP, TCP, and HTTP probes to track endpoint availability and latency
-- **GPU support** -- Optional NVIDIA GPU monitoring (utilization, memory, temperature per device)
-- **Lightweight footprint** -- Single binary server and agent, SQLite database, no external dependencies required
-- **OAuth login** -- GitHub, Google, and generic OIDC provider support
-- **GeoIP detection** -- Automatic server region identification via MaxMind MMDB
+- **Real-time monitoring** -- CPU, memory, disk, network, load average, temperature, GPU, disk I/O, and traffic metrics streamed over WebSocket
+- **Custom dashboards** -- Build multiple dashboard layouts with server cards, charts, maps, uptime timelines, Markdown notes, and service status widgets
+- **Alert rules** -- Flexible threshold and event-based alerts with debounce logic, maintenance suppression, and multiple notification channels
+- **Service monitors** -- SSL certificate, DNS, HTTP keyword, TCP, and WHOIS checks with history and notifications
+- **Web terminal and remote tasks** -- Browser-based PTY sessions, one-shot commands, and scheduled cron tasks with retries
+- **File manager** -- Controlled remote browse/read/write/upload/download operations with path sandboxing and audit logs
+- **Ping and network quality monitoring** -- ICMP, TCP, HTTP probes, preset network targets, packet loss/latency charts, CSV export, and traceroute
+- **Docker management** -- Container list, stats, events, logs, networks, volumes, and container actions when enabled
+- **Public status pages** -- Share service health with custom slugs, incidents, maintenance windows, uptime timelines, themes, and custom CSS
+- **Branding and themes** -- Preset/custom OKLCH themes plus white-label title, logo, favicon, and footer text
+- **Lightweight footprint** -- Single binary server and agent, SQLite database, no external database required
+- **OAuth and mobile support** -- GitHub, Google, generic OIDC login, mobile sessions, pairing, and push notification support
 
 ## Tech Stack
 
@@ -31,11 +35,11 @@ ServerBee is a lightweight, self-hosted VPS monitoring probe system built from t
 
 ServerBee follows a hub-and-spoke architecture:
 
-1. The **Server** is the central dashboard that runs the web UI, REST API, and manages all WebSocket connections
+1. The **Server** is the central dashboard that runs the web UI, REST API, background jobs, and manages all WebSocket connections
 2. **Agents** are installed on each VPS you want to monitor -- they collect system metrics and report back to the server every few seconds
 3. The **Frontend** is a React SPA embedded into the server binary, so there is nothing extra to deploy
 
-All communication between agents and the server happens over WebSocket with JSON-encoded messages. Terminal sessions use the same WebSocket connection with base64-encoded PTY data.
+All communication between agents and the server happens over WebSocket with JSON-encoded messages. Terminal sessions and some streaming features use dedicated WebSocket routes with binary or structured frames.
 
 ## Next Steps
 
@@ -44,13 +48,17 @@ All communication between agents and the server happens over WebSocket with JSON
   <Card title="Server Setup" href="/en/docs/server" />
   <Card title="Agent Setup" href="/en/docs/agent" />
   <Card title="Monitoring" href="/en/docs/monitoring" />
+  <Card title="Dashboards & Widgets" href="/en/docs/dashboards" />
   <Card title="Alerts" href="/en/docs/alerts" />
+  <Card title="Service Monitors" href="/en/docs/service-monitors" />
   <Card title="Web Terminal" href="/en/docs/terminal" />
+  <Card title="File Manager" href="/en/docs/file-manager" />
   <Card title="Ping Monitoring" href="/en/docs/ping" />
   <Card title="Capabilities" href="/en/docs/capabilities" />
-  <Card title="Security" href="/en/docs/security" />
-  <Card title="Status Page" href="/en/docs/status-page" />
+  <Card title="Status Pages" href="/en/docs/status-page" />
+  <Card title="Custom Themes & Branding" href="/en/docs/custom-themes" />
   <Card title="iOS Mobile" href="/en/docs/mobile" />
+  <Card title="Security" href="/en/docs/security" />
   <Card title="Admin Guide" href="/en/docs/admin" />
   <Card title="API Reference" href="/en/docs/api-reference" />
   <Card title="Storage & Sizing" href="/en/docs/storage-sizing" />
