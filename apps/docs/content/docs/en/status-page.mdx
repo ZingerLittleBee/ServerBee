@@ -1,100 +1,167 @@
 ---
-title: Status Page
-description: A public page showing server online status without authentication.
+title: Status Pages
+description: Publish public server health pages with incidents, maintenance windows, uptime history, and custom themes.
 icon: Globe
 ---
 
-ServerBee provides a public status page that shows server online status and basic metrics without requiring login. It is ideal for sharing service health with users or teams.
+ServerBee provides two public status experiences:
 
-## Access
+- **Default status page:** `https://your-server/status`, backed by `GET /api/status`, showing all non-hidden servers.
+- **Configurable status pages:** `https://your-server/status/{slug}`, backed by `GET /api/status/{slug}`, showing the specific servers and options selected by an administrator.
 
-The status page is available at: `https://your-server/status`
+Both are public and do not require authentication.
 
-No authentication is required — anyone can access this page.
+## Default `/status` Page
 
-## Page Content
+The default status page is useful when you want a quick public overview without creating a custom page.
 
-The status page displays:
+It shows:
 
-- **Online/Total count**: Current number of online servers vs total
-- **Server list**: All non-hidden servers organized by group
-- **Online status**: Each server shows an online/offline indicator
-- **Live metrics**: Online servers display CPU, memory, and disk usage progress bars
-- **90-day uptime timeline**: Each server shows a color-coded bar chart of daily uptime over the past 90 days
-- **Uptime percentage**: Overall uptime percentage calculated from daily uptime data
-- **Auto-refresh**: The page automatically fetches updated data every 10 seconds
+- Online/total server count
+- All servers where `hidden = false`
+- Server group labels
+- Online/offline status
+- Live metrics for online servers: CPU, memory, disk, network speed/transfer, uptime, and load
+- Public server remarks where configured
 
-## Display Rules
+Public API:
 
-- Only **non-hidden** servers are shown (admins can set the `hidden` flag in server settings)
-- Servers are organized by their group
-- Offline servers show only the offline status without metric data
-
-## API Endpoint
-
-```
+```http
 GET /api/status
 ```
 
-Public endpoint, no authentication required. Response structure:
+## Configurable Status Pages
 
-```json
-{
-  "data": {
-    "servers": [
-      {
-        "id": "server-uuid",
-        "name": "Web Server 1",
-        "hostname": "web1.example.com",
-        "is_online": true,
-        "group_name": "Production",
-        "cpu": 45.2,
-        "mem_used": 8589934592,
-        "mem_total": 17179869184,
-        "disk_used": 53687091200,
-        "disk_total": 107374182400
-      }
-    ],
-    "groups": [
-      { "id": "group-uuid", "name": "Production" }
-    ],
-    "online_count": 8,
-    "total_count": 10
-  }
-}
+Create and manage pages in **Settings → Status Pages**. Each page has its own slug and can be shared independently.
+
+### Page Settings
+
+| Setting | API field | Description |
+|---------|-----------|-------------|
+| Title | `title` | Public page title |
+| Slug | `slug` | URL segment for `/status/{slug}` |
+| Description | `description` | Optional introductory text |
+| Servers | `server_ids_json` | Servers shown on this page |
+| Group by server group | `group_by_server_group` | Organize servers by their ServerBee group |
+| Show values | `show_values` | Show numeric uptime/status values on the public page |
+| Custom CSS | `custom_css` | Extra CSS applied to this page |
+| Enabled | `enabled` | Disabled pages return 404 |
+| Yellow uptime threshold | `uptime_yellow_threshold` | Days below this percentage show as degraded |
+| Red uptime threshold | `uptime_red_threshold` | Days below this percentage show as major outage |
+| Theme | `theme_ref` | Preset/custom theme reference, or `null` to follow admin default |
+
+<Callout type="info">
+The current API request fields use `server_ids_json` and `status_page_ids_json` for selected IDs. These fields accept JSON arrays in request bodies.
+</Callout>
+
+### Public Page Data
+
+```http
+GET /api/status/{slug}
 ```
+
+The response includes:
+
+- `page` -- page metadata and display options
+- `theme` -- resolved theme variables
+- `servers` -- selected server statuses, uptime percentages, and 90-day daily uptime data
+- `active_incidents` -- unresolved incidents linked to the page
+- `planned_maintenances` -- active/upcoming maintenance windows linked to the page
+- `recent_incidents` -- resolved incidents from the recent history window
+
+Server entries include `server_id`, `server_name`, region/country, OS, group, `online`, `uptime_percent`, `uptime_daily`, and `in_maintenance`.
 
 ## Uptime Timeline
 
-Each server on the status page displays a 90-day uptime timeline. The timeline is a horizontal bar chart where each bar represents one day:
+Each server on a configurable status page can show a 90-day uptime timeline. Each bar represents one day:
 
-- **Green** -- 100% uptime (fully online all day)
-- **Yellow** -- Degraded uptime (below the yellow threshold, default 100%)
-- **Red** -- Major outage (below the red threshold, default 95%)
-- **Gray** -- No data available for that day
+- **Green** -- healthy uptime
+- **Yellow** -- uptime below the page's yellow threshold
+- **Red** -- uptime below the page's red threshold
+- **Gray** -- no data
 
-Hovering over a bar shows a tooltip with the date, uptime percentage, and online/total minutes.
+Uptime data comes from the `uptime_daily` table, populated by the server's background aggregation tasks. Missing dates are gap-filled so the timeline remains continuous.
 
-The uptime data comes from the `uptime_daily` table, which is populated by the server's background aggregation task. The status page API returns daily entries with gap-filling for dates where no data was recorded (shown as gray bars with 0 minutes).
+## Incidents
 
-### Uptime Thresholds
+Incidents are public announcements for outages or degraded service. They can be linked to specific servers, status pages, or both.
 
-Admins can customize the color thresholds per status page in **Settings > Status Pages**:
+### Fields
 
-- **Yellow threshold** (default: 100%) -- Days below this percentage are shown in yellow
-- **Red threshold** (default: 95%) -- Days below this percentage are shown in red
+| Field | Description |
+|-------|-------------|
+| `title` | Incident title |
+| `status` | `investigating`, `identified`, `monitoring`, or `resolved` |
+| `severity` | `minor`, `major`, or `critical` |
+| `server_ids_json` | Optional affected servers |
+| `status_page_ids_json` | Optional affected status pages |
 
-These thresholds are stored per status page and returned in the public API response, allowing different status pages to have different sensitivity levels.
+An incident can have multiple updates. Adding an update records a message and moves the incident to the update's status. Setting status to `resolved` also sets `resolved_at`.
 
-## Hiding Servers
+### API
 
-To exclude servers from the status page:
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/incidents` | List incidents; supports status filtering |
+| POST | `/api/incidents` | Create an incident |
+| PUT | `/api/incidents/{id}` | Update an incident |
+| DELETE | `/api/incidents/{id}` | Delete an incident |
+| POST | `/api/incidents/{id}/updates` | Add an incident update |
 
-1. Go to the server detail page → Edit
-2. Enable the **Hidden** option
-3. The server will no longer appear in the `/api/status` response
+## Maintenance Windows
+
+Maintenance windows announce planned work and also suppress notifications for associated servers while active.
+
+### Fields
+
+| Field | Description |
+|-------|-------------|
+| `title` | Maintenance title |
+| `description` | Optional details |
+| `start_at` | UTC start time |
+| `end_at` | UTC end time; must be after `start_at` |
+| `server_ids_json` | Optional affected servers |
+| `status_page_ids_json` | Optional affected status pages |
+| `active` | Whether the window is enabled |
+
+### API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/maintenances` | List maintenance windows |
+| POST | `/api/maintenances` | Create a maintenance window |
+| PUT | `/api/maintenances/{id}` | Update a maintenance window |
+| DELETE | `/api/maintenances/{id}` | Delete a maintenance window |
+
+## Admin API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/status-pages` | List configured status pages |
+| POST | `/api/status-pages` | Create a status page |
+| PUT | `/api/status-pages/{id}` | Update a status page |
+| DELETE | `/api/status-pages/{id}` | Delete a status page |
+
+Create example:
+
+```json
+{
+  "title": "Production Status",
+  "slug": "production",
+  "description": "Public health for production services",
+  "server_ids_json": ["server-id-1", "server-id-2"],
+  "group_by_server_group": true,
+  "show_values": true,
+  "enabled": true,
+  "uptime_yellow_threshold": 99.9,
+  "uptime_red_threshold": 95
+}
+```
+
+To set a custom theme during update, pass `theme_ref`, for example `"preset:default"` or a custom theme reference. Use `null` to follow the admin default.
 
 <Cards>
-  <Card title="Monitoring" href="/en/docs/monitoring" />
-  <Card title="Deployment" href="/en/docs/deployment" />
+  <Card title="Custom Themes" href="/en/docs/custom-themes" />
+  <Card title="Service Monitors" href="/en/docs/service-monitors" />
+  <Card title="Alerts & Notifications" href="/en/docs/alerts" />
 </Cards>
