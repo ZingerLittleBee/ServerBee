@@ -1,100 +1,167 @@
 ---
 title: 公开状态页
-description: 为访客提供无需登录的服务器在线状态展示页面。
+description: 发布包含事件公告、维护窗口、可用性历史和自定义主题的公开健康状态页。
 icon: Globe
 ---
 
-ServerBee 提供一个公开状态页面，无需登录即可查看服务器的在线状态和基本指标。适合向用户或团队展示服务运行状况。
+ServerBee 提供两种公开状态页：
 
-## 访问方式
+- **默认状态页：** `https://your-server/status`，由 `GET /api/status` 提供数据，展示所有非隐藏服务器。
+- **可配置状态页：** `https://your-server/status/{slug}`，由 `GET /api/status/{slug}` 提供数据，展示管理员选择的服务器和配置项。
 
-状态页面地址：`https://your-server/status`
+两者均为公开访问，不需要登录认证。
 
-该页面不需要任何认证，任何人都可以访问。
+## 默认 `/status` 页面
 
-## 页面内容
+默认状态页适合不创建自定义页面时快速公开服务器概览。
 
-状态页展示以下信息：
+它展示：
 
-- **在线/总数统计**：显示当前在线服务器数量和总服务器数量
-- **服务器列表**：按分组展示所有非隐藏的服务器
-- **在线状态**：每台服务器显示在线/离线状态指示
-- **实时指标**：在线服务器显示 CPU、内存、磁盘使用率进度条
-- **90 天可用性时间线**：每台服务器展示过去 90 天的每日可用性彩色条形图
-- **可用性百分比**：根据每日可用性数据计算的总体可用率
-- **自动刷新**：页面每 10 秒自动从 API 获取最新数据
+- 在线/总服务器数量
+- 所有 `hidden = false` 的服务器
+- 服务器分组标签
+- 在线/离线状态
+- 在线服务器的实时指标：CPU、内存、磁盘、网络速率/流量、uptime、负载
+- 已配置的公开备注
 
-## 显示规则
+公开 API：
 
-- 仅展示 **非隐藏** 的服务器（管理员可在服务器编辑中设置 `hidden` 属性）
-- 按服务器分组（Group）组织展示
-- 离线服务器不显示指标数据，仅显示离线状态
-
-## API 端点
-
-```
+```http
 GET /api/status
 ```
 
-公开端点，无需认证。返回结构：
+## 可配置状态页
 
-```json
-{
-  "data": {
-    "servers": [
-      {
-        "id": "server-uuid",
-        "name": "Web Server 1",
-        "hostname": "web1.example.com",
-        "is_online": true,
-        "group_name": "Production",
-        "cpu": 45.2,
-        "mem_used": 8589934592,
-        "mem_total": 17179869184,
-        "disk_used": 53687091200,
-        "disk_total": 107374182400
-      }
-    ],
-    "groups": [
-      { "id": "group-uuid", "name": "Production" }
-    ],
-    "online_count": 8,
-    "total_count": 10
-  }
-}
+在 **Settings → Status Pages** 中创建和管理状态页。每个页面都有独立 slug，可以单独分享。
+
+### 页面设置
+
+| 设置 | API 字段 | 说明 |
+|------|----------|------|
+| 标题 | `title` | 公开页面标题 |
+| Slug | `slug` | `/status/{slug}` 的 URL 片段 |
+| 描述 | `description` | 可选介绍文本 |
+| 服务器 | `server_ids_json` | 此页面展示的服务器 |
+| 按服务器分组 | `group_by_server_group` | 按 ServerBee 分组组织服务器 |
+| 显示数值 | `show_values` | 在公开页显示可用性/状态数值 |
+| 自定义 CSS | `custom_css` | 应用于该页面的额外 CSS |
+| 启用 | `enabled` | 禁用后页面返回 404 |
+| 黄色可用性阈值 | `uptime_yellow_threshold` | 低于该百分比的日期显示为降级 |
+| 红色可用性阈值 | `uptime_red_threshold` | 低于该百分比的日期显示为严重故障 |
+| 主题 | `theme_ref` | 预设/自定义主题引用，或 `null` 跟随后台默认主题 |
+
+<Callout type="info">
+当前 API 请求字段使用 `server_ids_json` 和 `status_page_ids_json` 表示选择的 ID。这些字段在请求体中接受 JSON 数组。
+</Callout>
+
+### 公开页面数据
+
+```http
+GET /api/status/{slug}
 ```
+
+响应包含：
+
+- `page` -- 页面元数据和显示选项
+- `theme` -- 解析后的主题变量
+- `servers` -- 选中服务器状态、可用性百分比和 90 天每日可用性数据
+- `active_incidents` -- 关联到页面且尚未解决的事件
+- `planned_maintenances` -- 关联到页面的活动/计划维护窗口
+- `recent_incidents` -- 最近历史中的已解决事件
+
+服务器条目包含 `server_id`、`server_name`、地区/国家、操作系统、分组、`online`、`uptime_percent`、`uptime_daily` 和 `in_maintenance`。
 
 ## 可用性时间线
 
-状态页上每台服务器都会显示 90 天可用性时间线。时间线是一个水平条形图，每根条形代表一天：
+可配置状态页上的每台服务器都可以展示 90 天可用性时间线。每根条代表一天：
 
-- **绿色** -- 100% 可用（全天在线）
-- **黄色** -- 可用性下降（低于黄色阈值，默认 100%）
-- **红色** -- 严重故障（低于红色阈值，默认 95%）
-- **灰色** -- 该日无数据
+- **绿色** -- 健康可用性
+- **黄色** -- 低于该页面黄色阈值
+- **红色** -- 低于该页面红色阈值
+- **灰色** -- 无数据
 
-将鼠标悬停在条形上可查看日期、可用性百分比和在线/总分钟数。
+可用性数据来自 `uptime_daily` 表，由服务端后台聚合任务生成。缺失日期会自动补齐，保证时间线连续。
 
-可用性数据来自 `uptime_daily` 表，由服务端后台聚合任务填充。状态页 API 返回的每日条目会自动补全无数据的日期（显示为灰色条，0 分钟）。
+## 事件公告（Incidents）
 
-### 可用性阈值
+事件公告用于公开说明故障或服务降级。事件可以关联到指定服务器、状态页或两者。
 
-管理员可以在 **设置 > 状态页** 中为每个状态页自定义颜色阈值：
+### 字段
 
-- **黄色阈值**（默认：100%）-- 低于此百分比的天数显示为黄色
-- **红色阈值**（默认：95%）-- 低于此百分比的天数显示为红色
+| 字段 | 说明 |
+|------|------|
+| `title` | 事件标题 |
+| `status` | `investigating`、`identified`、`monitoring` 或 `resolved` |
+| `severity` | `minor`、`major` 或 `critical` |
+| `server_ids_json` | 可选，受影响服务器 |
+| `status_page_ids_json` | 可选，受影响状态页 |
 
-这些阈值按状态页存储，并在公开 API 响应中返回，允许不同的状态页设置不同的灵敏度。
+一个事件可以包含多条 update。添加 update 会记录消息，并把事件状态更新为该 update 的状态。状态变为 `resolved` 时会设置 `resolved_at`。
 
-## 隐藏服务器
+### API
 
-如果某些服务器不希望出现在状态页上：
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/incidents` | 列出事件；支持按状态过滤 |
+| POST | `/api/incidents` | 创建事件 |
+| PUT | `/api/incidents/{id}` | 更新事件 |
+| DELETE | `/api/incidents/{id}` | 删除事件 |
+| POST | `/api/incidents/{id}/updates` | 添加事件更新 |
 
-1. 进入服务器详情页 → 编辑
-2. 勾选 **Hidden** 选项
-3. 该服务器不会出现在 `/api/status` 返回的列表中
+## 维护窗口
+
+维护窗口用于公告计划维护，并在活动期间抑制相关服务器的通知。
+
+### 字段
+
+| 字段 | 说明 |
+|------|------|
+| `title` | 维护标题 |
+| `description` | 可选详情 |
+| `start_at` | UTC 开始时间 |
+| `end_at` | UTC 结束时间，必须晚于 `start_at` |
+| `server_ids_json` | 可选，受影响服务器 |
+| `status_page_ids_json` | 可选，受影响状态页 |
+| `active` | 是否启用该维护窗口 |
+
+### API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/maintenances` | 列出维护窗口 |
+| POST | `/api/maintenances` | 创建维护窗口 |
+| PUT | `/api/maintenances/{id}` | 更新维护窗口 |
+| DELETE | `/api/maintenances/{id}` | 删除维护窗口 |
+
+## 管理 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/status-pages` | 列出已配置状态页 |
+| POST | `/api/status-pages` | 创建状态页 |
+| PUT | `/api/status-pages/{id}` | 更新状态页 |
+| DELETE | `/api/status-pages/{id}` | 删除状态页 |
+
+创建示例：
+
+```json
+{
+  "title": "Production Status",
+  "slug": "production",
+  "description": "Public health for production services",
+  "server_ids_json": ["server-id-1", "server-id-2"],
+  "group_by_server_group": true,
+  "show_values": true,
+  "enabled": true,
+  "uptime_yellow_threshold": 99.9,
+  "uptime_red_threshold": 95
+}
+```
+
+更新时可以传入 `theme_ref` 设置自定义主题，例如 `"preset:default"` 或自定义主题引用。传 `null` 表示跟随后台默认主题。
 
 <Cards>
-  <Card title="监控功能" href="/cn/docs/monitoring" />
-  <Card title="部署指南" href="/cn/docs/deployment" />
+  <Card title="自定义主题" href="/cn/docs/custom-themes" />
+  <Card title="服务监控" href="/cn/docs/service-monitors" />
+  <Card title="告警与通知" href="/cn/docs/alerts" />
 </Cards>

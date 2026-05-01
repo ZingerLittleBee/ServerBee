@@ -1,0 +1,114 @@
+---
+title: Dashboards & Widgets
+description: Build custom monitoring dashboards with draggable widgets and reusable layouts.
+icon: LayoutDashboard
+---
+
+ServerBee dashboards are configurable pages made of widgets. You can keep the default overview dashboard, create separate dashboards for regions or teams, and choose one dashboard as the default for all users.
+
+## Managing Dashboards
+
+Use the dashboard switcher in the top bar of the home page to:
+
+- Switch between dashboards
+- Create a new dashboard
+- Rename a dashboard
+- Delete dashboards you no longer need
+- Set a dashboard as the default
+
+The first dashboard is created automatically if none exists. A dashboard marked as default cannot be unset directly; set another dashboard as default instead.
+
+## Editing Layouts
+
+1. Open a dashboard.
+2. Click **Edit**.
+3. Add widgets from the widget picker.
+4. Drag widgets to rearrange them.
+5. Resize widgets within their min/max size constraints.
+6. Configure each widget's data source and title.
+7. Click **Save**.
+
+The layout is stored as grid coordinates (`grid_x`, `grid_y`, `grid_w`, `grid_h`) and widget configuration JSON. Saving a dashboard performs a diff: existing widgets are updated, new widgets are inserted, and widgets removed from the layout are deleted.
+
+## Widget Types
+
+| Widget | Category | Typical use |
+|--------|----------|-------------|
+| `stat-number` | Real-time | Show one metric from one server, such as CPU or memory |
+| `server-cards` | Real-time | Show compact server cards for selected servers |
+| `gauge` | Real-time | Gauge visualization for one metric and server |
+| `line-chart` | Charts | Historical chart for one metric on one server |
+| `multi-line` | Charts | Compare one metric across multiple servers |
+| `top-n` | Real-time | Rank servers by a selected metric |
+| `alert-list` | Status | Show active or recent alert state |
+| `service-status` | Status | Show Service Monitor status |
+| `traffic-bar` | Charts | Show traffic usage for one server |
+| `disk-io` | Charts | Show disk read/write throughput history |
+| `server-map` | Status | Show server locations on a map when GeoIP is installed |
+| `markdown` | Status | Add notes, runbooks, or links using Markdown |
+| `uptime-timeline` | Status | Show uptime bars for selected servers |
+
+## Common Widget Configuration
+
+Most widgets store their settings in `config_json`. Common fields include:
+
+| Field | Used by | Meaning |
+|-------|---------|---------|
+| `server_id` | Single-server widgets | Server ID to query |
+| `server_ids` | Multi-server widgets | List of server IDs to include |
+| `metric` | Metric widgets | Metric key such as CPU, memory, disk, traffic, or load |
+| `hours` | Historical widgets | Lookback window for chart data |
+| `interval` | Historical widgets | Data granularity (`raw`, `hourly`, or `auto`) |
+| `monitor_ids` | Service Status | Service Monitor IDs to display |
+| `content` | Markdown | Markdown content |
+
+## GeoIP and Server Map
+
+The Server Map widget requires GeoIP data. You can either:
+
+- Configure a custom MaxMind-compatible MMDB file with `geoip.mmdb_path`, or
+- Download the DB-IP Lite database from **Settings → GeoIP Database**.
+
+The widget shows an installation prompt when GeoIP data is missing.
+
+## API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/dashboards` | List dashboards |
+| GET | `/api/dashboards/default` | Get the default dashboard, creating one if needed |
+| GET | `/api/dashboards/{id}` | Get a dashboard with widgets |
+| POST | `/api/dashboards` | Create a dashboard |
+| PUT | `/api/dashboards/{id}` | Update metadata and/or widgets |
+| DELETE | `/api/dashboards/{id}` | Delete a dashboard |
+
+Update request example:
+
+```json
+{
+  "name": "Production",
+  "is_default": true,
+  "widgets": [
+    {
+      "widget_type": "stat-number",
+      "title": "Web CPU",
+      "config_json": {
+        "server_id": "server-id",
+        "metric": "cpu",
+        "unit": "%"
+      },
+      "grid_x": 0,
+      "grid_y": 0,
+      "grid_w": 2,
+      "grid_h": 1,
+      "sort_order": 0
+    }
+  ]
+}
+```
+
+<Cards>
+  <Card title="Monitoring" href="/en/docs/monitoring" />
+  <Card title="Service Monitors" href="/en/docs/service-monitors" />
+  <Card title="Storage & Sizing" href="/en/docs/storage-sizing" />
+</Cards>

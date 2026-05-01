@@ -52,6 +52,7 @@ An alert rule consists of:
 | `transfer_out_cycle` | Outbound traffic per cycle | Triggers when cumulative transfer >= `cycle_limit` bytes |
 | `transfer_all_cycle` | Total traffic per cycle | Triggers when combined transfer >= `cycle_limit` bytes |
 | `expiration` | Server expiration date | Triggers when expired_at is within `duration` days |
+| `ip_changed` | Agent IP address changed | Event-driven rule; triggers when the agent reports an IP change event |
 
 ### Threshold Configuration
 
@@ -141,9 +142,15 @@ Each alert rule specifies which servers it applies to:
 
 When a previously triggered alert recovers (the condition is no longer met), the alert state is cleared in both the in-memory cache and the database. If the condition triggers again later, notifications will fire according to the trigger mode.
 
+## Maintenance Suppression
+
+Alert notifications are suppressed while the affected server is in an active maintenance window. The rule evaluation still runs, but ServerBee skips notification delivery for that server until the maintenance window ends.
+
+`ip_changed` is event-driven rather than polling-based. It is evaluated when an agent reports an IP change event, and it follows the same cover-type and maintenance suppression rules as other alerts.
+
 ## Notification Channels
 
-ServerBee supports four notification channel types. Each channel is configured as a separate entity that can be reused across multiple notification groups.
+ServerBee supports five notification channel types. Each channel is configured as a separate entity that can be reused across multiple notification groups.
 
 ### Webhook
 
@@ -190,7 +197,7 @@ Send push notifications to iOS devices via [Bark](https://github.com/Finb/Bark).
 
 Email notifications are delivered through [Resend](https://resend.com/). Two steps before use:
 
-1. Set `SERVERBEE_RESEND__API_KEY` on the server (see the [Configuration](/docs/en/configuration) page).
+1. Set `SERVERBEE_RESEND__API_KEY` on the server (see the [Configuration](/en/docs/configuration) page).
 2. Add and verify your sender domain at [resend.com/domains](https://resend.com/domains). The `from` address on each channel must belong to a verified domain.
 
 Channel config:
@@ -203,6 +210,22 @@ Channel config:
 ```
 
 `to` is an array — a single channel can deliver to multiple recipients in one API call. The subject follows the format `[ServerBee] {server_name} {event}`; the body is HTML with a plain-text fallback.
+
+### APNs
+
+Send native Apple Push Notification service pushes to registered mobile devices.
+
+```json
+{
+  "key_id": "ABC123DEFG",
+  "team_id": "TEAM999888",
+  "private_key": "-----BEGIN PRIVATE KEY-----...",
+  "bundle_id": "com.example.serverbee",
+  "sandbox": false
+}
+```
+
+APNs requires an Apple developer key, team ID, bundle ID, and private key. Set `sandbox: true` only for development builds.
 
 ## Notification Groups
 

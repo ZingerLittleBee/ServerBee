@@ -54,6 +54,39 @@ Only `version: 1` is accepted.
 - Alpha must be between `0` and `1`, or between `0%` and `100%`.
 - Chroma has no hard cap. Browsers may gamut-clip values that cannot be displayed.
 
+## Branding and White Label
+
+The same **Settings → Appearance** page also controls basic product branding. Branding settings are stored in the server database and are read by both the dashboard shell and public pages.
+
+| Field | Description |
+|-------|-------------|
+| `site_title` | Browser/app title shown by the UI |
+| `footer_text` | Footer text shown where the UI renders a product footer |
+| `logo_path` | Public path for the uploaded logo, usually `/api/brand/logo` |
+| `favicon_path` | Public path for the uploaded favicon, usually `/api/brand/favicon` |
+
+Public endpoints:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/settings/brand` | Read brand configuration without authentication |
+| GET | `/api/brand/logo` | Serve uploaded logo |
+| GET | `/api/brand/favicon` | Serve uploaded favicon |
+
+Admin endpoints:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| PUT | `/api/settings/brand` | Update `site_title`, `footer_text`, `logo_path`, and `favicon_path` as JSON |
+| POST | `/api/settings/brand/logo` | Upload a logo via multipart field `file` |
+| POST | `/api/settings/brand/favicon` | Upload a favicon via multipart field `file` |
+
+Logo and favicon uploads accept PNG or ICO files only and are limited to 512 KB. Uploading a new asset replaces the previous asset of the same type.
+
+<Callout type="info">
+`PUT /api/settings/brand` expects JSON. Image files are uploaded through the dedicated logo/favicon endpoints, not through the JSON update endpoint.
+</Callout>
+
 ## Disable custom themes
 
 Set:
