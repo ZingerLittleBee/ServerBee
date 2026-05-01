@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.11] - 2026-05-01
+
+### Added
+
+- **Custom theme system** -- Admins can now create, edit, and activate fully custom themes from the settings page. Each theme is a typed bundle of OKLCH-validated CSS variables, persisted as a `custom_theme` row, and addressable via a `theme://` URN scheme that decouples references from numeric IDs. Status pages can opt into a custom theme through `status_page.theme_ref`, gated by the new `feature.custom_themes` flag and exposed over a dedicated `/api/themes/*` HTTP surface
+- **OKLCH-aware theme variable validator** -- A new server-side validator parses every theme variable, enforces OKLCH lightness/chroma/hue ranges, and rejects malformed payloads before they reach storage so invalid themes can never be activated or referenced from a status page
+- **Frontend theme runtime rewrite** -- `ThemeProvider` now resolves a payload from the API, applies it directly to CSS variables, and caches the result in localStorage so theme switches feel instant and survive refreshes. OKLCH ⇄ hex conversion is provided through `culori`, and a shared preset variable map keeps every built-in preset in lockstep with the runtime via a CSS sync invariant test
+
+### Changed
+
+- **Status page theming** -- Public status pages now read their theme from `theme_ref` and fall back to the previous default behavior when the feature flag is off, so existing deployments see no visual change until they explicitly opt in
+
+### Testing
+
+- Added backend integration coverage for the `/api/themes/*` HTTP routing, custom theme service invariants, theme-ref URN parsing edges, theme variable validation edges, and reference integrity between status pages and custom themes
+- Added frontend coverage for the theme-ref URN parser, the preset variable map ↔ CSS sync invariant, and updated capabilities-dialog mocks to match the new theme surface
+
 ## [0.8.10] - 2026-04-18
 
 ### Added
