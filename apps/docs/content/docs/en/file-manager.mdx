@@ -1,0 +1,132 @@
+---
+title: File Manager
+description: Browse, read, edit, upload, download, and manage remote files through ServerBee.
+icon: FolderOpen
+---
+
+File Manager provides controlled remote filesystem access through the ServerBee agent. It is intended for operational tasks such as checking logs, editing small configuration files, and transferring files without opening a full terminal.
+
+<Callout type="warn">
+File Manager is a high-risk feature. Enable it only on trusted servers and restrict `root_paths` to the minimum directories needed.
+</Callout>
+
+## Requirements
+
+File Manager must be enabled at two layers:
+
+1. **Server-side capability:** enable `CAP_FILE` for the server in **Settings → Capabilities** or the server detail page.
+2. **Agent-side policy:** set `[file].enabled = true` and configure at least one allowed root path.
+
+Example `agent.toml`:
+
+```toml
+[file]
+enabled = true
+root_paths = ["/home", "/var/log", "/etc/serverbee"]
+max_file_size = 1073741824
+# Defaults shown here for clarity
+deny_patterns = ["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]
+```
+
+Equivalent environment variables:
+
+```bash
+SERVERBEE_FILE__ENABLED=true
+SERVERBEE_FILE__ROOT_PATHS=/home,/var/log,/etc/serverbee
+SERVERBEE_FILE__MAX_FILE_SIZE=1073741824
+```
+
+## Accessing the File Manager
+
+Open a server's action menu and click **Files**, or navigate directly to:
+
+```
+/files/{serverId}
+```
+
+The button is hidden when the server does not have `CAP_FILE` in its effective capabilities.
+
+## Permissions
+
+| Role | Allowed operations |
+|------|--------------------|
+| Admin | Browse, stat, read, write, upload, download, delete, move, create directories, cancel transfers |
+| Member | Browse, stat, read, download, list own transfers |
+
+All high-risk file operations are recorded in the audit log, including denied attempts when the capability is disabled.
+
+## Supported Operations
+
+| Operation | Description |
+|-----------|-------------|
+| List directory | Browse files and directories below allowed roots |
+| Stat | Load metadata for one path |
+| Read | Read UTF-8 text content for preview/editor use |
+| Write | Replace file content with provided text |
+| Upload | Upload a local file to a remote path |
+| Download | Start a server-mediated download transfer, then fetch it from ServerBee |
+| Delete | Delete a file or recursively delete a directory |
+| Mkdir | Create a directory |
+| Move | Rename or move a file/directory |
+| Transfers | View and cancel active file transfers |
+
+## Security Model
+
+The agent enforces path safety before touching the filesystem:
+
+- `root_paths` is an allow-list. Empty `root_paths` rejects all file operations.
+- Paths must resolve inside one of the configured roots.
+- `deny_patterns` blocks sensitive names such as private keys, `.env*`, `shadow`, and `passwd`.
+- The agent also checks local capabilities, so server-side capability changes cannot override an agent-local deny.
+- The server checks `CAP_FILE` before dispatching file messages to the agent.
+
+## Limits
+
+| Limit | Default | Where configured |
+|-------|---------|------------------|
+| Upload size | 100 MB | Server `file.max_upload_size` / `SERVERBEE_FILE__MAX_UPLOAD_SIZE` |
+| Agent read/download max file size | 1 GB | Agent `[file].max_file_size` / `SERVERBEE_FILE__MAX_FILE_SIZE` |
+| Inline read chunk | 384 KB | Protocol limit to keep WebSocket frames below the configured max size |
+
+Uploads and downloads are chunked. Downloads create a temporary transfer on the server and can be cancelled while pending or in progress.
+
+## API
+
+Read endpoints are available to Admin and Member users. Write endpoints require Admin.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/files/{server_id}/list` | List a directory; body `{ "path": "/var/log" }` |
+| POST | `/api/files/{server_id}/stat` | Stat a path |
+| POST | `/api/files/{server_id}/read` | Read UTF-8 text content |
+| GET | `/api/files/download/{transfer_id}` | Download a ready transfer owned by the current user |
+| GET | `/api/files/transfers` | List transfers owned by the current user |
+| POST | `/api/files/{server_id}/write` | Replace file content |
+| POST | `/api/files/{server_id}/delete` | Delete file/directory; supports `recursive` |
+| POST | `/api/files/{server_id}/mkdir` | Create a directory |
+| POST | `/api/files/{server_id}/move` | Move or rename a path |
+| POST | `/api/files/{server_id}/download` | Start a download transfer |
+| POST | `/api/files/{server_id}/upload` | Upload multipart form with `path` and `file` fields |
+| DELETE | `/api/files/transfers/{transfer_id}` | Cancel a transfer |
+
+Examples:
+
+```bash
+curl -X POST https://your-server/api/files/server-id/list \
+  -H "X-API-Key: serverbee_..." \
+  -H "Content-Type: application/json" \
+  -d '{"path":"/var/log"}'
+```
+
+```bash
+curl -X POST https://your-server/api/files/server-id/upload \
+  -H "X-API-Key: serverbee_..." \
+  -F 'path=/tmp/example.txt' \
+  -F 'file=@example.txt'
+```
+
+<Cards>
+  <Card title="Agent Setup" href="/en/docs/agent" />
+  <Card title="Configuration" href="/en/docs/configuration" />
+  <Card title="Capabilities" href="/en/docs/capabilities" />
+</Cards>

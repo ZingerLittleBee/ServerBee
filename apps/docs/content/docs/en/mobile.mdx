@@ -138,7 +138,7 @@ To enable push notifications, configure APNs credentials in the web app:
 ### WebSocket Connection
 
 The iOS app maintains a WebSocket connection for real-time updates:
-- Connection URL: `wss://your-server/api/ws/browser`
+- Connection URL: `wss://your-server/api/ws/servers`
 - Authentication via `Authorization: Bearer` header during handshake
 - Automatic reconnection with exponential backoff
 - Connection auto-closes when access token expires (reconnect triggers refresh)

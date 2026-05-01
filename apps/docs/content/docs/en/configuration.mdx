@@ -73,7 +73,7 @@ These variables are intentionally scoped to local tooling. `ALLOW_WRITES` is not
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `SERVERBEE_GEOIP__MMDB_PATH` | `""` | Path to MaxMind GeoLite2-City.mmdb file. Non-empty path enables GeoIP |
+| `SERVERBEE_GEOIP__MMDB_PATH` | `""` | Path to a MaxMind-compatible MMDB file. Non-empty path enables this custom GeoIP database; otherwise admins can download the DB-IP Lite database from Settings → GeoIP Database |
 
 #### Resend (Email Notifications)
 
@@ -244,7 +244,7 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `mmdb_path` | string | `""` | Path to a MaxMind GeoLite2-City MMDB file. Non-empty path enables GeoIP |
+| `mmdb_path` | string | `""` | Path to a MaxMind-compatible MMDB file. Non-empty path enables this custom GeoIP database; if empty, the UI can download DB-IP Lite into the server data directory |
 
 ### `[resend]` -- Email Notifications
 

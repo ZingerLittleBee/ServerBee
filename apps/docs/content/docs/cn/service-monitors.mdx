@@ -1,0 +1,171 @@
+---
+title: 服务监控
+description: 从 ServerBee 服务端监控 SSL 证书、DNS 记录、HTTP 关键字、TCP 端口和 WHOIS 到期时间。
+icon: Radar
+---
+
+服务监控（Service Monitors）是一类由 ServerBee 服务端主动执行的合成检查。它适合监控公开服务，即使这些服务并不运行在安装了 ServerBee Agent 的主机上也可以使用。
+
+与 Ping 监控不同，Ping 监控由 Agent 从各节点发起探测；服务监控由中心 Server 进程执行。检查结果会写入 SQLite，在仪表盘中展示，也可以通过通知组发送告警。
+
+## 支持的监控类型
+
+| 类型 | 目标格式 | 检查内容 |
+|------|----------|----------|
+| `ssl` | `example.com` 或 `example.com:443` | TLS 握手、证书有效期、签发者/主体、SHA-256 指纹 |
+| `dns` | `example.com` | `A`、`AAAA`、`CNAME`、`MX`、`TXT` 记录，可与期望值比较 |
+| `http_keyword` | `https://example.com/health` | HTTP 状态码，以及响应正文中关键字存在/不存在 |
+| `tcp` | `host:port` | TCP 连接是否成功和连接延迟 |
+| `whois` | `example.com` 或 URL | 域名到期时间和注册商，优先使用 WHOIS 客户端，失败时回退系统命令 |
+
+## 创建监控
+
+1. 打开 **Settings → Service Monitors**。
+2. 点击 **New Monitor**。
+3. 选择监控类型并填写目标。
+4. 设置检查间隔（秒）。
+5. 配置该类型的专属参数。
+6. 可选：选择通知组。
+7. 保存监控。
+
+后台检查器每 10 秒唤醒一次，根据每个监控的 `interval` 判断是否到期，并最多并发执行 20 个检查。
+
+## 类型配置
+
+### SSL 证书
+
+```json
+{
+  "port": 443,
+  "warning_days": 14,
+  "critical_days": 7,
+  "timeout": 10
+}
+```
+
+- `port` 默认 `443`，除非目标中已经包含端口。
+- 证书剩余天数小于等于 `critical_days` 时检查失败。
+- 证书剩余天数小于等于 `warning_days` 时，结果详情中会包含 warning 信息。
+
+### DNS 记录
+
+```json
+{
+  "record_type": "A",
+  "expected_values": ["203.0.113.10"],
+  "nameserver": "8.8.8.8"
+}
+```
+
+- `record_type` 默认 `A`，支持 `A`、`AAAA`、`CNAME`、`MX`、`TXT`。
+- 不设置 `expected_values` 时，只要解析返回至少一个值即视为成功。
+- 设置 `expected_values` 时，返回值排序后必须与期望值排序后完全一致。
+- `nameserver` 可选；不设置时使用系统解析器。
+
+### HTTP 关键字
+
+```json
+{
+  "method": "GET",
+  "expected_status": [200],
+  "keyword": "ok",
+  "keyword_exists": true,
+  "headers": {
+    "User-Agent": "ServerBee"
+  },
+  "body": null,
+  "timeout": 10
+}
+```
+
+- `method` 支持 `GET` 和 `POST`。
+- `expected_status` 默认 `[200]`。
+- 设置 `keyword` 后，`keyword_exists: true` 表示必须出现，`false` 表示必须不存在。
+- `headers` 的值必须是字符串。
+- `body` 用于 `POST` 请求。
+
+### TCP 端口
+
+```json
+{
+  "timeout": 10
+}
+```
+
+目标必须是 `host:port`。在超时时间内能建立 TCP 连接即视为成功。
+
+### WHOIS 到期
+
+```json
+{
+  "warning_days": 30,
+  "critical_days": 7
+}
+```
+
+- 目标会归一化为域名，因此 `https://example.com/path` 会变为 `example.com`。
+- 域名剩余天数小于等于 `critical_days` 时检查失败。
+- `.app`、`.dev`、`.page` 等 TLD 不暴露标准 WHOIS 服务，建议改用 SSL 监控。
+
+## 通知和重试
+
+每个监控都可以关联一个通知组。每次检查时：
+
+1. 写入一条记录，包含 `success`、`latency`、`detail_json`、`error`、`time`。
+2. 更新监控的 `last_status`、`last_checked_at`、`consecutive_failures`。
+3. 只有当 `consecutive_failures > retry_count` 时才发送失败通知。
+4. 如果之前处于失败状态，本次恢复成功，则发送恢复通知。
+
+如果监控关联了服务器，并且其中任意服务器正处于活动维护窗口，本次检查会跳过通知发送，但检查记录仍会保存。
+
+## 历史记录与保留
+
+进入监控详情页可以查看：
+
+- 最新状态和延迟
+- 最近成功/失败历史
+- 延迟趋势图
+- 每次检查的原始详情和错误信息
+
+服务监控记录默认保留 30 天（`retention.service_monitor_days`）。
+
+## API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/service-monitors` | 列出监控；可用 `?type=ssl` 过滤 |
+| GET | `/api/service-monitors/{id}` | 获取单个监控及最新记录 |
+| POST | `/api/service-monitors` | 创建监控 |
+| PUT | `/api/service-monitors/{id}` | 更新监控 |
+| DELETE | `/api/service-monitors/{id}` | 删除监控及其记录 |
+| GET | `/api/service-monitors/{id}/records` | 查询记录，可带 `from`、`to`、`limit` |
+| POST | `/api/service-monitors/{id}/check` | 立即触发一次检查 |
+
+创建请求示例：
+
+```json
+{
+  "name": "Website SSL",
+  "monitor_type": "ssl",
+  "target": "example.com",
+  "interval": 300,
+  "config_json": {
+    "warning_days": 14,
+    "critical_days": 7
+  },
+  "notification_group_id": "notification-group-id",
+  "retry_count": 1,
+  "server_ids_json": ["server-id"],
+  "enabled": true
+}
+```
+
+<Callout type="info">
+`server_ids_json` 用于把服务监控与服务器关联，主要用于维护窗口抑制通知和仪表盘展示上下文。检查本身仍由中心 ServerBee 服务端执行。
+</Callout>
+
+<Cards>
+  <Card title="告警与通知" href="/cn/docs/alerts" />
+  <Card title="公开状态页" href="/cn/docs/status-page" />
+  <Card title="API 参考" href="/cn/docs/api-reference" />
+</Cards>

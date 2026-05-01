@@ -1,0 +1,114 @@
+---
+title: 仪表盘与组件
+description: 使用可拖拽组件和可复用布局构建自定义监控仪表盘。
+icon: LayoutDashboard
+---
+
+ServerBee 仪表盘由可配置组件组成。你可以保留默认总览仪表盘，也可以按地区、团队或用途创建多个仪表盘，并设置一个作为所有用户默认打开的仪表盘。
+
+## 管理仪表盘
+
+在首页顶部的仪表盘切换器中可以：
+
+- 切换不同仪表盘
+- 创建新仪表盘
+- 重命名仪表盘
+- 删除不再需要的仪表盘
+- 将某个仪表盘设为默认
+
+如果系统中还没有仪表盘，ServerBee 会自动创建第一个默认仪表盘。已经是默认的仪表盘不能直接取消默认；请把另一个仪表盘设为默认。
+
+## 编辑布局
+
+1. 打开一个仪表盘。
+2. 点击 **Edit**。
+3. 从组件选择器添加组件。
+4. 拖拽组件调整位置。
+5. 在组件的最小/最大尺寸约束内调整大小。
+6. 配置组件数据源和标题。
+7. 点击 **Save**。
+
+布局以网格坐标保存：`grid_x`、`grid_y`、`grid_w`、`grid_h`，组件设置保存为 JSON。保存时会做差异更新：已有组件更新，新组件插入，从布局中移除的组件会被删除。
+
+## 组件类型
+
+| 组件 | 分类 | 典型用途 |
+|------|------|----------|
+| `stat-number` | 实时 | 展示单台服务器的一个指标，例如 CPU 或内存 |
+| `server-cards` | 实时 | 展示选中服务器的紧凑卡片 |
+| `gauge` | 实时 | 用仪表盘形式展示某台服务器的一个指标 |
+| `line-chart` | 图表 | 展示单台服务器单一指标的历史曲线 |
+| `multi-line` | 图表 | 对比多台服务器的同一指标 |
+| `top-n` | 实时 | 按某个指标给服务器排行 |
+| `alert-list` | 状态 | 展示活动或最近告警状态 |
+| `service-status` | 状态 | 展示服务监控状态 |
+| `traffic-bar` | 图表 | 展示单台服务器流量使用情况 |
+| `disk-io` | 图表 | 展示磁盘读写吞吐历史 |
+| `server-map` | 状态 | 安装 GeoIP 后在地图上展示服务器位置 |
+| `markdown` | 状态 | 用 Markdown 添加说明、Runbook 或链接 |
+| `uptime-timeline` | 状态 | 展示选中服务器的可用性条形时间线 |
+
+## 常见组件配置
+
+多数组件设置保存在 `config_json` 中。常见字段包括：
+
+| 字段 | 使用场景 | 含义 |
+|------|----------|------|
+| `server_id` | 单服务器组件 | 要查询的服务器 ID |
+| `server_ids` | 多服务器组件 | 要包含的服务器 ID 列表 |
+| `metric` | 指标组件 | 指标键，例如 CPU、内存、磁盘、流量或负载 |
+| `hours` | 历史组件 | 图表回看时间窗口 |
+| `interval` | 历史组件 | 数据粒度（`raw`、`hourly` 或 `auto`） |
+| `monitor_ids` | Service Status | 要展示的服务监控 ID |
+| `content` | Markdown | Markdown 内容 |
+
+## GeoIP 与服务器地图
+
+Server Map 组件需要 GeoIP 数据。你可以：
+
+- 通过 `geoip.mmdb_path` 配置自定义 MaxMind 兼容 MMDB 文件，或
+- 在 **Settings → GeoIP Database** 中下载 DB-IP Lite 数据库。
+
+缺少 GeoIP 数据时，组件会显示安装提示。
+
+## API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/dashboards` | 列出仪表盘 |
+| GET | `/api/dashboards/default` | 获取默认仪表盘，必要时自动创建 |
+| GET | `/api/dashboards/{id}` | 获取仪表盘及其组件 |
+| POST | `/api/dashboards` | 创建仪表盘 |
+| PUT | `/api/dashboards/{id}` | 更新元数据和/或组件 |
+| DELETE | `/api/dashboards/{id}` | 删除仪表盘 |
+
+更新请求示例：
+
+```json
+{
+  "name": "Production",
+  "is_default": true,
+  "widgets": [
+    {
+      "widget_type": "stat-number",
+      "title": "Web CPU",
+      "config_json": {
+        "server_id": "server-id",
+        "metric": "cpu",
+        "unit": "%"
+      },
+      "grid_x": 0,
+      "grid_y": 0,
+      "grid_w": 2,
+      "grid_h": 1,
+      "sort_order": 0
+    }
+  ]
+}
+```
+
+<Cards>
+  <Card title="监控功能" href="/cn/docs/monitoring" />
+  <Card title="服务监控" href="/cn/docs/service-monitors" />
+  <Card title="存储与容量规划" href="/cn/docs/storage-sizing" />
+</Cards>

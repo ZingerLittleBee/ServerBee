@@ -19,9 +19,15 @@ The main dashboard shows all registered servers with their current status at a g
 
 Servers are organized by groups and sorted by weight. You can filter, search, and batch-operate on servers from this view.
 
+For custom operations views, use [Dashboards & Widgets](/en/docs/dashboards) to create additional dashboard layouts with charts, maps, service status widgets, Markdown notes, and uptime timelines.
+
+### GeoIP Display
+
+Region/country labels and the Server Map widget require GeoIP data. You can configure a custom MaxMind-compatible MMDB path with `geoip.mmdb_path`, or download the DB-IP Lite database from **Settings → GeoIP Database**. The status endpoint is `GET /api/geoip/status`, and administrators can trigger a download with `POST /api/geoip/download`.
+
 ## Real-Time Updates
 
-The browser connects to the server via WebSocket at `/ws/browser`. The communication flow works as follows:
+The browser connects to the server via WebSocket at `/api/ws/servers`. The communication flow works as follows:
 
 1. On initial connection, the server sends a `FullSync` message containing the current state of all servers
 2. As agents report new metrics, the server broadcasts `Update` messages to all connected browsers
@@ -380,6 +386,26 @@ Click a server card to see `/network/:serverId` with:
 - **Anomaly table** -- High latency, high packet loss, and unreachable events
 - **Statistics bar** -- Average latency, availability percentage, target count
 - **CSV export** -- Download probe data for the selected time range
+
+### Traceroute
+
+The network detail page can run traceroute from the selected agent to a target host or IP. This is useful for diagnosing routing changes and packet loss outside regular probe intervals.
+
+- Requires the agent's effective `CAP_PING_ICMP` capability.
+- The target may contain only letters, numbers, dots, hyphens, and colons.
+- The server sends `max_hops = 30` to the agent.
+- The agent times out the command after 60 seconds.
+- On Linux/macOS, the agent tries `traceroute` first and falls back to `mtr` if `traceroute` is missing.
+- On Windows, the agent uses the platform traceroute command.
+
+API flow:
+
+```http
+POST /api/servers/{id}/traceroute
+GET  /api/servers/{id}/traceroute/{request_id}
+```
+
+The first request returns a `request_id`; poll the second endpoint until `completed` is true.
 
 ### Data Retention
 

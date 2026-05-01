@@ -87,8 +87,11 @@ ServerBee validates capabilities on both the server side and agent side:
 ### Server-Side Enforcement
 
 - **Terminal**: WebSocket upgrade rejected with 403
-- **Exec**: `POST /api/tasks` filters out disabled servers and writes synthetic results (`exit_code = -2`, message: "Capability 'exec' is disabled")
-- **Ping**: Tasks filtered by capability — disabled agents do not receive probe tasks
+- **Exec**: `POST /api/tasks` and scheduled task runs filter out disabled servers and write synthetic results (`exit_code = -2`, message: "Capability 'exec' is disabled")
+- **Auto Upgrade**: `POST /api/servers/{id}/upgrade` returns 403 when `CAP_UPGRADE` is disabled
+- **Ping and Traceroute**: Probe tasks are filtered by capability; traceroute requires effective `CAP_PING_ICMP`
+- **File Manager**: file endpoints reject requests before dispatch when `CAP_FILE` is disabled
+- **Docker**: Docker read/action endpoints and Docker log WebSocket routes require `CAP_DOCKER` and agent runtime Docker support
 
 ### Agent-Side Enforcement
 
@@ -129,6 +132,7 @@ When an agent locally disables a capability, the UI shows the toggle as disabled
 
 <Cards>
   <Card title="Web Terminal" href="/en/docs/terminal" />
+  <Card title="File Manager" href="/en/docs/file-manager" />
   <Card title="Ping Monitoring" href="/en/docs/ping" />
   <Card title="Admin Guide" href="/en/docs/admin" />
 </Cards>
