@@ -106,7 +106,7 @@ GET /api/audit-logs?limit=50&offset=0
 | `/api/tasks/{id}` | GET | 获取任务详情 |
 | `/api/tasks/{id}/results` | GET | 获取执行结果 |
 
-创建任务请求体：
+创建一次性任务请求体：
 
 ```json
 {
@@ -115,6 +115,75 @@ GET /api/audit-logs?limit=50&offset=0
   "timeout": 60
 }
 ```
+
+## 计划任务
+
+计划任务在远程命令基础上增加了 cron 调度、重试和运行历史。
+
+### 创建计划任务
+
+1. 进入 **Settings → Tasks**。
+2. 切换到计划任务区域。
+3. 填写名称、命令、cron 表达式、目标服务器、超时、重试次数和重试间隔。
+4. 保存任务。启用状态的任务会立即注册到服务端调度器。
+
+计划任务使用服务端 `scheduler.timezone` 配置计算 `next_run_at`。
+
+### 字段
+
+| 字段 | 说明 |
+|------|------|
+| `name` | 计划任务显示名称 |
+| `task_type` | cron 任务使用 `scheduled`；省略/默认表示 `oneshot` |
+| `cron_expression` | 服务端调度器解析的 cron 表达式 |
+| `command` | 下发给每个目标 Agent 的 Shell 命令 |
+| `server_ids` | 目标服务器 |
+| `timeout` | 每次尝试的命令超时时间（秒）；默认执行超时为 300 秒 |
+| `retry_count` | 首次尝试后的重试次数，范围 0-10 |
+| `retry_interval` | 重试之间等待秒数，必须至少为 1 |
+| `enabled` | 禁用后会从调度器移除，不再自动运行 |
+
+### 执行行为
+
+- 每次计划触发都会生成 `run_id`，用于把所有目标服务器和重试尝试的结果分组。
+- ServerBee 会避免同一个计划任务重叠运行。如果上一次运行仍未结束，新的触发会被跳过。
+- `POST /api/tasks/{id}/run` 可手动运行任务，且手动运行会跳过重试逻辑。
+- 禁用或删除任务会取消当前活动运行。
+- 结果中包含 `attempt`，用于区分重试次数。
+
+合成退出码：
+
+| 退出码 | 含义 |
+|--------|------|
+| `-2` | `CAP_EXEC` 未启用，或被 Agent 本地 capability 策略阻止 |
+| `-3` | 服务器离线或下发失败 |
+| `-4` | 超时前没有收到 Agent 响应 |
+
+### API 示例
+
+```json
+{
+  "task_type": "scheduled",
+  "name": "Daily disk check",
+  "command": "df -h",
+  "server_ids": ["server-id-1"],
+  "cron_expression": "0 0 8 * * *",
+  "timeout": 120,
+  "retry_count": 2,
+  "retry_interval": 60
+}
+```
+
+相关端点：
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/tasks?type=scheduled` | GET | 列出计划任务 |
+| `/api/tasks` | POST | 创建一次性任务或计划任务 |
+| `/api/tasks/{id}` | PUT | 更新任务字段、启用/禁用状态和调度注册 |
+| `/api/tasks/{id}` | DELETE | 删除任务并取消活动执行 |
+| `/api/tasks/{id}/run` | POST | 手动运行任务 |
+| `/api/tasks/{id}/results` | GET | 获取按 task/run/attempt 分组的任务结果 |
 
 ## 计费信息
 
