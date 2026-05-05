@@ -5,6 +5,7 @@ pub mod audit;
 pub mod auth;
 pub mod checker;
 pub mod config;
+pub mod cost;
 pub mod custom_theme;
 pub mod dashboard;
 pub mod db_error;
