@@ -3,6 +3,8 @@ import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerCostInsights } from '@/lib/api-schema'
 
+const REGEX_DETAIL_EXPIRED = /detail_expired/
+
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children?: ReactNode }) => <a href="/">{children}</a>,
   createFileRoute: () => (config: Record<string, unknown>) => ({
@@ -248,6 +250,7 @@ describe('ServerDetailPage', () => {
         currency: 'USD',
         disk_total: 1,
         effective_capabilities: 0,
+        expired_at: '2020-01-01T00:00:00Z',
         id: 'server-1',
         ip_v4: null,
         ip_v6: null,
@@ -265,6 +268,7 @@ describe('ServerDetailPage', () => {
       isLoading: false
     })
     mockUseCostInsights.mockReturnValue({
+      isError: true,
       data: {
         billing_cycle: 'monthly',
         configured: true,
@@ -298,5 +302,53 @@ describe('ServerDetailPage', () => {
 
     expect(screen.getByText('cost_value_score')).toBeInTheDocument()
     expect(screen.getByText('82')).toBeInTheDocument()
+    expect(screen.getByText(REGEX_DETAIL_EXPIRED)).toBeInTheDocument()
+  })
+
+  it('keeps expiration status when cost config is incomplete', () => {
+    mockUseServer.mockReturnValue({
+      data: {
+        agent_version: '1.0.0',
+        billing_cycle: null,
+        capabilities: 0,
+        country_code: 'US',
+        cpu_arch: 'x86_64',
+        cpu_cores: 4,
+        cpu_name: 'Test CPU',
+        currency: 'USD',
+        disk_total: 1,
+        effective_capabilities: 0,
+        expired_at: '2020-01-01T00:00:00Z',
+        id: 'server-1',
+        ip_v4: null,
+        ip_v6: null,
+        ipv4: '127.0.0.1',
+        ipv6: null,
+        kernel_version: '6.0.0',
+        mem_total: 1,
+        name: 'test-server',
+        os: 'Ubuntu',
+        price: 5,
+        protocol_version: 1,
+        region: 'test-region',
+        traffic_limit: null
+      },
+      isLoading: false
+    })
+    mockUseCostInsights.mockReturnValue({
+      data: {
+        billing_cycle: null,
+        configured: false,
+        currency: 'USD',
+        invalid_reason: 'missing_billing_cycle',
+        price: 5,
+        server_id: 'server-1'
+      } satisfies ServerCostInsights
+    })
+
+    render(<ServerDetailPage />)
+
+    expect(screen.getByText(REGEX_DETAIL_EXPIRED)).toBeInTheDocument()
+    expect(screen.getByText('cost_invalid_missing_billing_cycle')).toBeInTheDocument()
   })
 })
