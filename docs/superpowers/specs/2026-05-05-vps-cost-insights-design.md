@@ -155,6 +155,7 @@ ServerBee 已经在 `servers` 表中保存了 VPS 的价格相关字段:
 - `server.mem_total`
 - `server.disk_total`
 - `server.traffic_limit`
+- `server.traffic_limit_type`
 - `record` 最近 24 小时指标
 - `uptime_daily` 最近 7 或 30 天在线率(若服务层已有可复用方法则复用)
 - `AgentManager` 当前在线状态,作为历史不足时的兜底信号
@@ -162,6 +163,14 @@ ServerBee 已经在 `servers` 表中保存了 VPS 的价格相关字段:
 ### 6.3 周期计算
 
 复用 `crate::service::traffic::get_cycle_range()`。
+
+`get_cycle_range()` 对未知周期会回退到 `monthly`,这是流量模块的兼容行为。`CostService` 不能直接继承这个兜底。成本计算必须先显式校验:
+
+```text
+billing_cycle in {"monthly", "quarterly", "yearly"}
+```
+
+不在白名单内时直接返回 `configured = false` 和 `invalid_reason = invalid_billing_cycle`,不得进入 `get_cycle_range()`。
 
 `cycle_start` 和 `cycle_end` 使用当前日期计算。`cycle_end` 保持现有语义:日期闭区间的结束日。成本计算时需要把天数视为包含首尾:
 
@@ -182,6 +191,19 @@ cycle_cost_remaining = max(price - cycle_cost_elapsed, 0)
 cycle_burn_percent = cycle_cost_elapsed / price * 100
 ```
 
+`price = 0` 时:
+
+```text
+cost_per_day = 0
+cost_per_hour = 0
+cost_per_second = 0
+cycle_cost_elapsed = 0
+cycle_cost_remaining = 0
+cycle_burn_percent = None
+```
+
+不要计算 `0 / 0`,不然 NaN 会一路爬到前端,这种东西比便宜 VPS 还烦。
+
 `cost_per_month_equivalent` 用于同币种排序:
 
 ```text
@@ -190,7 +212,28 @@ quarterly: price / 3
 yearly:    price / 12
 ```
 
-`cost_per_month_equivalent` 只表示账单等效,不用于当前周期燃烧。
+`cost_per_month_equivalent` 只表示账单等效,不用于当前周期燃烧。它刻意不等于 `cost_per_day * 30`,因为当前周期燃烧使用真实周期天数,而月等效成本用于账单周期之间的排序和分位数比较。实现时不要把这两个公式"统一"掉。
+
+资源单位成本全部使用月等效成本作为分子:
+
+```text
+cost_per_cpu_core = cost_per_month_equivalent / cpu_cores
+cost_per_gb_memory = cost_per_month_equivalent / (mem_total_bytes / 1024^3)
+cost_per_gb_disk = cost_per_month_equivalent / (disk_total_bytes / 1024^3)
+cost_per_tb_traffic_limit = cost_per_month_equivalent / (traffic_limit_bytes / 1024^4)
+```
+
+`traffic_limit` 是当前账单周期内的流量额度,`traffic_limit_type` 当前合法值为:
+
+| `traffic_limit_type` | 语义 |
+|---|---|
+| `sum` 或 `NULL` | 入站 + 出站总额度 |
+| `up` | 出站额度 |
+| `down` | 入站额度 |
+
+`cost_per_tb_traffic_limit` 表示每 TB 该周期额度对应的月等效成本。它可以用于同币种、同方向语义下的粗略比较,但不要把 `up` 和 `down` 当成不同的流量单位。`traffic_limit <= 0` 或 `traffic_limit_type` 不在上述集合时,该字段返回 `None`,并且该资源指标不参与 `resource_score`。
+
+`expired_at` 不截断成本周期。它是续费/到期提醒字段,不是可靠的实际账单停止时间。成本燃烧只由 `price + billing_cycle + billing_start_day` 决定;过期状态由详情页和 reason 单独提示。
 
 ### 6.4 输入校验
 
@@ -199,6 +242,7 @@ yearly:    price / 12
 - `price` 必须大于等于 0。
 - `billing_cycle` 只能是 `monthly / quarterly / yearly`。
 - `currency` 允许为空;为空时成本接口标准化为 `USD`。非空值首版不强制限定到前端下拉选项,避免拒绝历史数据或 API 调用方使用其他 ISO 4217 货币代码。
+- `traffic_limit_type` 只能是 `sum / up / down` 或 `NULL`。非法历史值不阻止成本接口返回基础成本,但流量单位成本返回 `None`。
 - `billing_start_day` 已有 1..=28 DB trigger,服务层可提前返回更友好的 validation error。
 
 价格为 0 合法,但不参与价值比较的性价比排序权重应特殊处理,避免除以 0。成本 insight 可返回 0 成本和 `excellent` 的资源价格并不合理,所以 `value_score` 应给出 `free_or_zero_price` reason,并跳过资源分同组分位计算。
@@ -208,6 +252,8 @@ yearly:    price / 12
 #### 6.5.1 `GET /api/cost/overview`
 
 返回列表和卡片需要的轻量数据。该接口在 read router 中注册,所有已登录用户可读。
+
+成本金额目前已经通过 `/api/servers` 的 `ServerResponse` 暴露给所有已登录用户,所以首版 `cost` read API 与现有行为保持一致:Admin 和 Member 都可读。若未来要隐藏账单金额,需要单独设计价格可见性/RBAC,而不是只在成本接口里局部遮住。
 
 ```rust
 pub struct CostOverviewResponse {
@@ -243,6 +289,10 @@ pub struct ServerCostOverview {
 
 `/api/cost/overview` 不放进 `/api/traffic/overview`。流量页面不应该背成本逻辑的锅。
 
+`ServerCostOverview` 是 `ServerCostInsights` 的列表投影。后端实现应尽量从同一套内部计算结果映射出 overview 和 detail DTO,避免两边公式漂移。
+
+overview 实现必须批量读取服务器、近 24 小时 record 聚合、uptime_daily 聚合和同币种分位数输入,不得对每台服务器逐个查询历史数据。首版可以使用请求级计算;如果大 fleet 下变慢,再加 60 秒服务端缓存,不要提前引入缓存失效复杂度。
+
 #### 6.5.2 `GET /api/servers/{id}/cost-insights`
 
 返回单台服务器详情页使用的完整成本洞察。
@@ -276,6 +326,7 @@ pub struct ResourceValue {
     pub cost_per_gb_memory: Option<f64>,
     pub cost_per_gb_disk: Option<f64>,
     pub cost_per_tb_traffic_limit: Option<f64>,
+    pub traffic_limit_type: Option<String>,
 }
 
 pub struct ValueScore {
@@ -316,6 +367,7 @@ pub enum ValueReason {
     ExpensiveCpu,
     HealthyUptime,
     LowUptime,
+    ExpiredBilling,
     NoPriceCycle,
     InsufficientData,
     FreeOrZeroPrice,
@@ -358,6 +410,8 @@ value_score = resource_score 40 + utilization_score 35 + reliability_score 25
 
 每个指标按分位数评分,单位成本越低分数越高。缺失资源字段时跳过该项,并用剩余项重新归一化。
 
+如果某个指标在同币种 fleet 中少于 2 台可比较服务器,该指标给中性分(该指标权重的 50%),并加入 `insufficient_data` reason。这样只有 1 台机器时不会因为"没有对手"被判定为极值,后续新增/删除服务器造成的分数变化也能解释。
+
 如果一个服务器可参与的资源指标少于 2 个,`resource_score` 信心降级,并加入 `insufficient_data` reason。
 
 ### 7.2 `utilization_score`,35 分
@@ -369,11 +423,13 @@ value_score = resource_score 40 + utilization_score 35 + reliability_score 25
 - 网络活动量或平均速度
 - 磁盘 I/O 活动
 
-建议规则:
+初始规则:
 
+- 极低利用率:近 24 小时 `avg_cpu < 5%`,`avg_memory_percent < 20%`,网络和磁盘 I/O 都接近 0。
+- 高月等效成本:同币种 configured server 中 `cost_per_month_equivalent >= p75`;同币种 configured server 少于 4 台时改用 `>= median`。
 - 极低利用率 + 高月等效成本:扣分,加入 `idle_burn`。
-- 中等利用率且稳定:加分。
-- 极高利用率不直接加满分,避免把过载误判为高价值。
+- 中等利用率且稳定:加分。建议区间为 `avg_cpu 10%..70%` 或 `avg_memory_percent 30%..80%`,且不是网络/磁盘全静默。
+- 极高利用率不直接加满分。`avg_cpu > 85%` 或 `avg_memory_percent > 90%` 时认为可能过载,最多拿到利用率分的 70%。
 - 数据不足时使用当前在线实时数据兜底,并降低 `confidence`。
 
 这里不追求精确的容量规划。第一版目标是识别明显浪费,不是给机器颁发精算证书。
@@ -386,16 +442,16 @@ value_score = resource_score 40 + utilization_score 35 + reliability_score 25
 - 如果 30 天数据不足,使用最近 7 天。
 - 如果仍不足,使用当前在线状态兜底,并降低 `confidence`。
 - 离线且配置了价格和周期:加入 `sleeping_money`。
-- 过期服务器不直接重扣价值分,但可以在详情页给续费提醒。到期更像运营风险,不是性价比本身。
+- `expired_at < now` 时加入 `expired_billing`,但不截断成本周期,也不直接重扣价值分。到期更像运营风险,不是性价比本身。
 
 ### 7.4 grade 映射
 
 ```text
-90-100 excellent
-75-89  good
-60-74  okay
-40-59  poor
-0-39   waste
+score >= 90               excellent
+75 <= score < 90          good
+60 <= score < 75          okay
+40 <= score < 60          poor
+0 <= score < 40           waste
 ```
 
 输出 `score` 保留 1 位小数,前端展示可四舍五入为整数。
@@ -411,9 +467,16 @@ value_score = resource_score 40 + utilization_score 35 + reliability_score 25
 - `good_memory_value`:内存成本在同币种机器里较好。
 - `expensive_cpu`:CPU 单价偏高。
 - `healthy_uptime`:在线稳定性良好。
+- `expired_billing`:账单到期日已过,请确认是否续费。
 - `insufficient_data`:数据不足,评分信心较低。
 
-趣味表达只出现在 tooltip 或详情页 reasons 中,不要污染表格主信息。
+后端最多返回 3 条 reasons。优先级:
+
+```text
+sleeping_money > expired_billing > idle_burn > low_uptime > expensive_cpu > insufficient_data > positive reasons
+```
+
+positive reasons 包括 `healthy_uptime / good_memory_value / good_disk_value` 等。趣味表达只出现在 tooltip 或详情页 reasons 中,不要污染表格主信息。
 
 ## 8. 前端设计
 
@@ -532,7 +595,7 @@ apps/web/src/lib/cost.ts
 - `apps/web/src/lib/api-types.ts`
 - `apps/web/src/lib/api-schema.ts` 的 re-export 或临时手写类型
 
-如果项目当前 API 类型生成流程不可用,第一版可以像 `TrafficResponse` 一样临时手写前端类型,但要在注释中标明后续由 OpenAPI 生成替代。
+首选路径是首版 PR 合并前重新生成 OpenAPI 前端类型。只有类型生成流程不可用时,才允许像 `TrafficResponse` 一样临时手写前端类型;这种兜底必须在 PR 中明确说明失败原因,并在类型注释中标明后续由 OpenAPI 生成替代。
 
 ## 11. 测试策略
 
@@ -545,14 +608,19 @@ apps/web/src/lib/cost.ts
 - `price + billing_cycle` 缺失组合。
 - 未知 `billing_cycle`。
 - `price = 0`。
+- `expired_at` 已过但成本周期不截断。
+- 闰年 yearly cycle 的 `cycle_days = 366` 金额一致性。
 - resource score 缺失字段归一化。
+- 同币种只有 1 台可比较服务器时资源分为中性分。
 - grade 映射。
+- reason 上限、排序和优先级。
 - 多币种分组 summary。
 
 `ServerService`:
 
 - price 非负校验。
 - billing_cycle 枚举校验。
+- traffic_limit_type 枚举校验。
 
 ### 11.2 Rust API 集成测试
 
@@ -561,7 +629,13 @@ apps/web/src/lib/cost.ts
 - 未配置价格不返回 500。
 - 多币种 summary 不混合。
 - `currency = NULL` 的服务器归入 `USD` summary。
+- Admin 和 Member 都可读 cost overview,与现有 server read endpoint 保持一致。
+- `/api/traffic/overview` 响应不被成本字段污染。
 - 响应不包含 `token_hash` 或 `token_prefix`。
+
+性能回归:
+
+- 构造至少 100 台服务器和 24 小时 record 数据,确认 `/api/cost/overview` 使用批量聚合查询而不是 per-server N+1。
 
 ### 11.3 前端测试
 
@@ -632,5 +706,7 @@ apps/web/src/lib/cost.ts
 - 详情页显示每秒、每小时、每天、本周期已消耗和资源单位成本。
 - 没填价格或没填周期的服务器不会导致接口或页面报错。
 - 多币种 overview 不混合汇总金额。
+- 同币种 fleet 只有 1 台可比较服务器时,`resource_score` 使用中性分而不是极值分。
+- fleet 配置变化导致的 `value_score` 变化可以从同币种分位数、利用率和在线率三类输入解释。
 - `value_score` 的分数、grade 和 reasons 可由测试覆盖并解释。
 - 后端成本计算逻辑只存在于 `CostService`,没有散落在前端组件里重复实现。
