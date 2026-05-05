@@ -83,8 +83,8 @@ pub(crate) struct NormalizedCostConfig {
 
 pub struct CostService;
 
-#[allow(dead_code)]
 impl CostService {
+    #[allow(dead_code)]
     pub(crate) fn normalize_config(
         price: Option<f64>,
         billing_cycle: Option<&str>,
@@ -238,9 +238,17 @@ fn cost_per_month_equivalent(price: f64, billing_cycle: &str) -> f64 {
 }
 
 fn divide_positive(numerator: f64, denominator: Option<f64>) -> Option<f64> {
+    if !is_valid_resource_cost(numerator) {
+        return None;
+    }
+
     denominator
         .filter(|value| value.is_finite() && *value > 0.0)
         .map(|value| numerator / value)
+}
+
+fn is_valid_resource_cost(value: f64) -> bool {
+    value.is_finite() && value >= 0.0
 }
 
 fn bytes_to_gib(bytes: i64) -> f64 {
@@ -347,6 +355,26 @@ mod tests {
         assert_eq!(values.cost_per_gb_disk, Some(0.0625));
         assert_eq!(values.cost_per_tb_traffic_limit, Some(5.0));
         assert_eq!(values.traffic_limit_type.as_deref(), Some("sum"));
+    }
+
+    #[test]
+    fn invalid_month_equivalent_cost_returns_no_resource_costs() {
+        for cost in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0] {
+            let values = CostService::compute_resource_value(
+                cost,
+                Some(2),
+                Some(8 * 1024_i64.pow(3)),
+                Some(80 * 1024_i64.pow(3)),
+                Some(1024_i64.pow(4)),
+                Some("sum"),
+            );
+
+            assert_eq!(values.cost_per_cpu_core, None);
+            assert_eq!(values.cost_per_gb_memory, None);
+            assert_eq!(values.cost_per_gb_disk, None);
+            assert_eq!(values.cost_per_tb_traffic_limit, None);
+            assert_eq!(values.traffic_limit_type.as_deref(), Some("sum"));
+        }
     }
 
     #[test]
