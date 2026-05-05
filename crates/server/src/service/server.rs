@@ -74,6 +74,8 @@ impl ServerService {
         input: UpdateServerInput,
     ) -> Result<server::Model, AppError> {
         let model = Self::get_server(db, id).await?;
+        Self::validate_update_input(&input)?;
+
         let mut active: server::ActiveModel = model.into();
 
         if let Some(name) = input.name {
@@ -126,6 +128,42 @@ impl ServerService {
         active.updated_at = Set(Utc::now());
         let updated = active.update(db).await?;
         Ok(updated)
+    }
+
+    fn validate_update_input(input: &UpdateServerInput) -> Result<(), AppError> {
+        if matches!(input.price, Some(Some(price)) if !price.is_finite() || price < 0.0) {
+            return Err(AppError::Validation(
+                "price must be finite and greater than or equal to 0".into(),
+            ));
+        }
+
+        if matches!(
+            input.billing_cycle.as_ref(),
+            Some(Some(billing_cycle))
+                if !matches!(billing_cycle.as_str(), "monthly" | "quarterly" | "yearly")
+        ) {
+            return Err(AppError::Validation(
+                "billing_cycle must be monthly, quarterly, or yearly".into(),
+            ));
+        }
+
+        if matches!(
+            input.traffic_limit_type.as_ref(),
+            Some(Some(traffic_limit_type))
+                if !matches!(traffic_limit_type.as_str(), "sum" | "up" | "down")
+        ) {
+            return Err(AppError::Validation(
+                "traffic_limit_type must be sum, up, or down".into(),
+            ));
+        }
+
+        if matches!(input.billing_start_day, Some(Some(day)) if !(1..=28).contains(&day)) {
+            return Err(AppError::Validation(
+                "billing_start_day must be between 1 and 28".into(),
+            ));
+        }
+
+        Ok(())
     }
 
     /// Delete a server by ID.
@@ -228,6 +266,33 @@ mod tests {
         .expect("insert test server should succeed");
     }
 
+    fn update_input() -> UpdateServerInput {
+        UpdateServerInput {
+            name: None,
+            group_id: None,
+            weight: None,
+            hidden: None,
+            remark: None,
+            public_remark: None,
+            price: None,
+            billing_cycle: None,
+            currency: None,
+            expired_at: None,
+            traffic_limit: None,
+            traffic_limit_type: None,
+            billing_start_day: None,
+            capabilities: None,
+        }
+    }
+
+    fn validation_message(result: Result<server::Model, AppError>) -> String {
+        match result {
+            Err(AppError::Validation(message)) => message,
+            Err(error) => panic!("expected validation error, got {error:?}"),
+            Ok(_) => panic!("expected validation error, got success"),
+        }
+    }
+
     #[tokio::test]
     async fn test_list_servers() {
         let (db, _tmp) = setup_test_db().await;
@@ -298,5 +363,182 @@ mod tests {
         let result2 = ServerService::get_server(&db, "srv-batch-2").await;
         assert!(result1.is_err(), "First server should be gone");
         assert!(result2.is_err(), "Second server should be gone");
+    }
+
+    #[tokio::test]
+    async fn update_server_rejects_negative_price() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-price-negative", "Price Negative").await;
+
+        let result = ServerService::update_server(
+            &db,
+            "srv-price-negative",
+            UpdateServerInput {
+                price: Some(Some(-0.01)),
+                ..update_input()
+            },
+        )
+        .await;
+
+        let message = validation_message(result);
+        assert!(
+            message.contains("price"),
+            "validation message should mention price, got {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_server_rejects_non_finite_price() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-price-non-finite", "Price Non Finite").await;
+
+        for price in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let result = ServerService::update_server(
+                &db,
+                "srv-price-non-finite",
+                UpdateServerInput {
+                    price: Some(Some(price)),
+                    ..update_input()
+                },
+            )
+            .await;
+
+            let message = validation_message(result);
+            assert!(
+                message.contains("price"),
+                "validation message should mention price, got {message}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn update_server_rejects_invalid_billing_cycle() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-billing-cycle-invalid", "Billing Cycle Invalid").await;
+
+        for billing_cycle in ["weekly", ""] {
+            let result = ServerService::update_server(
+                &db,
+                "srv-billing-cycle-invalid",
+                UpdateServerInput {
+                    billing_cycle: Some(Some(billing_cycle.to_string())),
+                    ..update_input()
+                },
+            )
+            .await;
+
+            let message = validation_message(result);
+            assert!(
+                message.contains("billing_cycle"),
+                "validation message should mention billing_cycle, got {message}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn update_server_rejects_invalid_traffic_limit_type() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(
+            &db,
+            "srv-traffic-limit-type-invalid",
+            "Traffic Limit Type Invalid",
+        )
+        .await;
+
+        let result = ServerService::update_server(
+            &db,
+            "srv-traffic-limit-type-invalid",
+            UpdateServerInput {
+                traffic_limit_type: Some(Some("total".to_string())),
+                ..update_input()
+            },
+        )
+        .await;
+
+        let message = validation_message(result);
+        assert!(
+            message.contains("traffic_limit_type"),
+            "validation message should mention traffic_limit_type, got {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_server_rejects_invalid_billing_start_day() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(
+            &db,
+            "srv-billing-start-day-invalid",
+            "Billing Start Day Invalid",
+        )
+        .await;
+
+        for billing_start_day in [0, 29] {
+            let result = ServerService::update_server(
+                &db,
+                "srv-billing-start-day-invalid",
+                UpdateServerInput {
+                    billing_start_day: Some(Some(billing_start_day)),
+                    ..update_input()
+                },
+            )
+            .await;
+
+            let message = validation_message(result);
+            assert!(
+                message.contains("billing_start_day"),
+                "validation message should mention billing_start_day, got {message}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn update_server_allows_valid_and_cleared_billing_fields() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-billing-valid", "Billing Valid").await;
+
+        for (billing_cycle, traffic_limit_type) in
+            [("monthly", "sum"), ("quarterly", "up"), ("yearly", "down")]
+        {
+            let updated = ServerService::update_server(
+                &db,
+                "srv-billing-valid",
+                UpdateServerInput {
+                    price: Some(Some(0.0)),
+                    billing_cycle: Some(Some(billing_cycle.to_string())),
+                    traffic_limit_type: Some(Some(traffic_limit_type.to_string())),
+                    billing_start_day: Some(Some(28)),
+                    ..update_input()
+                },
+            )
+            .await
+            .expect("valid billing fields should update");
+
+            assert_eq!(updated.price, Some(0.0));
+            assert_eq!(updated.billing_cycle.as_deref(), Some(billing_cycle));
+            assert_eq!(
+                updated.traffic_limit_type.as_deref(),
+                Some(traffic_limit_type)
+            );
+            assert_eq!(updated.billing_start_day, Some(28));
+        }
+
+        let updated = ServerService::update_server(
+            &db,
+            "srv-billing-valid",
+            UpdateServerInput {
+                price: Some(None),
+                billing_cycle: Some(None),
+                traffic_limit_type: Some(None),
+                billing_start_day: Some(None),
+                ..update_input()
+            },
+        )
+        .await
+        .expect("explicit null billing fields should clear");
+
+        assert_eq!(updated.price, None);
+        assert_eq!(updated.billing_cycle, None);
+        assert_eq!(updated.traffic_limit_type, None);
+        assert_eq!(updated.billing_start_day, None);
     }
 }
