@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerCostInsights } from '@/lib/api-schema'
 
 const REGEX_DETAIL_EXPIRED = /detail_expired/
+const REGEX_EDIT_CYCLE_MONTHLY = /edit_cycle_monthly/
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children?: ReactNode }) => <a href="/">{children}</a>,
@@ -302,6 +303,7 @@ describe('ServerDetailPage', () => {
 
     expect(screen.getByText('cost_value_score')).toBeInTheDocument()
     expect(screen.getByText('82')).toBeInTheDocument()
+    expect(screen.getByText(REGEX_EDIT_CYCLE_MONTHLY)).toBeInTheDocument()
     expect(screen.getByText(REGEX_DETAIL_EXPIRED)).toBeInTheDocument()
   })
 

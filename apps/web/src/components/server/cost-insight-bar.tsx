@@ -190,6 +190,8 @@ function PriceCycle({
   currency?: string | null
   price?: number | null
 }) {
+  const { t } = useTranslation('servers')
+
   if (price == null) {
     return null
   }
@@ -197,7 +199,7 @@ function PriceCycle({
   return (
     <span>
       {formatCostAmount(price, currency, { maximumFractionDigits: 2 })}
-      {billingCycle && <span className="text-muted-foreground"> / {billingCycle}</span>}
+      {billingCycle && <span className="text-muted-foreground"> / {getBillingCycleLabel(billingCycle, t)}</span>}
     </span>
   )
 }
@@ -212,6 +214,19 @@ function CostMetric({ children, label }: { children: ReactNode; label: string })
 
 function getInvalidReasonKey(reason: ServerCostInsights['invalid_reason']) {
   return reason == null ? 'cost_invalid' : getCostInvalidReasonKey(reason)
+}
+
+function getBillingCycleLabel(billingCycle: string, t: (key: string) => string) {
+  switch (billingCycle) {
+    case 'monthly':
+      return t('edit_cycle_monthly')
+    case 'quarterly':
+      return t('edit_cycle_quarterly')
+    case 'yearly':
+      return t('edit_cycle_yearly')
+    default:
+      return billingCycle
+  }
 }
 
 function getResourceValueItems(

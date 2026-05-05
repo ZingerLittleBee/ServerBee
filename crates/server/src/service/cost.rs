@@ -64,7 +64,7 @@ pub struct ValueScore {
     pub confidence: ValueConfidence,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CostBurn {
     pub cycle_start: String,
     pub cycle_end: String,
