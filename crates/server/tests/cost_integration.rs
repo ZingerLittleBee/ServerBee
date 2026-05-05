@@ -253,6 +253,17 @@ async fn server_cost_insights_unknown_server_returns_404() {
         .expect("GET /api/servers/{id}/cost-insights failed");
 
     assert_eq!(resp.status(), 404);
+    let body: Value = resp
+        .json()
+        .await
+        .expect("Failed to parse cost insights error response");
+    assert_eq!(body["error"]["code"], "NOT_FOUND");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .expect("error message should be a string")
+            .contains("Server not found")
+    );
 }
 
 #[tokio::test]
