@@ -57,5 +57,5 @@ function getUnconfiguredLabel(entry: ServerCostOverview) {
   if (entry.invalid_reason === 'missing_price') {
     return 'cost_not_set'
   }
-  return 'cost_not_set'
+  return 'cost_invalid'
 }
