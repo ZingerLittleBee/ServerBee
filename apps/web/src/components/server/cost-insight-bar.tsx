@@ -64,7 +64,7 @@ function ConfiguredCostBar({
 }) {
   const { t } = useTranslation('servers')
   const currency = insights.currency ?? server.currency
-  const resourceItems = getResourceValueItems(insights.resource_value, currency)
+  const resourceItems = getResourceValueItems(insights.resource_value, currency, t)
   const reasons = insights.value_score?.reasons ?? []
 
   return (
@@ -214,7 +214,11 @@ function getInvalidReasonKey(reason: ServerCostInsights['invalid_reason']) {
   return reason == null ? 'cost_invalid' : getCostInvalidReasonKey(reason)
 }
 
-function getResourceValueItems(resourceValue: ResourceValue | null | undefined, currency: string | null | undefined) {
+function getResourceValueItems(
+  resourceValue: ResourceValue | null | undefined,
+  currency: string | null | undefined,
+  t: (key: string, options?: Record<string, string>) => string
+) {
   if (resourceValue == null) {
     return []
   }
@@ -223,25 +227,27 @@ function getResourceValueItems(resourceValue: ResourceValue | null | undefined, 
 
   if (resourceValue.cost_per_cpu_core != null) {
     items.push({
-      label: 'CPU',
+      label: t('cost_resource_cpu'),
       value: formatCostRate(resourceValue.cost_per_cpu_core, currency, 'core', { maximumFractionDigits: 4 })
     })
   }
   if (resourceValue.cost_per_gb_memory != null) {
     items.push({
-      label: 'RAM',
+      label: t('cost_resource_memory'),
       value: formatCostRate(resourceValue.cost_per_gb_memory, currency, 'GB', { maximumFractionDigits: 4 })
     })
   }
   if (resourceValue.cost_per_gb_disk != null) {
     items.push({
-      label: 'Disk',
+      label: t('cost_resource_disk'),
       value: formatCostRate(resourceValue.cost_per_gb_disk, currency, 'GB', { maximumFractionDigits: 4 })
     })
   }
   if (resourceValue.cost_per_tb_traffic_limit != null) {
     items.push({
-      label: resourceValue.traffic_limit_type ? `Traffic (${resourceValue.traffic_limit_type})` : 'Traffic',
+      label: resourceValue.traffic_limit_type
+        ? t('cost_resource_traffic_type', { type: resourceValue.traffic_limit_type })
+        : t('cost_resource_traffic'),
       value: formatCostRate(resourceValue.cost_per_tb_traffic_limit, currency, 'TB', { maximumFractionDigits: 4 })
     })
   }
