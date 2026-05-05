@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { CostOverviewResponse, ServerCostInsights } from '@/lib/api-schema'
 import { useCostInsights, useCostOverview } from './use-cost'
 
 function createWrapper() {
@@ -18,7 +19,7 @@ function createWrapper() {
 const costOverview = {
   currencies: [],
   servers: []
-}
+} satisfies CostOverviewResponse
 
 const costInsights = {
   server_id: 'srv-1',
@@ -41,7 +42,7 @@ const costInsights = {
   cycle_burn_percent: null,
   resource_value: null,
   value_score: null
-}
+} satisfies ServerCostInsights
 
 beforeEach(() => {
   vi.spyOn(globalThis, 'fetch')
@@ -53,11 +54,7 @@ afterEach(() => {
 
 describe('cost hooks', () => {
   it('fetches cost overview with the expected endpoint', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({ data: costOverview })
-    } as Response)
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(costOverview))
 
     const { result } = renderHook(() => useCostOverview(), { wrapper: createWrapper() })
 
@@ -68,11 +65,7 @@ describe('cost hooks', () => {
   })
 
   it('fetches cost insights for a server', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({ data: costInsights })
-    } as Response)
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(costInsights))
 
     const { result } = renderHook(() => useCostInsights('srv-1'), { wrapper: createWrapper() })
 
@@ -89,3 +82,12 @@ describe('cost hooks', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 })
+
+function jsonResponse<T>(data: T) {
+  return Promise.resolve(
+    new Response(JSON.stringify({ data }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  )
+}
