@@ -1,8 +1,11 @@
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CostOverviewResponse } from '@/lib/api-schema'
+import type { CostOverviewResponse, ServerCostOverview } from '@/lib/api-schema'
 import type { NetworkServerSummary } from '@/lib/network-types'
+import { CostFootnote } from './cost-footnote'
 import { ServerCard } from './server-card'
+
+const REGEX_COST_PER_HOUR = /0\.01\/h/
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -169,8 +172,39 @@ describe('ServerCard', () => {
 
     render(<ServerCard server={makeServer()} />)
 
-    expect(screen.getByText('82')).toBeDefined()
+    expect(screen.getByText(REGEX_COST_PER_HOUR)).toBeDefined()
     expect(screen.getByText('cost_grade_good')).toBeDefined()
+    expect(screen.queryByText('82')).toBeNull()
+  })
+
+  it('renders compact unconfigured cost footnote labels', () => {
+    const missingPrice = {
+      configured: false,
+      invalid_reason: 'missing_price',
+      name: 'test-server',
+      server_id: 'srv-1'
+    } satisfies ServerCostOverview
+    const missingCycle = {
+      configured: false,
+      invalid_reason: 'missing_billing_cycle',
+      name: 'test-server',
+      server_id: 'srv-1'
+    } satisfies ServerCostOverview
+    const invalidPrice = {
+      configured: false,
+      invalid_reason: 'invalid_price',
+      name: 'test-server',
+      server_id: 'srv-1'
+    } satisfies ServerCostOverview
+
+    const { rerender } = render(<CostFootnote entry={missingPrice} />)
+    expect(screen.getByText('cost_not_set')).toBeDefined()
+
+    rerender(<CostFootnote entry={missingCycle} />)
+    expect(screen.getByText('cost_price_only')).toBeDefined()
+
+    rerender(<CostFootnote entry={invalidPrice} />)
+    expect(screen.getByText('cost_not_set')).toBeDefined()
   })
 
   it('renders network and disk I/O rates with load trend', () => {
