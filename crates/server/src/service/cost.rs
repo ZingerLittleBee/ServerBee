@@ -1,4 +1,4 @@
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::Serialize;
 
 use crate::service::traffic;
@@ -47,6 +47,14 @@ pub enum ValueConfidence {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, utoipa::ToSchema)]
+pub struct ValueScore {
+    pub score: f64,
+    pub grade: ValueGrade,
+    pub reasons: Vec<ValueReason>,
+    pub confidence: ValueConfidence,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, utoipa::ToSchema)]
 pub struct CostBurn {
     pub cycle_start: String,
     pub cycle_end: String,
@@ -71,6 +79,15 @@ pub struct ResourceValue {
     pub traffic_limit_type: Option<String>,
 }
 
+#[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
+pub(crate) struct UtilizationStats {
+    avg_cpu: Option<f64>,
+    avg_memory_percent: Option<f64>,
+    has_network_activity: bool,
+    has_disk_io_activity: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub(crate) struct NormalizedCostConfig {
@@ -84,6 +101,159 @@ pub(crate) struct NormalizedCostConfig {
 pub struct CostService;
 
 impl CostService {
+    #[allow(dead_code)]
+    pub(crate) fn grade_for_score(score: f64) -> ValueGrade {
+        if score >= 90.0 {
+            ValueGrade::Excellent
+        } else if score >= 75.0 {
+            ValueGrade::Good
+        } else if score >= 60.0 {
+            ValueGrade::Okay
+        } else if score >= 40.0 {
+            ValueGrade::Poor
+        } else {
+            ValueGrade::Waste
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn prioritize_reasons(reasons: Vec<ValueReason>) -> Vec<ValueReason> {
+        let priority = [
+            ValueReason::SleepingMoney,
+            ValueReason::IdleBurn,
+            ValueReason::ExpensiveCpu,
+            ValueReason::LowUptime,
+            ValueReason::InsufficientData,
+            ValueReason::ExpiredBilling,
+            ValueReason::FreeOrZeroPrice,
+            ValueReason::HealthyUptime,
+            ValueReason::GoodMemoryValue,
+            ValueReason::GoodDiskValue,
+        ];
+        let mut prioritized = Vec::new();
+
+        for reason in priority {
+            if reasons.contains(&reason) {
+                prioritized.push(reason);
+                if prioritized.len() == 3 {
+                    return prioritized;
+                }
+            }
+        }
+
+        for reason in reasons {
+            if !prioritized.contains(&reason) {
+                prioritized.push(reason);
+                if prioritized.len() == 3 {
+                    break;
+                }
+            }
+        }
+
+        prioritized
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn resource_percentile_score(value: f64, comparable_values: &[f64]) -> f64 {
+        let mut values = finite_positive_values(comparable_values);
+        if values.len() < 2 || !is_finite_positive(value) {
+            return 0.5;
+        }
+
+        values.sort_by(f64::total_cmp);
+        let lowest = values[0];
+        let highest = values[values.len() - 1];
+        if lowest == highest {
+            return 0.5;
+        }
+
+        let lower_count = values
+            .iter()
+            .filter(|candidate| **candidate < value)
+            .count();
+        let equal_count = values
+            .iter()
+            .filter(|candidate| **candidate == value)
+            .count();
+        let rank = if equal_count == 0 {
+            lower_count as f64
+        } else {
+            lower_count as f64 + (equal_count.saturating_sub(1) as f64 / 2.0)
+        };
+
+        (1.0 - (rank / (values.len() - 1) as f64)).clamp(0.0, 1.0)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn compute_utilization_score(
+        stats: &UtilizationStats,
+        monthly_cost: f64,
+        fleet_monthly_costs: &[f64],
+    ) -> (f64, Vec<ValueReason>, ValueConfidence) {
+        let mut reasons = Vec::new();
+        let confidence = utilization_confidence(stats);
+
+        if confidence != ValueConfidence::High {
+            reasons.push(ValueReason::InsufficientData);
+        }
+
+        let low_utilization = is_low_utilization(stats);
+        let high_monthly_cost = is_high_monthly_cost(monthly_cost, fleet_monthly_costs);
+        let over_utilized = stats.avg_cpu.is_some_and(|value| value > 85.0)
+            || stats.avg_memory_percent.is_some_and(|value| value > 90.0);
+
+        let score = if low_utilization && high_monthly_cost {
+            reasons.push(ValueReason::IdleBurn);
+            7.0
+        } else if over_utilized {
+            35.0 * 0.7
+        } else if is_moderate_stable_utilization(stats) {
+            31.5
+        } else if confidence == ValueConfidence::Low {
+            17.5
+        } else {
+            22.0
+        };
+
+        (score, Self::prioritize_reasons(reasons), confidence)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn compute_reliability_score(
+        uptime_ratio: Option<f64>,
+        online: bool,
+        expired_at: Option<DateTime<Utc>>,
+    ) -> (f64, Vec<ValueReason>, ValueConfidence) {
+        let mut reasons = Vec::new();
+        let expired = expired_at.is_some_and(|value| value < Utc::now());
+        if expired {
+            reasons.push(ValueReason::ExpiredBilling);
+        }
+
+        let (score, confidence) = match uptime_ratio.filter(|value| value.is_finite()) {
+            Some(value) => {
+                let uptime = value.clamp(0.0, 1.0);
+                if uptime >= 0.99 && !expired {
+                    reasons.push(ValueReason::HealthyUptime);
+                } else if uptime < 0.90 {
+                    reasons.push(ValueReason::LowUptime);
+                }
+                (uptime * 25.0, ValueConfidence::High)
+            }
+            None if online => {
+                reasons.push(ValueReason::InsufficientData);
+                (18.75, ValueConfidence::Low)
+            }
+            None => {
+                reasons.push(ValueReason::SleepingMoney);
+                reasons.push(ValueReason::InsufficientData);
+                (0.0, ValueConfidence::Low)
+            }
+        };
+
+        (score, Self::prioritize_reasons(reasons), confidence)
+    }
+
     #[allow(dead_code)]
     pub(crate) fn normalize_config(
         price: Option<f64>,
@@ -251,6 +421,88 @@ fn is_valid_resource_cost(value: f64) -> bool {
     value.is_finite() && value >= 0.0
 }
 
+fn finite_positive_values(values: &[f64]) -> Vec<f64> {
+    values
+        .iter()
+        .copied()
+        .filter(|value| is_finite_positive(*value))
+        .collect()
+}
+
+fn is_finite_positive(value: f64) -> bool {
+    value.is_finite() && value > 0.0
+}
+
+fn utilization_confidence(stats: &UtilizationStats) -> ValueConfidence {
+    match (
+        stats.avg_cpu.filter(|value| value.is_finite()),
+        stats.avg_memory_percent.filter(|value| value.is_finite()),
+    ) {
+        (Some(_), Some(_)) => ValueConfidence::High,
+        (Some(_), None) | (None, Some(_)) => ValueConfidence::Medium,
+        (None, None) => ValueConfidence::Low,
+    }
+}
+
+fn is_low_utilization(stats: &UtilizationStats) -> bool {
+    let cpu_is_low = stats
+        .avg_cpu
+        .is_some_and(|value| value.is_finite() && value < 5.0);
+    let memory_is_low = stats
+        .avg_memory_percent
+        .is_some_and(|value| value.is_finite() && value < 20.0);
+    let io_is_quiet = !stats.has_network_activity && !stats.has_disk_io_activity;
+
+    cpu_is_low && memory_is_low && io_is_quiet
+}
+
+fn is_moderate_stable_utilization(stats: &UtilizationStats) -> bool {
+    let cpu_is_moderate = stats
+        .avg_cpu
+        .is_some_and(|value| value.is_finite() && (10.0..=70.0).contains(&value));
+    let memory_is_moderate = stats
+        .avg_memory_percent
+        .is_some_and(|value| value.is_finite() && (30.0..=80.0).contains(&value));
+    let has_activity = stats.has_network_activity || stats.has_disk_io_activity;
+
+    has_activity && (cpu_is_moderate || memory_is_moderate)
+}
+
+fn is_high_monthly_cost(monthly_cost: f64, fleet_monthly_costs: &[f64]) -> bool {
+    if !is_finite_positive(monthly_cost) {
+        return false;
+    }
+
+    let mut costs = finite_positive_values(fleet_monthly_costs);
+    if costs.is_empty() {
+        return false;
+    }
+
+    costs.sort_by(f64::total_cmp);
+    let threshold = if costs.len() < 4 {
+        median(&costs)
+    } else {
+        percentile_nearest_rank(&costs, 0.75)
+    };
+
+    monthly_cost >= threshold
+}
+
+fn median(sorted_values: &[f64]) -> f64 {
+    let middle = sorted_values.len() / 2;
+    if sorted_values.len() % 2 == 0 {
+        (sorted_values[middle - 1] + sorted_values[middle]) / 2.0
+    } else {
+        sorted_values[middle]
+    }
+}
+
+fn percentile_nearest_rank(sorted_values: &[f64], percentile: f64) -> f64 {
+    let rank = (percentile.clamp(0.0, 1.0) * sorted_values.len() as f64).ceil() as usize;
+    let index = rank.saturating_sub(1).min(sorted_values.len() - 1);
+    sorted_values[index]
+}
+
 fn bytes_to_gib(bytes: i64) -> f64 {
     bytes as f64 / 1024_f64.powi(3)
 }
@@ -261,7 +513,11 @@ fn bytes_to_tib(bytes: i64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::service::cost::{CostInvalidReason, CostService};
+    use chrono::{TimeZone, Utc};
+
+    use crate::service::cost::{
+        CostInvalidReason, CostService, UtilizationStats, ValueConfidence, ValueGrade, ValueReason,
+    };
 
     fn assert_near(actual: f64, expected: f64) {
         assert!(
@@ -430,5 +686,115 @@ mod tests {
 
         assert_eq!(values.cost_per_tb_traffic_limit, Some(5.0));
         assert_eq!(values.traffic_limit_type, None);
+    }
+
+    #[test]
+    fn grade_boundaries_are_half_open() {
+        assert_eq!(CostService::grade_for_score(90.0), ValueGrade::Excellent);
+        assert_eq!(CostService::grade_for_score(75.0), ValueGrade::Good);
+        assert_eq!(CostService::grade_for_score(60.0), ValueGrade::Okay);
+        assert_eq!(CostService::grade_for_score(40.0), ValueGrade::Poor);
+        assert_eq!(CostService::grade_for_score(39.9), ValueGrade::Waste);
+    }
+
+    #[test]
+    fn reasons_are_limited_and_prioritized() {
+        let reasons = CostService::prioritize_reasons(vec![
+            ValueReason::HealthyUptime,
+            ValueReason::IdleBurn,
+            ValueReason::SleepingMoney,
+            ValueReason::ExpensiveCpu,
+            ValueReason::IdleBurn,
+        ]);
+
+        assert_eq!(
+            reasons,
+            vec![
+                ValueReason::SleepingMoney,
+                ValueReason::IdleBurn,
+                ValueReason::ExpensiveCpu
+            ]
+        );
+    }
+
+    #[test]
+    fn single_server_resource_metric_uses_neutral_score() {
+        let score = CostService::resource_percentile_score(5.0, &[5.0]);
+
+        assert_eq!(score, 0.5);
+    }
+
+    #[test]
+    fn lower_unit_cost_gets_higher_percentile_score_than_higher_unit_cost() {
+        let comparable_values = [2.0, 5.0, 10.0, 20.0];
+
+        let cheap_score = CostService::resource_percentile_score(2.0, &comparable_values);
+        let expensive_score = CostService::resource_percentile_score(20.0, &comparable_values);
+
+        assert!(cheap_score > expensive_score);
+    }
+
+    #[test]
+    fn invalid_comparable_values_do_not_produce_non_finite_score() {
+        let score = CostService::resource_percentile_score(
+            f64::INFINITY,
+            &[f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0, 0.0],
+        );
+
+        assert!(score.is_finite());
+        assert!((0.0..=1.0).contains(&score));
+    }
+
+    #[test]
+    fn expired_billing_adds_reason_without_lowering_perfect_uptime_score() {
+        let expired_at = Utc.with_ymd_and_hms(2000, 1, 1, 0, 0, 0).unwrap();
+
+        let (score, reasons, confidence) =
+            CostService::compute_reliability_score(Some(1.0), true, Some(expired_at));
+
+        assert_eq!(score, 25.0);
+        assert_eq!(reasons, vec![ValueReason::ExpiredBilling]);
+        assert_eq!(confidence, ValueConfidence::High);
+    }
+
+    #[test]
+    fn low_utilization_with_high_monthly_cost_yields_idle_burn() {
+        let stats = UtilizationStats {
+            avg_cpu: Some(2.0),
+            avg_memory_percent: Some(10.0),
+            has_network_activity: false,
+            has_disk_io_activity: false,
+        };
+
+        let (_score, reasons, _confidence) =
+            CostService::compute_utilization_score(&stats, 20.0, &[5.0, 10.0, 20.0]);
+
+        assert!(reasons.contains(&ValueReason::IdleBurn));
+    }
+
+    #[test]
+    fn over_utilization_caps_score_below_stable_moderate_utilization() {
+        let stable = UtilizationStats {
+            avg_cpu: Some(35.0),
+            avg_memory_percent: Some(50.0),
+            has_network_activity: true,
+            has_disk_io_activity: false,
+        };
+        let overloaded = UtilizationStats {
+            avg_cpu: Some(90.0),
+            avg_memory_percent: Some(70.0),
+            has_network_activity: true,
+            has_disk_io_activity: true,
+        };
+
+        let (stable_score, _stable_reasons, stable_confidence) =
+            CostService::compute_utilization_score(&stable, 10.0, &[5.0, 10.0, 20.0]);
+        let (overloaded_score, _overloaded_reasons, overloaded_confidence) =
+            CostService::compute_utilization_score(&overloaded, 10.0, &[5.0, 10.0, 20.0]);
+
+        assert!(overloaded_score <= 35.0 * 0.7);
+        assert!(overloaded_score < stable_score);
+        assert_eq!(stable_confidence, ValueConfidence::High);
+        assert_eq!(overloaded_confidence, ValueConfidence::High);
     }
 }
