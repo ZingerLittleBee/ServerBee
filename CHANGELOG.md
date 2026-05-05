@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.12] - 2026-05-05
+
+### Added
+
+- **VPS cost insights** -- A new cost analytics surface scores every server's price-to-resource value from validated billing inputs. The backend computes normalized cost metrics, scores VPS value with guarded helpers, and exposes a `/api/cost/*` insights API (overview + per-server insights) with full OpenAPI schema registration so clients get typed payloads end to end
+- **Cost signal in the servers UI** -- The servers table now surfaces cost alongside resources, the dashboard server card shows a compact cost signal with a footnote, and a dedicated cost insights panel renders the per-server scoring detail so admins can spot poor-value VPS at a glance
+- **Cost insight configuration validation** -- New server-side validation rejects non-finite prices, invalid billing cycles, and malformed cost resource inputs before they reach scoring, keeping the insights pipeline resilient to bad data
+
+### Changed
+
+- **Documentation refresh** -- Reorganized the docs site with a refreshed feature overview and navigation, plus new or expanded guides for alerts & APNs, scheduled tasks, dashboards, file manager, service monitors, status pages, branding/themes, capabilities enforcement, GeoIP/traceroute flows, and the API endpoint overview
+- **Cost UI polish** -- Localized billing cycle labels, kept the card cost footnote compact, formatted generated cost API types, labeled invalid card cost configs, and preserved expiry context inside cost insights
+
+### Testing
+
+- Added backend integration coverage for the cost insights API error body contract, billing input validation, and cost aggregation guards
+- Hardened frontend cost helper tests around scoring edges and insight derivation
+
 ## [0.8.11] - 2026-05-01
 
 ### Added
