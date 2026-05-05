@@ -30,7 +30,7 @@ export function CostInsightBar({ server, serverId }: CostInsightBarProps) {
   const costInsights = useCostInsights(serverId)
   const insights = costInsights.data
 
-  if (costInsights.isError || insights == null) {
+  if (insights == null) {
     return <FallbackBillingBar server={server} serverId={serverId} />
   }
 
@@ -43,6 +43,7 @@ export function CostInsightBar({ server, serverId }: CostInsightBarProps) {
           currency={insights.currency ?? server.currency}
           price={insights.price ?? server.price}
         />
+        <ExpiryStatus expiredAt={server.expired_at} />
         <span className="text-muted-foreground">{t(getInvalidReasonKey(insights.invalid_reason))}</span>
         {server.traffic_limit != null && <TrafficProgress serverId={serverId} />}
       </div>
@@ -75,6 +76,7 @@ function ConfiguredCostBar({
           currency={currency}
           price={insights.price ?? server.price}
         />
+        <ExpiryStatus expiredAt={server.expired_at} />
         {insights.cost_per_day != null && (
           <span>
             {t('cost_per_day', {
@@ -138,36 +140,44 @@ function ConfiguredCostBar({
 }
 
 function FallbackBillingBar({ server, serverId }: CostInsightBarProps) {
+  return (
+    <div className={cn(BAR_CLASS_NAME, 'flex flex-wrap items-center gap-4')}>
+      <CreditCard aria-hidden="true" className="size-4 text-muted-foreground" />
+      <PriceCycle billingCycle={server.billing_cycle} currency={server.currency} price={server.price} />
+      <ExpiryStatus expiredAt={server.expired_at} />
+      {server.traffic_limit != null && <TrafficProgress serverId={serverId} />}
+    </div>
+  )
+}
+
+function ExpiryStatus({ expiredAt }: { expiredAt?: string | null }) {
   const { t } = useTranslation('servers')
-  const isExpired = server.expired_at ? new Date(server.expired_at) < new Date() : false
-  const daysUntilExpiry = server.expired_at
-    ? Math.ceil((new Date(server.expired_at).getTime() - Date.now()) / 86_400_000)
-    : null
+
+  if (!expiredAt) {
+    return null
+  }
+
+  const expiryDate = new Date(expiredAt)
+  const isExpired = expiryDate < new Date()
+  const daysUntilExpiry = Math.ceil((expiryDate.getTime() - Date.now()) / 86_400_000)
 
   const expiryColor = (() => {
     if (isExpired) {
       return 'text-destructive'
     }
-    if (daysUntilExpiry != null && daysUntilExpiry <= 7) {
+    if (daysUntilExpiry <= 7) {
       return 'text-yellow-600 dark:text-yellow-400'
     }
     return 'text-muted-foreground'
   })()
 
   return (
-    <div className={cn(BAR_CLASS_NAME, 'flex flex-wrap items-center gap-4')}>
-      <CreditCard aria-hidden="true" className="size-4 text-muted-foreground" />
-      <PriceCycle billingCycle={server.billing_cycle} currency={server.currency} price={server.price} />
-      {server.expired_at && (
-        <span className={cn(expiryColor)}>
-          {isExpired
-            ? `${t('detail_expired')} ${new Date(server.expired_at).toLocaleDateString()}`
-            : `${t('detail_expires')} ${new Date(server.expired_at).toLocaleDateString()}`}
-          {daysUntilExpiry != null && !isExpired && ` (${t('detail_expires_days', { count: daysUntilExpiry })})`}
-        </span>
-      )}
-      {server.traffic_limit != null && <TrafficProgress serverId={serverId} />}
-    </div>
+    <span className={cn(expiryColor)}>
+      {isExpired
+        ? `${t('detail_expired')} ${expiryDate.toLocaleDateString()}`
+        : `${t('detail_expires')} ${expiryDate.toLocaleDateString()}`}
+      {!isExpired && ` (${t('detail_expires_days', { count: daysUntilExpiry })})`}
+    </span>
   )
 }
 
