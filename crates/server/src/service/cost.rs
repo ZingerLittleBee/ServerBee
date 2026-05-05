@@ -70,7 +70,7 @@ impl CostService {
 
         let invalid_reason = if price.is_none() {
             Some(CostInvalidReason::MissingPrice)
-        } else if price.is_some_and(|value| value < 0.0) {
+        } else if price.is_some_and(|value| !value.is_finite() || value < 0.0) {
             Some(CostInvalidReason::InvalidPrice)
         } else if normalized_billing_cycle.is_none() {
             Some(CostInvalidReason::MissingBillingCycle)
@@ -135,5 +135,16 @@ mod tests {
             CostService::normalize_config(Some(-0.01), Some("monthly"), Some("USD")).invalid_reason,
             Some(CostInvalidReason::InvalidPrice)
         );
+    }
+
+    #[test]
+    fn cost_config_rejects_non_finite_price() {
+        for price in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(
+                CostService::normalize_config(Some(price), Some("monthly"), Some("USD"))
+                    .invalid_reason,
+                Some(CostInvalidReason::InvalidPrice)
+            );
+        }
     }
 }
