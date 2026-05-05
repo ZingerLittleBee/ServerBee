@@ -204,7 +204,7 @@ describe('ServerCard', () => {
     expect(screen.getByText('cost_price_only')).toBeDefined()
 
     rerender(<CostFootnote entry={invalidPrice} />)
-    expect(screen.getByText('cost_not_set')).toBeDefined()
+    expect(screen.getByText('cost_invalid')).toBeDefined()
   })
 
   it('renders network and disk I/O rates with load trend', () => {
