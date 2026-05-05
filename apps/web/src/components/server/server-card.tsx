@@ -5,6 +5,7 @@ import { Bar, BarChart } from 'recharts'
 import { CompactMetric } from '@/components/server/compact-metric'
 import { type ChartConfig, ChartContainer, ChartTooltip } from '@/components/ui/chart'
 import { RingChart } from '@/components/ui/ring-chart'
+import { useCostOverview } from '@/hooks/use-cost'
 import { useNetworkOverview } from '@/hooks/use-network-api'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
@@ -19,6 +20,7 @@ import { latencyColorClass } from '@/lib/network-types'
 import { computeTrafficQuota } from '@/lib/traffic'
 import { countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
+import { CostFootnote } from './cost-footnote'
 import { buildServerCardNetworkState, type ServerCardMetricPoint } from './server-card-network-data'
 import { SeverityBar, type SeverityBarDatum } from './severity-bar'
 import { StatusBadge } from './status-badge'
@@ -190,6 +192,7 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
   const { data: networkOverview = [] } = useNetworkOverview()
   const { data: realtimeData } = useNetworkRealtime(server.id)
   const { data: trafficOverview } = useTrafficOverview()
+  const { data: costOverview } = useCostOverview()
   const upgradeJob = useUpgradeJobsStore((state) => state.jobs.get(server.id))
   const failPatternId = `${useId()}-fail-stripe`
 
@@ -221,6 +224,7 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
     netOutTransfer: server.net_out_transfer
   })
   const trafficDaysRemaining = trafficEntry?.days_remaining ?? null
+  const costEntry = costOverview?.servers.find((entry) => entry.server_id === server.id)
 
   return (
     <div className="flex flex-col rounded-lg border bg-card p-4 shadow-sm">
@@ -361,6 +365,7 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
             <span className="tabular-nums">{t('card_traffic_days_left', { count: trafficDaysRemaining })}</span>
           </>
         )}
+        <CostFootnote entry={costEntry} />
       </div>
 
       {latencyPoints.length > 0 && (
