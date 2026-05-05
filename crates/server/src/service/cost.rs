@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, NaiveDate, Utc};
-use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, EntityTrait, Statement};
+use sea_orm::{
+    ConnectionTrait, DatabaseBackend, DatabaseConnection, EntityTrait, Statement, Value,
+};
 use serde::Serialize;
 
 use crate::entity::server;
@@ -10,7 +12,6 @@ use crate::service::traffic;
 
 const RECORD_LOOKBACK_HOURS: i64 = 24;
 const UPTIME_RECENT_DAYS: i64 = 30;
-const UPTIME_FALLBACK_DAYS: i64 = 7;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -146,7 +147,6 @@ pub struct ServerCostInsights {
 }
 
 #[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
 pub(crate) struct UtilizationStats {
     avg_cpu: Option<f64>,
     avg_memory_percent: Option<f64>,
@@ -155,7 +155,6 @@ pub(crate) struct UtilizationStats {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 pub(crate) struct NormalizedCostConfig {
     pub configured: bool,
     pub invalid_reason: Option<CostInvalidReason>,
@@ -225,7 +224,6 @@ impl CostService {
             .ok_or_else(|| AppError::NotFound("Server not found".to_string()))
     }
 
-    #[allow(dead_code)]
     pub(crate) fn grade_for_score(score: f64) -> ValueGrade {
         if score >= 90.0 {
             ValueGrade::Excellent
@@ -240,7 +238,6 @@ impl CostService {
         }
     }
 
-    #[allow(dead_code)]
     pub(crate) fn prioritize_reasons(reasons: Vec<ValueReason>) -> Vec<ValueReason> {
         let priority = [
             ValueReason::SleepingMoney,
@@ -277,7 +274,6 @@ impl CostService {
         prioritized
     }
 
-    #[allow(dead_code)]
     pub(crate) fn resource_percentile_score(value: f64, comparable_values: &[f64]) -> f64 {
         let mut values = finite_positive_values(comparable_values);
         if values.len() < 2 || !is_finite_positive(value) {
@@ -308,7 +304,6 @@ impl CostService {
         (1.0 - (rank / (values.len() - 1) as f64)).clamp(0.0, 1.0)
     }
 
-    #[allow(dead_code)]
     pub(crate) fn compute_utilization_score(
         stats: &UtilizationStats,
         monthly_cost: f64,
@@ -343,7 +338,6 @@ impl CostService {
         (score, Self::prioritize_reasons(reasons), confidence)
     }
 
-    #[allow(dead_code)]
     pub(crate) fn compute_reliability_score(
         uptime_ratio: Option<f64>,
         online: bool,
@@ -380,7 +374,6 @@ impl CostService {
         (score, Self::prioritize_reasons(reasons), confidence)
     }
 
-    #[allow(dead_code)]
     pub(crate) fn normalize_config(
         price: Option<f64>,
         billing_cycle: Option<&str>,
@@ -521,8 +514,12 @@ async fn compute_costs(
 ) -> Result<Vec<ComputedCost>, AppError> {
     let now = Utc::now();
     let today = now.date_naive();
-    let utilization_by_server = load_utilization_stats(db, now).await?;
-    let uptime_by_server = load_uptime_aggregates(db, today).await?;
+    let server_ids = servers
+        .iter()
+        .map(|server| server.id.clone())
+        .collect::<Vec<_>>();
+    let utilization_by_server = load_utilization_stats(db, &server_ids, now).await?;
+    let uptime_by_server = load_uptime_aggregates(db, &server_ids, today).await?;
 
     let mut computed = servers
         .into_iter()
@@ -597,10 +594,17 @@ async fn compute_costs(
 
 async fn load_utilization_stats(
     db: &DatabaseConnection,
+    server_ids: &[String],
     now: DateTime<Utc>,
 ) -> Result<HashMap<String, UtilizationStats>, AppError> {
+    if server_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
     let recent_cutoff = now - chrono::Duration::hours(RECORD_LOOKBACK_HOURS);
-    let sql = r#"
+    let placeholders = sql_placeholders(server_ids.len());
+    let sql = format!(
+        r#"
         SELECT
             r.server_id,
             AVG(r.cpu) AS avg_cpu,
@@ -621,26 +625,26 @@ async fn load_utilization_stats(
                     ELSE 0
                 END
             ) AS has_network_activity,
-            MAX(
-                CASE
-                    WHEN r.disk_io_json IS NOT NULL
-                        AND trim(r.disk_io_json) != ''
-                        AND trim(r.disk_io_json) != '[]'
-                    THEN 1
-                    ELSE 0
-                END
-            ) AS has_disk_io_activity
+            GROUP_CONCAT(r.disk_io_json, char(30)) AS disk_io_samples
         FROM records r
         INNER JOIN servers s ON s.id = r.server_id
-        WHERE r.time >= ?
+        WHERE r.server_id IN ({placeholders})
+            AND r.time >= ?
         GROUP BY r.server_id
-    "#;
+    "#
+    );
 
+    let mut values = server_ids
+        .iter()
+        .cloned()
+        .map(Value::from)
+        .collect::<Vec<_>>();
+    values.push(recent_cutoff.into());
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
             sql,
-            vec![recent_cutoff.into()],
+            values,
         ))
         .await?;
 
@@ -650,7 +654,7 @@ async fn load_utilization_stats(
         let avg_cpu: Option<f64> = row.try_get_by_index(1)?;
         let avg_memory_percent: Option<f64> = row.try_get_by_index(2)?;
         let has_network_activity: i64 = row.try_get_by_index(3).unwrap_or(0);
-        let has_disk_io_activity: i64 = row.try_get_by_index(4).unwrap_or(0);
+        let disk_io_samples: Option<String> = row.try_get_by_index(4)?;
 
         stats.insert(
             server_id,
@@ -658,7 +662,9 @@ async fn load_utilization_stats(
                 avg_cpu,
                 avg_memory_percent,
                 has_network_activity: has_network_activity > 0,
-                has_disk_io_activity: has_disk_io_activity > 0,
+                has_disk_io_activity: disk_io_samples
+                    .as_deref()
+                    .is_some_and(disk_io_samples_have_activity),
             },
         );
     }
@@ -668,54 +674,47 @@ async fn load_utilization_stats(
 
 async fn load_uptime_aggregates(
     db: &DatabaseConnection,
+    server_ids: &[String],
     today: NaiveDate,
 ) -> Result<HashMap<String, UptimeAggregate>, AppError> {
+    if server_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
     let recent_cutoff = today - chrono::Duration::days(UPTIME_RECENT_DAYS - 1);
-    let sql = r#"
-        WITH ranked AS (
-            SELECT
-                server_id,
-                date,
-                total_minutes,
-                online_minutes,
-                ROW_NUMBER() OVER (PARTITION BY server_id ORDER BY date DESC) AS recency_rank
-            FROM uptime_daily
-        )
+    let placeholders = sql_placeholders(server_ids.len());
+    let sql = format!(
+        r#"
         SELECT
             server_id,
-            SUM(CASE WHEN date >= ? THEN total_minutes ELSE 0 END) AS recent_total_minutes,
-            SUM(CASE WHEN date >= ? THEN online_minutes ELSE 0 END) AS recent_online_minutes,
-            SUM(CASE WHEN recency_rank <= ? THEN total_minutes ELSE 0 END) AS fallback_total_minutes,
-            SUM(CASE WHEN recency_rank <= ? THEN online_minutes ELSE 0 END) AS fallback_online_minutes
-        FROM ranked
+            SUM(total_minutes) AS total_minutes,
+            SUM(online_minutes) AS online_minutes
+        FROM uptime_daily
+        WHERE server_id IN ({placeholders})
+            AND date >= ?
         GROUP BY server_id
-    "#;
+    "#
+    );
 
+    let mut values = server_ids
+        .iter()
+        .cloned()
+        .map(Value::from)
+        .collect::<Vec<_>>();
+    values.push(recent_cutoff.to_string().into());
     let rows = db
         .query_all(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
             sql,
-            vec![
-                recent_cutoff.to_string().into(),
-                recent_cutoff.to_string().into(),
-                UPTIME_FALLBACK_DAYS.into(),
-                UPTIME_FALLBACK_DAYS.into(),
-            ],
+            values,
         ))
         .await?;
 
     let mut aggregates = HashMap::new();
     for row in rows {
         let server_id: String = row.try_get_by_index(0)?;
-        let recent_total_minutes: i64 = row.try_get_by_index(1).unwrap_or(0);
-        let recent_online_minutes: i64 = row.try_get_by_index(2).unwrap_or(0);
-        let fallback_total_minutes: i64 = row.try_get_by_index(3).unwrap_or(0);
-        let fallback_online_minutes: i64 = row.try_get_by_index(4).unwrap_or(0);
-        let (total_minutes, online_minutes) = if recent_total_minutes > 0 {
-            (recent_total_minutes, recent_online_minutes)
-        } else {
-            (fallback_total_minutes, fallback_online_minutes)
-        };
+        let total_minutes: i64 = row.try_get_by_index(1).unwrap_or(0);
+        let online_minutes: i64 = row.try_get_by_index(2).unwrap_or(0);
 
         aggregates.insert(
             server_id,
@@ -735,6 +734,44 @@ fn uptime_ratio(aggregate: &UptimeAggregate) -> Option<f64> {
     }
 
     Some((aggregate.online_minutes as f64 / aggregate.total_minutes as f64).clamp(0.0, 1.0))
+}
+
+fn sql_placeholders(count: usize) -> String {
+    vec!["?"; count].join(", ")
+}
+
+fn disk_io_samples_have_activity(samples: &str) -> bool {
+    samples
+        .split('\u{1e}')
+        .any(disk_io_json_sample_has_activity)
+}
+
+fn disk_io_json_sample_has_activity(sample: &str) -> bool {
+    let sample = sample.trim();
+    if sample.is_empty() {
+        return false;
+    }
+
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(sample) else {
+        return false;
+    };
+
+    match &value {
+        serde_json::Value::Array(devices) => devices.iter().any(disk_io_device_has_activity),
+        serde_json::Value::Object(_) => disk_io_device_has_activity(&value),
+        _ => false,
+    }
+}
+
+fn disk_io_device_has_activity(device: &serde_json::Value) -> bool {
+    positive_json_number(device.get("read_bytes_per_sec"))
+        || positive_json_number(device.get("write_bytes_per_sec"))
+}
+
+fn positive_json_number(value: Option<&serde_json::Value>) -> bool {
+    value
+        .and_then(serde_json::Value::as_f64)
+        .is_some_and(|value| value.is_finite() && value > 0.0)
 }
 
 fn build_currency_comparables(computed: &[ComputedCost]) -> HashMap<String, CurrencyComparables> {
@@ -1025,7 +1062,6 @@ fn map_insights(entry: &ComputedCost) -> ServerCostInsights {
     }
 }
 
-#[allow(dead_code)]
 fn normalize_currency(currency: Option<&str>) -> String {
     let currency = currency.map(str::trim).filter(|value| !value.is_empty());
     currency.unwrap_or("USD").to_string()
@@ -1219,6 +1255,23 @@ mod tests {
         mem_used: i64,
         active_io: bool,
     ) {
+        let disk_io_json = if active_io {
+            Some(r#"[{"name":"vda","read_bytes_per_sec":1}]"#.to_string())
+        } else {
+            Some("[]".to_string())
+        };
+        insert_test_record_with_disk_io_json(db, server_id, cpu, mem_used, active_io, disk_io_json)
+            .await;
+    }
+
+    async fn insert_test_record_with_disk_io_json(
+        db: &DatabaseConnection,
+        server_id: &str,
+        cpu: f64,
+        mem_used: i64,
+        active_network: bool,
+        disk_io_json: Option<String>,
+    ) {
         record::ActiveModel {
             server_id: Set(server_id.to_string()),
             time: Set(Utc::now()),
@@ -1226,9 +1279,9 @@ mod tests {
             mem_used: Set(mem_used),
             swap_used: Set(0),
             disk_used: Set(0),
-            net_in_speed: Set(if active_io { 100 } else { 0 }),
+            net_in_speed: Set(if active_network { 100 } else { 0 }),
             net_out_speed: Set(0),
-            net_in_transfer: Set(if active_io { 1024 } else { 0 }),
+            net_in_transfer: Set(if active_network { 1024 } else { 0 }),
             net_out_transfer: Set(0),
             load1: Set(0.0),
             load5: Set(0.0),
@@ -1236,11 +1289,7 @@ mod tests {
             tcp_conn: Set(0),
             udp_conn: Set(0),
             process_count: Set(0),
-            disk_io_json: Set(if active_io {
-                Some(r#"[{"name":"vda","read_bytes_per_sec":1}]"#.to_string())
-            } else {
-                Some("[]".to_string())
-            }),
+            disk_io_json: Set(disk_io_json),
             ..Default::default()
         }
         .insert(db)
@@ -1414,6 +1463,42 @@ mod tests {
                 .iter()
                 .all(|entry| entry.value_score.is_some()),
             "grouped record and uptime inputs should feed every server in one overview call"
+        );
+    }
+
+    #[tokio::test]
+    async fn zero_valued_non_empty_disk_io_json_still_counts_as_idle() {
+        let (db, _tmp) = crate::test_utils::setup_test_db().await;
+        insert_test_server(
+            &db,
+            "srv-idle",
+            "Idle",
+            Some(100.0),
+            Some("monthly"),
+            Some("USD"),
+            None,
+        )
+        .await;
+        insert_test_record_with_disk_io_json(
+            &db,
+            "srv-idle",
+            1.0,
+            512 * 1024_i64.pow(2),
+            false,
+            Some(r#"[{"name":"vda","read_bytes_per_sec":0,"write_bytes_per_sec":0}]"#.to_string()),
+        )
+        .await;
+
+        let insights = CostService::server_insights(&db, &test_agent_manager(), "srv-idle")
+            .await
+            .expect("server insights should succeed");
+
+        assert!(
+            insights
+                .value_score
+                .expect("value score should exist")
+                .reasons
+                .contains(&ValueReason::IdleBurn)
         );
     }
 
