@@ -35,8 +35,7 @@ describe('CostCell', () => {
         entry={makeEntry({
           configured: false,
           currency: 'USD',
-          invalid_reason: 'missing_billing_cycle',
-          price: 5
+          invalid_reason: 'missing_billing_cycle'
         })}
       />
     )
