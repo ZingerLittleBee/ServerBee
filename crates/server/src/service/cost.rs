@@ -190,14 +190,15 @@ impl CostService {
         monthly_cost: f64,
         fleet_monthly_costs: &[f64],
     ) -> (f64, Vec<ValueReason>, ValueConfidence) {
+        let stats = normalize_utilization_stats(stats);
         let mut reasons = Vec::new();
-        let confidence = utilization_confidence(stats);
+        let confidence = utilization_confidence(&stats);
 
         if confidence != ValueConfidence::High {
             reasons.push(ValueReason::InsufficientData);
         }
 
-        let low_utilization = is_low_utilization(stats);
+        let low_utilization = is_low_utilization(&stats);
         let high_monthly_cost = is_high_monthly_cost(monthly_cost, fleet_monthly_costs);
         let over_utilized = stats.avg_cpu.is_some_and(|value| value > 85.0)
             || stats.avg_memory_percent.is_some_and(|value| value > 90.0);
@@ -207,7 +208,7 @@ impl CostService {
             7.0
         } else if over_utilized {
             35.0 * 0.7
-        } else if is_moderate_stable_utilization(stats) {
+        } else if is_moderate_stable_utilization(&stats) {
             31.5
         } else if confidence == ValueConfidence::Low {
             17.5
@@ -223,9 +224,10 @@ impl CostService {
         uptime_ratio: Option<f64>,
         online: bool,
         expired_at: Option<DateTime<Utc>>,
+        now: DateTime<Utc>,
     ) -> (f64, Vec<ValueReason>, ValueConfidence) {
         let mut reasons = Vec::new();
-        let expired = expired_at.is_some_and(|value| value < Utc::now());
+        let expired = expired_at.is_some_and(|value| value < now);
         if expired {
             reasons.push(ValueReason::ExpiredBilling);
         }
@@ -433,11 +435,17 @@ fn is_finite_positive(value: f64) -> bool {
     value.is_finite() && value > 0.0
 }
 
+fn normalize_utilization_stats(stats: &UtilizationStats) -> UtilizationStats {
+    UtilizationStats {
+        avg_cpu: stats.avg_cpu.filter(|value| value.is_finite()),
+        avg_memory_percent: stats.avg_memory_percent.filter(|value| value.is_finite()),
+        has_network_activity: stats.has_network_activity,
+        has_disk_io_activity: stats.has_disk_io_activity,
+    }
+}
+
 fn utilization_confidence(stats: &UtilizationStats) -> ValueConfidence {
-    match (
-        stats.avg_cpu.filter(|value| value.is_finite()),
-        stats.avg_memory_percent.filter(|value| value.is_finite()),
-    ) {
+    match (stats.avg_cpu, stats.avg_memory_percent) {
         (Some(_), Some(_)) => ValueConfidence::High,
         (Some(_), None) | (None, Some(_)) => ValueConfidence::Medium,
         (None, None) => ValueConfidence::Low,
@@ -445,12 +453,8 @@ fn utilization_confidence(stats: &UtilizationStats) -> ValueConfidence {
 }
 
 fn is_low_utilization(stats: &UtilizationStats) -> bool {
-    let cpu_is_low = stats
-        .avg_cpu
-        .is_some_and(|value| value.is_finite() && value < 5.0);
-    let memory_is_low = stats
-        .avg_memory_percent
-        .is_some_and(|value| value.is_finite() && value < 20.0);
+    let cpu_is_low = stats.avg_cpu.is_some_and(|value| value < 5.0);
+    let memory_is_low = stats.avg_memory_percent.is_some_and(|value| value < 20.0);
     let io_is_quiet = !stats.has_network_activity && !stats.has_disk_io_activity;
 
     cpu_is_low && memory_is_low && io_is_quiet
@@ -459,10 +463,10 @@ fn is_low_utilization(stats: &UtilizationStats) -> bool {
 fn is_moderate_stable_utilization(stats: &UtilizationStats) -> bool {
     let cpu_is_moderate = stats
         .avg_cpu
-        .is_some_and(|value| value.is_finite() && (10.0..=70.0).contains(&value));
+        .is_some_and(|value| (10.0..=70.0).contains(&value));
     let memory_is_moderate = stats
         .avg_memory_percent
-        .is_some_and(|value| value.is_finite() && (30.0..=80.0).contains(&value));
+        .is_some_and(|value| (30.0..=80.0).contains(&value));
     let has_activity = stats.has_network_activity || stats.has_disk_io_activity;
 
     has_activity && (cpu_is_moderate || memory_is_moderate)
@@ -490,7 +494,7 @@ fn is_high_monthly_cost(monthly_cost: f64, fleet_monthly_costs: &[f64]) -> bool 
 
 fn median(sorted_values: &[f64]) -> f64 {
     let middle = sorted_values.len() / 2;
-    if sorted_values.len() % 2 == 0 {
+    if sorted_values.len().is_multiple_of(2) {
         (sorted_values[middle - 1] + sorted_values[middle]) / 2.0
     } else {
         sorted_values[middle]
@@ -747,10 +751,11 @@ mod tests {
 
     #[test]
     fn expired_billing_adds_reason_without_lowering_perfect_uptime_score() {
+        let now = Utc.with_ymd_and_hms(2026, 5, 5, 0, 0, 0).unwrap();
         let expired_at = Utc.with_ymd_and_hms(2000, 1, 1, 0, 0, 0).unwrap();
 
         let (score, reasons, confidence) =
-            CostService::compute_reliability_score(Some(1.0), true, Some(expired_at));
+            CostService::compute_reliability_score(Some(1.0), true, Some(expired_at), now);
 
         assert_eq!(score, 25.0);
         assert_eq!(reasons, vec![ValueReason::ExpiredBilling]);
@@ -773,6 +778,41 @@ mod tests {
     }
 
     #[test]
+    fn non_finite_utilization_inputs_are_insufficient_data_not_overload() {
+        let stable = UtilizationStats {
+            avg_cpu: Some(35.0),
+            avg_memory_percent: Some(50.0),
+            has_network_activity: true,
+            has_disk_io_activity: false,
+        };
+        let invalid = UtilizationStats {
+            avg_cpu: Some(f64::INFINITY),
+            avg_memory_percent: Some(f64::NAN),
+            has_network_activity: true,
+            has_disk_io_activity: true,
+        };
+        let overloaded = UtilizationStats {
+            avg_cpu: Some(90.0),
+            avg_memory_percent: Some(70.0),
+            has_network_activity: true,
+            has_disk_io_activity: true,
+        };
+
+        let (stable_score, _stable_reasons, _stable_confidence) =
+            CostService::compute_utilization_score(&stable, 10.0, &[5.0, 10.0, 20.0]);
+        let (invalid_score, invalid_reasons, invalid_confidence) =
+            CostService::compute_utilization_score(&invalid, 10.0, &[5.0, 10.0, 20.0]);
+        let (overloaded_score, _overloaded_reasons, _overloaded_confidence) =
+            CostService::compute_utilization_score(&overloaded, 10.0, &[5.0, 10.0, 20.0]);
+
+        assert!(invalid_score.is_finite());
+        assert!(invalid_score < overloaded_score);
+        assert!(invalid_score < stable_score);
+        assert_eq!(invalid_confidence, ValueConfidence::Low);
+        assert!(invalid_reasons.contains(&ValueReason::InsufficientData));
+    }
+
+    #[test]
     fn over_utilization_caps_score_below_stable_moderate_utilization() {
         let stable = UtilizationStats {
             avg_cpu: Some(35.0),
@@ -792,7 +832,8 @@ mod tests {
         let (overloaded_score, _overloaded_reasons, overloaded_confidence) =
             CostService::compute_utilization_score(&overloaded, 10.0, &[5.0, 10.0, 20.0]);
 
-        assert!(overloaded_score <= 35.0 * 0.7);
+        assert!(stable_score.is_finite());
+        assert!(overloaded_score.is_finite());
         assert!(overloaded_score < stable_score);
         assert_eq!(stable_confidence, ValueConfidence::High);
         assert_eq!(overloaded_confidence, ValueConfidence::High);
