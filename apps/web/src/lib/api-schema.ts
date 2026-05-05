@@ -31,6 +31,18 @@ export type RecoveryJobStage = S['RecoveryJobStage']
 export type RecoveryJobStatus = S['RecoveryJobStatus']
 export type StartRecoveryRequest = S['StartRecoveryRequest']
 
+// Cost
+export type CostOverviewResponse = S['CostOverviewResponse']
+export type CurrencyCostSummary = S['CurrencyCostSummary']
+export type ServerCostOverview = S['ServerCostOverview']
+export type ServerCostInsights = S['ServerCostInsights']
+export type ResourceValue = S['ResourceValue']
+export type ValueScore = S['ValueScore']
+export type CostInvalidReason = S['CostInvalidReason']
+export type ValueGrade = S['ValueGrade']
+export type ValueReason = S['ValueReason']
+export type ValueConfidence = S['ValueConfidence']
+
 // Server groups
 export type ServerGroup = S['ServerGroup']
 export type CreateGroupRequest = S['CreateGroupRequest']

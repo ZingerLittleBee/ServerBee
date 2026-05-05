@@ -1,7 +1,11 @@
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { CostOverviewResponse, ServerCostOverview } from '@/lib/api-schema'
 import type { NetworkServerSummary } from '@/lib/network-types'
+import { CostFootnote } from './cost-footnote'
 import { ServerCard } from './server-card'
+
+const REGEX_COST_PER_HOUR = /0\.01\/h/
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -40,6 +44,10 @@ vi.mock('recharts', () => {
 const mockNetworkOverview = vi.fn()
 const mockNetworkRealtime = vi.fn()
 const mockTrafficOverview = vi.fn()
+const mockCostOverview = vi.fn()
+vi.mock('@/hooks/use-cost', () => ({
+  useCostOverview: (...args: unknown[]) => mockCostOverview(...args)
+}))
 vi.mock('@/hooks/use-network-api', () => ({
   useNetworkOverview: (...args: unknown[]) => mockNetworkOverview(...args)
 }))
@@ -115,6 +123,7 @@ describe('ServerCard', () => {
     mockNetworkOverview.mockReturnValue({ data: [] })
     mockNetworkRealtime.mockReturnValue({ data: {} })
     mockTrafficOverview.mockReturnValue({ data: [] })
+    mockCostOverview.mockReturnValue({ data: { currencies: [], servers: [] } satisfies CostOverviewResponse })
   })
 
   it('renders server name', () => {
@@ -137,6 +146,65 @@ describe('ServerCard', () => {
     expect(screen.getByText('card_processes')).toBeDefined()
     expect(screen.getByText('card_tcp')).toBeDefined()
     expect(screen.getByText('card_udp')).toBeDefined()
+  })
+
+  it('renders compact cost footnote when cost overview is available', () => {
+    mockCostOverview.mockReturnValue({
+      data: {
+        currencies: [],
+        servers: [
+          {
+            configured: true,
+            cost_per_hour: 0.01,
+            currency: 'USD',
+            name: 'test-server',
+            server_id: 'srv-1',
+            value_score: {
+              confidence: 'high',
+              grade: 'good',
+              reasons: [],
+              score: 82
+            }
+          }
+        ]
+      } satisfies CostOverviewResponse
+    })
+
+    render(<ServerCard server={makeServer()} />)
+
+    expect(screen.getByText(REGEX_COST_PER_HOUR)).toBeDefined()
+    expect(screen.getByText('cost_grade_good')).toBeDefined()
+    expect(screen.queryByText('82')).toBeNull()
+  })
+
+  it('renders compact unconfigured cost footnote labels', () => {
+    const missingPrice = {
+      configured: false,
+      invalid_reason: 'missing_price',
+      name: 'test-server',
+      server_id: 'srv-1'
+    } satisfies ServerCostOverview
+    const missingCycle = {
+      configured: false,
+      invalid_reason: 'missing_billing_cycle',
+      name: 'test-server',
+      server_id: 'srv-1'
+    } satisfies ServerCostOverview
+    const invalidPrice = {
+      configured: false,
+      invalid_reason: 'invalid_price',
+      name: 'test-server',
+      server_id: 'srv-1'
+    } satisfies ServerCostOverview
+
+    const { rerender } = render(<CostFootnote entry={missingPrice} />)
+    expect(screen.getByText('cost_not_set')).toBeDefined()
+
+    rerender(<CostFootnote entry={missingCycle} />)
+    expect(screen.getByText('cost_price_only')).toBeDefined()
+
+    rerender(<CostFootnote entry={invalidPrice} />)
+    expect(screen.getByText('cost_invalid')).toBeDefined()
   })
 
   it('renders network and disk I/O rates with load trend', () => {

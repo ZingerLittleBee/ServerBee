@@ -407,6 +407,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/cost/overview': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_cost_overview']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/dashboards': {
     parameters: {
       query?: never
@@ -1058,6 +1074,22 @@ export interface paths {
     put: operations['update_server']
     post?: never
     delete: operations['delete_server']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/{id}/cost-insights': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_server_cost_insights']
+    put?: never
+    post?: never
+    delete?: never
     options?: never
     head?: never
     patch?: never
@@ -1864,10 +1896,51 @@ export interface components {
       key_prefix: string
       name: string
     }
+    ApiResponse_CostOverviewResponse: {
+      data: {
+        currencies: components['schemas']['CurrencyCostSummary'][]
+        servers: components['schemas']['ServerCostOverview'][]
+      }
+    }
     ApiResponse_CycleResponse: {
       data: {
         current: components['schemas']['CycleTraffic']
         history: components['schemas']['CycleTraffic'][]
+      }
+    }
+    ApiResponse_ServerCostInsights: {
+      data: {
+        billing_cycle?: string | null
+        configured: boolean
+        /** Format: double */
+        cost_per_day?: number | null
+        /** Format: double */
+        cost_per_hour?: number | null
+        /** Format: double */
+        cost_per_month_equivalent?: number | null
+        /** Format: double */
+        cost_per_second?: number | null
+        currency?: string | null
+        /** Format: double */
+        cycle_burn_percent?: number | null
+        /** Format: double */
+        cycle_cost_elapsed?: number | null
+        /** Format: double */
+        cycle_cost_remaining?: number | null
+        /** Format: int64 */
+        cycle_days?: number | null
+        cycle_end?: string | null
+        cycle_start?: string | null
+        /** Format: int64 */
+        days_elapsed?: number | null
+        /** Format: int64 */
+        days_remaining?: number | null
+        invalid_reason?: null | components['schemas']['CostInvalidReason']
+        /** Format: double */
+        price?: number | null
+        resource_value?: null | components['schemas']['ResourceValue']
+        server_id: string
+        value_score?: null | components['schemas']['ValueScore']
       }
     }
     ApiResponse_TrafficResponse: {
@@ -1976,6 +2049,12 @@ export interface components {
     CleanupResponse: {
       /** Format: int64 */
       deleted_count: number
+    }
+    /** @enum {string} */
+    CostInvalidReason: 'missing_price' | 'missing_billing_cycle' | 'invalid_billing_cycle' | 'invalid_price'
+    CostOverviewResponse: {
+      currencies: components['schemas']['CurrencyCostSummary'][]
+      servers: components['schemas']['ServerCostOverview'][]
     }
     CreateAlertRule: {
       cover_type?: string
@@ -2088,6 +2167,17 @@ export interface components {
       password: string
       role?: string
       username: string
+    }
+    CurrencyCostSummary: {
+      /** Format: int32 */
+      configured_server_count: number
+      currency: string
+      /** Format: double */
+      cycle_elapsed_total: number
+      /** Format: double */
+      daily_total: number
+      /** Format: double */
+      monthly_equivalent_total: number
     }
     CycleResponse: {
       current: components['schemas']['CycleTraffic']
@@ -2438,6 +2528,73 @@ export interface components {
     RegisterResponse: {
       server_id: string
       token: string
+    }
+    ResourceValue: {
+      /** Format: double */
+      cost_per_cpu_core?: number | null
+      /** Format: double */
+      cost_per_gb_disk?: number | null
+      /** Format: double */
+      cost_per_gb_memory?: number | null
+      /** Format: double */
+      cost_per_tb_traffic_limit?: number | null
+      traffic_limit_type?: string | null
+    }
+    ServerCostInsights: {
+      billing_cycle?: string | null
+      configured: boolean
+      /** Format: double */
+      cost_per_day?: number | null
+      /** Format: double */
+      cost_per_hour?: number | null
+      /** Format: double */
+      cost_per_month_equivalent?: number | null
+      /** Format: double */
+      cost_per_second?: number | null
+      currency?: string | null
+      /** Format: double */
+      cycle_burn_percent?: number | null
+      /** Format: double */
+      cycle_cost_elapsed?: number | null
+      /** Format: double */
+      cycle_cost_remaining?: number | null
+      /** Format: int64 */
+      cycle_days?: number | null
+      cycle_end?: string | null
+      cycle_start?: string | null
+      /** Format: int64 */
+      days_elapsed?: number | null
+      /** Format: int64 */
+      days_remaining?: number | null
+      invalid_reason?: null | components['schemas']['CostInvalidReason']
+      /** Format: double */
+      price?: number | null
+      resource_value?: null | components['schemas']['ResourceValue']
+      server_id: string
+      value_score?: null | components['schemas']['ValueScore']
+    }
+    ServerCostOverview: {
+      billing_cycle?: string | null
+      configured: boolean
+      /** Format: double */
+      cost_per_day?: number | null
+      /** Format: double */
+      cost_per_hour?: number | null
+      /** Format: double */
+      cost_per_month_equivalent?: number | null
+      /** Format: double */
+      cost_per_second?: number | null
+      currency?: string | null
+      /** Format: double */
+      cycle_burn_percent?: number | null
+      /** Format: double */
+      cycle_cost_elapsed?: number | null
+      /** Format: int64 */
+      days_remaining?: number | null
+      invalid_reason?: null | components['schemas']['CostInvalidReason']
+      name: string
+      server_id: string
+      value_score?: null | components['schemas']['ValueScore']
     }
     ServerGroup: {
       /** Format: date-time */
@@ -3078,6 +3235,30 @@ export interface components {
       /** Format: date-time */
       updated_at: string
       username: string
+    }
+    /** @enum {string} */
+    ValueConfidence: 'high' | 'medium' | 'low'
+    /** @enum {string} */
+    ValueGrade: 'excellent' | 'good' | 'okay' | 'poor' | 'waste'
+    /** @enum {string} */
+    ValueReason:
+      | 'idle_burn'
+      | 'sleeping_money'
+      | 'good_memory_value'
+      | 'good_disk_value'
+      | 'expensive_cpu'
+      | 'healthy_uptime'
+      | 'low_uptime'
+      | 'expired_billing'
+      | 'no_price_cycle'
+      | 'insufficient_data'
+      | 'free_or_zero_price'
+    ValueScore: {
+      confidence: components['schemas']['ValueConfidence']
+      grade: components['schemas']['ValueGrade']
+      reasons: components['schemas']['ValueReason'][]
+      /** Format: double */
+      score: number
     }
     WidgetInput: {
       config_json: unknown
@@ -4515,6 +4696,26 @@ export interface operations {
       }
     }
   }
+  get_cost_overview: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Cost overview */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ApiResponse_CostOverviewResponse']
+        }
+      }
+    }
+  }
   get_dashboard: {
     parameters: {
       query?: never
@@ -4888,6 +5089,36 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['ServerResponse']
+        }
+      }
+      /** @description Server not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_server_cost_insights: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Server cost insights */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ApiResponse_ServerCostInsights']
         }
       }
       /** @description Server not found */

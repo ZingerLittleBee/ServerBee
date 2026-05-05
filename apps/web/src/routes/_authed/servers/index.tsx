@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { DataTable } from '@/components/data-table/data-table'
 import { DataTableColumnHeader } from '@/components/data-table/data-table-column-header'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
+import { CostCell } from '@/components/server/cost-cell'
 import { ServerCard } from '@/components/server/server-card'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusDot } from '@/components/server/status-dot'
@@ -29,6 +30,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useServer } from '@/hooks/use-api'
+import { useCostOverview } from '@/hooks/use-cost'
 import { useDataTable } from '@/hooks/use-data-table'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { useTrafficOverview } from '@/hooks/use-traffic-overview'
@@ -93,11 +95,16 @@ function ServersListPage() {
   })
 
   const { data: trafficOverview = [] } = useTrafficOverview()
+  const { data: costOverview } = useCostOverview()
 
   const setSearch = (value: string) => navigate({ search: (prev) => ({ ...prev, q: value }) })
   const [editingId, setEditingId] = useState<string | null>(null)
 
   const groupMap = useMemo(() => new Map(groups?.map((g) => [g.id, g.name]) ?? []), [groups])
+  const costByServerId = useMemo(() => {
+    const entries = costOverview?.servers ?? []
+    return new Map(entries.map((entry) => [entry.server_id, entry]))
+  }, [costOverview])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
@@ -216,6 +223,17 @@ function ServersListPage() {
         meta: { className: 'hidden lg:table-cell lg:w-[150px]', cellClassName: 'lg:align-top', label: t('col_network') }
       },
       {
+        id: 'cost',
+        accessorFn: (row) => {
+          const entry = costByServerId.get(row.id)
+          return entry?.cost_per_month_equivalent ?? entry?.cost_per_day ?? -1
+        },
+        header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_cost')} />,
+        cell: ({ row }) => <CostCell entry={costByServerId.get(row.original.id)} />,
+        size: 150,
+        meta: { className: 'hidden xl:table-cell xl:w-[150px]', cellClassName: 'xl:align-top', label: t('col_cost') }
+      },
+      {
         accessorKey: 'uptime',
         id: 'uptime',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_uptime')} />,
@@ -263,7 +281,7 @@ function ServersListPage() {
         meta: { className: 'w-10' }
       }
     ],
-    [t, groupMap, groupOptions, statusOptions, trafficOverview]
+    [t, costByServerId, groupMap, groupOptions, statusOptions, trafficOverview]
   )
 
   const { table } = useDataTable({
