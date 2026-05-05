@@ -1,17 +1,17 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeft, BarChart3, Container, CreditCard, FileText, Pencil, Terminal as TerminalIcon } from 'lucide-react'
+import { ArrowLeft, BarChart3, Container, FileText, Pencil, Terminal as TerminalIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AgentVersionSection } from '@/components/server/agent-version-section'
 import { CapabilitiesDialog } from '@/components/server/capabilities-dialog'
+import { CostInsightBar } from '@/components/server/cost-insight-bar'
 import { DiskIoChart } from '@/components/server/disk-io-chart'
 import { MetricsChart } from '@/components/server/metrics-chart'
 import { RecoveryMergeDialog } from '@/components/server/recovery-merge-dialog'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
 import { TrafficCard } from '@/components/server/traffic-card'
-import { TrafficProgress } from '@/components/server/traffic-progress'
 import { TrafficTab } from '@/components/server/traffic-tab'
 import { UpgradeJobBadge } from '@/components/server/upgrade-job-badge'
 import { Badge } from '@/components/ui/badge'
@@ -70,14 +70,6 @@ const TIME_RANGES: TimeRange[] = [
   { key: '7d', label: 'range_7d', hours: 168, interval: 'hourly' },
   { key: '30d', label: 'range_30d', hours: 720, interval: 'hourly' }
 ]
-
-function formatCurrency(price: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(price)
-  } catch {
-    return `${currency} ${price.toFixed(2)}`
-  }
-}
 
 function translateRecoveryStage(
   t: (key: string, options?: { defaultValue?: string }) => string,
@@ -635,7 +627,7 @@ export function ServerDetailPage() {
         </div>
       </div>
 
-      {hasBilling && <BillingInfoBar server={server} serverId={id} />}
+      {hasBilling && <CostInsightBar server={server} serverId={id} />}
 
       {isOnline && (liveNetIn > 0 || liveNetOut > 0) && (
         <div className="mb-6 flex flex-wrap gap-6 rounded-lg border bg-card p-3 text-sm">
@@ -696,54 +688,6 @@ export function ServerDetailPage() {
         open={recoveryOpen}
         targetServerId={id}
       />
-    </div>
-  )
-}
-
-function BillingInfoBar({
-  server,
-  serverId
-}: {
-  server: Pick<
-    ServerResponse,
-    'billing_cycle' | 'currency' | 'expired_at' | 'price' | 'traffic_limit' | 'traffic_limit_type'
-  >
-  serverId: string
-}) {
-  const { t } = useTranslation('servers')
-  const isExpired = server.expired_at ? new Date(server.expired_at) < new Date() : false
-  const daysUntilExpiry = server.expired_at
-    ? Math.ceil((new Date(server.expired_at).getTime() - Date.now()) / 86_400_000)
-    : null
-
-  const expiryColor = (() => {
-    if (isExpired) {
-      return 'text-destructive'
-    }
-    if (daysUntilExpiry != null && daysUntilExpiry <= 7) {
-      return 'text-yellow-600 dark:text-yellow-400'
-    }
-    return 'text-muted-foreground'
-  })()
-
-  return (
-    <div className="mb-6 flex flex-wrap items-center gap-4 rounded-lg border bg-card p-3 text-sm">
-      <CreditCard aria-hidden="true" className="size-4 text-muted-foreground" />
-      {server.price != null && (
-        <span>
-          {formatCurrency(server.price, server.currency ?? 'USD')}
-          {server.billing_cycle && <span className="text-muted-foreground"> / {server.billing_cycle}</span>}
-        </span>
-      )}
-      {server.expired_at && (
-        <span className={cn(expiryColor)}>
-          {isExpired
-            ? `${t('detail_expired')} ${new Date(server.expired_at).toLocaleDateString()}`
-            : `${t('detail_expires')} ${new Date(server.expired_at).toLocaleDateString()}`}
-          {daysUntilExpiry != null && !isExpired && ` (${t('detail_expires_days', { count: daysUntilExpiry })})`}
-        </span>
-      )}
-      {server.traffic_limit != null && <TrafficProgress serverId={serverId} />}
     </div>
   )
 }
