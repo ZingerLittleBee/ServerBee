@@ -84,10 +84,8 @@ describe('cost hooks', () => {
 })
 
 function jsonResponse<T>(data: T) {
-  return Promise.resolve(
-    new Response(JSON.stringify({ data }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    })
-  )
+  return new Response(JSON.stringify({ data }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' }
+  })
 }
