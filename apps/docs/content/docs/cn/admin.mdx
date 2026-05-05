@@ -215,6 +215,36 @@ GET /api/audit-logs?limit=50&offset=0
 
 使用 `transfer_in_cycle` / `transfer_out_cycle` / `transfer_all_cycle` 告警类型，可以监控当前计费周期内的累计流量是否超过设定阈值。详见 [告警与通知](/cn/docs/alerts)。
 
+### 成本洞察
+
+填写 `price` 和 `billing_cycle` 之后，ServerBee 会基于已记录的计费信息以及 Agent 上报的资源、利用率和在线时长，自动衍生出一组成本相关的信号。这些洞察会在三个位置展示：
+
+- **服务器列表的成本单元格** -- `/servers` 表格在 CPU/内存/磁盘/流量旁边直接展示月度等价成本和价值评级，不必再到编辑弹窗里翻账单字段
+- **仪表盘 server card** -- 每张服务器卡片会显示一行紧凑的 cost 信号 + 注脚，概括 burn 速率和价值评级；如果计费配置缺失或非法会自动隐藏
+- **服务器详情的 cost insights 面板** -- 服务器详情页展示完整明细：月度等价成本、当前计费周期已消耗 / 剩余成本与 burn 百分比、剩余天数、归一化的资源单位成本（每 CPU 核 / 每 GB 内存 / 每 GB 磁盘 / 每 TB 流量限额），以及带原因和置信度的价值评分
+
+#### 价值评分
+
+每台已配置成本的服务器都有一个 `score`（0-100）和对应的 `grade`：
+
+| Grade | 分数区间 | 含义 |
+|-------|---------|------|
+| `excellent` | ≥ 90 | 单价相对资源非常划算 |
+| `good` | ≥ 75 | 价值不错，仅有少量低效 |
+| `okay` | ≥ 60 | 还算合理，但有优化空间 |
+| `poor` | ≥ 40 | 实际使用相对支出偏低 |
+| `waste` | < 40 | 大量空转或单位资源价格过高 |
+
+评分由三部分组成：与同币种其他服务器对比的资源单位成本分位、利用率（CPU/内存空闲、缺乏网络/磁盘 IO 活动会贡献 `idle_burn` / `sleeping_money`）、以及最近 30 天的可用性（在线率驱动 `healthy_uptime` / `low_uptime`）。`confidence` 字段（`high` / `medium` / `low`）反映可用数据量；面板还会展示 `expensive_cpu`、`good_memory_value`、`expired_billing`、`free_or_zero_price`、`insufficient_data` 等定性原因。
+
+#### 输入校验
+
+成本洞察 API 在评分前会拒绝非法的计费输入，对应的 `invalid_reason` 包括 `missing_price`、`missing_billing_cycle`、`invalid_billing_cycle`、`invalid_price`。前端会把这些行标记为「invalid card cost config」而不是默默给 0 分。
+
+#### API
+
+同样的数据也通过只读 API 暴露：`GET /api/cost/overview`（按币种汇总的舰队总览 + 每台服务器摘要）和 `GET /api/servers/{id}/cost-insights`（单台服务器的完整明细）。认证细节见 [API 参考](/cn/docs/api-reference#已认证读取端点)。
+
 ## Agent 注册管理
 
 管理员现在可以直接在界面里管理首次接入流程：
