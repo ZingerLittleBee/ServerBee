@@ -1,6 +1,10 @@
 import { render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ServerCostInsights } from '@/lib/api-schema'
+
+const REGEX_DETAIL_EXPIRED = /detail_expired/
+const REGEX_EDIT_CYCLE_MONTHLY = /edit_cycle_monthly/
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children?: ReactNode }) => <a href="/">{children}</a>,
@@ -100,11 +104,16 @@ vi.mock('@/components/uptime/uptime-timeline', () => ({
 const mockUseServer = vi.fn()
 const mockUseServerRecords = vi.fn()
 const mockUseUptimeDaily = vi.fn()
+const mockUseCostInsights = vi.fn()
 
 vi.mock('@/hooks/use-api', () => ({
   useServer: (serverId: string) => mockUseServer(serverId),
   useServerRecords: (...args: unknown[]) => mockUseServerRecords(...args),
   useUptimeDaily: (serverId: string) => mockUseUptimeDaily(serverId)
+}))
+
+vi.mock('@/hooks/use-cost', () => ({
+  useCostInsights: (serverId: string) => mockUseCostInsights(serverId)
 }))
 
 vi.mock('@/hooks/use-realtime-metrics', () => ({
@@ -190,6 +199,7 @@ describe('ServerDetailPage', () => {
     })
     mockUseServerRecords.mockReturnValue({ data: [] })
     mockUseUptimeDaily.mockReturnValue({ data: [] })
+    mockUseCostInsights.mockReturnValue({ data: undefined })
   })
 
   it('keeps bottom padding on the page container', () => {
@@ -226,5 +236,121 @@ describe('ServerDetailPage', () => {
     render(<ServerDetailPage />)
 
     expect(screen.getByText('Recover Agent')).toBeInTheDocument()
+  })
+
+  it('shows cost insights on the billing summary', () => {
+    mockUseServer.mockReturnValue({
+      data: {
+        agent_version: '1.0.0',
+        billing_cycle: 'monthly',
+        capabilities: 0,
+        country_code: 'US',
+        cpu_arch: 'x86_64',
+        cpu_cores: 4,
+        cpu_name: 'Test CPU',
+        currency: 'USD',
+        disk_total: 1,
+        effective_capabilities: 0,
+        expired_at: '2020-01-01T00:00:00Z',
+        id: 'server-1',
+        ip_v4: null,
+        ip_v6: null,
+        ipv4: '127.0.0.1',
+        ipv6: null,
+        kernel_version: '6.0.0',
+        mem_total: 1,
+        name: 'test-server',
+        os: 'Ubuntu',
+        price: 5,
+        protocol_version: 1,
+        region: 'test-region',
+        traffic_limit: null
+      },
+      isLoading: false
+    })
+    mockUseCostInsights.mockReturnValue({
+      isError: true,
+      data: {
+        billing_cycle: 'monthly',
+        configured: true,
+        cost_per_day: 0.16,
+        cost_per_hour: 0.0068,
+        cost_per_month_equivalent: 5,
+        cost_per_second: 0.000_001_9,
+        currency: 'USD',
+        cycle_burn_percent: 54.2,
+        cycle_cost_elapsed: 2.71,
+        cycle_cost_remaining: 2.29,
+        cycle_days: 30,
+        cycle_end: null,
+        cycle_start: null,
+        days_elapsed: 16,
+        days_remaining: 14,
+        invalid_reason: null,
+        price: 5,
+        resource_value: {},
+        server_id: 'server-1',
+        value_score: {
+          confidence: 'high',
+          grade: 'good',
+          reasons: ['healthy_uptime'],
+          score: 82
+        }
+      } satisfies ServerCostInsights
+    })
+
+    render(<ServerDetailPage />)
+
+    expect(screen.getByText('cost_value_score')).toBeInTheDocument()
+    expect(screen.getByText('82')).toBeInTheDocument()
+    expect(screen.getByText(REGEX_EDIT_CYCLE_MONTHLY)).toBeInTheDocument()
+    expect(screen.getByText(REGEX_DETAIL_EXPIRED)).toBeInTheDocument()
+  })
+
+  it('keeps expiration status when cost config is incomplete', () => {
+    mockUseServer.mockReturnValue({
+      data: {
+        agent_version: '1.0.0',
+        billing_cycle: null,
+        capabilities: 0,
+        country_code: 'US',
+        cpu_arch: 'x86_64',
+        cpu_cores: 4,
+        cpu_name: 'Test CPU',
+        currency: 'USD',
+        disk_total: 1,
+        effective_capabilities: 0,
+        expired_at: '2020-01-01T00:00:00Z',
+        id: 'server-1',
+        ip_v4: null,
+        ip_v6: null,
+        ipv4: '127.0.0.1',
+        ipv6: null,
+        kernel_version: '6.0.0',
+        mem_total: 1,
+        name: 'test-server',
+        os: 'Ubuntu',
+        price: 5,
+        protocol_version: 1,
+        region: 'test-region',
+        traffic_limit: null
+      },
+      isLoading: false
+    })
+    mockUseCostInsights.mockReturnValue({
+      data: {
+        billing_cycle: null,
+        configured: false,
+        currency: 'USD',
+        invalid_reason: 'missing_billing_cycle',
+        price: 5,
+        server_id: 'server-1'
+      } satisfies ServerCostInsights
+    })
+
+    render(<ServerDetailPage />)
+
+    expect(screen.getByText(REGEX_DETAIL_EXPIRED)).toBeInTheDocument()
+    expect(screen.getByText('cost_invalid_missing_billing_cycle')).toBeInTheDocument()
   })
 })

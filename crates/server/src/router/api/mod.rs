@@ -3,6 +3,7 @@ pub mod alert;
 pub mod audit;
 pub mod auth;
 pub mod brand;
+pub mod cost;
 pub mod dashboard;
 pub mod docker;
 pub mod file;
@@ -59,6 +60,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 .merge(file::read_router())
                 .merge(docker::read_router())
                 .merge(traffic::read_router())
+                .merge(cost::read_router())
                 .merge(traceroute::read_router())
                 .merge(service_monitor::read_router())
                 .merge(status_page::read_router())

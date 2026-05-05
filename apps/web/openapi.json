@@ -1001,6 +1001,35 @@
         }
       }
     },
+    "/api/cost/overview": {
+      "get": {
+        "tags": ["cost"],
+        "operationId": "get_cost_overview",
+        "responses": {
+          "200": {
+            "description": "Cost overview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CostOverviewResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
     "/api/dashboards": {
       "get": {
         "tags": ["dashboards"],
@@ -3727,6 +3756,49 @@
         "responses": {
           "200": {
             "description": "Server deleted"
+          },
+          "404": {
+            "description": "Server not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/servers/{id}/cost-insights": {
+      "get": {
+        "tags": ["cost"],
+        "operationId": "get_server_cost_insights",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Server cost insights",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ServerCostInsights"
+                }
+              }
+            }
           },
           "404": {
             "description": "Server not found"
@@ -6582,6 +6654,30 @@
           }
         }
       },
+      "ApiResponse_CostOverviewResponse": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["currencies", "servers"],
+            "properties": {
+              "currencies": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CurrencyCostSummary"
+                }
+              },
+              "servers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ServerCostOverview"
+                }
+              }
+            }
+          }
+        }
+      },
       "ApiResponse_CycleResponse": {
         "type": "object",
         "required": ["data"],
@@ -6598,6 +6694,110 @@
                 "items": {
                   "$ref": "#/components/schemas/CycleTraffic"
                 }
+              }
+            }
+          }
+        }
+      },
+      "ApiResponse_ServerCostInsights": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["server_id", "configured"],
+            "properties": {
+              "billing_cycle": {
+                "type": ["string", "null"]
+              },
+              "configured": {
+                "type": "boolean"
+              },
+              "cost_per_day": {
+                "type": ["number", "null"],
+                "format": "double"
+              },
+              "cost_per_hour": {
+                "type": ["number", "null"],
+                "format": "double"
+              },
+              "cost_per_month_equivalent": {
+                "type": ["number", "null"],
+                "format": "double"
+              },
+              "cost_per_second": {
+                "type": ["number", "null"],
+                "format": "double"
+              },
+              "currency": {
+                "type": ["string", "null"]
+              },
+              "cycle_burn_percent": {
+                "type": ["number", "null"],
+                "format": "double"
+              },
+              "cycle_cost_elapsed": {
+                "type": ["number", "null"],
+                "format": "double"
+              },
+              "cycle_cost_remaining": {
+                "type": ["number", "null"],
+                "format": "double"
+              },
+              "cycle_days": {
+                "type": ["integer", "null"],
+                "format": "int64"
+              },
+              "cycle_end": {
+                "type": ["string", "null"]
+              },
+              "cycle_start": {
+                "type": ["string", "null"]
+              },
+              "days_elapsed": {
+                "type": ["integer", "null"],
+                "format": "int64"
+              },
+              "days_remaining": {
+                "type": ["integer", "null"],
+                "format": "int64"
+              },
+              "invalid_reason": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CostInvalidReason"
+                  }
+                ]
+              },
+              "price": {
+                "type": ["number", "null"],
+                "format": "double"
+              },
+              "resource_value": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ResourceValue"
+                  }
+                ]
+              },
+              "server_id": {
+                "type": "string"
+              },
+              "value_score": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ValueScore"
+                  }
+                ]
               }
             }
           }
@@ -6931,6 +7131,33 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          }
+        }
+      },
+      "CostInvalidReason": {
+        "type": "string",
+        "enum": [
+          "missing_price",
+          "missing_billing_cycle",
+          "invalid_billing_cycle",
+          "invalid_price"
+        ]
+      },
+      "CostOverviewResponse": {
+        "type": "object",
+        "required": ["currencies", "servers"],
+        "properties": {
+          "currencies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CurrencyCostSummary"
+            }
+          },
+          "servers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServerCostOverview"
+            }
           }
         }
       },
@@ -7275,6 +7502,38 @@
           },
           "username": {
             "type": "string"
+          }
+        }
+      },
+      "CurrencyCostSummary": {
+        "type": "object",
+        "required": [
+          "currency",
+          "configured_server_count",
+          "monthly_equivalent_total",
+          "daily_total",
+          "cycle_elapsed_total"
+        ],
+        "properties": {
+          "configured_server_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "currency": {
+            "type": "string"
+          },
+          "cycle_elapsed_total": {
+            "type": "number",
+            "format": "double"
+          },
+          "daily_total": {
+            "type": "number",
+            "format": "double"
+          },
+          "monthly_equivalent_total": {
+            "type": "number",
+            "format": "double"
           }
         }
       },
@@ -8355,6 +8614,197 @@
           },
           "token": {
             "type": "string"
+          }
+        }
+      },
+      "ResourceValue": {
+        "type": "object",
+        "properties": {
+          "cost_per_cpu_core": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "cost_per_gb_disk": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "cost_per_gb_memory": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "cost_per_tb_traffic_limit": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "traffic_limit_type": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "ServerCostInsights": {
+        "type": "object",
+        "required": ["server_id", "configured"],
+        "properties": {
+          "billing_cycle": {
+            "type": ["string", "null"]
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "cost_per_day": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "cost_per_hour": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "cost_per_month_equivalent": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "cost_per_second": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "currency": {
+            "type": ["string", "null"]
+          },
+          "cycle_burn_percent": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "cycle_cost_elapsed": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "cycle_cost_remaining": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "cycle_days": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "cycle_end": {
+            "type": ["string", "null"]
+          },
+          "cycle_start": {
+            "type": ["string", "null"]
+          },
+          "days_elapsed": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "days_remaining": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "invalid_reason": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CostInvalidReason"
+              }
+            ]
+          },
+          "price": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "resource_value": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ResourceValue"
+              }
+            ]
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "value_score": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ValueScore"
+              }
+            ]
+          }
+        }
+      },
+      "ServerCostOverview": {
+        "type": "object",
+        "required": ["server_id", "name", "configured"],
+        "properties": {
+          "billing_cycle": {
+            "type": ["string", "null"]
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "cost_per_day": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "cost_per_hour": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "cost_per_month_equivalent": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "cost_per_second": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "currency": {
+            "type": ["string", "null"]
+          },
+          "cycle_burn_percent": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "cycle_cost_elapsed": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "days_remaining": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "invalid_reason": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CostInvalidReason"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "value_score": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ValueScore"
+              }
+            ]
           }
         }
       },
@@ -10207,6 +10657,52 @@
           }
         }
       },
+      "ValueConfidence": {
+        "type": "string",
+        "enum": ["high", "medium", "low"]
+      },
+      "ValueGrade": {
+        "type": "string",
+        "enum": ["excellent", "good", "okay", "poor", "waste"]
+      },
+      "ValueReason": {
+        "type": "string",
+        "enum": [
+          "idle_burn",
+          "sleeping_money",
+          "good_memory_value",
+          "good_disk_value",
+          "expensive_cpu",
+          "healthy_uptime",
+          "low_uptime",
+          "expired_billing",
+          "no_price_cycle",
+          "insufficient_data",
+          "free_or_zero_price"
+        ]
+      },
+      "ValueScore": {
+        "type": "object",
+        "required": ["score", "grade", "reasons", "confidence"],
+        "properties": {
+          "confidence": {
+            "$ref": "#/components/schemas/ValueConfidence"
+          },
+          "grade": {
+            "$ref": "#/components/schemas/ValueGrade"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ValueReason"
+            }
+          },
+          "score": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
       "WidgetInput": {
         "type": "object",
         "required": [
@@ -10393,6 +10889,10 @@
     {
       "name": "traffic",
       "description": "Traffic statistics & billing cycle overview"
+    },
+    {
+      "name": "cost",
+      "description": "VPS cost insights and value scoring"
     },
     {
       "name": "uptime",

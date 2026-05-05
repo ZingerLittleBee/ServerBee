@@ -191,6 +191,9 @@ impl Modify for SecurityAddon {
         crate::router::api::traffic::get_traffic_overview,
         crate::router::api::traffic::get_traffic_overview_daily,
         crate::router::api::traffic::get_traffic_cycle,
+        // cost
+        crate::router::api::cost::get_cost_overview,
+        crate::router::api::cost::get_server_cost_insights,
         // mobile-auth
         crate::router::api::mobile::mobile_login,
         crate::router::api::mobile::mobile_refresh,
@@ -356,6 +359,17 @@ impl Modify for SecurityAddon {
             crate::service::traffic::HourlyTraffic,
             crate::service::traffic::ServerTrafficOverview,
             crate::service::traffic::CycleTraffic,
+            // cost
+            crate::service::cost::CostOverviewResponse,
+            crate::service::cost::CurrencyCostSummary,
+            crate::service::cost::ServerCostOverview,
+            crate::service::cost::ServerCostInsights,
+            crate::service::cost::ResourceValue,
+            crate::service::cost::ValueScore,
+            crate::service::cost::CostInvalidReason,
+            crate::service::cost::ValueGrade,
+            crate::service::cost::ValueReason,
+            crate::service::cost::ValueConfidence,
             // mobile-auth
             crate::router::api::mobile::MobileLoginRequest,
             crate::router::api::mobile::MobileRefreshRequest,
@@ -416,6 +430,7 @@ impl Modify for SecurityAddon {
         (name = "ping-tasks", description = "Ping probe tasks"),
         (name = "traceroute", description = "Traceroute diagnostics"),
         (name = "traffic", description = "Traffic statistics & billing cycle overview"),
+        (name = "cost", description = "VPS cost insights and value scoring"),
         (name = "uptime", description = "Uptime statistics"),
         (name = "files", description = "File management"),
     ),
