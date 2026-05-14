@@ -119,3 +119,29 @@ export function getLossDotBgClass(lossRatio: number | null | undefined): string 
   }
   return 'bg-red-500'
 }
+
+export function getLatencySquareColor({ latencyMs, lossRatio }: CombinedSeverityInput): string {
+  if (lossRatio != null && lossRatio >= NETWORK_FAILURE_PACKET_LOSS_RATIO) {
+    return LATENCY_FAILED_BAR_COLOR
+  }
+  if (latencyMs == null) {
+    return LATENCY_UNKNOWN_BAR_COLOR
+  }
+  if (latencyMs < LATENCY_HEALTHY_THRESHOLD_MS) {
+    return LATENCY_HEALTHY_BAR_COLOR
+  }
+  return LATENCY_WARNING_BAR_COLOR
+}
+
+export function getLossSquareColor(lossRatio: number | null | undefined): string {
+  if (lossRatio == null) {
+    return LATENCY_UNKNOWN_BAR_COLOR
+  }
+  if (lossRatio < LOSS_WARNING_THRESHOLD_RATIO) {
+    return LATENCY_HEALTHY_BAR_COLOR
+  }
+  if (lossRatio < LOSS_SEVERE_THRESHOLD_RATIO) {
+    return LATENCY_WARNING_BAR_COLOR
+  }
+  return LATENCY_FAILED_BAR_COLOR
+}

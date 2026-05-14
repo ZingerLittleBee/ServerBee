@@ -92,7 +92,7 @@ describe('buildServerCardNetworkState', () => {
 
     expect(state.currentAvgLatency).toBe(80)
     expect(state.currentAvgLossRatio).toBeCloseTo(0.045)
-    expect(state.latencyPoints).toHaveLength(12)
+    expect(state.latencyPoints).toHaveLength(30)
     expect(state.latencyPoints.at(-2)?.value).toBe(40)
     expect(state.latencyPoints.at(-1)?.value).toBe(80)
     expect(state.latencyPoints.at(-1)?.targets).toEqual([
@@ -164,7 +164,7 @@ describe('buildServerCardNetworkState', () => {
       ]
     })
 
-    expect(state.latencyPoints).toHaveLength(12)
+    expect(state.latencyPoints).toHaveLength(30)
     expect(state.latencyPoints.at(-4)?.value).toBe(10)
     expect(state.latencyPoints.at(-1)?.value).toBe(60)
     expect(state.currentAvgLatency).toBe(60)
@@ -202,10 +202,10 @@ describe('buildServerCardNetworkState', () => {
       ]
     })
 
-    expect(state.latencyPoints).toHaveLength(12)
+    expect(state.latencyPoints).toHaveLength(30)
     expect(state.latencyPoints[0].value).toBeNull()
     expect(state.latencyPoints.at(-1)?.value).toBe(60)
-    expect(state.lossPoints).toHaveLength(12)
+    expect(state.lossPoints).toHaveLength(30)
     expect(state.lossPoints[0].value).toBeNull()
     expect(state.lossPoints.at(-1)?.value).toBe(4)
   })

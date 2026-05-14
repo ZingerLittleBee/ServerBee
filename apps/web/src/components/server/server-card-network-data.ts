@@ -1,6 +1,6 @@
 import type { NetworkProbeResultData, NetworkServerSummary, NetworkTargetSummary } from '@/lib/network-types'
 
-const MAX_TREND_POINTS = 12
+const MAX_TREND_POINTS = 30
 
 export interface ServerCardTooltipTarget {
   latency: number | null

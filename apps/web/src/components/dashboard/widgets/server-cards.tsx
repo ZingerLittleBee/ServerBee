@@ -11,14 +11,12 @@ interface ServerCardsWidgetProps {
 
 export function ServerCardsWidget({ config, servers }: ServerCardsWidgetProps) {
   const filtered = useMemo(() => filterByIds(servers, config.server_ids, (s) => s.id), [servers, config.server_ids])
-  const maxColumns = config.columns ?? 3
-  const columns = Math.min(maxColumns, filtered.length || 1)
 
   return (
     <div
       className="grid h-full content-start gap-4 overflow-auto"
       style={{
-        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`
+        gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))'
       }}
     >
       {filtered.map((server) => (
