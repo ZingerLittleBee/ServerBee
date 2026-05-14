@@ -125,17 +125,19 @@ export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
     <div className="flex h-3 w-full items-end overflow-hidden" ref={containerRef} style={{ gap: `${SQUARE_GAP}px` }}>
       {visible.map((point) => (
         <Tooltip key={point.timestamp}>
-          <TooltipTrigger asChild>
-            <div
-              className="flex-none rounded-[1px]"
-              data-testid="square"
-              style={{
-                backgroundColor: getSquareColor(point, kind),
-                height: `${SQUARE_SIZE}px`,
-                width: `${SQUARE_SIZE}px`
-              }}
-            />
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <div
+                className="flex-none rounded-[1px]"
+                data-testid="square"
+                style={{
+                  backgroundColor: getSquareColor(point, kind),
+                  height: `${SQUARE_SIZE}px`,
+                  width: `${SQUARE_SIZE}px`
+                }}
+              />
+            }
+          />
           <TooltipContent
             className="grid min-w-48 gap-1.5 rounded-lg border border-border/50 bg-background/95 px-3 py-2 text-xs shadow-xl backdrop-blur-sm"
             sideOffset={4}
