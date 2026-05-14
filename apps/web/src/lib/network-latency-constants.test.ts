@@ -3,11 +3,17 @@ import {
   getCombinedBarColor,
   getCombinedSeverity,
   getLatencyBarColor,
+  getLatencySquareColor,
   getLatencyStatus,
   getLatencyTextClass,
   getLossDotBgClass,
+  getLossSquareColor,
   isLatencyFailure,
-  LATENCY_HEALTHY_THRESHOLD_MS
+  LATENCY_FAILED_BAR_COLOR,
+  LATENCY_HEALTHY_BAR_COLOR,
+  LATENCY_HEALTHY_THRESHOLD_MS,
+  LATENCY_UNKNOWN_BAR_COLOR,
+  LATENCY_WARNING_BAR_COLOR
 } from './network-latency-constants'
 
 describe('network-latency-constants', () => {
@@ -90,6 +96,48 @@ describe('network-latency-constants', () => {
       expect(getLossDotBgClass(0.049)).toBe('bg-amber-500')
       expect(getLossDotBgClass(0.05)).toBe('bg-red-500')
       expect(getLossDotBgClass(1)).toBe('bg-red-500')
+    })
+  })
+
+  describe('getLatencySquareColor', () => {
+    it('returns muted for null latency', () => {
+      expect(getLatencySquareColor({ latencyMs: null, lossRatio: 0 })).toBe(LATENCY_UNKNOWN_BAR_COLOR)
+    })
+
+    it('returns failed color when loss indicates probe failure', () => {
+      expect(getLatencySquareColor({ latencyMs: 40, lossRatio: 1 })).toBe(LATENCY_FAILED_BAR_COLOR)
+      expect(getLatencySquareColor({ latencyMs: null, lossRatio: 1 })).toBe(LATENCY_FAILED_BAR_COLOR)
+    })
+
+    it('returns healthy color below threshold', () => {
+      expect(getLatencySquareColor({ latencyMs: 50, lossRatio: 0 })).toBe(LATENCY_HEALTHY_BAR_COLOR)
+      expect(getLatencySquareColor({ latencyMs: 299, lossRatio: 0 })).toBe(LATENCY_HEALTHY_BAR_COLOR)
+    })
+
+    it('returns warning color at or above threshold', () => {
+      expect(getLatencySquareColor({ latencyMs: 300, lossRatio: 0 })).toBe(LATENCY_WARNING_BAR_COLOR)
+      expect(getLatencySquareColor({ latencyMs: 500, lossRatio: 0 })).toBe(LATENCY_WARNING_BAR_COLOR)
+    })
+  })
+
+  describe('getLossSquareColor', () => {
+    it('returns muted for null loss', () => {
+      expect(getLossSquareColor(null)).toBe(LATENCY_UNKNOWN_BAR_COLOR)
+    })
+
+    it('returns healthy when loss is below warning threshold', () => {
+      expect(getLossSquareColor(0)).toBe(LATENCY_HEALTHY_BAR_COLOR)
+      expect(getLossSquareColor(0.009)).toBe(LATENCY_HEALTHY_BAR_COLOR)
+    })
+
+    it('returns warning between warning and severe thresholds', () => {
+      expect(getLossSquareColor(0.01)).toBe(LATENCY_WARNING_BAR_COLOR)
+      expect(getLossSquareColor(0.049)).toBe(LATENCY_WARNING_BAR_COLOR)
+    })
+
+    it('returns failed at or above severe threshold', () => {
+      expect(getLossSquareColor(0.05)).toBe(LATENCY_FAILED_BAR_COLOR)
+      expect(getLossSquareColor(1)).toBe(LATENCY_FAILED_BAR_COLOR)
     })
   })
 })
