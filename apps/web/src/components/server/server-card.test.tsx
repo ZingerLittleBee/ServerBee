@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import type { CostOverviewResponse, ServerCostOverview } from '@/lib/api-schema'
 import type { NetworkServerSummary } from '@/lib/network-types'
 import { CostFootnote } from './cost-footnote'
@@ -21,26 +22,6 @@ vi.mock('@tanstack/react-router', () => ({
   )
 }))
 
-vi.mock('recharts', () => {
-  const createWrapper =
-    (testId: string) =>
-    ({ children }: { children?: React.ReactNode }) => <div data-testid={testId}>{children}</div>
-
-  return {
-    ResponsiveContainer: createWrapper('responsive-container'),
-    Tooltip: createWrapper('chart-tooltip'),
-    Legend: createWrapper('chart-legend'),
-    CartesianGrid: () => <div data-testid="cartesian-grid" />,
-    XAxis: () => <div data-testid="x-axis" />,
-    YAxis: () => <div data-testid="y-axis" />,
-    BarChart: createWrapper('bar-chart'),
-    Bar: ({ children, dataKey }: { children?: React.ReactNode; dataKey: string }) => (
-      <div data-testid={`bar-${dataKey}`}>{children}</div>
-    ),
-    Cell: ({ fill }: { fill?: string }) => <div data-fill={fill} data-testid="bar-cell" />
-  }
-})
-
 const mockNetworkOverview = vi.fn()
 const mockNetworkRealtime = vi.fn()
 const mockTrafficOverview = vi.fn()
@@ -57,6 +38,14 @@ vi.mock('@/hooks/use-network-realtime', () => ({
 vi.mock('@/hooks/use-traffic-overview', () => ({
   useTrafficOverview: (...args: unknown[]) => mockTrafficOverview(...args)
 }))
+
+function renderCard(server: Parameters<typeof ServerCard>[0]['server']) {
+  return render(
+    <TooltipProvider>
+      <ServerCard server={server} />
+    </TooltipProvider>
+  )
+}
 
 function makeServer(overrides: Partial<Parameters<typeof ServerCard>[0]['server']> = {}) {
   return {
@@ -89,6 +78,7 @@ function makeServer(overrides: Partial<Parameters<typeof ServerCard>[0]['server'
     region: null,
     group_id: null,
     last_active: Date.now(),
+    tags: undefined,
     ...overrides
   }
 }
@@ -107,17 +97,6 @@ function makeSummary(overrides: Partial<NetworkServerSummary> = {}): NetworkServ
   }
 }
 
-function findHeroLatency(textContent: string) {
-  return screen.getByText((_content, element) => {
-    return (
-      element?.tagName === 'SPAN' &&
-      element.textContent === textContent &&
-      element.className.includes('text-lg') &&
-      element.className.includes('tabular-nums')
-    )
-  })
-}
-
 describe('ServerCard', () => {
   beforeEach(() => {
     mockNetworkOverview.mockReturnValue({ data: [] })
@@ -127,12 +106,12 @@ describe('ServerCard', () => {
   })
 
   it('renders server name', () => {
-    render(<ServerCard server={makeServer()} />)
+    renderCard(makeServer())
     expect(screen.getByText('test-server')).toBeDefined()
   })
 
   it('renders four ring charts with CPU, Memory, Disk, Traffic labels', () => {
-    render(<ServerCard server={makeServer()} />)
+    renderCard(makeServer())
     expect(screen.getByText('col_cpu')).toBeDefined()
     expect(screen.getByText('col_memory')).toBeDefined()
     expect(screen.getByText('col_disk')).toBeDefined()
@@ -140,7 +119,7 @@ describe('ServerCard', () => {
   })
 
   it('renders footnote secondary metrics', () => {
-    render(<ServerCard server={makeServer()} />)
+    renderCard(makeServer())
     expect(screen.getByText('col_uptime')).toBeDefined()
     expect(screen.getByText('card_swap')).toBeDefined()
     expect(screen.getByText('card_processes')).toBeDefined()
@@ -170,7 +149,7 @@ describe('ServerCard', () => {
       } satisfies CostOverviewResponse
     })
 
-    render(<ServerCard server={makeServer()} />)
+    renderCard(makeServer())
 
     expect(screen.getByText(REGEX_COST_PER_HOUR)).toBeDefined()
     expect(screen.getByText('cost_grade_good')).toBeDefined()
@@ -208,7 +187,7 @@ describe('ServerCard', () => {
   })
 
   it('renders network and disk I/O rates with load trend', () => {
-    render(<ServerCard server={makeServer()} />)
+    renderCard(makeServer())
     expect(screen.getByText('card_net_in_speed')).toBeDefined()
     expect(screen.getByText('card_net_out_speed')).toBeDefined()
     expect(screen.getByLabelText('card_disk_read')).toBeDefined()
@@ -217,11 +196,12 @@ describe('ServerCard', () => {
   })
 
   it('does not render network quality section when no data', () => {
-    render(<ServerCard server={makeServer()} />)
-    expect(screen.queryByText('card_network_quality')).toBeNull()
+    renderCard(makeServer())
+    expect(screen.queryByText('card_latency')).toBeNull()
+    expect(screen.queryByText('card_packet_loss')).toBeNull()
   })
 
-  it('renders a single aggregated latency and loss view from target summaries', () => {
+  it('renders latency and loss square grids when network data is present', () => {
     mockNetworkOverview.mockReturnValue({
       data: [
         makeSummary({
@@ -235,174 +215,31 @@ describe('ServerCard', () => {
               provider: 'ct',
               target_id: 'target-1',
               target_name: 'Shanghai Telecom'
-            },
-            {
-              availability: 0.97,
-              avg_latency: 80,
-              max_latency: 90,
-              min_latency: 70,
-              packet_loss: 0.03,
-              provider: 'cu',
-              target_id: 'target-2',
-              target_name: 'Beijing Unicom'
             }
           ]
         })
       ]
     })
 
-    render(<ServerCard server={makeServer()} />)
+    renderCard(makeServer())
 
-    expect(findHeroLatency('60ms')).toBeDefined()
-    expect(screen.getByLabelText('common:a11y.latency_trend')).toBeDefined()
-    expect(screen.queryByLabelText('common:a11y.packet_loss_trend')).toBeNull()
-    expect(screen.queryByText('Shanghai Telecom')).toBeNull()
-    expect(screen.queryByText('Beijing Unicom')).toBeNull()
+    expect(screen.getByText('card_latency')).toBeDefined()
+    expect(screen.getByText('card_packet_loss')).toBeDefined()
   })
 
-  it('uses realtime samples to update the aggregated current values', () => {
-    mockNetworkOverview.mockReturnValue({
-      data: [
-        makeSummary({
-          targets: [
-            {
-              availability: 0.99,
-              avg_latency: 40,
-              max_latency: 45,
-              min_latency: 35,
-              packet_loss: 0.01,
-              provider: 'ct',
-              target_id: 'target-1',
-              target_name: 'Shanghai'
-            },
-            {
-              availability: 0.98,
-              avg_latency: 50,
-              max_latency: 55,
-              min_latency: 45,
-              packet_loss: 0.02,
-              provider: 'cu',
-              target_id: 'target-2',
-              target_name: 'Beijing'
-            }
-          ]
-        })
-      ]
-    })
-    mockNetworkRealtime.mockReturnValue({
-      data: {
-        'target-1': [
-          {
-            avg_latency: 50,
-            max_latency: 55,
-            min_latency: 45,
-            packet_loss: 0.02,
-            packet_received: 9,
-            packet_sent: 10,
-            target_id: 'target-1',
-            timestamp: '2026-04-12T10:00:00Z'
-          },
-          {
-            avg_latency: 70,
-            max_latency: 75,
-            min_latency: 65,
-            packet_loss: 0.04,
-            packet_received: 8,
-            packet_sent: 10,
-            target_id: 'target-1',
-            timestamp: '2026-04-12T10:01:00Z'
-          }
-        ],
-        'target-2': [
-          {
-            avg_latency: 30,
-            max_latency: 35,
-            min_latency: 25,
-            packet_loss: 0.01,
-            packet_received: 10,
-            packet_sent: 10,
-            target_id: 'target-2',
-            timestamp: '2026-04-12T10:00:00Z'
-          },
-          {
-            avg_latency: 90,
-            max_latency: 95,
-            min_latency: 85,
-            packet_loss: 0.05,
-            packet_received: 7,
-            packet_sent: 10,
-            target_id: 'target-2',
-            timestamp: '2026-04-12T10:01:00Z'
-          }
-        ]
-      }
-    })
-
-    render(<ServerCard server={makeServer()} />)
-
-    expect(findHeroLatency('80ms')).toBeDefined()
+  it('renders tag chips when server.tags is non-empty', () => {
+    renderCard(makeServer({ tags: ['CN2 GIA', 'AS9929'] }))
+    expect(screen.getByText('CN2 GIA')).toBeDefined()
+    expect(screen.getByText('AS9929')).toBeDefined()
   })
 
-  it('uses warning styling for latency at or above 300ms', () => {
-    mockNetworkOverview.mockReturnValue({
-      data: [
-        makeSummary({
-          targets: [
-            {
-              availability: 1,
-              avg_latency: 320,
-              max_latency: 330,
-              min_latency: 310,
-              packet_loss: 0,
-              provider: 'intl',
-              target_id: 'target-1',
-              target_name: 'Tokyo'
-            }
-          ]
-        })
-      ]
-    })
-
-    render(
-      <div className="dark">
-        <ServerCard server={makeServer()} />
-      </div>
-    )
-
-    expect(findHeroLatency('320ms').className).toContain('text-amber-600')
-  })
-
-  it('uses failure styling when packet loss indicates probe failure', () => {
-    mockNetworkOverview.mockReturnValue({
-      data: [
-        makeSummary({
-          targets: [
-            {
-              availability: 0,
-              avg_latency: null,
-              max_latency: null,
-              min_latency: null,
-              packet_loss: 1,
-              provider: 'intl',
-              target_id: 'target-1',
-              target_name: 'Cloudflare'
-            }
-          ]
-        })
-      ]
-    })
-
-    render(
-      <div className="dark">
-        <ServerCard server={makeServer()} />
-      </div>
-    )
-
-    expect(findHeroLatency('—ms').className).toContain('text-red-600')
+  it('does not render tag chip container when tags is empty', () => {
+    renderCard(makeServer({ tags: [] }))
+    expect(screen.queryByText('CN2 GIA')).toBeNull()
   })
 
   it('renders StatusBadge', () => {
-    render(<ServerCard server={makeServer({ online: false })} />)
+    renderCard(makeServer({ online: false }))
     expect(screen.getByText('offline')).toBeDefined()
   })
 })
