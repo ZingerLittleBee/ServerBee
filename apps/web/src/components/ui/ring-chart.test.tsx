@@ -5,7 +5,7 @@ import { RingChart } from './ring-chart'
 describe('RingChart', () => {
   it('renders percentage text', () => {
     render(<RingChart color="#3b82f6" label="CPU" value={72.3} />)
-    expect(screen.getByText('72.3%')).toBeDefined()
+    expect(screen.getByText('72%')).toBeDefined()
   })
 
   it('renders label', () => {
@@ -21,10 +21,10 @@ describe('RingChart', () => {
 
   it('clamps value to 0-100 range', () => {
     const { rerender } = render(<RingChart color="#3b82f6" label="CPU" value={150} />)
-    expect(screen.getByText('100.0%')).toBeDefined()
+    expect(screen.getByText('100%')).toBeDefined()
 
     rerender(<RingChart color="#3b82f6" label="CPU" value={-10} />)
-    expect(screen.getByText('0.0%')).toBeDefined()
+    expect(screen.getByText('0%')).toBeDefined()
   })
 
   it('accepts custom size', () => {
