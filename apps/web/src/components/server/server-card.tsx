@@ -1,46 +1,28 @@
 import { Link } from '@tanstack/react-router'
-import { type ComponentProps, memo, useId, useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Bar, BarChart } from 'recharts'
 import { CompactMetric } from '@/components/server/compact-metric'
-import { type ChartConfig, ChartContainer, ChartTooltip } from '@/components/ui/chart'
 import { RingChart } from '@/components/ui/ring-chart'
 import { useCostOverview } from '@/hooks/use-cost'
 import { useNetworkOverview } from '@/hooks/use-network-api'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { useTrafficOverview } from '@/hooks/use-traffic-overview'
-import {
-  getCombinedBarColor,
-  getCombinedSeverity,
-  getLossDotBgClass,
-  isLatencyFailure
-} from '@/lib/network-latency-constants'
+import { isLatencyFailure } from '@/lib/network-latency-constants'
 import { latencyColorClass } from '@/lib/network-types'
 import { computeTrafficQuota } from '@/lib/traffic'
 import { countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import { CostFootnote } from './cost-footnote'
-import { buildServerCardNetworkState, type ServerCardMetricPoint } from './server-card-network-data'
-import { SeverityBar, type SeverityBarDatum } from './severity-bar'
+import { NetworkSquareGrid } from './network-square-grid'
+import { buildServerCardNetworkState } from './server-card-network-data'
 import { StatusBadge } from './status-badge'
+import { TagChips } from './tag-chips'
 import { UpgradeJobBadge } from './upgrade-job-badge'
 
 interface ServerCardProps {
   server: ServerMetrics
 }
-
-type SeverityBarShapeProps = Omit<ComponentProps<typeof SeverityBar>, 'failPatternId'>
-
-function isSeverityBarShapeProps(value: unknown): value is SeverityBarShapeProps {
-  return typeof value === 'object' && value !== null
-}
-
-const LATENCY_CHART_CONFIG = {
-  value: { label: 'Latency', color: 'var(--chart-4)' }
-} satisfies ChartConfig
-
-const CHART_BAR_GAP = 2
 
 function osIcon(os: string | null): string {
   if (!os) {
@@ -87,14 +69,14 @@ function getLossTextClassName(lossRatio: number | null): string {
 
 function formatLatency(ms: number | null): string {
   if (ms == null) {
-    return '-'
+    return '—'
   }
-  return `${ms.toFixed(0)}ms`
+  return `${ms.toFixed(0)}`
 }
 
 function formatPacketLoss(lossRatio: number | null): string {
   if (lossRatio == null) {
-    return '-'
+    return '—'
   }
   return `${(lossRatio * 100).toFixed(1)}%`
 }
@@ -120,68 +102,20 @@ function renderSpeedValue(bytesPerSec: number): React.ReactNode {
   )
 }
 
-function averageLossRatio(point: ServerCardMetricPoint): number | null {
-  if (point.targets.length === 0) {
-    return null
-  }
-
-  return point.targets.reduce((sum, target) => sum + target.lossRatio, 0) / point.targets.length
+interface RingMetricProps {
+  color: string
+  label: string
+  subText: React.ReactNode
+  value: number
 }
 
-function getSeverityBarData(point: ServerCardMetricPoint): SeverityBarDatum {
-  const lossRatio = averageLossRatio(point)
-  return {
-    combinedSeverity: getCombinedSeverity({ latencyMs: point.value, lossRatio }),
-    fillColor: getCombinedBarColor({ latencyMs: point.value, lossRatio }),
-    lossRatio,
-    value: point.value
-  }
-}
-
-function formatTooltipLabel(point: ServerCardMetricPoint, t: (key: string) => string): string {
-  if (point.synthetic) {
-    return t('current_targets')
-  }
-
-  return new Date(point.timestamp).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  })
-}
-
-function NetworkChartTooltip({
-  active,
-  payload,
-  t
-}: ComponentProps<typeof ChartTooltip> & { t: (key: string) => string }) {
-  if (!(active && payload?.length)) {
-    return null
-  }
-
-  const point = payload[0]?.payload as ServerCardMetricPoint | undefined
-  if (!point || point.targets.length === 0) {
-    return null
-  }
-
+function RingMetric({ color, label, subText, value }: RingMetricProps) {
   return (
-    <div className="grid min-w-48 gap-1.5 rounded-lg border border-border/50 bg-background/95 px-3 py-2 text-xs shadow-xl backdrop-blur-sm">
-      <div className="font-medium">{formatTooltipLabel(point, t)}</div>
-      <div className="grid gap-1.5">
-        {point.targets.map((target) => {
-          const failed = isLatencyFailure(target.lossRatio)
-
-          return (
-            <div className="flex items-center justify-between gap-3" key={target.targetId}>
-              <span className="truncate text-muted-foreground">{target.targetName}</span>
-              <div className="flex gap-2 font-medium font-mono tabular-nums">
-                <span className={latencyColorClass(target.latency, { failed })}>{formatLatency(target.latency)}</span>
-                <span className={getLossTextClassName(target.lossRatio)}>{formatPacketLoss(target.lossRatio)}</span>
-              </div>
-            </div>
-          )
-        })}
+    <div className="flex items-center gap-2">
+      <RingChart color={color} compact label={label} value={value} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-[11px] text-muted-foreground">{label}</span>
+        <span className="truncate text-[10px] text-muted-foreground tabular-nums">{subText}</span>
       </div>
     </div>
   )
@@ -194,7 +128,6 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
   const { data: trafficOverview } = useTrafficOverview()
   const { data: costOverview } = useCostOverview()
   const upgradeJob = useUpgradeJobsStore((state) => state.jobs.get(server.id))
-  const failPatternId = `${useId()}-fail-stripe`
 
   const memoryPct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
   const diskPct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
@@ -203,15 +136,12 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
   const osEmoji = osIcon(server.os)
 
   const networkSummary = networkOverview.find((entry) => entry.server_id === server.id)
-  const { currentAvgLatency, currentAvgLossRatio, latencyPoints } = useMemo(
+  const { currentAvgLatency, currentAvgLossRatio, latencyPoints, lossPoints } = useMemo(
     () => buildServerCardNetworkState(networkSummary, realtimeData),
     [networkSummary, realtimeData]
   )
 
-  const severityPoints = useMemo(
-    () => latencyPoints.map((point) => ({ ...point, ...getSeverityBarData(point) })),
-    [latencyPoints]
-  )
+  const hasNetworkData = latencyPoints.length > 0
 
   const trafficEntry = trafficOverview?.find((entry) => entry.server_id === server.id)
   const {
@@ -227,10 +157,10 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
   const costEntry = costOverview?.servers.find((entry) => entry.server_id === server.id)
 
   return (
-    <div className="flex flex-col rounded-lg border bg-card p-4 shadow-sm">
-      <div className="mb-3 flex items-center justify-between">
+    <div className="flex w-full min-w-[320px] max-w-[480px] flex-col gap-2 rounded-lg border bg-card p-3 shadow-sm">
+      <div className="flex items-center justify-between">
         <Link
-          className="flex items-center gap-1.5 truncate border-transparent border-b pb-px hover:border-current"
+          className="flex items-center gap-1 truncate border-transparent border-b pb-px hover:border-current"
           params={{ id: server.id }}
           search={{ range: 'realtime' }}
           to="/servers/$id"
@@ -245,7 +175,7 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
               {osEmoji}
             </span>
           )}
-          <h3 className="truncate font-semibold text-sm">{server.name}</h3>
+          <h3 className="truncate font-semibold text-[13px]">{server.name}</h3>
         </Link>
         <div className="flex items-center gap-1.5">
           <UpgradeJobBadge job={upgradeJob} />
@@ -253,60 +183,59 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
         </div>
       </div>
 
-      <div className="mb-3 grid grid-cols-4 gap-2">
-        <div className="flex flex-col items-center gap-1">
-          <RingChart color={getRingColor(server.cpu, 'var(--color-chart-1)')} label={t('col_cpu')} value={server.cpu} />
-          <div className="text-[10px] text-muted-foreground tabular-nums">
-            {t('card_load')} <span className="font-medium text-foreground">{formatLoad(server.load1)}</span>
-          </div>
-        </div>
-        <div className="flex flex-col items-center gap-1">
-          <RingChart
-            color={getRingColor(memoryPct, 'var(--color-chart-2)')}
-            label={t('col_memory')}
-            value={memoryPct}
-          />
-          <div className="text-[10px] text-muted-foreground tabular-nums">
-            <span className="font-medium text-foreground">{formatBytes(server.mem_used)}</span>
-            <span className="mx-0.5">/</span>
-            {formatBytes(server.mem_total)}
-          </div>
-        </div>
-        <div className="flex flex-col items-center gap-1">
-          <RingChart color={getRingColor(diskPct, 'var(--color-chart-3)')} label={t('col_disk')} value={diskPct} />
-          <div className="text-[10px] text-muted-foreground tabular-nums">
-            <span className="font-medium text-foreground">{formatBytes(server.disk_used)}</span>
-            <span className="mx-0.5">/</span>
-            {formatBytes(server.disk_total)}
-          </div>
-        </div>
-        <div className="flex flex-col items-center gap-1">
-          <RingChart
-            color={getRingColor(trafficRingPct, 'var(--color-chart-4)')}
-            label={t('card_traffic_quota')}
-            value={trafficRingPct}
-          />
-          <div className="text-[10px] text-muted-foreground tabular-nums">
-            <span className="font-medium text-foreground">{formatBytes(trafficUsed)}</span>
-            <span className="mx-0.5">/</span>
-            {formatBytes(trafficLimit)}
-          </div>
-        </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+        <RingMetric
+          color={getRingColor(server.cpu, 'var(--color-chart-1)')}
+          label={t('col_cpu')}
+          subText={
+            <>
+              {t('card_load')} <span className="font-medium text-foreground">{formatLoad(server.load1)}</span>
+            </>
+          }
+          value={server.cpu}
+        />
+        <RingMetric
+          color={getRingColor(memoryPct, 'var(--color-chart-2)')}
+          label={t('col_memory')}
+          subText={
+            <>
+              <span className="font-medium text-foreground">{formatBytes(server.mem_used)}</span>
+              <span className="mx-0.5">/</span>
+              {formatBytes(server.mem_total)}
+            </>
+          }
+          value={memoryPct}
+        />
+        <RingMetric
+          color={getRingColor(diskPct, 'var(--color-chart-3)')}
+          label={t('col_disk')}
+          subText={
+            <>
+              <span className="font-medium text-foreground">{formatBytes(server.disk_used)}</span>
+              <span className="mx-0.5">/</span>
+              {formatBytes(server.disk_total)}
+            </>
+          }
+          value={diskPct}
+        />
+        <RingMetric
+          color={getRingColor(trafficRingPct, 'var(--color-chart-4)')}
+          label={t('card_traffic_quota')}
+          subText={
+            <>
+              <span className="font-medium text-foreground">{formatBytes(trafficUsed)}</span>
+              <span className="mx-0.5">/</span>
+              {formatBytes(trafficLimit)}
+            </>
+          }
+          value={trafficRingPct}
+        />
       </div>
 
-      <div className="mb-2 grid grid-cols-5 gap-1 rounded-lg bg-muted/40 px-2 py-1.5">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-md bg-muted/40 px-2 py-1.5">
+        <CompactMetric label={t('card_net_in_speed')} value={renderSpeedValue(server.net_in_speed)} />
+        <CompactMetric label={t('card_net_out_speed')} value={renderSpeedValue(server.net_out_speed)} />
         <CompactMetric
-          className="items-center"
-          label={t('card_net_in_speed')}
-          value={renderSpeedValue(server.net_in_speed)}
-        />
-        <CompactMetric
-          className="items-center"
-          label={t('card_net_out_speed')}
-          value={renderSpeedValue(server.net_out_speed)}
-        />
-        <CompactMetric
-          className="items-center"
           label={
             <span
               aria-label={t('card_disk_read')}
@@ -319,7 +248,6 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
           value={renderSpeedValue(server.disk_read_bytes_per_sec)}
         />
         <CompactMetric
-          className="items-center"
           label={
             <span
               aria-label={t('card_disk_write')}
@@ -332,13 +260,36 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
           value={renderSpeedValue(server.disk_write_bytes_per_sec)}
         />
         <CompactMetric
-          className="items-center"
           label={t('card_load_trend')}
           value={`${formatLoad(server.load5)}·${formatLoad(server.load15)}`}
         />
       </div>
 
-      <div className="mb-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
+      {hasNetworkData && (
+        <section aria-label={t('card_network_quality')} className="grid grid-cols-2 gap-x-3 gap-y-1">
+          <div className="flex items-baseline justify-between">
+            <span className="text-[11px] text-muted-foreground">{t('card_latency')}</span>
+            <span
+              className={`font-semibold text-xs tabular-nums ${latencyColorClass(currentAvgLatency, {
+                failed: isLatencyFailure(currentAvgLossRatio)
+              })}`}
+            >
+              {formatLatency(currentAvgLatency)}
+              <span className="ml-0.5 font-medium text-[10px] text-muted-foreground">ms</span>
+            </span>
+          </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-[11px] text-muted-foreground">{t('card_packet_loss')}</span>
+            <span className={`font-semibold text-xs tabular-nums ${getLossTextClassName(currentAvgLossRatio)}`}>
+              {formatPacketLoss(currentAvgLossRatio)}
+            </span>
+          </div>
+          <NetworkSquareGrid kind="latency" points={latencyPoints} />
+          <NetworkSquareGrid kind="loss" points={lossPoints} />
+        </section>
+      )}
+
+      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
         <span>
           {t('col_uptime')}{' '}
           <span className="font-medium text-foreground tabular-nums">{formatUptime(server.uptime)}</span>
@@ -368,67 +319,27 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
         <CostFootnote entry={costEntry} />
       </div>
 
-      {latencyPoints.length > 0 && (
-        <div>
-          <div className="mb-1 flex items-baseline justify-between">
-            <span
-              className={`font-semibold text-lg tabular-nums leading-none ${latencyColorClass(currentAvgLatency, {
-                failed: isLatencyFailure(currentAvgLossRatio)
-              })}`}
-            >
-              {currentAvgLatency == null || isLatencyFailure(currentAvgLossRatio) ? '—' : currentAvgLatency.toFixed(0)}
-              <span className="ml-0.5 font-medium text-[10px] text-muted-foreground">ms</span>
-            </span>
-            <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-              <span aria-hidden="true" className={`size-1.5 rounded-full ${getLossDotBgClass(currentAvgLossRatio)}`} />
-              <span>
-                {t('card_packet_loss')}{' '}
-                <strong className={`font-semibold tabular-nums ${getLossTextClassName(currentAvgLossRatio)}`}>
-                  {formatPacketLoss(currentAvgLossRatio)}
-                </strong>
-              </span>
-            </span>
-          </div>
-          <figure aria-label={t('common:a11y.latency_trend')} className="relative z-10 m-0">
-            <ChartContainer className="aspect-auto h-8 w-full" config={LATENCY_CHART_CONFIG}>
-              <BarChart
-                accessibilityLayer
-                barCategoryGap={CHART_BAR_GAP}
-                data={severityPoints}
-                margin={{ bottom: 0, left: 0, right: 0, top: 0 }}
-              >
-                <defs>
-                  <pattern
-                    height="5"
-                    id={failPatternId}
-                    patternTransform="rotate(45)"
-                    patternUnits="userSpaceOnUse"
-                    width="5"
-                  >
-                    <rect fill="#ef4444" height="5" width="5" />
-                    <line stroke="rgba(0,0,0,0.25)" strokeWidth="2" x1="0" x2="0" y1="0" y2="5" />
-                  </pattern>
-                </defs>
-                <ChartTooltip content={<NetworkChartTooltip t={t} />} cursor={false} />
-                <Bar
-                  background={{ fill: 'transparent' }}
-                  dataKey="value"
-                  isAnimationActive={false}
-                  shape={(shapeProps: unknown) =>
-                    isSeverityBarShapeProps(shapeProps) ? (
-                      <SeverityBar {...shapeProps} failPatternId={failPatternId} />
-                    ) : (
-                      <g />
-                    )
-                  }
-                />
-              </BarChart>
-            </ChartContainer>
-          </figure>
-        </div>
-      )}
+      <TagChips tags={server.tags} />
     </div>
   )
+}
+
+function tagsEqual(a: readonly string[] | undefined, b: readonly string[] | undefined): boolean {
+  if (a === b) {
+    return true
+  }
+  if (!(a && b)) {
+    return false
+  }
+  if (a.length !== b.length) {
+    return false
+  }
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) {
+      return false
+    }
+  }
+  return true
 }
 
 export const ServerCard = memo(ServerCardInner, (prev, next) => {
@@ -443,6 +354,7 @@ export const ServerCard = memo(ServerCardInner, (prev, next) => {
     a.os === b.os &&
     a.mem_total === b.mem_total &&
     a.disk_total === b.disk_total &&
-    a.swap_total === b.swap_total
+    a.swap_total === b.swap_total &&
+    tagsEqual(a.tags, b.tags)
   )
 })
