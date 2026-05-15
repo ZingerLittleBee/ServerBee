@@ -1,3 +1,4 @@
+import { Bento } from './sections/bento'
 import { Hero } from './sections/hero'
 import { Pillars } from './sections/pillars'
 import { TrustStrip } from './sections/trust-strip'
@@ -9,6 +10,7 @@ export function LandingPage({ lang }: { lang: LandingLang }) {
       <Hero lang={lang} />
       <TrustStrip lang={lang} />
       <Pillars lang={lang} />
+      <Bento lang={lang} />
     </div>
   )
 }
