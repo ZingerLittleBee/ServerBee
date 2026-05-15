@@ -8,7 +8,10 @@ export function AlertBellAnim() {
       className="flex h-full flex-col items-center justify-center gap-3"
       role="img"
     >
-      <Bell className="bell-shake h-10 w-10 text-amber-300" />
+      <div className="relative">
+        <Bell className="bell-shake h-9 w-9 text-amber-300" />
+        <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-zinc-950" />
+      </div>
       <div className="flex flex-wrap justify-center gap-1.5">
         {channels.map((c, i) => (
           <span

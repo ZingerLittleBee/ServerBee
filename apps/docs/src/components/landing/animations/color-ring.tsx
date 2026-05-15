@@ -7,9 +7,12 @@ export function ColorRingAnim() {
       className="flex h-full items-center justify-center"
       role="img"
     >
-      <div className="orbit-anim h-24 w-24 rounded-full" style={{ background: `conic-gradient(${gradient})` }}>
-        <div className="m-2 h-20 w-20 rounded-full bg-zinc-950">
-          <div className="fade-cycle m-2 h-16 w-16 rounded-full bg-amber-400" />
+      <div className="relative">
+        <div className="orbit-anim h-28 w-28 rounded-full" style={{ background: `conic-gradient(${gradient})` }} />
+        <div className="absolute inset-2 rounded-full bg-zinc-950" />
+        <div className="fade-cycle absolute inset-4 rounded-full bg-amber-400 shadow-[0_0_30px_-6px_rgba(255,179,0,0.7)]" />
+        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-full bg-zinc-900/80 px-2 py-0.5 font-mono text-[10px] text-amber-300">
+          OKLCH
         </div>
       </div>
     </div>
