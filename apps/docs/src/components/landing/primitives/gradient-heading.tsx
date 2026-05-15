@@ -10,7 +10,7 @@ export function GradientHeading({
   return (
     <Tag
       className={cn(
-        'gradient-text font-semibold tracking-tight',
+        'gradient-text text-balance font-semibold tracking-tight',
         Tag === 'h1' ? 'text-5xl leading-tight sm:text-6xl lg:text-7xl' : 'text-3xl sm:text-4xl',
         className
       )}

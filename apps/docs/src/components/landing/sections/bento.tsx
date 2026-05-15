@@ -35,7 +35,7 @@ export function Bento({ lang }: { lang: LandingLang }) {
   return (
     <Section>
       <GradientHeading className="mb-10 max-w-2xl">{bentoTitle(lang)}</GradientHeading>
-      <div className="grid auto-rows-[200px] grid-cols-1 gap-4 md:grid-cols-12">
+      <div className="grid auto-rows-[240px] grid-cols-1 gap-4 md:grid-cols-12">
         {tiles.map(({ title, body, Anim, span }) => (
           <Card body={body} key={title} span={span} title={title}>
             <Anim />
@@ -51,10 +51,10 @@ function Card({ title, body, span, children }: { title: string; body: string; sp
     <article
       className={`group flex flex-col gap-4 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition hover:border-amber-400/30 hover:bg-white/[0.04] ${span}`}
     >
-      <div className="min-h-[120px] flex-1">{children}</div>
+      <div className="min-h-[110px] flex-1">{children}</div>
       <div>
         <h3 className="font-semibold text-base text-zinc-100">{title}</h3>
-        <p className="mt-1 text-sm text-zinc-400 leading-relaxed">{body}</p>
+        <p className="mt-1 line-clamp-3 text-sm text-zinc-400 leading-relaxed">{body}</p>
       </div>
     </article>
   )
