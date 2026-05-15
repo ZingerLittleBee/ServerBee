@@ -103,10 +103,10 @@
     }
   }
   .serverbee-landing .orbit-anim {
-    animation: landing-orbit 14s linear infinite;
+    animation: landing-orbit 8s linear infinite;
   }
   .serverbee-landing .orbit-counter {
-    animation: landing-orbit 14s linear infinite reverse;
+    animation: landing-orbit 8s linear infinite reverse;
   }
 
   @keyframes landing-stream {
