@@ -14,7 +14,7 @@ function Home() {
   const landingLang: LandingLang = lang === 'cn' ? 'cn' : 'en'
 
   return (
-    <HomeLayout {...baseOptions(lang)}>
+    <HomeLayout {...baseOptions(lang)} themeSwitch={{ enabled: false }}>
       <LandingPage lang={landingLang} />
     </HomeLayout>
   )
