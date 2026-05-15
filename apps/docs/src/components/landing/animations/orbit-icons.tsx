@@ -37,22 +37,22 @@ export function OrbitIconsAnim() {
         </div>
 
         <div className="orbit-anim absolute inset-0">
-          <Bead angle={0} icon={<TerminalSquare className="h-3.5 w-3.5" />} />
-          <Bead angle={120} icon={<FileCog className="h-3.5 w-3.5" />} />
-          <Bead angle={240} icon={<Layers className="h-3.5 w-3.5" />} />
+          <OrbitItem angle={0} icon={<TerminalSquare className="h-4 w-4" />} />
+          <OrbitItem angle={120} icon={<FileCog className="h-4 w-4" />} />
+          <OrbitItem angle={240} icon={<Layers className="h-4 w-4" />} />
         </div>
       </div>
     </div>
   )
 }
 
-function Bead({ angle, icon }: { angle: number; icon: ReactNode }) {
+function OrbitItem({ angle, icon }: { angle: number; icon: ReactNode }) {
   return (
     <div
       className="absolute top-1/2 left-1/2"
-      style={{ transform: `rotate(${angle}deg) translate(0, -${RING_RADIUS}px)` }}
+      style={{ transform: `rotate(${angle}deg) translate(0, -${RING_RADIUS}px) rotate(-${angle}deg)` }}
     >
-      <div className="orbit-counter flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-amber-400/40 bg-zinc-950 text-amber-300 shadow-[0_0_12px_-2px_rgba(255,179,0,0.5)]">
+      <div className="orbit-counter -mt-4 -ml-4 flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-white/[0.05] text-amber-300">
         {icon}
       </div>
     </div>
