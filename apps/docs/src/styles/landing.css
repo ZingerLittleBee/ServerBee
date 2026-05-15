@@ -111,7 +111,7 @@
 
   @keyframes landing-stream {
     0% {
-      transform: translateX(-100%);
+      left: 0;
       opacity: 0;
     }
     10% {
@@ -121,7 +121,7 @@
       opacity: 1;
     }
     100% {
-      transform: translateX(100%);
+      left: calc(100% - 12px);
       opacity: 0;
     }
   }
@@ -177,10 +177,10 @@
 
   @keyframes landing-band {
     0% {
-      transform: translateX(-110%);
+      left: -40%;
     }
     100% {
-      transform: translateX(110%);
+      left: 100%;
     }
   }
   .serverbee-landing .light-band {
@@ -234,4 +234,13 @@
       animation-iteration-count: 1 !important;
     }
   }
+}
+
+/* Unlayered to outrank Fumadocs `p { display: flow-root }` base styles. */
+.serverbee-landing .landing-clamp-3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
 }

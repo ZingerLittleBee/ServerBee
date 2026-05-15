@@ -26,7 +26,7 @@ function OrbitItem({ angle, icon }: { angle: number; icon: ReactNode }) {
   return (
     <div
       className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
-      style={{ transform: `translate(-50%, -50%) rotate(${angle}deg) translate(60px) rotate(-${angle}deg)` }}
+      style={{ transform: `translate(-50%, -50%) rotate(${angle}deg) translate(64px) rotate(-${angle}deg)` }}
     >
       <div className="orbit-counter flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-white/[0.05] text-amber-300">
         {icon}

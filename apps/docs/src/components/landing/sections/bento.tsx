@@ -51,10 +51,10 @@ function Card({ title, body, span, children }: { title: string; body: string; sp
     <article
       className={`group flex flex-col gap-4 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition hover:border-amber-400/30 hover:bg-white/[0.04] ${span}`}
     >
-      <div className="min-h-[110px] flex-1">{children}</div>
-      <div>
+      <div className="min-h-0 flex-1">{children}</div>
+      <div className="shrink-0">
         <h3 className="font-semibold text-base text-zinc-100">{title}</h3>
-        <p className="mt-1 line-clamp-3 text-sm text-zinc-400 leading-relaxed">{body}</p>
+        <p className="landing-clamp-3 mt-1 text-sm text-zinc-400 leading-relaxed">{body}</p>
       </div>
     </article>
   )
