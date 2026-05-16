@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-05-16
+
+### Added
+
+- **Marketing landing page** -- The docs site now ships a dedicated landing page built from reusable primitives (section, gradient heading, code-copy, hex background) with a bilingual i18n layer. It opens on a hero with an animated mini-dashboard, then flows through a trust strip, a three-pillar value section, an eight-tile bento grid with per-feature animations, a how-it-works walkthrough, and a final call-to-action. The page is dark-only by design, so the theme switch is hidden there
+- **ServerCard 2-column redesign** -- The server card was rebuilt around a 2x2 ring layout with side-by-side network grids. A new `NetworkSquareGrid` fits points dynamically to the available space, `RingChart` gained a compact mode, `TagChips` renders server tags, and new latency/loss color helpers drive the square coloring. The dashboard server-cards widget is now responsive via an auto-fill grid
+- **Mobile viewport adaptation** -- The web UI now adapts to mobile viewports, including horizontally scrollable tables that clamp page width on small screens
+
+### Changed
+
+- **Landing layout polish** -- Refined the landing page across viewports: wrapped install commands, richer bento tiles, balanced headings, full-width stream/light-band animations, orbit icons that ride the dashed ring while staying upright, and a file-tree that no longer overflows into the card heading
+- **ServerCard trend window** -- Widened the ServerCard trend window from 12 to 30 points for a smoother signal, and switched the TooltipTrigger to the base-ui render prop
+
 ## [0.8.12] - 2026-05-05
 
 ### Added
