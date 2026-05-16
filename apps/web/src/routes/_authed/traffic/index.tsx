@@ -265,7 +265,7 @@ export function TrafficPage() {
   }
 
   return (
-    <div className="min-w-0">
+    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
       <h1 className="mb-6 font-bold text-2xl">{t('traffic_overview_title')}</h1>
 
       {hasOverviewData ? (
@@ -283,7 +283,7 @@ export function TrafficPage() {
           </div>
 
           {/* Server traffic ranking table */}
-          <div className="mb-6 min-w-0 overflow-hidden rounded-lg border">
+          <div className="mb-6 min-w-0 max-w-full overflow-hidden rounded-lg border">
             <Table>
               <TableHeader>
                 <TableRow>
