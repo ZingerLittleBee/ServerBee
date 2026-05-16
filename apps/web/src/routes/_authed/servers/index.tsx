@@ -333,7 +333,7 @@ function ServersListPage() {
   }
 
   return (
-    <div className="min-w-0">
+    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="font-bold text-2xl">{t('title')}</h1>
