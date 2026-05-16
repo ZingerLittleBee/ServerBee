@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveInitialServersView } from './components/mobile-view'
+import { resolveInitialServersView } from './mobile-view'
 
 describe('resolveInitialServersView', () => {
   it('uses grid as the mobile default when there is no saved preference', () => {
