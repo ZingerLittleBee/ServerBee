@@ -131,23 +131,23 @@ function FilesPage() {
   )
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b px-4 py-2">
+      <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2 sm:gap-3 sm:px-4">
         <Link params={{ id: serverId }} search={{ range: 'realtime' }} to="/servers/$id">
           <Button size="sm" variant="ghost">
             <ArrowLeft aria-hidden="true" className="size-4" />
             {t('back_to_server')}
           </Button>
         </Link>
-        <h1 className="font-semibold text-lg">{t('title')}</h1>
-        <span className="text-muted-foreground text-sm">{serverId.slice(0, 8)}...</span>
+        <h1 className="font-semibold text-base sm:text-lg">{t('title')}</h1>
+        <span className="text-muted-foreground text-xs sm:text-sm">{serverId.slice(0, 8)}...</span>
       </div>
 
       {/* Breadcrumb + Actions */}
-      <div className="flex items-center gap-2 border-b px-4 py-1.5">
+      <div className="flex flex-col gap-2 border-b px-3 py-2 sm:flex-row sm:items-center sm:px-4 sm:py-1.5">
         <FileBreadcrumb onNavigate={handleNavigate} path={currentPath} />
-        <div className="ml-auto flex gap-1">
+        <div className="flex flex-wrap gap-1 sm:ml-auto">
           {isAdmin && (
             <Button aria-label={t('upload')} onClick={() => setUploadOpen(true)} size="sm" variant="outline">
               <Upload className="size-3.5" />
@@ -169,7 +169,7 @@ function FilesPage() {
       {/* Main content: file list + preview */}
       <div className="flex min-h-0 flex-1">
         {/* File list panel */}
-        <div className="w-full min-w-0 overflow-y-auto border-r md:w-[45%]">
+        <div className="w-full min-w-0 border-r md:w-[45%]">
           <FileBrowser
             entries={entries}
             error={isError ? getErrorMessage(listError, t('load_error')) : undefined}
@@ -190,14 +190,14 @@ function FilesPage() {
       {/* Mobile preview overlay */}
       {selectedFile && (
         <div className="fixed inset-0 z-40 flex flex-col bg-background md:hidden">
-          <div className="flex items-center gap-2 border-b px-4 py-2">
+          <div className="flex min-w-0 items-center gap-2 border-b px-3 py-2 sm:px-4">
             <Button onClick={() => setSelectedFile(null)} size="sm" variant="ghost">
               <ArrowLeft aria-hidden="true" className="size-4" />
               {t('back_to_server')}
             </Button>
             <span className="truncate text-sm">{selectedFile.name}</span>
           </div>
-          <div className="flex-1">
+          <div className="min-h-0 flex-1">
             <FilePreview entry={selectedFile} readOnly={!isAdmin} serverId={serverId} />
           </div>
         </div>

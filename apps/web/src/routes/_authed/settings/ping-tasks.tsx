@@ -209,7 +209,7 @@ function PingTasksPage() {
 
       <div className="max-w-3xl space-y-6">
         <div className="rounded-lg border bg-card p-6">
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-semibold text-lg">{t('ping.probe_tasks')}</h2>
             <Button onClick={() => setShowForm(!showForm)} size="sm" variant="outline">
               <Plus className="size-4" />
@@ -227,7 +227,7 @@ function PingTasksPage() {
                 value={name}
               />
 
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <Select
                   items={probeTypeLabels}
                   onValueChange={(value) => setProbeType(value as ProbeType)}
@@ -317,7 +317,7 @@ function PingTasksPage() {
                 const isExpanded = expandedTaskId === task.id
                 return (
                   <div key={task.id}>
-                    <div className="flex items-center justify-between px-4 py-3">
+                    <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                       <div className="flex items-center gap-3">
                         <Activity className={`size-4 ${task.enabled ? 'text-green-500' : 'text-muted-foreground'}`} />
                         <div>

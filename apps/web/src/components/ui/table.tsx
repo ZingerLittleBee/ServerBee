@@ -5,8 +5,8 @@ import { cn } from '@/lib/utils'
 
 function Table({ className, ...props }: React.ComponentProps<'table'>) {
   return (
-    <ScrollArea className="min-h-0 w-full flex-1" data-slot="table-container">
-      <table className={cn('w-full caption-bottom text-sm', className)} data-slot="table" {...props} />
+    <ScrollArea className="min-h-0 w-full min-w-0 flex-1" data-slot="table-container">
+      <table className={cn('w-full min-w-max caption-bottom text-sm', className)} data-slot="table" {...props} />
     </ScrollArea>
   )
 }

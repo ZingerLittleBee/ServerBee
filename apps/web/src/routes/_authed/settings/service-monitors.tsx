@@ -732,16 +732,16 @@ export function ServiceMonitorsPage() {
   }
 
   return (
-    <div>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-bold text-2xl">{t('page.title')}</h1>
-        <Button onClick={openCreate} size="sm">
+    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
+      <div className="mb-6 flex w-full min-w-0 max-w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="min-w-0 font-bold text-2xl">{t('page.title')}</h1>
+        <Button className="w-full sm:w-auto" onClick={openCreate} size="sm">
           <Plus className="size-4" />
           {tCommon('actions.addMonitor')}
         </Button>
       </div>
 
-      <div className="max-w-5xl">
+      <div className="w-full min-w-0 max-w-full lg:max-w-5xl">
         {isLoading && (
           <div className="space-y-2">
             {Array.from({ length: 3 }, (_, i) => (
@@ -761,7 +761,7 @@ export function ServiceMonitorsPage() {
         )}
 
         {monitors && monitors.length > 0 && (
-          <div className="rounded-lg border">
+          <div className="min-w-0 overflow-hidden rounded-lg border">
             <Table>
               <TableHeader>
                 <TableRow>

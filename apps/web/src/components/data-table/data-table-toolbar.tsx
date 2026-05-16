@@ -28,11 +28,11 @@ export function DataTableToolbar<TData>({ table, children, className, ...props }
   return (
     <div
       aria-orientation="horizontal"
-      className={cn('flex w-full items-start justify-between gap-2 p-1', className)}
+      className={cn('flex w-full min-w-0 flex-col gap-2 p-1 sm:flex-row sm:items-start sm:justify-between', className)}
       role="toolbar"
       {...props}
     >
-      <div className="flex flex-1 flex-wrap items-center gap-2">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
         {columns.map((column) => (
           <DataTableToolbarFilter column={column} key={column.id} />
         ))}
@@ -43,7 +43,7 @@ export function DataTableToolbar<TData>({ table, children, className, ...props }
           </Button>
         )}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
         {children}
         <DataTableViewOptions align="end" table={table} />
       </div>
@@ -67,7 +67,7 @@ function DataTableToolbarFilter<TData>({ column }: DataTableToolbarFilterProps<T
         case 'text':
           return (
             <Input
-              className="h-8 w-40 lg:w-56"
+              className="h-8 w-full min-w-36 sm:w-40 lg:w-56"
               onChange={(event) => column.setFilterValue(event.target.value)}
               placeholder={columnMeta.placeholder ?? columnMeta.label}
               value={(column.getFilterValue() as string) ?? ''}
@@ -76,9 +76,9 @@ function DataTableToolbarFilter<TData>({ column }: DataTableToolbarFilterProps<T
 
         case 'number':
           return (
-            <div className="relative">
+            <div className="relative min-w-32">
               <Input
-                className={cn('h-8 w-[120px]', columnMeta.unit && 'pr-8')}
+                className={cn('h-8 w-full', columnMeta.unit && 'pr-8')}
                 inputMode="numeric"
                 onChange={(event) => column.setFilterValue(event.target.value)}
                 placeholder={columnMeta.placeholder ?? columnMeta.label}
