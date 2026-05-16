@@ -339,7 +339,7 @@ function StatusPagesTab({ servers }: { servers: ServerResponse[] }) {
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-muted-foreground text-sm">{t('status_pages.tab_description')}</p>
         <Button
           onClick={() => {
@@ -730,7 +730,7 @@ function IncidentsTab({ servers }: { servers: ServerResponse[] }) {
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-muted-foreground text-sm">{t('incidents.tab_description')}</p>
         <Button
           onClick={() => {
@@ -1055,7 +1055,7 @@ function MaintenanceTab({ servers }: { servers: ServerResponse[] }) {
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-muted-foreground text-sm">{t('maintenance.tab_description')}</p>
         <Button
           onClick={() => {

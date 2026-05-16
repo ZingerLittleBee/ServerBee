@@ -11,7 +11,7 @@ import {
   NetworkCell,
   PositionIndicator,
   UptimeCell
-} from './index.cells'
+} from './components/index-cells'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key })

@@ -88,7 +88,7 @@ export function WidgetPicker({ onSelect, open, onOpenChange }: WidgetPickerProps
               return (
                 <div key={category}>
                   <h4 className="mb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">{category}</h4>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid gap-2 sm:grid-cols-2">
                     {widgets.map((widgetType) => {
                       const Icon = WIDGET_ICONS[widgetType.id] ?? Server
                       const description = WIDGET_DESCRIPTIONS[widgetType.id] ?? ''

@@ -228,7 +228,7 @@ function AlertsPage() {
 
       <div className="max-w-2xl space-y-6">
         <div className="rounded-lg border bg-card p-6">
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-semibold text-lg">{t('alerts.rules')}</h2>
             <Button onClick={() => setShowForm(!showForm)} size="sm" variant="outline">
               <Plus className="size-4" />
@@ -247,7 +247,7 @@ function AlertsPage() {
                 value={name}
               />
 
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <Select
                   items={{ always: t('alerts.trigger_always'), once: t('alerts.trigger_once') }}
                   onValueChange={(v) => v !== null && setTriggerMode(v)}
@@ -481,8 +481,11 @@ function AlertsPage() {
                 const items: AlertRuleItem[] = JSON.parse(rule.rules_json || '[]')
                 return (
                   <>
-                    <div className="flex items-center justify-between px-4 py-3" key={rule.id}>
-                      <div className="flex items-center gap-3">
+                    <div
+                      className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                      key={rule.id}
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
                         <AlertTriangle
                           className={`size-4 ${rule.enabled ? 'text-amber-500' : 'text-muted-foreground'}`}
                         />

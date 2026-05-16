@@ -68,17 +68,17 @@ function TerminalPage() {
   )
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 border-b px-4 py-2">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2 sm:gap-3 sm:px-4">
         <Link params={{ id: serverId }} search={{ range: 'realtime' }} to="/servers/$id">
           <Button size="sm" variant="ghost">
             <ArrowLeft className="size-4" />
             {t('back')}
           </Button>
         </Link>
-        <h1 className="font-semibold text-lg">{t('title')}</h1>
-        <span className="text-muted-foreground text-sm">{serverId.slice(0, 8)}...</span>
-        <div className="ml-auto flex items-center gap-2">
+        <h1 className="font-semibold text-base sm:text-lg">{t('title')}</h1>
+        <span className="text-muted-foreground text-xs sm:text-sm">{serverId.slice(0, 8)}...</span>
+        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
           <span className={`inline-block size-2 rounded-full ${statusColor(status)}`} />
           <span className="text-muted-foreground text-xs">{statusLabel(status, t)}</span>
           {error && <span className="text-red-500 text-xs">{error}</span>}
@@ -89,7 +89,7 @@ function TerminalPage() {
           )}
         </div>
       </div>
-      <div className="flex-1 p-2">
+      <div className="min-h-0 flex-1 p-1 sm:p-2">
         <TerminalView onData={handleData} onResize={handleResize} writeRef={writeRef} />
       </div>
     </div>

@@ -38,7 +38,8 @@ import { api } from '@/lib/api-client'
 import type { ServerGroup } from '@/lib/api-schema'
 import { countCleanupCandidates } from '@/lib/orphan-server-utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
-import { CpuCell, DiskCell, MemoryCell, NameCell, NetworkCell, UptimeCell } from './index.cells'
+import { CpuCell, DiskCell, MemoryCell, NameCell, NetworkCell, UptimeCell } from './components/index-cells'
+import { getInitialServersView } from './components/mobile-view'
 
 function UpgradeBadgeCell({ serverId }: { serverId: string }) {
   const job = useUpgradeJobsStore((state) => state.jobs.get(serverId))
@@ -50,7 +51,7 @@ export const Route = createFileRoute('/_authed/servers/')({
   validateSearch: (search: Record<string, unknown>) => ({
     ...search,
     q: (search.q as string) || '',
-    view: (search.view === 'grid' ? 'grid' : 'table') as 'table' | 'grid'
+    view: search.view === 'grid' || search.view === 'table' ? search.view : undefined
   })
 })
 
@@ -67,12 +68,9 @@ function ServersListPage() {
   const navigate = Route.useNavigate()
   const { q: search, view: viewParam } = Route.useSearch()
 
-  const [viewMode, setViewModeState] = useState<'table' | 'grid'>(() => {
-    if (viewParam === 'table' || viewParam === 'grid') {
-      return viewParam
-    }
-    return (localStorage.getItem('serverbee-servers-view-mode') as 'table' | 'grid') || 'table'
-  })
+  const [viewMode, setViewModeState] = useState<'table' | 'grid'>(() =>
+    getInitialServersView(viewParam === 'grid' || viewParam === 'table' ? viewParam : undefined)
+  )
 
   const setViewMode = (value: 'table' | 'grid') => {
     setViewModeState(value)
@@ -335,9 +333,9 @@ function ServersListPage() {
   }
 
   return (
-    <div>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
+    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="font-bold text-2xl">{t('title')}</h1>
           <p className="text-muted-foreground text-sm">
             {t('servers_online', { online: servers.filter((s) => s.online).length, total: servers.length })}
@@ -345,8 +343,8 @@ function ServersListPage() {
         </div>
       </div>
 
-      <div className="mb-4 flex items-center gap-3">
-        <div className="relative flex-1">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative min-w-0 flex-1">
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             aria-label={t('servers:search_placeholder')}
@@ -359,69 +357,71 @@ function ServersListPage() {
             value={search}
           />
         </div>
-        <ToggleGroup
-          multiple={false}
-          onValueChange={(value) => value.length > 0 && setViewMode(value[0] as 'table' | 'grid')}
-          size="sm"
-          value={[viewMode]}
-          variant="outline"
-        >
-          <ToggleGroupItem aria-label={t('common:a11y.table_view')} value="table">
-            <Table2 className="size-4" />
-          </ToggleGroupItem>
-          <ToggleGroupItem aria-label={t('common:a11y.grid_view')} value="grid">
-            <LayoutGrid className="size-4" />
-          </ToggleGroupItem>
-        </ToggleGroup>
-        {orphanCount > 0 && (
-          <AlertDialog>
-            <AlertDialogTrigger
-              render={
-                <Button disabled={cleanupMutation.isPending} size="sm" variant="outline">
-                  {t('servers:cleanup_orphans')} ({orphanCount})
-                </Button>
-              }
-            />
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>{t('servers:cleanup_confirm_title')}</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {t('servers:cleanup_confirm_description', { count: orphanCount })}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
-                <AlertDialogAction onClick={() => cleanupMutation.mutate()} variant="destructive">
-                  {t('common:delete')}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        )}
-        {selectedCount > 0 && (
-          <AlertDialog>
-            <AlertDialogTrigger
-              render={
-                <Button disabled={batchDeleteMutation.isPending} size="sm" variant="destructive">
-                  <Trash2 aria-hidden="true" className="size-3.5" />
-                  {t('servers:delete_selected', { count: selectedCount })}
-                </Button>
-              }
-            />
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
-                <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
-                <AlertDialogAction onClick={handleBatchDelete} variant="destructive">
-                  {t('common:delete')}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <ToggleGroup
+            multiple={false}
+            onValueChange={(value) => value.length > 0 && setViewMode(value[0] as 'table' | 'grid')}
+            size="sm"
+            value={[viewMode]}
+            variant="outline"
+          >
+            <ToggleGroupItem aria-label={t('common:a11y.table_view')} value="table">
+              <Table2 className="size-4" />
+            </ToggleGroupItem>
+            <ToggleGroupItem aria-label={t('common:a11y.grid_view')} value="grid">
+              <LayoutGrid className="size-4" />
+            </ToggleGroupItem>
+          </ToggleGroup>
+          {orphanCount > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger
+                render={
+                  <Button disabled={cleanupMutation.isPending} size="sm" variant="outline">
+                    {t('servers:cleanup_orphans')} ({orphanCount})
+                  </Button>
+                }
+              />
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t('servers:cleanup_confirm_title')}</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {t('servers:cleanup_confirm_description', { count: orphanCount })}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => cleanupMutation.mutate()} variant="destructive">
+                    {t('common:delete')}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+          {selectedCount > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger
+                render={
+                  <Button disabled={batchDeleteMutation.isPending} size="sm" variant="destructive">
+                    <Trash2 aria-hidden="true" className="size-3.5" />
+                    {t('servers:delete_selected', { count: selectedCount })}
+                  </Button>
+                }
+              />
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
+                  <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleBatchDelete} variant="destructive">
+                    {t('common:delete')}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </div>
       </div>
 
       {servers.length === 0 && (
@@ -438,7 +438,7 @@ function ServersListPage() {
         </DataTable>
       )}
       {servers.length > 0 && viewMode === 'grid' && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {filtered.map((server) => (
             <div className="[contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={server.id}>
               <ServerCard server={server} />

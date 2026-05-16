@@ -199,14 +199,14 @@ export function CapabilitiesPage() {
   }
 
   return (
-    <div>
-      <div className="mb-6">
+    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
+      <div className="mb-6 min-w-0">
         <h1 className="font-bold text-2xl">{t('capabilities.title')}</h1>
         <p className="text-muted-foreground text-sm">{t('capabilities.description')}</p>
       </div>
 
-      <div className="mb-4 flex items-center gap-3">
-        <div className="relative max-w-sm flex-1">
+      <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative w-full min-w-0 max-w-sm flex-1">
           <Search
             aria-hidden="true"
             className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
@@ -222,7 +222,7 @@ export function CapabilitiesPage() {
           />
         </div>
         {selectedIds.length > 0 && (
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <span className="text-muted-foreground text-sm">
               {t('capabilities.selected', { count: selectedIds.length })}
             </span>

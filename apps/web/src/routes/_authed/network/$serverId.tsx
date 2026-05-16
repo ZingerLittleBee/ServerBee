@@ -667,7 +667,7 @@ export function NetworkDetailPage() {
       </div>
 
       {/* Bottom stats */}
-      <div className="mb-6 grid grid-cols-3 gap-4">
+      <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <div className="rounded-lg border bg-card p-4 text-center">
           <p className="font-mono font-semibold text-lg tabular-nums">
             {stats.avgLatency != null ? `${stats.avgLatency.toFixed(1)} ms` : 'N/A'}

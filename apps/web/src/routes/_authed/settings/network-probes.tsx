@@ -342,20 +342,20 @@ export function NetworkProbeSettingsPage() {
   })
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <h1 className="mb-6 font-bold text-2xl">{t('settings_title')}</h1>
+    <div className="flex min-h-0 w-full min-w-0 max-w-[calc(100vw-1.5rem)] flex-1 flex-col overflow-hidden sm:max-w-full">
+      <h1 className="mb-6 min-w-0 font-bold text-2xl">{t('settings_title')}</h1>
       <Tabs
-        className="flex min-h-0 flex-1 flex-col"
+        className="flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col"
         onValueChange={(value) => navigate({ search: { tab: value } })}
         value={activeTab}
       >
-        <div className="flex max-w-4xl items-center justify-between">
-          <TabsList>
+        <div className="flex w-full max-w-full flex-col items-stretch gap-3 sm:max-w-4xl sm:flex-row sm:items-center sm:justify-between">
+          <TabsList className="w-full sm:w-auto">
             <TabsTrigger value="targets">{t('target_management')}</TabsTrigger>
             <TabsTrigger value="settings">{t('global_settings')}</TabsTrigger>
           </TabsList>
           {activeTab === 'targets' && (
-            <Button onClick={openAddDialog} size="sm" variant="outline">
+            <Button className="w-full sm:w-auto" onClick={openAddDialog} size="sm" variant="outline">
               <Plus className="size-4" />
               {t('add_target')}
             </Button>
@@ -373,7 +373,11 @@ export function NetworkProbeSettingsPage() {
           )}
 
           {!targetsLoading && (
-            <DataTable className="flex h-full max-w-4xl flex-col" noResults={t('no_targets')} table={targetsTable} />
+            <DataTable
+              className="flex h-full w-full min-w-0 max-w-full sm:max-w-4xl"
+              noResults={t('no_targets')}
+              table={targetsTable}
+            />
           )}
         </TabsContent>
 
