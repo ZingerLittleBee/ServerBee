@@ -546,7 +546,7 @@ function NotificationsPage() {
       <div className="max-w-2xl space-y-6">
         {/* Create notification */}
         <div className="rounded-lg border bg-card p-6">
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-semibold text-lg">{t('notifications.channels')}</h2>
             <Button onClick={toggleChannelForm} size="sm" variant="outline">
               <Plus className="size-4" />
@@ -614,7 +614,7 @@ function NotificationsPage() {
                     value={configFields[key] ?? ''}
                   />
                 ))}
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <Label className="text-sm">{t('notifications.enabled_label')}</Label>
                 <Switch checked={isEnabled} onCheckedChange={setIsEnabled} />
               </div>
@@ -642,7 +642,10 @@ function NotificationsPage() {
           {notifications && notifications.length > 0 && (
             <div className="divide-y rounded-md border">
               {notifications.map((n) => (
-                <div className="flex items-center justify-between px-4 py-3" key={n.id}>
+                <div
+                  className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  key={n.id}
+                >
                   <div className="flex items-center gap-3">
                     <Bell className="size-4 text-muted-foreground" />
                     <div>
@@ -689,7 +692,7 @@ function NotificationsPage() {
 
         {/* Notification Groups */}
         <div className="rounded-lg border bg-card p-6">
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-semibold text-lg">{t('notifications.groups')}</h2>
             <Button onClick={toggleGroupForm} size="sm" variant="outline">
               <Plus className="size-4" />
@@ -743,7 +746,10 @@ function NotificationsPage() {
               {groups.map((g) => {
                 const ids = parseGroupIds(g.notification_ids_json)
                 return (
-                  <div className="flex items-center justify-between px-4 py-3" key={g.id}>
+                  <div
+                    className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    key={g.id}
+                  >
                     <div>
                       <p className="font-medium text-sm">{g.name}</p>
                       <p className="text-muted-foreground text-xs">

@@ -200,7 +200,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                   value={name}
                 />
               </Field>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <Field label={t('edit_weight')}>
                   <Input
                     aria-label={t('edit_weight')}
@@ -282,7 +282,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
               <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">
                 {t('edit_billing')}
               </legend>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid gap-3 sm:grid-cols-3">
                 <Field label={t('edit_price')}>
                   <Input
                     aria-label={t('edit_price')}
@@ -336,7 +336,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
               <Field label={t('edit_expiration')}>
                 <DatePickerField ariaLabel={t('edit_expiration')} onChange={setExpiredAt} value={expiredAt} />
               </Field>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <Field label={t('edit_traffic_limit')}>
                   <Input
                     aria-label={t('edit_traffic_limit')}

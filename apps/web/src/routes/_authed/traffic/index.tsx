@@ -265,7 +265,7 @@ export function TrafficPage() {
   }
 
   return (
-    <div>
+    <div className="min-w-0">
       <h1 className="mb-6 font-bold text-2xl">{t('traffic_overview_title')}</h1>
 
       {hasOverviewData ? (
@@ -283,7 +283,7 @@ export function TrafficPage() {
           </div>
 
           {/* Server traffic ranking table */}
-          <div className="mb-6 rounded-lg border">
+          <div className="mb-6 min-w-0 overflow-hidden rounded-lg border">
             <Table>
               <TableHeader>
                 <TableRow>

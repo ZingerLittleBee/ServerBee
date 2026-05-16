@@ -331,8 +331,11 @@ function OAuthAccountsSection() {
       {!isLoading && accounts && accounts.length > 0 && (
         <div className="space-y-2">
           {accounts.map((acct) => (
-            <div className="flex items-center justify-between rounded-md border px-4 py-3" key={acct.id}>
-              <div>
+            <div
+              className="flex flex-col gap-3 rounded-md border px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              key={acct.id}
+            >
+              <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs uppercase">{acct.provider}</span>
                   <span className="font-medium text-sm">
