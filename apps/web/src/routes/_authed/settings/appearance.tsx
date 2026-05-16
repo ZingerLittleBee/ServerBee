@@ -175,7 +175,7 @@ export function ThemeGrid() {
         <h2 className="mb-1 font-semibold text-lg">{t('appearance.color_theme')}</h2>
         <p className="mb-4 text-muted-foreground text-sm">{t('appearance.color_theme_description')}</p>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {themes.map((themeInfo) => (
             <ThemeCard
               active={isActive(`preset:${themeInfo.id}`)}
@@ -189,12 +189,12 @@ export function ThemeGrid() {
       </div>
 
       <div className="rounded-lg border bg-card p-6">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
             <h2 className="font-semibold text-lg">{t('appearance.custom_themes.title')}</h2>
             <p className="text-muted-foreground text-sm">{t('appearance.custom_themes.description')}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <input
               accept="application/json"
               className="hidden"
@@ -213,7 +213,7 @@ export function ThemeGrid() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {(customThemes ?? []).map((customTheme) => (
             <CustomThemeCard
               active={isActive(`custom:${customTheme.id}`)}

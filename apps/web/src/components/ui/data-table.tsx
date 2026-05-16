@@ -18,7 +18,7 @@ interface DataTableProps<TData> {
 
 function DataTable<TData>({ table, noResults, className }: DataTableProps<TData>) {
   return (
-    <div className={cn('overflow-hidden rounded-lg border', className)}>
+    <div className={cn('min-w-0 max-w-full overflow-hidden rounded-lg border', className)}>
       <Table className="table-fixed">
         <TableHeader className="sticky top-0 z-10 bg-background">
           {table.getHeaderGroups().map((headerGroup) => (

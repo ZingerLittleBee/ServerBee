@@ -173,6 +173,7 @@ export function DashboardGrid({
           <div className="relative" key={widget.id}>
             {isEditing && (
               <EditOverlay
+                forceVisible
                 isStatic={isWidgetStatic(widget.config_json)}
                 onDelete={() => onWidgetDelete(widget.id)}
                 onEdit={() => onWidgetEdit(widget.id)}
@@ -232,18 +233,25 @@ export function DashboardGrid({
 }
 
 function EditOverlay({
+  forceVisible,
   isStatic,
   onEdit,
   onDelete,
   onToggleStatic
 }: {
+  forceVisible?: boolean
   isStatic?: boolean
   onDelete: () => void
   onEdit: () => void
   onToggleStatic?: () => void
 }) {
   return (
-    <div className="absolute top-1 right-1 z-10 flex gap-1 opacity-0 transition-opacity [div:hover>&]:opacity-100">
+    <div
+      className={cn(
+        'absolute top-1 right-1 z-10 flex gap-1 transition-opacity [div:hover>&]:opacity-100',
+        forceVisible ? 'opacity-100' : 'opacity-0'
+      )}
+    >
       {onToggleStatic && (
         <Button
           className="size-7"

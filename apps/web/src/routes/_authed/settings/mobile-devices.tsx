@@ -102,8 +102,8 @@ function MobileDevicesPage() {
 
       <div className="max-w-2xl space-y-6">
         <div className="rounded-lg border bg-card p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
               <h2 className="font-semibold text-lg">{t('mobile.devices')}</h2>
               <p className="text-muted-foreground text-sm">{t('mobile.devices_description')}</p>
             </div>
@@ -123,12 +123,15 @@ function MobileDevicesPage() {
           {!isLoading && devices && devices.length > 0 && (
             <div className="divide-y rounded-md border">
               {devices.map((device) => (
-                <div className="flex items-center justify-between px-4 py-3" key={device.id}>
-                  <div className="flex items-center gap-3">
+                <div
+                  className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  key={device.id}
+                >
+                  <div className="flex min-w-0 items-center gap-3">
                     <Smartphone aria-hidden="true" className="size-4 text-muted-foreground" />
                     <div>
                       <p className="font-medium text-sm">{device.device_name || t('mobile.unknown_device')}</p>
-                      <div className="flex gap-3 text-muted-foreground text-xs">
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground text-xs">
                         <span>
                           {t('mobile.paired')} {new Date(device.created_at).toLocaleDateString()}
                         </span>

@@ -107,7 +107,7 @@ function UsersPage() {
 
       <div className="max-w-2xl space-y-6">
         <div className="rounded-lg border bg-card p-6">
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-semibold text-lg">{t('users.count')}</h2>
             <Button onClick={() => setShowForm(!showForm)} size="sm" variant="outline">
               <Plus className="size-4" />
@@ -173,8 +173,11 @@ function UsersPage() {
           {users && users.length > 0 && (
             <div className="divide-y rounded-md border">
               {users.map((user) => (
-                <div className="flex items-center justify-between px-4 py-3" key={user.id}>
-                  <div className="flex items-center gap-3">
+                <div
+                  className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  key={user.id}
+                >
+                  <div className="flex min-w-0 items-center gap-3">
                     <UserCog aria-hidden="true" className="size-4 text-muted-foreground" />
                     <div>
                       <p className="font-medium text-sm">

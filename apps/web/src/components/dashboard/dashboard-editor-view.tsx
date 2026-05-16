@@ -142,15 +142,15 @@ export function DashboardEditorView({
   }
 
   return (
-    <div>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
+      <div className="mb-6 flex w-full min-w-0 max-w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <DashboardSwitcher
           currentId={activeDashboardId}
           dashboards={dashboards}
           isAdmin={isAdmin}
           onSelect={handleDashboardSelect}
         />
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {isAdmin && !editor.isEditing && isDashboardReady && (
             <Button onClick={handleEdit} size="sm" variant="outline">
               <PencilIcon className="mr-1 size-4" />

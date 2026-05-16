@@ -57,17 +57,17 @@ function SettingsPage() {
   }
 
   return (
-    <div>
+    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
       <h1 className="mb-6 font-bold text-2xl">{t('title')}</h1>
 
-      <div className="max-w-xl space-y-6">
+      <div className="w-full min-w-0 max-w-xl space-y-6">
         <div className="rounded-lg border bg-card p-6">
           <h2 className="mb-1 font-semibold text-lg">{t('auto_discovery_key')}</h2>
           <p className="mb-4 text-muted-foreground text-sm">{t('auto_discovery_description')}</p>
 
           {config?.key ? (
-            <div className="flex items-center gap-2">
-              <div className="flex-1 rounded-md border bg-muted/50 px-3 py-2 font-mono text-sm">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <div className="min-w-0 flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 font-mono text-sm">
                 {showKey ? config.key : config.key.replace(/./g, '*')}
               </div>
               <Button

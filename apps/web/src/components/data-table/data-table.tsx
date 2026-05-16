@@ -12,9 +12,9 @@ interface DataTableProps<TData> extends React.ComponentProps<'div'> {
 
 export function DataTable<TData>({ table, actionBar, children, className, ...props }: DataTableProps<TData>) {
   return (
-    <div className={cn('flex w-full flex-col gap-2.5 overflow-auto', className)} {...props}>
+    <div className={cn('flex w-full min-w-0 flex-col gap-2.5 overflow-hidden', className)} {...props}>
       {children}
-      <div className="overflow-hidden rounded-md border">
+      <div className="min-w-0 max-w-full overflow-hidden rounded-md border" data-testid="data-table-scroll">
         <Table className="table-fixed [&_td]:px-3 [&_th]:px-3">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (

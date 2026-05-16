@@ -196,23 +196,23 @@ function AuthedLayout() {
       <SidebarProvider>
         <AppSidebar />
         <SidebarInset className="min-h-0 overflow-hidden">
-          <header className="flex h-16 shrink-0 items-center justify-between gap-2 px-4">
-            <div className="flex items-center gap-2">
+          <header className="flex h-14 shrink-0 items-center justify-between gap-2 px-3 sm:h-16 sm:px-4">
+            <div className="flex min-w-0 items-center gap-2">
               <SidebarTrigger className="-ml-1" />
               <Separator
-                className="mr-2 data-[orientation=vertical]:h-4 data-[orientation=vertical]:self-center"
+                className="mr-1 data-[orientation=vertical]:h-4 data-[orientation=vertical]:self-center sm:mr-2"
                 orientation="vertical"
               />
-              <Breadcrumb>
-                <BreadcrumbList>
+              <Breadcrumb className="min-w-0">
+                <BreadcrumbList className="min-w-0 flex-nowrap">
                   {breadcrumbs.map((crumb, index) => {
                     const isLast = index === breadcrumbs.length - 1
                     const hiddenOnMobile = index === 0 && breadcrumbs.length > 1
                     return (
                       <Fragment key={crumb.label}>
-                        <BreadcrumbItem className={hiddenOnMobile ? 'hidden md:block' : ''}>
+                        <BreadcrumbItem className={hiddenOnMobile ? 'hidden md:block' : 'min-w-0'}>
                           {isLast || !crumb.to ? (
-                            <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+                            <BreadcrumbPage className="truncate">{crumb.label}</BreadcrumbPage>
                           ) : (
                             <BreadcrumbLink render={<Link to={crumb.to} />}>{crumb.label}</BreadcrumbLink>
                           )}
@@ -224,13 +224,13 @@ function AuthedLayout() {
                 </BreadcrumbList>
               </Breadcrumb>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
               <LanguageSwitcher />
               <ThemeToggle />
             </div>
           </header>
           <ScrollArea className="min-h-0 flex-1 overflow-hidden">
-            <main className="flex h-full flex-col p-4 pt-0">
+            <main className="flex min-h-full min-w-0 flex-col p-3 pt-0 sm:p-4 sm:pt-0">
               <Outlet />
             </main>
           </ScrollArea>

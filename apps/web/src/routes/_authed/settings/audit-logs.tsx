@@ -95,10 +95,10 @@ function AuditLogsPage() {
   })
 
   return (
-    <div>
+    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
       <h1 className="mb-6 font-bold text-2xl">{t('audit.title')}</h1>
 
-      <div className="max-w-4xl">
+      <div className="w-full min-w-0 max-w-4xl">
         {isLoading && !data ? (
           <div className="space-y-2">
             {Array.from({ length: 5 }, (_, i) => (

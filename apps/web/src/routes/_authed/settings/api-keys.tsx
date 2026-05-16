@@ -137,10 +137,13 @@ function ApiKeysPage() {
           {!isLoading && keys && keys.length > 0 && (
             <div className="divide-y">
               {keys.map((apiKey) => (
-                <div className="flex items-center justify-between px-6 py-3" key={apiKey.id}>
-                  <div>
+                <div
+                  className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6"
+                  key={apiKey.id}
+                >
+                  <div className="min-w-0">
                     <p className="font-medium text-sm">{apiKey.name}</p>
-                    <div className="flex gap-3 text-muted-foreground text-xs">
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground text-xs">
                       <span className="font-mono">
                         {t('api_keys.prefix')}
                         {apiKey.key_prefix}
