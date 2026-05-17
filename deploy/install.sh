@@ -9,6 +9,8 @@ DATA_DIR="/var/lib/serverbee"
 DOCKER_DIR="/opt/serverbee"
 META_FILE="${CONFIG_DIR}/.install-meta"
 DOCS_URL="https://server-bee-docs.vercel.app"
+CADDY_CONFIG_DIR="/etc/caddy"
+CADDYFILE="${CADDY_CONFIG_DIR}/Caddyfile"
 
 # ─── Globals ──────────────────────────────────────────────────────────────────
 COMMAND=""
@@ -17,8 +19,11 @@ METHOD=""
 SERVER_URL=""
 ENROLLMENT_CODE=""
 PASSWORD=""
+DOMAIN=""
+EMAIL=""
 YES=false
 PURGE=false
+SKIP_DNS_CHECK=false
 CONFIG_KEY=""
 CONFIG_VALUE=""
 
@@ -85,7 +90,7 @@ require_root() {
 }
 
 # ─── Known subcommands ───────────────────────────────────────────────────────
-KNOWN_COMMANDS="install uninstall upgrade status start stop restart config env"
+KNOWN_COMMANDS="install uninstall upgrade status start stop restart config env domain"
 
 # ─── Argument parsing ─────────────────────────────────────────────────────────
 parse_args() {
@@ -95,6 +100,9 @@ parse_args() {
             --server-url)    SERVER_URL="$2"; shift 2 ;;
             --enrollment-code) ENROLLMENT_CODE="$2"; shift 2 ;;
             --password)      PASSWORD="$2"; shift 2 ;;
+            --domain)        DOMAIN="$2"; shift 2 ;;
+            --email)         EMAIL="$2"; shift 2 ;;
+            --skip-dns-check) SKIP_DNS_CHECK=true; shift ;;
             --purge)         PURGE=true; shift ;;
             --yes|-y)        YES=true; shift ;;
             -*)              error "Unknown option: $1" ;;
@@ -152,6 +160,101 @@ get_local_ip() {
     ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' \
         || hostname -I 2>/dev/null | awk '{print $1}' \
         || echo "localhost"
+}
+
+get_public_ipv4() {
+    if [ -n "${SERVERBEE_TEST_PUBLIC_IPV4:-}" ]; then
+        echo "$SERVERBEE_TEST_PUBLIC_IPV4"
+        return
+    fi
+    curl -4 -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true
+}
+
+get_public_ipv6() {
+    if [ -n "${SERVERBEE_TEST_PUBLIC_IPV6:-}" ]; then
+        echo "$SERVERBEE_TEST_PUBLIC_IPV6"
+        return
+    fi
+    curl -6 -fsS --max-time 5 https://api6.ipify.org 2>/dev/null || true
+}
+
+resolve_domain_a() {
+    local domain="$1"
+    if [ -n "${SERVERBEE_TEST_DNS_A:-}" ]; then
+        echo "$SERVERBEE_TEST_DNS_A" | tr ',' '\n' | sed '/^$/d'
+        return
+    fi
+    if command -v getent &>/dev/null; then
+        getent ahostsv4 "$domain" 2>/dev/null | awk '{print $1}' | sort -u
+    elif command -v dig &>/dev/null; then
+        dig +short A "$domain" 2>/dev/null | sed '/^$/d'
+    elif command -v host &>/dev/null; then
+        host -t A "$domain" 2>/dev/null | awk '/has address/ {print $4}'
+    fi
+}
+
+resolve_domain_aaaa() {
+    local domain="$1"
+    if [ -n "${SERVERBEE_TEST_DNS_AAAA:-}" ]; then
+        echo "$SERVERBEE_TEST_DNS_AAAA" | tr ',' '\n' | sed '/^$/d'
+        return
+    fi
+    if command -v getent &>/dev/null; then
+        getent ahostsv6 "$domain" 2>/dev/null | awk '{print $1}' | sort -u
+    elif command -v dig &>/dev/null; then
+        dig +short AAAA "$domain" 2>/dev/null | sed '/^$/d'
+    elif command -v host &>/dev/null; then
+        host -t AAAA "$domain" 2>/dev/null | awk '/has IPv6 address/ {print $5}'
+    fi
+}
+
+validate_domain_name() {
+    local domain="$1"
+    [[ "$domain" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$ ]] \
+        || error "Invalid domain: ${domain}\n  Use a hostname like monitor.example.com, without http:// or a path."
+}
+
+line_contains_value() {
+    local haystack="$1" needle="$2"
+    [ -n "$needle" ] && echo "$haystack" | grep -Fxq "$needle"
+}
+
+check_domain_points_here() {
+    local domain="$1"
+    if [ "$SKIP_DNS_CHECK" = true ]; then
+        warn "Skipping DNS check for ${domain}."
+        return
+    fi
+
+    local public_ipv4 public_ipv6 dns_a dns_aaaa
+    public_ipv4=$(get_public_ipv4)
+    public_ipv6=$(get_public_ipv6)
+    dns_a=$(resolve_domain_a "$domain" || true)
+    dns_aaaa=$(resolve_domain_aaaa "$domain" || true)
+
+    if line_contains_value "$dns_a" "$public_ipv4" || line_contains_value "$dns_aaaa" "$public_ipv6"; then
+        info "DNS check passed: ${domain} resolves to this server."
+        return
+    fi
+
+    echo ""
+    echo "Domain ${domain} does not resolve to this server."
+    echo ""
+    echo "Current server IP:"
+    echo "  IPv4: ${public_ipv4:-unknown}"
+    echo "  IPv6: ${public_ipv6:-unknown}"
+    echo ""
+    echo "Current DNS records:"
+    echo "  A:    ${dns_a:-none}"
+    echo "  AAAA: ${dns_aaaa:-none}"
+    echo ""
+    echo "Please add/update DNS:"
+    [ -n "$public_ipv4" ] && echo "  A    ${domain} -> ${public_ipv4}"
+    [ -n "$public_ipv6" ] && echo "  AAAA ${domain} -> ${public_ipv6}"
+    echo ""
+    echo "Then wait for DNS propagation and re-run this command."
+    echo ""
+    error "DNS validation failed for ${domain}"
 }
 
 # ─── Install metadata (.install-meta JSON) ───────────────────────────────────
@@ -676,6 +779,205 @@ print_agent_result() {
     echo ""
 }
 
+# ─── Domain / HTTPS setup ─────────────────────────────────────────────────────
+
+install_caddy() {
+    if command -v caddy &>/dev/null; then
+        info "Caddy is already installed"
+        return
+    fi
+
+    if command -v apt-get &>/dev/null; then
+        info "Installing Caddy via official apt repository..."
+        apt-get update -qq >/dev/null 2>&1
+        apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl gpg >/dev/null 2>&1 \
+            || error "Failed to install Caddy apt repository dependencies"
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+            | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+            > /etc/apt/sources.list.d/caddy-stable.list
+        chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg /etc/apt/sources.list.d/caddy-stable.list
+        apt-get update -qq >/dev/null 2>&1
+        apt-get install -y -qq caddy >/dev/null 2>&1 || error "Failed to install Caddy"
+    elif command -v dnf &>/dev/null; then
+        info "Installing Caddy via COPR repository..."
+        dnf install -y -q dnf-plugins-core >/dev/null 2>&1 || dnf install -y -q dnf5-plugins >/dev/null 2>&1 \
+            || error "Failed to install dnf COPR plugin"
+        dnf copr enable -y @caddy/caddy >/dev/null 2>&1 || error "Failed to enable Caddy COPR repository"
+        dnf install -y -q caddy >/dev/null 2>&1 || error "Failed to install Caddy"
+    elif command -v yum &>/dev/null; then
+        info "Installing Caddy via COPR repository..."
+        yum install -y -q yum-plugin-copr >/dev/null 2>&1 || error "Failed to install yum COPR plugin"
+        yum copr enable -y @caddy/caddy >/dev/null 2>&1 || error "Failed to enable Caddy COPR repository"
+        yum install -y -q caddy >/dev/null 2>&1 || error "Failed to install Caddy"
+    else
+        error "Cannot install Caddy automatically on this distribution.\n  Install Caddy manually, then configure:\n\n  ${DOMAIN} {\n      reverse_proxy 127.0.0.1:9527\n  }"
+    fi
+}
+
+check_http_ports_available() {
+    local listeners=""
+    if command -v ss &>/dev/null; then
+        listeners=$(ss -ltnp 2>/dev/null | awk '$4 ~ /:80$/ || $4 ~ /:443$/ {print}' || true)
+    elif command -v lsof &>/dev/null; then
+        listeners=$(lsof -nP -iTCP:80 -iTCP:443 -sTCP:LISTEN 2>/dev/null || true)
+    fi
+
+    if [ -n "$listeners" ] && ! echo "$listeners" | grep -qi caddy; then
+        echo "$listeners" | sed 's/^/  /'
+        error "Port 80 or 443 is already used by a non-Caddy service.\n  Stop that service or configure your existing reverse proxy manually."
+    fi
+}
+
+write_caddyfile() {
+    mkdir -p "$CADDY_CONFIG_DIR"
+    if [ -f "$CADDYFILE" ]; then
+        cp "$CADDYFILE" "${CADDYFILE}.serverbee.$(date +%Y%m%d%H%M%S).bak"
+        if [ -n "$EMAIL" ] && ! grep -q "^[[:space:]]*email[[:space:]]" "$CADDYFILE"; then
+            local first_nonblank
+            first_nonblank=$(awk 'NF {print; exit}' "$CADDYFILE")
+            if [ "$first_nonblank" = "{" ]; then
+                awk -v email="$EMAIL" '
+                    !inserted && $0 == "{" { print; print "    email "email; inserted=1; next }
+                    { print }
+                ' "$CADDYFILE" > /tmp/serverbee-caddyfile
+            else
+                {
+                    echo "{"
+                    echo "    email ${EMAIL}"
+                    echo "}"
+                    echo ""
+                    cat "$CADDYFILE"
+                } > /tmp/serverbee-caddyfile
+            fi
+            mv /tmp/serverbee-caddyfile "$CADDYFILE"
+        fi
+        if grep -q "^${DOMAIN}[[:space:]]*{" "$CADDYFILE"; then
+            awk -v domain="$DOMAIN" '
+                $0 ~ "^"domain"[[:space:]]*{" { print domain" {\n    reverse_proxy 127.0.0.1:9527\n}"; in_block=1; depth=1; next }
+                in_block {
+                    depth += gsub(/\{/, "{")
+                    depth -= gsub(/\}/, "}")
+                    if (depth <= 0) in_block=0
+                    next
+                }
+                { print }
+            ' "$CADDYFILE" > /tmp/serverbee-caddyfile
+            mv /tmp/serverbee-caddyfile "$CADDYFILE"
+        else
+            cat >> "$CADDYFILE" << EOF
+
+${DOMAIN} {
+    reverse_proxy 127.0.0.1:9527
+}
+EOF
+        fi
+    else
+        if [ -n "$EMAIL" ]; then
+            cat > "$CADDYFILE" << EOF
+{
+    email ${EMAIL}
+}
+
+${DOMAIN} {
+    reverse_proxy 127.0.0.1:9527
+}
+EOF
+        else
+            cat > "$CADDYFILE" << EOF
+${DOMAIN} {
+    reverse_proxy 127.0.0.1:9527
+}
+EOF
+        fi
+    fi
+    info "Configured ${CADDYFILE} for ${DOMAIN}"
+}
+
+update_server_for_domain_binary() {
+    [ -f "${CONFIG_DIR}/server.toml" ] || error "Server config not found: ${CONFIG_DIR}/server.toml"
+    toml_set "${CONFIG_DIR}/server.toml" "server.listen" "127.0.0.1:9527"
+    toml_set "${CONFIG_DIR}/server.toml" "auth.secure_cookie" "true"
+    if has_systemd; then
+        systemctl restart serverbee-server
+    fi
+}
+
+update_server_for_domain_docker() {
+    local compose_file="${DOCKER_DIR}/docker-compose.server.yml"
+    [ -f "$compose_file" ] || error "Compose file not found: $compose_file"
+
+    sed -i.bak 's|- "9527:9527"|- "127.0.0.1:9527:9527"|' "$compose_file" && rm -f "${compose_file}.bak"
+    if grep -q "SERVERBEE_AUTH__SECURE_COOKIE=" "$compose_file"; then
+        sed -i.bak 's|SERVERBEE_AUTH__SECURE_COOKIE=.*|SERVERBEE_AUTH__SECURE_COOKIE=true|' "$compose_file" && rm -f "${compose_file}.bak"
+    else
+        sed -i.bak '/environment:/a\      - SERVERBEE_AUTH__SECURE_COOKIE=true' "$compose_file" && rm -f "${compose_file}.bak"
+    fi
+    docker compose -f "$compose_file" up -d
+}
+
+setup_domain() {
+    validate_domain_name "$DOMAIN"
+    check_domain_points_here "$DOMAIN"
+    check_http_ports_available
+    install_caddy
+    write_caddyfile
+
+    detect_installed
+    meta_has "server" || error "serverbee-server is not installed. Install the server first."
+
+    local method
+    method=$(meta_read "server" "method")
+    case "$method" in
+        binary) update_server_for_domain_binary ;;
+        docker) update_server_for_domain_docker ;;
+        *) error "Unsupported server install method for domain setup: ${method}" ;;
+    esac
+
+    if has_systemd; then
+        systemctl enable caddy >/dev/null 2>&1 || true
+        systemctl restart caddy
+    else
+        warn "systemd not found. Start Caddy manually with: caddy run --config ${CADDYFILE}"
+    fi
+
+    info "Verifying HTTPS endpoint..."
+    curl -fsS --max-time 20 "https://${DOMAIN}/healthz" >/dev/null \
+        || error "HTTPS verification failed for https://${DOMAIN}/healthz. Check Caddy logs and DNS propagation."
+
+    echo ""
+    echo -e "${GREEN}ServerBee HTTPS domain configured successfully!${NC}"
+    echo ""
+    echo "  Dashboard: https://${DOMAIN}"
+    echo "  Agent URL: https://${DOMAIN}"
+    echo ""
+    echo "Install an agent with:"
+    echo "  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/deploy/install.sh | sudo bash -s -- agent \\"
+    echo "    --server-url https://${DOMAIN} \\"
+    echo "    --enrollment-code YOUR_ONE_TIME_CODE"
+    echo ""
+}
+
+cmd_domain() {
+    if [ -z "$COMPONENT" ]; then
+        COMPONENT="setup"
+    fi
+    [ "$COMPONENT" = "setup" ] || error "Usage: serverbee domain setup --domain monitor.example.com --email admin@example.com"
+
+    if [ -z "$DOMAIN" ]; then
+        if [ "$YES" = true ] || ! [ -t 0 ]; then
+            error "--domain is required"
+        fi
+        read -rp "Domain (e.g., monitor.example.com): " DOMAIN
+    fi
+
+    if [ -z "$EMAIL" ] && [ "$YES" != true ] && [ -t 0 ]; then
+        read -rp "Email for certificate notices (optional): " EMAIL
+    fi
+
+    setup_domain
+}
+
 # ─── Install command ──────────────────────────────────────────────────────────
 
 cmd_install() {
@@ -750,6 +1052,14 @@ cmd_install() {
             echo ""
             read -rp "Admin password (Enter to skip, auto-generated on first start): " PASSWORD
         fi
+        if [ -z "$DOMAIN" ] && [ "$YES" != true ] && [ -t 0 ]; then
+            echo ""
+            read -rp "Configure HTTPS domain with Caddy now? [y/N]: " confirm_domain
+            if [[ "$confirm_domain" =~ ^[yY] ]]; then
+                read -rp "Domain (e.g., monitor.example.com): " DOMAIN
+                read -rp "Email for certificate notices (optional): " EMAIL
+            fi
+        fi
     elif [ "$COMPONENT" = "agent" ]; then
         while [ -z "$SERVER_URL" ]; do
             if [ "$YES" = true ]; then error "--server-url is required for agent installation"; fi
@@ -769,6 +1079,10 @@ cmd_install() {
         agent-binary)  install_binary_agent ;;
         agent-docker)  install_docker_agent ;;
     esac
+
+    if [ "$COMPONENT" = "server" ] && [ -n "$DOMAIN" ]; then
+        setup_domain
+    fi
 }
 
 # ─── Uninstall command ────────────────────────────────────────────────────────
@@ -1551,9 +1865,10 @@ interactive_menu() {
     echo "  [5] Service    服务控制 (start/stop/restart)"
     echo "  [6] Config     配置管理"
     echo "  [7] Env        环境变量"
+    echo "  [8] Domain     域名 HTTPS"
     echo "  [0] Exit       退出"
     echo ""
-    read -rp "Select [0-7]: " choice
+    read -rp "Select [0-8]: " choice
     case "$choice" in
         1) COMMAND="install" ;;
         2) COMMAND="uninstall" ;;
@@ -1562,6 +1877,7 @@ interactive_menu() {
         5) interactive_service_menu ;;
         6) COMMAND="config" ;;
         7) COMMAND="env" ;;
+        8) COMMAND="domain"; COMPONENT="setup" ;;
         0) exit 0 ;;
         *) error "Invalid choice: $choice" ;;
     esac
@@ -1597,6 +1913,7 @@ run_command() {
         restart)   cmd_service restart ;;
         config)    cmd_config ;;
         env)       cmd_env ;;
+        domain)    cmd_domain ;;
         *) error "Unknown command: $COMMAND" ;;
     esac
 }

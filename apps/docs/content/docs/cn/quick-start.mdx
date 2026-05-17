@@ -65,6 +65,17 @@ ServerBee 可以直接用服务器 IP 访问，也可以通过域名和反向代
 如果你先按快速开始使用 HTTP，之后迁移到域名和 HTTPS，请把 `secure_cookie` 改回 `true`，重启 ServerBee，并把已安装 Agent 的 Server 地址更新为新的 `https://` 地址。
 </Callout>
 
+如果你已经有域名，并且 DNS `A` 记录已经指向当前服务器，可以让安装脚本自动配置 Caddy HTTPS：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server \
+  --domain monitor.example.com \
+  --email admin@example.com \
+  -y
+```
+
+脚本会先校验域名是否解析到当前服务器。未解析或解析到其他 IP 时，脚本会停止并提示应添加的 DNS 记录。`--email` 用于 Let's Encrypt 证书通知，可省略。
+
 ## 方式二：安装脚本
 
 适用于 Linux 服务器，一键完成安装、配置和 systemd 服务注册。
