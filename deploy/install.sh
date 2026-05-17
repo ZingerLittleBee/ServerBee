@@ -143,6 +143,11 @@ get_latest_version() {
     echo "$tag"
 }
 
+docker_image_tag() {
+    local version="$1"
+    echo "${version#v}"
+}
+
 get_local_ip() {
     ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' \
         || hostname -I 2>/dev/null | awk '{print $1}' \
@@ -395,6 +400,9 @@ install_binary_server() {
         cat > "${CONFIG_DIR}/server.toml" << TOML
 [server]
 data_dir = "${DATA_DIR}"
+
+[auth]
+secure_cookie = false
 TOML
         if [ -n "$PASSWORD" ]; then
             cat >> "${CONFIG_DIR}/server.toml" << TOML
@@ -512,8 +520,9 @@ install_docker_server() {
     check_docker
     check_unmanaged_container "server"
 
-    local version
+    local version image_tag
     version=$(get_latest_version)
+    image_tag=$(docker_image_tag "$version")
 
     mkdir -p "$DOCKER_DIR" "$CONFIG_DIR"
 
@@ -543,7 +552,7 @@ TOML
     cat > "${DOCKER_DIR}/docker-compose.server.yml" << YAML
 services:
   serverbee-server:
-    image: ghcr.io/zingerlittlebee/serverbee-server:${version}
+    image: ghcr.io/zingerlittlebee/serverbee-server:${image_tag}
     container_name: serverbee-server
     ports:
       - "9527:9527"
@@ -551,6 +560,7 @@ services:
       - serverbee-data:/data
     environment:
       - SERVERBEE_ADMIN__USERNAME=admin
+      - SERVERBEE_AUTH__SECURE_COOKIE=false
 ${password_env:+${password_env}
 }    restart: unless-stopped
     healthcheck:
@@ -577,8 +587,9 @@ install_docker_agent() {
     check_docker
     check_unmanaged_container "agent"
 
-    local version
+    local version image_tag
     version=$(get_latest_version)
+    image_tag=$(docker_image_tag "$version")
 
     mkdir -p "$CONFIG_DIR"
 
@@ -602,7 +613,7 @@ TOML
     cat > "${DOCKER_DIR}/docker-compose.agent.yml" << YAML
 services:
   serverbee-agent:
-    image: ghcr.io/zingerlittlebee/serverbee-agent:${version}
+    image: ghcr.io/zingerlittlebee/serverbee-agent:${image_tag}
     container_name: serverbee-agent
     privileged: true
     network_mode: host
@@ -635,11 +646,11 @@ print_server_result() {
     if [ -n "$PASSWORD" ]; then
         echo "  Password:   ${PASSWORD}"
     elif [ "$METHOD" = "docker" ]; then
-        echo "  Password:   (auto-generated, check: docker compose -f ${DOCKER_DIR}/docker-compose.server.yml logs | grep 'Generated admin password')"
+        echo "  Password:   (auto-generated, check: docker compose -f ${DOCKER_DIR}/docker-compose.server.yml logs serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
     elif has_systemd; then
-        echo "  Password:   (auto-generated, check: sudo journalctl -u serverbee-server | grep 'Generated admin password')"
+        echo "  Password:   (auto-generated, check: sudo journalctl -u serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
     else
-        echo "  Password:   (auto-generated, check process output for 'Generated admin password')"
+        echo "  Password:   (auto-generated, check process output for 'FIRST-RUN ADMIN CREDENTIALS')"
     fi
     echo ""
     echo "  Docs: ${DOCS_URL}/en/docs/configuration"
@@ -735,7 +746,7 @@ cmd_install() {
 
     # Prompt for component-specific params
     if [ "$COMPONENT" = "server" ]; then
-        if [ -z "$PASSWORD" ] && [ "$YES" != true ]; then
+        if [ -z "$PASSWORD" ] && [ "$YES" != true ] && [ -t 0 ]; then
             echo ""
             read -rp "Admin password (Enter to skip, auto-generated on first start): " PASSWORD
         fi
@@ -953,6 +964,8 @@ upgrade_binary() {
 upgrade_docker() {
     local component="$1" version="$2"
     local compose_file="${DOCKER_DIR}/docker-compose.${component}.yml"
+    local image_tag
+    image_tag=$(docker_image_tag "$version")
 
     if [ ! -f "$compose_file" ]; then
         error "Compose file not found: $compose_file"
@@ -960,7 +973,7 @@ upgrade_docker() {
 
     # Update image tag in compose file
     local image_base="ghcr.io/zingerlittlebee/serverbee-${component}"
-    sed -i.bak "s|${image_base}:[^ ]*|${image_base}:${version}|" "$compose_file" && rm -f "${compose_file}.bak"
+    sed -i.bak "s|${image_base}:[^ ]*|${image_base}:${image_tag}|" "$compose_file" && rm -f "${compose_file}.bak"
 
     docker compose -f "$compose_file" pull
     docker compose -f "$compose_file" up -d
@@ -1326,17 +1339,21 @@ cmd_config() {
                 fi
             done
         else
-            echo ""
-            echo "  Restart service to apply changes?"
-            read -rp "  [y/N]: " confirm
-            if [[ "$confirm" =~ ^[yY] ]]; then
-                for entry in "${MANAGED_COMPONENTS[@]}"; do
-                    local comp="${entry%%:*}"
-                    local method="${entry##*:}"
-                    if [[ "$target" == "$comp" || "$target" == "both" ]]; then
-                        cmd_service_single "$comp" "$method" "restart"
-                    fi
-                done
+            if [ -t 0 ]; then
+                echo ""
+                echo "  Restart service to apply changes?"
+                read -rp "  [y/N]: " confirm
+                if [[ "$confirm" =~ ^[yY] ]]; then
+                    for entry in "${MANAGED_COMPONENTS[@]}"; do
+                        local comp="${entry%%:*}"
+                        local method="${entry##*:}"
+                        if [[ "$target" == "$comp" || "$target" == "both" ]]; then
+                            cmd_service_single "$comp" "$method" "restart"
+                        fi
+                    done
+                fi
+            else
+                warn "Non-interactive mode detected; services were not restarted. Re-run with -y to restart automatically, or restart manually."
             fi
         fi
         return
