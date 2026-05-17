@@ -15,8 +15,6 @@ pub struct AppConfig {
     #[serde(default)]
     pub auth: AuthConfig,
     #[serde(default)]
-    pub admin: AdminConfig,
-    #[serde(default)]
     pub retention: RetentionConfig,
     #[serde(default)]
     pub rate_limit: RateLimitConfig,
@@ -46,7 +44,6 @@ impl Default for AppConfig {
             server: default_server(),
             database: DatabaseConfig::default(),
             auth: AuthConfig::default(),
-            admin: AdminConfig::default(),
             retention: RetentionConfig::default(),
             rate_limit: RateLimitConfig::default(),
             oauth: OAuthConfig::default(),
@@ -108,23 +105,6 @@ impl Default for AuthConfig {
             session_ttl: default_session_ttl(),
             secure_cookie: true,
             max_servers: 0,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct AdminConfig {
-    #[serde(default = "default_admin_username")]
-    pub username: String,
-    #[serde(default)]
-    pub password: String,
-}
-
-impl Default for AdminConfig {
-    fn default() -> Self {
-        Self {
-            username: default_admin_username(),
-            password: String::new(),
         }
     }
 }
@@ -407,10 +387,6 @@ fn default_max_connections() -> u32 {
 
 fn default_session_ttl() -> i64 {
     86400
-}
-
-fn default_admin_username() -> String {
-    "admin".to_string()
 }
 
 fn default_log_level() -> String {
