@@ -1,13 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
-import { CircleDot, ExternalLink, LayoutGrid, Search, Table2, Tag, Trash2 } from 'lucide-react'
+import { CircleDot, ExternalLink, LayoutGrid, Plus, Search, Table2, Tag, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { DataTable } from '@/components/data-table/data-table'
 import { DataTableColumnHeader } from '@/components/data-table/data-table-column-header'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
+import { AddServerDialog } from '@/components/server/add-server-dialog'
 import { CostCell } from '@/components/server/cost-cell'
 import { ServerCard } from '@/components/server/server-card'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
@@ -30,6 +31,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useServer } from '@/hooks/use-api'
+import { useAuth } from '@/hooks/use-auth'
 import { useCostOverview } from '@/hooks/use-cost'
 import { useDataTable } from '@/hooks/use-data-table'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
@@ -65,6 +67,9 @@ const arrayIncludesFilter = (row: { getValue: (id: string) => unknown }, id: str
 function ServersListPage() {
   const { t } = useTranslation(['servers', 'common'])
   const queryClient = useQueryClient()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+  const [addOpen, setAddOpen] = useState(false)
   const navigate = Route.useNavigate()
   const { q: search, view: viewParam } = Route.useSearch()
 
@@ -334,13 +339,19 @@ function ServersListPage() {
 
   return (
     <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
         <div className="min-w-0">
           <h1 className="font-bold text-2xl">{t('title')}</h1>
           <p className="text-muted-foreground text-sm">
             {t('servers_online', { online: servers.filter((s) => s.online).length, total: servers.length })}
           </p>
         </div>
+        {isAdmin && (
+          <Button className="sm:mt-0.5 sm:self-start" onClick={() => setAddOpen(true)}>
+            <Plus className="size-4" />
+            {t('add_server.button')}
+          </Button>
+        )}
       </div>
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -448,6 +459,7 @@ function ServersListPage() {
       )}
 
       {editingId !== null && <EditWrapper onClose={() => setEditingId(null)} serverId={editingId} />}
+      {isAdmin && <AddServerDialog onClose={() => setAddOpen(false)} open={addOpen} />}
     </div>
   )
 }
