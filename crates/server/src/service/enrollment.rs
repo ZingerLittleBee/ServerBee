@@ -27,7 +27,8 @@ impl EnrollmentService {
         }
         let code = AuthService::generate_session_token();
         let code_hash = AuthService::hash_password(&code)?;
-        let code_prefix = code[..8.min(code.len())].to_string();
+        // generate_session_token() yields a fixed-length ASCII (base64url) token, so [..8] is byte-safe.
+        let code_prefix = code[..8].to_string();
         let now = Utc::now();
 
         let model = agent_enrollment::ActiveModel {
@@ -228,5 +229,51 @@ mod tests {
             .unwrap();
         let removed = EnrollmentService::prune(&db).await.expect("prune");
         assert_eq!(removed, 1, "consumed enrollment pruned");
+    }
+
+    #[tokio::test]
+    async fn concurrent_redemption_consumes_exactly_once() {
+        let (db, _tmp) = setup_test_db().await;
+        let uid = seed_user(&db).await;
+        let (_m, code) = EnrollmentService::mint(&db, &uid, None, 600)
+            .await
+            .expect("mint");
+
+        let db2 = db.clone();
+        let c1 = code.clone();
+        let c2 = code.clone();
+        let h1 = tokio::spawn(async move {
+            EnrollmentService::verify_and_consume(&db, &c1).await
+        });
+        let h2 = tokio::spawn(async move {
+            EnrollmentService::verify_and_consume(&db2, &c2).await
+        });
+        let r1 = h1.await.expect("join1").expect("no db err");
+        let r2 = h2.await.expect("join2").expect("no db err");
+
+        let successes = [r1.is_some(), r2.is_some()]
+            .iter()
+            .filter(|&&s| s)
+            .count();
+        assert_eq!(successes, 1, "exactly one concurrent redemption must succeed");
+    }
+
+    #[tokio::test]
+    async fn prune_removes_expired_unconsumed() {
+        let (db, _tmp) = setup_test_db().await;
+        let uid = seed_user(&db).await;
+        let (_m, _code) = EnrollmentService::mint(&db, &uid, None, 600)
+            .await
+            .unwrap();
+        agent_enrollment::Entity::update_many()
+            .col_expr(
+                agent_enrollment::Column::ExpiresAt,
+                sea_orm::sea_query::Expr::value(Utc::now() - Duration::seconds(10)),
+            )
+            .exec(&db)
+            .await
+            .unwrap();
+        let removed = EnrollmentService::prune(&db).await.expect("prune");
+        assert_eq!(removed, 1, "expired-but-unconsumed enrollment pruned");
     }
 }
