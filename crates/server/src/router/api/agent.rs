@@ -19,14 +19,12 @@ use crate::middleware::auth::CurrentUser;
 use crate::router::utils::extract_client_ip;
 use crate::service::audit::AuditService;
 use crate::service::auth::AuthService;
-use crate::service::config::ConfigService;
 use crate::service::enrollment::{DEFAULT_TTL_SECS, EnrollmentService};
 use crate::service::network_probe::NetworkProbeService;
 use crate::service::upgrade_release::LatestAgentVersionResponse;
 use crate::state::AppState;
 use serverbee_common::constants::CAP_DEFAULT;
 
-const CONFIG_KEY_AUTO_DISCOVERY: &str = "auto_discovery_key";
 const DEFAULT_SERVER_NAME: &str = "New Server";
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -98,8 +96,8 @@ pub async fn latest_version(
     tag = "agent",
     responses(
         (status = 200, description = "Agent registered", body = RegisterResponse),
-        (status = 400, description = "Auto-discovery key not configured or server limit reached"),
-        (status = 401, description = "Invalid auto-discovery key"),
+        (status = 400, description = "Server limit reached"),
+        (status = 401, description = "Invalid, expired, or already-used enrollment code"),
     ),
     security(("bearer_token" = []))
 )]
@@ -122,26 +120,17 @@ async fn register(
         ));
     }
 
-    // 2. Discovery key validation
+    // 2. Enrollment code validation (single-use, TTL, constant-time argon2)
     let auth_header = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or(AppError::Unauthorized)?;
 
-    let stored_key = ConfigService::get(&state.db, CONFIG_KEY_AUTO_DISCOVERY)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("Auto-discovery key not configured".to_string()))?;
-
-    if stored_key.is_empty() {
-        return Err(AppError::BadRequest(
-            "Auto-discovery key not configured".to_string(),
-        ));
-    }
-
-    if auth_header != stored_key {
-        return Err(AppError::Unauthorized);
-    }
+    let enrollment =
+        crate::service::enrollment::EnrollmentService::verify_and_consume(&state.db, auth_header)
+            .await?
+            .ok_or(AppError::Unauthorized)?;
 
     let fingerprint = body
         .as_ref()
@@ -174,9 +163,21 @@ async fn register(
         let mut active: server::ActiveModel = existing.into();
         active.token_hash = Set(token_hash);
         active.token_prefix = Set(token_prefix.to_string());
-        active.last_remote_addr = Set(Some(ip));
+        active.last_remote_addr = Set(Some(ip.clone()));
         active.updated_at = Set(Utc::now());
         active.update(&state.db).await?;
+
+        let _ = crate::service::audit::AuditService::log(
+            &state.db,
+            "system",
+            "agent_enrolled",
+            Some(&format!(
+                "server_id={server_id} enrollment={} prefix={}",
+                enrollment.id, enrollment.code_prefix
+            )),
+            &ip,
+        )
+        .await;
 
         return ok(RegisterResponse {
             server_id,
@@ -267,9 +268,21 @@ async fn register(
                 let mut active: server::ActiveModel = existing.into();
                 active.token_hash = Set(token_hash);
                 active.token_prefix = Set(token_prefix.to_string());
-                active.last_remote_addr = Set(Some(ip));
+                active.last_remote_addr = Set(Some(ip.clone()));
                 active.updated_at = Set(Utc::now());
                 active.update(&state.db).await?;
+
+                let _ = crate::service::audit::AuditService::log(
+                    &state.db,
+                    "system",
+                    "agent_enrolled",
+                    Some(&format!(
+                        "server_id={server_id} enrollment={} prefix={}",
+                        enrollment.id, enrollment.code_prefix
+                    )),
+                    &ip,
+                )
+                .await;
 
                 return ok(RegisterResponse {
                     server_id,
@@ -287,6 +300,18 @@ async fn register(
     if let Err(e) = NetworkProbeService::apply_defaults(&state.db, &server_id).await {
         tracing::warn!("Failed to apply default network probe targets to {server_id}: {e}");
     }
+
+    let _ = crate::service::audit::AuditService::log(
+        &state.db,
+        "system",
+        "agent_enrolled",
+        Some(&format!(
+            "server_id={server_id} enrollment={} prefix={}",
+            enrollment.id, enrollment.code_prefix
+        )),
+        &ip,
+    )
+    .await;
 
     ok(RegisterResponse {
         server_id,
@@ -444,6 +469,29 @@ mod enrollment_endpoint_tests {
         assert!(
             !list[0].code_hash.contains(&code),
             "plaintext code never stored"
+        );
+    }
+
+    #[tokio::test]
+    async fn register_flow_consumes_code_single_use() {
+        let (db, _tmp) = setup_test_db().await;
+        let uid = seed_user(&db).await;
+        let (_m, code) = EnrollmentService::mint(&db, &uid, None, 600)
+            .await
+            .unwrap();
+        assert!(
+            EnrollmentService::verify_and_consume(&db, &code)
+                .await
+                .unwrap()
+                .is_some(),
+            "first registration consumes the code"
+        );
+        assert!(
+            EnrollmentService::verify_and_consume(&db, &code)
+                .await
+                .unwrap()
+                .is_none(),
+            "a replayed enrollment code is rejected"
         );
     }
 
