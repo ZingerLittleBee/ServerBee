@@ -63,6 +63,7 @@ impl Modify for SecurityAddon {
         crate::router::api::agent::create_enrollment,
         crate::router::api::agent::list_enrollments,
         crate::router::api::agent::delete_enrollment,
+        crate::router::api::agent::rotate_token,
         // servers
         crate::router::api::server::list_servers,
         crate::router::api::server::get_server,
@@ -247,6 +248,7 @@ impl Modify for SecurityAddon {
             crate::router::api::agent::CreateEnrollmentRequest,
             crate::router::api::agent::CreateEnrollmentResponse,
             crate::router::api::agent::EnrollmentSummary,
+            crate::router::api::agent::RotateTokenResponse,
             // servers
             crate::router::api::server::ServerResponse,
             crate::router::api::server::BatchDeleteRequest,
