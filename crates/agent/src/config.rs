@@ -10,7 +10,7 @@ pub struct AgentConfig {
     #[serde(default)]
     pub token: String,
     #[serde(default)]
-    pub auto_discovery_key: String,
+    pub enrollment_code: String,
     #[serde(default)]
     pub collector: CollectorConfig,
     #[serde(default)]

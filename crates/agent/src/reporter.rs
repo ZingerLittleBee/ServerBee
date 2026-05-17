@@ -1505,7 +1505,7 @@ fn capability_denied_reason(
 }
 
 fn should_refresh_registration(config: &AgentConfig, error: &anyhow::Error) -> bool {
-    !config.auto_discovery_key.is_empty()
+    !config.enrollment_code.is_empty()
         && matches!(
             error.downcast_ref::<tokio_tungstenite::tungstenite::Error>(),
             Some(tokio_tungstenite::tungstenite::Error::Http(response)) if response.status().as_u16() == 401
@@ -1660,7 +1660,7 @@ mod tests {
         let config = AgentConfig {
             server_url: "http://127.0.0.1:9527".to_string(),
             token: "stale-token".to_string(),
-            auto_discovery_key: "dev-key".to_string(),
+            enrollment_code: "dev-key".to_string(),
             collector: CollectorConfig::default(),
             log: LogConfig::default(),
             file: FileConfig::default(),
@@ -1674,11 +1674,11 @@ mod tests {
     }
 
     #[test]
-    fn test_should_not_refresh_registration_without_auto_discovery_key() {
+    fn test_should_not_refresh_registration_without_enrollment_code() {
         let config = AgentConfig {
             server_url: "http://127.0.0.1:9527".to_string(),
             token: "stale-token".to_string(),
-            auto_discovery_key: String::new(),
+            enrollment_code: String::new(),
             collector: CollectorConfig::default(),
             log: LogConfig::default(),
             file: FileConfig::default(),
@@ -1696,7 +1696,7 @@ mod tests {
         let config = AgentConfig {
             server_url: "http://127.0.0.1:9527".to_string(),
             token: "stale-token".to_string(),
-            auto_discovery_key: "dev-key".to_string(),
+            enrollment_code: "dev-key".to_string(),
             collector: CollectorConfig::default(),
             log: LogConfig::default(),
             file: FileConfig::default(),
@@ -1714,7 +1714,7 @@ mod tests {
         let config = AgentConfig {
             server_url: "https://example.com".to_string(),
             token: "agent-token-123".to_string(),
-            auto_discovery_key: String::new(),
+            enrollment_code: String::new(),
             collector: CollectorConfig::default(),
             log: LogConfig::default(),
             file: FileConfig::default(),
