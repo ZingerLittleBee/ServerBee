@@ -4,6 +4,54 @@
  */
 
 export interface paths {
+  '/api/agent/{id}/rotate-token': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['rotate_token']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/agent/enrollments': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_enrollments']
+    put?: never
+    post: operations['create_enrollment']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/agent/enrollments/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['delete_enrollment']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/agent/latest-version': {
     parameters: {
       query?: never
@@ -1401,22 +1449,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/api/settings/auto-discovery-key': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['get_auto_discovery_key']
-    put: operations['regenerate_auto_discovery_key']
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   '/api/settings/backup': {
     parameters: {
       query?: never
@@ -2015,9 +2047,6 @@ export interface components {
       ip: string
       user_id: string
     }
-    AutoDiscoveryKeyResponse: {
-      key: string
-    }
     BatchCapabilitiesRequest: {
       server_ids: string[]
       /** Format: int32 */
@@ -2070,6 +2099,20 @@ export interface components {
     }
     CreateDashboardInput: {
       name: string
+    }
+    CreateEnrollmentRequest: {
+      label?: string | null
+      /**
+       * Format: int64
+       * @description Lifetime in seconds. Defaults to 600 (10 min), max 86400.
+       */
+      ttl_secs?: number | null
+    }
+    CreateEnrollmentResponse: {
+      /** @description Plaintext enrollment code — shown exactly once, never retrievable again. */
+      code: string
+      expires_at: string
+      id: string
     }
     CreateGroupRequest: {
       name: string
@@ -2212,6 +2255,15 @@ export interface components {
     DownloadResponse: {
       status: string
       transfer_id: string
+    }
+    EnrollmentSummary: {
+      code_prefix: string
+      consumed_at?: string | null
+      created_at: string
+      created_by: string
+      expires_at: string
+      id: string
+      label?: string | null
     }
     ErrorBody: {
       error: components['schemas']['ErrorDetail']
@@ -2539,6 +2591,14 @@ export interface components {
       /** Format: double */
       cost_per_tb_traffic_limit?: number | null
       traffic_limit_type?: string | null
+    }
+    RotateTokenResponse: {
+      server_id: string
+      /**
+       * @description New plaintext run token — shown once. The agent must be reconfigured
+       *     with this value (or it will need to re-enroll).
+       */
+      token: string
     }
     ServerCostInsights: {
       billing_cycle?: string | null
@@ -3532,6 +3592,30 @@ export interface operations {
       }
     }
   }
+  create_enrollment: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateEnrollmentRequest']
+      }
+    }
+    responses: {
+      /** @description Enrollment code created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CreateEnrollmentResponse']
+        }
+      }
+    }
+  }
   create_incident: {
     parameters: {
       query?: never
@@ -3995,6 +4079,27 @@ export interface operations {
       }
       /** @description Dashboard not found */
       404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_enrollment: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Enrollment id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Deleted */
+      200: {
         headers: {
           [name: string]: unknown
         }
@@ -4653,26 +4758,6 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
-      }
-    }
-  }
-  get_auto_discovery_key: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description Auto-discovery key */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['AutoDiscoveryKeyResponse']
-        }
       }
     }
   }
@@ -5785,6 +5870,26 @@ export interface operations {
       }
     }
   }
+  list_enrollments: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List enrollment codes */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['EnrollmentSummary'][]
+        }
+      }
+    }
+  }
   list_files: {
     parameters: {
       query?: never
@@ -6751,26 +6856,6 @@ export interface operations {
       }
     }
   }
-  regenerate_auto_discovery_key: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description Key regenerated */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['AutoDiscoveryKeyResponse']
-        }
-      }
-    }
-  }
   register: {
     parameters: {
       query?: never
@@ -6793,14 +6878,14 @@ export interface operations {
           'application/json': components['schemas']['RegisterResponse']
         }
       }
-      /** @description Auto-discovery key not configured or server limit reached */
+      /** @description Server limit reached */
       400: {
         headers: {
           [name: string]: unknown
         }
         content?: never
       }
-      /** @description Invalid auto-discovery key */
+      /** @description Invalid, expired, or already-used enrollment code */
       401: {
         headers: {
           [name: string]: unknown
@@ -6873,6 +6958,36 @@ export interface operations {
         content?: never
       }
       /** @description Mobile session not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  rotate_token: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Token rotated; old token revoked */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RotateTokenResponse']
+        }
+      }
+      /** @description Server not found */
       404: {
         headers: {
           [name: string]: unknown
