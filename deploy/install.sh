@@ -164,8 +164,7 @@ declare -A I18N_EN=(
     [opt_agent]="  [2] Agent"
     [uninstall_confirm]="Uninstall serverbee-%s (%s)%s? [y/N]: "
     [uninstall_purge_note]=" (including config and data)"
-    [uninstall_preserved]="  Config preserved at:"
-    [uninstall_purge_hint]="  To remove all data:  re-run with --purge"
+    [uninstall_preserved]="  Config and data preserved. To remove them, run:"
     [deps_install_confirm]="  Install them now? [y/N]: "
     [docker_continue_confirm]="  Continue with Docker? [y/N]: "
     [docker_agent_note]="  ServerBee Agent is portable software:"
@@ -282,8 +281,7 @@ declare -A I18N_ZH=(
     [opt_agent]="  [2] Agent"
     [uninstall_confirm]="卸载 serverbee-%s（%s）%s ? [y/N]: "
     [uninstall_purge_note]="（含配置与数据）"
-    [uninstall_preserved]="  配置已保留:"
-    [uninstall_purge_hint]="  如需移除全部数据: 重新运行并加 --purge"
+    [uninstall_preserved]="  配置与数据已保留,如需移除请执行:"
     [deps_install_confirm]="  现在安装它们？[y/N]: "
     [docker_continue_confirm]="  仍然继续使用 Docker？[y/N]: "
     [docker_agent_note]="  ServerBee Agent 是便携软件:"
@@ -1995,8 +1993,22 @@ cmd_uninstall() {
 
     if [ "$PURGE" != true ]; then
         echo ""
-        echo "$(tr_text uninstall_preserved) ${CONFIG_DIR}/${COMPONENT}.toml"
-        echo "$(tr_text uninstall_purge_hint)"
+        echo "$(tr_text uninstall_preserved)"
+        echo ""
+        if [ "$method" = "docker" ]; then
+            local conf_dir
+            conf_dir="$(docker_conf_dir)"
+            echo "    rm -f ${DOCKER_DIR}/docker-compose.${COMPONENT}.yml"
+            echo "    rm -f ${conf_dir}/${COMPONENT}.toml"
+            if [ "$COMPONENT" = "server" ]; then
+                echo "    docker volume rm serverbee_serverbee-data"
+            fi
+        else
+            echo "    rm -f ${CONFIG_DIR}/${COMPONENT}.toml"
+            if [ "$COMPONENT" = "server" ]; then
+                echo "    rm -rf ${DATA_DIR}"
+            fi
+        fi
         echo ""
     fi
 }
