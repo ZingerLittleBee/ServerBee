@@ -10,7 +10,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 
 use serverbee_common::types::{DiskIo, SystemReport};
-use serverbee_server::config::{AdminConfig, AppConfig, AuthConfig, DatabaseConfig, ServerConfig};
+use serverbee_server::config::{AppConfig, AuthConfig, DatabaseConfig, ServerConfig};
 use serverbee_server::migration::Migrator;
 use serverbee_server::router::create_router;
 use serverbee_server::service::auth::AuthService;
@@ -39,10 +39,6 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
             secure_cookie: false,
             max_servers: 0,
         },
-        admin: AdminConfig {
-            username: "admin".to_string(),
-            password: "testpass".to_string(),
-        },
         ..AppConfig::default()
     };
 
@@ -70,10 +66,11 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
         .await
         .expect("Failed to run migrations");
 
-    // Initialize admin user
-    AuthService::init_admin(&db, &config.admin)
+    // Seed a ready-to-use admin (password known, onboarding already done)
+    // so existing tests can log in without the forced-change flow.
+    AuthService::create_user(&db, "admin", "testpass", "admin")
         .await
-        .expect("Failed to init admin");
+        .expect("Failed to seed admin");
 
     // Build state and router
     let state = AppState::new(db, config)

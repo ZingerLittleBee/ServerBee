@@ -8,7 +8,6 @@ use rand::RngCore;
 use sea_orm::*;
 use uuid::Uuid;
 
-use crate::config::AdminConfig;
 use sea_orm::sea_query::Expr;
 
 use crate::entity::{api_key, mobile_session, server, session, user};
@@ -27,6 +26,9 @@ pub struct LoginParams<'a> {
 pub struct AuthService;
 
 impl AuthService {
+    /// The fixed username for the auto-provisioned first admin account.
+    pub const DEFAULT_ADMIN_USERNAME: &str = "admin";
+
     /// Hash a password using argon2 with a random salt.
     pub fn hash_password(password: &str) -> Result<String, AppError> {
         let salt = SaltString::generate(&mut OsRng);
@@ -322,33 +324,29 @@ impl AuthService {
     }
 
     /// Initialize the admin user if the users table is empty.
-    /// If the admin password is not configured, generates a random one and logs it.
-    /// Initialize the admin user if the users table is empty.
-    /// Returns `Some(generated_password)` if a new admin was created with an auto-generated password.
-    pub async fn init_admin(
-        db: &DatabaseConnection,
-        admin_config: &AdminConfig,
-    ) -> Result<Option<String>, AppError> {
+    /// Always generates a random password and forces a change on first login.
+    /// Returns `Some(generated_password)` when a new admin was created.
+    pub async fn init_admin(db: &DatabaseConnection) -> Result<Option<String>, AppError> {
         let user_count = user::Entity::find().count(db).await?;
-
         if user_count > 0 {
             return Ok(None);
         }
 
-        let generated = if admin_config.password.is_empty() {
-            let pwd = Self::generate_session_token();
-            Some(pwd.clone())
-        } else {
-            None
-        };
+        let password = Self::generate_session_token();
+        let created =
+            Self::create_user(db, Self::DEFAULT_ADMIN_USERNAME, &password, "admin").await?;
 
-        let password = generated
-            .clone()
-            .unwrap_or_else(|| admin_config.password.clone());
-        Self::create_user(db, &admin_config.username, &password, "admin").await?;
-        tracing::info!("Admin user '{}' created", admin_config.username);
+        let mut active: user::ActiveModel = created.into();
+        active.must_change_password = Set(true);
+        active.updated_at = Set(Utc::now());
+        active.update(db).await?;
 
-        Ok(generated)
+        tracing::info!(
+            "Admin user '{}' created with a random password (must be changed on first login)",
+            Self::DEFAULT_ADMIN_USERNAME
+        );
+
+        Ok(Some(password))
     }
 
     /// Generate a cryptographically random session token (32 bytes, base64url encoded).
@@ -756,5 +754,46 @@ mod tests {
         // Login with old password should fail
         let result2 = AuthService::login(&db, login_params("grace", "old_pass1")).await;
         assert!(result2.is_err(), "login with old password should fail");
+    }
+
+    #[tokio::test]
+    async fn test_init_admin_creates_random_admin_with_flag() {
+        let (db, _tmp) = setup_test_db().await;
+        let generated = AuthService::init_admin(&db)
+            .await
+            .expect("init_admin should succeed");
+        let pwd = generated.expect("first run must return a generated password");
+        assert!(!pwd.is_empty(), "generated password must not be empty");
+
+        let admin = user::Entity::find()
+            .filter(user::Column::Username.eq(AuthService::DEFAULT_ADMIN_USERNAME))
+            .one(&db)
+            .await
+            .expect("query should succeed")
+            .expect("admin user must exist");
+        assert_eq!(admin.role, "admin");
+        assert!(
+            admin.must_change_password,
+            "freshly seeded admin must require password change"
+        );
+        assert!(
+            AuthService::verify_password(&pwd, &admin.password_hash).expect("verify"),
+            "generated password must match stored hash"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_init_admin_noop_when_users_exist() {
+        let (db, _tmp) = setup_test_db().await;
+        AuthService::create_user(&db, "someone", "pass1234", "admin")
+            .await
+            .expect("seed a user");
+        let generated = AuthService::init_admin(&db)
+            .await
+            .expect("init_admin should succeed");
+        assert!(
+            generated.is_none(),
+            "init_admin must be a no-op when users already exist"
+        );
     }
 }

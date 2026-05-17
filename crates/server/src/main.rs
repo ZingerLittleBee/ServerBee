@@ -57,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Database migrations complete");
 
     // Initialize admin user (creates if users table is empty)
-    let generated_admin_password = AuthService::init_admin(&db, &config.admin).await?;
+    let generated_admin_password = AuthService::init_admin(&db).await?;
 
     // Build AppState
     let state = AppState::new(db, config.clone())
@@ -99,18 +99,27 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Listening on {}", listener.local_addr()?);
     tracing::info!("========================================");
 
-    // Print credentials block — grouped so users can spot them immediately
+    // Print credentials block — grouped + warn-level so users can spot them immediately.
     if let Some(ref pwd) = generated_admin_password {
-        let mut credentials = String::from("\n\n********************************************");
-        credentials.push_str("\n***       IMPORTANT: Save these now       ***");
-        credentials.push_str("\n********************************************\n");
-        credentials.push_str(&format!(
-            "\n  Admin username:      {}",
-            config.admin.username
-        ));
-        credentials.push_str(&format!("\n  Admin password:      {}", pwd));
-        credentials.push_str("\n\n********************************************\n");
-        tracing::info!("{}", credentials);
+        let banner = format!(
+            "\n\n\
+             ============================================================\n\
+             ==                                                        ==\n\
+             ==   FIRST-RUN ADMIN CREDENTIALS — SHOWN ONLY ONCE        ==\n\
+             ==                                                        ==\n\
+             ============================================================\n\
+             \n\
+             Username:  {}\n\
+             Password:  {}\n\
+             \n\
+             You will be forced to change this password the first time\n\
+             you log in. This password is NOT recoverable from the logs\n\
+             afterwards — copy it now.\n\
+             \n\
+             ============================================================\n",
+            AuthService::DEFAULT_ADMIN_USERNAME, pwd
+        );
+        tracing::warn!("{}", banner);
     }
 
     axum::serve(

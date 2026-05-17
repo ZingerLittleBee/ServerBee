@@ -4,7 +4,7 @@ use sea_orm::{ConnectOptions, ConnectionTrait, Database};
 use sea_orm_migration::MigratorTrait;
 use serde_json::{Value, json};
 
-use serverbee_server::config::{AdminConfig, AppConfig, AuthConfig, DatabaseConfig, ServerConfig};
+use serverbee_server::config::{AppConfig, AuthConfig, DatabaseConfig, ServerConfig};
 use serverbee_server::migration::Migrator;
 use serverbee_server::router::create_router;
 use serverbee_server::service::auth::AuthService;
@@ -28,10 +28,6 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
             session_ttl: 86400,
             secure_cookie: false,
             max_servers: 0,
-        },
-        admin: AdminConfig {
-            username: "admin".to_string(),
-            password: "testpass".to_string(),
         },
         ..AppConfig::default()
     };
@@ -57,9 +53,9 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
         .await
         .expect("Failed to run migrations");
 
-    AuthService::init_admin(&db, &config.admin)
+    AuthService::create_user(&db, "admin", "testpass", "admin")
         .await
-        .expect("Failed to init admin");
+        .expect("Failed to seed admin");
 
     let state = AppState::new(db, config)
         .await
