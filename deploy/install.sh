@@ -34,6 +34,7 @@ DOCKER_DIR="${BASE_DIR}"
 DEFAULT_DOCKER_DIR="${BASE_DIR}"
 SNAP_DOCKER_DIR="/var/snap/docker/common/serverbee"
 META_FILE="${CONFIG_DIR}/.install-meta"
+LANG_CACHE_FILE="${CONFIG_DIR}/.install-lang"
 CLI_PATH="/usr/local/bin/serverbee"
 # Legacy FHS-split layout (pre-/opt). Kept only for one-time auto-migration
 # of installs created by older versions of this script.
@@ -85,9 +86,32 @@ normalize_lang() {
     esac
 }
 
+lang_cache_read() {
+    [ -f "$LANG_CACHE_FILE" ] || return 1
+    local cached
+    cached=$(head -n1 "$LANG_CACHE_FILE" 2>/dev/null | tr -d '[:space:]')
+    case "$cached" in
+        en|zh) printf '%s' "$cached"; return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+lang_cache_write() {
+    [ -n "${LANG_CODE:-}" ] || return 0
+    mkdir -p "$CONFIG_DIR" 2>/dev/null || return 0
+    printf '%s\n' "$LANG_CODE" > "$LANG_CACHE_FILE" 2>/dev/null || return 0
+    chmod 600 "$LANG_CACHE_FILE" 2>/dev/null || true
+}
+
 detect_lang() {
     if [ -n "${LANG_CODE:-}" ]; then
         normalize_lang
+        return
+    fi
+
+    local cached
+    if cached=$(lang_cache_read); then
+        LANG_CODE="$cached"
         return
     fi
 
@@ -99,6 +123,12 @@ detect_lang() {
 
 select_language() {
     [ -z "${LANG_CODE:-}" ] || { normalize_lang; return; }
+
+    local cached
+    if cached=$(lang_cache_read); then
+        LANG_CODE="$cached"
+        return
+    fi
 
     if ! should_prompt; then
         detect_lang
@@ -118,6 +148,7 @@ select_language() {
         2|zh|ZH|cn|CN|中文) LANG_CODE="zh" ;;
         *) error "Invalid language choice: ${choice}" ;;
     esac
+    lang_cache_write
 }
 
 # i18n string tables. Add new user-facing strings here in both languages.
@@ -1991,6 +2022,7 @@ cmd_uninstall() {
         if [ "$remaining" -eq 0 ]; then
             rm -f "$CLI_PATH"
             rm -f "$META_FILE"
+            rm -f "$LANG_CACHE_FILE"
             # Drop now-empty layout directories (ignored if anything remains).
             rmdir "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR" "$DOCKER_DIR" "$BASE_DIR" 2>/dev/null || true
             info "All components removed. CLI uninstalled."
