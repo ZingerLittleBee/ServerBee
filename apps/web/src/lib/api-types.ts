@@ -407,6 +407,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/auth/onboarding': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['onboarding']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/auth/password': {
     parameters: {
       query?: never
@@ -2366,6 +2382,7 @@ export interface components {
       username: string
     }
     LoginResponse: {
+      must_change_password: boolean
       role: string
       user_id: string
       username: string
@@ -2387,6 +2404,7 @@ export interface components {
       updated_at: string
     }
     MeResponse: {
+      must_change_password: boolean
       role: string
       user_id: string
       username: string
@@ -2492,6 +2510,10 @@ export interface components {
     }
     OAuthProvidersResponse: {
       providers: string[]
+    }
+    OnboardingRequest: {
+      new_password: string
+      new_username?: string | null
     }
     PingRecord: {
       error?: string | null
@@ -6675,6 +6697,49 @@ export interface operations {
       }
       /** @description Invalid callback */
       400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  onboarding: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['OnboardingRequest']
+      }
+    }
+    responses: {
+      /** @description Onboarding complete */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Onboarding not required / forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Username already taken */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
         headers: {
           [name: string]: unknown
         }

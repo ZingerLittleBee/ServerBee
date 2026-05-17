@@ -1,10 +1,12 @@
 class ApiError extends Error {
   status: number
+  code?: string
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code?: string) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.code = code
   }
 }
 
@@ -25,7 +27,17 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
   if (!response.ok) {
     const text = await response.text().catch(() => response.statusText)
-    throw new ApiError(text, response.status)
+    let code: string | undefined
+    try {
+      const parsed = JSON.parse(text)
+      code = parsed?.error?.code
+    } catch {
+      // body is not JSON; leave code undefined
+    }
+    if (code === 'MUST_CHANGE_PASSWORD' && window.location.pathname !== '/onboarding') {
+      window.location.assign('/onboarding')
+    }
+    throw new ApiError(text, response.status, code)
   }
 
   if (response.status === 204) {

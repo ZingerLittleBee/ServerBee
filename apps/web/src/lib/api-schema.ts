@@ -12,6 +12,7 @@ type S = components['schemas']
 export type LoginRequest = S['LoginRequest']
 export type LoginResponse = S['LoginResponse']
 export type MeResponse = S['MeResponse']
+export type OnboardingRequest = S['OnboardingRequest']
 
 // Users
 export type UserResponse = S['UserResponse']
