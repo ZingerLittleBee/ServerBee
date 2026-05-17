@@ -449,7 +449,7 @@ function ServersListPage() {
         </DataTable>
       )}
       {servers.length > 0 && viewMode === 'grid' && (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
           {filtered.map((server) => (
             <div className="[contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={server.id}>
               <ServerCard server={server} />
