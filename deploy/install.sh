@@ -18,7 +18,6 @@ COMPONENT=""
 METHOD=""
 SERVER_URL=""
 ENROLLMENT_CODE=""
-PASSWORD=""
 DOMAIN=""
 EMAIL=""
 YES=false
@@ -99,7 +98,7 @@ parse_args() {
             --method)        METHOD="$2"; shift 2 ;;
             --server-url)    SERVER_URL="$2"; shift 2 ;;
             --enrollment-code) ENROLLMENT_CODE="$2"; shift 2 ;;
-            --password)      PASSWORD="$2"; shift 2 ;;
+            --password)      error "--password is no longer supported. ServerBee always generates a one-time first-run admin password; check the server logs after installation." ;;
             --domain)        DOMAIN="$2"; shift 2 ;;
             --email)         EMAIL="$2"; shift 2 ;;
             --skip-dns-check) SKIP_DNS_CHECK=true; shift ;;
@@ -507,13 +506,6 @@ data_dir = "${DATA_DIR}"
 [auth]
 secure_cookie = false
 TOML
-        if [ -n "$PASSWORD" ]; then
-            cat >> "${CONFIG_DIR}/server.toml" << TOML
-
-[admin]
-password = "${PASSWORD}"
-TOML
-        fi
         info "Created ${CONFIG_DIR}/server.toml"
     else
         warn "${CONFIG_DIR}/server.toml already exists, not overwriting"
@@ -635,21 +627,9 @@ install_docker_server() {
 [server]
 data_dir = "/data"
 TOML
-        if [ -n "$PASSWORD" ]; then
-            cat >> "${CONFIG_DIR}/server.toml" << TOML
-
-[admin]
-password = "${PASSWORD}"
-TOML
-        fi
         info "Created ${CONFIG_DIR}/server.toml"
     else
         warn "${CONFIG_DIR}/server.toml already exists, not overwriting"
-    fi
-
-    local password_env=""
-    if [ -n "$PASSWORD" ]; then
-        password_env="      - SERVERBEE_ADMIN__PASSWORD=${PASSWORD}"
     fi
 
     cat > "${DOCKER_DIR}/docker-compose.server.yml" << YAML
@@ -664,8 +644,7 @@ services:
     environment:
       - SERVERBEE_ADMIN__USERNAME=admin
       - SERVERBEE_AUTH__SECURE_COOKIE=false
-${password_env:+${password_env}
-}    restart: unless-stopped
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:9527/healthz"]
       interval: 30s
@@ -746,9 +725,7 @@ print_server_result() {
     echo ""
     echo "  Dashboard:  http://${ip}:9527"
     echo "  Username:   admin"
-    if [ -n "$PASSWORD" ]; then
-        echo "  Password:   ${PASSWORD}"
-    elif [ "$METHOD" = "docker" ]; then
+    if [ "$METHOD" = "docker" ]; then
         echo "  Password:   (auto-generated, check: docker compose -f ${DOCKER_DIR}/docker-compose.server.yml logs serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
     elif has_systemd; then
         echo "  Password:   (auto-generated, check: sudo journalctl -u serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
@@ -1048,10 +1025,6 @@ cmd_install() {
 
     # Prompt for component-specific params
     if [ "$COMPONENT" = "server" ]; then
-        if [ -z "$PASSWORD" ] && [ "$YES" != true ] && [ -t 0 ]; then
-            echo ""
-            read -rp "Admin password (Enter to skip, auto-generated on first start): " PASSWORD
-        fi
         if [ -z "$DOMAIN" ] && [ "$YES" != true ] && [ -t 0 ]; then
             echo ""
             read -rp "Configure HTTPS domain with Caddy now? [y/N]: " confirm_domain
@@ -1603,8 +1576,8 @@ cmd_config() {
         # 1. Check rejected keys
         if echo "$REJECTED_KEYS" | grep -qw "$key"; then
             case "$key" in
-                admin.password) error "Admin password can only be set during initial installation. To change password, use the Dashboard UI." ;;
-                admin.username) error "Admin username can only be set during initial installation." ;;
+                admin.password) error "Admin password is not a runtime config. ServerBee generates a one-time first-run password; change it in the Dashboard UI after login." ;;
+                admin.username) error "Admin username is not a runtime config. Change it during first-login onboarding or in the Dashboard UI." ;;
             esac
         fi
 
