@@ -8,7 +8,6 @@ use serverbee_server::config::{AdminConfig, AppConfig, AuthConfig, DatabaseConfi
 use serverbee_server::migration::Migrator;
 use serverbee_server::router::create_router;
 use serverbee_server::service::auth::AuthService;
-use serverbee_server::service::config::ConfigService;
 use serverbee_server::state::AppState;
 
 async fn start_test_server() -> (String, tempfile::TempDir) {
@@ -27,7 +26,6 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
         },
         auth: AuthConfig {
             session_ttl: 86400,
-            auto_discovery_key: "test-key".to_string(),
             secure_cookie: false,
             max_servers: 0,
         },
@@ -62,10 +60,6 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
     AuthService::init_admin(&db, &config.admin)
         .await
         .expect("Failed to init admin");
-
-    ConfigService::set(&db, "auto_discovery_key", "test-key")
-        .await
-        .expect("Failed to set auto_discovery_key");
 
     let state = AppState::new(db, config)
         .await

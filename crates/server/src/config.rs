@@ -93,8 +93,6 @@ impl Default for DatabaseConfig {
 pub struct AuthConfig {
     #[serde(default = "default_session_ttl")]
     pub session_ttl: i64,
-    #[serde(default)]
-    pub auto_discovery_key: String,
     /// Whether to set the Secure flag on session cookies.
     /// Defaults to true. Set to false only for development without HTTPS.
     #[serde(default = "default_true")]
@@ -108,7 +106,6 @@ impl Default for AuthConfig {
     fn default() -> Self {
         Self {
             session_ttl: default_session_ttl(),
-            auto_discovery_key: String::new(),
             secure_cookie: true,
             max_servers: 0,
         }

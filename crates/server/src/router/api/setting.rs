@@ -8,12 +8,10 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{ApiResponse, AppError, ok};
-use crate::service::auth::AuthService;
 use crate::service::config::ConfigService;
 use crate::state::AppState;
 
 const CONFIG_KEY_SETTINGS: &str = "system_settings";
-const CONFIG_KEY_AUTO_DISCOVERY: &str = "auto_discovery_key";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, utoipa::ToSchema)]
 pub struct SystemSettings {
@@ -23,20 +21,10 @@ pub struct SystemSettings {
     custom_js: Option<String>,
 }
 
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub struct AutoDiscoveryKeyResponse {
-    key: String,
-}
-
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/settings", get(get_settings))
         .route("/settings", put(update_settings))
-        .route("/settings/auto-discovery-key", get(get_auto_discovery_key))
-        .route(
-            "/settings/auto-discovery-key",
-            put(regenerate_auto_discovery_key),
-        )
         .route("/settings/backup", post(create_backup))
         .route("/settings/restore", post(restore_backup))
 }
@@ -75,41 +63,6 @@ async fn update_settings(
 ) -> Result<Json<ApiResponse<SystemSettings>>, AppError> {
     ConfigService::set_typed(&state.db, CONFIG_KEY_SETTINGS, &body).await?;
     ok(body)
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/settings/auto-discovery-key",
-    tag = "settings",
-    responses(
-        (status = 200, description = "Auto-discovery key", body = AutoDiscoveryKeyResponse),
-    ),
-    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
-)]
-async fn get_auto_discovery_key(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<ApiResponse<AutoDiscoveryKeyResponse>>, AppError> {
-    let key = ConfigService::get(&state.db, CONFIG_KEY_AUTO_DISCOVERY)
-        .await?
-        .unwrap_or_default();
-    ok(AutoDiscoveryKeyResponse { key })
-}
-
-#[utoipa::path(
-    put,
-    path = "/api/settings/auto-discovery-key",
-    tag = "settings",
-    responses(
-        (status = 200, description = "Key regenerated", body = AutoDiscoveryKeyResponse),
-    ),
-    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
-)]
-async fn regenerate_auto_discovery_key(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<ApiResponse<AutoDiscoveryKeyResponse>>, AppError> {
-    let new_key = AuthService::generate_session_token();
-    ConfigService::set(&state.db, CONFIG_KEY_AUTO_DISCOVERY, &new_key).await?;
-    ok(AutoDiscoveryKeyResponse { key: new_key })
 }
 
 /// Download a backup of the SQLite database.
