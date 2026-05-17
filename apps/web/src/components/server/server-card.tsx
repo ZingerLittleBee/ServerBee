@@ -300,8 +300,10 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
         </div>
         <div className="flex items-baseline justify-between">
           <span>{t('card_load_trend')}</span>
-          <span className="font-medium text-foreground tabular-nums">
-            {`${formatLoad(server.load5)}·${formatLoad(server.load15)}`}
+          <span className="inline-flex items-center gap-1.5 font-medium text-foreground tabular-nums">
+            <span>{formatLoad(server.load5)}</span>
+            <span aria-hidden="true">·</span>
+            <span>{formatLoad(server.load15)}</span>
           </span>
         </div>
         <div className="flex items-baseline justify-between">
@@ -310,7 +312,11 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
             {`${server.process_count} / ${server.tcp_conn} / ${server.udp_conn}`}
           </span>
         </div>
-        {trafficDaysRemaining != null && (
+        {trafficDaysRemaining == null ? (
+          <div aria-hidden="true" className="invisible flex items-baseline justify-between">
+            <span>—</span>
+          </div>
+        ) : (
           <div className="flex items-baseline justify-between">
             <span>{t('card_traffic_days_left_label')}</span>
             <span className="font-medium text-foreground tabular-nums">
@@ -318,10 +324,14 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
             </span>
           </div>
         )}
-        {costEntry && (
+        {costEntry?.configured ? (
           <div className="flex items-baseline justify-between">
             <span>{t('card_cost_label')}</span>
             <CostFootnote entry={costEntry} inline />
+          </div>
+        ) : (
+          <div aria-hidden="true" className="invisible flex items-baseline justify-between">
+            <span>—</span>
           </div>
         )}
       </div>
