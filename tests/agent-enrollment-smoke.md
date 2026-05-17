@@ -69,9 +69,15 @@ curl -s -b /tmp/sb.txt http://localhost:9527/api/agent/enrollments
 # 旧共享 key 注册方式
 curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:9527/api/agent/register \
   -H 'Authorization: Bearer test-key'                          # 预期 401
-# 旧设置端点
-curl -s -o /dev/null -w '%{http_code}\n' -b /tmp/sb.txt \
-  http://localhost:9527/api/settings/auto-discovery-key        # 预期 404
+# 旧设置端点：handler 已删除。注意未匹配的 /api/* 会被 SPA fallback
+# (.fallback(static_handler)) 兜底返回 200 text/html，这是既有路由行为，
+# 不代表旧 API 复活。判据是“不再返回旧 JSON（无 key 字段），而是 HTML”。
+curl -s -b /tmp/sb.txt http://localhost:9527/api/settings/auto-discovery-key \
+  | head -c 200
+# 预期：输出是 SPA 的 HTML（<!doctype html ...>），而非 {"data":{"key":...}}
+curl -s -b /tmp/sb.txt -o /dev/null -w 'content-type=%{content_type}\n' \
+  http://localhost:9527/api/settings/auto-discovery-key
+# 预期：content-type=text/html...（非 application/json）
 ```
 
 ## 7. Token 轮换 + 吊销旧 token
@@ -80,12 +86,21 @@ curl -s -o /dev/null -w '%{http_code}\n' -b /tmp/sb.txt \
 curl -s -b /tmp/sb.txt -X POST http://localhost:9527/api/agent/$SERVER_ID/rotate-token
 ```
 
-预期：HTTP 200，返回新 `token` ≠ `OLD_TOKEN`。再用旧 token 连 WS：
+预期：HTTP 200，返回新 `token` ≠ `OLD_TOKEN`。
+
+再用旧 token 连 WS 验证吊销。**注意**：`curl` 不带 upgrade 头会被 Axum
+`WebSocketUpgrade` extractor 在鉴权前打成 400，无法验证 token——必须用真实
+WS 客户端（如 `websocat`）：
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' \
-  "http://localhost:9527/api/agent/ws?token=$OLD_TOKEN"        # 预期 401
+# 旧 token：握手应被拒（401）
+websocat "ws://localhost:9527/api/agent/ws?token=$OLD_TOKEN"   # 预期：连接失败 / 401
+# 新 token：可正常握手
+websocat "ws://localhost:9527/api/agent/ws?token=$NEW_TOKEN"   # 预期：连接建立
 ```
+
+> 此属性已有自动化 e2e 覆盖（`integration.rs` 用真实 WebSocket 客户端断言旧
+> token 握手返回 401）；手动冒烟若无 `websocat` 可仅依赖该自动化测试。
 
 ## 8. TTL 过期（可选，耗时）
 
