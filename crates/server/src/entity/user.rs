@@ -10,6 +10,7 @@ pub struct Model {
     pub password_hash: String,
     pub role: String,
     pub totp_secret: Option<String>,
+    pub must_change_password: bool,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }
