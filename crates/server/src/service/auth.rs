@@ -482,6 +482,65 @@ impl AuthService {
 
         Ok(())
     }
+
+    /// Complete first-login onboarding: set a new password and optionally a new
+    /// username, then clear the `must_change_password` flag. Only valid while
+    /// the flag is set. Does NOT write audit logs (the handler does).
+    pub async fn complete_onboarding(
+        db: &DatabaseConnection,
+        user_id: &str,
+        new_password: &str,
+        new_username: Option<&str>,
+    ) -> Result<(), AppError> {
+        let user = user::Entity::find_by_id(user_id)
+            .one(db)
+            .await?
+            .ok_or(AppError::NotFound("User not found".to_string()))?;
+
+        if !user.must_change_password {
+            return Err(AppError::Forbidden(
+                "Onboarding is not required for this account".to_string(),
+            ));
+        }
+        if new_password.is_empty() {
+            return Err(AppError::Validation("New password is required".to_string()));
+        }
+        if Self::verify_password(new_password, &user.password_hash)? {
+            return Err(AppError::Validation(
+                "New password must be different from the current password".to_string(),
+            ));
+        }
+
+        let trimmed_username: Option<String> = new_username
+            .map(str::trim)
+            .filter(|u| !u.is_empty())
+            .filter(|u| *u != user.username)
+            .map(str::to_string);
+
+        if let Some(ref uname) = trimmed_username {
+            let existing = user::Entity::find()
+                .filter(user::Column::Username.eq(uname.as_str()))
+                .one(db)
+                .await?;
+            if existing.is_some() {
+                return Err(AppError::Conflict(format!(
+                    "User '{uname}' already exists"
+                )));
+            }
+        }
+
+        let new_hash = Self::hash_password(new_password)?;
+        let mut active: user::ActiveModel = user.into();
+        active.password_hash = Set(new_hash);
+        if let Some(uname) = trimmed_username {
+            active.username = Set(uname);
+        }
+        active.must_change_password = Set(false);
+        active.updated_at = Set(Utc::now());
+        active.update(db).await?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -780,6 +839,84 @@ mod tests {
             AuthService::verify_password(&pwd, &admin.password_hash).expect("verify"),
             "generated password must match stored hash"
         );
+    }
+
+    async fn seed_must_change_admin(db: &DatabaseConnection) -> user::Model {
+        let u = AuthService::create_user(db, "admin", "init-pass-123", "admin")
+            .await
+            .expect("seed admin");
+        let mut a: user::ActiveModel = u.into();
+        a.must_change_password = Set(true);
+        a.update(db).await.expect("set flag")
+    }
+
+    #[tokio::test]
+    async fn test_complete_onboarding_success_password_only() {
+        let (db, _tmp) = setup_test_db().await;
+        let admin = seed_must_change_admin(&db).await;
+        AuthService::complete_onboarding(&db, &admin.id, "brand-new-pass-9", None)
+            .await
+            .expect("onboarding should succeed");
+        let after = user::Entity::find_by_id(&admin.id).one(&db).await.unwrap().unwrap();
+        assert!(!after.must_change_password, "flag must be cleared");
+        assert_eq!(after.username, "admin", "username unchanged when None");
+        assert!(AuthService::verify_password("brand-new-pass-9", &after.password_hash).unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_complete_onboarding_with_username_change() {
+        let (db, _tmp) = setup_test_db().await;
+        let admin = seed_must_change_admin(&db).await;
+        AuthService::complete_onboarding(&db, &admin.id, "np-12345", Some("  newname  "))
+            .await
+            .expect("should succeed and trim username");
+        let after = user::Entity::find_by_id(&admin.id).one(&db).await.unwrap().unwrap();
+        assert_eq!(after.username, "newname", "username trimmed + applied");
+        assert!(!after.must_change_password);
+    }
+
+    #[tokio::test]
+    async fn test_complete_onboarding_blank_username_is_ignored() {
+        let (db, _tmp) = setup_test_db().await;
+        let admin = seed_must_change_admin(&db).await;
+        AuthService::complete_onboarding(&db, &admin.id, "np-12345", Some("   "))
+            .await
+            .expect("blank username treated as not provided");
+        let after = user::Entity::find_by_id(&admin.id).one(&db).await.unwrap().unwrap();
+        assert_eq!(after.username, "admin");
+    }
+
+    #[tokio::test]
+    async fn test_complete_onboarding_rejects_same_password() {
+        let (db, _tmp) = setup_test_db().await;
+        let admin = seed_must_change_admin(&db).await;
+        let r = AuthService::complete_onboarding(&db, &admin.id, "init-pass-123", None).await;
+        assert!(r.is_err(), "reusing current password must be rejected");
+    }
+
+    #[tokio::test]
+    async fn test_complete_onboarding_rejects_empty_password() {
+        let (db, _tmp) = setup_test_db().await;
+        let admin = seed_must_change_admin(&db).await;
+        let r = AuthService::complete_onboarding(&db, &admin.id, "", None).await;
+        assert!(r.is_err(), "empty password must be rejected");
+    }
+
+    #[tokio::test]
+    async fn test_complete_onboarding_rejects_when_flag_not_set() {
+        let (db, _tmp) = setup_test_db().await;
+        let u = AuthService::create_user(&db, "admin", "p", "admin").await.unwrap();
+        let r = AuthService::complete_onboarding(&db, &u.id, "new-pass-1", None).await;
+        assert!(r.is_err(), "onboarding when flag is false must be rejected");
+    }
+
+    #[tokio::test]
+    async fn test_complete_onboarding_rejects_duplicate_username() {
+        let (db, _tmp) = setup_test_db().await;
+        AuthService::create_user(&db, "taken", "p", "member").await.unwrap();
+        let admin = seed_must_change_admin(&db).await;
+        let r = AuthService::complete_onboarding(&db, &admin.id, "new-pass-1", Some("taken")).await;
+        assert!(r.is_err(), "duplicate username must be rejected");
     }
 
     #[tokio::test]
