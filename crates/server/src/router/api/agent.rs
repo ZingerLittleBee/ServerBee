@@ -128,7 +128,7 @@ async fn register(
         .ok_or(AppError::Unauthorized)?;
 
     let enrollment =
-        crate::service::enrollment::EnrollmentService::verify_and_consume(&state.db, auth_header)
+        EnrollmentService::verify_and_consume(&state.db, auth_header)
             .await?
             .ok_or(AppError::Unauthorized)?;
 
@@ -167,7 +167,7 @@ async fn register(
         active.updated_at = Set(Utc::now());
         active.update(&state.db).await?;
 
-        let _ = crate::service::audit::AuditService::log(
+        let _ = AuditService::log(
             &state.db,
             "system",
             "agent_enrolled",
@@ -272,7 +272,7 @@ async fn register(
                 active.updated_at = Set(Utc::now());
                 active.update(&state.db).await?;
 
-                let _ = crate::service::audit::AuditService::log(
+                let _ = AuditService::log(
                     &state.db,
                     "system",
                     "agent_enrolled",
@@ -301,7 +301,7 @@ async fn register(
         tracing::warn!("Failed to apply default network probe targets to {server_id}: {e}");
     }
 
-    let _ = crate::service::audit::AuditService::log(
+    let _ = AuditService::log(
         &state.db,
         "system",
         "agent_enrolled",
