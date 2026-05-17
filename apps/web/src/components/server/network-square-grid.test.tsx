@@ -71,6 +71,48 @@ describe('NetworkSquareGrid', () => {
     expect(squares.length).toBe(10)
   })
 
+  it('colors synthetic backend-history points that carry a real value', () => {
+    // @ts-expect-error inject mock
+    globalThis.ResizeObserver = TestResizeObserver
+
+    const historyPoint: ServerCardMetricPoint = {
+      synthetic: true,
+      targets: [],
+      timestamp: 'synthetic-0',
+      value: 42
+    }
+
+    const { container } = render(
+      <TooltipProvider>
+        <NetworkSquareGrid kind="latency" points={[historyPoint]} />
+      </TooltipProvider>
+    )
+
+    const square = container.querySelector<HTMLElement>('[data-testid="square"]')
+    expect(square?.style.backgroundColor).not.toBe('var(--color-muted)')
+  })
+
+  it('renders the unknown color for points without a value', () => {
+    // @ts-expect-error inject mock
+    globalThis.ResizeObserver = TestResizeObserver
+
+    const emptyPoint: ServerCardMetricPoint = {
+      synthetic: true,
+      targets: [],
+      timestamp: 'padding-0',
+      value: null
+    }
+
+    const { container } = render(
+      <TooltipProvider>
+        <NetworkSquareGrid kind="latency" points={[emptyPoint]} />
+      </TooltipProvider>
+    )
+
+    const square = container.querySelector<HTMLElement>('[data-testid="square"]')
+    expect(square?.style.backgroundColor).toBe('var(--color-muted)')
+  })
+
   it('renders at least one square even at zero width', () => {
     // @ts-expect-error inject mock
     globalThis.ResizeObserver = TestResizeObserver

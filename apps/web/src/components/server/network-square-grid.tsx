@@ -27,7 +27,7 @@ function averageLossRatio(point: ServerCardMetricPoint): number | null {
 }
 
 function getSquareColor(point: ServerCardMetricPoint, kind: 'latency' | 'loss'): string {
-  if (point.synthetic) {
+  if (point.value == null) {
     return LATENCY_UNKNOWN_BAR_COLOR
   }
   if (kind === 'latency') {
