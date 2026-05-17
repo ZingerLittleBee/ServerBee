@@ -240,26 +240,16 @@ line_contains_value() {
     [ -n "$needle" ] && echo "$haystack" | grep -Fxq "$needle"
 }
 
-check_domain_points_here() {
-    local domain="$1"
-    if [ "$SKIP_DNS_CHECK" = true ]; then
-        warn "Skipping DNS check for ${domain}."
-        return
-    fi
+domain_points_to_server() {
+    local dns_a="$1" dns_aaaa="$2" public_ipv4="$3" public_ipv6="$4"
+    line_contains_value "$dns_a" "$public_ipv4" || line_contains_value "$dns_aaaa" "$public_ipv6"
+}
 
-    local public_ipv4 public_ipv6 dns_a dns_aaaa
-    public_ipv4=$(get_public_ipv4)
-    public_ipv6=$(get_public_ipv6)
-    dns_a=$(resolve_domain_a "$domain" || true)
-    dns_aaaa=$(resolve_domain_aaaa "$domain" || true)
-
-    if line_contains_value "$dns_a" "$public_ipv4" || line_contains_value "$dns_aaaa" "$public_ipv6"; then
-        info "DNS check passed: ${domain} resolves to this server."
-        return
-    fi
+print_dns_mismatch_help() {
+    local domain="$1" public_ipv4="$2" public_ipv6="$3" dns_a="$4" dns_aaaa="$5"
 
     echo ""
-    echo "Domain ${domain} does not resolve to this server."
+    echo "Domain ${domain} does not resolve to this server yet."
     echo ""
     echo "Current server IP:"
     echo "  IPv4: ${public_ipv4:-unknown}"
@@ -273,9 +263,36 @@ check_domain_points_here() {
     [ -n "$public_ipv4" ] && echo "  A    ${domain} -> ${public_ipv4}"
     [ -n "$public_ipv6" ] && echo "  AAAA ${domain} -> ${public_ipv6}"
     echo ""
-    echo "Then wait for DNS propagation and re-run this command."
+    echo "Waiting for DNS to match before continuing."
+    echo "If this does not match, Caddy/Let's Encrypt certificate issuance will fail."
+    echo "Press Ctrl+C to stop waiting."
     echo ""
-    error "DNS validation failed for ${domain}"
+}
+
+check_domain_points_here() {
+    local domain="$1"
+    if [ "$SKIP_DNS_CHECK" = true ]; then
+        warn "Skipping DNS check for ${domain}."
+        return
+    fi
+
+    local public_ipv4 public_ipv6 dns_a dns_aaaa
+    public_ipv4=$(get_public_ipv4)
+    public_ipv6=$(get_public_ipv6)
+
+    local interval="${SERVERBEE_DNS_CHECK_INTERVAL:-10}"
+    while true; do
+        dns_a=$(resolve_domain_a "$domain" || true)
+        dns_aaaa=$(resolve_domain_aaaa "$domain" || true)
+
+        if domain_points_to_server "$dns_a" "$dns_aaaa" "$public_ipv4" "$public_ipv6"; then
+            info "DNS check passed: ${domain} resolves to this server."
+            return
+        fi
+
+        print_dns_mismatch_help "$domain" "$public_ipv4" "$public_ipv6" "$dns_a" "$dns_aaaa"
+        sleep "$interval"
+    done
 }
 
 # ─── Install metadata (.install-meta JSON) ───────────────────────────────────
