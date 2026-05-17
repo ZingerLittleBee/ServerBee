@@ -99,6 +99,13 @@ impl MobileAuthService {
             Self::validate_credentials(db, params.username, params.password, params.totp_code)
                 .await?;
 
+        if user_model.must_change_password {
+            return Err(AppError::Forbidden(
+                "MUST_CHANGE_PASSWORD: complete onboarding via the web UI before using mobile"
+                    .to_string(),
+            ));
+        }
+
         Self::login_for_user(
             db,
             config,
