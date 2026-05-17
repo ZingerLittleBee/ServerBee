@@ -87,6 +87,7 @@ async fn validate_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Option<Str
     if let Some(token) = extract_session_cookie(headers)
         && let Ok(Some((user, _session))) =
             AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
+        && !user.must_change_password
     {
         return Some(user.id);
     }
@@ -94,6 +95,7 @@ async fn validate_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Option<Str
     // Try API key header
     if let Some(key) = extract_api_key(headers)
         && let Ok(Some(user)) = AuthService::validate_api_key(&state.db, &key).await
+        && !user.must_change_password
     {
         return Some(user.id);
     }
@@ -102,6 +104,7 @@ async fn validate_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Option<Str
     if let Some(token) = extract_bearer_token(headers)
         && let Ok(Some((user, _session))) =
             AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
+        && !user.must_change_password
     {
         return Some(user.id);
     }
