@@ -165,7 +165,7 @@ level = "info"
 首次启动 Agent 时，使用一次性注册码进行注册：
 
 ```bash
-SERVERBEE_TOKEN="" SERVERBEE_ENROLLMENT_CODE=YOUR_ONE_TIME_CODE serverbee-agent
+SERVERBEE_ENROLLMENT_CODE=YOUR_ONE_TIME_CODE serverbee-agent
 ```
 
 注册码在 Agent 首次注册成功时即被消费。Agent 会自动向 Server 注册，获取每台服务器专属的 Token 并写回配置文件。后续启动改用持久化的 Token，无需再提供注册码。如果某个 Agent 丢失了 Token 需要重新接入，请在设置页重新生成一个新的注册码。
