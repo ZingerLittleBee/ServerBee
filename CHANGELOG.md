@@ -7,22 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-05-17
+
 ### Security
 
 - **One-time agent enrollment codes replace the shared discovery key** -- The permanent, plaintext, globally-shared `auto_discovery_key` is gone. Agents now register with a single-use, short-lived (default 10 min), argon2-hashed enrollment code minted by an admin. Codes are verified in constant time, atomically consumed on first successful registration (race-safe), and pruned after expiry/consumption. This closes the prior takeover vector where a leaked discovery key allowed silent registration/impersonation of any agent
+- **Forced first-login admin password change** -- The auto-provisioned admin account is created with a randomly generated password (printed once to the server logs in a high-visibility banner) and is hard-blocked from every authenticated surface -- REST (`auth_middleware`), the browser/terminal/docker-logs WebSockets, and mobile login/refresh -- until a new password is set. This removes the practice of supplying admin credentials in plaintext environment variables
 
 ### Added
 
 - **Enrollment & token management API** -- New admin endpoints: `POST/GET/DELETE /api/agent/enrollments` to mint, list, and delete one-time enrollment codes (the list never returns the plaintext code or hash), and `POST /api/agent/{id}/rotate-token` to rotate and revoke a server's run token, force-disconnecting the live agent so it must reconnect with the new token. Enrollment create/delete, agent enrollment, and token rotation are written to the audit log
 - **Settings UI for enrollment** -- The Settings page can mint a one-time code and shows a copyable one-line install command (carrying `--enrollment-code` and the current origin); existing codes are listed with prefix, status (active/consumed/expired), and a confirm-guarded delete
+- **First-login onboarding flow** -- New `POST /api/auth/onboarding` endpoint and `/onboarding` web page (CN/EN) that forces the initial password change and optionally lets the admin rename the account. `must_change_password` is surfaced on the login and `me` responses, and a dedicated `MUST_CHANGE_PASSWORD` error code drives the frontend redirect
 
 ### Changed
 
 - **Agent registration uses a Bearer enrollment code** -- `POST /api/agent/register` now authenticates via `Authorization: Bearer <enrollment_code>`. The agent config field is `enrollment_code` (env `SERVERBEE_ENROLLMENT_CODE`); the install script flag is `--enrollment-code`. Registration failures now surface the server's error body and log the bound `server_id`. Already-registered agents are unaffected -- the per-server run-token path is unchanged
+- **Admin bootstrap is always a random password** -- On first start the server unconditionally generates the admin password instead of reading it from configuration. Existing deployments are unaffected: the new `must_change_password` column defaults off via an additive migration, so already-provisioned users are never forced to change
 
 ### Removed
 
 - **`auto_discovery_key` fully removed** -- Server config `auth.auto_discovery_key`, env `SERVERBEE_AUTH__AUTO_DISCOVERY_KEY`, the `GET/PUT /api/settings/auto-discovery-key` endpoints, the startup-printed key, and the agent `auto_discovery_key` field are all deleted. A migration removes the stored key row so it no longer lingers in database backups
+- **Admin credential environment variables removed** -- `SERVERBEE_ADMIN__USERNAME` / `SERVERBEE_ADMIN__PASSWORD` and the `AdminConfig` block are deleted; docs, README, and `docker-compose.yml` now describe the first-run log banner and forced onboarding instead
 
 ## [0.9.0] - 2026-05-16
 
