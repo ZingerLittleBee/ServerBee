@@ -232,6 +232,38 @@ See the [Agent Setup](/en/docs/agent) guide for a complete systemd service unit 
 
 Running ServerBee behind a reverse proxy is strongly recommended for production. It provides TLS termination, HTTP/2, and additional security headers.
 
+### Access URL and Cookie Settings
+
+Choose one public access URL and keep the browser URL, agent `server_url`, and cookie setting aligned:
+
+| Scenario | Public URL | `auth.secure_cookie` | Docker Environment Variable | Agent URL |
+|----------|------------|----------------------|-----------------------------|-----------|
+| Direct IP over HTTP | `http://203.0.113.10:9527` | `false` | `SERVERBEE_AUTH__SECURE_COOKIE=false` | `http://203.0.113.10:9527` |
+| Domain through HTTPS reverse proxy | `https://monitor.example.com` | `true` | `SERVERBEE_AUTH__SECURE_COOKIE=true` or omit the variable | `https://monitor.example.com` |
+
+For domain access, create a DNS `A` or `AAAA` record pointing to the server, terminate HTTPS in Nginx, Caddy, or Traefik, and proxy traffic to ServerBee on `127.0.0.1:9527`.
+
+If you installed with the quick-start script, it writes `auth.secure_cookie = false` for direct HTTP access. Before switching that same installation to HTTPS, update `/etc/serverbee/server.toml`:
+
+```toml
+[auth]
+secure_cookie = true
+```
+
+Then restart the server:
+
+```bash
+sudo systemctl restart serverbee-server
+```
+
+If ServerBee was installed with the install script, you can also let the CLI configure Caddy HTTPS automatically:
+
+```bash
+sudo serverbee domain setup --domain monitor.example.com --email admin@example.com -y
+```
+
+This command verifies that the domain resolves to the current server, installs and configures Caddy, changes ServerBee to listen only on `127.0.0.1:9527`, and sets `auth.secure_cookie = true`. If DNS is not ready yet, it stops and prints the `A`/`AAAA` record you need to add.
+
 ### Nginx
 
 ```nginx
@@ -355,7 +387,7 @@ server_url = "https://monitor.example.com"
 The agent automatically handles WebSocket connections using the provided URL.
 
 <Callout type="warn">
-When using HTTPS, ensure `auth.secure_cookie = true` in your server configuration (this is the default). If you set it to `false`, session cookies will not be sent over HTTPS connections, breaking browser authentication.
+When using HTTPS, keep `auth.secure_cookie = true` in your server configuration. Leaving it `false` may still allow login, but it removes the browser's Secure cookie protection and is not appropriate for production.
 </Callout>
 
 ## Backup and Restore

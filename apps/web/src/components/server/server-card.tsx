@@ -237,31 +237,31 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
         <CompactMetric label={t('card_net_out_speed')} value={renderSpeedValue(server.net_out_speed)} />
         <CompactMetric
           label={
-            <span
-              aria-label={t('card_disk_read')}
-              className="inline-flex size-3 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-[9px] text-foreground leading-none"
-              role="img"
-            >
-              R
+            <span aria-label={t('card_disk_read')} className="inline-flex items-center gap-1" role="img">
+              <span
+                aria-hidden="true"
+                className="inline-flex size-3.5 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[8px] text-foreground leading-none"
+              >
+                R
+              </span>
+              {t('card_disk_read')}
             </span>
           }
           value={renderSpeedValue(server.disk_read_bytes_per_sec)}
         />
         <CompactMetric
           label={
-            <span
-              aria-label={t('card_disk_write')}
-              className="inline-flex size-3 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-[9px] text-foreground leading-none"
-              role="img"
-            >
-              W
+            <span aria-label={t('card_disk_write')} className="inline-flex items-center gap-1" role="img">
+              <span
+                aria-hidden="true"
+                className="inline-flex size-3.5 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[8px] text-foreground leading-none"
+              >
+                W
+              </span>
+              {t('card_disk_write')}
             </span>
           }
           value={renderSpeedValue(server.disk_write_bytes_per_sec)}
-        />
-        <CompactMetric
-          label={t('card_load_trend')}
-          value={`${formatLoad(server.load5)}·${formatLoad(server.load15)}`}
         />
       </div>
 
@@ -289,34 +289,51 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
         </section>
       )}
 
-      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
-        <span>
-          {t('col_uptime')}{' '}
+      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
+        <div className="flex items-baseline justify-between">
+          <span>{t('col_uptime')}</span>
           <span className="font-medium text-foreground tabular-nums">{formatUptime(server.uptime)}</span>
-        </span>
-        <span aria-hidden="true">·</span>
-        <span>
-          {t('card_swap')} <span className="font-medium text-foreground tabular-nums">{`${swapPct.toFixed(0)}%`}</span>
-        </span>
-        <span aria-hidden="true">·</span>
-        <span>
-          {t('card_processes')} <span className="font-medium text-foreground tabular-nums">{server.process_count}</span>
-        </span>
-        <span aria-hidden="true">·</span>
-        <span>
-          {t('card_tcp')} <span className="font-medium text-foreground tabular-nums">{server.tcp_conn}</span>
-        </span>
-        <span aria-hidden="true">·</span>
-        <span>
-          {t('card_udp')} <span className="font-medium text-foreground tabular-nums">{server.udp_conn}</span>
-        </span>
-        {trafficDaysRemaining != null && (
-          <>
+        </div>
+        <div className="flex items-baseline justify-between">
+          <span>{t('card_swap')}</span>
+          <span className="font-medium text-foreground tabular-nums">{`${swapPct.toFixed(0)}%`}</span>
+        </div>
+        <div className="flex items-baseline justify-between">
+          <span>{t('card_load_trend')}</span>
+          <span className="inline-flex items-center gap-1.5 font-medium text-foreground tabular-nums">
+            <span>{formatLoad(server.load5)}</span>
             <span aria-hidden="true">·</span>
-            <span className="tabular-nums">{t('card_traffic_days_left', { count: trafficDaysRemaining })}</span>
-          </>
+            <span>{formatLoad(server.load15)}</span>
+          </span>
+        </div>
+        <div className="flex items-baseline justify-between">
+          <span>{t('card_proc_conn_label')}</span>
+          <span className="font-medium text-foreground tabular-nums">
+            {`${server.process_count} / ${server.tcp_conn} / ${server.udp_conn}`}
+          </span>
+        </div>
+        {trafficDaysRemaining == null ? (
+          <div aria-hidden="true" className="invisible flex items-baseline justify-between">
+            <span>—</span>
+          </div>
+        ) : (
+          <div className="flex items-baseline justify-between">
+            <span>{t('card_traffic_days_left_label')}</span>
+            <span className="font-medium text-foreground tabular-nums">
+              {t('card_traffic_days_value', { count: trafficDaysRemaining })}
+            </span>
+          </div>
         )}
-        <CostFootnote entry={costEntry} />
+        {costEntry?.configured ? (
+          <div className="flex items-baseline justify-between">
+            <span>{t('card_cost_label')}</span>
+            <CostFootnote entry={costEntry} inline />
+          </div>
+        ) : (
+          <div aria-hidden="true" className="invisible flex items-baseline justify-between">
+            <span>—</span>
+          </div>
+        )}
       </div>
 
       <TagChips tags={server.tags} />

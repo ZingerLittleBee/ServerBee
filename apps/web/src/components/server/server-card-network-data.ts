@@ -2,6 +2,8 @@ import type { NetworkProbeResultData, NetworkServerSummary, NetworkTargetSummary
 
 const MAX_TREND_POINTS = 30
 
+export const AGGREGATE_TARGET_ID = '__aggregate__'
+
 export interface ServerCardTooltipTarget {
   latency: number | null
   lossRatio: number
@@ -170,17 +172,30 @@ function buildFallbackState(
 
   for (let index = startIndex; index < pointCount; index += 1) {
     const timestamp = buildSyntheticTimestamp(index)
+    const latencyValue = latencySparkline[index] ?? null
+    const lossValue = lossSparkline[index] ?? null
+    const bucketTargets: ServerCardTooltipTarget[] =
+      latencyValue == null && lossValue == null
+        ? []
+        : [
+            {
+              latency: latencyValue,
+              lossRatio: lossValue ?? 0,
+              targetId: AGGREGATE_TARGET_ID,
+              targetName: AGGREGATE_TARGET_ID
+            }
+          ]
     latencyPoints.push({
       synthetic: true,
-      targets: fallbackTargets,
+      targets: bucketTargets,
       timestamp,
-      value: latencySparkline[index] ?? null
+      value: latencyValue
     })
     lossPoints.push({
       synthetic: true,
-      targets: fallbackTargets,
+      targets: bucketTargets,
       timestamp,
-      value: lossSparkline[index] == null ? null : (lossSparkline[index] as number) * 100
+      value: lossValue == null ? null : lossValue * 100
     })
   }
 
