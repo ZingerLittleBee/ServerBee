@@ -8,6 +8,20 @@ if [ -z "${BASH_VERSINFO:-}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
     exit 1
 fi
 
+# Absolute path to this script when run as a regular file; empty when the
+# script was piped via stdin (curl | bash). Used so the installed
+# management CLI matches the installer that created the layout, instead
+# of an out-of-sync released copy.
+SELF_SCRIPT=""
+case "${BASH_SOURCE[0]:-}" in
+    "" | bash | sh | -bash | -sh) ;;
+    *)
+        if [ -r "${BASH_SOURCE[0]}" ]; then
+            SELF_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/$(basename "${BASH_SOURCE[0]}")"
+        fi
+        ;;
+esac
+
 # ─── Constants ────────────────────────────────────────────────────────────────
 REPO="ZingerLittleBee/ServerBee"
 # Everything ServerBee installs lives under a single base directory for
@@ -1011,10 +1025,15 @@ install_cli() {
         tmp=$(mktemp "${target_dir}/.serverbee-cli.XXXXXX")
         trap 'rm -f "$tmp"' EXIT
 
-        # Always download from the release tag to avoid version skew
-        # between binaries (latest release) and CLI (possibly stale checkout)
-        local url="https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
-        curl -fsSL -o "$tmp" "$url"
+        # Prefer the running script so the CLI always matches the layout
+        # it just created. Fall back to the released copy only when piped
+        # via stdin (curl | bash), where no script file is available.
+        if [ -n "$SELF_SCRIPT" ] && [ -r "$SELF_SCRIPT" ]; then
+            cp "$SELF_SCRIPT" "$tmp"
+        else
+            local url="https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
+            curl -fsSL -o "$tmp" "$url"
+        fi
 
         chmod +x "$tmp"
         mv "$tmp" "$target"
