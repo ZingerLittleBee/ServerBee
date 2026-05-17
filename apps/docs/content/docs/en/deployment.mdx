@@ -112,6 +112,41 @@ View logs:
 docker compose logs -f serverbee-server
 ```
 
+## Build from Source
+
+For developers or users with customization needs, you can build ServerBee from source. Building requires Rust 1.85+ and Bun 1.x (or Node.js 22+).
+
+```bash
+# Clone the repo
+git clone https://github.com/ZingerLittleBee/ServerBee.git
+cd ServerBee
+
+# Build the frontend
+cd apps/web
+bun install
+bun run build
+cd ../..
+
+# Build the server (embeds the frontend via rust-embed)
+cargo build --release -p serverbee-server
+
+# Build the agent
+cargo build --release -p serverbee-agent
+```
+
+The binaries will be located in `target/release/`:
+
+- `serverbee-server` — the server, with the frontend assets embedded
+- `serverbee-agent` — the metrics agent
+
+Start the server:
+
+```bash
+./target/release/serverbee-server
+```
+
+Once you have deployed the compiled binaries to the target host, use the systemd service configuration below to manage the processes.
+
 ## Systemd Services
 
 For deployments without Docker, use systemd to manage both the server and agent processes.

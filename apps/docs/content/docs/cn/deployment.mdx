@@ -141,6 +141,41 @@ volumes:
 当使用反向代理时，建议将端口绑定到 `127.0.0.1:9527` 而非 `0.0.0.0:9527`，防止绕过反向代理直接访问。
 </Callout>
 
+## 源码编译
+
+适合开发者或有定制需求的用户。源码编译需要 Rust 1.85+ 和 Bun 1.x（或 Node.js 22+）。
+
+```bash
+# 克隆仓库
+git clone https://github.com/ZingerLittleBee/ServerBee.git
+cd ServerBee
+
+# 构建前端
+cd apps/web
+bun install
+bun run build
+cd ../..
+
+# 构建 Server（通过 rust-embed 内嵌前端静态资源）
+cargo build --release -p serverbee-server
+
+# 构建 Agent
+cargo build --release -p serverbee-agent
+```
+
+编译产物位于 `target/release/` 目录下：
+
+- `serverbee-server` — 服务端，内嵌前端静态资源
+- `serverbee-agent` — Agent 采集端
+
+启动 Server：
+
+```bash
+./target/release/serverbee-server
+```
+
+将编译好的二进制部署到目标主机后，可以参考下文的 systemd 服务配置进行进程管理。
+
 ## systemd 服务（生产 Linux 环境）
 
 适用于不使用 Docker 的 Linux 服务器。
