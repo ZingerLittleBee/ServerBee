@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-05-18
+
+### Added
+
+- **Installer domain HTTPS setup with action preview** -- The interactive installer can configure a domain with automatic HTTPS, previews the exact actions before executing them, and shows the resolved release version (instead of `<latest>`) in the plan
+- **Localized installer with cached language selection** -- The installer's interactive UI, plan, result and status output are fully localized; the language is chosen once and cached for subsequent runs
+- **Smarter agent install defaults** -- The agent install prompt defaults the server URL to the detected local IP, lists Agent before Server in the component menu, and the install result prints the one-time first-run admin password
+- **Self-updating management CLI** -- The running install script is installed as the management CLI and is refreshed automatically during `upgrade`
+- **Add Server enrollment dialog** -- Servers can be enrolled directly from the Servers page via a dialog that mints a one-time code and shows the install command and steps
+
+### Changed
+
+- **Server card redesign** -- The card footer is a two-column stats grid; processes/TCP/UDP are merged into one line; the monthly-equivalent total cost replaces the value grade; disk read/write use circular R/W badges; load moved into the footer; days-left and cost slots stay reserved so card height is stable
+- **Consistent grid and tooltips** -- The Servers card view uses the same auto-fill grid as the dashboard, tooltips follow the active theme, and the network square-grid tooltip styling is corrected
+- **Consolidated install layout** -- The installation layout is consolidated under `/opt/serverbee`, with docker-mode and compose config placed in snap-accessible directories the server actually loads
+- **Safer uninstall** -- Uninstall prints explicit `rm` commands instead of an opaque `--purge` hint, and docker is recommended for server installs
+
+### Fixed
+
+- **Network history rendering** -- Persisted network-quality history is colored on first paint (previously rendered gray until live samples arrived), and each square's tooltip shows that bucket's own values instead of a constant current snapshot
+- **DataTable layout** -- Column widths no longer explode to extreme values and wide tables scroll horizontally instead of clipping content
+- **Server config loading** -- The server also loads config from `/opt/serverbee/etc/server.toml` and the service workdir points at the config directory so `server.toml` is found
+- **Robust domain/DNS flow** -- The installer waits for and rechecks domain DNS before confirmation and planning, warns on mismatched IPv6 DNS, makes domain verification idempotent, hardens the noninteractive flow, rejects an unsupported admin-password option, defers interactive dependency checks, and widens the docker first-run password poll budget
+
+### Documentation
+
+- Documented how to correct a wrong agent enrollment code, and clarified domain and IP access setup
+
 ## [0.9.1] - 2026-05-17
 
 ### Security
