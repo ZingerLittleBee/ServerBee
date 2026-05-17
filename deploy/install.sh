@@ -2039,6 +2039,10 @@ interactive_menu() {
         *) error "Invalid choice: $choice" ;;
     esac
     require_root
+    case "$COMMAND" in
+        install|domain) ;;
+        *) check_deps ;;
+    esac
     run_command
 }
 
@@ -2088,7 +2092,6 @@ main() {
     fi
 
     if [[ $# -eq 0 ]]; then
-        check_deps
         interactive_menu
     else
         COMMAND="$1"; shift
