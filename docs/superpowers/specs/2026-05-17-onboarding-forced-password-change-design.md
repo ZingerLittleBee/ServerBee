@@ -77,7 +77,8 @@
 - 行为（`AuthService::complete_onboarding`）：
   - argon2 哈希新密码（复用 `hash_password`）。
   - 更新 `password_hash`，若提供 `new_username` 则更新 `username`，置 `must_change_password = false`，刷新 `updated_at`。
-  - 写审计日志 `action = "onboarding"`（best-effort）。
+  - service 本身**不写审计**。
+- **审计日志归属 handler**（修正自 review P3）：`AuditService::log` 需要 `ip` 参数（`crates/server/src/service/audit.rs:11`），现有 `change_password` 也是 handler 提取 IP 后 best-effort 记录（`crates/server/src/router/api/auth.rs:357`）。onboarding 沿用同模式：handler 在 `complete_onboarding` 成功后，提取 client IP 并 best-effort 写 `action = "onboarding"`。`complete_onboarding` service 签名不引入 audit/IP 上下文。
 - 响应：`Json<ApiResponse<&'static str>>`，`"ok"`。
 - 现有 `PUT /api/auth/password`（`change_password`）保持不变，不改动。
 - `#[utoipa::path]` 注解齐全，Swagger 可见。
@@ -112,6 +113,11 @@
 Rust 单测（`crates/server`）：
 - `init_admin`：users 表空时必创建 admin，密码随机非空，`must_change_password == true`，用户名为 `admin`；users 表非空时返回 `None` 不创建。
 - `complete_onboarding`：成功置 false 并改密；新旧密码相同被拒；空密码被拒；用户名重名被拒；当前用户非 must_change_password 时被拒。
+
+**集成测试 harness 改造**（修正自 review P2）：现有 `crates/server/tests/integration.rs` 等大量用例 import `AdminConfig` 并调用 `AuthService::init_admin(&db, &config.admin)` 配合固定 `testpass` 登录（`crates/server/tests/integration.rs:13,74,117`，docker/custom_theme/cost 同理）。删除 `AdminConfig` + `init_admin` 改随机密码后这些会编译/逻辑失败。处理：
+- 通用 fixture 不再走 `init_admin`，改为直接 seed 一个已知密码、`must_change_password = false` 的 admin（复用 `AuthService::create_user`，再显式置 `must_change_password = false`，或新增测试辅助 `seed_admin(db, username, password)`）。
+- 仅 onboarding 专项测试走 `init_admin` 随机密码 + must_change_password=true 路径，并从返回值取生成密码登录。
+- 全量扫描替换所有 `init_admin(&config.admin)` / `AdminConfig` 引用点。
 
 集成测试（`crates/server/tests/integration`）：
 - must_change_password 会话访问任意受保护路由（如 `GET /api/servers`）返回 `403` 且 body `error.code == "MUST_CHANGE_PASSWORD"`。
@@ -153,5 +159,7 @@ Rust 单测（`crates/server`）：
 - `apps/web/src/routes/_authed.tsx` — 守卫 + WS hook 门控
 - `crates/server/src/openapi.rs` — 手动注册 onboarding path / OnboardingRequest schema（修正自 review P2）
 - `apps/web/src/lib/api-client.ts` — ApiError 加 code 字段 + window.location.assign 兜底
+- `apps/web/src/lib/api-types.ts`（生成）+ `apps/web/src/lib/api-schema.ts`（re-export `OnboardingRequest`/更新 `MeResponse`/`LoginResponse`）— 需跑 `bun run generate:api-types`（依赖 server OpenAPI，故 server 改动需先完成）（修正自 review P2）
+- `apps/web/src/routeTree.gen.ts`（生成）— 新增 `/onboarding` 路由后由 TanStack 插件/`bun run dev` 自动重生成，typecheck 前需确保已生成（修正自 review P2）
 - `apps/web/src/hooks/use-auth.ts` / `apps/web/src/routes/login.tsx` — 参考（LoginResponse 带字段后 guard 即时生效，确认无需强制 refetch）
 - `ENV.md` / `apps/docs/content/docs/{en,cn}/configuration.mdx` / README — 删 env 引导
