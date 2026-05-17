@@ -116,7 +116,10 @@ export type StatusGroup = S['StatusGroup']
 // Agent
 export type RegisterResponse = S['RegisterResponse']
 export type UpgradeRequest = S['UpgradeRequest']
-export type AutoDiscoveryKeyResponse = S['AutoDiscoveryKeyResponse']
+export type CreateEnrollmentRequest = S['CreateEnrollmentRequest']
+export type CreateEnrollmentResponse = S['CreateEnrollmentResponse']
+export type EnrollmentSummary = S['EnrollmentSummary']
+export type RotateTokenResponse = S['RotateTokenResponse']
 
 // Traffic (manually typed until OpenAPI types are regenerated)
 export interface TrafficResponse {
