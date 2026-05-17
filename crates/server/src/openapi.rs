@@ -43,6 +43,7 @@ impl Modify for SecurityAddon {
         crate::router::api::auth::list_api_keys,
         crate::router::api::auth::delete_api_key,
         crate::router::api::auth::change_password,
+        crate::router::api::auth::onboarding,
         // 2FA
         crate::router::api::auth::totp_setup,
         crate::router::api::auth::totp_enable,
@@ -232,6 +233,7 @@ impl Modify for SecurityAddon {
             crate::router::api::auth::CreateApiKeyRequest,
             crate::router::api::auth::ApiKeyResponse,
             crate::router::api::auth::ChangePasswordRequest,
+            crate::router::api::auth::OnboardingRequest,
             // 2FA
             crate::router::api::auth::TotpSetupResponse,
             crate::router::api::auth::TotpVerifyRequest,

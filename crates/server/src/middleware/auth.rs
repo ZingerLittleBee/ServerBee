@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use axum::Json;
 use axum::{
     extract::{Request, State},
     http::StatusCode,
@@ -15,6 +16,32 @@ pub struct CurrentUser {
     pub user_id: String,
     pub username: String,
     pub role: String,
+    pub must_change_password: bool,
+}
+
+/// 403 response with a distinct machine-readable code so the frontend can
+/// reliably detect the forced-password-change state. Deliberately NOT routed
+/// through `AppError` (whose Forbidden code is always "FORBIDDEN").
+fn must_change_password_response() -> Response {
+    (
+        StatusCode::FORBIDDEN,
+        Json(serde_json::json!({
+            "error": {
+                "code": "MUST_CHANGE_PASSWORD",
+                "message": "Password change required before continuing"
+            }
+        })),
+    )
+        .into_response()
+}
+
+/// Paths (already `/api`-stripped by `.nest("/api", ...)`) that a flagged user
+/// may still reach so they can complete onboarding.
+fn is_onboarding_whitelisted(method: &axum::http::Method, path: &str) -> bool {
+    matches!(
+        (method.as_str(), path),
+        ("GET", "/auth/me") | ("POST", "/auth/onboarding") | ("POST", "/auth/logout")
+    )
 }
 
 pub async fn auth_middleware(
@@ -32,6 +59,7 @@ pub async fn auth_middleware(
                 user_id: user.id.clone(),
                 username: user.username.clone(),
                 role: user.role.clone(),
+                must_change_password: user.must_change_password,
             })
     } else {
         None
@@ -50,6 +78,7 @@ pub async fn auth_middleware(
                         user_id: user.id.clone(),
                         username: user.username.clone(),
                         role: user.role.clone(),
+                        must_change_password: user.must_change_password,
                     })
             } else {
                 None
@@ -70,6 +99,7 @@ pub async fn auth_middleware(
                         user_id: user.id.clone(),
                         username: user.username.clone(),
                         role: user.role.clone(),
+                        must_change_password: user.must_change_password,
                     })
             } else {
                 None
@@ -79,6 +109,11 @@ pub async fn auth_middleware(
 
     match current_user {
         Some(user) => {
+            if user.must_change_password
+                && !is_onboarding_whitelisted(req.method(), req.uri().path())
+            {
+                return must_change_password_response();
+            }
             req.extensions_mut().insert(user);
             next.run(req).await
         }
@@ -215,5 +250,16 @@ mod tests {
             .body(axum::body::Body::empty())
             .unwrap();
         assert_eq!(extract_bearer_token(&req), None);
+    }
+
+    #[test]
+    fn test_onboarding_whitelist() {
+        use axum::http::Method;
+        assert!(is_onboarding_whitelisted(&Method::GET, "/auth/me"));
+        assert!(is_onboarding_whitelisted(&Method::POST, "/auth/onboarding"));
+        assert!(is_onboarding_whitelisted(&Method::POST, "/auth/logout"));
+        assert!(!is_onboarding_whitelisted(&Method::POST, "/auth/me"));
+        assert!(!is_onboarding_whitelisted(&Method::GET, "/servers"));
+        assert!(!is_onboarding_whitelisted(&Method::GET, "/api/auth/me"));
     }
 }

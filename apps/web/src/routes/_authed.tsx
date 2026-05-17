@@ -127,7 +127,7 @@ function AuthedLayout() {
   const navigate = useNavigate()
   const breadcrumbs = useBreadcrumbs()
   const { pathname } = useLocation()
-  const shouldConnectWs = isAuthenticated && !isLoading
+  const shouldConnectWs = isAuthenticated && !isLoading && user?.must_change_password !== true
   const wsRef = useServersWs(shouldConnectWs)
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected')
 
@@ -165,6 +165,14 @@ function AuthedLayout() {
   }, [isLoading, isAuthenticated, navigate])
 
   useEffect(() => {
+    if (!isLoading && isAuthenticated && user?.must_change_password === true) {
+      navigate({ to: '/onboarding' }).catch(() => {
+        // Navigation error is non-critical
+      })
+    }
+  }, [isLoading, isAuthenticated, user, navigate])
+
+  useEffect(() => {
     if (!isLoading && isAuthenticated && user?.role !== 'admin' && isAdminRoute(pathname)) {
       navigate({ to: '/' }).catch(() => {
         // Navigation error is non-critical
@@ -184,6 +192,10 @@ function AuthedLayout() {
   }
 
   if (!isAuthenticated) {
+    return null
+  }
+
+  if (user?.must_change_password === true) {
     return null
   }
 

@@ -6,9 +6,10 @@ services:
       - "9527:9527"
     volumes:
       - serverbee-data:/data
-    environment:
-      - SERVERBEE_ADMIN__USERNAME=admin
-      - SERVERBEE_ADMIN__PASSWORD=changeme
+    # On first start the server auto-creates an admin account with a random
+    # password printed once to the container logs (look for the highlighted
+    # credentials banner: `docker compose logs serverbee-server`). You must
+    # change this password on first login and may optionally pick a new username.
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:9527/healthz"]

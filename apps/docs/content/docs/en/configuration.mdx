@@ -35,9 +35,12 @@ These variables are intentionally scoped to local tooling. `ALLOW_WRITES` is not
 
 #### Quick Start
 
+<Callout type="info">
+There is no admin username/password environment variable. On first start (when no users exist) the server auto-creates an admin account with a randomly generated password and prints it once to the server/container logs as a highlighted credentials banner. Capture it from the logs, then on first login you are required to change this password and may optionally choose a different username.
+</Callout>
+
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `SERVERBEE_ADMIN__PASSWORD` | auto-generated | Admin password. Leave empty to auto-generate and print to log |
 | `SERVERBEE_SERVER__LISTEN` | `0.0.0.0:9527` | Listen address and port |
 
 #### Common
@@ -46,7 +49,6 @@ These variables are intentionally scoped to local tooling. `ALLOW_WRITES` is not
 |---------------------|---------|-------------|
 | `SERVERBEE_SERVER__DATA_DIR` | `./data` | Data directory for database and backups |
 | `SERVERBEE_AUTH__MAX_SERVERS` | `0` | Maximum servers allowed via enrollment (0 = no limit). Best-effort soft cap |
-| `SERVERBEE_ADMIN__USERNAME` | `admin` | Initial admin username (only used when no users exist) |
 | `SERVERBEE_SERVER__TRUSTED_PROXIES` | private/loopback CIDRs | CIDR list of trusted reverse proxies. Defaults to RFC 1918 + loopback. Set to `[]` to disable |
 | `SERVERBEE_SCHEDULER__TIMEZONE` | `UTC` | Timezone for daily traffic aggregation (e.g. `Asia/Shanghai`) |
 | `SERVERBEE_FEATURE__CUSTOM_THEMES` | `true` | Set `feature.custom_themes` to false to disable user-defined themes. Custom refs are read-coerced to `preset:default` |

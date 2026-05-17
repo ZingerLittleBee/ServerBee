@@ -126,9 +126,6 @@ Examples:
 # server.listen
 export SERVERBEE_SERVER__LISTEN="0.0.0.0:9527"
 
-# admin.password
-export SERVERBEE_ADMIN__PASSWORD="my-secure-password"
-
 # retention.records_days
 export SERVERBEE_RETENTION__RECORDS_DAYS=14
 
@@ -156,13 +153,20 @@ Database migrations run automatically on startup. No manual schema management is
 
 ## Initial Admin Account
 
-On first startup, if no users exist in the database, the server creates an admin account using the configured `admin.username` and `admin.password` values.
+On first startup, if no users exist in the database, the server automatically creates an admin account. There is no username/password environment variable: the password is always randomly generated and printed once to the server/container logs as a highlighted credentials banner.
 
-- If no password is set, a random password is generated and printed to the logs
-- If the password is set to `admin`, a warning is displayed at startup
+```
+========================================
+  ServerBee initial admin credentials
+  Username: admin
+  Password: aB3xK9mP2qR5
+========================================
+```
+
+Capture this password from the logs. On first login you are required to change it, and you may optionally choose a different username at that time.
 
 <Callout type="warn">
-Always change the default admin password before exposing the server to the internet. Navigate to Settings > Security in the web UI to update it.
+The generated password is shown only once in the logs. Record it before the logs rotate, and complete the forced password change on first login before exposing the server to the internet.
 </Callout>
 
 ## Enrollment Codes

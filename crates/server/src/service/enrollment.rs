@@ -134,6 +134,7 @@ mod tests {
             password_hash: Set("$argon2id$v=19$m=19456,t=2,p=1$x$x".to_string()),
             role: Set("admin".to_string()),
             totp_secret: Set(None),
+            must_change_password: Set(false),
             created_at: Set(now),
             updated_at: Set(now),
         }

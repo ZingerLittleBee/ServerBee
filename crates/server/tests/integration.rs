@@ -10,7 +10,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 
 use serverbee_common::types::{DiskIo, SystemReport};
-use serverbee_server::config::{AdminConfig, AppConfig, AuthConfig, DatabaseConfig, ServerConfig};
+use serverbee_server::config::{AppConfig, AuthConfig, DatabaseConfig, ServerConfig};
 use serverbee_server::migration::Migrator;
 use serverbee_server::router::create_router;
 use serverbee_server::service::auth::AuthService;
@@ -39,10 +39,6 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
             secure_cookie: false,
             max_servers: 0,
         },
-        admin: AdminConfig {
-            username: "admin".to_string(),
-            password: "testpass".to_string(),
-        },
         ..AppConfig::default()
     };
 
@@ -70,10 +66,11 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
         .await
         .expect("Failed to run migrations");
 
-    // Initialize admin user
-    AuthService::init_admin(&db, &config.admin)
+    // Seed a ready-to-use admin (password known, onboarding already done)
+    // so existing tests can log in without the forced-change flow.
+    AuthService::create_user(&db, "admin", "testpass", "admin")
         .await
-        .expect("Failed to init admin");
+        .expect("Failed to seed admin");
 
     // Build state and router
     let state = AppState::new(db, config)
@@ -4387,4 +4384,151 @@ async fn test_rotate_token_revokes_old_token_and_404_for_unknown_server() {
         404,
         "rotating an unknown server id should return 404"
     );
+}
+
+mod onboarding_tests {
+    use super::*;
+    use serverbee_server::service::auth::AuthService;
+
+    #[tokio::test]
+    async fn flagged_admin_is_blocked_and_can_onboard() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let data_dir = tmp.path().to_str().unwrap().to_string();
+        let db_url = format!("sqlite://{}/test.db?mode=rwc", data_dir);
+        let mut opt = sea_orm::ConnectOptions::new(&db_url);
+        opt.max_connections(5);
+        opt.sqlx_logging(false);
+        let db = sea_orm::Database::connect(opt).await.expect("connect");
+        db.execute_unprepared("PRAGMA foreign_keys=ON").await.unwrap();
+        serverbee_server::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrate");
+
+        let generated = AuthService::init_admin(&db)
+            .await
+            .expect("init_admin")
+            .expect("password generated");
+
+        let config = AppConfig {
+            server: ServerConfig {
+                listen: "127.0.0.1:0".to_string(),
+                data_dir: data_dir.clone(),
+                trusted_proxies: Vec::new(),
+            },
+            database: DatabaseConfig {
+                path: "test.db".to_string(),
+                max_connections: 5,
+            },
+            auth: AuthConfig {
+                session_ttl: 86400,
+                secure_cookie: false,
+                max_servers: 0,
+            },
+            ..AppConfig::default()
+        };
+        let state = serverbee_server::state::AppState::new(db, config)
+            .await
+            .expect("state");
+        let app = serverbee_server::router::create_router(state);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let base_url = format!("http://{}", addr);
+        tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .await
+            .unwrap();
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let client = http_client();
+
+        let login: serde_json::Value = client
+            .post(format!("{}/api/auth/login", base_url))
+            .json(&json!({ "username": "admin", "password": generated }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            login["data"]["must_change_password"], true,
+            "login response must flag the account"
+        );
+
+        let me: serde_json::Value = client
+            .get(format!("{}/api/auth/me", base_url))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(me["data"]["must_change_password"], true);
+
+        let blocked = client
+            .get(format!("{}/api/servers", base_url))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(blocked.status(), 403, "protected route must be blocked");
+        let body: serde_json::Value = blocked.json().await.unwrap();
+        assert_eq!(body["error"]["code"], "MUST_CHANGE_PASSWORD");
+
+        let mobile = client
+            .post(format!("{}/api/mobile/auth/login", base_url))
+            .json(&json!({
+                "username": "admin",
+                "password": generated,
+                "installation_id": "test-install",
+                "device_name": "test-device"
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(mobile.status(), 403, "mobile login must be blocked");
+
+        let ob = client
+            .post(format!("{}/api/auth/onboarding", base_url))
+            .json(&json!({ "new_password": "Fresh-Pass-12345", "new_username": "rootadmin" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(ob.status(), 200, "onboarding should succeed");
+
+        let ok_after = client
+            .get(format!("{}/api/servers", base_url))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(ok_after.status(), 200, "unblocked after onboarding");
+
+        let relog = client
+            .post(format!("{}/api/auth/login", base_url))
+            .json(&json!({ "username": "rootadmin", "password": "Fresh-Pass-12345" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(relog.status(), 200);
+        let relog_body: serde_json::Value = relog.json().await.unwrap();
+        assert_eq!(relog_body["data"]["must_change_password"], false);
+
+        let mobile_ok = client
+            .post(format!("{}/api/mobile/auth/login", base_url))
+            .json(&json!({
+                "username": "rootadmin",
+                "password": "Fresh-Pass-12345",
+                "installation_id": "test-install",
+                "device_name": "test-device"
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(mobile_ok.status(), 200, "mobile login works post-onboarding");
+
+        drop(tmp);
+    }
 }
