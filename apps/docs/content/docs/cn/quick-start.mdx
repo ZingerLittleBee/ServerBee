@@ -28,6 +28,8 @@ services:
       - "9527:9527"
     volumes:
       - serverbee-data:/data
+    environment:
+      - SERVERBEE_AUTH__SECURE_COOKIE=false
     restart: unless-stopped
 
 volumes:
@@ -46,6 +48,23 @@ docker compose up -d
 
 启动完成后，打开浏览器访问 `http://your-server-ip:9527` 即可进入管理面板。
 
+<Callout type="info">
+上面的 Compose 示例关闭了 Cookie 的 `Secure` 标记，因为快速开始使用的是普通 HTTP。迁移到 HTTPS 后，请设置 `SERVERBEE_AUTH__SECURE_COOKIE=true`。
+</Callout>
+
+## 使用 IP 访问还是域名访问
+
+ServerBee 可以直接用服务器 IP 访问，也可以通过域名和反向代理访问。需要额外配置的地方取决于浏览器最终使用的是普通 HTTP 还是 HTTPS。
+
+| 访问方式 | 浏览器地址 | Server Cookie 配置 | Agent `server_url` | 额外配置 |
+|----------|------------|--------------------|--------------------|----------|
+| IP 直连，普通 HTTP | `http://your-server-ip:9527` | `auth.secure_cookie = false` 或 `SERVERBEE_AUTH__SECURE_COOKIE=false` | `http://your-server-ip:9527` | 防火墙放行 `9527` 端口 |
+| 域名 + HTTPS | `https://monitor.example.com` | `auth.secure_cookie = true` 或 `SERVERBEE_AUTH__SECURE_COOKIE=true` | `https://monitor.example.com` | DNS 指向服务器 IP，并在 ServerBee 前面配置 Nginx、Caddy 或 Traefik |
+
+<Callout type="warn">
+如果你先按快速开始使用 HTTP，之后迁移到域名和 HTTPS，请把 `secure_cookie` 改回 `true`，重启 ServerBee，并把已安装 Agent 的 Server 地址更新为新的 `https://` 地址。
+</Callout>
+
 ## 方式二：安装脚本
 
 适用于 Linux 服务器，一键完成安装、配置和 systemd 服务注册。
@@ -53,7 +72,7 @@ docker compose up -d
 **安装 Server：**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server -y
 ```
 
 安装脚本会自动完成以下操作：
@@ -64,6 +83,14 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 4. 创建 `/etc/serverbee/` 配置目录并生成默认配置
 5. 创建 systemd service unit
 6. 启动服务并设置开机自启
+
+首次启动时，Server 会自动创建管理员账号并随机生成密码，该密码只会在服务日志中打印一次。使用以下命令查看：
+
+```bash
+sudo journalctl -u serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS'
+```
+
+安装脚本会写入 `auth.secure_cookie = false`，保证普通 HTTP 快速开始地址可以在浏览器中正常登录。迁移到 HTTPS 后，请在 `/etc/serverbee/server.toml` 中改回 `true` 并重启 Server。
 
 **安装 Agent：**
 
@@ -89,14 +116,21 @@ sudo serverbee uninstall agent      # 卸载 Agent
 sudo serverbee uninstall server --purge   # 卸载服务端并清除数据
 ```
 
+验证 Server 是否运行：
+
+```bash
+sudo serverbee status
+sudo journalctl -u serverbee-server -n 80 --no-pager
+```
+
 ## 首次登录
 
 1. 打开浏览器访问 `http://your-server-ip:9527`
-2. 使用默认账户 `admin` 和你设置的密码登录
-3. 如果未设置密码，查看 Server 启动日志获取自动生成的密码
+2. 使用默认账户 `admin` 和 Server 启动日志中的随机密码登录
+3. 首次登录时按页面提示完成强制密码修改，可同时选择新的用户名
 
 <Callout type="warn">
-首次登录后请立即修改默认密码。进入「设置」页面即可修改。
+自动生成的密码只会在日志中显示一次。请在日志轮转前复制，并在暴露到公网前完成首次密码修改。
 </Callout>
 
 ## 添加第一台 Agent
@@ -120,6 +154,13 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 ```
 
 脚本会自动检测平台架构、下载对应二进制、写入配置、注册 systemd 服务并启动 Agent。
+
+验证 Agent 是否已连接并开始上报：
+
+```bash
+sudo serverbee status
+sudo journalctl -u serverbee-agent -n 80 --no-pager
+```
 
 更多采集、日志等可调选项请参考 [Agent 配置](/cn/docs/agent)和[完整配置参考](/cn/docs/configuration)。
 
