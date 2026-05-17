@@ -20,6 +20,7 @@ SERVER_URL=""
 ENROLLMENT_CODE=""
 DOMAIN=""
 EMAIL=""
+LANG_CODE="${SERVERBEE_LANG:-}"
 YES=false
 PURGE=false
 SKIP_DNS_CHECK=false
@@ -41,6 +42,119 @@ error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 
 should_prompt() {
     [ "$YES" != true ] && [ -t 0 ]
+}
+
+normalize_lang() {
+    case "${LANG_CODE:-}" in
+        zh|zh_*|zh-*|cn|CN) LANG_CODE="zh" ;;
+        en|en_*|en-*) LANG_CODE="en" ;;
+        "") ;;
+        *) error "Unsupported language: ${LANG_CODE} (use 'en' or 'zh')" ;;
+    esac
+}
+
+detect_lang() {
+    if [ -n "${LANG_CODE:-}" ]; then
+        normalize_lang
+        return
+    fi
+
+    case "${LC_ALL:-${LANG:-en}}" in
+        zh*|ZH*) LANG_CODE="zh" ;;
+        *) LANG_CODE="en" ;;
+    esac
+}
+
+select_language() {
+    [ -z "${LANG_CODE:-}" ] || { normalize_lang; return; }
+
+    if ! should_prompt; then
+        detect_lang
+        return
+    fi
+
+    local choice
+    echo ""
+    echo -e "${BOLD}Select language / 选择语言${NC}"
+    echo ""
+    echo "  [1] English"
+    echo "  [2] 简体中文"
+    echo ""
+    read -rp "Select language [1/2]: " choice
+    case "$choice" in
+        1|en|EN|English|english) LANG_CODE="en" ;;
+        2|zh|ZH|cn|CN|中文) LANG_CODE="zh" ;;
+        *) error "Invalid language choice: ${choice}" ;;
+    esac
+}
+
+tr_text() {
+    local key="$1"
+    case "${LANG_CODE:-en}:${key}" in
+        zh:manager_title) echo "ServerBee 管理器" ;;
+        en:manager_title) echo "ServerBee Manager" ;;
+        zh:install_menu) echo "  [1] 安装      Install" ;;
+        en:install_menu) echo "  [1] Install    安装" ;;
+        zh:uninstall_menu) echo "  [2] 卸载      Uninstall" ;;
+        en:uninstall_menu) echo "  [2] Uninstall  卸载" ;;
+        zh:upgrade_menu) echo "  [3] 升级      Upgrade" ;;
+        en:upgrade_menu) echo "  [3] Upgrade    升级" ;;
+        zh:status_menu) echo "  [4] 状态      Status" ;;
+        en:status_menu) echo "  [4] Status     查看状态" ;;
+        zh:service_menu) echo "  [5] 服务控制  Service (start/stop/restart)" ;;
+        en:service_menu) echo "  [5] Service    服务控制 (start/stop/restart)" ;;
+        zh:config_menu) echo "  [6] 配置管理  Config" ;;
+        en:config_menu) echo "  [6] Config     配置管理" ;;
+        zh:env_menu) echo "  [7] 环境变量  Env" ;;
+        en:env_menu) echo "  [7] Env        环境变量" ;;
+        zh:domain_menu) echo "  [8] 域名 HTTPS Domain" ;;
+        en:domain_menu) echo "  [8] Domain     域名 HTTPS" ;;
+        zh:exit_menu) echo "  [0] 退出      Exit" ;;
+        en:exit_menu) echo "  [0] Exit       退出" ;;
+        zh:select_menu) echo "选择 [0-8]: " ;;
+        en:select_menu) echo "Select [0-8]: " ;;
+        zh:install_title) echo "安装" ;;
+        en:install_title) echo "Install" ;;
+        zh:server_option) echo "  [1] Server  — 控制台和 API" ;;
+        en:server_option) echo "  [1] Server  — Dashboard & API" ;;
+        zh:agent_option) echo "  [2] Agent   — 系统指标采集器" ;;
+        en:agent_option) echo "  [2] Agent   — System metrics collector" ;;
+        zh:select_component) echo "选择组件 [1/2]: " ;;
+        en:select_component) echo "Select component [1/2]: " ;;
+        zh:server_docker_recommended) echo "  [1] Docker  (Server 推荐)" ;;
+        en:server_docker_recommended) echo "  [1] Docker  (recommended for Server)" ;;
+        zh:agent_binary_recommended) echo "  [1] Binary  (Agent 推荐)" ;;
+        en:agent_binary_recommended) echo "  [1] Binary  (recommended for Agent)" ;;
+        zh:binary_option) echo "  [2] Binary" ;;
+        en:binary_option) echo "  [2] Binary" ;;
+        zh:docker_option) echo "  [2] Docker" ;;
+        en:docker_option) echo "  [2] Docker" ;;
+        zh:select_method) echo "选择安装方式 [1/2]: " ;;
+        en:select_method) echo "Select installation method [1/2]: " ;;
+        zh:configure_domain) echo "现在配置 HTTPS 域名（Caddy）吗？[y/N]: " ;;
+        en:configure_domain) echo "Configure HTTPS domain with Caddy now? [y/N]: " ;;
+        zh:domain_prompt) echo "域名（例如 monitor.example.com）: " ;;
+        en:domain_prompt) echo "Domain (e.g., monitor.example.com): " ;;
+        zh:email_prompt) echo "证书通知邮箱（可选）: " ;;
+        en:email_prompt) echo "Email for certificate notices (optional): " ;;
+        zh:server_url_prompt) echo "Server URL（例如 http://10.0.0.1:9527）: " ;;
+        en:server_url_prompt) echo "Server URL (e.g., http://10.0.0.1:9527): " ;;
+        zh:enrollment_prompt) echo "Enrollment code（注册码）: " ;;
+        en:enrollment_prompt) echo "Enrollment code: " ;;
+        zh:install_plan_title) echo "安装计划" ;;
+        en:install_plan_title) echo "Installation plan" ;;
+        zh:domain_plan_title) echo "域名配置计划" ;;
+        en:domain_plan_title) echo "Domain setup plan" ;;
+        zh:will_add_download) echo "将添加或下载:" ;;
+        en:will_add_download) echo "Will add or download:" ;;
+        zh:start_install) echo "现在开始安装？[y/N]: " ;;
+        en:start_install) echo "Start installation now? [y/N]: " ;;
+        zh:start_domain) echo "现在开始域名配置？[y/N]: " ;;
+        en:start_domain) echo "Start domain setup now? [y/N]: " ;;
+        zh:preflight) echo "安装前检查:" ;;
+        en:preflight) echo "Preflight checks:" ;;
+        *) echo "$key" ;;
+    esac
 }
 
 # ─── Dependency check ─────────────────────────────────────────────────────────
@@ -123,6 +237,7 @@ parse_args() {
             --password)      error "--password is no longer supported. ServerBee always generates a one-time first-run admin password; check the server logs after installation." ;;
             --domain)        DOMAIN="$2"; shift 2 ;;
             --email)         EMAIL="$2"; shift 2 ;;
+            --lang)          LANG_CODE="$2"; normalize_lang; shift 2 ;;
             --skip-dns-check) SKIP_DNS_CHECK=true; shift ;;
             --purge)         PURGE=true; shift ;;
             --yes|-y)        YES=true; shift ;;
@@ -253,40 +368,75 @@ warn_mismatched_aaaa_if_present() {
         return 0
     fi
 
-    warn "AAAA record for ${domain} does not point to this server."
-    if [ -n "$public_ipv6" ]; then
-        echo "  Current server IPv6: ${public_ipv6}"
-        echo "  DNS AAAA: ${dns_aaaa}"
-        echo "  Fix the AAAA record or remove it if you only want IPv4."
+    if [ "${LANG_CODE:-en}" = "zh" ]; then
+        warn "${domain} 的 AAAA 记录没有指向当前服务器。"
+        if [ -n "$public_ipv6" ]; then
+            echo "  当前服务器 IPv6: ${public_ipv6}"
+            echo "  DNS AAAA: ${dns_aaaa}"
+            echo "  请修正 AAAA 记录；如果只使用 IPv4，请删除 AAAA 记录。"
+        else
+            echo "  当前服务器未检测到公网 IPv6，但 DNS 存在 AAAA: ${dns_aaaa}"
+            echo "  除非你确认 IPv6 可以访问这台服务器，否则请删除 AAAA 记录。"
+        fi
+        echo "  Caddy/Let's Encrypt 可能会尝试 IPv6，导致证书申请失败。"
     else
-        echo "  This server has no detected public IPv6, but DNS has AAAA: ${dns_aaaa}"
-        echo "  Remove the AAAA record unless you have verified IPv6 reaches this server."
+        warn "AAAA record for ${domain} does not point to this server."
+        if [ -n "$public_ipv6" ]; then
+            echo "  Current server IPv6: ${public_ipv6}"
+            echo "  DNS AAAA: ${dns_aaaa}"
+            echo "  Fix the AAAA record or remove it if you only want IPv4."
+        else
+            echo "  This server has no detected public IPv6, but DNS has AAAA: ${dns_aaaa}"
+            echo "  Remove the AAAA record unless you have verified IPv6 reaches this server."
+        fi
+        echo "  Caddy/Let's Encrypt may try IPv6 and certificate issuance may fail."
     fi
-    echo "  Caddy/Let's Encrypt may try IPv6 and certificate issuance may fail."
 }
 
 print_dns_mismatch_help() {
     local domain="$1" public_ipv4="$2" public_ipv6="$3" dns_a="$4" dns_aaaa="$5"
 
-    echo ""
-    echo "Domain ${domain} does not resolve to this server yet."
-    echo ""
-    echo "Current server IP:"
-    echo "  IPv4: ${public_ipv4:-unknown}"
-    echo "  IPv6: ${public_ipv6:-unknown}"
-    echo ""
-    echo "Current DNS records:"
-    echo "  A:    ${dns_a:-none}"
-    echo "  AAAA: ${dns_aaaa:-none}"
-    echo ""
-    echo "Please add/update DNS:"
-    [ -n "$public_ipv4" ] && echo "  A    ${domain} -> ${public_ipv4}"
-    [ -n "$public_ipv6" ] && echo "  AAAA ${domain} -> ${public_ipv6}"
-    echo ""
-    echo "DNS must match before continuing."
-    echo "If this does not match, Caddy/Let's Encrypt certificate issuance will fail."
-    echo "Update DNS, then press Enter to check again. Press Ctrl+C to stop."
-    echo ""
+    if [ "${LANG_CODE:-en}" = "zh" ]; then
+        echo ""
+        echo "域名 ${domain} 还没有解析到当前服务器。"
+        echo ""
+        echo "当前服务器 IP:"
+        echo "  IPv4: ${public_ipv4:-未知}"
+        echo "  IPv6: ${public_ipv6:-未知}"
+        echo ""
+        echo "当前 DNS 记录:"
+        echo "  A:    ${dns_a:-无}"
+        echo "  AAAA: ${dns_aaaa:-无}"
+        echo ""
+        echo "请添加或更新 DNS:"
+        [ -n "$public_ipv4" ] && echo "  A    ${domain} -> ${public_ipv4}"
+        [ -n "$public_ipv6" ] && echo "  AAAA ${domain} -> ${public_ipv6}"
+        echo ""
+        echo "继续之前 DNS 必须匹配。"
+        echo "如果不匹配，Caddy/Let's Encrypt 证书申请会失败。"
+        echo "更新 DNS 后按 Enter 重新校验，按 Ctrl+C 停止。"
+        echo ""
+    else
+        echo ""
+        echo "Domain ${domain} does not resolve to this server yet."
+        echo ""
+        echo "Current server IP:"
+        echo "  IPv4: ${public_ipv4:-unknown}"
+        echo "  IPv6: ${public_ipv6:-unknown}"
+        echo ""
+        echo "Current DNS records:"
+        echo "  A:    ${dns_a:-none}"
+        echo "  AAAA: ${dns_aaaa:-none}"
+        echo ""
+        echo "Please add/update DNS:"
+        [ -n "$public_ipv4" ] && echo "  A    ${domain} -> ${public_ipv4}"
+        [ -n "$public_ipv6" ] && echo "  AAAA ${domain} -> ${public_ipv6}"
+        echo ""
+        echo "DNS must match before continuing."
+        echo "If this does not match, Caddy/Let's Encrypt certificate issuance will fail."
+        echo "Update DNS, then press Enter to check again. Press Ctrl+C to stop."
+        echo ""
+    fi
 }
 
 check_domain_points_here() {
@@ -314,7 +464,11 @@ check_domain_points_here() {
         if ! should_prompt; then
             error "DNS validation failed for ${domain}. Fix DNS and re-run, or pass --skip-dns-check if you have configured TLS another way."
         fi
-        read -rp "Press Enter to re-check DNS..." _
+        if [ "${LANG_CODE:-en}" = "zh" ]; then
+            read -rp "按 Enter 重新校验 DNS..." _
+        else
+            read -rp "Press Enter to re-check DNS..." _
+        fi
     done
 }
 
@@ -1027,11 +1181,11 @@ cmd_domain() {
         if [ "$YES" = true ] || ! [ -t 0 ]; then
             error "--domain is required"
         fi
-        read -rp "Domain (e.g., monitor.example.com): " DOMAIN
+        read -rp "$(tr_text domain_prompt)" DOMAIN
     fi
 
     if [ -z "$EMAIL" ] && [ "$YES" != true ] && [ -t 0 ]; then
-        read -rp "Email for certificate notices (optional): " EMAIL
+        read -rp "$(tr_text email_prompt)" EMAIL
     fi
 
     run_domain_setup_with_plan
@@ -1090,7 +1244,7 @@ run_domain_preflight_checks() {
     [ -z "$DOMAIN" ] && return
 
     echo ""
-    echo "Preflight checks:"
+    echo "$(tr_text preflight)"
     validate_domain_name "$DOMAIN"
     check_domain_points_here "$DOMAIN"
 }
@@ -1099,12 +1253,12 @@ confirm_domain_setup_plan() {
     run_domain_preflight_checks
 
     echo ""
-    echo -e "${BOLD}Domain setup plan${NC}"
+    echo -e "${BOLD}$(tr_text domain_plan_title)${NC}"
     echo ""
     echo "Domain: ${DOMAIN}"
     [ -n "$EMAIL" ] && echo "Email:  ${EMAIL}"
     echo ""
-    echo "Will add or download:"
+    echo "$(tr_text will_add_download)"
     print_missing_deps_plan
     print_domain_plan
     echo ""
@@ -1114,7 +1268,7 @@ confirm_domain_setup_plan() {
         return
     fi
 
-    read -rp "Start domain setup now? [y/N]: " confirm
+    read -rp "$(tr_text start_domain)" confirm
     case "$confirm" in
         [yY]|[yY][eE][sS]) ;;
         *) error "Domain setup cancelled." ;;
@@ -1129,7 +1283,7 @@ run_domain_setup_with_plan() {
 
 print_install_plan() {
     echo ""
-    echo -e "${BOLD}Installation plan${NC}"
+    echo -e "${BOLD}$(tr_text install_plan_title)${NC}"
     echo ""
     echo "Component: serverbee-${COMPONENT}"
     echo "Method:    ${METHOD}"
@@ -1145,7 +1299,7 @@ print_install_plan() {
     fi
 
     echo ""
-    echo "Will add or download:"
+    echo "$(tr_text will_add_download)"
     print_missing_deps_plan
     case "${COMPONENT}-${METHOD}" in
         server-binary)
@@ -1184,7 +1338,7 @@ confirm_install_plan() {
         return
     fi
 
-    read -rp "Start installation now? [y/N]: " confirm
+    read -rp "$(tr_text start_install)" confirm
     case "$confirm" in
         [yY]|[yY][eE][sS]) ;;
         *) error "Installation cancelled." ;;
@@ -1196,20 +1350,20 @@ prompt_install_method() {
 
     echo ""
     if [ "$COMPONENT" = "server" ]; then
-        echo "  [1] Docker  (recommended for Server)"
-        echo "  [2] Binary"
+        echo "$(tr_text server_docker_recommended)"
+        echo "$(tr_text binary_option)"
         echo ""
-        read -rp "Select installation method [1/2]: " choice
+        read -rp "$(tr_text select_method)" choice
         case "$choice" in
             1|docker) METHOD="docker" ;;
             2|binary) METHOD="binary" ;;
             *) error "Invalid choice: $choice" ;;
         esac
     else
-        echo "  [1] Binary  (recommended for Agent)"
-        echo "  [2] Docker"
+        echo "$(tr_text agent_binary_recommended)"
+        echo "$(tr_text docker_option)"
         echo ""
-        read -rp "Select installation method [1/2]: " choice
+        read -rp "$(tr_text select_method)" choice
         case "$choice" in
             1|binary) METHOD="binary" ;;
             2|docker) METHOD="docker" ;;
@@ -1222,12 +1376,12 @@ cmd_install() {
     # Interactive: prompt for component if not provided
     if [ -z "$COMPONENT" ]; then
         echo ""
-        echo -e "${BOLD}Install${NC}"
+        echo -e "${BOLD}$(tr_text install_title)${NC}"
         echo ""
-        echo "  [1] Server  — Dashboard & API"
-        echo "  [2] Agent   — System metrics collector"
+        echo "$(tr_text server_option)"
+        echo "$(tr_text agent_option)"
         echo ""
-        read -rp "Select component [1/2]: " choice
+        read -rp "$(tr_text select_component)" choice
         case "$choice" in
             1|server) COMPONENT="server" ;;
             2|agent)  COMPONENT="agent" ;;
@@ -1281,20 +1435,20 @@ cmd_install() {
     if [ "$COMPONENT" = "server" ]; then
         if [ -z "$DOMAIN" ] && [ "$YES" != true ] && [ -t 0 ]; then
             echo ""
-            read -rp "Configure HTTPS domain with Caddy now? [y/N]: " confirm_domain
+            read -rp "$(tr_text configure_domain)" confirm_domain
             if [[ "$confirm_domain" =~ ^[yY] ]]; then
-                read -rp "Domain (e.g., monitor.example.com): " DOMAIN
-                read -rp "Email for certificate notices (optional): " EMAIL
+                read -rp "$(tr_text domain_prompt)" DOMAIN
+                read -rp "$(tr_text email_prompt)" EMAIL
             fi
         fi
     elif [ "$COMPONENT" = "agent" ]; then
         while [ -z "$SERVER_URL" ]; do
             if [ "$YES" = true ]; then error "--server-url is required for agent installation"; fi
-            read -rp "Server URL (e.g., http://10.0.0.1:9527): " SERVER_URL
+            read -rp "$(tr_text server_url_prompt)" SERVER_URL
         done
         while [ -z "$ENROLLMENT_CODE" ]; do
             if [ "$YES" = true ]; then error "--enrollment-code is required for agent installation (generate a one-time code in the server UI Settings)"; fi
-            read -rp "Enrollment code: " ENROLLMENT_CODE
+            read -rp "$(tr_text enrollment_prompt)" ENROLLMENT_CODE
         done
     fi
 
@@ -2085,20 +2239,20 @@ EOF
 
 interactive_menu() {
     echo ""
-    echo -e "${BOLD}ServerBee Manager${NC}"
+    echo -e "${BOLD}$(tr_text manager_title)${NC}"
     echo "================="
     echo ""
-    echo "  [1] Install    安装"
-    echo "  [2] Uninstall  卸载"
-    echo "  [3] Upgrade    升级"
-    echo "  [4] Status     查看状态"
-    echo "  [5] Service    服务控制 (start/stop/restart)"
-    echo "  [6] Config     配置管理"
-    echo "  [7] Env        环境变量"
-    echo "  [8] Domain     域名 HTTPS"
-    echo "  [0] Exit       退出"
+    echo "$(tr_text install_menu)"
+    echo "$(tr_text uninstall_menu)"
+    echo "$(tr_text upgrade_menu)"
+    echo "$(tr_text status_menu)"
+    echo "$(tr_text service_menu)"
+    echo "$(tr_text config_menu)"
+    echo "$(tr_text env_menu)"
+    echo "$(tr_text domain_menu)"
+    echo "$(tr_text exit_menu)"
     echo ""
-    read -rp "Select [0-8]: " choice
+    read -rp "$(tr_text select_menu)" choice
     case "$choice" in
         1) COMMAND="install" ;;
         2) COMMAND="uninstall" ;;
@@ -2154,9 +2308,22 @@ run_command() {
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 main() {
-    # Pre-scan for -y flag so check_deps knows whether to auto-install
-    for arg in "$@"; do
-        case "$arg" in --yes|-y) YES=true ;; esac
+    # Pre-scan for -y and --lang before any prompt or dependency handling.
+    local args=("$@")
+    local i
+    for ((i = 0; i < ${#args[@]}; i++)); do
+        case "${args[$i]}" in
+            --yes|-y)
+                YES=true
+                ;;
+            --lang)
+                if [ $((i + 1)) -ge ${#args[@]} ]; then
+                    error "--lang requires a value"
+                fi
+                LANG_CODE="${args[$((i + 1))]}"
+                normalize_lang
+                ;;
+        esac
     done
 
     # Shorthand: first arg not a known command → prepend "install"
@@ -2165,10 +2332,15 @@ main() {
     fi
 
     if [[ $# -eq 0 ]]; then
+        select_language
         interactive_menu
     else
         COMMAND="$1"; shift
         parse_args "$@"
+        case "$COMMAND" in
+            install|domain) select_language ;;
+            *) detect_lang ;;
+        esac
         require_root
         case "$COMMAND" in
             install|domain) ;;
