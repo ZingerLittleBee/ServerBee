@@ -299,16 +299,10 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
           <span className="font-medium text-foreground tabular-nums">{`${swapPct.toFixed(0)}%`}</span>
         </div>
         <div className="flex items-baseline justify-between">
-          <span>{t('card_processes')}</span>
-          <span className="font-medium text-foreground tabular-nums">{server.process_count}</span>
-        </div>
-        <div className="flex items-baseline justify-between">
-          <span>{t('card_tcp')}</span>
-          <span className="font-medium text-foreground tabular-nums">{server.tcp_conn}</span>
-        </div>
-        <div className="flex items-baseline justify-between">
-          <span>{t('card_udp')}</span>
-          <span className="font-medium text-foreground tabular-nums">{server.udp_conn}</span>
+          <span>{t('card_proc_conn_label')}</span>
+          <span className="font-medium text-foreground tabular-nums">
+            {`${server.process_count} / ${server.tcp_conn} / ${server.udp_conn}`}
+          </span>
         </div>
         {trafficDaysRemaining != null && (
           <div className="flex items-baseline justify-between">
@@ -318,9 +312,12 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
             </span>
           </div>
         )}
-        <div className="col-span-2 flex justify-center pt-0.5">
-          <CostFootnote entry={costEntry} />
-        </div>
+        {costEntry && (
+          <div className="flex items-baseline justify-between">
+            <span>{t('card_cost_label')}</span>
+            <CostFootnote entry={costEntry} inline />
+          </div>
+        )}
       </div>
 
       <TagChips tags={server.tags} />
