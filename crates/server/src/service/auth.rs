@@ -74,6 +74,7 @@ impl AuthService {
             password_hash: Set(password_hash),
             role: Set(role.to_string()),
             totp_secret: Set(None),
+            must_change_password: Set(false),
             created_at: Set(now),
             updated_at: Set(now),
         };
