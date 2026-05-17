@@ -33,16 +33,23 @@ pub async fn register_agent(config: &AgentConfig, fingerprint: &str) -> Result<(
     let client = reqwest::Client::new();
     let resp = client
         .post(&url)
-        .bearer_auth(&config.auto_discovery_key)
+        .bearer_auth(&config.enrollment_code)
         .json(&RegisterRequest {
             fingerprint: fingerprint.to_string(),
         })
         .send()
         .await?;
     if !resp.status().is_success() {
-        anyhow::bail!("Registration failed: HTTP {}", resp.status());
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        anyhow::bail!(
+            "Registration failed: HTTP {status}. Server said: {}. \
+             Check that the enrollment code is valid and not expired or already used.",
+            body.trim()
+        );
     }
     let data: RegisterResponse = resp.json().await?;
+    tracing::info!("Registered as server_id={}", data.data.server_id);
     Ok((data.data.server_id, data.data.token))
 }
 

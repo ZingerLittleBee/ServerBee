@@ -84,7 +84,7 @@ curl https://your-server/api/auth/me \
 | POST | `/api/mobile/auth/login` | Mobile login |
 | POST | `/api/mobile/auth/refresh` | Refresh a mobile session |
 | POST | `/api/mobile/auth/pair` | Redeem a mobile pairing code |
-| POST | `/api/agent/register` | Agent auto-registration using discovery key |
+| POST | `/api/agent/register` | Agent registration using a one-time enrollment code (the code is consumed on first successful registration) |
 | GET | `/api/status` | Default public status page data |
 | GET | `/api/status/{slug}` | Configurable public status page data |
 | GET | `/api/settings/brand` | Public brand settings |
@@ -123,6 +123,7 @@ Admin role is required for write operations and system management.
 | Family | Representative endpoints |
 |--------|--------------------------|
 | Server management | `POST/PUT/DELETE /api/servers/*`, `PUT /api/servers/batch-capabilities`, `POST /api/servers/{id}/upgrade` |
+| Agent enrollment | `POST /api/agent/enrollments`, `GET /api/agent/enrollments`, `DELETE /api/agent/enrollments/{id}`, `POST /api/agent/{id}/rotate-token` |
 | Agent recovery | `GET /api/servers/{target_id}/recovery-candidates`, `GET /api/servers/recovery-jobs/{job_id}`, `POST /api/servers/{target_id}/recover-merge` |
 | Groups and tags | CRUD `/api/server-groups/*`, CRUD `/api/server-tags/*` |
 | Ping and network probes | CRUD `/api/ping-tasks/*`, write endpoints under `/api/network-probes/*` |
@@ -141,6 +142,53 @@ Admin role is required for write operations and system management.
 | Audit and settings | `GET /api/audit-logs`, `/api/settings/*`, backup/restore endpoints |
 | GeoIP | `POST /api/geoip/download` |
 | Mobile push | `POST /api/mobile/pair`, `POST /api/mobile/push/register`, `POST /api/mobile/push/unregister` |
+
+## Agent Enrollment Endpoints
+
+All of these endpoints require the Admin role. Responses follow the standard `{ "data": ... }` envelope.
+
+### `POST /api/agent/enrollments` -- Mint an enrollment code
+
+Mints a one-time, short-lived enrollment code (default TTL 600 seconds / 10 minutes; single-use; consumed on the agent's first successful registration).
+
+Response:
+
+```json
+{
+  "data": {
+    "id": "01J...",
+    "code": "<plaintext code, returned only once>",
+    "expires_at": "2026-05-17T12:34:56Z"
+  }
+}
+```
+
+The plaintext `code` is returned only at mint time -- copy it immediately.
+
+### `GET /api/agent/enrollments` -- List enrollment codes
+
+Lists issued enrollment codes with metadata. For security this endpoint **never returns the plaintext code**, only an 8-character prefix plus status/expiry metadata.
+
+```json
+{
+  "data": [
+    {
+      "id": "01J...",
+      "code_prefix": "ab12cd34",
+      "expires_at": "2026-05-17T12:34:56Z",
+      "consumed_at": null
+    }
+  ]
+}
+```
+
+### `DELETE /api/agent/enrollments/{id}` -- Delete an enrollment code
+
+Deletes an unused enrollment code, invalidating it immediately.
+
+### `POST /api/agent/{id}/rotate-token` -- Rotate/revoke a run token
+
+Rotates (revokes) the agent run token for the given server. The old token is invalidated immediately and the affected agent is forced to disconnect and must reconnect with the new token.
 
 ## WebSocket Endpoints
 

@@ -15,7 +15,7 @@
 - **通知渠道** -- Webhook、Telegram、Bark、邮件 (通过 Resend)，支持通知组
 - **网络质量监控** -- 多目标网络探测 (96 个预设中国三网 + 国际节点)，实时/历史延迟图表，异常检测，每服务器独立目标配置
 - **Ping 探测** -- ICMP、TCP、HTTP 探测，延迟图表和成功率统计
-- **自动注册加固** -- 基于稳定机器指纹复用既有服务器记录，`auth.max_servers` 软限制自动注册规模，支持在设置页重新生成 discovery key，并清理未连接占位服务器
+- **安全的 Agent 注册** -- 由管理员铸造的一次性、短时效 enrollment code（单次使用，默认 10 分钟过期），基于稳定机器指纹复用既有服务器记录，`auth.max_servers` 软限制注册规模，运行 token 可轮换/吊销，并可清理未连接占位服务器
 - **Web 终端** -- 基于 WebSocket 代理的浏览器 PTY 终端
 - **GPU 监控** -- NVIDIA GPU 使用率/温度/显存 (nvml-wrapper，可选功能)
 - **磁盘 I/O 监控** -- 每块磁盘读写吞吐量图表，支持合并和分盘视图。Linux 通过 `/proc/diskstats`，macOS/Windows 通过 sysinfo
@@ -77,23 +77,27 @@ cargo build --release
 ./serverbee-server
 # 默认地址: http://localhost:9527
 # 管理员密码在启动日志中自动生成并打印
-# Auto-discovery key 也会在首次启动时打印
 ```
 
 ### 启动 Agent
 
+首先以管理员身份登录服务端 Web UI，打开 **设置** 页，生成一个一次性
+enrollment code（单次使用，默认约 10 分钟后过期）。
+
 ```bash
-# 通过环境变量设置服务端地址和发现密钥
+# 通过环境变量设置服务端地址和一次性 enrollment code
 SERVERBEE_SERVER_URL=http://your-server:9527 \
-SERVERBEE_AUTO_DISCOVERY_KEY=YOUR_KEY \
+SERVERBEE_ENROLLMENT_CODE=YOUR_ONE_TIME_CODE \
 ./serverbee-agent
 
 # 或创建配置文件 /etc/serverbee/agent.toml:
 # server_url = "http://your-server:9527"
-# auto_discovery_key = "YOUR_KEY"
+# enrollment_code = "YOUR_ONE_TIME_CODE"
 ```
 
-注册成功后，Agent 会将 token 保存到配置文件，重启后自动重连。
+enrollment code 在 Agent 首次注册成功时被消费。之后 Agent 会将每个服务器的
+token 保存到配置文件，重启后自动重连 —— 不再需要该 code。要接入另一个 Agent
+（或为丢失 token 的 Agent 重新注册），在设置页铸造一个新的 code。
 
 ### Docker
 
@@ -110,7 +114,7 @@ make dev-full
 
 # 或分步启动:
 make server-dev                                           # 终端 1: 服务端 :9527
-SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # 终端 2: Agent
+SERVERBEE_ENROLLMENT_CODE="<一次性 code>" make agent-dev   # 终端 2: Agent
 
 # 测试与代码质量:
 make cargo-test        # 运行全部 Rust 测试 (395)
@@ -121,7 +125,7 @@ make                   # 交互式菜单 (需要 fzf)
 
 手动浏览器验证清单索引见 `tests/README.md`。
 
-服务端启动时会打印完整的 auto-discovery key，复制后即可启动 Agent；如需轮换，也可以在设置页重新生成。
+在服务端 Web UI **设置** 页生成一个一次性 enrollment code，并将其传给 Agent。该 code 单次使用，约 10 分钟后过期；每次需要接入新的 Agent 时铸造一个新的 code。
 
 > **说明**: `make dev-full` 启动带 HMR 的 Vite 开发服务器 (`http://localhost:5173`)，自动代理 `/api/*` 到 Rust 服务端 (`:9527`)。生产构建请使用 `make build` 然后 `make server-run`。
 
@@ -144,8 +148,7 @@ max_connections = 10
 [auth]
 session_ttl = 86400           # 24 小时
 secure_cookie = true          # 开发环境设为 false
-auto_discovery_key = ""       # 留空自动生成
-max_servers = 0               # 自动注册新服务器的软上限
+max_servers = 0               # 新注册服务器的软上限
 
 [admin]
 username = "admin"
@@ -187,7 +190,7 @@ export SERVERBEE_OAUTH__GITHUB__CLIENT_ID="..."
 ```toml
 server_url = "http://your-server:9527"
 token = ""                    # 注册后自动填充
-auto_discovery_key = ""       # 仅用于首次注册
+enrollment_code = ""          # 来自设置页的一次性 code；仅用于首次注册
 
 [collector]
 interval = 3                  # 指标上报间隔 (秒)
@@ -201,7 +204,7 @@ level = "info"
 Agent 环境变量使用 `SERVERBEE_` 前缀，顶层键无需嵌套:
 ```bash
 export SERVERBEE_SERVER_URL="http://your-server:9527"
-export SERVERBEE_AUTO_DISCOVERY_KEY="YOUR_KEY"
+export SERVERBEE_ENROLLMENT_CODE="YOUR_ONE_TIME_CODE"
 ```
 
 ### OAuth 配置
@@ -240,9 +243,9 @@ client_secret = "..."
 # 服务端
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
 
-# Agent（替换为你的服务端地址和发现密钥）
+# Agent（替换为你的服务端地址和来自设置页的一次性 enrollment code）
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
-  --server-url http://YOUR_SERVER:9527 --discovery-key YOUR_KEY
+  --server-url http://YOUR_SERVER:9527 --enrollment-code YOUR_ONE_TIME_CODE
 ```
 
 安装脚本会自动将 `serverbee` 管理 CLI 安装到 `/usr/local/bin/serverbee`。

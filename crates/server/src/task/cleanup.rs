@@ -116,6 +116,13 @@ pub async fn run(state: Arc<AppState>) {
             _ => {}
         }
 
+        // Clean up expired/consumed agent enrollment codes
+        match crate::service::enrollment::EnrollmentService::prune(&state.db).await {
+            Ok(n) if n > 0 => tracing::info!("Pruned {n} expired/consumed enrollments"),
+            Err(e) => tracing::warn!("Enrollment prune failed: {e}"),
+            _ => {}
+        }
+
         // Clean up expired file transfers (idle for > 30 minutes)
         state.file_transfers.cleanup_expired(Duration::from_secs(
             serverbee_common::constants::FILE_TRANSFER_TIMEOUT_SECS,

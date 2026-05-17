@@ -92,6 +92,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                         .merge(dashboard::write_router())
                         .merge(theme::write_router())
                         .merge(setting::router())
+                        .merge(agent::admin_router())
                         .merge(brand::write_router())
                         .merge(notification::router())
                         .merge(alert::router())

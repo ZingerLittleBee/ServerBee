@@ -8,7 +8,6 @@ use serverbee_server::config::{AdminConfig, AppConfig, AuthConfig, DatabaseConfi
 use serverbee_server::migration::Migrator;
 use serverbee_server::router::create_router;
 use serverbee_server::service::auth::AuthService;
-use serverbee_server::service::config::ConfigService;
 use serverbee_server::state::AppState;
 
 async fn start_test_server() -> (String, tempfile::TempDir) {
@@ -27,7 +26,6 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
         },
         auth: AuthConfig {
             session_ttl: 86400,
-            auto_discovery_key: "test-key".to_string(),
             secure_cookie: false,
             max_servers: 0,
         },
@@ -62,10 +60,6 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
     AuthService::init_admin(&db, &config.admin)
         .await
         .expect("Failed to init admin");
-
-    ConfigService::set(&db, "auto_discovery_key", "test-key")
-        .await
-        .expect("Failed to set auto_discovery_key");
 
     let state = AppState::new(db, config)
         .await
@@ -114,10 +108,30 @@ async fn login_admin(client: &reqwest::Client, base_url: &str) {
     assert_eq!(resp.status(), 200, "Login should succeed");
 }
 
+async fn mint_enrollment_code(client: &reqwest::Client, base_url: &str) -> String {
+    login_admin(client, base_url).await;
+    let resp = client
+        .post(format!("{}/api/agent/enrollments", base_url))
+        .json(&json!({}))
+        .send()
+        .await
+        .expect("Enrollment mint request failed");
+    assert_eq!(resp.status(), 200, "Enrollment mint should succeed");
+    let body: Value = resp
+        .json()
+        .await
+        .expect("Failed to parse enrollment response");
+    body["data"]["code"]
+        .as_str()
+        .expect("enrollment code missing")
+        .to_string()
+}
+
 async fn register_agent(client: &reqwest::Client, base_url: &str) -> String {
+    let code = mint_enrollment_code(client, base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {code}"))
         .send()
         .await
         .expect("Register request failed");

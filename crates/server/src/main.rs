@@ -1,6 +1,3 @@
-use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use rand::RngCore;
 use sea_orm::{ConnectOptions, ConnectionTrait, Database};
 use sea_orm_migration::MigratorTrait;
 use tracing_subscriber::EnvFilter;
@@ -9,7 +6,6 @@ use serverbee_server::config::AppConfig;
 use serverbee_server::migration::Migrator;
 use serverbee_server::router::create_router;
 use serverbee_server::service::auth::AuthService;
-use serverbee_server::service::config::ConfigService;
 use serverbee_server::state::AppState;
 use serverbee_server::task;
 
@@ -63,9 +59,6 @@ async fn main() -> anyhow::Result<()> {
     // Initialize admin user (creates if users table is empty)
     let generated_admin_password = AuthService::init_admin(&db, &config.admin).await?;
 
-    // Initialize auto-discovery key
-    let auto_discovery_key = init_auto_discovery_key(&db, &config).await?;
-
     // Build AppState
     let state = AppState::new(db, config.clone())
         .await
@@ -107,18 +100,15 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("========================================");
 
     // Print credentials block — grouped so users can spot them immediately
-    if generated_admin_password.is_some() || !auto_discovery_key.is_empty() {
+    if let Some(ref pwd) = generated_admin_password {
         let mut credentials = String::from("\n\n********************************************");
         credentials.push_str("\n***       IMPORTANT: Save these now       ***");
         credentials.push_str("\n********************************************\n");
-        if let Some(ref pwd) = generated_admin_password {
-            credentials.push_str(&format!(
-                "\n  Admin username:      {}",
-                config.admin.username
-            ));
-            credentials.push_str(&format!("\n  Admin password:      {}", pwd));
-        }
-        credentials.push_str(&format!("\n  Auto-discovery key:  {}", auto_discovery_key));
+        credentials.push_str(&format!(
+            "\n  Admin username:      {}",
+            config.admin.username
+        ));
+        credentials.push_str(&format!("\n  Admin password:      {}", pwd));
         credentials.push_str("\n\n********************************************\n");
         tracing::info!("{}", credentials);
     }
@@ -132,44 +122,6 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Server stopped");
     Ok(())
-}
-
-/// Initialize or retrieve the auto-discovery key.
-///
-/// Priority:
-/// 1. If `config.auth.auto_discovery_key` is non-empty, use and persist that value.
-/// 2. If a key already exists in the DB (`auto_discovery_key` config entry), reuse it.
-/// 3. Otherwise, generate a random 32-byte base64url key and persist it.
-async fn init_auto_discovery_key(
-    db: &sea_orm::DatabaseConnection,
-    config: &AppConfig,
-) -> anyhow::Result<String> {
-    const CONFIG_KEY: &str = "auto_discovery_key";
-
-    // If the user explicitly configured a key, always use that
-    if !config.auth.auto_discovery_key.is_empty() {
-        let key = config.auth.auto_discovery_key.clone();
-        ConfigService::set(db, CONFIG_KEY, &key).await?;
-        tracing::info!("Auto-discovery key set from configuration");
-        return Ok(key);
-    }
-
-    // Check if a key already exists in the database
-    if let Some(existing) = ConfigService::get(db, CONFIG_KEY).await?
-        && !existing.is_empty()
-    {
-        return Ok(existing);
-    }
-
-    // Generate a new random key
-    let mut bytes = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
-    let key = URL_SAFE_NO_PAD.encode(bytes);
-
-    ConfigService::set(db, CONFIG_KEY, &key).await?;
-    tracing::info!("Generated new auto-discovery key");
-
-    Ok(key)
 }
 
 async fn shutdown_signal() {

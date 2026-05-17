@@ -9,6 +9,99 @@
     "version": "0.2.1"
   },
   "paths": {
+    "/api/agent/enrollments": {
+      "get": {
+        "tags": ["agent"],
+        "operationId": "list_enrollments",
+        "responses": {
+          "200": {
+            "description": "List enrollment codes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EnrollmentSummary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "post": {
+        "tags": ["agent"],
+        "operationId": "create_enrollment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEnrollmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Enrollment code created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateEnrollmentResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/agent/enrollments/{id}": {
+      "delete": {
+        "tags": ["agent"],
+        "operationId": "delete_enrollment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Enrollment id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
     "/api/agent/latest-version": {
       "get": {
         "tags": ["agent"],
@@ -63,13 +156,56 @@
             }
           },
           "400": {
-            "description": "Auto-discovery key not configured or server limit reached"
+            "description": "Server limit reached"
           },
           "401": {
-            "description": "Invalid auto-discovery key"
+            "description": "Invalid, expired, or already-used enrollment code"
           }
         },
         "security": [
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/agent/{id}/rotate-token": {
+      "post": {
+        "tags": ["agent"],
+        "operationId": "rotate_token",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Token rotated; old token revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RotateTokenResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
           {
             "bearer_token": []
           }
@@ -4847,62 +4983,6 @@
         ]
       }
     },
-    "/api/settings/auto-discovery-key": {
-      "get": {
-        "tags": ["settings"],
-        "operationId": "get_auto_discovery_key",
-        "responses": {
-          "200": {
-            "description": "Auto-discovery key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AutoDiscoveryKeyResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
-          }
-        ]
-      },
-      "put": {
-        "tags": ["settings"],
-        "operationId": "regenerate_auto_discovery_key",
-        "responses": {
-          "200": {
-            "description": "Key regenerated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AutoDiscoveryKeyResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
-          }
-        ]
-      }
-    },
     "/api/settings/backup": {
       "post": {
         "tags": ["settings"],
@@ -7029,15 +7109,6 @@
           }
         }
       },
-      "AutoDiscoveryKeyResponse": {
-        "type": "object",
-        "required": ["key"],
-        "properties": {
-          "key": {
-            "type": "string"
-          }
-        }
-      },
       "BatchCapabilitiesRequest": {
         "type": "object",
         "required": ["server_ids"],
@@ -7208,6 +7279,35 @@
         "required": ["name"],
         "properties": {
           "name": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateEnrollmentRequest": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": ["string", "null"]
+          },
+          "ttl_secs": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Lifetime in seconds. Defaults to 600 (10 min), max 86400."
+          }
+        }
+      },
+      "CreateEnrollmentResponse": {
+        "type": "object",
+        "required": ["id", "code", "expires_at"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Plaintext enrollment code — shown exactly once, never retrievable again."
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "id": {
             "type": "string"
           }
         }
@@ -7641,6 +7741,39 @@
           },
           "transfer_id": {
             "type": "string"
+          }
+        }
+      },
+      "EnrollmentSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "code_prefix",
+          "created_by",
+          "expires_at",
+          "created_at"
+        ],
+        "properties": {
+          "code_prefix": {
+            "type": "string"
+          },
+          "consumed_at": {
+            "type": ["string", "null"]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": ["string", "null"]
           }
         }
       },
@@ -8638,6 +8771,19 @@
           },
           "traffic_limit_type": {
             "type": ["string", "null"]
+          }
+        }
+      },
+      "RotateTokenResponse": {
+        "type": "object",
+        "required": ["server_id", "token"],
+        "properties": {
+          "server_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string",
+            "description": "New plaintext run token — shown once. The agent must be reconfigured\nwith this value (or it will need to re-enroll)."
           }
         }
       },

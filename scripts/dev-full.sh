@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Start server + web dev, and print agent startup command with auto-discovery key.
+# Start server + web dev, and print agent startup command with a freshly minted one-time enrollment code.
 
 ADMIN_PASS="admin123"
 SERVER_URL="http://127.0.0.1:9527"
@@ -31,21 +31,23 @@ fi
 
 echo "Server is ready at $SERVER_URL"
 
-# Login and fetch auto-discovery key
+# Login and mint a one-time enrollment code
 COOKIE_JAR=$(mktemp)
 curl -s -c "$COOKIE_JAR" -X POST "$SERVER_URL/api/auth/login" \
   -H 'Content-Type: application/json' \
   -d "{\"username\":\"admin\",\"password\":\"$ADMIN_PASS\"}" > /dev/null
 
-ADK=$(curl -s -b "$COOKIE_JAR" "$SERVER_URL/api/settings/auto-discovery-key" \
-  | grep -o '"key":"[^"]*"' | cut -d'"' -f4)
+CODE=$(curl -s -b "$COOKIE_JAR" -X POST "$SERVER_URL/api/agent/enrollments" \
+  -H 'Content-Type: application/json' -d '{}' \
+  | grep -o '"code":"[^"]*"' | cut -d'"' -f4)
 rm -f "$COOKIE_JAR"
 
 echo ""
 echo "=========================================="
-echo "  To start the agent, run in another terminal:"
+echo "  To start the agent, run in another terminal"
+echo "  (this enrollment code is single-use and freshly minted each run):"
 echo ""
-echo "  SERVERBEE_AUTO_DISCOVERY_KEY=\"$ADK\" make agent-dev"
+echo "  SERVERBEE_ENROLLMENT_CODE=\"$CODE\" make agent-dev"
 echo ""
 echo "=========================================="
 echo ""

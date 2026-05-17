@@ -27,16 +27,17 @@ until curl -fsS http://localhost:9527/healthz >/dev/null; do
   sleep 1
 done
 
-# 4. 登录 admin，获取会话和 auto-discovery key
+# 4. 登录 admin，铸造一次性 enrollment code
 curl -fsS -c "$ADMIN_COOKIE" -X POST http://localhost:9527/api/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"admin123"}'
-KEY=$(curl -fsS -b "$ADMIN_COOKIE" http://localhost:9527/api/settings/auto-discovery-key \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['key'])")
+CODE=$(curl -fsS -b "$ADMIN_COOKIE" -X POST http://localhost:9527/api/agent/enrollments \
+  -H 'Content-Type: application/json' -d '{}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['code'])")
 
 # 5. 启动 Agent
 SERVERBEE_SERVER_URL="http://127.0.0.1:9527" \
-SERVERBEE_AUTO_DISCOVERY_KEY="$KEY" \
+SERVERBEE_ENROLLMENT_CODE="$CODE" \
 cargo run -p serverbee-agent &
 AGENT_PID=$!
 

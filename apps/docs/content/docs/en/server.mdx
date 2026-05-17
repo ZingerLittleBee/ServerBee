@@ -59,8 +59,7 @@ max_connections = 10           # Maximum SQLite connection pool size
 
 [auth]
 session_ttl = 86400            # Session lifetime in seconds (default: 24 hours)
-auto_discovery_key = ""        # Fixed agent discovery key (auto-generated if empty)
-max_servers = 0                # Soft limit for newly auto-registered servers
+max_servers = 0                # Soft limit for newly enrolled servers
 secure_cookie = true           # Set Secure flag on session cookies (disable for HTTP-only dev)
 
 [admin]
@@ -166,17 +165,17 @@ On first startup, if no users exist in the database, the server creates an admin
 Always change the default admin password before exposing the server to the internet. Navigate to Settings > Security in the web UI to update it.
 </Callout>
 
-## Auto-Discovery Key
+## Enrollment Codes
 
-The auto-discovery key allows agents to register themselves without manual token configuration. The server manages this key with the following priority:
+Agents enroll with a **one-time enrollment code** instead of a permanent shared secret. An admin mints a code from **Settings** in the web UI (or via `POST /api/agent/enrollments`, admin-only, which returns `{ id, code, expires_at }`). Enrollment codes have the following properties:
 
-1. If `auth.auto_discovery_key` is set in the config, that value is used and persisted
-2. If a key already exists in the database (from a previous run), it is reused
-3. Otherwise, a random 32-byte base64url key is generated and persisted
+1. **Single-use** -- the code is consumed on the agent's first successful registration and cannot be reused afterwards
+2. **Short-lived** -- expires after a default TTL of 600 seconds (10 minutes)
+3. After registration the agent uses its persisted per-server token; the code is no longer needed
 
-The full key is printed to the logs on first startup and can also be viewed or regenerated later from **Settings** in the web UI. Regeneration affects only future registrations. Already connected agents keep using their stored tokens.
+If a code is lost, expired, or already used, the server responds with HTTP 401 and the agent logs `Registration failed: HTTP 401 ... enrollment code ... expired or already used`. To onboard another agent (or re-enroll one that lost its token), mint a fresh code in Settings. Use `GET /api/agent/enrollments` to list issued codes (returns only an 8-character prefix and metadata, never the plaintext code) and `DELETE /api/agent/enrollments/{id}` to delete an unused code.
 
-To reduce duplicate placeholder servers, agents reuse the existing server row when they re-register with the same machine fingerprint. You can also set `auth.max_servers` to soft-cap new auto-registered servers, and use **Clean up unconnected** on the Servers page to remove offline placeholders that never finished initialization.
+To reduce duplicate placeholder servers, agents reuse the existing server row when they re-register with the same machine fingerprint. You can also set `auth.max_servers` to soft-cap newly enrolled servers, and use **Clean up unconnected** on the Servers page to remove offline placeholders that never finished initialization. A connected agent's run token can be rotated or revoked via `POST /api/agent/{id}/rotate-token`, which forces that agent to reconnect. After rotation the affected agent is disconnected and must be reconfigured with the new token, or re-enrolled with a fresh one-time enrollment code (the original code is single-use and was already consumed).
 
 ## Recovering a Reinstalled Agent
 
