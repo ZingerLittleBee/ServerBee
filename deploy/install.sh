@@ -582,13 +582,19 @@ detect_arch() {
     esac
 }
 
+RESOLVED_VERSION=""
 get_latest_version() {
+    if [ -n "$RESOLVED_VERSION" ]; then
+        echo "$RESOLVED_VERSION"
+        return
+    fi
     local tag
     tag=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
         | grep '"tag_name"' \
         | head -1 \
         | sed 's/.*"tag_name": *"//;s/".*//')
     [ -z "$tag" ] && error "Failed to get latest version from GitHub"
+    RESOLVED_VERSION="$tag"
     echo "$tag"
 }
 
@@ -1512,27 +1518,29 @@ print_missing_deps_plan() {
 
 print_common_binary_plan() {
     local component="$1"
-    local os arch filename
+    local os arch filename version
     os=$(detect_os)
     arch=$(detect_arch)
     filename="serverbee-${component}-${os}-${arch}"
+    version=$(get_latest_version)
 
     echo "$(tr_text plan_gh_meta)"
     if [ -f "${INSTALL_DIR}/serverbee-${component}" ]; then
         echo "$(tr_text plan_binary_adopt_pre) ${INSTALL_DIR}/serverbee-${component} $(tr_text plan_binary_adopt_suf)"
     else
-        echo "$(tr_text plan_binary_dl) https://github.com/${REPO}/releases/download/<latest>/${filename}"
+        echo "$(tr_text plan_binary_dl) https://github.com/${REPO}/releases/download/${version}/${filename}"
     fi
-    echo "$(tr_text plan_cli_script) https://raw.githubusercontent.com/${REPO}/<latest>/deploy/install.sh"
+    echo "$(tr_text plan_cli_script) https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
 }
 
 print_common_docker_plan() {
-    local component="$1"
+    local component="$1" version
     configure_docker_dir
+    version=$(get_latest_version)
     echo "$(tr_text plan_docker_prereq)"
     echo "$(tr_text plan_gh_meta)"
-    echo "$(tr_text plan_docker_image) ghcr.io/zingerlittlebee/serverbee-${component}:<latest>"
-    echo "$(tr_text plan_cli_script) https://raw.githubusercontent.com/${REPO}/<latest>/deploy/install.sh"
+    echo "$(tr_text plan_docker_image) ghcr.io/zingerlittlebee/serverbee-${component}:$(docker_image_tag "$version")"
+    echo "$(tr_text plan_cli_script) https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
 }
 
 print_domain_plan() {
