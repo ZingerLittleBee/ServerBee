@@ -1138,6 +1138,33 @@ confirm_install_plan() {
     esac
 }
 
+prompt_install_method() {
+    local choice
+
+    echo ""
+    if [ "$COMPONENT" = "server" ]; then
+        echo "  [1] Docker  (recommended for Server)"
+        echo "  [2] Binary"
+        echo ""
+        read -rp "Select installation method [1/2]: " choice
+        case "$choice" in
+            1|docker) METHOD="docker" ;;
+            2|binary) METHOD="binary" ;;
+            *) error "Invalid choice: $choice" ;;
+        esac
+    else
+        echo "  [1] Binary  (recommended for Agent)"
+        echo "  [2] Docker"
+        echo ""
+        read -rp "Select installation method [1/2]: " choice
+        case "$choice" in
+            1|binary) METHOD="binary" ;;
+            2|docker) METHOD="docker" ;;
+            *) error "Invalid choice: $choice" ;;
+        esac
+    fi
+}
+
 cmd_install() {
     # Interactive: prompt for component if not provided
     if [ -z "$COMPONENT" ]; then
@@ -1167,21 +1194,14 @@ cmd_install() {
     # Interactive: prompt for method if not provided
     if [ -z "$METHOD" ]; then
         if [ -t 0 ]; then
-            # Interactive terminal — show menu
-            echo ""
-            echo "  [1] Binary  (recommended)"
-            echo "  [2] Docker"
-            echo ""
-            read -rp "Select installation method [1/2]: " choice
-            case "$choice" in
-                1|binary) METHOD="binary" ;;
-                2|docker) METHOD="docker" ;;
-                *) error "Invalid choice: $choice" ;;
-            esac
+            prompt_install_method
         else
             # Non-interactive (piped) — default to binary
             METHOD="binary"
             info "Non-interactive mode detected, defaulting to binary installation."
+            if [ "$COMPONENT" = "server" ]; then
+                info "Docker is recommended for Server when Docker is available; pass --method docker to use it."
+            fi
         fi
     fi
     : "${METHOD:=binary}"
