@@ -15,7 +15,6 @@ icon: Cloud
 ```bash
 SERVERBEE_ADMIN__USERNAME="admin"              # 管理员用户名（未填写自动生成，可在日志中查看）
 SERVERBEE_ADMIN__PASSWORD=""                   # 管理员密码（未填写自动生成，可在日志中查看）
-SERVERBEE_AUTH__AUTO_DISCOVERY_KEY=""           # Agent 自动注册密钥（未填写自动生成，可在日志中查看）
 
 SERVERBEE_LOG__LEVEL="info"                    # 日志级别（trace/debug/info/warn/error）
 
@@ -50,7 +49,7 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 # 安装 Agent
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
   --server-url http://your-server-ip:9527 \
-  --discovery-key YOUR_DISCOVERY_KEY
+  --enrollment-code YOUR_ONE_TIME_CODE
 ```
 
 安装完成后，使用 `serverbee` CLI 管理你的部署（安装时自动部署到 `/usr/local/bin/serverbee`）：

@@ -35,7 +35,7 @@ Use the install script to download the binary and configure a systemd service au
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
   --server-url http://your-server-ip:9527 \
-  --discovery-key YOUR_DISCOVERY_KEY
+  --enrollment-code YOUR_ONE_TIME_CODE
 ```
 
 After installation, manage the agent with the `serverbee` CLI (automatically installed):
@@ -100,27 +100,27 @@ Mount `/etc/machine-id` from the host to keep the agent fingerprint stable acros
 
 Agents authenticate with the server using a **token**. There are two ways to obtain a token:
 
-### Automatic Registration (Recommended)
+### Enrollment Code Registration (Recommended)
 
-1. Get the **auto-discovery key** from **Settings** in the web UI, or copy it from the server startup logs
-2. Configure the agent with the key:
+1. Sign in to the web UI as an admin, open **Settings**, and generate a one-time **enrollment code** (also available via `POST /api/agent/enrollments`, admin-only). The code is **single-use** and **short-lived** (default 10 minute expiry).
+2. Configure the agent with the code:
 
 ```toml
 server_url = "http://your-server-ip:9527"
-auto_discovery_key = "your-auto-discovery-key"
+enrollment_code = "<one-time code from Settings>"
 ```
 
 3. Start the agent. It will:
-   - Send a registration request to `POST /api/agent/register` using the key as a Bearer token
-   - Receive a `server_id` and `token` from the server
+   - Send a registration request to `POST /api/agent/register` presenting the one-time enrollment code
+   - Receive a `server_id` and per-server `token` from the server (the code is consumed on this first successful registration)
    - Save the token to the config file automatically
-   - Connect via WebSocket using the token for all future sessions
+   - Connect via WebSocket using the token for all future sessions -- the enrollment code is no longer needed
 
-When the agent can read a stable machine identifier, it also sends a fingerprint during registration. Repeated registration from the same machine reuses the existing server row and rotates the token instead of creating duplicate placeholders.
+When the agent can read a stable machine identifier, it also sends a fingerprint during registration. Repeated registration from the same machine reuses the existing server row instead of creating duplicate placeholders. If a code is lost, expired, or already used, the server responds with HTTP 401 and the agent logs `Registration failed: HTTP 401 ... enrollment code ... expired or already used`; mint a fresh code in Settings to retry.
 
 ### Manual Token
 
-If you prefer not to use auto-discovery, you can manually create a server entry in the dashboard and provide the token directly:
+If you prefer not to use enrollment codes, you can manually create a server entry in the dashboard and provide the token directly:
 
 ```toml
 server_url = "http://your-server-ip:9527"
@@ -144,8 +144,8 @@ server_url = "http://your-server-ip:9527"
 # Authentication token (auto-populated after registration)
 token = ""
 
-# Auto-discovery key for automatic registration (used only if token is empty)
-auto_discovery_key = ""
+# One-time enrollment code for first-time registration (used only if token is empty)
+enrollment_code = ""
 
 [collector]
 interval = 3                   # Metric collection interval in seconds

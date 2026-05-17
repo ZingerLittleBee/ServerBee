@@ -111,9 +111,11 @@ If you are using the default password, the server will display a prominent warni
 
 ## Adding Your First Agent
 
-### Step 1: Get the discovery key
+### Step 1: Generate a one-time enrollment code
 
-Open the web UI, go to **Settings**, and copy the **Auto Discovery Key**. The full key is also printed on first startup, and you can regenerate it later from the same page if needed.
+Sign in to the web UI as an admin, go to **Settings**, and generate a one-time
+**enrollment code**, then copy it. The code is **single-use** and **short-lived**
+(default 10 minute expiry); mint a fresh one each time you onboard a new agent.
 
 ### Step 2: Configure and start the agent
 
@@ -121,7 +123,7 @@ On the VPS you want to monitor, create an agent configuration file at `/etc/serv
 
 ```toml
 server_url = "http://your-server-ip:9527"
-auto_discovery_key = "your-auto-discovery-key-here"
+enrollment_code = "<one-time code from Settings>"
 ```
 
 Then start the agent:
@@ -132,9 +134,9 @@ Then start the agent:
 
 The agent will:
 
-1. Contact the server using the auto-discovery key
-2. Register itself and receive an authentication token
-3. Save the token to the config file for future connections
+1. Contact the server and present the one-time enrollment code
+2. Register itself and receive a per-server authentication token (the code is consumed on this first successful registration)
+3. Save the token to the config file for future connections (the enrollment code is no longer needed)
 4. Begin reporting system metrics immediately
 
 You should see the new server appear in your dashboard within a few seconds.

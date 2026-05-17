@@ -15,7 +15,7 @@ COMMAND=""
 COMPONENT=""
 METHOD=""
 SERVER_URL=""
-DISCOVERY_KEY=""
+ENROLLMENT_CODE=""
 PASSWORD=""
 YES=false
 PURGE=false
@@ -93,7 +93,7 @@ parse_args() {
         case "$1" in
             --method)        METHOD="$2"; shift 2 ;;
             --server-url)    SERVER_URL="$2"; shift 2 ;;
-            --discovery-key) DISCOVERY_KEY="$2"; shift 2 ;;
+            --enrollment-code) ENROLLMENT_CODE="$2"; shift 2 ;;
             --password)      PASSWORD="$2"; shift 2 ;;
             --purge)         PURGE=true; shift ;;
             --yes|-y)        YES=true; shift ;;
@@ -466,7 +466,7 @@ install_binary_agent() {
     if [ ! -f "${CONFIG_DIR}/agent.toml" ]; then
         cat > "${CONFIG_DIR}/agent.toml" << TOML
 server_url = "${SERVER_URL}"
-auto_discovery_key = "${DISCOVERY_KEY}"
+enrollment_code = "${ENROLLMENT_CODE}"
 
 [collector]
 interval = 3
@@ -586,7 +586,7 @@ install_docker_agent() {
     if [ ! -f "${CONFIG_DIR}/agent.toml" ]; then
         cat > "${CONFIG_DIR}/agent.toml" << TOML
 server_url = "${SERVER_URL}"
-auto_discovery_key = "${DISCOVERY_KEY}"
+enrollment_code = "${ENROLLMENT_CODE}"
 
 [collector]
 interval = 3
@@ -744,9 +744,9 @@ cmd_install() {
             if [ "$YES" = true ]; then error "--server-url is required for agent installation"; fi
             read -rp "Server URL (e.g., http://10.0.0.1:9527): " SERVER_URL
         done
-        while [ -z "$DISCOVERY_KEY" ]; do
-            if [ "$YES" = true ]; then error "--discovery-key is required for agent installation"; fi
-            read -rp "Auto-discovery key: " DISCOVERY_KEY
+        while [ -z "$ENROLLMENT_CODE" ]; do
+            if [ "$YES" = true ]; then error "--enrollment-code is required for agent installation (generate a one-time code in the server UI Settings)"; fi
+            read -rp "Enrollment code: " ENROLLMENT_CODE
         done
     fi
 
@@ -1160,8 +1160,8 @@ cmd_service() {
 # Config key mapping
 REJECTED_KEYS="admin.password admin.username"
 ARRAY_KEYS="file.root_paths file.deny_patterns server.trusted_proxies oauth.oidc.scopes"
-AGENT_KEYS="server_url auto_discovery_key token collector.interval collector.enable_gpu collector.enable_temperature file.enabled file.max_file_size ip_change.enabled ip_change.check_external_ip ip_change.external_ip_url ip_change.interval_secs"
-SERVER_KEYS="file.max_upload_size server.listen server.data_dir auth.auto_discovery_key auth.session_ttl auth.secure_cookie geoip.mmdb_path retention.records_days retention.records_hourly_days retention.gpu_records_days retention.ping_records_days retention.network_probe_days retention.network_probe_hourly_days retention.audit_logs_days retention.traffic_hourly_days retention.traffic_daily_days retention.task_results_days retention.docker_events_days retention.service_monitor_days database.path database.max_connections rate_limit.login_max rate_limit.register_max scheduler.timezone upgrade.release_base_url oauth.base_url oauth.allow_registration oauth.github.client_id oauth.github.client_secret oauth.google.client_id oauth.google.client_secret oauth.oidc.issuer_url oauth.oidc.client_id oauth.oidc.client_secret"
+AGENT_KEYS="server_url enrollment_code token collector.interval collector.enable_gpu collector.enable_temperature file.enabled file.max_file_size ip_change.enabled ip_change.check_external_ip ip_change.external_ip_url ip_change.interval_secs"
+SERVER_KEYS="file.max_upload_size server.listen server.data_dir auth.session_ttl auth.secure_cookie geoip.mmdb_path retention.records_days retention.records_hourly_days retention.gpu_records_days retention.ping_records_days retention.network_probe_days retention.network_probe_hourly_days retention.audit_logs_days retention.traffic_hourly_days retention.traffic_daily_days retention.task_results_days retention.docker_events_days retention.service_monitor_days database.path database.max_connections rate_limit.login_max rate_limit.register_max scheduler.timezone upgrade.release_base_url oauth.base_url oauth.allow_registration oauth.github.client_id oauth.github.client_secret oauth.google.client_id oauth.google.client_secret oauth.oidc.issuer_url oauth.oidc.client_id oauth.oidc.client_secret"
 LOG_KEYS="log.level log.file"
 
 config_key_to_file() {
@@ -1375,7 +1375,7 @@ env_key_to_component() {
     # Maps an env var name (without SERVERBEE_ prefix) to agent or server
     local key="$1"
     case "$key" in
-        SERVER_URL|AUTO_DISCOVERY_KEY|TOKEN|COLLECTOR__*|IP_CHANGE__*|FILE__ENABLED|FILE__MAX_FILE_SIZE|FILE__ROOT_PATHS|FILE__DENY_PATTERNS)
+        SERVER_URL|ENROLLMENT_CODE|TOKEN|COLLECTOR__*|IP_CHANGE__*|FILE__ENABLED|FILE__MAX_FILE_SIZE|FILE__ROOT_PATHS|FILE__DENY_PATTERNS)
             echo "agent" ;;
         SERVER__*|ADMIN__*|AUTH__*|GEOIP__*|RETENTION__*|DATABASE__*|RATE_LIMIT__*|SCHEDULER__*|UPGRADE__*|OAUTH__*|FILE__MAX_UPLOAD_SIZE)
             echo "server" ;;
