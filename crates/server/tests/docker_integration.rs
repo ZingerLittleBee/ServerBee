@@ -153,10 +153,30 @@ async fn list_audit_entries(client: &Client, base_url: &str) -> Vec<serde_json::
         .clone()
 }
 
+async fn mint_enrollment_code(client: &Client, base_url: &str) -> String {
+    login_admin(client, base_url).await;
+    let resp = client
+        .post(format!("{}/api/agent/enrollments", base_url))
+        .json(&json!({}))
+        .send()
+        .await
+        .expect("Enrollment mint request failed");
+    assert_eq!(resp.status(), 200, "Enrollment mint should succeed");
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .expect("Failed to parse enrollment response");
+    body["data"]["code"]
+        .as_str()
+        .expect("enrollment code missing")
+        .to_string()
+}
+
 async fn register_agent(client: &Client, base_url: &str) -> (String, String) {
+    let code = mint_enrollment_code(client, base_url).await;
     let resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {code}"))
         .send()
         .await
         .expect("Register request failed");

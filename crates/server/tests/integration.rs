@@ -169,10 +169,30 @@ async fn list_audit_entries(client: &reqwest::Client, base_url: &str) -> Vec<ser
         .clone()
 }
 
+async fn mint_enrollment_code(client: &reqwest::Client, base_url: &str) -> String {
+    login_admin(client, base_url).await;
+    let resp = client
+        .post(format!("{}/api/agent/enrollments", base_url))
+        .json(&json!({}))
+        .send()
+        .await
+        .expect("Enrollment mint request failed");
+    assert_eq!(resp.status(), 200, "Enrollment mint should succeed");
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .expect("Failed to parse enrollment response");
+    body["data"]["code"]
+        .as_str()
+        .expect("enrollment code missing")
+        .to_string()
+}
+
 async fn register_agent(client: &reqwest::Client, base_url: &str) -> (String, String) {
+    let code = mint_enrollment_code(client, base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {code}"))
         .send()
         .await
         .expect("Register request failed");
@@ -302,9 +322,10 @@ async fn test_agent_register_connect_report() {
     let client = http_client();
 
     // ── Step 1: Register agent ──
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Register request failed");
@@ -539,9 +560,10 @@ async fn test_server_records_api_returns_disk_io_json() {
     let (base_url, tmp) = start_test_server().await;
     let client = http_client();
 
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Register request failed");
@@ -1482,9 +1504,10 @@ async fn test_network_probe_server_targets() {
     login_admin(&client, &base_url).await;
 
     // ── Step 1: Register an agent to get a server id ──
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Agent register failed");
@@ -2002,9 +2025,10 @@ async fn test_agent_register_reuses_existing_server_for_same_fingerprint() {
     let client = http_client();
     let fingerprint = "a".repeat(64);
 
+    let first_code = mint_enrollment_code(&client, &base_url).await;
     let first_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {first_code}"))
         .json(&json!({ "fingerprint": fingerprint }))
         .send()
         .await
@@ -2025,9 +2049,10 @@ async fn test_agent_register_reuses_existing_server_for_same_fingerprint() {
         .expect("token missing on first registration")
         .to_string();
 
+    let second_code = mint_enrollment_code(&client, &base_url).await;
     let second_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {second_code}"))
         .json(&json!({ "fingerprint": fingerprint }))
         .send()
         .await
@@ -2080,9 +2105,10 @@ async fn test_cleanup_orphans_skips_online_uninitialized_server() {
     let client = http_client();
     login_admin(&client, &base_url).await;
 
+    let orphan_code = mint_enrollment_code(&client, &base_url).await;
     let orphan_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {orphan_code}"))
         .send()
         .await
         .expect("Offline orphan registration failed");
@@ -2094,9 +2120,10 @@ async fn test_cleanup_orphans_skips_online_uninitialized_server() {
         .expect("orphan server_id missing")
         .to_string();
 
+    let online_code = mint_enrollment_code(&client, &base_url).await;
     let online_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {online_code}"))
         .send()
         .await
         .expect("Online placeholder registration failed");
@@ -2229,9 +2256,10 @@ async fn test_file_list_server_offline() {
     login_admin(&client, &base_url).await;
 
     // Register an agent to get a server_id
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Register request failed");
@@ -2277,9 +2305,10 @@ async fn test_file_capability_enforcement() {
     login_admin(&client, &base_url).await;
 
     // Register an agent — default capabilities = CAP_DEFAULT (56), no CAP_FILE
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Register request failed");
@@ -2648,9 +2677,10 @@ async fn test_oneshot_task_backward_compat() {
     login_admin(&client, &base_url).await;
 
     // Register agent to get a server_id
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Register failed");
@@ -2683,9 +2713,10 @@ async fn test_traffic_api_returns_data() {
     login_admin(&client, &base_url).await;
 
     // Register agent
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Register failed");
@@ -2855,9 +2886,10 @@ async fn test_traffic_overview_api() {
     );
 
     // ── Step 2: Register agent and configure billing cycle ──
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Register failed");
@@ -2922,9 +2954,10 @@ async fn test_server_billing_start_day() {
     login_admin(&client, &base_url).await;
 
     // Register agent
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Register failed");
@@ -3530,9 +3563,10 @@ async fn test_uptime_daily_returns_data() {
     login_admin(&client, &base_url).await;
 
     // Register agent to create a server
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Register failed");
