@@ -71,7 +71,7 @@ curl -s -X POST http://localhost:9527/api/agent/register \
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| RH-5 | UI 重新生成 discovery key | 打开 `/settings`，显示 key 后点击 Regenerate 并确认 | 新 key 与旧 key 不同；本轮验证从 `test-key` 变为 `Su6GKY9teQFy9psueUb5j371uNWpo8xefFTV_EZ3VJY` | ✅ agent-browser 实测 |
+| RH-5 | UI 铸造一次性 enrollment code | 打开 `/settings`，点击生成 enrollment code | 显示一次性 code 及安装命令；code 单次使用、约 10 分钟过期 | ⬜ 待重测 |
 
 ---
 

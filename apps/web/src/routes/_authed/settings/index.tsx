@@ -78,7 +78,7 @@ function SettingsPage() {
   })
 
   const installCommand = issuedCode
-    ? `curl -fsSL ${window.location.origin}/install.sh | sudo bash -s -- --server-url ${window.location.origin} --enrollment-code ${issuedCode}`
+    ? `curl -fsSL ${window.location.origin}/install.sh | sudo bash -s -- --server-url '${window.location.origin}' --enrollment-code '${issuedCode}'`
     : ''
 
   const copy = async (value: string) => {

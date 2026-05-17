@@ -214,7 +214,7 @@ Agent 首次注册通过一次性注册码完成。由管理员在 Web 管理面
 
 如果注册码丢失、过期或已被使用，Server 返回 HTTP 401，Agent 日志会显示 `Registration failed: HTTP 401 ... enrollment code ... expired or already used`。需要接入新 Agent（或为丢失 token 的 Agent 重新接入）时，在设置页重新生成一个新注册码即可。可通过 `GET /api/agent/enrollments` 查看已生成的注册码列表（仅返回 8 位前缀等元信息，不会返回明文注册码），通过 `DELETE /api/agent/enrollments/{id}` 删除尚未使用的注册码。
 
-为减少重复的占位服务器，Agent 在可读取稳定机器标识时会携带指纹，相同机器重复注册会复用原有服务器记录。你还可以通过 `auth.max_servers` 软限制通过注册码新建的服务器数量；如果历史失败注册留下了离线占位条目，可在 `/servers` 页面使用 **Clean up unconnected** 清理。已连接 Agent 的 run token 可通过 `POST /api/agent/{id}/rotate-token` 轮换/吊销，吊销后该 Agent 会被强制重新连接。
+为减少重复的占位服务器，Agent 在可读取稳定机器标识时会携带指纹，相同机器重复注册会复用原有服务器记录。你还可以通过 `auth.max_servers` 软限制通过注册码新建的服务器数量；如果历史失败注册留下了离线占位条目，可在 `/servers` 页面使用 **Clean up unconnected** 清理。已连接 Agent 的 run token 可通过 `POST /api/agent/{id}/rotate-token` 轮换/吊销，吊销后该 Agent 会被强制重新连接。轮换后该 Agent 会断开连接，必须用新 token 重新配置，或使用一个新的一次性 enrollment code 重新注册（原 code 单次使用且已被消费）。
 
 ## 恢复重装后的 Agent
 

@@ -12,14 +12,15 @@ cargo build --workspace
 # 3. 启动 Server（设置管理员密码，开发环境关闭 secure cookie）
 SERVERBEE_ADMIN__PASSWORD=admin123 SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server &
 
-# 4. 获取 auto-discovery key（登录后调用 API）
+# 4. 铸造一次性 enrollment code（登录后调用 API；也可在服务端 UI 设置页生成）
 curl -s -c /tmp/sb-cookies.txt -X POST http://localhost:9527/api/auth/login \
   -H 'Content-Type: application/json' -d '{"username":"admin","password":"admin123"}'
-curl -s -b /tmp/sb-cookies.txt http://localhost:9527/api/settings/auto-discovery-key
-# 返回 {"data":{"key":"<discovery_key>"}}
+curl -s -b /tmp/sb-cookies.txt -X POST http://localhost:9527/api/agent/enrollments \
+  -H 'Content-Type: application/json' -d '{}'
+# 返回 {"data":{"id":"...","code":"<enrollment_code>","expires_at":...}}（单次使用，默认 10 分钟过期）
 
 # 5. 启动 Agent（server_url 是 HTTP 基础地址，不是 WS 路径）
-SERVERBEE_SERVER_URL="http://127.0.0.1:9527" SERVERBEE_AUTO_DISCOVERY_KEY="<discovery_key>" cargo run -p serverbee-agent &
+SERVERBEE_SERVER_URL="http://127.0.0.1:9527" SERVERBEE_ENROLLMENT_CODE="<enrollment_code>" cargo run -p serverbee-agent &
 
 # Docker 方式
 docker compose up -d
@@ -36,7 +37,7 @@ docker compose up -d
 | [auth-users.md](auth-users.md) | 认证、用户与安全 | `/login`, `/settings/users`, `/settings/api-keys` |
 | [dashboard.md](dashboard.md) | 自定义仪表盘 | `/` |
 | [server-detail.md](server-detail.md) | 服务器列表与详情 | `/servers`, `/servers/:id` |
-| [registration-hardening.md](registration-hardening.md) | 自动注册加固、cleanup 与 discovery key | `/servers`, `/settings`, Docker agent install |
+| [registration-hardening.md](registration-hardening.md) | 注册加固、cleanup 与 enrollment code | `/servers`, `/settings`, Docker agent install |
 | [ping-tasks.md](ping-tasks.md) | Ping 探测任务管理 | `/settings/ping-tasks` |
 | [network-quality.md](network-quality.md) | 网络质量监控 | `/network`, `/network/:id`, `/settings/network-probes` |
 | [docker.md](docker.md) | Docker 容器监控 | `/servers/:id/docker` |
