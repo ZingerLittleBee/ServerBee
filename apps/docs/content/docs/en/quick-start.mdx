@@ -63,6 +63,17 @@ ServerBee can be accessed directly by IP address or through a domain name. The r
 If you started with the quick-start HTTP settings and later move to a domain with HTTPS, change `secure_cookie` back to `true`, restart ServerBee, and update existing agents to use the new `https://` server URL.
 </Callout>
 
+If you already have a domain and its DNS `A` record points to this server, the install script can configure Caddy HTTPS automatically:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server \
+  --domain monitor.example.com \
+  --email admin@example.com \
+  -y
+```
+
+The script first verifies that the domain resolves to the current server. If it does not, installation stops and prints the DNS record you need to add. `--email` is used for Let's Encrypt certificate notices and can be omitted.
+
 ## Option 2: Install Script
 
 Download and run the install script for a quick binary installation:

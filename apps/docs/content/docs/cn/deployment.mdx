@@ -264,6 +264,14 @@ secure_cookie = true
 sudo systemctl restart serverbee-server
 ```
 
+如果 ServerBee 已经通过安装脚本部署，也可以使用内置命令自动完成 Caddy HTTPS 配置：
+
+```bash
+sudo serverbee domain setup --domain monitor.example.com --email admin@example.com -y
+```
+
+该命令会校验域名 DNS 是否解析到当前服务器，安装并配置 Caddy，把 ServerBee 改为只监听 `127.0.0.1:9527`，并把 `auth.secure_cookie` 设置为 `true`。如果 DNS 还没生效，命令会停止并打印需要添加的 `A`/`AAAA` 记录。
+
 ### 基础配置
 
 ```nginx title="/etc/nginx/sites-available/serverbee"

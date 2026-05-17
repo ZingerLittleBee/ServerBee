@@ -256,6 +256,14 @@ Then restart the server:
 sudo systemctl restart serverbee-server
 ```
 
+If ServerBee was installed with the install script, you can also let the CLI configure Caddy HTTPS automatically:
+
+```bash
+sudo serverbee domain setup --domain monitor.example.com --email admin@example.com -y
+```
+
+This command verifies that the domain resolves to the current server, installs and configures Caddy, changes ServerBee to listen only on `127.0.0.1:9527`, and sets `auth.secure_cookie = true`. If DNS is not ready yet, it stops and prints the `A`/`AAAA` record you need to add.
+
 ### Nginx
 
 ```nginx
