@@ -87,9 +87,9 @@ client_secret = "your-github-client-secret"
 
 Passwords are hashed with argon2, following OWASP recommendations.
 
-### Default Password Warning
+### First-Run Admin Credentials
 
-If `admin.password` is not set during first deployment, ServerBee generates a random password and prints it to the startup log. After login, a prominent warning banner appears at the top of the Dashboard, prompting immediate password change.
+On first start (when no users exist) ServerBee auto-creates an admin account with a randomly generated password and prints it once to the server/container logs as a highlighted credentials banner. There is no way to preset the username or password via environment variables. On first login you are required to change this password, and may optionally choose a different username at that time.
 
 ## Login Security
 

@@ -7,8 +7,8 @@ Lightweight, self-hosted VPS monitoring server. Receives metrics from distribute
 ## Quick Start
 
 1. Click the **Deploy on Railway** button above
-2. Set `SERVERBEE_ADMIN__PASSWORD` (required)
-3. Deploy — the server will be live in ~30 seconds
+2. Deploy — the server will be live in ~30 seconds
+3. On first start the server auto-creates an admin account with a randomly generated password and prints it once to the deploy logs as a highlighted credentials banner. Open the Railway logs to retrieve it. You must change this password on first login and may optionally choose a different username.
 
 ## Volume
 
@@ -25,9 +25,6 @@ ServerBee stores data in SQLite. Add a Railway volume mounted at `/data` to pers
 These are the variables you'll most likely want to configure:
 
 ```env
-SERVERBEE_ADMIN__USERNAME="admin"              # 管理员用户名（未填写自动生成 admin 用户，可在日志中查看）
-SERVERBEE_ADMIN__PASSWORD=""                   # 管理员密码（未填写自动生成，可在日志中查看）
-
 SERVERBEE_LOG__LEVEL="info"                    # 日志级别（trace/debug/info/warn/error）
 
 SERVERBEE_RETENTION__RECORDS_DAYS="7"          # 原始指标保留天数
@@ -55,10 +52,7 @@ SERVERBEE_OAUTH__ALLOW_REGISTRATION="false"    # 首次登录自动创建账号�
 
 #### Admin
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SERVERBEE_ADMIN__USERNAME` | `admin` | Admin username (created on first startup) |
-| `SERVERBEE_ADMIN__PASSWORD` | Auto-generated | Admin password. If empty, auto-generated and printed to logs |
+There is no admin username/password variable. On first start the server auto-creates an admin account with a randomly generated password printed once to the deploy logs (look for the highlighted credentials banner). You are required to change this password on first login and may optionally choose a different username then.
 
 #### Database
 

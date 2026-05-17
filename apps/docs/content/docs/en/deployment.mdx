@@ -13,9 +13,6 @@ This guide covers production deployment best practices for ServerBee, including 
 The fastest way to get ServerBee running. Click the button above and configure the environment variables:
 
 ```bash
-SERVERBEE_ADMIN__USERNAME="admin"              # Admin username (auto-generated if empty, check logs)
-SERVERBEE_ADMIN__PASSWORD=""                   # Admin password (auto-generated if empty, check logs)
-
 SERVERBEE_LOG__LEVEL="info"                    # Log level (trace/debug/info/warn/error)
 
 SERVERBEE_RETENTION__RECORDS_DAYS="7"          # Raw metrics retention in days
@@ -33,6 +30,7 @@ After deploying:
 
 1. Add a **Volume** mounted at `/data` to persist data across deploys
 2. Configure your agents to connect using the Railway-provided URL
+3. On first start the server auto-creates an admin account with a randomly generated password. Open the Railway deploy logs and look for the highlighted credentials banner to retrieve it. On first login you are required to change this password and may optionally choose a different username.
 
 <Callout type="info">
 Railway automatically assigns a port and provides HTTPS. No need to configure `SERVERBEE_SERVER__LISTEN` or TLS certificates.
@@ -83,7 +81,6 @@ services:
       - serverbee-data:/data
       - ./server.toml:/app/server.toml:ro
     environment:
-      - SERVERBEE_ADMIN__PASSWORD=change-this-password
       - SERVERBEE_AUTH__SECURE_COOKIE=true
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:9527/healthz"]
@@ -213,9 +210,6 @@ A production `server.toml` for systemd:
 listen = "127.0.0.1:9527"
 data_dir = "/var/lib/serverbee"
 
-[admin]
-password = "change-this-immediately"
-
 [log]
 level = "info"
 file = "/var/log/serverbee/server.log"
@@ -311,8 +305,6 @@ services:
     image: ghcr.io/zingerlittlebee/serverbee-server:latest
     volumes:
       - serverbee-data:/data
-    environment:
-      - SERVERBEE_ADMIN__PASSWORD=your_secure_password
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.serverbee.rule=Host(`monitor.example.com`)"
