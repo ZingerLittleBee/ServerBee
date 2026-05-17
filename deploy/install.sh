@@ -166,8 +166,8 @@ declare -A I18N_EN=(
     [exit_menu]="  [0] Exit       退出"
     [select_menu]="Select [0-8]: "
     [install_title]="Install"
-    [server_option]="  [1] Server  — Dashboard & API"
-    [agent_option]="  [2] Agent   — System metrics collector"
+    [agent_option]="  [1] Agent   — System metrics collector"
+    [server_option]="  [2] Server  — Dashboard & API"
     [select_component]="Select component [1/2]: "
     [server_docker_recommended]="  [1] Docker  (recommended for Server)"
     [agent_binary_recommended]="  [1] Binary  (recommended for Agent)"
@@ -191,8 +191,8 @@ declare -A I18N_EN=(
     [svc_restart]="  [3] Restart"
     [svc_select]="Select [1-3]: "
     [uninstall_title]="Uninstall"
-    [opt_server]="  [1] Server"
-    [opt_agent]="  [2] Agent"
+    [opt_agent]="  [1] Agent"
+    [opt_server]="  [2] Server"
     [uninstall_confirm]="Uninstall serverbee-%s (%s)%s? [y/N]: "
     [uninstall_purge_note]=" (including config and data)"
     [uninstall_preserved]="  Config and data preserved. To remove them, run:"
@@ -283,8 +283,8 @@ declare -A I18N_ZH=(
     [exit_menu]="  [0] 退出      Exit"
     [select_menu]="选择 [0-8]: "
     [install_title]="安装"
-    [server_option]="  [1] Server  — 控制台和 API"
-    [agent_option]="  [2] Agent   — 系统指标采集器"
+    [agent_option]="  [1] Agent   — 系统指标采集器"
+    [server_option]="  [2] Server  — 控制台和 API"
     [select_component]="选择组件 [1/2]: "
     [server_docker_recommended]="  [1] Docker  (Server 推荐)"
     [agent_binary_recommended]="  [1] Binary  (Agent 推荐)"
@@ -308,8 +308,8 @@ declare -A I18N_ZH=(
     [svc_restart]="  [3] 重启"
     [svc_select]="选择 [1-3]: "
     [uninstall_title]="卸载"
-    [opt_server]="  [1] Server"
-    [opt_agent]="  [2] Agent"
+    [opt_agent]="  [1] Agent"
+    [opt_server]="  [2] Server"
     [uninstall_confirm]="卸载 serverbee-%s（%s）%s ? [y/N]: "
     [uninstall_purge_note]="（含配置与数据）"
     [uninstall_preserved]="  配置与数据已保留,如需移除请执行:"
@@ -1858,13 +1858,13 @@ cmd_install() {
         echo ""
         echo -e "${BOLD}$(tr_text install_title)${NC}"
         echo ""
-        echo "$(tr_text server_option)"
         echo "$(tr_text agent_option)"
+        echo "$(tr_text server_option)"
         echo ""
         read -rp "$(tr_text select_component)" choice
         case "$choice" in
-            1|server) COMPONENT="server" ;;
-            2|agent)  COMPONENT="agent" ;;
+            1|agent)  COMPONENT="agent" ;;
+            2|server) COMPONENT="server" ;;
             *) error "Invalid choice: $choice" ;;
         esac
     fi
@@ -2016,13 +2016,13 @@ cmd_uninstall() {
         echo ""
         echo -e "${BOLD}$(tr_text uninstall_title)${NC}"
         echo ""
-        echo "$(tr_text opt_server)"
         echo "$(tr_text opt_agent)"
+        echo "$(tr_text opt_server)"
         echo ""
         read -rp "$(tr_text select_component)" choice
         case "$choice" in
-            1|server) COMPONENT="server" ;;
-            2|agent)  COMPONENT="agent" ;;
+            1|agent)  COMPONENT="agent" ;;
+            2|server) COMPONENT="server" ;;
             *) error "Invalid choice: $choice" ;;
         esac
     fi
