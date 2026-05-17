@@ -146,7 +146,7 @@ declare -A I18N_EN=(
     [configure_domain]="Configure HTTPS domain with Caddy now? [y/N]: "
     [domain_prompt]="Domain (e.g., monitor.example.com): "
     [email_prompt]="Email for certificate notices (optional): "
-    [server_url_prompt]="Server URL (e.g., http://10.0.0.1:9527): "
+    [server_url_prompt]="Server URL [%s]: "
     [enrollment_prompt]="Enrollment code: "
     [install_plan_title]="Installation plan"
     [domain_plan_title]="Domain setup plan"
@@ -263,7 +263,7 @@ declare -A I18N_ZH=(
     [configure_domain]="现在配置 HTTPS 域名（Caddy）吗？[y/N]: "
     [domain_prompt]="域名（例如 monitor.example.com）: "
     [email_prompt]="证书通知邮箱（可选）: "
-    [server_url_prompt]="Server URL（例如 http://10.0.0.1:9527）: "
+    [server_url_prompt]="Server URL [%s]: "
     [enrollment_prompt]="Enrollment code（注册码）: "
     [install_plan_title]="安装计划"
     [domain_plan_title]="域名配置计划"
@@ -1845,9 +1845,15 @@ cmd_install() {
             fi
         fi
     elif [ "$COMPONENT" = "agent" ]; then
+        if [ -z "$SERVER_URL" ] && [ "$YES" != true ]; then
+            local default_server_url
+            default_server_url="http://$(get_local_ip):9527"
+            read -rp "$(trp server_url_prompt "$default_server_url")" SERVER_URL
+            SERVER_URL="${SERVER_URL:-$default_server_url}"
+        fi
         while [ -z "$SERVER_URL" ]; do
             if [ "$YES" = true ]; then error "--server-url is required for agent installation"; fi
-            read -rp "$(tr_text server_url_prompt)" SERVER_URL
+            read -rp "$(trp server_url_prompt "http://$(get_local_ip):9527")" SERVER_URL
         done
         while [ -z "$ENROLLMENT_CODE" ]; do
             if [ "$YES" = true ]; then error "--enrollment-code is required for agent installation (generate a one-time code in the server UI Settings)"; fi
