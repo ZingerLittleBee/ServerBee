@@ -3,13 +3,22 @@ set -euo pipefail
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 REPO="ZingerLittleBee/ServerBee"
-INSTALL_DIR="/usr/local/bin"
-CONFIG_DIR="/etc/serverbee"
-DATA_DIR="/var/lib/serverbee"
-DOCKER_DIR="/opt/serverbee"
-DEFAULT_DOCKER_DIR="/opt/serverbee"
+# Everything ServerBee installs lives under a single base directory for
+# unified management. The PATH-visible management CLI is the only exception.
+BASE_DIR="/opt/serverbee"
+INSTALL_DIR="${BASE_DIR}/bin"
+CONFIG_DIR="${BASE_DIR}/etc"
+DATA_DIR="${BASE_DIR}/data"
+DOCKER_DIR="${BASE_DIR}"
+DEFAULT_DOCKER_DIR="${BASE_DIR}"
 SNAP_DOCKER_DIR="/var/snap/docker/common/serverbee"
 META_FILE="${CONFIG_DIR}/.install-meta"
+CLI_PATH="/usr/local/bin/serverbee"
+# Legacy FHS-split layout (pre-/opt). Kept only for one-time auto-migration
+# of installs created by older versions of this script.
+LEGACY_BIN_DIR="/usr/local/bin"
+LEGACY_CONFIG_DIR="/etc/serverbee"
+LEGACY_DATA_DIR="/var/lib/serverbee"
 DOCS_URL="https://server-bee-docs.vercel.app"
 CADDY_CONFIG_DIR="/etc/caddy"
 CADDYFILE="${CADDY_CONFIG_DIR}/Caddyfile"
@@ -235,6 +244,81 @@ require_root() {
     if [ "$(id -u)" -ne 0 ]; then
         error "This script must be run as root (use sudo)"
     fi
+}
+
+# ─── Legacy layout migration ──────────────────────────────────────────────────
+# Older versions of this script used an FHS-split layout:
+#   /usr/local/bin/serverbee-*  /etc/serverbee  /var/lib/serverbee
+# Newer installs are consolidated under ${BASE_DIR}. This migrates an existing
+# legacy install in place so that upgrade/uninstall/config keep working.
+migrate_legacy_layout() {
+    # Already on the new layout — nothing to do.
+    [ -f "$META_FILE" ] && return 0
+
+    local legacy_meta="${LEGACY_CONFIG_DIR}/.install-meta"
+    local has_legacy=false
+    [ -f "$legacy_meta" ] && has_legacy=true
+    [ -f "${LEGACY_BIN_DIR}/serverbee-server" ] && has_legacy=true
+    [ -f "${LEGACY_BIN_DIR}/serverbee-agent" ] && has_legacy=true
+    [ "$has_legacy" = true ] || return 0
+
+    info "Detected legacy install layout — migrating to ${BASE_DIR}"
+    mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR"
+
+    local comp
+    for comp in server agent; do
+        if [ -f "${LEGACY_BIN_DIR}/serverbee-${comp}" ]; then
+            mv -f "${LEGACY_BIN_DIR}/serverbee-${comp}" "${INSTALL_DIR}/serverbee-${comp}"
+        fi
+    done
+
+    if [ -d "$LEGACY_CONFIG_DIR" ]; then
+        local f
+        for f in "$LEGACY_CONFIG_DIR"/* "$LEGACY_CONFIG_DIR"/.install-meta; do
+            [ -e "$f" ] || continue
+            mv -f "$f" "$CONFIG_DIR"/ 2>/dev/null || true
+        done
+        rmdir "$LEGACY_CONFIG_DIR" 2>/dev/null || true
+    fi
+
+    if [ -d "$LEGACY_DATA_DIR" ] && [ "$LEGACY_DATA_DIR" != "$DATA_DIR" ]; then
+        local d
+        for d in "$LEGACY_DATA_DIR"/* "$LEGACY_DATA_DIR"/.[!.]*; do
+            [ -e "$d" ] || continue
+            mv -f "$d" "$DATA_DIR"/ 2>/dev/null || true
+        done
+        rmdir "$LEGACY_DATA_DIR" 2>/dev/null || true
+    fi
+
+    # Point server.toml at the new data directory if it referenced the old one.
+    if [ -f "${CONFIG_DIR}/server.toml" ]; then
+        sed -i "s#${LEGACY_DATA_DIR}#${DATA_DIR}#g" "${CONFIG_DIR}/server.toml" 2>/dev/null || true
+    fi
+
+    # Rewrite systemd units to the new paths and restart anything running.
+    if has_systemd; then
+        local unit svc
+        for comp in server agent; do
+            svc="serverbee-${comp}"
+            unit="/etc/systemd/system/${svc}.service"
+            [ -f "$unit" ] || continue
+            sed -i \
+                -e "s#${LEGACY_BIN_DIR}/serverbee-${comp}#${INSTALL_DIR}/serverbee-${comp}#g" \
+                -e "s#WorkingDirectory=${LEGACY_DATA_DIR}#WorkingDirectory=${DATA_DIR}#g" \
+                -e "s#WorkingDirectory=${LEGACY_CONFIG_DIR}#WorkingDirectory=${CONFIG_DIR}#g" \
+                -e "s#SERVERBEE_SERVER__DATA_DIR=${LEGACY_DATA_DIR}#SERVERBEE_SERVER__DATA_DIR=${DATA_DIR}#g" \
+                "$unit" 2>/dev/null || true
+        done
+        systemctl daemon-reload 2>/dev/null || true
+        for comp in server agent; do
+            svc="serverbee-${comp}"
+            if systemctl is-active --quiet "$svc" 2>/dev/null; then
+                systemctl restart "$svc" 2>/dev/null || true
+            fi
+        done
+    fi
+
+    info "Migration complete — ServerBee now lives under ${BASE_DIR}"
 }
 
 # ─── Known subcommands ───────────────────────────────────────────────────────
@@ -682,7 +766,7 @@ check_unmanaged_container() {
 # ─── CLI self-install ────────────────────────────────────────────────────────
 
 install_cli() {
-    local target="/usr/local/bin/serverbee"
+    local target="$CLI_PATH"
     local version="${1:-main}"
 
     # Entire body runs in a subshell so any failure (cp, curl, chmod, mv)
@@ -718,6 +802,8 @@ install_binary_server() {
     arch=$(detect_arch)
     version=$(get_latest_version)
 
+    mkdir -p "$INSTALL_DIR"
+
     # Download (skip if binary already exists — adopt mode)
     if [ -f "${INSTALL_DIR}/serverbee-server" ]; then
         warn "Binary already exists at ${INSTALL_DIR}/serverbee-server — skipping download (adopting existing)"
@@ -750,16 +836,16 @@ TOML
 
     # systemd service
     if has_systemd; then
-        cat > /etc/systemd/system/serverbee-server.service << 'UNIT'
+        cat > /etc/systemd/system/serverbee-server.service << UNIT
 [Unit]
 Description=ServerBee Dashboard
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/serverbee-server
-WorkingDirectory=/var/lib/serverbee
-Environment=SERVERBEE_SERVER__DATA_DIR=/var/lib/serverbee
+ExecStart=${INSTALL_DIR}/serverbee-server
+WorkingDirectory=${DATA_DIR}
+Environment=SERVERBEE_SERVER__DATA_DIR=${DATA_DIR}
 Restart=always
 RestartSec=5
 LimitNOFILE=65536
@@ -785,6 +871,8 @@ install_binary_agent() {
     os=$(detect_os)
     arch=$(detect_arch)
     version=$(get_latest_version)
+
+    mkdir -p "$INSTALL_DIR"
 
     # Download (skip if binary already exists — adopt mode)
     if [ -f "${INSTALL_DIR}/serverbee-agent" ]; then
@@ -819,15 +907,15 @@ TOML
 
     # systemd service
     if has_systemd; then
-        cat > /etc/systemd/system/serverbee-agent.service << 'UNIT'
+        cat > /etc/systemd/system/serverbee-agent.service << UNIT
 [Unit]
 Description=ServerBee Agent
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/serverbee-agent
-WorkingDirectory=/etc/serverbee
+ExecStart=${INSTALL_DIR}/serverbee-agent
+WorkingDirectory=${CONFIG_DIR}
 Restart=always
 RestartSec=5
 AmbientCapabilities=CAP_NET_RAW
@@ -941,7 +1029,7 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /etc/machine-id:/etc/machine-id:ro
-      - /etc/serverbee:/etc/serverbee
+      - ${CONFIG_DIR}:/etc/serverbee
     restart: unless-stopped
 YAML
 
@@ -1602,8 +1690,10 @@ cmd_uninstall() {
         remaining=$(grep -c '"method"' "$META_FILE" 2>/dev/null || true)
         : "${remaining:=0}"
         if [ "$remaining" -eq 0 ]; then
-            rm -f "/usr/local/bin/serverbee"
+            rm -f "$CLI_PATH"
             rm -f "$META_FILE"
+            # Drop now-empty layout directories (ignored if anything remains).
+            rmdir "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR" "$DOCKER_DIR" "$BASE_DIR" 2>/dev/null || true
             info "All components removed. CLI uninstalled."
         fi
     fi
@@ -2288,6 +2378,7 @@ interactive_menu() {
         *) error "Invalid choice: $choice" ;;
     esac
     require_root
+    migrate_legacy_layout
     case "$COMMAND" in
         install|domain) ;;
         *) check_deps ;;
@@ -2366,6 +2457,7 @@ main() {
             *) detect_lang ;;
         esac
         require_root
+        migrate_legacy_layout
         case "$COMMAND" in
             install|domain) ;;
             *) check_deps ;;
