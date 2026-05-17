@@ -5,9 +5,10 @@ import { cn } from '@/lib/utils'
 
 interface CostFootnoteProps {
   entry?: ServerCostOverview
+  inline?: boolean
 }
 
-export function CostFootnote({ entry }: CostFootnoteProps) {
+export function CostFootnote({ entry, inline = false }: CostFootnoteProps) {
   const { t } = useTranslation('servers')
 
   if (!entry) {
@@ -16,7 +17,7 @@ export function CostFootnote({ entry }: CostFootnoteProps) {
 
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">
-      <span aria-hidden="true">·</span>
+      {!inline && <span aria-hidden="true">·</span>}
       {entry.configured ? (
         <ConfiguredFootnote entry={entry} />
       ) : (

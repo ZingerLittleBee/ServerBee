@@ -122,9 +122,7 @@ describe('ServerCard', () => {
     renderCard(makeServer())
     expect(screen.getByText('col_uptime')).toBeDefined()
     expect(screen.getByText('card_swap')).toBeDefined()
-    expect(screen.getByText('card_processes')).toBeDefined()
-    expect(screen.getByText('card_tcp')).toBeDefined()
-    expect(screen.getByText('card_udp')).toBeDefined()
+    expect(screen.getByText('card_proc_conn_label')).toBeDefined()
   })
 
   it('renders compact cost footnote when cost overview is available', () => {
