@@ -1,7 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import type { ServerCostOverview } from '@/lib/api-schema'
-import { formatCostRate, getCostGradeClassName } from '@/lib/cost'
-import { cn } from '@/lib/utils'
+import { formatCostRate } from '@/lib/cost'
 
 interface CostFootnoteProps {
   entry?: ServerCostOverview
@@ -39,11 +38,11 @@ function ConfiguredFootnote({ entry }: { entry: ServerCostOverview }) {
       <span className="truncate font-medium text-foreground">
         {formatCostRate(entry.cost_per_hour, entry.currency, 'h', { maximumFractionDigits: 4 })}
       </span>
-      {entry.value_score && (
+      {entry.cost_per_month_equivalent != null && (
         <>
           <span aria-hidden="true">·</span>
-          <span className={cn('font-medium', getCostGradeClassName(entry.value_score.grade))}>
-            {t(`cost_grade_${entry.value_score.grade}`)}
+          <span className="font-medium text-foreground">
+            {formatCostRate(entry.cost_per_month_equivalent, entry.currency, 'mo', { maximumFractionDigits: 2 })}
           </span>
         </>
       )}
