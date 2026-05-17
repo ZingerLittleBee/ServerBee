@@ -339,7 +339,7 @@ function ServersListPage() {
 
   return (
     <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="font-bold text-2xl">{t('title')}</h1>
           <p className="text-muted-foreground text-sm">
@@ -347,7 +347,7 @@ function ServersListPage() {
           </p>
         </div>
         {isAdmin && (
-          <Button className="sm:mt-0.5 sm:self-start" onClick={() => setAddOpen(true)}>
+          <Button className="sm:self-start" onClick={() => setAddOpen(true)}>
             <Plus className="size-4" />
             {t('add_server.button')}
           </Button>
