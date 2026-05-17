@@ -1374,8 +1374,12 @@ YAML
 # Echoes the password if found within the timeout, otherwise nothing (e.g.
 # re-install/adopt where the admin already exists, or no captured logs).
 fetch_first_run_password() {
-    local i out pw
-    for ((i = 0; i < 15; i++)); do
+    local i out pw max
+    # Docker's first run may pull the image before the container starts and
+    # logs the banner, so allow a longer budget; the loop exits as soon as
+    # the password is found, keeping the warm-cache path fast.
+    if [ "$METHOD" = "docker" ]; then max=45; else max=15; fi
+    for ((i = 0; i < max; i++)); do
         if [ "$METHOD" = "docker" ]; then
             out=$(docker compose -f "${DOCKER_DIR}/docker-compose.server.yml" logs --no-color serverbee-server 2>/dev/null)
         elif has_systemd; then
