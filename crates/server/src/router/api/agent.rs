@@ -446,4 +446,36 @@ mod enrollment_endpoint_tests {
             "plaintext code never stored"
         );
     }
+
+    #[tokio::test]
+    async fn enrollment_summary_dto_never_exposes_code_or_hash() {
+        let (db, _tmp) = setup_test_db().await;
+        let uid = seed_user(&db).await;
+        let (model, code) = EnrollmentService::mint(&db, &uid, None, 600)
+            .await
+            .unwrap();
+
+        // Mirror exactly the mapping in `list_enrollments`.
+        let summary = super::EnrollmentSummary {
+            id: model.id,
+            label: model.label,
+            code_prefix: model.code_prefix,
+            created_by: model.created_by,
+            expires_at: model.expires_at.to_rfc3339(),
+            consumed_at: model.consumed_at.map(|d| d.to_rfc3339()),
+            created_at: model.created_at.to_rfc3339(),
+        };
+        let json = serde_json::to_string(&summary).expect("serialize");
+
+        assert!(
+            !json.contains("code_hash"),
+            "DTO must never expose code_hash: {json}"
+        );
+        assert!(
+            !json.contains(&code),
+            "DTO must never expose the plaintext code"
+        );
+        // code_prefix is the only code-derived field that may appear.
+        assert!(json.contains(&format!("\"code_prefix\":\"{}\"", &code[..8])));
+    }
 }
