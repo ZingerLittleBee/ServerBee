@@ -237,31 +237,31 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
         <CompactMetric label={t('card_net_out_speed')} value={renderSpeedValue(server.net_out_speed)} />
         <CompactMetric
           label={
-            <span
-              aria-label={t('card_disk_read')}
-              className="inline-flex size-3 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-[9px] text-foreground leading-none"
-              role="img"
-            >
-              R
+            <span aria-label={t('card_disk_read')} className="inline-flex items-center gap-1" role="img">
+              <span
+                aria-hidden="true"
+                className="inline-flex size-3.5 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[8px] text-foreground leading-none"
+              >
+                R
+              </span>
+              {t('card_disk_read')}
             </span>
           }
           value={renderSpeedValue(server.disk_read_bytes_per_sec)}
         />
         <CompactMetric
           label={
-            <span
-              aria-label={t('card_disk_write')}
-              className="inline-flex size-3 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-[9px] text-foreground leading-none"
-              role="img"
-            >
-              W
+            <span aria-label={t('card_disk_write')} className="inline-flex items-center gap-1" role="img">
+              <span
+                aria-hidden="true"
+                className="inline-flex size-3.5 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[8px] text-foreground leading-none"
+              >
+                W
+              </span>
+              {t('card_disk_write')}
             </span>
           }
           value={renderSpeedValue(server.disk_write_bytes_per_sec)}
-        />
-        <CompactMetric
-          label={t('card_load_trend')}
-          value={`${formatLoad(server.load5)}·${formatLoad(server.load15)}`}
         />
       </div>
 
@@ -297,6 +297,12 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
         <div className="flex items-baseline justify-between">
           <span>{t('card_swap')}</span>
           <span className="font-medium text-foreground tabular-nums">{`${swapPct.toFixed(0)}%`}</span>
+        </div>
+        <div className="flex items-baseline justify-between">
+          <span>{t('card_load_trend')}</span>
+          <span className="font-medium text-foreground tabular-nums">
+            {`${formatLoad(server.load5)}·${formatLoad(server.load15)}`}
+          </span>
         </div>
         <div className="flex items-baseline justify-between">
           <span>{t('card_proc_conn_label')}</span>
