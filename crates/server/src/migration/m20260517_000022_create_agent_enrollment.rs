@@ -18,7 +18,7 @@ impl MigrationTrait for Migration {
                 code_hash TEXT NOT NULL,
                 code_prefix TEXT NOT NULL,
                 label TEXT,
-                created_by TEXT NOT NULL,
+                created_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 expires_at DATETIME NOT NULL,
                 consumed_at DATETIME,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
