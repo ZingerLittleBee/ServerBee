@@ -1,10 +1,10 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::{ConnectInfo, State};
+use axum::extract::{ConnectInfo, Path, State};
 use axum::http::HeaderMap;
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DbErr, EntityTrait, PaginatorTrait,
@@ -15,9 +15,12 @@ use uuid::Uuid;
 
 use crate::entity::server;
 use crate::error::{ApiResponse, AppError, ok};
+use crate::middleware::auth::CurrentUser;
 use crate::router::utils::extract_client_ip;
+use crate::service::audit::AuditService;
 use crate::service::auth::AuthService;
 use crate::service::config::ConfigService;
+use crate::service::enrollment::{DEFAULT_TTL_SECS, EnrollmentService};
 use crate::service::network_probe::NetworkProbeService;
 use crate::service::upgrade_release::LatestAgentVersionResponse;
 use crate::state::AppState;
@@ -36,6 +39,33 @@ pub struct RegisterRequest {
 pub struct RegisterResponse {
     server_id: String,
     token: String,
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct CreateEnrollmentRequest {
+    #[serde(default)]
+    label: Option<String>,
+    /// Lifetime in seconds. Defaults to 600 (10 min), max 86400.
+    ttl_secs: Option<i64>,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct CreateEnrollmentResponse {
+    id: String,
+    /// Plaintext enrollment code — shown exactly once, never retrievable again.
+    code: String,
+    expires_at: String,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct EnrollmentSummary {
+    id: String,
+    label: Option<String>,
+    code_prefix: String,
+    created_by: String,
+    expires_at: String,
+    consumed_at: Option<String>,
+    created_at: String,
 }
 
 /// Public routes for agent registration (Bearer auth checked inside handler).
@@ -262,4 +292,158 @@ async fn register(
         server_id,
         token: plaintext_token,
     })
+}
+
+/// Admin-only routes for managing enrollment codes.
+pub fn admin_router() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/agent/enrollments", post(create_enrollment))
+        .route("/agent/enrollments", get(list_enrollments))
+        .route(
+            "/agent/enrollments/{id}",
+            axum::routing::delete(delete_enrollment),
+        )
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/agent/enrollments",
+    tag = "agent",
+    request_body = CreateEnrollmentRequest,
+    responses((status = 200, description = "Enrollment code created", body = CreateEnrollmentResponse)),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+async fn create_enrollment(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Extension(current_user): Extension<CurrentUser>,
+    Json(body): Json<CreateEnrollmentRequest>,
+) -> Result<Json<ApiResponse<CreateEnrollmentResponse>>, AppError> {
+    let ttl = body.ttl_secs.unwrap_or(DEFAULT_TTL_SECS);
+    let (model, code) =
+        EnrollmentService::mint(&state.db, &current_user.user_id, body.label.clone(), ttl).await?;
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+    let detail = format!("id={} prefix={}", model.id, model.code_prefix);
+    let _ = AuditService::log(
+        &state.db,
+        &current_user.user_id,
+        "agent_enrollment_created",
+        Some(&detail),
+        &ip,
+    )
+    .await;
+    ok(CreateEnrollmentResponse {
+        id: model.id,
+        code,
+        expires_at: model.expires_at.to_rfc3339(),
+    })
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/agent/enrollments",
+    tag = "agent",
+    responses((status = 200, description = "List enrollment codes", body = [EnrollmentSummary])),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+async fn list_enrollments(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ApiResponse<Vec<EnrollmentSummary>>>, AppError> {
+    let rows = EnrollmentService::list(&state.db).await?;
+    let out = rows
+        .into_iter()
+        .map(|m| EnrollmentSummary {
+            id: m.id,
+            label: m.label,
+            code_prefix: m.code_prefix,
+            created_by: m.created_by,
+            expires_at: m.expires_at.to_rfc3339(),
+            consumed_at: m.consumed_at.map(|d| d.to_rfc3339()),
+            created_at: m.created_at.to_rfc3339(),
+        })
+        .collect();
+    ok(out)
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/agent/enrollments/{id}",
+    tag = "agent",
+    params(("id" = String, Path, description = "Enrollment id")),
+    responses((status = 200, description = "Deleted")),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+async fn delete_enrollment(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<&'static str>>, AppError> {
+    EnrollmentService::delete(&state.db, &id).await?;
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+    let detail = format!("id={id}");
+    let _ = AuditService::log(
+        &state.db,
+        &current_user.user_id,
+        "agent_enrollment_deleted",
+        Some(&detail),
+        &ip,
+    )
+    .await;
+    ok("deleted")
+}
+
+#[cfg(test)]
+mod enrollment_endpoint_tests {
+    use crate::entity::user;
+    use crate::service::enrollment::EnrollmentService;
+    use crate::test_utils::setup_test_db;
+    use chrono::Utc;
+    use sea_orm::*;
+    use uuid::Uuid;
+
+    /// Seed a user so the `created_by` FK on `agent_enrollments` is satisfied.
+    async fn seed_user(db: &DatabaseConnection) -> String {
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now();
+        user::ActiveModel {
+            id: Set(id.clone()),
+            username: Set(format!("user-{id}")),
+            password_hash: Set("$argon2id$v=19$m=19456,t=2,p=1$x$x".to_string()),
+            role: Set("admin".to_string()),
+            totp_secret: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(db)
+        .await
+        .expect("seed user");
+        id
+    }
+
+    #[tokio::test]
+    async fn mint_then_list_shows_prefix_not_code() {
+        let (db, _tmp) = setup_test_db().await;
+        let uid = seed_user(&db).await;
+        let (_m, code) = EnrollmentService::mint(&db, &uid, None, 600).await.unwrap();
+        let list = EnrollmentService::list(&db).await.unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].code_prefix, &code[..8]);
+        assert!(
+            !list[0].code_hash.contains(&code),
+            "plaintext code never stored"
+        );
+    }
 }
