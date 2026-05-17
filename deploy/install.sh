@@ -216,6 +216,7 @@ declare -A I18N_EN=(
     [pw_docker]="(auto-generated, check: docker compose -f %s logs serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
     [pw_systemd]="(auto-generated, check: sudo journalctl -u serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
     [pw_proc]="(auto-generated, check process output for 'FIRST-RUN ADMIN CREDENTIALS')"
+    [pw_must_change]="  (one-time password — you must change it on first login)"
     [lbl_docs]="  Docs:"
     [lbl_server_url]="  Server URL:"
     [lbl_logs]="  Logs:"
@@ -333,6 +334,7 @@ declare -A I18N_ZH=(
     [pw_docker]="（自动生成，查看: docker compose -f %s logs serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
     [pw_systemd]="（自动生成，查看: sudo journalctl -u serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
     [pw_proc]="（自动生成，在进程输出中查找 'FIRST-RUN ADMIN CREDENTIALS')"
+    [pw_must_change]="  （一次性密码 —— 首次登录后必须修改）"
     [lbl_docs]="  文档:"
     [lbl_server_url]="  Server URL:"
     [lbl_logs]="  日志:"
@@ -1297,15 +1299,47 @@ YAML
     print_agent_result
 }
 
+# Poll the server's startup logs for the one-time first-run admin password.
+# Echoes the password if found within the timeout, otherwise nothing (e.g.
+# re-install/adopt where the admin already exists, or no captured logs).
+fetch_first_run_password() {
+    local i out pw
+    for ((i = 0; i < 15; i++)); do
+        if [ "$METHOD" = "docker" ]; then
+            out=$(docker compose -f "${DOCKER_DIR}/docker-compose.server.yml" logs --no-color serverbee-server 2>/dev/null)
+        elif has_systemd; then
+            out=$(journalctl -u serverbee-server --no-pager 2>/dev/null)
+        else
+            return 0
+        fi
+        pw=$(printf '%s\n' "$out" \
+            | sed 's/\x1b\[[0-9;]*m//g' \
+            | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' \
+            | grep -m1 'Password:' \
+            | sed -E 's/.*Password:[[:space:]]*//' \
+            | awk '{print $1}')
+        if [ -n "$pw" ]; then
+            printf '%s' "$pw"
+            return 0
+        fi
+        sleep 1
+    done
+    return 0
+}
+
 print_server_result() {
-    local ip
+    local ip pw
     ip=$(get_local_ip)
+    pw="$(fetch_first_run_password)"
     echo ""
     echo -e "${GREEN}$(tr_text result_server_ok)${NC}"
     echo ""
     echo "$(tr_text lbl_dashboard) http://${ip}:9527"
     echo "$(tr_text lbl_username) admin"
-    if [ "$METHOD" = "docker" ]; then
+    if [ -n "$pw" ]; then
+        echo -e "$(tr_text lbl_password) ${BOLD}${pw}${NC}"
+        echo "$(tr_text pw_must_change)"
+    elif [ "$METHOD" = "docker" ]; then
         echo "$(tr_text lbl_password) $(trp pw_docker "${DOCKER_DIR}/docker-compose.server.yml")"
     elif has_systemd; then
         echo "$(tr_text lbl_password) $(tr_text pw_systemd)"
