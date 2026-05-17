@@ -138,10 +138,7 @@ export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
               />
             }
           />
-          <TooltipContent
-            className="grid min-w-48 gap-1.5 rounded-lg border border-border/50 bg-background/95 px-3 py-2 text-xs shadow-xl backdrop-blur-sm"
-            sideOffset={4}
-          >
+          <TooltipContent className="grid min-w-48 gap-1.5" sideOffset={4}>
             <PointTooltip point={point} t={t} />
           </TooltipContent>
         </Tooltip>
