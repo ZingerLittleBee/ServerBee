@@ -1,0 +1,13 @@
+{
+  "title": "设置你的管理员账户",
+  "subtitle": "出于安全考虑，继续之前必须修改初始密码。",
+  "username": "用户名",
+  "username_hint": "可选 —— 留空则保持当前用户名。",
+  "new_password": "新密码",
+  "confirm_password": "确认新密码",
+  "submit": "保存并继续",
+  "saving": "保存中…",
+  "password_required": "请输入新密码。",
+  "password_mismatch": "两次输入的密码不一致。",
+  "failed": "设置未能完成，请重试。"
+}
