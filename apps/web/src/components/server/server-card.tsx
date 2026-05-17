@@ -289,34 +289,38 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
         </section>
       )}
 
-      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
-        <span>
-          {t('col_uptime')}{' '}
+      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
+        <div className="flex items-baseline justify-between">
+          <span>{t('col_uptime')}</span>
           <span className="font-medium text-foreground tabular-nums">{formatUptime(server.uptime)}</span>
-        </span>
-        <span aria-hidden="true">·</span>
-        <span>
-          {t('card_swap')} <span className="font-medium text-foreground tabular-nums">{`${swapPct.toFixed(0)}%`}</span>
-        </span>
-        <span aria-hidden="true">·</span>
-        <span>
-          {t('card_processes')} <span className="font-medium text-foreground tabular-nums">{server.process_count}</span>
-        </span>
-        <span aria-hidden="true">·</span>
-        <span>
-          {t('card_tcp')} <span className="font-medium text-foreground tabular-nums">{server.tcp_conn}</span>
-        </span>
-        <span aria-hidden="true">·</span>
-        <span>
-          {t('card_udp')} <span className="font-medium text-foreground tabular-nums">{server.udp_conn}</span>
-        </span>
+        </div>
+        <div className="flex items-baseline justify-between">
+          <span>{t('card_swap')}</span>
+          <span className="font-medium text-foreground tabular-nums">{`${swapPct.toFixed(0)}%`}</span>
+        </div>
+        <div className="flex items-baseline justify-between">
+          <span>{t('card_processes')}</span>
+          <span className="font-medium text-foreground tabular-nums">{server.process_count}</span>
+        </div>
+        <div className="flex items-baseline justify-between">
+          <span>{t('card_tcp')}</span>
+          <span className="font-medium text-foreground tabular-nums">{server.tcp_conn}</span>
+        </div>
+        <div className="flex items-baseline justify-between">
+          <span>{t('card_udp')}</span>
+          <span className="font-medium text-foreground tabular-nums">{server.udp_conn}</span>
+        </div>
         {trafficDaysRemaining != null && (
-          <>
-            <span aria-hidden="true">·</span>
-            <span className="tabular-nums">{t('card_traffic_days_left', { count: trafficDaysRemaining })}</span>
-          </>
+          <div className="flex items-baseline justify-between">
+            <span>{t('card_traffic_days_left_label')}</span>
+            <span className="font-medium text-foreground tabular-nums">
+              {t('card_traffic_days_value', { count: trafficDaysRemaining })}
+            </span>
+          </div>
         )}
-        <CostFootnote entry={costEntry} />
+        <div className="col-span-2 flex justify-center pt-0.5">
+          <CostFootnote entry={costEntry} />
+        </div>
       </div>
 
       <TagChips tags={server.tags} />
