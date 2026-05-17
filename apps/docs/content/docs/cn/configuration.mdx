@@ -380,8 +380,14 @@ refresh_ttl = 2592000
 server_url = "http://your-server-ip:9527"
 
 # Agent Token，注册成功后自动写入
-# 首次运行时留空，通过 Discovery Key 注册后自动填入
+# 首次运行时留空，注册成功后自动填入
 token = ""
+
+# 一次性注册码（enrollment code）
+# 由管理员在 Server 设置页（或 POST /api/agent/enrollments）生成
+# 仅在 token 为空的首次注册时使用；单次有效、默认 10 分钟过期，
+# 注册成功后即被消费
+enrollment_code = ""
 
 # --- 采集配置 ---
 [collector]
