@@ -429,6 +429,7 @@ impl AppConfig {
     pub fn load() -> anyhow::Result<Self> {
         let config: AppConfig = Figment::new()
             .merge(Toml::file("/etc/serverbee/server.toml"))
+            .merge(Toml::file("/opt/serverbee/etc/server.toml"))
             .merge(Toml::file("server.toml"))
             .merge(Env::prefixed("SERVERBEE_").split("__"))
             .extract()?;
