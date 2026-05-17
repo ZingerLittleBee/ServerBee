@@ -52,6 +52,7 @@
     - `GET /api/auth/me`
     - `POST /api/auth/onboarding`
     - `POST /api/auth/logout`
+  - **路径匹配口径**（修正自 review P2）：API router 经 `.nest("/api", api::router(...))` 挂载（`crates/server/src/router/mod.rs:21`），auth_middleware 在 nest 内运行时 `req.uri().path()` 已被 strip 成 `/auth/me`（不含 `/api`）。白名单匹配以 **stripped 路径**为准（`/auth/me`、`/auth/onboarding`、`/auth/logout`），不要写 `/api/...` 前缀；如需原始路径用 `axum::extract::OriginalUri`。集成测试用真实完整路径 `/api/auth/onboarding` 打，验证 strip 后匹配正确。
   - 其余 HTTP 请求返回 `403`。**错误码约定**（修正自 review P1）：现有 `AppError::Forbidden(s)` 经 `IntoResponse` 产出 `{ error: { code: "FORBIDDEN", message: "Forbidden: {s}" } }`（见 `crates/server/src/error.rs:39,69`），`code` 对所有 Forbidden 都是 `FORBIDDEN`，无法区分。因此中间件**不走 `AppError`**，直接构造自定义 `Response`，body 为 `{ error: { code: "MUST_CHANGE_PASSWORD", message: "Password change required before continuing" } }`，HTTP 403。前端按 `error.code === "MUST_CHANGE_PASSWORD"` 匹配，不依赖 message 文本。
   - `CurrentUser` 需携带 `must_change_password`（从 user 记录读取）。
 - **用户会话类 WS 拦截**（修正自 review P1/P2）：must_change_password 时拒绝的是**用户认证的 WS**——browser (`crates/server/src/router/ws/browser.rs:49`)、terminal (`crates/server/src/router/ws/terminal.rs:99`)、docker logs (`crates/server/src/router/ws/docker_logs.rs:83`)。这三处各自在 handler 内做 session/API key/bearer 校验，**不经过 auth_middleware**，需在每个 validator 内分别加 must_change_password 检查并拒绝升级。
@@ -84,9 +85,12 @@
 ### 5. 前端
 
 - `apps/web/src/hooks/use-auth.ts`：`MeResponse` 类型经 `api-schema` 自动带出 `must_change_password`，无需手写。
-- `_authed` 守卫（`apps/web/src/routes/_authed.tsx`）：已认证且 `user.must_change_password === true` 时，强制 `navigate({ to: '/onboarding' })`，并阻止渲染常规受保护内容。
+- `_authed` 守卫（`apps/web/src/routes/_authed.tsx`）：
+  - 已认证且 `user.must_change_password === true` 时，强制 `navigate({ to: '/onboarding' })`，并阻止渲染常规受保护内容。
+  - **WS hook 门控**（修正自 review P2）：当前 `shouldConnectWs = isAuthenticated && !isLoading`（`apps/web/src/routes/_authed.tsx:130`），即使带了字段也会尝试连 browser WS。改为 `isAuthenticated && !isLoading && user?.must_change_password !== true`，确保 must-change 状态下 `useServersWs` 不启动。
 - 新路由 `apps/web/src/routes/onboarding.tsx`：
   - 独立布局，不复用 `_authed` 的侧边栏/导航（避免可点击逃逸）。
+  - **自身 auth 状态处理**（修正自 review P3，因不在 `_authed` 下）：未认证 → `navigate('/login')`；已认证但 `must_change_password !== true` → `navigate('/')`；加载中显示 loading。不依赖后端 403 兜底来决定页面可用性。
   - 表单字段：
     - 新密码（必填，password input）
     - 确认新密码（必填，前端校验一致）
@@ -143,10 +147,11 @@ Rust 单测（`crates/server`）：
 - `crates/server/src/router/ws/browser.rs` — validator 内加 must_change_password 拒绝
 - `crates/server/src/router/ws/terminal.rs` — validator 内加 must_change_password 拒绝
 - `crates/server/src/router/ws/docker_logs.rs` — validator 内加 must_change_password 拒绝
-- `crates/server/src/service/mobile.rs`（或 `router/api/mobile.rs` 调用点）— mobile login 对 must_change_password 用户返回 403，不签发设备 token
+- `crates/server/src/service/mobile_auth.rs`（`MobileAuthService::login`）+ `crates/server/src/router/api/mobile.rs` 调用点 — mobile login 对 must_change_password 用户返回 403，不签发设备 token（文件名修正自 review P3）
 - `crates/server/src/main.rs` — init_admin 调用点 + banner 增强
 - `apps/web/src/routes/onboarding.tsx` — 新页面
-- `apps/web/src/routes/_authed.tsx` — 守卫
+- `apps/web/src/routes/_authed.tsx` — 守卫 + WS hook 门控
+- `crates/server/src/openapi.rs` — 手动注册 onboarding path / OnboardingRequest schema（修正自 review P2）
 - `apps/web/src/lib/api-client.ts` — ApiError 加 code 字段 + window.location.assign 兜底
 - `apps/web/src/hooks/use-auth.ts` / `apps/web/src/routes/login.tsx` — 参考（LoginResponse 带字段后 guard 即时生效，确认无需强制 refetch）
 - `ENV.md` / `apps/docs/content/docs/{en,cn}/configuration.mdx` / README — 删 env 引导
