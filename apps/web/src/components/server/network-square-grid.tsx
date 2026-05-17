@@ -8,7 +8,7 @@ import {
   LATENCY_UNKNOWN_BAR_COLOR
 } from '@/lib/network-latency-constants'
 import { latencyColorClass } from '@/lib/network-types'
-import type { ServerCardMetricPoint } from './server-card-network-data'
+import { AGGREGATE_TARGET_ID, type ServerCardMetricPoint } from './server-card-network-data'
 
 const SQUARE_SIZE = 6
 const SQUARE_GAP = 2
@@ -87,7 +87,9 @@ function PointTooltip({ point, t }: { point: ServerCardMetricPoint; t: (key: str
           const failed = isLatencyFailure(target.lossRatio)
           return (
             <div className="flex items-center justify-between gap-3" key={target.targetId}>
-              <span className="truncate text-muted-foreground">{target.targetName}</span>
+              <span className="truncate text-muted-foreground">
+                {target.targetId === AGGREGATE_TARGET_ID ? t('card_network_avg') : target.targetName}
+              </span>
               <div className="flex gap-2 font-medium font-mono tabular-nums">
                 <span className={latencyColorClass(target.latency, { failed })}>{formatLatency(target.latency)}</span>
                 <span className={getLossTextClassName(target.lossRatio)}>{formatPacketLoss(target.lossRatio)}</span>

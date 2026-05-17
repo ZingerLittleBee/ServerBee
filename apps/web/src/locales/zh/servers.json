@@ -39,6 +39,7 @@
   "card_load": "负载",
   "card_net_total": "总流量",
   "card_network_quality": "网络质量",
+  "card_network_avg": "平均",
   "card_packet_loss": "丢包",
   "card_swap": "Swap",
   "card_net_in_speed": "↓ 入站",
