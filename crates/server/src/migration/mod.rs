@@ -22,6 +22,7 @@ mod m20260430_000019_create_custom_theme;
 mod m20260430_000020_add_status_page_theme_ref;
 mod m20260430_000021_custom_theme_ref_integrity;
 mod m20260517_000022_create_agent_enrollment;
+mod m20260517_000023_add_must_change_password;
 
 pub struct Migrator;
 
@@ -50,6 +51,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260430_000020_add_status_page_theme_ref::Migration),
             Box::new(m20260430_000021_custom_theme_ref_integrity::Migration),
             Box::new(m20260517_000022_create_agent_enrollment::Migration),
+            Box::new(m20260517_000023_add_must_change_password::Migration),
         ]
     }
 }
