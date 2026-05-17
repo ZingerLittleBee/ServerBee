@@ -84,25 +84,21 @@ Sign in to the web UI as an admin, go to **Settings**, and generate a one-time
 **enrollment code**, then copy it. The code is **single-use** and **short-lived**
 (default 10 minute expiry); mint a fresh one each time you onboard a new agent.
 
-### Step 2: Configure and start the agent
+### Step 2: Install and start the agent
 
-If you onboarded the agent via the install script (Option 2), the configuration file is generated automatically and you can skip this manual step.
+On the VPS you want to monitor, run the one-line install script, passing the server URL and the one-time enrollment code as parameters:
 
-On the VPS you want to monitor, create a minimal agent configuration file that only points at the server:
-
-```toml title="/etc/serverbee/agent.toml"
-server_url = "http://your-server-ip:9527"
+```bash
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
+  --server-url http://your-server-ip:9527 \
+  --enrollment-code YOUR_ONE_TIME_CODE
 ```
+
+The script downloads the right binary for your platform, writes the configuration, registers a systemd service, and starts the agent automatically.
 
 For collector, logging, and other tunable options, see [Agent Configuration](/en/docs/agent) and the [full configuration reference](/en/docs/configuration).
 
-On its first start, register the agent with the one-time enrollment code:
-
-```bash
-SERVERBEE_ENROLLMENT_CODE=YOUR_ONE_TIME_CODE serverbee-agent
-```
-
-The agent will:
+On its first start, the agent will:
 
 1. Contact the server and present the one-time enrollment code
 2. Register itself and receive a per-server authentication token (the code is consumed on this first successful registration)

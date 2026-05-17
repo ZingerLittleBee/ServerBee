@@ -112,25 +112,21 @@ sudo serverbee uninstall server --purge   # 卸载服务端并清除数据
 
 注册码为**单次使用**且**短时有效**（默认 10 分钟过期），仅在 Agent 首次注册时使用。每需要接入一台新 Agent，就在设置页重新生成一个新码。
 
-### 第二步：配置并启动 Agent
+### 第二步：安装并启动 Agent
 
-如果你使用安装脚本（方式二）接入 Agent，配置文件会自动生成，可跳过本节手动配置。
+在被监控的服务器上执行一键安装脚本，通过参数传入 Server 地址和一次性注册码：
 
-在被监控的服务器上创建一个最小配置文件，只需指定 Server 地址：
-
-```toml title="/etc/serverbee/agent.toml"
-server_url = "http://your-server-ip:9527"
+```bash
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
+  --server-url http://your-server-ip:9527 \
+  --enrollment-code YOUR_ONE_TIME_CODE
 ```
+
+脚本会自动检测平台架构、下载对应二进制、写入配置、注册 systemd 服务并启动 Agent。
 
 更多采集、日志等可调选项请参考 [Agent 配置](/cn/docs/agent)和[完整配置参考](/cn/docs/configuration)。
 
-首次启动 Agent 时，使用一次性注册码进行注册：
-
-```bash
-SERVERBEE_ENROLLMENT_CODE=YOUR_ONE_TIME_CODE serverbee-agent
-```
-
-注册码在 Agent 首次注册成功时即被消费。Agent 会自动向 Server 注册，获取每台服务器专属的 Token 并写回配置文件。后续启动改用持久化的 Token，无需再提供注册码。如果某个 Agent 丢失了 Token 需要重新接入，请在设置页重新生成一个新的注册码。
+首次启动时，Agent 会自动向 Server 注册：注册码在首次注册成功时即被消费，Agent 获取每台服务器专属的 Token 并写回配置文件。后续启动改用持久化的 Token，无需再提供注册码。如果某个 Agent 丢失了 Token 需要重新接入，请在设置页重新生成一个新的注册码。
 
 <Callout type="info">
 当 Agent 能读取稳定的机器标识时，重复自动注册会复用已有服务器记录，而不是继续生成新的占位条目。
