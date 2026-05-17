@@ -505,7 +505,7 @@ migrate_legacy_layout() {
             [ -f "$unit" ] || continue
             sed -i \
                 -e "s#${LEGACY_BIN_DIR}/serverbee-${comp}#${INSTALL_DIR}/serverbee-${comp}#g" \
-                -e "s#WorkingDirectory=${LEGACY_DATA_DIR}#WorkingDirectory=${DATA_DIR}#g" \
+                -e "s#WorkingDirectory=${LEGACY_DATA_DIR}#WorkingDirectory=${CONFIG_DIR}#g" \
                 -e "s#WorkingDirectory=${LEGACY_CONFIG_DIR}#WorkingDirectory=${CONFIG_DIR}#g" \
                 -e "s#SERVERBEE_SERVER__DATA_DIR=${LEGACY_DATA_DIR}#SERVERBEE_SERVER__DATA_DIR=${DATA_DIR}#g" \
                 "$unit" 2>/dev/null || true
@@ -1051,7 +1051,7 @@ After=network.target
 [Service]
 Type=simple
 ExecStart=${INSTALL_DIR}/serverbee-server
-WorkingDirectory=${DATA_DIR}
+WorkingDirectory=${CONFIG_DIR}
 Environment=SERVERBEE_SERVER__DATA_DIR=${DATA_DIR}
 Restart=always
 RestartSec=5
