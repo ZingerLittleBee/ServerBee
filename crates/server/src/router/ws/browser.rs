@@ -54,6 +54,7 @@ async fn validate_browser_auth(
     if let Some(token) = extract_session_cookie(headers)
         && let Ok(Some((user, _session))) =
             AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
+        && !user.must_change_password
     {
         return Some((user.id, user.role == "admin", None));
     }
@@ -61,6 +62,7 @@ async fn validate_browser_auth(
     // Try API key header (no expiry)
     if let Some(key) = extract_api_key(headers)
         && let Ok(Some(user)) = AuthService::validate_api_key(&state.db, &key).await
+        && !user.must_change_password
     {
         return Some((user.id, user.role == "admin", None));
     }
@@ -69,6 +71,7 @@ async fn validate_browser_auth(
     if let Some(token) = extract_bearer_token(headers)
         && let Ok(Some((user, session))) =
             AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
+        && !user.must_change_password
     {
         let mobile_expires = if session.source != "web" {
             Some(session.expires_at)
