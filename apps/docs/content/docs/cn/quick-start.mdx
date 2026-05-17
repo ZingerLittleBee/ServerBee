@@ -76,7 +76,7 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
   --server-url http://your-server-ip:9527 \
-  --discovery-key YOUR_DISCOVERY_KEY
+  --enrollment-code YOUR_ONE_TIME_CODE
 ```
 
 **管理命令：**
@@ -140,11 +140,11 @@ cargo build --release -p serverbee-agent
 
 完成 Server 安装后，按以下步骤添加监控节点：
 
-### 第一步：获取 Discovery Key
+### 第一步：生成一次性注册码
 
-登录管理面板，进入「设置」页面，找到「Auto Discovery Key」，复制该密钥。
+以管理员身份登录管理面板，进入「设置」页面，生成一个一次性注册码（Enrollment Code）并复制。
 
-Server 首次启动时会自动生成完整密钥并打印到日志中；如需轮换，也可以直接在设置页重新生成。
+注册码为**单次使用**且**短时有效**（默认 10 分钟过期），仅在 Agent 首次注册时使用。每需要接入一台新 Agent，就在设置页重新生成一个新码。
 
 ### 第二步：配置并启动 Agent
 
@@ -162,13 +162,13 @@ enable_temperature = true
 level = "info"
 ```
 
-首次启动 Agent 时，使用 Discovery Key 进行自动注册：
+首次启动 Agent 时，使用一次性注册码进行注册：
 
 ```bash
-SERVERBEE_TOKEN="" SERVERBEE_AUTO_DISCOVERY_KEY=YOUR_KEY serverbee-agent
+SERVERBEE_TOKEN="" SERVERBEE_ENROLLMENT_CODE=YOUR_ONE_TIME_CODE serverbee-agent
 ```
 
-Agent 会自动向 Server 注册，获取 Token 并写回配置文件。后续启动无需再提供 Discovery Key。
+注册码在 Agent 首次注册成功时即被消费。Agent 会自动向 Server 注册，获取每台服务器专属的 Token 并写回配置文件。后续启动改用持久化的 Token，无需再提供注册码。如果某个 Agent 丢失了 Token 需要重新接入，请在设置页重新生成一个新的注册码。
 
 <Callout type="info">
 当 Agent 能读取稳定的机器标识时，重复自动注册会复用已有服务器记录，而不是继续生成新的占位条目。

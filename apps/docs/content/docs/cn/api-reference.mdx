@@ -84,7 +84,7 @@ curl https://your-server/api/auth/me \
 | POST | `/api/mobile/auth/login` | 移动端登录 |
 | POST | `/api/mobile/auth/refresh` | 刷新移动端会话 |
 | POST | `/api/mobile/auth/pair` | 兑换移动端配对码 |
-| POST | `/api/agent/register` | Agent 使用 discovery key 自动注册 |
+| POST | `/api/agent/register` | Agent 使用一次性注册码注册（注册码在首次成功注册时被消费） |
 | GET | `/api/status` | 默认公开状态页数据 |
 | GET | `/api/status/{slug}` | 可配置公开状态页数据 |
 | GET | `/api/settings/brand` | 公开品牌设置 |
@@ -123,6 +123,7 @@ curl https://your-server/api/auth/me \
 | 端点族 | 代表端点 |
 |--------|----------|
 | 服务器管理 | `POST/PUT/DELETE /api/servers/*`、`PUT /api/servers/batch-capabilities`、`POST /api/servers/{id}/upgrade` |
+| Agent 注册码 | `POST /api/agent/enrollments`、`GET /api/agent/enrollments`、`DELETE /api/agent/enrollments/{id}`、`POST /api/agent/{id}/rotate-token` |
 | Agent 恢复 | `GET /api/servers/{target_id}/recovery-candidates`、`GET /api/servers/recovery-jobs/{job_id}`、`POST /api/servers/{target_id}/recover-merge` |
 | 分组和标签 | CRUD `/api/server-groups/*`、CRUD `/api/server-tags/*` |
 | Ping 和网络探测 | CRUD `/api/ping-tasks/*`、`/api/network-probes/*` 下的写入端点 |
@@ -141,6 +142,53 @@ curl https://your-server/api/auth/me \
 | 审计和设置 | `GET /api/audit-logs`、`/api/settings/*`、备份/恢复端点 |
 | GeoIP | `POST /api/geoip/download` |
 | 移动端推送 | `POST /api/mobile/pair`、`POST /api/mobile/push/register`、`POST /api/mobile/push/unregister` |
+
+## Agent 注册码端点
+
+以下端点均需 Admin 角色。所有响应遵循统一的 `{ "data": ... }` 包装格式。
+
+### `POST /api/agent/enrollments` —— 生成注册码
+
+生成一个一次性、短时有效的注册码（默认 TTL 600 秒 / 10 分钟，单次使用，在 Agent 首次成功注册时被消费）。
+
+响应：
+
+```json
+{
+  "data": {
+    "id": "01J...",
+    "code": "<明文注册码，仅此一次返回>",
+    "expires_at": "2026-05-17T12:34:56Z"
+  }
+}
+```
+
+明文 `code` 只在生成时返回一次，请立即复制。
+
+### `GET /api/agent/enrollments` —— 列出注册码
+
+列出已生成的注册码及其元信息。出于安全考虑，**永不返回明文注册码**，仅返回 8 位前缀和状态/过期等元数据。
+
+```json
+{
+  "data": [
+    {
+      "id": "01J...",
+      "code_prefix": "ab12cd34",
+      "expires_at": "2026-05-17T12:34:56Z",
+      "consumed_at": null
+    }
+  ]
+}
+```
+
+### `DELETE /api/agent/enrollments/{id}` —— 删除注册码
+
+删除一个尚未使用的注册码，使其立即失效。
+
+### `POST /api/agent/{id}/rotate-token` —— 轮换/吊销 run token
+
+轮换（吊销）指定服务器的 Agent run token。旧 token 立即失效，对应 Agent 会被强制断开并需使用新 token 重新连接。
 
 ## WebSocket 端点
 

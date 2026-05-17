@@ -15,7 +15,7 @@ A lightweight, self-hosted VPS monitoring system built with Rust and React.
 - **Notifications** -- Webhook, Telegram, Bark, Email (via Resend) channels with notification groups
 - **Network Quality Monitoring** -- Multi-target network probing (96 preset China 3-ISP + international nodes), real-time/historical latency charts, anomaly detection, per-server target assignment
 - **Ping Monitoring** -- ICMP, TCP, HTTP probes with latency charts and success rate
-- **Safer Agent Registration** -- Stable machine fingerprints reuse existing server records, `auth.max_servers` soft-caps auto-discovery growth, discovery keys can be regenerated from Settings, and unconnected placeholders can be cleaned up
+- **Safer Agent Registration** -- One-time, short-lived enrollment codes minted by an admin (single-use, default 10 min TTL), stable machine fingerprints reuse existing server records, `auth.max_servers` soft-caps enrollment growth, run tokens can be rotated/revoked, and unconnected placeholders can be cleaned up
 - **Web Terminal** -- Browser-based PTY terminal via WebSocket proxy
 - **GPU Monitoring** -- NVIDIA GPU usage/temperature/memory (via nvml-wrapper, feature-gated)
 - **Disk I/O Monitoring** -- Per-disk read/write throughput charts with merged and per-disk views. Linux via `/proc/diskstats`, macOS/Windows via sysinfo
@@ -77,23 +77,28 @@ cargo build --release
 ./serverbee-server
 # Default: http://localhost:9527
 # Admin password is auto-generated and printed to startup log
-# Auto-discovery key is also printed on first startup
 ```
 
 ### Run the Agent
 
+First, sign in to the server web UI as an admin, open **Settings**, and generate a
+one-time enrollment code (single-use, expires after ~10 minutes by default).
+
 ```bash
-# Set server URL and discovery key via environment variables
+# Set server URL and the one-time enrollment code via environment variables
 SERVERBEE_SERVER_URL=http://your-server:9527 \
-SERVERBEE_AUTO_DISCOVERY_KEY=YOUR_KEY \
+SERVERBEE_ENROLLMENT_CODE=YOUR_ONE_TIME_CODE \
 ./serverbee-agent
 
 # Or create /etc/serverbee/agent.toml:
 # server_url = "http://your-server:9527"
-# auto_discovery_key = "YOUR_KEY"
+# enrollment_code = "YOUR_ONE_TIME_CODE"
 ```
 
-After registration, the agent saves its token to config and reconnects automatically on restart.
+The enrollment code is consumed on the agent's first successful registration. After
+that the agent saves its per-server token to config and reconnects automatically on
+restart -- the code is no longer needed. To onboard another agent (or re-enroll one
+that lost its token), mint a fresh code in Settings.
 
 ### Docker
 
@@ -109,8 +114,8 @@ make dev-full
 # Visit http://localhost:5173, login with admin / admin123
 
 # Or step by step:
-make server-dev                                           # Terminal 1: server on :9527
-SERVERBEE_AUTO_DISCOVERY_KEY="<key>" make agent-dev       # Terminal 2: agent
+make server-dev                                                # Terminal 1: server on :9527
+SERVERBEE_ENROLLMENT_CODE="<one-time code>" make agent-dev     # Terminal 2: agent
 
 # Testing & code quality:
 make cargo-test        # Run all Rust tests (395)
@@ -121,7 +126,7 @@ make                   # Interactive menu (requires fzf)
 
 Manual browser verification checklists are indexed in `tests/README.md`.
 
-The server prints the full auto-discovery key on startup. Copy it to start the agent, or regenerate it later from Settings if needed.
+Generate a one-time enrollment code from the server web UI **Settings** page and pass it to the agent. The code is single-use and expires after ~10 minutes; mint a fresh one whenever you need to enroll another agent.
 
 > **Note**: `make dev-full` starts a Vite dev server with HMR at `http://localhost:5173` (proxies `/api/*` to the Rust server at `:9527`). For production builds, use `make build` then `make server-run`.
 
@@ -144,8 +149,7 @@ max_connections = 10
 [auth]
 session_ttl = 86400           # 24 hours
 secure_cookie = true          # Set false for HTTP-only dev
-auto_discovery_key = ""       # Leave empty to auto-generate
-max_servers = 0               # Soft limit for new auto-registered servers
+max_servers = 0               # Soft limit for newly enrolled servers
 
 [admin]
 username = "admin"
@@ -187,7 +191,7 @@ export SERVERBEE_OAUTH__GITHUB__CLIENT_ID="..."
 ```toml
 server_url = "http://your-server:9527"
 token = ""                    # Auto-populated after registration
-auto_discovery_key = ""       # Used only for first registration
+enrollment_code = ""          # One-time code from Settings; used only for first registration
 
 [collector]
 interval = 3                  # Seconds between metric reports
@@ -201,7 +205,7 @@ level = "info"
 Agent environment variables use the `SERVERBEE_` prefix without nesting (top-level keys):
 ```bash
 export SERVERBEE_SERVER_URL="http://your-server:9527"
-export SERVERBEE_AUTO_DISCOVERY_KEY="YOUR_KEY"
+export SERVERBEE_ENROLLMENT_CODE="YOUR_ONE_TIME_CODE"
 ```
 
 ### OAuth Setup
@@ -240,9 +244,9 @@ Install via curl (one-liner):
 # Server
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
 
-# Agent (replace with your server URL and discovery key)
+# Agent (replace with your server URL and a one-time enrollment code from Settings)
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
-  --server-url http://YOUR_SERVER:9527 --discovery-key YOUR_KEY
+  --server-url http://YOUR_SERVER:9527 --enrollment-code YOUR_ONE_TIME_CODE
 ```
 
 The installer automatically places a `serverbee` management CLI at `/usr/local/bin/serverbee`.

@@ -27,7 +27,6 @@ These are the variables you'll most likely want to configure:
 ```env
 SERVERBEE_ADMIN__USERNAME="admin"              # 管理员用户名（未填写自动生成 admin 用户，可在日志中查看）
 SERVERBEE_ADMIN__PASSWORD=""                   # 管理员密码（未填写自动生成，可在日志中查看）
-SERVERBEE_AUTH__AUTO_DISCOVERY_KEY=""           # Agent 自动注册密钥（未填写自动生成，可在日志中查看）
 
 SERVERBEE_LOG__LEVEL="info"                    # 日志级别（trace/debug/info/warn/error）
 
@@ -73,8 +72,7 @@ SERVERBEE_OAUTH__ALLOW_REGISTRATION="false"    # 首次登录自动创建账号�
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SERVERBEE_AUTH__SESSION_TTL` | `86400` | Session token TTL in seconds (24h) |
-| `SERVERBEE_AUTH__AUTO_DISCOVERY_KEY` | Auto-generated | Key for agent auto-registration. Leave empty to auto-generate |
-| `SERVERBEE_AUTH__MAX_SERVERS` | `0` | Maximum servers allowed via auto-discovery (0 = no limit) |
+| `SERVERBEE_AUTH__MAX_SERVERS` | `0` | Maximum servers allowed via enrollment (0 = no limit) |
 | `SERVERBEE_AUTH__SECURE_COOKIE` | `true` | Set `Secure` flag on session cookies. Set `false` for HTTP-only |
 
 #### Data Retention
@@ -142,7 +140,7 @@ After deployment, configure your agents to connect:
 
 ```bash
 SERVERBEE_SERVER_URL=https://your-railway-app.up.railway.app
-SERVERBEE_AUTO_DISCOVERY_KEY=<your-discovery-key>
+SERVERBEE_ENROLLMENT_CODE=<one-time code from Settings>
 ```
 
-The discovery key is shown in the server startup logs if auto-generated, or set via `SERVERBEE_AUTH__AUTO_DISCOVERY_KEY`.
+Sign in to the deployed server as an admin, open **Settings**, and generate a one-time enrollment code. The code is single-use and short-lived (default 10 min) and is consumed on the agent's first successful registration; mint a fresh one for each new agent.
