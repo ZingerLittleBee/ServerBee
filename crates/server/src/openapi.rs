@@ -93,8 +93,6 @@ impl Modify for SecurityAddon {
         // settings
         crate::router::api::setting::get_settings,
         crate::router::api::setting::update_settings,
-        crate::router::api::setting::get_auto_discovery_key,
-        crate::router::api::setting::regenerate_auto_discovery_key,
         crate::router::api::setting::create_backup,
         crate::router::api::setting::restore_backup,
         // themes
@@ -271,7 +269,6 @@ impl Modify for SecurityAddon {
             crate::router::api::brand::UploadResponse,
             // settings
             crate::router::api::setting::SystemSettings,
-            crate::router::api::setting::AutoDiscoveryKeyResponse,
             // themes
             crate::service::custom_theme::ThemeSummary,
             crate::service::custom_theme::Theme,

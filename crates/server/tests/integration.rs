@@ -14,7 +14,6 @@ use serverbee_server::config::{AdminConfig, AppConfig, AuthConfig, DatabaseConfi
 use serverbee_server::migration::Migrator;
 use serverbee_server::router::create_router;
 use serverbee_server::service::auth::AuthService;
-use serverbee_server::service::config::ConfigService;
 use serverbee_server::service::record::RecordService;
 use serverbee_server::state::AppState;
 
@@ -37,7 +36,6 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
         },
         auth: AuthConfig {
             session_ttl: 86400,
-            auto_discovery_key: "test-key".to_string(),
             secure_cookie: false,
             max_servers: 0,
         },
@@ -76,11 +74,6 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
     AuthService::init_admin(&db, &config.admin)
         .await
         .expect("Failed to init admin");
-
-    // Persist the auto-discovery key
-    ConfigService::set(&db, "auto_discovery_key", "test-key")
-        .await
-        .expect("Failed to set auto_discovery_key");
 
     // Build state and router
     let state = AppState::new(db, config)
@@ -1959,63 +1952,6 @@ async fn test_user_management_crud() {
             .iter()
             .any(|u| u["id"].as_str() == Some(user_id)),
         "Deleted user should not appear in user list"
-    );
-}
-
-#[tokio::test]
-async fn test_settings_auto_discovery_key() {
-    let (base_url, _tmp) = start_test_server().await;
-    let client = http_client();
-
-    login_admin(&client, &base_url).await;
-
-    // ── GET current auto-discovery key ──
-    let get_resp = client
-        .get(format!("{}/api/settings/auto-discovery-key", base_url))
-        .send()
-        .await
-        .expect("GET /api/settings/auto-discovery-key failed");
-
-    assert_eq!(
-        get_resp.status(),
-        200,
-        "GET auto-discovery-key should succeed"
-    );
-    let get_body: serde_json::Value = get_resp.json().await.unwrap();
-    let original_key = get_body["data"]["key"]
-        .as_str()
-        .expect("key field missing")
-        .to_string();
-    assert!(
-        !original_key.is_empty(),
-        "Auto-discovery key should not be empty"
-    );
-
-    // ── PUT to regenerate the key ──
-    let regen_resp = client
-        .put(format!("{}/api/settings/auto-discovery-key", base_url))
-        .send()
-        .await
-        .expect("PUT /api/settings/auto-discovery-key failed");
-
-    assert_eq!(
-        regen_resp.status(),
-        200,
-        "Regenerate auto-discovery-key should succeed"
-    );
-    let regen_body: serde_json::Value = regen_resp.json().await.unwrap();
-    let new_key = regen_body["data"]["key"]
-        .as_str()
-        .expect("key field missing after regeneration")
-        .to_string();
-
-    assert!(
-        !new_key.is_empty(),
-        "New auto-discovery key should not be empty"
-    );
-    assert_ne!(
-        original_key, new_key,
-        "Regenerated key should differ from the original key"
     );
 }
 
