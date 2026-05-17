@@ -440,6 +440,31 @@ configure_docker_dir() {
     fi
 }
 
+# Config directory for docker-mode components. The snap-confined Docker
+# daemon cannot bind-mount paths under /opt or /etc (its rootfs is
+# read-only), so config that must be visible inside a container has to
+# live under the snap-accessible tree. For non-snap Docker this is the
+# normal CONFIG_DIR, so binary mode and non-snap Docker are unchanged.
+docker_conf_dir() {
+    if docker_is_snap; then
+        echo "${SNAP_DOCKER_DIR}/etc"
+    else
+        echo "${CONFIG_DIR}"
+    fi
+}
+
+# Resolve a component's config file based on how it was installed.
+# Docker-managed components may live under the snap-accessible tree.
+conf_file_for() {
+    local comp="$1" method
+    method=$(meta_read "$comp" "method" 2>/dev/null || echo "")
+    if [ "$method" = "docker" ]; then
+        echo "$(docker_conf_dir)/${comp}.toml"
+    else
+        echo "${CONFIG_DIR}/${comp}.toml"
+    fi
+}
+
 # ─── Root check ───────────────────────────────────────────────────────────────
 require_root() {
     if [ "$(id -u)" -ne 0 ]; then
@@ -1151,17 +1176,19 @@ install_docker_server() {
     version=$(get_latest_version)
     image_tag=$(docker_image_tag "$version")
 
-    mkdir -p "$DOCKER_DIR" "$CONFIG_DIR"
+    local conf_dir
+    conf_dir="$(docker_conf_dir)"
+    mkdir -p "$DOCKER_DIR" "$conf_dir"
 
     # Generate server.toml (skip if exists)
-    if [ ! -f "${CONFIG_DIR}/server.toml" ]; then
-        cat > "${CONFIG_DIR}/server.toml" << TOML
+    if [ ! -f "${conf_dir}/server.toml" ]; then
+        cat > "${conf_dir}/server.toml" << TOML
 [server]
 data_dir = "/data"
 TOML
-        info "Created ${CONFIG_DIR}/server.toml"
+        info "Created ${conf_dir}/server.toml"
     else
-        warn "${CONFIG_DIR}/server.toml already exists, not overwriting"
+        warn "${conf_dir}/server.toml already exists, not overwriting"
     fi
 
     cat > "${DOCKER_DIR}/docker-compose.server.yml" << YAML
@@ -1205,11 +1232,13 @@ install_docker_agent() {
     version=$(get_latest_version)
     image_tag=$(docker_image_tag "$version")
 
-    mkdir -p "$CONFIG_DIR"
+    local conf_dir
+    conf_dir="$(docker_conf_dir)"
+    mkdir -p "$conf_dir"
 
     # Generate agent.toml (skip if exists)
-    if [ ! -f "${CONFIG_DIR}/agent.toml" ]; then
-        cat > "${CONFIG_DIR}/agent.toml" << TOML
+    if [ ! -f "${conf_dir}/agent.toml" ]; then
+        cat > "${conf_dir}/agent.toml" << TOML
 server_url = "${SERVER_URL}"
 enrollment_code = "${ENROLLMENT_CODE}"
 
@@ -1217,9 +1246,9 @@ enrollment_code = "${ENROLLMENT_CODE}"
 interval = 3
 enable_temperature = true
 TOML
-        info "Created ${CONFIG_DIR}/agent.toml"
+        info "Created ${conf_dir}/agent.toml"
     else
-        warn "${CONFIG_DIR}/agent.toml already exists, not overwriting"
+        warn "${conf_dir}/agent.toml already exists, not overwriting"
     fi
 
     mkdir -p "$DOCKER_DIR"
@@ -1236,7 +1265,7 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /etc/machine-id:/etc/machine-id:ro
-      - ${CONFIG_DIR}:/etc/serverbee
+      - ${conf_dir}:/etc/serverbee
     restart: unless-stopped
 YAML
 
@@ -1283,7 +1312,11 @@ print_agent_result() {
         echo "$(tr_text lbl_start) ${INSTALL_DIR}/serverbee-agent &"
     fi
     echo ""
-    echo "$(tr_text lbl_config) ${CONFIG_DIR}/agent.toml"
+    if [ "$METHOD" = "docker" ]; then
+        echo "$(tr_text lbl_config) $(docker_conf_dir)/agent.toml"
+    else
+        echo "$(tr_text lbl_config) ${CONFIG_DIR}/agent.toml"
+    fi
     echo "$(tr_text lbl_docs) ${DOCS_URL}/$(docs_lang)/docs/configuration"
     echo ""
 }
@@ -1634,13 +1667,13 @@ print_install_plan() {
             ;;
         server-docker)
             print_common_docker_plan "server"
-            echo "$(tr_text plan_cfg_file) ${CONFIG_DIR}/server.toml"
+            echo "$(tr_text plan_cfg_file) $(docker_conf_dir)/server.toml"
             echo "$(tr_text plan_compose_file) ${DOCKER_DIR}/docker-compose.server.yml"
             echo "$(tr_text plan_docker_volume)"
             ;;
         agent-docker)
             print_common_docker_plan "agent"
-            echo "$(tr_text plan_cfg_file) ${CONFIG_DIR}/agent.toml"
+            echo "$(tr_text plan_cfg_file) $(docker_conf_dir)/agent.toml"
             echo "$(tr_text plan_compose_file) ${DOCKER_DIR}/docker-compose.agent.yml"
             ;;
     esac
@@ -1838,7 +1871,7 @@ uninstall_docker() {
             done
         fi
         rm -f "$compose_file"
-        rm -f "${CONFIG_DIR}/${component}.toml"
+        rm -f "$(docker_conf_dir)/${component}.toml"
         info "Config, data, images, and volumes purged"
     fi
 }
@@ -2325,13 +2358,13 @@ cmd_config() {
 
         local files_to_update=()
         if [ "$target" = "both" ]; then
-            meta_has "agent" && files_to_update+=("${CONFIG_DIR}/agent.toml")
-            meta_has "server" && files_to_update+=("${CONFIG_DIR}/server.toml")
+            meta_has "agent" && files_to_update+=("$(conf_file_for agent)")
+            meta_has "server" && files_to_update+=("$(conf_file_for server)")
             [ ${#files_to_update[@]} -eq 0 ] && error "No managed components found to update log config"
         elif [ "$target" = "agent" ]; then
-            files_to_update=("${CONFIG_DIR}/agent.toml")
+            files_to_update=("$(conf_file_for agent)")
         elif [ "$target" = "server" ]; then
-            files_to_update=("${CONFIG_DIR}/server.toml")
+            files_to_update=("$(conf_file_for server)")
         fi
 
         for file in "${files_to_update[@]}"; do
@@ -2392,7 +2425,8 @@ cmd_config() {
     [ ${#targets[@]} -eq 0 ] && error "No managed components found."
 
     for comp in "${targets[@]}"; do
-        local file="${CONFIG_DIR}/${comp}.toml"
+        local file
+        file="$(conf_file_for "$comp")"
         echo ""
         echo -e "${BOLD}${comp^} config (${file})${NC}"
         echo "─────────────────────────────────"
