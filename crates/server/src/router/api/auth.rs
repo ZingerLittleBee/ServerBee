@@ -60,6 +60,12 @@ pub struct ChangePasswordRequest {
     new_password: String,
 }
 
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct OnboardingRequest {
+    new_password: String,
+    new_username: Option<String>,
+}
+
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct TotpSetupResponse {
     secret: String,
@@ -96,6 +102,7 @@ pub fn protected_router() -> Router<Arc<AppState>> {
         .route("/auth/api-keys", get(list_api_keys))
         .route("/auth/api-keys/{id}", delete(delete_api_key))
         .route("/auth/password", put(change_password))
+        .route("/auth/onboarding", post(onboarding))
         // 2FA
         .route("/auth/2fa/setup", post(totp_setup))
         .route("/auth/2fa/enable", post(totp_enable))
@@ -372,6 +379,45 @@ pub async fn change_password(
         &ip,
     )
     .await;
+
+    ok("ok")
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/auth/onboarding",
+    tag = "auth",
+    request_body = OnboardingRequest,
+    responses(
+        (status = 200, description = "Onboarding complete"),
+        (status = 403, description = "Onboarding not required / forbidden"),
+        (status = 409, description = "Username already taken"),
+        (status = 422, description = "Validation error"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
+)]
+pub async fn onboarding(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Extension(current_user): Extension<CurrentUser>,
+    req_headers: HeaderMap,
+    Json(body): Json<OnboardingRequest>,
+) -> Result<Json<ApiResponse<&'static str>>, AppError> {
+    AuthService::complete_onboarding(
+        &state.db,
+        &current_user.user_id,
+        &body.new_password,
+        body.new_username.as_deref(),
+    )
+    .await?;
+
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &req_headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+    let _ = AuditService::log(&state.db, &current_user.user_id, "onboarding", None, &ip).await;
 
     ok("ok")
 }
