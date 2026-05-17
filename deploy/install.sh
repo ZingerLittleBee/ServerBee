@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Requires bash 4.0+ (associative arrays for i18n string tables).
+if [ -z "${BASH_VERSINFO:-}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+    echo "ServerBee installer requires bash 4.0+ (found ${BASH_VERSION:-unknown})." >&2
+    echo "On macOS: 'brew install bash' then run it with that bash." >&2
+    exit 1
+fi
+
 # ─── Constants ────────────────────────────────────────────────────────────────
 REPO="ZingerLittleBee/ServerBee"
 # Everything ServerBee installs lives under a single base directory for
@@ -99,73 +106,267 @@ select_language() {
     esac
 }
 
+# i18n string tables. Add new user-facing strings here in both languages.
+# Parametrized strings use printf format specifiers (%s) — render via trp().
+declare -A I18N_EN=(
+    [manager_title]="ServerBee Manager"
+    [install_menu]="  [1] Install    安装"
+    [uninstall_menu]="  [2] Uninstall  卸载"
+    [upgrade_menu]="  [3] Upgrade    升级"
+    [status_menu]="  [4] Status     查看状态"
+    [service_menu]="  [5] Service    服务控制 (start/stop/restart)"
+    [config_menu]="  [6] Config     配置管理"
+    [env_menu]="  [7] Env        环境变量"
+    [domain_menu]="  [8] Domain     域名 HTTPS"
+    [exit_menu]="  [0] Exit       退出"
+    [select_menu]="Select [0-8]: "
+    [install_title]="Install"
+    [server_option]="  [1] Server  — Dashboard & API"
+    [agent_option]="  [2] Agent   — System metrics collector"
+    [select_component]="Select component [1/2]: "
+    [server_docker_recommended]="  [1] Docker  (recommended for Server)"
+    [agent_binary_recommended]="  [1] Binary  (recommended for Agent)"
+    [binary_option]="  [2] Binary"
+    [docker_option]="  [2] Docker"
+    [select_method]="Select installation method [1/2]: "
+    [configure_domain]="Configure HTTPS domain with Caddy now? [y/N]: "
+    [domain_prompt]="Domain (e.g., monitor.example.com): "
+    [email_prompt]="Email for certificate notices (optional): "
+    [server_url_prompt]="Server URL (e.g., http://10.0.0.1:9527): "
+    [enrollment_prompt]="Enrollment code: "
+    [install_plan_title]="Installation plan"
+    [domain_plan_title]="Domain setup plan"
+    [will_add_download]="Will add or download:"
+    [start_install]="Start installation now? [y/N]: "
+    [start_domain]="Start domain setup now? [y/N]: "
+    [preflight]="Preflight checks:"
+    [svc_title]="Service control"
+    [svc_start]="  [1] Start"
+    [svc_stop]="  [2] Stop"
+    [svc_restart]="  [3] Restart"
+    [svc_select]="Select [1-3]: "
+    [uninstall_title]="Uninstall"
+    [opt_server]="  [1] Server"
+    [opt_agent]="  [2] Agent"
+    [uninstall_confirm]="Uninstall serverbee-%s (%s)%s? [y/N]: "
+    [uninstall_purge_note]=" (including config and data)"
+    [uninstall_preserved]="  Config preserved at:"
+    [uninstall_purge_hint]="  To remove all data:  re-run with --purge"
+    [deps_install_confirm]="  Install them now? [y/N]: "
+    [docker_continue_confirm]="  Continue with Docker? [y/N]: "
+    [docker_agent_note]="  ServerBee Agent is portable software:"
+    [docker_agent_note1]="  - Single binary, no residual files"
+    [docker_agent_note2]="  - Docker requires --privileged for full metrics"
+    [docker_agent_note3]="  - Web terminal accesses container, not host"
+    [upgrade_confirm]="Proceed with upgrade? [y/N]: "
+    [restart_apply_q]="  Restart service to apply changes?"
+    [restart_apply_confirm]="  [y/N]: "
+    [plan_component]="Component:"
+    [plan_method]="Method:"
+    [plan_access]="Access:"
+    [plan_access_ip_val]="IP / direct port (:9527)"
+    [plan_access_domain_val]="domain"
+    [plan_server_url]="Server URL:"
+    [plan_cfg_file]="  - Config file:"
+    [plan_data_dir]="  - Data directory:"
+    [plan_compose_file]="  - Compose file:"
+    [plan_docker_volume]="  - Docker volume: serverbee-data"
+    [plan_systemd]="  - systemd service:"
+    [plan_pkgs]="  - System packages:"
+    [plan_pkgs_suffix]="(required script tools)"
+    [plan_gh_meta]="  - GitHub API: latest ServerBee release metadata"
+    [plan_binary_adopt_pre]="  - Binary: existing"
+    [plan_binary_adopt_suf]="will be adopted (no binary download)"
+    [plan_binary_dl]="  - Binary:"
+    [plan_cli_script]="  - CLI script:"
+    [plan_docker_prereq]="  - Prerequisite: Docker and Docker Compose V2 must already be installed"
+    [plan_docker_image]="  - Docker image:"
+    [domain_plan_header]="HTTPS domain setup:"
+    [dp_dns_pre]="  - DNS validation:"
+    [dp_dns_suf]="must resolve to this server"
+    [dp_repo]="  - Caddy repository: Cloudsmith apt repo on Debian/Ubuntu, or COPR on Fedora/CentOS"
+    [dp_key]="  - Caddy apt key:"
+    [dp_src]="  - Caddy apt source:"
+    [dp_pkgs]="  - System packages: Caddy and its repository dependencies when missing"
+    [dp_caddyfile]="  - Caddyfile:"
+    [dp_bind]="  - Server bind address: 127.0.0.1:9527"
+    [dp_cookie]="  - secure_cookie: true"
+    [dp_url]="  - Public URL:"
+    [domain_label]="Domain:"
+    [email_label]="Email: "
+    [result_server_ok]="ServerBee Server installed successfully!"
+    [result_agent_ok]="ServerBee Agent installed successfully!"
+    [lbl_dashboard]="  Dashboard:"
+    [lbl_username]="  Username:"
+    [lbl_password]="  Password:"
+    [pw_docker]="(auto-generated, check: docker compose -f %s logs serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
+    [pw_systemd]="(auto-generated, check: sudo journalctl -u serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
+    [pw_proc]="(auto-generated, check process output for 'FIRST-RUN ADMIN CREDENTIALS')"
+    [lbl_docs]="  Docs:"
+    [lbl_server_url]="  Server URL:"
+    [lbl_logs]="  Logs:"
+    [lbl_start]="  Start:"
+    [lbl_config]="  Config:"
+    [status_none]="No ServerBee components found. Run 'serverbee install' to get started."
+    [status_title]="ServerBee Status"
+    [st_version]="  Version:"
+    [st_binary]="  Binary:"
+    [st_config]="  Config:"
+    [st_service]="  Service:"
+    [st_active]="active (running)"
+    [st_since]="since"
+    [st_recent_logs]="  Recent logs:"
+    [st_no_logs]="    (no logs)"
+    [st_server]="  Server:"
+    [st_dashboard]="  Dashboard:"
+    [st_container]="  Container:"
+    [st_stopped]="stopped"
+    [st_image]="  Image:"
+    [st_port]="  Port:"
+    [st_unknown]="unknown"
+)
+declare -A I18N_ZH=(
+    [manager_title]="ServerBee 管理器"
+    [install_menu]="  [1] 安装      Install"
+    [uninstall_menu]="  [2] 卸载      Uninstall"
+    [upgrade_menu]="  [3] 升级      Upgrade"
+    [status_menu]="  [4] 状态      Status"
+    [service_menu]="  [5] 服务控制  Service (start/stop/restart)"
+    [config_menu]="  [6] 配置管理  Config"
+    [env_menu]="  [7] 环境变量  Env"
+    [domain_menu]="  [8] 域名 HTTPS Domain"
+    [exit_menu]="  [0] 退出      Exit"
+    [select_menu]="选择 [0-8]: "
+    [install_title]="安装"
+    [server_option]="  [1] Server  — 控制台和 API"
+    [agent_option]="  [2] Agent   — 系统指标采集器"
+    [select_component]="选择组件 [1/2]: "
+    [server_docker_recommended]="  [1] Docker  (Server 推荐)"
+    [agent_binary_recommended]="  [1] Binary  (Agent 推荐)"
+    [binary_option]="  [2] Binary"
+    [docker_option]="  [2] Docker"
+    [select_method]="选择安装方式 [1/2]: "
+    [configure_domain]="现在配置 HTTPS 域名（Caddy）吗？[y/N]: "
+    [domain_prompt]="域名（例如 monitor.example.com）: "
+    [email_prompt]="证书通知邮箱（可选）: "
+    [server_url_prompt]="Server URL（例如 http://10.0.0.1:9527）: "
+    [enrollment_prompt]="Enrollment code（注册码）: "
+    [install_plan_title]="安装计划"
+    [domain_plan_title]="域名配置计划"
+    [will_add_download]="将添加或下载:"
+    [start_install]="现在开始安装？[y/N]: "
+    [start_domain]="现在开始域名配置？[y/N]: "
+    [preflight]="安装前检查:"
+    [svc_title]="服务控制"
+    [svc_start]="  [1] 启动"
+    [svc_stop]="  [2] 停止"
+    [svc_restart]="  [3] 重启"
+    [svc_select]="选择 [1-3]: "
+    [uninstall_title]="卸载"
+    [opt_server]="  [1] Server"
+    [opt_agent]="  [2] Agent"
+    [uninstall_confirm]="卸载 serverbee-%s（%s）%s ? [y/N]: "
+    [uninstall_purge_note]="（含配置与数据）"
+    [uninstall_preserved]="  配置已保留:"
+    [uninstall_purge_hint]="  如需移除全部数据: 重新运行并加 --purge"
+    [deps_install_confirm]="  现在安装它们？[y/N]: "
+    [docker_continue_confirm]="  仍然继续使用 Docker？[y/N]: "
+    [docker_agent_note]="  ServerBee Agent 是便携软件:"
+    [docker_agent_note1]="  - 单一二进制，无残留文件"
+    [docker_agent_note2]="  - Docker 需 --privileged 才能采集完整指标"
+    [docker_agent_note3]="  - Web 终端访问的是容器而非宿主机"
+    [upgrade_confirm]="确认升级？[y/N]: "
+    [restart_apply_q]="  重启服务以应用更改？"
+    [restart_apply_confirm]="  [y/N]: "
+    [plan_component]="组件:"
+    [plan_method]="方式:"
+    [plan_access]="访问:"
+    [plan_access_ip_val]="IP / 直连端口 (:9527)"
+    [plan_access_domain_val]="域名"
+    [plan_server_url]="Server URL:"
+    [plan_cfg_file]="  - 配置文件:"
+    [plan_data_dir]="  - 数据目录:"
+    [plan_compose_file]="  - Compose 文件:"
+    [plan_docker_volume]="  - Docker 卷: serverbee-data"
+    [plan_systemd]="  - systemd 服务:"
+    [plan_pkgs]="  - 系统软件包:"
+    [plan_pkgs_suffix]="（脚本所需工具）"
+    [plan_gh_meta]="  - GitHub API: 最新 ServerBee 发布元数据"
+    [plan_binary_adopt_pre]="  - 二进制: 已存在"
+    [plan_binary_adopt_suf]="将被沿用（不下载二进制）"
+    [plan_binary_dl]="  - 二进制:"
+    [plan_cli_script]="  - CLI 脚本:"
+    [plan_docker_prereq]="  - 前置条件: 需已安装 Docker 与 Docker Compose V2"
+    [plan_docker_image]="  - Docker 镜像:"
+    [domain_plan_header]="HTTPS 域名配置:"
+    [dp_dns_pre]="  - DNS 校验:"
+    [dp_dns_suf]="必须解析到本机"
+    [dp_repo]="  - Caddy 仓库: Debian/Ubuntu 用 Cloudsmith apt 源，Fedora/CentOS 用 COPR"
+    [dp_key]="  - Caddy apt key:"
+    [dp_src]="  - Caddy apt source:"
+    [dp_pkgs]="  - 系统软件包: 缺失时安装 Caddy 及其仓库依赖"
+    [dp_caddyfile]="  - Caddyfile:"
+    [dp_bind]="  - 服务监听地址: 127.0.0.1:9527"
+    [dp_cookie]="  - secure_cookie: true"
+    [dp_url]="  - 公网地址:"
+    [domain_label]="域名:"
+    [email_label]="邮箱: "
+    [result_server_ok]="ServerBee Server 安装成功！"
+    [result_agent_ok]="ServerBee Agent 安装成功！"
+    [lbl_dashboard]="  控制台:"
+    [lbl_username]="  用户名:"
+    [lbl_password]="  密码:"
+    [pw_docker]="（自动生成，查看: docker compose -f %s logs serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
+    [pw_systemd]="（自动生成，查看: sudo journalctl -u serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
+    [pw_proc]="（自动生成，在进程输出中查找 'FIRST-RUN ADMIN CREDENTIALS')"
+    [lbl_docs]="  文档:"
+    [lbl_server_url]="  Server URL:"
+    [lbl_logs]="  日志:"
+    [lbl_start]="  启动:"
+    [lbl_config]="  配置:"
+    [status_none]="未找到任何 ServerBee 组件。运行 'serverbee install' 开始安装。"
+    [status_title]="ServerBee 状态"
+    [st_version]="  版本:"
+    [st_binary]="  二进制:"
+    [st_config]="  配置:"
+    [st_service]="  服务:"
+    [st_active]="运行中"
+    [st_since]="自"
+    [st_recent_logs]="  最近日志:"
+    [st_no_logs]="    （无日志）"
+    [st_server]="  Server:"
+    [st_dashboard]="  控制台:"
+    [st_container]="  容器:"
+    [st_stopped]="已停止"
+    [st_image]="  镜像:"
+    [st_port]="  端口:"
+    [st_unknown]="未知"
+)
+
 tr_text() {
-    local key="$1"
-    case "${LANG_CODE:-en}:${key}" in
-        zh:manager_title) echo "ServerBee 管理器" ;;
-        en:manager_title) echo "ServerBee Manager" ;;
-        zh:install_menu) echo "  [1] 安装      Install" ;;
-        en:install_menu) echo "  [1] Install    安装" ;;
-        zh:uninstall_menu) echo "  [2] 卸载      Uninstall" ;;
-        en:uninstall_menu) echo "  [2] Uninstall  卸载" ;;
-        zh:upgrade_menu) echo "  [3] 升级      Upgrade" ;;
-        en:upgrade_menu) echo "  [3] Upgrade    升级" ;;
-        zh:status_menu) echo "  [4] 状态      Status" ;;
-        en:status_menu) echo "  [4] Status     查看状态" ;;
-        zh:service_menu) echo "  [5] 服务控制  Service (start/stop/restart)" ;;
-        en:service_menu) echo "  [5] Service    服务控制 (start/stop/restart)" ;;
-        zh:config_menu) echo "  [6] 配置管理  Config" ;;
-        en:config_menu) echo "  [6] Config     配置管理" ;;
-        zh:env_menu) echo "  [7] 环境变量  Env" ;;
-        en:env_menu) echo "  [7] Env        环境变量" ;;
-        zh:domain_menu) echo "  [8] 域名 HTTPS Domain" ;;
-        en:domain_menu) echo "  [8] Domain     域名 HTTPS" ;;
-        zh:exit_menu) echo "  [0] 退出      Exit" ;;
-        en:exit_menu) echo "  [0] Exit       退出" ;;
-        zh:select_menu) echo "选择 [0-8]: " ;;
-        en:select_menu) echo "Select [0-8]: " ;;
-        zh:install_title) echo "安装" ;;
-        en:install_title) echo "Install" ;;
-        zh:server_option) echo "  [1] Server  — 控制台和 API" ;;
-        en:server_option) echo "  [1] Server  — Dashboard & API" ;;
-        zh:agent_option) echo "  [2] Agent   — 系统指标采集器" ;;
-        en:agent_option) echo "  [2] Agent   — System metrics collector" ;;
-        zh:select_component) echo "选择组件 [1/2]: " ;;
-        en:select_component) echo "Select component [1/2]: " ;;
-        zh:server_docker_recommended) echo "  [1] Docker  (Server 推荐)" ;;
-        en:server_docker_recommended) echo "  [1] Docker  (recommended for Server)" ;;
-        zh:agent_binary_recommended) echo "  [1] Binary  (Agent 推荐)" ;;
-        en:agent_binary_recommended) echo "  [1] Binary  (recommended for Agent)" ;;
-        zh:binary_option) echo "  [2] Binary" ;;
-        en:binary_option) echo "  [2] Binary" ;;
-        zh:docker_option) echo "  [2] Docker" ;;
-        en:docker_option) echo "  [2] Docker" ;;
-        zh:select_method) echo "选择安装方式 [1/2]: " ;;
-        en:select_method) echo "Select installation method [1/2]: " ;;
-        zh:configure_domain) echo "现在配置 HTTPS 域名（Caddy）吗？[y/N]: " ;;
-        en:configure_domain) echo "Configure HTTPS domain with Caddy now? [y/N]: " ;;
-        zh:domain_prompt) echo "域名（例如 monitor.example.com）: " ;;
-        en:domain_prompt) echo "Domain (e.g., monitor.example.com): " ;;
-        zh:email_prompt) echo "证书通知邮箱（可选）: " ;;
-        en:email_prompt) echo "Email for certificate notices (optional): " ;;
-        zh:server_url_prompt) echo "Server URL（例如 http://10.0.0.1:9527）: " ;;
-        en:server_url_prompt) echo "Server URL (e.g., http://10.0.0.1:9527): " ;;
-        zh:enrollment_prompt) echo "Enrollment code（注册码）: " ;;
-        en:enrollment_prompt) echo "Enrollment code: " ;;
-        zh:install_plan_title) echo "安装计划" ;;
-        en:install_plan_title) echo "Installation plan" ;;
-        zh:domain_plan_title) echo "域名配置计划" ;;
-        en:domain_plan_title) echo "Domain setup plan" ;;
-        zh:will_add_download) echo "将添加或下载:" ;;
-        en:will_add_download) echo "Will add or download:" ;;
-        zh:start_install) echo "现在开始安装？[y/N]: " ;;
-        en:start_install) echo "Start installation now? [y/N]: " ;;
-        zh:start_domain) echo "现在开始域名配置？[y/N]: " ;;
-        en:start_domain) echo "Start domain setup now? [y/N]: " ;;
-        zh:preflight) echo "安装前检查:" ;;
-        en:preflight) echo "Preflight checks:" ;;
-        *) echo "$key" ;;
-    esac
+    local key="$1" val
+    if [ "${LANG_CODE:-en}" = "zh" ]; then
+        val="${I18N_ZH[$key]-}"
+    else
+        val="${I18N_EN[$key]-}"
+    fi
+    # Fall back to English, then to a visible marker so gaps are obvious.
+    [ -n "$val" ] || val="${I18N_EN[$key]-??${key}??}"
+    echo "$val"
+}
+
+# Docs site language segment (apps/docs is bilingual: cn / en).
+docs_lang() {
+    [ "${LANG_CODE:-en}" = "zh" ] && echo "cn" || echo "en"
+}
+
+# Translate + printf for parametrized strings (no trailing newline added).
+trp() {
+    local key="$1"; shift
+    local fmt
+    fmt="$(tr_text "$key")"
+    # shellcheck disable=SC2059
+    printf "$fmt" "$@"
 }
 
 # ─── Dependency check ─────────────────────────────────────────────────────────
@@ -203,7 +404,7 @@ check_deps() {
         install_deps "${missing[@]}"
     else
         warn "Missing required tools: ${missing[*]}"
-        read -rp "  Install them now? [y/N]: " confirm
+        read -rp "$(tr_text deps_install_confirm)" confirm
         case "$confirm" in
             [yY]|[yY][eE][sS]) install_deps "${missing[@]}" ;;
             *) error "Cannot continue without: ${missing[*]}" ;;
@@ -1046,38 +1247,38 @@ print_server_result() {
     local ip
     ip=$(get_local_ip)
     echo ""
-    echo -e "${GREEN}ServerBee Server installed successfully!${NC}"
+    echo -e "${GREEN}$(tr_text result_server_ok)${NC}"
     echo ""
-    echo "  Dashboard:  http://${ip}:9527"
-    echo "  Username:   admin"
+    echo "$(tr_text lbl_dashboard) http://${ip}:9527"
+    echo "$(tr_text lbl_username) admin"
     if [ "$METHOD" = "docker" ]; then
-        echo "  Password:   (auto-generated, check: docker compose -f ${DOCKER_DIR}/docker-compose.server.yml logs serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
+        echo "$(tr_text lbl_password) $(trp pw_docker "${DOCKER_DIR}/docker-compose.server.yml")"
     elif has_systemd; then
-        echo "  Password:   (auto-generated, check: sudo journalctl -u serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
+        echo "$(tr_text lbl_password) $(tr_text pw_systemd)"
     else
-        echo "  Password:   (auto-generated, check process output for 'FIRST-RUN ADMIN CREDENTIALS')"
+        echo "$(tr_text lbl_password) $(tr_text pw_proc)"
     fi
     echo ""
-    echo "  Docs: ${DOCS_URL}/en/docs/configuration"
+    echo "$(tr_text lbl_docs) ${DOCS_URL}/$(docs_lang)/docs/configuration"
     echo ""
 }
 
 print_agent_result() {
     echo ""
-    echo -e "${GREEN}ServerBee Agent installed successfully!${NC}"
+    echo -e "${GREEN}$(tr_text result_agent_ok)${NC}"
     echo ""
-    echo "  Server URL: ${SERVER_URL}"
+    echo "$(tr_text lbl_server_url) ${SERVER_URL}"
     if [ "$METHOD" = "docker" ]; then
-        echo "  Logs:   docker compose -f ${DOCKER_DIR}/docker-compose.agent.yml logs -f"
+        echo "$(tr_text lbl_logs) docker compose -f ${DOCKER_DIR}/docker-compose.agent.yml logs -f"
     elif has_systemd; then
-        echo "  Start:  sudo systemctl start serverbee-agent"
-        echo "  Logs:   sudo journalctl -u serverbee-agent -f"
+        echo "$(tr_text lbl_start) sudo systemctl start serverbee-agent"
+        echo "$(tr_text lbl_logs) sudo journalctl -u serverbee-agent -f"
     else
-        echo "  Start:  ${INSTALL_DIR}/serverbee-agent &"
+        echo "$(tr_text lbl_start) ${INSTALL_DIR}/serverbee-agent &"
     fi
     echo ""
-    echo "  Config: ${CONFIG_DIR}/agent.toml"
-    echo "  Docs:   ${DOCS_URL}/en/docs/configuration"
+    echo "$(tr_text lbl_config) ${CONFIG_DIR}/agent.toml"
+    echo "$(tr_text lbl_docs) ${DOCS_URL}/$(docs_lang)/docs/configuration"
     echo ""
 }
 
@@ -1305,7 +1506,7 @@ cmd_domain() {
 print_missing_deps_plan() {
     collect_missing_deps
     if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
-        echo "  - System packages: ${MISSING_DEPS[*]} (required script tools)"
+        echo "$(tr_text plan_pkgs) ${MISSING_DEPS[*]} $(tr_text plan_pkgs_suffix)"
     fi
 }
 
@@ -1316,38 +1517,38 @@ print_common_binary_plan() {
     arch=$(detect_arch)
     filename="serverbee-${component}-${os}-${arch}"
 
-    echo "  - GitHub API: latest ServerBee release metadata"
+    echo "$(tr_text plan_gh_meta)"
     if [ -f "${INSTALL_DIR}/serverbee-${component}" ]; then
-        echo "  - Binary: existing ${INSTALL_DIR}/serverbee-${component} will be adopted (no binary download)"
+        echo "$(tr_text plan_binary_adopt_pre) ${INSTALL_DIR}/serverbee-${component} $(tr_text plan_binary_adopt_suf)"
     else
-        echo "  - Binary: https://github.com/${REPO}/releases/download/<latest>/${filename}"
+        echo "$(tr_text plan_binary_dl) https://github.com/${REPO}/releases/download/<latest>/${filename}"
     fi
-    echo "  - CLI script: https://raw.githubusercontent.com/${REPO}/<latest>/deploy/install.sh"
+    echo "$(tr_text plan_cli_script) https://raw.githubusercontent.com/${REPO}/<latest>/deploy/install.sh"
 }
 
 print_common_docker_plan() {
     local component="$1"
     configure_docker_dir
-    echo "  - Prerequisite: Docker and Docker Compose V2 must already be installed"
-    echo "  - GitHub API: latest ServerBee release metadata"
-    echo "  - Docker image: ghcr.io/zingerlittlebee/serverbee-${component}:<latest>"
-    echo "  - CLI script: https://raw.githubusercontent.com/${REPO}/<latest>/deploy/install.sh"
+    echo "$(tr_text plan_docker_prereq)"
+    echo "$(tr_text plan_gh_meta)"
+    echo "$(tr_text plan_docker_image) ghcr.io/zingerlittlebee/serverbee-${component}:<latest>"
+    echo "$(tr_text plan_cli_script) https://raw.githubusercontent.com/${REPO}/<latest>/deploy/install.sh"
 }
 
 print_domain_plan() {
     [ -z "$DOMAIN" ] && return
 
     echo ""
-    echo "HTTPS domain setup:"
-    echo "  - DNS validation: ${DOMAIN} must resolve to this server"
-    echo "  - Caddy repository: Cloudsmith apt repo on Debian/Ubuntu, or COPR on Fedora/CentOS"
-    echo "  - Caddy apt key: https://dl.cloudsmith.io/public/caddy/stable/gpg.key"
-    echo "  - Caddy apt source: https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt"
-    echo "  - System packages: Caddy and its repository dependencies when missing"
-    echo "  - Caddyfile: ${CADDYFILE}"
-    echo "  - Server bind address: 127.0.0.1:9527"
-    echo "  - secure_cookie: true"
-    echo "  - Public URL: https://${DOMAIN}"
+    echo "$(tr_text domain_plan_header)"
+    echo "$(tr_text dp_dns_pre) ${DOMAIN} $(tr_text dp_dns_suf)"
+    echo "$(tr_text dp_repo)"
+    echo "$(tr_text dp_key) https://dl.cloudsmith.io/public/caddy/stable/gpg.key"
+    echo "$(tr_text dp_src) https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt"
+    echo "$(tr_text dp_pkgs)"
+    echo "$(tr_text dp_caddyfile) ${CADDYFILE}"
+    echo "$(tr_text dp_bind)"
+    echo "$(tr_text dp_cookie)"
+    echo "$(tr_text dp_url) https://${DOMAIN}"
 }
 
 run_domain_preflight_checks() {
@@ -1365,8 +1566,8 @@ confirm_domain_setup_plan() {
     echo ""
     echo -e "${BOLD}$(tr_text domain_plan_title)${NC}"
     echo ""
-    echo "Domain: ${DOMAIN}"
-    [ -n "$EMAIL" ] && echo "Email:  ${EMAIL}"
+    echo "$(tr_text domain_label) ${DOMAIN}"
+    [ -n "$EMAIL" ] && echo "$(tr_text email_label) ${EMAIL}"
     echo ""
     echo "$(tr_text will_add_download)"
     print_missing_deps_plan
@@ -1395,17 +1596,17 @@ print_install_plan() {
     echo ""
     echo -e "${BOLD}$(tr_text install_plan_title)${NC}"
     echo ""
-    echo "Component: serverbee-${COMPONENT}"
-    echo "Method:    ${METHOD}"
+    echo "$(tr_text plan_component) serverbee-${COMPONENT}"
+    echo "$(tr_text plan_method) ${METHOD}"
 
     if [ "$COMPONENT" = "server" ]; then
         if [ -n "$DOMAIN" ]; then
-            echo "Access:    domain (${DOMAIN})"
+            echo "$(tr_text plan_access) $(tr_text plan_access_domain_val) (${DOMAIN})"
         else
-            echo "Access:    IP / direct port (:9527)"
+            echo "$(tr_text plan_access) $(tr_text plan_access_ip_val)"
         fi
     else
-        echo "Server URL: ${SERVER_URL}"
+        echo "$(tr_text plan_server_url) ${SERVER_URL}"
     fi
 
     echo ""
@@ -1414,25 +1615,25 @@ print_install_plan() {
     case "${COMPONENT}-${METHOD}" in
         server-binary)
             print_common_binary_plan "server"
-            echo "  - Config file: ${CONFIG_DIR}/server.toml"
-            echo "  - Data directory: ${DATA_DIR}"
-            if has_systemd; then echo "  - systemd service: serverbee-server"; fi
+            echo "$(tr_text plan_cfg_file) ${CONFIG_DIR}/server.toml"
+            echo "$(tr_text plan_data_dir) ${DATA_DIR}"
+            if has_systemd; then echo "$(tr_text plan_systemd) serverbee-server"; fi
             ;;
         agent-binary)
             print_common_binary_plan "agent"
-            echo "  - Config file: ${CONFIG_DIR}/agent.toml"
-            if has_systemd; then echo "  - systemd service: serverbee-agent"; fi
+            echo "$(tr_text plan_cfg_file) ${CONFIG_DIR}/agent.toml"
+            if has_systemd; then echo "$(tr_text plan_systemd) serverbee-agent"; fi
             ;;
         server-docker)
             print_common_docker_plan "server"
-            echo "  - Config file: ${CONFIG_DIR}/server.toml"
-            echo "  - Compose file: ${DOCKER_DIR}/docker-compose.server.yml"
-            echo "  - Docker volume: serverbee-data"
+            echo "$(tr_text plan_cfg_file) ${CONFIG_DIR}/server.toml"
+            echo "$(tr_text plan_compose_file) ${DOCKER_DIR}/docker-compose.server.yml"
+            echo "$(tr_text plan_docker_volume)"
             ;;
         agent-docker)
             print_common_docker_plan "agent"
-            echo "  - Config file: ${CONFIG_DIR}/agent.toml"
-            echo "  - Compose file: ${DOCKER_DIR}/docker-compose.agent.yml"
+            echo "$(tr_text plan_cfg_file) ${CONFIG_DIR}/agent.toml"
+            echo "$(tr_text plan_compose_file) ${DOCKER_DIR}/docker-compose.agent.yml"
             ;;
     esac
     print_domain_plan
@@ -1529,12 +1730,12 @@ cmd_install() {
         echo ""
         warn "Docker is NOT recommended for Agent"
         echo ""
-        echo "  ServerBee Agent is portable software:"
-        echo "  - Single binary, no residual files"
-        echo "  - Docker requires --privileged for full metrics"
-        echo "  - Web terminal accesses container, not host"
+        echo "$(tr_text docker_agent_note)"
+        echo "$(tr_text docker_agent_note1)"
+        echo "$(tr_text docker_agent_note2)"
+        echo "$(tr_text docker_agent_note3)"
         echo ""
-        read -rp "  Continue with Docker? [y/N]: " confirm
+        read -rp "$(tr_text docker_continue_confirm)" confirm
         case "$confirm" in
             [yY]|[yY][eE][sS]) ;;
             *) METHOD="binary"; info "Switched to binary installation." ;;
@@ -1638,12 +1839,12 @@ cmd_uninstall() {
     # Component is required for uninstall
     if [ -z "$COMPONENT" ]; then
         echo ""
-        echo -e "${BOLD}Uninstall${NC}"
+        echo -e "${BOLD}$(tr_text uninstall_title)${NC}"
         echo ""
-        echo "  [1] Server"
-        echo "  [2] Agent"
+        echo "$(tr_text opt_server)"
+        echo "$(tr_text opt_agent)"
         echo ""
-        read -rp "Select component [1/2]: " choice
+        read -rp "$(tr_text select_component)" choice
         case "$choice" in
             1|server) COMPONENT="server" ;;
             2|agent)  COMPONENT="agent" ;;
@@ -1664,9 +1865,9 @@ cmd_uninstall() {
     if [ "$YES" != true ]; then
         local purge_note=""
         if [ "$PURGE" = true ]; then
-            purge_note=" (including config and data)"
+            purge_note="$(tr_text uninstall_purge_note)"
         fi
-        read -rp "Uninstall serverbee-${COMPONENT} (${method})${purge_note}? [y/N]: " confirm
+        read -rp "$(trp uninstall_confirm "$COMPONENT" "$method" "$purge_note")" confirm
         case "$confirm" in
             [yY]|[yY][eE][sS]) ;;
             *) info "Cancelled."; exit 0 ;;
@@ -1700,8 +1901,8 @@ cmd_uninstall() {
 
     if [ "$PURGE" != true ]; then
         echo ""
-        echo "  Config preserved at: ${CONFIG_DIR}/${COMPONENT}.toml"
-        echo "  To remove all data:  re-run with --purge"
+        echo "$(tr_text uninstall_preserved) ${CONFIG_DIR}/${COMPONENT}.toml"
+        echo "$(tr_text uninstall_purge_hint)"
         echo ""
     fi
 }
@@ -1729,7 +1930,7 @@ upgrade_component() {
 
     # Confirmation
     if [ "$YES" != true ]; then
-        read -rp "Proceed with upgrade? [y/N]: " confirm
+        read -rp "$(tr_text upgrade_confirm)" confirm
         case "$confirm" in
             [yY]|[yY][eE][sS]) ;;
             *) info "Skipped."; return ;;
@@ -1825,9 +2026,9 @@ status_component() {
     echo -e "${BOLD}${component^} (${method})${NC}"
 
     if [ "$method" = "binary" ]; then
-        echo "  Version:  ${version:-unknown}"
-        echo "  Binary:   ${INSTALL_DIR}/${service}"
-        echo "  Config:   ${CONFIG_DIR}/${component}.toml"
+        echo "$(tr_text st_version) ${version:-$(tr_text st_unknown)}"
+        echo "$(tr_text st_binary) ${INSTALL_DIR}/${service}"
+        echo "$(tr_text st_config) ${CONFIG_DIR}/${component}.toml"
 
         if has_systemd; then
             local status_line
@@ -1835,55 +2036,55 @@ status_component() {
             if [ "$status_line" = "active" ]; then
                 local since
                 since=$(systemctl show "$service" --property=ActiveEnterTimestamp --value 2>/dev/null || echo "")
-                echo -e "  Service:  ${GREEN}active (running)${NC} since ${since}"
+                echo -e "$(tr_text st_service) ${GREEN}$(tr_text st_active)${NC} $(tr_text st_since) ${since}"
             else
-                echo -e "  Service:  ${RED}${status_line}${NC}"
+                echo -e "$(tr_text st_service) ${RED}${status_line}${NC}"
             fi
-            echo "  Recent logs:"
-            journalctl -u "$service" -n 5 --no-pager 2>/dev/null | sed 's/^/    /' || echo "    (no logs)"
+            echo "$(tr_text st_recent_logs)"
+            journalctl -u "$service" -n 5 --no-pager 2>/dev/null | sed 's/^/    /' || echo "$(tr_text st_no_logs)"
         fi
 
         # Show server_url for agent
         if [ "$component" = "agent" ] && [ -f "${CONFIG_DIR}/agent.toml" ]; then
             local srv
             srv=$(grep "^server_url" "${CONFIG_DIR}/agent.toml" 2>/dev/null | sed 's/.*= *"//;s/".*//' || echo "")
-            [ -n "$srv" ] && echo "  Server:   ${srv}"
+            [ -n "$srv" ] && echo "$(tr_text st_server) ${srv}"
         fi
 
         # Show dashboard URL for server
         if [ "$component" = "server" ]; then
             local ip
             ip=$(get_local_ip)
-            echo "  Dashboard: http://${ip}:9527"
+            echo "$(tr_text st_dashboard) http://${ip}:9527"
         fi
 
     elif [ "$method" = "docker" ]; then
         local compose_file="${DOCKER_DIR}/docker-compose.${component}.yml"
-        echo "  Version:  ${version:-unknown}"
+        echo "$(tr_text st_version) ${version:-$(tr_text st_unknown)}"
 
         if docker ps --format '{{.Names}} {{.Status}}' 2>/dev/null | grep -q "^${service} "; then
             local container_status
             container_status=$(docker ps --format '{{.Status}}' --filter "name=^${service}$" 2>/dev/null)
-            echo -e "  Container: ${service} (${GREEN}${container_status}${NC})"
+            echo -e "$(tr_text st_container) ${service} (${GREEN}${container_status}${NC})"
         else
-            echo -e "  Container: ${service} (${RED}stopped${NC})"
+            echo -e "$(tr_text st_container) ${service} (${RED}$(tr_text st_stopped)${NC})"
         fi
 
         local image_tag
         image_tag=$(docker inspect "${service}" --format '{{.Config.Image}}' 2>/dev/null || echo "unknown")
-        echo "  Image:    ${image_tag}"
+        echo "$(tr_text st_image) ${image_tag}"
 
         if [ "$component" = "server" ]; then
             local ports
             ports=$(docker port "${service}" 2>/dev/null | head -1 || echo "")
-            [ -n "$ports" ] && echo "  Port:     ${ports}"
+            [ -n "$ports" ] && echo "$(tr_text st_port) ${ports}"
             local ip
             ip=$(get_local_ip)
-            echo "  Dashboard: http://${ip}:9527"
+            echo "$(tr_text st_dashboard) http://${ip}:9527"
         fi
 
-        echo "  Recent logs:"
-        docker logs "${service}" --tail 5 2>/dev/null | sed 's/^/    /' || echo "    (no logs)"
+        echo "$(tr_text st_recent_logs)"
+        docker logs "${service}" --tail 5 2>/dev/null | sed 's/^/    /' || echo "$(tr_text st_no_logs)"
     fi
 }
 
@@ -1893,13 +2094,13 @@ cmd_status() {
 
     if [ ${#MANAGED_COMPONENTS[@]} -eq 0 ] && [ ${#UNMANAGED_COMPONENTS[@]} -eq 0 ]; then
         echo ""
-        echo "No ServerBee components found. Run 'serverbee install' to get started."
+        echo "$(tr_text status_none)"
         echo ""
         return
     fi
 
     echo ""
-    echo -e "${BOLD}ServerBee Status${NC}"
+    echo -e "${BOLD}$(tr_text status_title)${NC}"
     echo "================"
 
     for entry in "${MANAGED_COMPONENTS[@]}"; do
@@ -2151,8 +2352,8 @@ cmd_config() {
         else
             if [ -t 0 ]; then
                 echo ""
-                echo "  Restart service to apply changes?"
-                read -rp "  [y/N]: " confirm
+                echo "$(tr_text restart_apply_q)"
+                read -rp "$(tr_text restart_apply_confirm)" confirm
                 if [[ "$confirm" =~ ^[yY] ]]; then
                     for entry in "${MANAGED_COMPONENTS[@]}"; do
                         local comp="${entry%%:*}"
@@ -2388,11 +2589,13 @@ interactive_menu() {
 
 interactive_service_menu() {
     echo ""
-    echo "  [1] Start    启动"
-    echo "  [2] Stop     停止"
-    echo "  [3] Restart  重启"
+    echo -e "${BOLD}$(tr_text svc_title)${NC}"
     echo ""
-    read -rp "Select [1-3]: " choice
+    echo "$(tr_text svc_start)"
+    echo "$(tr_text svc_stop)"
+    echo "$(tr_text svc_restart)"
+    echo ""
+    read -rp "$(tr_text svc_select)" choice
     case "$choice" in
         1) COMMAND="start" ;;
         2) COMMAND="stop" ;;
