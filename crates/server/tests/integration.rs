@@ -14,7 +14,6 @@ use serverbee_server::config::{AdminConfig, AppConfig, AuthConfig, DatabaseConfi
 use serverbee_server::migration::Migrator;
 use serverbee_server::router::create_router;
 use serverbee_server::service::auth::AuthService;
-use serverbee_server::service::config::ConfigService;
 use serverbee_server::service::record::RecordService;
 use serverbee_server::state::AppState;
 
@@ -37,7 +36,6 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
         },
         auth: AuthConfig {
             session_ttl: 86400,
-            auto_discovery_key: "test-key".to_string(),
             secure_cookie: false,
             max_servers: 0,
         },
@@ -76,11 +74,6 @@ async fn start_test_server() -> (String, tempfile::TempDir) {
     AuthService::init_admin(&db, &config.admin)
         .await
         .expect("Failed to init admin");
-
-    // Persist the auto-discovery key
-    ConfigService::set(&db, "auto_discovery_key", "test-key")
-        .await
-        .expect("Failed to set auto_discovery_key");
 
     // Build state and router
     let state = AppState::new(db, config)
@@ -169,10 +162,30 @@ async fn list_audit_entries(client: &reqwest::Client, base_url: &str) -> Vec<ser
         .clone()
 }
 
+async fn mint_enrollment_code(client: &reqwest::Client, base_url: &str) -> String {
+    login_admin(client, base_url).await;
+    let resp = client
+        .post(format!("{}/api/agent/enrollments", base_url))
+        .json(&json!({}))
+        .send()
+        .await
+        .expect("Enrollment mint request failed");
+    assert_eq!(resp.status(), 200, "Enrollment mint should succeed");
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .expect("Failed to parse enrollment response");
+    body["data"]["code"]
+        .as_str()
+        .expect("enrollment code missing")
+        .to_string()
+}
+
 async fn register_agent(client: &reqwest::Client, base_url: &str) -> (String, String) {
+    let code = mint_enrollment_code(client, base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {code}"))
         .send()
         .await
         .expect("Register request failed");
@@ -302,9 +315,10 @@ async fn test_agent_register_connect_report() {
     let client = http_client();
 
     // ── Step 1: Register agent ──
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Register request failed");
@@ -539,9 +553,10 @@ async fn test_server_records_api_returns_disk_io_json() {
     let (base_url, tmp) = start_test_server().await;
     let client = http_client();
 
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Register request failed");
@@ -1482,9 +1497,10 @@ async fn test_network_probe_server_targets() {
     login_admin(&client, &base_url).await;
 
     // ── Step 1: Register an agent to get a server id ──
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Agent register failed");
@@ -1940,71 +1956,15 @@ async fn test_user_management_crud() {
 }
 
 #[tokio::test]
-async fn test_settings_auto_discovery_key() {
-    let (base_url, _tmp) = start_test_server().await;
-    let client = http_client();
-
-    login_admin(&client, &base_url).await;
-
-    // ── GET current auto-discovery key ──
-    let get_resp = client
-        .get(format!("{}/api/settings/auto-discovery-key", base_url))
-        .send()
-        .await
-        .expect("GET /api/settings/auto-discovery-key failed");
-
-    assert_eq!(
-        get_resp.status(),
-        200,
-        "GET auto-discovery-key should succeed"
-    );
-    let get_body: serde_json::Value = get_resp.json().await.unwrap();
-    let original_key = get_body["data"]["key"]
-        .as_str()
-        .expect("key field missing")
-        .to_string();
-    assert!(
-        !original_key.is_empty(),
-        "Auto-discovery key should not be empty"
-    );
-
-    // ── PUT to regenerate the key ──
-    let regen_resp = client
-        .put(format!("{}/api/settings/auto-discovery-key", base_url))
-        .send()
-        .await
-        .expect("PUT /api/settings/auto-discovery-key failed");
-
-    assert_eq!(
-        regen_resp.status(),
-        200,
-        "Regenerate auto-discovery-key should succeed"
-    );
-    let regen_body: serde_json::Value = regen_resp.json().await.unwrap();
-    let new_key = regen_body["data"]["key"]
-        .as_str()
-        .expect("key field missing after regeneration")
-        .to_string();
-
-    assert!(
-        !new_key.is_empty(),
-        "New auto-discovery key should not be empty"
-    );
-    assert_ne!(
-        original_key, new_key,
-        "Regenerated key should differ from the original key"
-    );
-}
-
-#[tokio::test]
 async fn test_agent_register_reuses_existing_server_for_same_fingerprint() {
     let (base_url, _tmp) = start_test_server().await;
     let client = http_client();
     let fingerprint = "a".repeat(64);
 
+    let first_code = mint_enrollment_code(&client, &base_url).await;
     let first_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {first_code}"))
         .json(&json!({ "fingerprint": fingerprint }))
         .send()
         .await
@@ -2025,9 +1985,10 @@ async fn test_agent_register_reuses_existing_server_for_same_fingerprint() {
         .expect("token missing on first registration")
         .to_string();
 
+    let second_code = mint_enrollment_code(&client, &base_url).await;
     let second_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {second_code}"))
         .json(&json!({ "fingerprint": fingerprint }))
         .send()
         .await
@@ -2080,9 +2041,10 @@ async fn test_cleanup_orphans_skips_online_uninitialized_server() {
     let client = http_client();
     login_admin(&client, &base_url).await;
 
+    let orphan_code = mint_enrollment_code(&client, &base_url).await;
     let orphan_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {orphan_code}"))
         .send()
         .await
         .expect("Offline orphan registration failed");
@@ -2094,9 +2056,10 @@ async fn test_cleanup_orphans_skips_online_uninitialized_server() {
         .expect("orphan server_id missing")
         .to_string();
 
+    let online_code = mint_enrollment_code(&client, &base_url).await;
     let online_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {online_code}"))
         .send()
         .await
         .expect("Online placeholder registration failed");
@@ -2229,9 +2192,10 @@ async fn test_file_list_server_offline() {
     login_admin(&client, &base_url).await;
 
     // Register an agent to get a server_id
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Register request failed");
@@ -2277,9 +2241,10 @@ async fn test_file_capability_enforcement() {
     login_admin(&client, &base_url).await;
 
     // Register an agent — default capabilities = CAP_DEFAULT (56), no CAP_FILE
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Register request failed");
@@ -2648,9 +2613,10 @@ async fn test_oneshot_task_backward_compat() {
     login_admin(&client, &base_url).await;
 
     // Register agent to get a server_id
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Register failed");
@@ -2683,9 +2649,10 @@ async fn test_traffic_api_returns_data() {
     login_admin(&client, &base_url).await;
 
     // Register agent
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Register failed");
@@ -2855,9 +2822,10 @@ async fn test_traffic_overview_api() {
     );
 
     // ── Step 2: Register agent and configure billing cycle ──
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Register failed");
@@ -2922,9 +2890,10 @@ async fn test_server_billing_start_day() {
     login_admin(&client, &base_url).await;
 
     // Register agent
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Register failed");
@@ -3530,9 +3499,10 @@ async fn test_uptime_daily_returns_data() {
     login_admin(&client, &base_url).await;
 
     // Register agent to create a server
+    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", "Bearer test-key")
+        .header("Authorization", format!("Bearer {enrollment_code}"))
         .send()
         .await
         .expect("Register failed");
@@ -4345,4 +4315,76 @@ async fn test_recovery_job_get_requires_admin_and_start_creates_job() {
     assert!(get_body["data"].get("checkpoint_json").is_none());
     assert_eq!(get_body["data"]["status"], "running");
     assert_eq!(get_body["data"]["stage"], "rebinding");
+}
+
+#[tokio::test]
+async fn test_rotate_token_revokes_old_token_and_404_for_unknown_server() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, old_token) = register_agent(&client, &base_url).await;
+
+    // Rotate the run token via the admin endpoint (admin session on client).
+    let rotate_resp = client
+        .post(format!("{}/api/agent/{}/rotate-token", base_url, server_id))
+        .send()
+        .await
+        .expect("rotate-token request failed");
+    assert_eq!(
+        rotate_resp.status(),
+        200,
+        "rotate-token should succeed for an existing server"
+    );
+    let rotate_body: serde_json::Value = rotate_resp
+        .json()
+        .await
+        .expect("Failed to parse rotate-token response");
+
+    assert_eq!(
+        rotate_body["data"]["server_id"].as_str(),
+        Some(server_id.as_str()),
+        "response echoes the server id"
+    );
+    let new_token = rotate_body["data"]["token"]
+        .as_str()
+        .expect("new token missing");
+    assert!(!new_token.is_empty(), "new token must be non-empty");
+    assert_ne!(
+        new_token, old_token,
+        "rotated token must differ from the old one"
+    );
+
+    // The OLD token must now be rejected on the agent WS upgrade (401).
+    let ws_url = format!(
+        "{}/api/agent/ws?token={}",
+        base_url.replace("http://", "ws://"),
+        old_token
+    );
+    let err = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .expect_err("revoked token must be rejected on agent ws upgrade");
+    match err {
+        tungstenite::Error::Http(resp) => {
+            assert_eq!(
+                resp.status(),
+                401,
+                "revoked agent token should yield a 401 handshake response"
+            );
+        }
+        other => panic!("expected http handshake failure, got {other:?}"),
+    }
+
+    // Rotating a non-existent server id returns 404.
+    let unknown_id = uuid::Uuid::new_v4().to_string();
+    let missing_resp = client
+        .post(format!("{}/api/agent/{}/rotate-token", base_url, unknown_id))
+        .send()
+        .await
+        .expect("rotate-token request for unknown server failed");
+    assert_eq!(
+        missing_resp.status(),
+        404,
+        "rotating an unknown server id should return 404"
+    );
 }

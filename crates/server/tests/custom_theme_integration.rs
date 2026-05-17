@@ -8,7 +8,6 @@ use serverbee_server::config::{AdminConfig, AppConfig, AuthConfig, DatabaseConfi
 use serverbee_server::migration::Migrator;
 use serverbee_server::router::create_router;
 use serverbee_server::service::auth::AuthService;
-use serverbee_server::service::config::ConfigService;
 use serverbee_server::state::AppState;
 
 const LIGHT_VALUE: &str = "oklch(0.5 0.1 180)";
@@ -30,7 +29,6 @@ async fn start_test_server(create_member: bool) -> (String, tempfile::TempDir) {
         },
         auth: AuthConfig {
             session_ttl: 86400,
-            auto_discovery_key: "test-key".to_string(),
             secure_cookie: false,
             max_servers: 0,
         },
@@ -71,10 +69,6 @@ async fn start_test_server(create_member: bool) -> (String, tempfile::TempDir) {
             .await
             .expect("Failed to create member");
     }
-
-    ConfigService::set(&db, "auto_discovery_key", "test-key")
-        .await
-        .expect("Failed to set auto_discovery_key");
 
     let state = AppState::new(db, config)
         .await

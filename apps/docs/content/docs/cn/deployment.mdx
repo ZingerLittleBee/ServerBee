@@ -15,7 +15,6 @@ icon: Cloud
 ```bash
 SERVERBEE_ADMIN__USERNAME="admin"              # 管理员用户名（未填写自动生成，可在日志中查看）
 SERVERBEE_ADMIN__PASSWORD=""                   # 管理员密码（未填写自动生成，可在日志中查看）
-SERVERBEE_AUTH__AUTO_DISCOVERY_KEY=""           # Agent 自动注册密钥（未填写自动生成，可在日志中查看）
 
 SERVERBEE_LOG__LEVEL="info"                    # 日志级别（trace/debug/info/warn/error）
 
@@ -50,7 +49,7 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 # 安装 Agent
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
   --server-url http://your-server-ip:9527 \
-  --discovery-key YOUR_DISCOVERY_KEY
+  --enrollment-code YOUR_ONE_TIME_CODE
 ```
 
 安装完成后，使用 `serverbee` CLI 管理你的部署（安装时自动部署到 `/usr/local/bin/serverbee`）：
@@ -141,6 +140,41 @@ volumes:
 <Callout type="info">
 当使用反向代理时，建议将端口绑定到 `127.0.0.1:9527` 而非 `0.0.0.0:9527`，防止绕过反向代理直接访问。
 </Callout>
+
+## 源码编译
+
+适合开发者或有定制需求的用户。源码编译需要 Rust 1.85+ 和 Bun 1.x（或 Node.js 22+）。
+
+```bash
+# 克隆仓库
+git clone https://github.com/ZingerLittleBee/ServerBee.git
+cd ServerBee
+
+# 构建前端
+cd apps/web
+bun install
+bun run build
+cd ../..
+
+# 构建 Server（通过 rust-embed 内嵌前端静态资源）
+cargo build --release -p serverbee-server
+
+# 构建 Agent
+cargo build --release -p serverbee-agent
+```
+
+编译产物位于 `target/release/` 目录下：
+
+- `serverbee-server` — 服务端，内嵌前端静态资源
+- `serverbee-agent` — Agent 采集端
+
+启动 Server：
+
+```bash
+./target/release/serverbee-server
+```
+
+将编译好的二进制部署到目标主机后，可以参考下文的 systemd 服务配置进行进程管理。
 
 ## systemd 服务（生产 Linux 环境）
 

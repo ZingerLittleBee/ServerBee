@@ -1,3 +1,4 @@
+pub mod agent_enrollment;
 pub mod alert_rule;
 pub mod alert_state;
 pub mod api_key;

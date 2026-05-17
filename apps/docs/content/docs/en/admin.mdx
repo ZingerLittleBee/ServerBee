@@ -249,9 +249,9 @@ For automation, the same data is exposed read-only at `GET /api/cost/overview` (
 
 Admins can manage first-time agent onboarding directly from the UI:
 
-### Discovery Key
+### Enrollment Codes
 
-Go to **Settings** to show, copy, or regenerate the auto-discovery key. Regenerating the key invalidates the previous key for future registrations, but already connected agents keep working because they use their own stored tokens.
+Go to **Settings** to mint a one-time enrollment code for a new agent. Each code is single-use and short-lived (default 10 minute expiry); it is consumed on the agent's first successful registration. You can list previously issued codes (the plaintext is never shown again, only an 8-character prefix and metadata) and delete unused ones. Already connected agents are unaffected because they use their own stored per-server tokens; a specific agent's run token can be rotated/revoked from the server detail actions, which forces that agent to reconnect.
 
 ### Clean Up Unconnected Placeholders
 

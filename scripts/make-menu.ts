@@ -394,7 +394,7 @@ const COMMANDS: CommandDefinition[] = [
     key: 'agent-dev',
     name: 'agent:dev',
     category: 'Rust',
-    description: 'Run agent connecting to local server (set SERVERBEE_AUTO_DISCOVERY_KEY)',
+    description: 'Run agent connecting to local server (set SERVERBEE_ENROLLMENT_CODE)',
     command: 'SERVERBEE_SERVER_URL=http://127.0.0.1:9527 cargo run -p serverbee-agent',
     featured: true
   },
@@ -402,7 +402,7 @@ const COMMANDS: CommandDefinition[] = [
     key: 'dev-full',
     name: 'dev:full',
     category: 'Workspace',
-    description: 'Start server + web dev, print agent command with auto-discovery key',
+    description: 'Start server + web dev, print agent command with a freshly minted enrollment code',
     command: 'bash scripts/dev-full.sh',
     featured: true
   },

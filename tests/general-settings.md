@@ -41,10 +41,10 @@
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| API-1 | 获取 discovery key | `GET /api/settings/auto-discovery-key` | 200，返回非空 key（43 字符） | ✅ |
+| API-1 | 铸造 enrollment code | `POST /api/agent/enrollments` with `{}` | 200，返回 `{data:{id, code, expires_at}}`，code 仅此一次返回 | ✅ |
 | API-2 | 获取系统设置 | `GET /api/settings` | 200，返回 `{site_name, site_description, custom_css, custom_js}` | ✅ |
 | API-3 | 更新系统设置 | `PUT /api/settings` with `{"site_name":"Test"}` | 200，返回 `{site_name:"Test",...}` | ✅ |
-| API-4 | 重新生成 key | `PUT /api/settings/auto-discovery-key` | 200，返回新 key（与原 key 不同） | ✅ old≠new 验证通过 |
+| API-4 | 列出/删除 enrollment code | `GET /api/agent/enrollments` 后 `DELETE /api/agent/enrollments/{id}` | 200，列表仅含 8 位前缀与元数据；删除后该 code 不再可用 | ✅ |
 | API-5 | 数据库备份 | `POST /api/settings/backup` | 200，Content-Disposition: `attachment; filename="serverbee_backup_*.db"` | ✅ |
 | API-6 | 恢复无效文件 | `POST /api/settings/restore` with 非 SQLite 数据 | 422 Unprocessable Entity | ✅ |
 | API-7 | 恢复过小文件 | `POST /api/settings/restore` with 小于 16 字节 | 422 Unprocessable Entity | ✅ |

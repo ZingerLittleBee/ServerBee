@@ -21,8 +21,6 @@ ENV SERVERBEE_DATABASE__MAX_CONNECTIONS=10
 # ── Authentication ──────────────────────────────────────────────
 # Session token TTL in seconds (default 24h)
 ENV SERVERBEE_AUTH__SESSION_TTL=86400
-# Key for agent auto-registration (empty = auto-generate on startup)
-ENV SERVERBEE_AUTH__AUTO_DISCOVERY_KEY=
 # Set Secure flag on session cookies (set false for HTTP-only)
 ENV SERVERBEE_AUTH__SECURE_COOKIE=true
 

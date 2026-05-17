@@ -288,7 +288,7 @@ Server 启动时通过 `tokio::spawn` 创建多个后台任务：
 
 ### Agent Token 认证
 
-- 注册时通过 Auto Discovery Key 认证
+- 注册时通过一次性注册码（Enrollment Code）认证，注册码单次使用且短时有效
 - 返回的 Token 用于后续 WebSocket 连接
 - Token 以 argon2 哈希存储在 `servers` 表
 

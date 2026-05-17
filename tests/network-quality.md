@@ -10,13 +10,13 @@ cd apps/web && bun install && bun run build && cd ../..
 SERVERBEE_ADMIN__PASSWORD=admin123 SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server &
 sleep 8
 
-# 2. 登录获取 auto-discovery key
+# 2. 登录并铸造一次性 enrollment code
 curl -s -c /tmp/sb-cookies.txt -X POST http://localhost:9527/api/auth/login \
   -H 'Content-Type: application/json' -d '{"username":"admin","password":"admin123"}'
-KEY=$(curl -s -b /tmp/sb-cookies.txt http://localhost:9527/api/settings/auto-discovery-key | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['key'])")
+CODE=$(curl -s -b /tmp/sb-cookies.txt -X POST http://localhost:9527/api/agent/enrollments -H 'Content-Type: application/json' -d '{}' | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['code'])")
 
 # 3. 启动 Agent
-SERVERBEE_SERVER_URL="http://127.0.0.1:9527" SERVERBEE_AUTO_DISCOVERY_KEY="$KEY" cargo run -p serverbee-agent &
+SERVERBEE_SERVER_URL="http://127.0.0.1:9527" SERVERBEE_ENROLLMENT_CODE="$CODE" cargo run -p serverbee-agent &
 sleep 10
 
 # 4. 创建 member 用户（用于权限测试）

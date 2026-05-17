@@ -45,8 +45,7 @@ These variables are intentionally scoped to local tooling. `ALLOW_WRITES` is not
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
 | `SERVERBEE_SERVER__DATA_DIR` | `./data` | Data directory for database and backups |
-| `SERVERBEE_AUTH__AUTO_DISCOVERY_KEY` | auto-generated | Agent discovery key. Leave empty to auto-generate on first startup |
-| `SERVERBEE_AUTH__MAX_SERVERS` | `0` | Maximum servers allowed via auto-discovery (0 = no limit). Best-effort soft cap |
+| `SERVERBEE_AUTH__MAX_SERVERS` | `0` | Maximum servers allowed via enrollment (0 = no limit). Best-effort soft cap |
 | `SERVERBEE_ADMIN__USERNAME` | `admin` | Initial admin username (only used when no users exist) |
 | `SERVERBEE_SERVER__TRUSTED_PROXIES` | private/loopback CIDRs | CIDR list of trusted reverse proxies. Defaults to RFC 1918 + loopback. Set to `[]` to disable |
 | `SERVERBEE_SCHEDULER__TIMEZONE` | `UTC` | Timezone for daily traffic aggregation (e.g. `Asia/Shanghai`) |
@@ -130,7 +129,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
 | `SERVERBEE_SERVER_URL` | -- (required) | Server HTTP base URL (e.g. `http://your-server:9527`). Agent appends API paths automatically |
-| `SERVERBEE_AUTO_DISCOVERY_KEY` | `""` | Discovery key for first-time registration. Only used when token is empty |
+| `SERVERBEE_ENROLLMENT_CODE` | `""` | One-time enrollment code minted by an admin in Settings. Single-use and short-lived (default 10 min). Only used when token is empty |
 
 #### Common
 
@@ -180,8 +179,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `session_ttl` | i64 | `86400` | Session cookie lifetime in seconds (24 hours) |
-| `auto_discovery_key` | string | `""` | Fixed agent discovery key. If empty, auto-generated on first start |
-| `max_servers` | u32 | `0` | Maximum servers allowed via auto-discovery (0 = no limit). Best-effort soft cap |
+| `max_servers` | u32 | `0` | Maximum servers allowed via enrollment (0 = no limit). Best-effort soft cap |
 | `secure_cookie` | bool | `true` | Set the `Secure` flag on session cookies. Disable only for HTTP-only development |
 
 ### `[admin]` -- Initial Admin Account
@@ -317,7 +315,7 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 |-----|------|---------|-------------|
 | `server_url` | string | **required** | URL of the ServerBee server (e.g., `http://10.0.0.1:9527`) |
 | `token` | string | `""` | Agent authentication token (auto-populated after registration) |
-| `auto_discovery_key` | string | `""` | Discovery key for automatic registration (used only when `token` is empty) |
+| `enrollment_code` | string | `""` | One-time enrollment code from server Settings (used only when `token` is empty; consumed on first successful registration) |
 
 ### `[collector]` -- Metric Collection
 
@@ -401,7 +399,7 @@ client_secret = "secret123"
 
 ```toml
 server_url = "http://your-server-ip:9527"
-auto_discovery_key = "your-key-here"
+enrollment_code = "<one-time code from Settings>"
 ```
 
 ## Example: Production Agent Configuration
