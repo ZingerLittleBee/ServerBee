@@ -7,6 +7,7 @@ import { CostFootnote } from './cost-footnote'
 import { ServerCard } from './server-card'
 
 const REGEX_COST_PER_HOUR = /0\.01\/h/
+const REGEX_COST_PER_MONTH = /7\.30\/mo/
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -133,15 +134,10 @@ describe('ServerCard', () => {
           {
             configured: true,
             cost_per_hour: 0.01,
+            cost_per_month_equivalent: 7.3,
             currency: 'USD',
             name: 'test-server',
-            server_id: 'srv-1',
-            value_score: {
-              confidence: 'high',
-              grade: 'good',
-              reasons: [],
-              score: 82
-            }
+            server_id: 'srv-1'
           }
         ]
       } satisfies CostOverviewResponse
@@ -150,8 +146,8 @@ describe('ServerCard', () => {
     renderCard(makeServer())
 
     expect(screen.getByText(REGEX_COST_PER_HOUR)).toBeDefined()
-    expect(screen.getByText('cost_grade_good')).toBeDefined()
-    expect(screen.queryByText('82')).toBeNull()
+    expect(screen.getByText(REGEX_COST_PER_MONTH)).toBeDefined()
+    expect(screen.queryByText('cost_grade_good')).toBeNull()
   })
 
   it('renders compact unconfigured cost footnote labels', () => {
