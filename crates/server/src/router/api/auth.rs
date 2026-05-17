@@ -29,6 +29,7 @@ pub struct LoginResponse {
     user_id: String,
     username: String,
     role: String,
+    must_change_password: bool,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -36,6 +37,7 @@ pub struct MeResponse {
     user_id: String,
     username: String,
     role: String,
+    must_change_password: bool,
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -181,6 +183,7 @@ pub async fn login(
             user_id: user.id,
             username: user.username,
             role: user.role,
+            must_change_password: user.must_change_password,
         },
     };
 
@@ -240,6 +243,7 @@ pub async fn me(
         user_id: current_user.user_id,
         username: current_user.username,
         role: current_user.role,
+        must_change_password: current_user.must_change_password,
     })
 }
 
