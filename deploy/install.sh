@@ -770,7 +770,7 @@ install_caddy() {
         apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl gpg >/dev/null 2>&1 \
             || error "Failed to install Caddy apt repository dependencies"
         curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
-            | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+            | gpg --dearmor --batch --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
         curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
             > /etc/apt/sources.list.d/caddy-stable.list
         chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg /etc/apt/sources.list.d/caddy-stable.list
@@ -893,6 +893,26 @@ update_server_for_domain_docker() {
     docker compose -f "$compose_file" up -d
 }
 
+wait_for_https_endpoint() {
+    local url="https://${DOMAIN}/healthz"
+    local attempts=30
+    local delay=2
+    local attempt
+
+    for ((attempt = 1; attempt <= attempts; attempt++)); do
+        if curl -fsS --max-time 20 "$url" >/dev/null; then
+            return 0
+        fi
+
+        if [ "$attempt" -lt "$attempts" ]; then
+            info "HTTPS endpoint is not ready yet (attempt ${attempt}/${attempts}); retrying in ${delay}s..."
+            sleep "$delay"
+        fi
+    done
+
+    return 1
+}
+
 setup_domain() {
     validate_domain_name "$DOMAIN"
     check_domain_points_here "$DOMAIN"
@@ -919,7 +939,7 @@ setup_domain() {
     fi
 
     info "Verifying HTTPS endpoint..."
-    curl -fsS --max-time 20 "https://${DOMAIN}/healthz" >/dev/null \
+    wait_for_https_endpoint \
         || error "HTTPS verification failed for https://${DOMAIN}/healthz. Check Caddy logs and DNS propagation."
 
     echo ""
