@@ -1076,6 +1076,48 @@ install_cli() {
     fi
 }
 
+# Refresh the installed management CLI from the release script itself.
+# Unlike install_cli (which self-copies the running script to match the
+# layout it just created), this pulls the target release's deploy/install.sh
+# so `serverbee upgrade` also updates the installer logic, not just the
+# monitored component. Validates before atomically replacing; never aborts
+# the caller — a stale CLI is non-fatal and the component upgrade already
+# succeeded. The running process keeps old code; the new CLI applies on the
+# next invocation.
+CLI_REFRESHED=""
+refresh_cli_from_release() {
+    local version="${1:-main}"
+    [ -z "$CLI_REFRESHED" ] || return 0
+
+    local target="$CLI_PATH"
+    if (
+        local target_dir
+        target_dir=$(dirname "$target")
+        local tmp
+        tmp=$(mktemp "${target_dir}/.serverbee-cli.XXXXXX")
+        trap 'rm -f "$tmp"' EXIT
+
+        local url="https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
+        curl -fsSL -o "$tmp" "$url" || exit 1
+
+        # Sanity-check the download before trusting it as our own CLI:
+        # non-empty, syntactically valid bash, and carrying the expected
+        # repo marker (guards against HTML error pages / truncated bodies).
+        [ -s "$tmp" ] || exit 1
+        bash -n "$tmp" 2>/dev/null || exit 1
+        grep -q 'REPO="ZingerLittleBee/ServerBee"' "$tmp" || exit 1
+
+        chmod +x "$tmp"
+        mv "$tmp" "$target"
+        trap - EXIT
+    ); then
+        CLI_REFRESHED=1
+        info "Management CLI refreshed to ${version} (applies on next 'serverbee' run)"
+    else
+        warn "Could not refresh management CLI from ${version} — keeping existing CLI"
+    fi
+}
+
 # ─── Install helpers ─────────────────────────────────────────────────────────
 
 install_binary_server() {
@@ -2061,7 +2103,7 @@ upgrade_component() {
 
     if [ -n "$current_version" ] && [ "$current_version" = "$latest_version" ]; then
         # Always ensure CLI matches the current release (repairs missing or stale)
-        install_cli "$latest_version"
+        refresh_cli_from_release "$latest_version"
         info "serverbee-${component} is already up to date (${current_version})"
         return
     fi
@@ -2088,7 +2130,7 @@ upgrade_component() {
     esac
 
     meta_write "$component" "$method" "$latest_version"
-    install_cli "$latest_version"
+    refresh_cli_from_release "$latest_version"
     info "serverbee-${component} upgraded to ${latest_version}"
 }
 
