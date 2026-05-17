@@ -1,14 +1,49 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Requires bash 4.0+ (associative arrays for i18n string tables).
+if [ -z "${BASH_VERSINFO:-}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+    echo "ServerBee installer requires bash 4.0+ (found ${BASH_VERSION:-unknown})." >&2
+    echo "On macOS: 'brew install bash' then run it with that bash." >&2
+    exit 1
+fi
+
+# Absolute path to this script when run as a regular file; empty when the
+# script was piped via stdin (curl | bash). Used so the installed
+# management CLI matches the installer that created the layout, instead
+# of an out-of-sync released copy.
+SELF_SCRIPT=""
+case "${BASH_SOURCE[0]:-}" in
+    "" | bash | sh | -bash | -sh) ;;
+    *)
+        if [ -r "${BASH_SOURCE[0]}" ]; then
+            SELF_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/$(basename "${BASH_SOURCE[0]}")"
+        fi
+        ;;
+esac
+
 # ─── Constants ────────────────────────────────────────────────────────────────
 REPO="ZingerLittleBee/ServerBee"
-INSTALL_DIR="/usr/local/bin"
-CONFIG_DIR="/etc/serverbee"
-DATA_DIR="/var/lib/serverbee"
-DOCKER_DIR="/opt/serverbee"
+# Everything ServerBee installs lives under a single base directory for
+# unified management. The PATH-visible management CLI is the only exception.
+BASE_DIR="/opt/serverbee"
+INSTALL_DIR="${BASE_DIR}/bin"
+CONFIG_DIR="${BASE_DIR}/etc"
+DATA_DIR="${BASE_DIR}/data"
+DOCKER_DIR="${BASE_DIR}"
+DEFAULT_DOCKER_DIR="${BASE_DIR}"
+SNAP_DOCKER_DIR="/var/snap/docker/common/serverbee"
 META_FILE="${CONFIG_DIR}/.install-meta"
+LANG_CACHE_FILE="${CONFIG_DIR}/.install-lang"
+CLI_PATH="/usr/local/bin/serverbee"
+# Legacy FHS-split layout (pre-/opt). Kept only for one-time auto-migration
+# of installs created by older versions of this script.
+LEGACY_BIN_DIR="/usr/local/bin"
+LEGACY_CONFIG_DIR="/etc/serverbee"
+LEGACY_DATA_DIR="/var/lib/serverbee"
 DOCS_URL="https://server-bee-docs.vercel.app"
+CADDY_CONFIG_DIR="/etc/caddy"
+CADDYFILE="${CADDY_CONFIG_DIR}/Caddyfile"
 
 # ─── Globals ──────────────────────────────────────────────────────────────────
 COMMAND=""
@@ -16,11 +51,15 @@ COMPONENT=""
 METHOD=""
 SERVER_URL=""
 ENROLLMENT_CODE=""
-PASSWORD=""
+DOMAIN=""
+EMAIL=""
+LANG_CODE="${SERVERBEE_LANG:-}"
 YES=false
 PURGE=false
+SKIP_DNS_CHECK=false
 CONFIG_KEY=""
 CONFIG_VALUE=""
+MISSING_DEPS=()
 
 # ─── Colors ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -33,6 +72,347 @@ NC='\033[0m'
 info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
+
+should_prompt() {
+    [ "$YES" != true ] && [ -t 0 ]
+}
+
+normalize_lang() {
+    case "${LANG_CODE:-}" in
+        zh|zh_*|zh-*|cn|CN) LANG_CODE="zh" ;;
+        en|en_*|en-*) LANG_CODE="en" ;;
+        "") ;;
+        *) error "Unsupported language: ${LANG_CODE} (use 'en' or 'zh')" ;;
+    esac
+}
+
+lang_cache_read() {
+    [ -f "$LANG_CACHE_FILE" ] || return 1
+    local cached
+    cached=$(head -n1 "$LANG_CACHE_FILE" 2>/dev/null | tr -d '[:space:]')
+    case "$cached" in
+        en|zh) printf '%s' "$cached"; return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+lang_cache_write() {
+    [ -n "${LANG_CODE:-}" ] || return 0
+    mkdir -p "$CONFIG_DIR" 2>/dev/null || return 0
+    printf '%s\n' "$LANG_CODE" > "$LANG_CACHE_FILE" 2>/dev/null || return 0
+    chmod 600 "$LANG_CACHE_FILE" 2>/dev/null || true
+}
+
+detect_lang() {
+    if [ -n "${LANG_CODE:-}" ]; then
+        normalize_lang
+        return
+    fi
+
+    local cached
+    if cached=$(lang_cache_read); then
+        LANG_CODE="$cached"
+        return
+    fi
+
+    case "${LC_ALL:-${LANG:-en}}" in
+        zh*|ZH*) LANG_CODE="zh" ;;
+        *) LANG_CODE="en" ;;
+    esac
+}
+
+select_language() {
+    [ -z "${LANG_CODE:-}" ] || { normalize_lang; return; }
+
+    local cached
+    if cached=$(lang_cache_read); then
+        LANG_CODE="$cached"
+        return
+    fi
+
+    if ! should_prompt; then
+        detect_lang
+        return
+    fi
+
+    local choice
+    echo ""
+    echo -e "${BOLD}Select language / 选择语言${NC}"
+    echo ""
+    echo "  [1] English"
+    echo "  [2] 简体中文"
+    echo ""
+    read -rp "Select language [1/2]: " choice
+    case "$choice" in
+        1|en|EN|English|english) LANG_CODE="en" ;;
+        2|zh|ZH|cn|CN|中文) LANG_CODE="zh" ;;
+        *) error "Invalid language choice: ${choice}" ;;
+    esac
+    lang_cache_write
+}
+
+# i18n string tables. Add new user-facing strings here in both languages.
+# Parametrized strings use printf format specifiers (%s) — render via trp().
+declare -A I18N_EN=(
+    [manager_title]="ServerBee Manager"
+    [install_menu]="  [1] Install    安装"
+    [uninstall_menu]="  [2] Uninstall  卸载"
+    [upgrade_menu]="  [3] Upgrade    升级"
+    [status_menu]="  [4] Status     查看状态"
+    [service_menu]="  [5] Service    服务控制 (start/stop/restart)"
+    [config_menu]="  [6] Config     配置管理"
+    [env_menu]="  [7] Env        环境变量"
+    [domain_menu]="  [8] Domain     域名 HTTPS"
+    [exit_menu]="  [0] Exit       退出"
+    [select_menu]="Select [0-8]: "
+    [install_title]="Install"
+    [agent_option]="  [1] Agent   — System metrics collector"
+    [server_option]="  [2] Server  — Dashboard & API"
+    [select_component]="Select component [1/2]: "
+    [server_docker_recommended]="  [1] Docker  (recommended for Server)"
+    [agent_binary_recommended]="  [1] Binary  (recommended for Agent)"
+    [binary_option]="  [2] Binary"
+    [docker_option]="  [2] Docker"
+    [select_method]="Select installation method [1/2]: "
+    [configure_domain]="Configure HTTPS domain with Caddy now? [y/N]: "
+    [domain_prompt]="Domain (e.g., monitor.example.com): "
+    [email_prompt]="Email for certificate notices (optional): "
+    [server_url_prompt]="Server URL [%s]: "
+    [enrollment_prompt]="Enrollment code: "
+    [install_plan_title]="Installation plan"
+    [domain_plan_title]="Domain setup plan"
+    [will_add_download]="Will add or download:"
+    [start_install]="Start installation now? [y/N]: "
+    [start_domain]="Start domain setup now? [y/N]: "
+    [preflight]="Preflight checks:"
+    [svc_title]="Service control"
+    [svc_start]="  [1] Start"
+    [svc_stop]="  [2] Stop"
+    [svc_restart]="  [3] Restart"
+    [svc_select]="Select [1-3]: "
+    [uninstall_title]="Uninstall"
+    [opt_agent]="  [1] Agent"
+    [opt_server]="  [2] Server"
+    [uninstall_confirm]="Uninstall serverbee-%s (%s)%s? [y/N]: "
+    [uninstall_purge_note]=" (including config and data)"
+    [uninstall_preserved]="  Config and data preserved. To remove them, run:"
+    [deps_install_confirm]="  Install them now? [y/N]: "
+    [docker_continue_confirm]="  Continue with Docker? [y/N]: "
+    [docker_agent_note]="  ServerBee Agent is portable software:"
+    [docker_agent_note1]="  - Single binary, no residual files"
+    [docker_agent_note2]="  - Docker requires --privileged for full metrics"
+    [docker_agent_note3]="  - Web terminal accesses container, not host"
+    [upgrade_confirm]="Proceed with upgrade? [y/N]: "
+    [restart_apply_q]="  Restart service to apply changes?"
+    [restart_apply_confirm]="  [y/N]: "
+    [plan_component]="Component:"
+    [plan_method]="Method:"
+    [plan_access]="Access:"
+    [plan_access_ip_val]="IP / direct port (:9527)"
+    [plan_access_domain_val]="domain"
+    [plan_server_url]="Server URL:"
+    [plan_cfg_file]="  - Config file:"
+    [plan_data_dir]="  - Data directory:"
+    [plan_compose_file]="  - Compose file:"
+    [plan_docker_volume]="  - Docker volume: serverbee-data"
+    [plan_systemd]="  - systemd service:"
+    [plan_pkgs]="  - System packages:"
+    [plan_pkgs_suffix]="(required script tools)"
+    [plan_gh_meta]="  - GitHub API: latest ServerBee release metadata"
+    [plan_binary_adopt_pre]="  - Binary: existing"
+    [plan_binary_adopt_suf]="will be adopted (no binary download)"
+    [plan_binary_dl]="  - Binary:"
+    [plan_cli_script]="  - CLI script:"
+    [plan_docker_prereq]="  - Prerequisite: Docker and Docker Compose V2 must already be installed"
+    [plan_docker_image]="  - Docker image:"
+    [domain_plan_header]="HTTPS domain setup:"
+    [dp_dns_pre]="  - DNS validation:"
+    [dp_dns_suf]="must resolve to this server"
+    [dp_repo]="  - Caddy repository: Cloudsmith apt repo on Debian/Ubuntu, or COPR on Fedora/CentOS"
+    [dp_key]="  - Caddy apt key:"
+    [dp_src]="  - Caddy apt source:"
+    [dp_pkgs]="  - System packages: Caddy and its repository dependencies when missing"
+    [dp_caddyfile]="  - Caddyfile:"
+    [dp_bind]="  - Server bind address: 127.0.0.1:9527"
+    [dp_cookie]="  - secure_cookie: true"
+    [dp_url]="  - Public URL:"
+    [domain_label]="Domain:"
+    [email_label]="Email: "
+    [result_server_ok]="ServerBee Server installed successfully!"
+    [result_agent_ok]="ServerBee Agent installed successfully!"
+    [lbl_dashboard]="  Dashboard:"
+    [lbl_username]="  Username:"
+    [lbl_password]="  Password:"
+    [pw_docker]="(auto-generated, check: docker compose -f %s logs serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
+    [pw_systemd]="(auto-generated, check: sudo journalctl -u serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
+    [pw_proc]="(auto-generated, check process output for 'FIRST-RUN ADMIN CREDENTIALS')"
+    [pw_must_change]="  (one-time password — you must change it on first login)"
+    [lbl_docs]="  Docs:"
+    [lbl_server_url]="  Server URL:"
+    [lbl_logs]="  Logs:"
+    [lbl_start]="  Start:"
+    [lbl_config]="  Config:"
+    [status_none]="No ServerBee components found. Run 'serverbee install' to get started."
+    [status_title]="ServerBee Status"
+    [st_version]="  Version:"
+    [st_binary]="  Binary:"
+    [st_config]="  Config:"
+    [st_service]="  Service:"
+    [st_active]="active (running)"
+    [st_since]="since"
+    [st_recent_logs]="  Recent logs:"
+    [st_no_logs]="    (no logs)"
+    [st_server]="  Server:"
+    [st_dashboard]="  Dashboard:"
+    [st_container]="  Container:"
+    [st_stopped]="stopped"
+    [st_image]="  Image:"
+    [st_port]="  Port:"
+    [st_unknown]="unknown"
+)
+declare -A I18N_ZH=(
+    [manager_title]="ServerBee 管理器"
+    [install_menu]="  [1] 安装      Install"
+    [uninstall_menu]="  [2] 卸载      Uninstall"
+    [upgrade_menu]="  [3] 升级      Upgrade"
+    [status_menu]="  [4] 状态      Status"
+    [service_menu]="  [5] 服务控制  Service (start/stop/restart)"
+    [config_menu]="  [6] 配置管理  Config"
+    [env_menu]="  [7] 环境变量  Env"
+    [domain_menu]="  [8] 域名 HTTPS Domain"
+    [exit_menu]="  [0] 退出      Exit"
+    [select_menu]="选择 [0-8]: "
+    [install_title]="安装"
+    [agent_option]="  [1] Agent   — 系统指标采集器"
+    [server_option]="  [2] Server  — 控制台和 API"
+    [select_component]="选择组件 [1/2]: "
+    [server_docker_recommended]="  [1] Docker  (Server 推荐)"
+    [agent_binary_recommended]="  [1] Binary  (Agent 推荐)"
+    [binary_option]="  [2] Binary"
+    [docker_option]="  [2] Docker"
+    [select_method]="选择安装方式 [1/2]: "
+    [configure_domain]="现在配置 HTTPS 域名（Caddy）吗？[y/N]: "
+    [domain_prompt]="域名（例如 monitor.example.com）: "
+    [email_prompt]="证书通知邮箱（可选）: "
+    [server_url_prompt]="Server URL [%s]: "
+    [enrollment_prompt]="Enrollment code（注册码）: "
+    [install_plan_title]="安装计划"
+    [domain_plan_title]="域名配置计划"
+    [will_add_download]="将添加或下载:"
+    [start_install]="现在开始安装？[y/N]: "
+    [start_domain]="现在开始域名配置？[y/N]: "
+    [preflight]="安装前检查:"
+    [svc_title]="服务控制"
+    [svc_start]="  [1] 启动"
+    [svc_stop]="  [2] 停止"
+    [svc_restart]="  [3] 重启"
+    [svc_select]="选择 [1-3]: "
+    [uninstall_title]="卸载"
+    [opt_agent]="  [1] Agent"
+    [opt_server]="  [2] Server"
+    [uninstall_confirm]="卸载 serverbee-%s（%s）%s ? [y/N]: "
+    [uninstall_purge_note]="（含配置与数据）"
+    [uninstall_preserved]="  配置与数据已保留,如需移除请执行:"
+    [deps_install_confirm]="  现在安装它们？[y/N]: "
+    [docker_continue_confirm]="  仍然继续使用 Docker？[y/N]: "
+    [docker_agent_note]="  ServerBee Agent 是便携软件:"
+    [docker_agent_note1]="  - 单一二进制，无残留文件"
+    [docker_agent_note2]="  - Docker 需 --privileged 才能采集完整指标"
+    [docker_agent_note3]="  - Web 终端访问的是容器而非宿主机"
+    [upgrade_confirm]="确认升级？[y/N]: "
+    [restart_apply_q]="  重启服务以应用更改？"
+    [restart_apply_confirm]="  [y/N]: "
+    [plan_component]="组件:"
+    [plan_method]="方式:"
+    [plan_access]="访问:"
+    [plan_access_ip_val]="IP / 直连端口 (:9527)"
+    [plan_access_domain_val]="域名"
+    [plan_server_url]="Server URL:"
+    [plan_cfg_file]="  - 配置文件:"
+    [plan_data_dir]="  - 数据目录:"
+    [plan_compose_file]="  - Compose 文件:"
+    [plan_docker_volume]="  - Docker 卷: serverbee-data"
+    [plan_systemd]="  - systemd 服务:"
+    [plan_pkgs]="  - 系统软件包:"
+    [plan_pkgs_suffix]="（脚本所需工具）"
+    [plan_gh_meta]="  - GitHub API: 最新 ServerBee 发布元数据"
+    [plan_binary_adopt_pre]="  - 二进制: 已存在"
+    [plan_binary_adopt_suf]="将被沿用（不下载二进制）"
+    [plan_binary_dl]="  - 二进制:"
+    [plan_cli_script]="  - CLI 脚本:"
+    [plan_docker_prereq]="  - 前置条件: 需已安装 Docker 与 Docker Compose V2"
+    [plan_docker_image]="  - Docker 镜像:"
+    [domain_plan_header]="HTTPS 域名配置:"
+    [dp_dns_pre]="  - DNS 校验:"
+    [dp_dns_suf]="必须解析到本机"
+    [dp_repo]="  - Caddy 仓库: Debian/Ubuntu 用 Cloudsmith apt 源，Fedora/CentOS 用 COPR"
+    [dp_key]="  - Caddy apt key:"
+    [dp_src]="  - Caddy apt source:"
+    [dp_pkgs]="  - 系统软件包: 缺失时安装 Caddy 及其仓库依赖"
+    [dp_caddyfile]="  - Caddyfile:"
+    [dp_bind]="  - 服务监听地址: 127.0.0.1:9527"
+    [dp_cookie]="  - secure_cookie: true"
+    [dp_url]="  - 公网地址:"
+    [domain_label]="域名:"
+    [email_label]="邮箱: "
+    [result_server_ok]="ServerBee Server 安装成功！"
+    [result_agent_ok]="ServerBee Agent 安装成功！"
+    [lbl_dashboard]="  控制台:"
+    [lbl_username]="  用户名:"
+    [lbl_password]="  密码:"
+    [pw_docker]="（自动生成，查看: docker compose -f %s logs serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
+    [pw_systemd]="（自动生成，查看: sudo journalctl -u serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
+    [pw_proc]="（自动生成，在进程输出中查找 'FIRST-RUN ADMIN CREDENTIALS')"
+    [pw_must_change]="  （一次性密码 —— 首次登录后必须修改）"
+    [lbl_docs]="  文档:"
+    [lbl_server_url]="  Server URL:"
+    [lbl_logs]="  日志:"
+    [lbl_start]="  启动:"
+    [lbl_config]="  配置:"
+    [status_none]="未找到任何 ServerBee 组件。运行 'serverbee install' 开始安装。"
+    [status_title]="ServerBee 状态"
+    [st_version]="  版本:"
+    [st_binary]="  二进制:"
+    [st_config]="  配置:"
+    [st_service]="  服务:"
+    [st_active]="运行中"
+    [st_since]="自"
+    [st_recent_logs]="  最近日志:"
+    [st_no_logs]="    （无日志）"
+    [st_server]="  Server:"
+    [st_dashboard]="  控制台:"
+    [st_container]="  容器:"
+    [st_stopped]="已停止"
+    [st_image]="  镜像:"
+    [st_port]="  端口:"
+    [st_unknown]="未知"
+)
+
+tr_text() {
+    local key="$1" val
+    if [ "${LANG_CODE:-en}" = "zh" ]; then
+        val="${I18N_ZH[$key]-}"
+    else
+        val="${I18N_EN[$key]-}"
+    fi
+    # Fall back to English, then to a visible marker so gaps are obvious.
+    [ -n "$val" ] || val="${I18N_EN[$key]-??${key}??}"
+    echo "$val"
+}
+
+# Docs site language segment (apps/docs is bilingual: cn / en).
+docs_lang() {
+    [ "${LANG_CODE:-en}" = "zh" ] && echo "cn" || echo "en"
+}
+
+# Translate + printf for parametrized strings (no trailing newline added).
+trp() {
+    local key="$1"; shift
+    local fmt
+    fmt="$(tr_text "$key")"
+    # shellcheck disable=SC2059
+    printf "$fmt" "$@"
+}
 
 # ─── Dependency check ─────────────────────────────────────────────────────────
 install_deps() {
@@ -69,11 +449,64 @@ check_deps() {
         install_deps "${missing[@]}"
     else
         warn "Missing required tools: ${missing[*]}"
-        read -rp "  Install them now? [y/N]: " confirm
+        read -rp "$(tr_text deps_install_confirm)" confirm
         case "$confirm" in
             [yY]|[yY][eE][sS]) install_deps "${missing[@]}" ;;
             *) error "Cannot continue without: ${missing[*]}" ;;
         esac
+    fi
+}
+
+collect_missing_deps() {
+    MISSING_DEPS=()
+    local cmd
+    for cmd in curl grep sed awk mktemp; do
+        if ! command -v "$cmd" &>/dev/null; then
+            MISSING_DEPS+=("$cmd")
+        fi
+    done
+}
+
+docker_is_snap() {
+    command -v docker &>/dev/null || return 1
+    local docker_path
+    docker_path=$(command -v docker)
+    case "$(readlink -f "$docker_path" 2>/dev/null || echo "$docker_path")" in
+        /snap/*|/usr/bin/snap) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+configure_docker_dir() {
+    if docker_is_snap; then
+        DOCKER_DIR="$SNAP_DOCKER_DIR"
+    else
+        DOCKER_DIR="$DEFAULT_DOCKER_DIR"
+    fi
+}
+
+# Config directory for docker-mode components. The snap-confined Docker
+# daemon cannot bind-mount paths under /opt or /etc (its rootfs is
+# read-only), so config that must be visible inside a container has to
+# live under the snap-accessible tree. For non-snap Docker this is the
+# normal CONFIG_DIR, so binary mode and non-snap Docker are unchanged.
+docker_conf_dir() {
+    if docker_is_snap; then
+        echo "${SNAP_DOCKER_DIR}/etc"
+    else
+        echo "${CONFIG_DIR}"
+    fi
+}
+
+# Resolve a component's config file based on how it was installed.
+# Docker-managed components may live under the snap-accessible tree.
+conf_file_for() {
+    local comp="$1" method
+    method=$(meta_read "$comp" "method" 2>/dev/null || echo "")
+    if [ "$method" = "docker" ]; then
+        echo "$(docker_conf_dir)/${comp}.toml"
+    else
+        echo "${CONFIG_DIR}/${comp}.toml"
     fi
 }
 
@@ -84,8 +517,90 @@ require_root() {
     fi
 }
 
+# ─── Legacy layout migration ──────────────────────────────────────────────────
+# Older versions of this script used an FHS-split layout:
+#   /usr/local/bin/serverbee-*  /etc/serverbee  /var/lib/serverbee
+# Newer installs are consolidated under ${BASE_DIR}. This migrates an existing
+# legacy install in place so that upgrade/uninstall/config keep working.
+migrate_legacy_layout() {
+    # Already on the new layout — nothing to do.
+    [ -f "$META_FILE" ] && return 0
+
+    local legacy_meta="${LEGACY_CONFIG_DIR}/.install-meta"
+    local has_legacy=false
+    [ -f "$legacy_meta" ] && has_legacy=true
+    [ -f "${LEGACY_BIN_DIR}/serverbee-server" ] && has_legacy=true
+    [ -f "${LEGACY_BIN_DIR}/serverbee-agent" ] && has_legacy=true
+    [ "$has_legacy" = true ] || return 0
+
+    info "Detected legacy install layout — migrating to ${BASE_DIR}"
+    mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR"
+
+    local comp
+    for comp in server agent; do
+        if [ -f "${LEGACY_BIN_DIR}/serverbee-${comp}" ]; then
+            mv -f "${LEGACY_BIN_DIR}/serverbee-${comp}" "${INSTALL_DIR}/serverbee-${comp}"
+        fi
+    done
+
+    if [ -d "$LEGACY_CONFIG_DIR" ]; then
+        local f
+        for f in "$LEGACY_CONFIG_DIR"/* "$LEGACY_CONFIG_DIR"/.install-meta; do
+            [ -e "$f" ] || continue
+            mv -f "$f" "$CONFIG_DIR"/ 2>/dev/null || true
+        done
+        rmdir "$LEGACY_CONFIG_DIR" 2>/dev/null || true
+    fi
+
+    if [ -d "$LEGACY_DATA_DIR" ] && [ "$LEGACY_DATA_DIR" != "$DATA_DIR" ]; then
+        local d
+        for d in "$LEGACY_DATA_DIR"/* "$LEGACY_DATA_DIR"/.[!.]*; do
+            [ -e "$d" ] || continue
+            mv -f "$d" "$DATA_DIR"/ 2>/dev/null || true
+        done
+        rmdir "$LEGACY_DATA_DIR" 2>/dev/null || true
+    fi
+
+    # Point server.toml at the new data directory if it referenced the old one.
+    if [ -f "${CONFIG_DIR}/server.toml" ]; then
+        sed -i "s#${LEGACY_DATA_DIR}#${DATA_DIR}#g" "${CONFIG_DIR}/server.toml" 2>/dev/null || true
+    fi
+
+    # Rewrite systemd units to the new paths and restart anything running.
+    if has_systemd; then
+        local unit svc
+        for comp in server agent; do
+            svc="serverbee-${comp}"
+            unit="/etc/systemd/system/${svc}.service"
+            [ -f "$unit" ] || continue
+            sed -i \
+                -e "s#${LEGACY_BIN_DIR}/serverbee-${comp}#${INSTALL_DIR}/serverbee-${comp}#g" \
+                -e "s#WorkingDirectory=${LEGACY_DATA_DIR}#WorkingDirectory=${CONFIG_DIR}#g" \
+                -e "s#WorkingDirectory=${LEGACY_CONFIG_DIR}#WorkingDirectory=${CONFIG_DIR}#g" \
+                -e "s#SERVERBEE_SERVER__DATA_DIR=${LEGACY_DATA_DIR}#SERVERBEE_SERVER__DATA_DIR=${DATA_DIR}#g" \
+                "$unit" 2>/dev/null || true
+        done
+        systemctl daemon-reload 2>/dev/null || true
+        for comp in server agent; do
+            svc="serverbee-${comp}"
+            if systemctl is-active --quiet "$svc" 2>/dev/null; then
+                systemctl restart "$svc" 2>/dev/null || true
+            fi
+        done
+    fi
+
+    info "Migration complete — ServerBee now lives under ${BASE_DIR}"
+}
+
 # ─── Known subcommands ───────────────────────────────────────────────────────
-KNOWN_COMMANDS="install uninstall upgrade status start stop restart config env"
+KNOWN_COMMANDS="install uninstall upgrade status start stop restart config env domain"
+
+is_known_command() {
+    case "$1" in
+        install|uninstall|upgrade|status|start|stop|restart|config|env|domain) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
 # ─── Argument parsing ─────────────────────────────────────────────────────────
 parse_args() {
@@ -94,7 +609,11 @@ parse_args() {
             --method)        METHOD="$2"; shift 2 ;;
             --server-url)    SERVER_URL="$2"; shift 2 ;;
             --enrollment-code) ENROLLMENT_CODE="$2"; shift 2 ;;
-            --password)      PASSWORD="$2"; shift 2 ;;
+            --password)      error "--password is no longer supported. ServerBee always generates a one-time first-run admin password; check the server logs after installation." ;;
+            --domain)        DOMAIN="$2"; shift 2 ;;
+            --email)         EMAIL="$2"; shift 2 ;;
+            --lang)          LANG_CODE="$2"; normalize_lang; shift 2 ;;
+            --skip-dns-check) SKIP_DNS_CHECK=true; shift ;;
             --purge)         PURGE=true; shift ;;
             --yes|-y)        YES=true; shift ;;
             -*)              error "Unknown option: $1" ;;
@@ -133,20 +652,205 @@ detect_arch() {
     esac
 }
 
+RESOLVED_VERSION=""
 get_latest_version() {
+    if [ -n "$RESOLVED_VERSION" ]; then
+        echo "$RESOLVED_VERSION"
+        return
+    fi
     local tag
     tag=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
         | grep '"tag_name"' \
         | head -1 \
         | sed 's/.*"tag_name": *"//;s/".*//')
     [ -z "$tag" ] && error "Failed to get latest version from GitHub"
+    RESOLVED_VERSION="$tag"
     echo "$tag"
+}
+
+docker_image_tag() {
+    local version="$1"
+    echo "${version#v}"
 }
 
 get_local_ip() {
     ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' \
         || hostname -I 2>/dev/null | awk '{print $1}' \
         || echo "localhost"
+}
+
+get_public_ipv4() {
+    if [ -n "${SERVERBEE_TEST_PUBLIC_IPV4:-}" ]; then
+        echo "$SERVERBEE_TEST_PUBLIC_IPV4"
+        return
+    fi
+    curl -4 -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true
+}
+
+get_public_ipv6() {
+    if [ -n "${SERVERBEE_TEST_PUBLIC_IPV6:-}" ]; then
+        echo "$SERVERBEE_TEST_PUBLIC_IPV6"
+        return
+    fi
+    curl -6 -fsS --max-time 5 https://api6.ipify.org 2>/dev/null || true
+}
+
+resolve_domain_a() {
+    local domain="$1"
+    if [ -n "${SERVERBEE_TEST_DNS_A:-}" ]; then
+        echo "$SERVERBEE_TEST_DNS_A" | tr ',' '\n' | sed '/^$/d'
+        return
+    fi
+    if command -v getent &>/dev/null; then
+        getent ahostsv4 "$domain" 2>/dev/null | awk '{print $1}' | sort -u
+    elif command -v dig &>/dev/null; then
+        dig +short A "$domain" 2>/dev/null | sed '/^$/d'
+    elif command -v host &>/dev/null; then
+        host -t A "$domain" 2>/dev/null | awk '/has address/ {print $4}'
+    fi
+}
+
+resolve_domain_aaaa() {
+    local domain="$1"
+    if [ -n "${SERVERBEE_TEST_DNS_AAAA:-}" ]; then
+        echo "$SERVERBEE_TEST_DNS_AAAA" | tr ',' '\n' | sed '/^$/d'
+        return
+    fi
+    if command -v getent &>/dev/null; then
+        getent ahostsv6 "$domain" 2>/dev/null | awk '{print $1}' | sort -u
+    elif command -v dig &>/dev/null; then
+        dig +short AAAA "$domain" 2>/dev/null | sed '/^$/d'
+    elif command -v host &>/dev/null; then
+        host -t AAAA "$domain" 2>/dev/null | awk '/has IPv6 address/ {print $5}'
+    fi
+}
+
+validate_domain_name() {
+    local domain="$1"
+    [[ "$domain" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$ ]] \
+        || error "Invalid domain: ${domain}\n  Use a hostname like monitor.example.com, without http:// or a path."
+}
+
+line_contains_value() {
+    local haystack="$1" needle="$2"
+    [ -n "$needle" ] && echo "$haystack" | grep -Fxq "$needle"
+}
+
+domain_points_to_server() {
+    local dns_a="$1" dns_aaaa="$2" public_ipv4="$3" public_ipv6="$4"
+    line_contains_value "$dns_a" "$public_ipv4" || line_contains_value "$dns_aaaa" "$public_ipv6"
+}
+
+warn_mismatched_aaaa_if_present() {
+    local domain="$1" dns_aaaa="$2" public_ipv6="$3"
+
+    [ -n "$dns_aaaa" ] || return 0
+    if [ -n "$public_ipv6" ] && line_contains_value "$dns_aaaa" "$public_ipv6"; then
+        return 0
+    fi
+
+    if [ "${LANG_CODE:-en}" = "zh" ]; then
+        warn "${domain} 的 AAAA 记录没有指向当前服务器。"
+        if [ -n "$public_ipv6" ]; then
+            echo "  当前服务器 IPv6: ${public_ipv6}"
+            echo "  DNS AAAA: ${dns_aaaa}"
+            echo "  请修正 AAAA 记录；如果只使用 IPv4，请删除 AAAA 记录。"
+        else
+            echo "  当前服务器未检测到公网 IPv6，但 DNS 存在 AAAA: ${dns_aaaa}"
+            echo "  除非你确认 IPv6 可以访问这台服务器，否则请删除 AAAA 记录。"
+        fi
+        echo "  Caddy/Let's Encrypt 可能会尝试 IPv6，导致证书申请失败。"
+    else
+        warn "AAAA record for ${domain} does not point to this server."
+        if [ -n "$public_ipv6" ]; then
+            echo "  Current server IPv6: ${public_ipv6}"
+            echo "  DNS AAAA: ${dns_aaaa}"
+            echo "  Fix the AAAA record or remove it if you only want IPv4."
+        else
+            echo "  This server has no detected public IPv6, but DNS has AAAA: ${dns_aaaa}"
+            echo "  Remove the AAAA record unless you have verified IPv6 reaches this server."
+        fi
+        echo "  Caddy/Let's Encrypt may try IPv6 and certificate issuance may fail."
+    fi
+}
+
+print_dns_mismatch_help() {
+    local domain="$1" public_ipv4="$2" public_ipv6="$3" dns_a="$4" dns_aaaa="$5"
+
+    if [ "${LANG_CODE:-en}" = "zh" ]; then
+        echo ""
+        echo "域名 ${domain} 还没有解析到当前服务器。"
+        echo ""
+        echo "当前服务器 IP:"
+        echo "  IPv4: ${public_ipv4:-未知}"
+        echo "  IPv6: ${public_ipv6:-未知}"
+        echo ""
+        echo "当前 DNS 记录:"
+        echo "  A:    ${dns_a:-无}"
+        echo "  AAAA: ${dns_aaaa:-无}"
+        echo ""
+        echo "请添加或更新 DNS:"
+        [ -n "$public_ipv4" ] && echo "  A    ${domain} -> ${public_ipv4}"
+        [ -n "$public_ipv6" ] && echo "  AAAA ${domain} -> ${public_ipv6}"
+        echo ""
+        echo "继续之前 DNS 必须匹配。"
+        echo "如果不匹配，Caddy/Let's Encrypt 证书申请会失败。"
+        echo "更新 DNS 后按 Enter 重新校验，按 Ctrl+C 停止。"
+        echo ""
+    else
+        echo ""
+        echo "Domain ${domain} does not resolve to this server yet."
+        echo ""
+        echo "Current server IP:"
+        echo "  IPv4: ${public_ipv4:-unknown}"
+        echo "  IPv6: ${public_ipv6:-unknown}"
+        echo ""
+        echo "Current DNS records:"
+        echo "  A:    ${dns_a:-none}"
+        echo "  AAAA: ${dns_aaaa:-none}"
+        echo ""
+        echo "Please add/update DNS:"
+        [ -n "$public_ipv4" ] && echo "  A    ${domain} -> ${public_ipv4}"
+        [ -n "$public_ipv6" ] && echo "  AAAA ${domain} -> ${public_ipv6}"
+        echo ""
+        echo "DNS must match before continuing."
+        echo "If this does not match, Caddy/Let's Encrypt certificate issuance will fail."
+        echo "Update DNS, then press Enter to check again. Press Ctrl+C to stop."
+        echo ""
+    fi
+}
+
+check_domain_points_here() {
+    local domain="$1"
+    if [ "$SKIP_DNS_CHECK" = true ]; then
+        warn "Skipping DNS check for ${domain}."
+        return
+    fi
+
+    local public_ipv4 public_ipv6 dns_a dns_aaaa
+    public_ipv4=$(get_public_ipv4)
+    public_ipv6=$(get_public_ipv6)
+
+    while true; do
+        dns_a=$(resolve_domain_a "$domain" || true)
+        dns_aaaa=$(resolve_domain_aaaa "$domain" || true)
+
+        if domain_points_to_server "$dns_a" "$dns_aaaa" "$public_ipv4" "$public_ipv6"; then
+            info "DNS check passed: ${domain} resolves to this server."
+            warn_mismatched_aaaa_if_present "$domain" "$dns_aaaa" "$public_ipv6"
+            return
+        fi
+
+        print_dns_mismatch_help "$domain" "$public_ipv4" "$public_ipv6" "$dns_a" "$dns_aaaa"
+        if ! should_prompt; then
+            error "DNS validation failed for ${domain}. Fix DNS and re-run, or pass --skip-dns-check if you have configured TLS another way."
+        fi
+        if [ "${LANG_CODE:-en}" = "zh" ]; then
+            read -rp "按 Enter 重新校验 DNS..." _
+        else
+            read -rp "Press Enter to re-check DNS..." _
+        fi
+    done
 }
 
 # ─── Install metadata (.install-meta JSON) ───────────────────────────────────
@@ -322,6 +1026,7 @@ has_systemd() {
 check_docker() {
     command -v docker &>/dev/null || error "Docker is not installed. Install it first: https://docs.docker.com/get-docker/"
     docker compose version &>/dev/null || error "Docker Compose V2 is not available. Install it first: https://docs.docker.com/compose/install/"
+    configure_docker_dir
 }
 
 check_unmanaged_container() {
@@ -338,7 +1043,7 @@ check_unmanaged_container() {
 # ─── CLI self-install ────────────────────────────────────────────────────────
 
 install_cli() {
-    local target="/usr/local/bin/serverbee"
+    local target="$CLI_PATH"
     local version="${1:-main}"
 
     # Entire body runs in a subshell so any failure (cp, curl, chmod, mv)
@@ -351,10 +1056,15 @@ install_cli() {
         tmp=$(mktemp "${target_dir}/.serverbee-cli.XXXXXX")
         trap 'rm -f "$tmp"' EXIT
 
-        # Always download from the release tag to avoid version skew
-        # between binaries (latest release) and CLI (possibly stale checkout)
-        local url="https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
-        curl -fsSL -o "$tmp" "$url"
+        # Prefer the running script so the CLI always matches the layout
+        # it just created. Fall back to the released copy only when piped
+        # via stdin (curl | bash), where no script file is available.
+        if [ -n "$SELF_SCRIPT" ] && [ -r "$SELF_SCRIPT" ]; then
+            cp "$SELF_SCRIPT" "$tmp"
+        else
+            local url="https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
+            curl -fsSL -o "$tmp" "$url"
+        fi
 
         chmod +x "$tmp"
         mv "$tmp" "$target"
@@ -366,6 +1076,48 @@ install_cli() {
     fi
 }
 
+# Refresh the installed management CLI from the release script itself.
+# Unlike install_cli (which self-copies the running script to match the
+# layout it just created), this pulls the target release's deploy/install.sh
+# so `serverbee upgrade` also updates the installer logic, not just the
+# monitored component. Validates before atomically replacing; never aborts
+# the caller — a stale CLI is non-fatal and the component upgrade already
+# succeeded. The running process keeps old code; the new CLI applies on the
+# next invocation.
+CLI_REFRESHED=""
+refresh_cli_from_release() {
+    local version="${1:-main}"
+    [ -z "$CLI_REFRESHED" ] || return 0
+
+    local target="$CLI_PATH"
+    if (
+        local target_dir
+        target_dir=$(dirname "$target")
+        local tmp
+        tmp=$(mktemp "${target_dir}/.serverbee-cli.XXXXXX")
+        trap 'rm -f "$tmp"' EXIT
+
+        local url="https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
+        curl -fsSL -o "$tmp" "$url" || exit 1
+
+        # Sanity-check the download before trusting it as our own CLI:
+        # non-empty, syntactically valid bash, and carrying the expected
+        # repo marker (guards against HTML error pages / truncated bodies).
+        [ -s "$tmp" ] || exit 1
+        bash -n "$tmp" 2>/dev/null || exit 1
+        grep -q 'REPO="ZingerLittleBee/ServerBee"' "$tmp" || exit 1
+
+        chmod +x "$tmp"
+        mv "$tmp" "$target"
+        trap - EXIT
+    ); then
+        CLI_REFRESHED=1
+        info "Management CLI refreshed to ${version} (applies on next 'serverbee' run)"
+    else
+        warn "Could not refresh management CLI from ${version} — keeping existing CLI"
+    fi
+}
+
 # ─── Install helpers ─────────────────────────────────────────────────────────
 
 install_binary_server() {
@@ -373,6 +1125,8 @@ install_binary_server() {
     os=$(detect_os)
     arch=$(detect_arch)
     version=$(get_latest_version)
+
+    mkdir -p "$INSTALL_DIR"
 
     # Download (skip if binary already exists — adopt mode)
     if [ -f "${INSTALL_DIR}/serverbee-server" ]; then
@@ -395,14 +1149,10 @@ install_binary_server() {
         cat > "${CONFIG_DIR}/server.toml" << TOML
 [server]
 data_dir = "${DATA_DIR}"
-TOML
-        if [ -n "$PASSWORD" ]; then
-            cat >> "${CONFIG_DIR}/server.toml" << TOML
 
-[admin]
-password = "${PASSWORD}"
+[auth]
+secure_cookie = false
 TOML
-        fi
         info "Created ${CONFIG_DIR}/server.toml"
     else
         warn "${CONFIG_DIR}/server.toml already exists, not overwriting"
@@ -410,16 +1160,16 @@ TOML
 
     # systemd service
     if has_systemd; then
-        cat > /etc/systemd/system/serverbee-server.service << 'UNIT'
+        cat > /etc/systemd/system/serverbee-server.service << UNIT
 [Unit]
 Description=ServerBee Dashboard
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/serverbee-server
-WorkingDirectory=/var/lib/serverbee
-Environment=SERVERBEE_SERVER__DATA_DIR=/var/lib/serverbee
+ExecStart=${INSTALL_DIR}/serverbee-server
+WorkingDirectory=${CONFIG_DIR}
+Environment=SERVERBEE_SERVER__DATA_DIR=${DATA_DIR}
 Restart=always
 RestartSec=5
 LimitNOFILE=65536
@@ -445,6 +1195,8 @@ install_binary_agent() {
     os=$(detect_os)
     arch=$(detect_arch)
     version=$(get_latest_version)
+
+    mkdir -p "$INSTALL_DIR"
 
     # Download (skip if binary already exists — adopt mode)
     if [ -f "${INSTALL_DIR}/serverbee-agent" ]; then
@@ -479,15 +1231,15 @@ TOML
 
     # systemd service
     if has_systemd; then
-        cat > /etc/systemd/system/serverbee-agent.service << 'UNIT'
+        cat > /etc/systemd/system/serverbee-agent.service << UNIT
 [Unit]
 Description=ServerBee Agent
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/serverbee-agent
-WorkingDirectory=/etc/serverbee
+ExecStart=${INSTALL_DIR}/serverbee-agent
+WorkingDirectory=${CONFIG_DIR}
 Restart=always
 RestartSec=5
 AmbientCapabilities=CAP_NET_RAW
@@ -512,38 +1264,29 @@ install_docker_server() {
     check_docker
     check_unmanaged_container "server"
 
-    local version
+    local version image_tag
     version=$(get_latest_version)
+    image_tag=$(docker_image_tag "$version")
 
-    mkdir -p "$DOCKER_DIR" "$CONFIG_DIR"
+    local conf_dir
+    conf_dir="$(docker_conf_dir)"
+    mkdir -p "$DOCKER_DIR" "$conf_dir"
 
     # Generate server.toml (skip if exists)
-    if [ ! -f "${CONFIG_DIR}/server.toml" ]; then
-        cat > "${CONFIG_DIR}/server.toml" << TOML
+    if [ ! -f "${conf_dir}/server.toml" ]; then
+        cat > "${conf_dir}/server.toml" << TOML
 [server]
 data_dir = "/data"
 TOML
-        if [ -n "$PASSWORD" ]; then
-            cat >> "${CONFIG_DIR}/server.toml" << TOML
-
-[admin]
-password = "${PASSWORD}"
-TOML
-        fi
-        info "Created ${CONFIG_DIR}/server.toml"
+        info "Created ${conf_dir}/server.toml"
     else
-        warn "${CONFIG_DIR}/server.toml already exists, not overwriting"
-    fi
-
-    local password_env=""
-    if [ -n "$PASSWORD" ]; then
-        password_env="      - SERVERBEE_ADMIN__PASSWORD=${PASSWORD}"
+        warn "${conf_dir}/server.toml already exists, not overwriting"
     fi
 
     cat > "${DOCKER_DIR}/docker-compose.server.yml" << YAML
 services:
   serverbee-server:
-    image: ghcr.io/zingerlittlebee/serverbee-server:${version}
+    image: ghcr.io/zingerlittlebee/serverbee-server:${image_tag}
     container_name: serverbee-server
     ports:
       - "9527:9527"
@@ -551,8 +1294,8 @@ services:
       - serverbee-data:/data
     environment:
       - SERVERBEE_ADMIN__USERNAME=admin
-${password_env:+${password_env}
-}    restart: unless-stopped
+      - SERVERBEE_AUTH__SECURE_COOKIE=false
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:9527/healthz"]
       interval: 30s
@@ -577,14 +1320,17 @@ install_docker_agent() {
     check_docker
     check_unmanaged_container "agent"
 
-    local version
+    local version image_tag
     version=$(get_latest_version)
+    image_tag=$(docker_image_tag "$version")
 
-    mkdir -p "$CONFIG_DIR"
+    local conf_dir
+    conf_dir="$(docker_conf_dir)"
+    mkdir -p "$conf_dir"
 
     # Generate agent.toml (skip if exists)
-    if [ ! -f "${CONFIG_DIR}/agent.toml" ]; then
-        cat > "${CONFIG_DIR}/agent.toml" << TOML
+    if [ ! -f "${conf_dir}/agent.toml" ]; then
+        cat > "${conf_dir}/agent.toml" << TOML
 server_url = "${SERVER_URL}"
 enrollment_code = "${ENROLLMENT_CODE}"
 
@@ -592,9 +1338,9 @@ enrollment_code = "${ENROLLMENT_CODE}"
 interval = 3
 enable_temperature = true
 TOML
-        info "Created ${CONFIG_DIR}/agent.toml"
+        info "Created ${conf_dir}/agent.toml"
     else
-        warn "${CONFIG_DIR}/agent.toml already exists, not overwriting"
+        warn "${conf_dir}/agent.toml already exists, not overwriting"
     fi
 
     mkdir -p "$DOCKER_DIR"
@@ -602,7 +1348,7 @@ TOML
     cat > "${DOCKER_DIR}/docker-compose.agent.yml" << YAML
 services:
   serverbee-agent:
-    image: ghcr.io/zingerlittlebee/serverbee-agent:${version}
+    image: ghcr.io/zingerlittlebee/serverbee-agent:${image_tag}
     container_name: serverbee-agent
     privileged: true
     network_mode: host
@@ -611,7 +1357,7 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /etc/machine-id:/etc/machine-id:ro
-      - /etc/serverbee:/etc/serverbee
+      - ${conf_dir}:/etc/serverbee
     restart: unless-stopped
 YAML
 
@@ -624,62 +1370,501 @@ YAML
     print_agent_result
 }
 
+# Poll the server's startup logs for the one-time first-run admin password.
+# Echoes the password if found within the timeout, otherwise nothing (e.g.
+# re-install/adopt where the admin already exists, or no captured logs).
+fetch_first_run_password() {
+    local i out pw max
+    # Docker's first run may pull the image before the container starts and
+    # logs the banner, so allow a longer budget; the loop exits as soon as
+    # the password is found, keeping the warm-cache path fast.
+    if [ "$METHOD" = "docker" ]; then max=45; else max=15; fi
+    for ((i = 0; i < max; i++)); do
+        if [ "$METHOD" = "docker" ]; then
+            out=$(docker compose -f "${DOCKER_DIR}/docker-compose.server.yml" logs --no-color serverbee-server 2>/dev/null)
+        elif has_systemd; then
+            out=$(journalctl -u serverbee-server --no-pager 2>/dev/null)
+        else
+            return 0
+        fi
+        pw=$(printf '%s\n' "$out" \
+            | sed 's/\x1b\[[0-9;]*m//g' \
+            | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' \
+            | grep -m1 'Password:' \
+            | sed -E 's/.*Password:[[:space:]]*//' \
+            | awk '{print $1}')
+        if [ -n "$pw" ]; then
+            printf '%s' "$pw"
+            return 0
+        fi
+        sleep 1
+    done
+    return 0
+}
+
 print_server_result() {
-    local ip
+    local ip pw
     ip=$(get_local_ip)
+    pw="$(fetch_first_run_password)"
     echo ""
-    echo -e "${GREEN}ServerBee Server installed successfully!${NC}"
+    echo -e "${GREEN}$(tr_text result_server_ok)${NC}"
     echo ""
-    echo "  Dashboard:  http://${ip}:9527"
-    echo "  Username:   admin"
-    if [ -n "$PASSWORD" ]; then
-        echo "  Password:   ${PASSWORD}"
+    echo "$(tr_text lbl_dashboard) http://${ip}:9527"
+    echo "$(tr_text lbl_username) admin"
+    if [ -n "$pw" ]; then
+        echo -e "$(tr_text lbl_password) ${BOLD}${pw}${NC}"
+        echo "$(tr_text pw_must_change)"
     elif [ "$METHOD" = "docker" ]; then
-        echo "  Password:   (auto-generated, check: docker compose -f ${DOCKER_DIR}/docker-compose.server.yml logs | grep 'Generated admin password')"
+        echo "$(tr_text lbl_password) $(trp pw_docker "${DOCKER_DIR}/docker-compose.server.yml")"
     elif has_systemd; then
-        echo "  Password:   (auto-generated, check: sudo journalctl -u serverbee-server | grep 'Generated admin password')"
+        echo "$(tr_text lbl_password) $(tr_text pw_systemd)"
     else
-        echo "  Password:   (auto-generated, check process output for 'Generated admin password')"
+        echo "$(tr_text lbl_password) $(tr_text pw_proc)"
     fi
     echo ""
-    echo "  Docs: ${DOCS_URL}/en/docs/configuration"
+    echo "$(tr_text lbl_docs) ${DOCS_URL}/$(docs_lang)/docs/configuration"
     echo ""
 }
 
 print_agent_result() {
     echo ""
-    echo -e "${GREEN}ServerBee Agent installed successfully!${NC}"
+    echo -e "${GREEN}$(tr_text result_agent_ok)${NC}"
     echo ""
-    echo "  Server URL: ${SERVER_URL}"
+    echo "$(tr_text lbl_server_url) ${SERVER_URL}"
     if [ "$METHOD" = "docker" ]; then
-        echo "  Logs:   docker compose -f ${DOCKER_DIR}/docker-compose.agent.yml logs -f"
+        echo "$(tr_text lbl_logs) docker compose -f ${DOCKER_DIR}/docker-compose.agent.yml logs -f"
     elif has_systemd; then
-        echo "  Start:  sudo systemctl start serverbee-agent"
-        echo "  Logs:   sudo journalctl -u serverbee-agent -f"
+        echo "$(tr_text lbl_start) sudo systemctl start serverbee-agent"
+        echo "$(tr_text lbl_logs) sudo journalctl -u serverbee-agent -f"
     else
-        echo "  Start:  ${INSTALL_DIR}/serverbee-agent &"
+        echo "$(tr_text lbl_start) ${INSTALL_DIR}/serverbee-agent &"
     fi
     echo ""
-    echo "  Config: ${CONFIG_DIR}/agent.toml"
-    echo "  Docs:   ${DOCS_URL}/en/docs/configuration"
+    if [ "$METHOD" = "docker" ]; then
+        echo "$(tr_text lbl_config) $(docker_conf_dir)/agent.toml"
+    else
+        echo "$(tr_text lbl_config) ${CONFIG_DIR}/agent.toml"
+    fi
+    echo "$(tr_text lbl_docs) ${DOCS_URL}/$(docs_lang)/docs/configuration"
     echo ""
 }
 
+# ─── Domain / HTTPS setup ─────────────────────────────────────────────────────
+
+install_caddy() {
+    if command -v caddy &>/dev/null; then
+        info "Caddy is already installed"
+        return
+    fi
+
+    if command -v apt-get &>/dev/null; then
+        info "Installing Caddy via official apt repository..."
+        apt-get update -qq >/dev/null 2>&1
+        apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl gpg >/dev/null 2>&1 \
+            || error "Failed to install Caddy apt repository dependencies"
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+            | gpg --dearmor --batch --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+            > /etc/apt/sources.list.d/caddy-stable.list
+        chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg /etc/apt/sources.list.d/caddy-stable.list
+        apt-get update -qq >/dev/null 2>&1
+        apt-get install -y -qq caddy >/dev/null 2>&1 || error "Failed to install Caddy"
+    elif command -v dnf &>/dev/null; then
+        info "Installing Caddy via COPR repository..."
+        dnf install -y -q dnf-plugins-core >/dev/null 2>&1 || dnf install -y -q dnf5-plugins >/dev/null 2>&1 \
+            || error "Failed to install dnf COPR plugin"
+        dnf copr enable -y @caddy/caddy >/dev/null 2>&1 || error "Failed to enable Caddy COPR repository"
+        dnf install -y -q caddy >/dev/null 2>&1 || error "Failed to install Caddy"
+    elif command -v yum &>/dev/null; then
+        info "Installing Caddy via COPR repository..."
+        yum install -y -q yum-plugin-copr >/dev/null 2>&1 || error "Failed to install yum COPR plugin"
+        yum copr enable -y @caddy/caddy >/dev/null 2>&1 || error "Failed to enable Caddy COPR repository"
+        yum install -y -q caddy >/dev/null 2>&1 || error "Failed to install Caddy"
+    else
+        error "Cannot install Caddy automatically on this distribution.\n  Install Caddy manually, then configure:\n\n  ${DOMAIN} {\n      reverse_proxy 127.0.0.1:9527\n  }"
+    fi
+}
+
+check_http_ports_available() {
+    local listeners=""
+    if command -v ss &>/dev/null; then
+        listeners=$(ss -ltnp 2>/dev/null | awk '$4 ~ /:80$/ || $4 ~ /:443$/ {print}' || true)
+    elif command -v lsof &>/dev/null; then
+        listeners=$(lsof -nP -iTCP:80 -iTCP:443 -sTCP:LISTEN 2>/dev/null || true)
+    fi
+
+    if [ -n "$listeners" ] && ! echo "$listeners" | grep -qi caddy; then
+        echo "$listeners" | sed 's/^/  /'
+        error "Port 80 or 443 is already used by a non-Caddy service.\n  Stop that service or configure your existing reverse proxy manually."
+    fi
+}
+
+write_caddyfile() {
+    mkdir -p "$CADDY_CONFIG_DIR"
+    if [ -f "$CADDYFILE" ]; then
+        cp "$CADDYFILE" "${CADDYFILE}.serverbee.$(date +%Y%m%d%H%M%S).bak"
+        if [ -n "$EMAIL" ] && ! grep -q "^[[:space:]]*email[[:space:]]" "$CADDYFILE"; then
+            local first_nonblank
+            first_nonblank=$(awk 'NF {print; exit}' "$CADDYFILE")
+            if [ "$first_nonblank" = "{" ]; then
+                awk -v email="$EMAIL" '
+                    !inserted && $0 == "{" { print; print "    email "email; inserted=1; next }
+                    { print }
+                ' "$CADDYFILE" > /tmp/serverbee-caddyfile
+            else
+                {
+                    echo "{"
+                    echo "    email ${EMAIL}"
+                    echo "}"
+                    echo ""
+                    cat "$CADDYFILE"
+                } > /tmp/serverbee-caddyfile
+            fi
+            mv /tmp/serverbee-caddyfile "$CADDYFILE"
+        fi
+        if grep -q "^${DOMAIN}[[:space:]]*{" "$CADDYFILE"; then
+            awk -v domain="$DOMAIN" '
+                $0 ~ "^"domain"[[:space:]]*{" { print domain" {\n    reverse_proxy 127.0.0.1:9527\n}"; in_block=1; depth=1; next }
+                in_block {
+                    depth += gsub(/\{/, "{")
+                    depth -= gsub(/\}/, "}")
+                    if (depth <= 0) in_block=0
+                    next
+                }
+                { print }
+            ' "$CADDYFILE" > /tmp/serverbee-caddyfile
+            mv /tmp/serverbee-caddyfile "$CADDYFILE"
+        else
+            cat >> "$CADDYFILE" << EOF
+
+${DOMAIN} {
+    reverse_proxy 127.0.0.1:9527
+}
+EOF
+        fi
+    else
+        if [ -n "$EMAIL" ]; then
+            cat > "$CADDYFILE" << EOF
+{
+    email ${EMAIL}
+}
+
+${DOMAIN} {
+    reverse_proxy 127.0.0.1:9527
+}
+EOF
+        else
+            cat > "$CADDYFILE" << EOF
+${DOMAIN} {
+    reverse_proxy 127.0.0.1:9527
+}
+EOF
+        fi
+    fi
+    info "Configured ${CADDYFILE} for ${DOMAIN}"
+}
+
+update_server_for_domain_binary() {
+    [ -f "${CONFIG_DIR}/server.toml" ] || error "Server config not found: ${CONFIG_DIR}/server.toml"
+    toml_set "${CONFIG_DIR}/server.toml" "server.listen" "127.0.0.1:9527"
+    toml_set "${CONFIG_DIR}/server.toml" "auth.secure_cookie" "true"
+    if has_systemd; then
+        systemctl restart serverbee-server
+    fi
+}
+
+update_server_for_domain_docker() {
+    local compose_file="${DOCKER_DIR}/docker-compose.server.yml"
+    [ -f "$compose_file" ] || error "Compose file not found: $compose_file"
+
+    sed -i.bak 's|- "9527:9527"|- "127.0.0.1:9527:9527"|' "$compose_file" && rm -f "${compose_file}.bak"
+    if grep -q "SERVERBEE_AUTH__SECURE_COOKIE=" "$compose_file"; then
+        sed -i.bak 's|SERVERBEE_AUTH__SECURE_COOKIE=.*|SERVERBEE_AUTH__SECURE_COOKIE=true|' "$compose_file" && rm -f "${compose_file}.bak"
+    else
+        sed -i.bak '/environment:/a\      - SERVERBEE_AUTH__SECURE_COOKIE=true' "$compose_file" && rm -f "${compose_file}.bak"
+    fi
+    docker compose -f "$compose_file" up -d
+}
+
+wait_for_https_endpoint() {
+    local url="https://${DOMAIN}/healthz"
+    local attempts=30
+    local delay=2
+    local attempt
+
+    for ((attempt = 1; attempt <= attempts; attempt++)); do
+        if curl -fsS --max-time 20 "$url" >/dev/null; then
+            return 0
+        fi
+
+        if [ "$attempt" -lt "$attempts" ]; then
+            info "HTTPS endpoint is not ready yet (attempt ${attempt}/${attempts}); retrying in ${delay}s..."
+            sleep "$delay"
+        fi
+    done
+
+    return 1
+}
+
+setup_domain() {
+    validate_domain_name "$DOMAIN"
+    check_domain_points_here "$DOMAIN"
+    check_http_ports_available
+    install_caddy
+    write_caddyfile
+
+    detect_installed
+    meta_has "server" || error "serverbee-server is not installed. Install the server first."
+
+    local method
+    method=$(meta_read "server" "method")
+    case "$method" in
+        binary) update_server_for_domain_binary ;;
+        docker) update_server_for_domain_docker ;;
+        *) error "Unsupported server install method for domain setup: ${method}" ;;
+    esac
+
+    if has_systemd; then
+        systemctl enable caddy >/dev/null 2>&1 || true
+        systemctl restart caddy
+    else
+        warn "systemd not found. Start Caddy manually with: caddy run --config ${CADDYFILE}"
+    fi
+
+    info "Verifying HTTPS endpoint..."
+    wait_for_https_endpoint \
+        || error "HTTPS verification failed for https://${DOMAIN}/healthz. Check Caddy logs and DNS propagation."
+
+    echo ""
+    echo -e "${GREEN}ServerBee HTTPS domain configured successfully!${NC}"
+    echo ""
+    echo "  Dashboard: https://${DOMAIN}"
+    echo "  Agent URL: https://${DOMAIN}"
+    echo ""
+    echo "Install an agent with:"
+    echo "  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/deploy/install.sh | sudo bash -s -- agent \\"
+    echo "    --server-url https://${DOMAIN} \\"
+    echo "    --enrollment-code YOUR_ONE_TIME_CODE"
+    echo ""
+}
+
+cmd_domain() {
+    if [ -z "$COMPONENT" ]; then
+        COMPONENT="setup"
+    fi
+    [ "$COMPONENT" = "setup" ] || error "Usage: serverbee domain setup --domain monitor.example.com --email admin@example.com"
+
+    if [ -z "$DOMAIN" ]; then
+        if [ "$YES" = true ] || ! [ -t 0 ]; then
+            error "--domain is required"
+        fi
+        read -rp "$(tr_text domain_prompt)" DOMAIN
+    fi
+
+    if [ -z "$EMAIL" ] && [ "$YES" != true ] && [ -t 0 ]; then
+        read -rp "$(tr_text email_prompt)" EMAIL
+    fi
+
+    run_domain_setup_with_plan
+}
+
 # ─── Install command ──────────────────────────────────────────────────────────
+
+print_missing_deps_plan() {
+    collect_missing_deps
+    if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
+        echo "$(tr_text plan_pkgs) ${MISSING_DEPS[*]} $(tr_text plan_pkgs_suffix)"
+    fi
+}
+
+print_common_binary_plan() {
+    local component="$1"
+    local os arch filename version
+    os=$(detect_os)
+    arch=$(detect_arch)
+    filename="serverbee-${component}-${os}-${arch}"
+    version=$(get_latest_version)
+
+    echo "$(tr_text plan_gh_meta)"
+    if [ -f "${INSTALL_DIR}/serverbee-${component}" ]; then
+        echo "$(tr_text plan_binary_adopt_pre) ${INSTALL_DIR}/serverbee-${component} $(tr_text plan_binary_adopt_suf)"
+    else
+        echo "$(tr_text plan_binary_dl) https://github.com/${REPO}/releases/download/${version}/${filename}"
+    fi
+    echo "$(tr_text plan_cli_script) https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
+}
+
+print_common_docker_plan() {
+    local component="$1" version
+    configure_docker_dir
+    version=$(get_latest_version)
+    echo "$(tr_text plan_docker_prereq)"
+    echo "$(tr_text plan_gh_meta)"
+    echo "$(tr_text plan_docker_image) ghcr.io/zingerlittlebee/serverbee-${component}:$(docker_image_tag "$version")"
+    echo "$(tr_text plan_cli_script) https://raw.githubusercontent.com/${REPO}/${version}/deploy/install.sh"
+}
+
+print_domain_plan() {
+    [ -z "$DOMAIN" ] && return
+
+    echo ""
+    echo "$(tr_text domain_plan_header)"
+    echo "$(tr_text dp_dns_pre) ${DOMAIN} $(tr_text dp_dns_suf)"
+    echo "$(tr_text dp_repo)"
+    echo "$(tr_text dp_key) https://dl.cloudsmith.io/public/caddy/stable/gpg.key"
+    echo "$(tr_text dp_src) https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt"
+    echo "$(tr_text dp_pkgs)"
+    echo "$(tr_text dp_caddyfile) ${CADDYFILE}"
+    echo "$(tr_text dp_bind)"
+    echo "$(tr_text dp_cookie)"
+    echo "$(tr_text dp_url) https://${DOMAIN}"
+}
+
+run_domain_preflight_checks() {
+    [ -z "$DOMAIN" ] && return
+
+    echo ""
+    echo "$(tr_text preflight)"
+    validate_domain_name "$DOMAIN"
+    check_domain_points_here "$DOMAIN"
+}
+
+confirm_domain_setup_plan() {
+    run_domain_preflight_checks
+
+    echo ""
+    echo -e "${BOLD}$(tr_text domain_plan_title)${NC}"
+    echo ""
+    echo "$(tr_text domain_label) ${DOMAIN}"
+    [ -n "$EMAIL" ] && echo "$(tr_text email_label) ${EMAIL}"
+    echo ""
+    echo "$(tr_text will_add_download)"
+    print_missing_deps_plan
+    print_domain_plan
+    echo ""
+
+    if ! should_prompt; then
+        info "Proceeding without prompt."
+        return
+    fi
+
+    read -rp "$(tr_text start_domain)" confirm
+    case "$confirm" in
+        [yY]|[yY][eE][sS]) ;;
+        *) error "Domain setup cancelled." ;;
+    esac
+}
+
+run_domain_setup_with_plan() {
+    confirm_domain_setup_plan
+    check_deps
+    setup_domain
+}
+
+print_install_plan() {
+    echo ""
+    echo -e "${BOLD}$(tr_text install_plan_title)${NC}"
+    echo ""
+    echo "$(tr_text plan_component) serverbee-${COMPONENT}"
+    echo "$(tr_text plan_method) ${METHOD}"
+
+    if [ "$COMPONENT" = "server" ]; then
+        if [ -n "$DOMAIN" ]; then
+            echo "$(tr_text plan_access) $(tr_text plan_access_domain_val) (${DOMAIN})"
+        else
+            echo "$(tr_text plan_access) $(tr_text plan_access_ip_val)"
+        fi
+    else
+        echo "$(tr_text plan_server_url) ${SERVER_URL}"
+    fi
+
+    echo ""
+    echo "$(tr_text will_add_download)"
+    print_missing_deps_plan
+    case "${COMPONENT}-${METHOD}" in
+        server-binary)
+            print_common_binary_plan "server"
+            echo "$(tr_text plan_cfg_file) ${CONFIG_DIR}/server.toml"
+            echo "$(tr_text plan_data_dir) ${DATA_DIR}"
+            if has_systemd; then echo "$(tr_text plan_systemd) serverbee-server"; fi
+            ;;
+        agent-binary)
+            print_common_binary_plan "agent"
+            echo "$(tr_text plan_cfg_file) ${CONFIG_DIR}/agent.toml"
+            if has_systemd; then echo "$(tr_text plan_systemd) serverbee-agent"; fi
+            ;;
+        server-docker)
+            print_common_docker_plan "server"
+            echo "$(tr_text plan_cfg_file) $(docker_conf_dir)/server.toml"
+            echo "$(tr_text plan_compose_file) ${DOCKER_DIR}/docker-compose.server.yml"
+            echo "$(tr_text plan_docker_volume)"
+            ;;
+        agent-docker)
+            print_common_docker_plan "agent"
+            echo "$(tr_text plan_cfg_file) $(docker_conf_dir)/agent.toml"
+            echo "$(tr_text plan_compose_file) ${DOCKER_DIR}/docker-compose.agent.yml"
+            ;;
+    esac
+    print_domain_plan
+    echo ""
+}
+
+confirm_install_plan() {
+    run_domain_preflight_checks
+    print_install_plan
+
+    if ! should_prompt; then
+        info "Proceeding without prompt."
+        return
+    fi
+
+    read -rp "$(tr_text start_install)" confirm
+    case "$confirm" in
+        [yY]|[yY][eE][sS]) ;;
+        *) error "Installation cancelled." ;;
+    esac
+}
+
+prompt_install_method() {
+    local choice
+
+    echo ""
+    if [ "$COMPONENT" = "server" ]; then
+        echo "$(tr_text server_docker_recommended)"
+        echo "$(tr_text binary_option)"
+        echo ""
+        read -rp "$(tr_text select_method)" choice
+        case "$choice" in
+            1|docker) METHOD="docker" ;;
+            2|binary) METHOD="binary" ;;
+            *) error "Invalid choice: $choice" ;;
+        esac
+    else
+        echo "$(tr_text agent_binary_recommended)"
+        echo "$(tr_text docker_option)"
+        echo ""
+        read -rp "$(tr_text select_method)" choice
+        case "$choice" in
+            1|binary) METHOD="binary" ;;
+            2|docker) METHOD="docker" ;;
+            *) error "Invalid choice: $choice" ;;
+        esac
+    fi
+}
 
 cmd_install() {
     # Interactive: prompt for component if not provided
     if [ -z "$COMPONENT" ]; then
         echo ""
-        echo -e "${BOLD}Install${NC}"
+        echo -e "${BOLD}$(tr_text install_title)${NC}"
         echo ""
-        echo "  [1] Server  — Dashboard & API"
-        echo "  [2] Agent   — System metrics collector"
+        echo "$(tr_text agent_option)"
+        echo "$(tr_text server_option)"
         echo ""
-        read -rp "Select component [1/2]: " choice
+        read -rp "$(tr_text select_component)" choice
         case "$choice" in
-            1|server) COMPONENT="server" ;;
-            2|agent)  COMPONENT="agent" ;;
+            1|agent)  COMPONENT="agent" ;;
+            2|server) COMPONENT="server" ;;
             *) error "Invalid choice: $choice" ;;
         esac
     fi
@@ -696,21 +1881,14 @@ cmd_install() {
     # Interactive: prompt for method if not provided
     if [ -z "$METHOD" ]; then
         if [ -t 0 ]; then
-            # Interactive terminal — show menu
-            echo ""
-            echo "  [1] Binary  (recommended)"
-            echo "  [2] Docker"
-            echo ""
-            read -rp "Select installation method [1/2]: " choice
-            case "$choice" in
-                1|binary) METHOD="binary" ;;
-                2|docker) METHOD="docker" ;;
-                *) error "Invalid choice: $choice" ;;
-            esac
+            prompt_install_method
         else
             # Non-interactive (piped) — default to binary
             METHOD="binary"
             info "Non-interactive mode detected, defaulting to binary installation."
+            if [ "$COMPONENT" = "server" ]; then
+                info "Docker is recommended for Server when Docker is available; pass --method docker to use it."
+            fi
         fi
     fi
     : "${METHOD:=binary}"
@@ -721,12 +1899,12 @@ cmd_install() {
         echo ""
         warn "Docker is NOT recommended for Agent"
         echo ""
-        echo "  ServerBee Agent is portable software:"
-        echo "  - Single binary, no residual files"
-        echo "  - Docker requires --privileged for full metrics"
-        echo "  - Web terminal accesses container, not host"
+        echo "$(tr_text docker_agent_note)"
+        echo "$(tr_text docker_agent_note1)"
+        echo "$(tr_text docker_agent_note2)"
+        echo "$(tr_text docker_agent_note3)"
         echo ""
-        read -rp "  Continue with Docker? [y/N]: " confirm
+        read -rp "$(tr_text docker_continue_confirm)" confirm
         case "$confirm" in
             [yY]|[yY][eE][sS]) ;;
             *) METHOD="binary"; info "Switched to binary installation." ;;
@@ -735,20 +1913,33 @@ cmd_install() {
 
     # Prompt for component-specific params
     if [ "$COMPONENT" = "server" ]; then
-        if [ -z "$PASSWORD" ] && [ "$YES" != true ]; then
+        if [ -z "$DOMAIN" ] && [ "$YES" != true ] && [ -t 0 ]; then
             echo ""
-            read -rp "Admin password (Enter to skip, auto-generated on first start): " PASSWORD
+            read -rp "$(tr_text configure_domain)" confirm_domain
+            if [[ "$confirm_domain" =~ ^[yY] ]]; then
+                read -rp "$(tr_text domain_prompt)" DOMAIN
+                read -rp "$(tr_text email_prompt)" EMAIL
+            fi
         fi
     elif [ "$COMPONENT" = "agent" ]; then
+        if [ -z "$SERVER_URL" ] && [ "$YES" != true ]; then
+            local default_server_url
+            default_server_url="http://$(get_local_ip):9527"
+            read -rp "$(trp server_url_prompt "$default_server_url")" SERVER_URL
+            SERVER_URL="${SERVER_URL:-$default_server_url}"
+        fi
         while [ -z "$SERVER_URL" ]; do
             if [ "$YES" = true ]; then error "--server-url is required for agent installation"; fi
-            read -rp "Server URL (e.g., http://10.0.0.1:9527): " SERVER_URL
+            read -rp "$(trp server_url_prompt "http://$(get_local_ip):9527")" SERVER_URL
         done
         while [ -z "$ENROLLMENT_CODE" ]; do
             if [ "$YES" = true ]; then error "--enrollment-code is required for agent installation (generate a one-time code in the server UI Settings)"; fi
-            read -rp "Enrollment code: " ENROLLMENT_CODE
+            read -rp "$(tr_text enrollment_prompt)" ENROLLMENT_CODE
         done
     fi
+
+    confirm_install_plan
+    check_deps
 
     info "Installing ${COMPONENT} via ${METHOD}..."
 
@@ -758,6 +1949,10 @@ cmd_install() {
         agent-binary)  install_binary_agent ;;
         agent-docker)  install_docker_agent ;;
     esac
+
+    if [ "$COMPONENT" = "server" ] && [ -n "$DOMAIN" ]; then
+        setup_domain
+    fi
 }
 
 # ─── Uninstall command ────────────────────────────────────────────────────────
@@ -810,7 +2005,7 @@ uninstall_docker() {
             done
         fi
         rm -f "$compose_file"
-        rm -f "${CONFIG_DIR}/${component}.toml"
+        rm -f "$(docker_conf_dir)/${component}.toml"
         info "Config, data, images, and volumes purged"
     fi
 }
@@ -819,15 +2014,15 @@ cmd_uninstall() {
     # Component is required for uninstall
     if [ -z "$COMPONENT" ]; then
         echo ""
-        echo -e "${BOLD}Uninstall${NC}"
+        echo -e "${BOLD}$(tr_text uninstall_title)${NC}"
         echo ""
-        echo "  [1] Server"
-        echo "  [2] Agent"
+        echo "$(tr_text opt_agent)"
+        echo "$(tr_text opt_server)"
         echo ""
-        read -rp "Select component [1/2]: " choice
+        read -rp "$(tr_text select_component)" choice
         case "$choice" in
-            1|server) COMPONENT="server" ;;
-            2|agent)  COMPONENT="agent" ;;
+            1|agent)  COMPONENT="agent" ;;
+            2|server) COMPONENT="server" ;;
             *) error "Invalid choice: $choice" ;;
         esac
     fi
@@ -845,9 +2040,9 @@ cmd_uninstall() {
     if [ "$YES" != true ]; then
         local purge_note=""
         if [ "$PURGE" = true ]; then
-            purge_note=" (including config and data)"
+            purge_note="$(tr_text uninstall_purge_note)"
         fi
-        read -rp "Uninstall serverbee-${COMPONENT} (${method})${purge_note}? [y/N]: " confirm
+        read -rp "$(trp uninstall_confirm "$COMPONENT" "$method" "$purge_note")" confirm
         case "$confirm" in
             [yY]|[yY][eE][sS]) ;;
             *) info "Cancelled."; exit 0 ;;
@@ -871,16 +2066,33 @@ cmd_uninstall() {
         remaining=$(grep -c '"method"' "$META_FILE" 2>/dev/null || true)
         : "${remaining:=0}"
         if [ "$remaining" -eq 0 ]; then
-            rm -f "/usr/local/bin/serverbee"
+            rm -f "$CLI_PATH"
             rm -f "$META_FILE"
+            rm -f "$LANG_CACHE_FILE"
+            # Drop now-empty layout directories (ignored if anything remains).
+            rmdir "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR" "$DOCKER_DIR" "$BASE_DIR" 2>/dev/null || true
             info "All components removed. CLI uninstalled."
         fi
     fi
 
     if [ "$PURGE" != true ]; then
         echo ""
-        echo "  Config preserved at: ${CONFIG_DIR}/${COMPONENT}.toml"
-        echo "  To remove all data:  re-run with --purge"
+        echo "$(tr_text uninstall_preserved)"
+        echo ""
+        if [ "$method" = "docker" ]; then
+            local conf_dir
+            conf_dir="$(docker_conf_dir)"
+            echo "    rm -f ${DOCKER_DIR}/docker-compose.${COMPONENT}.yml"
+            echo "    rm -f ${conf_dir}/${COMPONENT}.toml"
+            if [ "$COMPONENT" = "server" ]; then
+                echo "    docker volume rm serverbee_serverbee-data"
+            fi
+        else
+            echo "    rm -f ${CONFIG_DIR}/${COMPONENT}.toml"
+            if [ "$COMPONENT" = "server" ]; then
+                echo "    rm -rf ${DATA_DIR}"
+            fi
+        fi
         echo ""
     fi
 }
@@ -895,7 +2107,7 @@ upgrade_component() {
 
     if [ -n "$current_version" ] && [ "$current_version" = "$latest_version" ]; then
         # Always ensure CLI matches the current release (repairs missing or stale)
-        install_cli "$latest_version"
+        refresh_cli_from_release "$latest_version"
         info "serverbee-${component} is already up to date (${current_version})"
         return
     fi
@@ -908,7 +2120,7 @@ upgrade_component() {
 
     # Confirmation
     if [ "$YES" != true ]; then
-        read -rp "Proceed with upgrade? [y/N]: " confirm
+        read -rp "$(tr_text upgrade_confirm)" confirm
         case "$confirm" in
             [yY]|[yY][eE][sS]) ;;
             *) info "Skipped."; return ;;
@@ -922,7 +2134,7 @@ upgrade_component() {
     esac
 
     meta_write "$component" "$method" "$latest_version"
-    install_cli "$latest_version"
+    refresh_cli_from_release "$latest_version"
     info "serverbee-${component} upgraded to ${latest_version}"
 }
 
@@ -953,6 +2165,8 @@ upgrade_binary() {
 upgrade_docker() {
     local component="$1" version="$2"
     local compose_file="${DOCKER_DIR}/docker-compose.${component}.yml"
+    local image_tag
+    image_tag=$(docker_image_tag "$version")
 
     if [ ! -f "$compose_file" ]; then
         error "Compose file not found: $compose_file"
@@ -960,7 +2174,7 @@ upgrade_docker() {
 
     # Update image tag in compose file
     local image_base="ghcr.io/zingerlittlebee/serverbee-${component}"
-    sed -i.bak "s|${image_base}:[^ ]*|${image_base}:${version}|" "$compose_file" && rm -f "${compose_file}.bak"
+    sed -i.bak "s|${image_base}:[^ ]*|${image_base}:${image_tag}|" "$compose_file" && rm -f "${compose_file}.bak"
 
     docker compose -f "$compose_file" pull
     docker compose -f "$compose_file" up -d
@@ -1002,9 +2216,9 @@ status_component() {
     echo -e "${BOLD}${component^} (${method})${NC}"
 
     if [ "$method" = "binary" ]; then
-        echo "  Version:  ${version:-unknown}"
-        echo "  Binary:   ${INSTALL_DIR}/${service}"
-        echo "  Config:   ${CONFIG_DIR}/${component}.toml"
+        echo "$(tr_text st_version) ${version:-$(tr_text st_unknown)}"
+        echo "$(tr_text st_binary) ${INSTALL_DIR}/${service}"
+        echo "$(tr_text st_config) ${CONFIG_DIR}/${component}.toml"
 
         if has_systemd; then
             local status_line
@@ -1012,55 +2226,55 @@ status_component() {
             if [ "$status_line" = "active" ]; then
                 local since
                 since=$(systemctl show "$service" --property=ActiveEnterTimestamp --value 2>/dev/null || echo "")
-                echo -e "  Service:  ${GREEN}active (running)${NC} since ${since}"
+                echo -e "$(tr_text st_service) ${GREEN}$(tr_text st_active)${NC} $(tr_text st_since) ${since}"
             else
-                echo -e "  Service:  ${RED}${status_line}${NC}"
+                echo -e "$(tr_text st_service) ${RED}${status_line}${NC}"
             fi
-            echo "  Recent logs:"
-            journalctl -u "$service" -n 5 --no-pager 2>/dev/null | sed 's/^/    /' || echo "    (no logs)"
+            echo "$(tr_text st_recent_logs)"
+            journalctl -u "$service" -n 5 --no-pager 2>/dev/null | sed 's/^/    /' || echo "$(tr_text st_no_logs)"
         fi
 
         # Show server_url for agent
         if [ "$component" = "agent" ] && [ -f "${CONFIG_DIR}/agent.toml" ]; then
             local srv
             srv=$(grep "^server_url" "${CONFIG_DIR}/agent.toml" 2>/dev/null | sed 's/.*= *"//;s/".*//' || echo "")
-            [ -n "$srv" ] && echo "  Server:   ${srv}"
+            [ -n "$srv" ] && echo "$(tr_text st_server) ${srv}"
         fi
 
         # Show dashboard URL for server
         if [ "$component" = "server" ]; then
             local ip
             ip=$(get_local_ip)
-            echo "  Dashboard: http://${ip}:9527"
+            echo "$(tr_text st_dashboard) http://${ip}:9527"
         fi
 
     elif [ "$method" = "docker" ]; then
         local compose_file="${DOCKER_DIR}/docker-compose.${component}.yml"
-        echo "  Version:  ${version:-unknown}"
+        echo "$(tr_text st_version) ${version:-$(tr_text st_unknown)}"
 
         if docker ps --format '{{.Names}} {{.Status}}' 2>/dev/null | grep -q "^${service} "; then
             local container_status
             container_status=$(docker ps --format '{{.Status}}' --filter "name=^${service}$" 2>/dev/null)
-            echo -e "  Container: ${service} (${GREEN}${container_status}${NC})"
+            echo -e "$(tr_text st_container) ${service} (${GREEN}${container_status}${NC})"
         else
-            echo -e "  Container: ${service} (${RED}stopped${NC})"
+            echo -e "$(tr_text st_container) ${service} (${RED}$(tr_text st_stopped)${NC})"
         fi
 
         local image_tag
         image_tag=$(docker inspect "${service}" --format '{{.Config.Image}}' 2>/dev/null || echo "unknown")
-        echo "  Image:    ${image_tag}"
+        echo "$(tr_text st_image) ${image_tag}"
 
         if [ "$component" = "server" ]; then
             local ports
             ports=$(docker port "${service}" 2>/dev/null | head -1 || echo "")
-            [ -n "$ports" ] && echo "  Port:     ${ports}"
+            [ -n "$ports" ] && echo "$(tr_text st_port) ${ports}"
             local ip
             ip=$(get_local_ip)
-            echo "  Dashboard: http://${ip}:9527"
+            echo "$(tr_text st_dashboard) http://${ip}:9527"
         fi
 
-        echo "  Recent logs:"
-        docker logs "${service}" --tail 5 2>/dev/null | sed 's/^/    /' || echo "    (no logs)"
+        echo "$(tr_text st_recent_logs)"
+        docker logs "${service}" --tail 5 2>/dev/null | sed 's/^/    /' || echo "$(tr_text st_no_logs)"
     fi
 }
 
@@ -1070,13 +2284,13 @@ cmd_status() {
 
     if [ ${#MANAGED_COMPONENTS[@]} -eq 0 ] && [ ${#UNMANAGED_COMPONENTS[@]} -eq 0 ]; then
         echo ""
-        echo "No ServerBee components found. Run 'serverbee install' to get started."
+        echo "$(tr_text status_none)"
         echo ""
         return
     fi
 
     echo ""
-    echo -e "${BOLD}ServerBee Status${NC}"
+    echo -e "${BOLD}$(tr_text status_title)${NC}"
     echo "================"
 
     for entry in "${MANAGED_COMPONENTS[@]}"; do
@@ -1276,8 +2490,8 @@ cmd_config() {
         # 1. Check rejected keys
         if echo "$REJECTED_KEYS" | grep -qw "$key"; then
             case "$key" in
-                admin.password) error "Admin password can only be set during initial installation. To change password, use the Dashboard UI." ;;
-                admin.username) error "Admin username can only be set during initial installation." ;;
+                admin.password) error "Admin password is not a runtime config. ServerBee generates a one-time first-run password; change it in the Dashboard UI after login." ;;
+                admin.username) error "Admin username is not a runtime config. Change it during first-login onboarding or in the Dashboard UI." ;;
             esac
         fi
 
@@ -1293,13 +2507,13 @@ cmd_config() {
 
         local files_to_update=()
         if [ "$target" = "both" ]; then
-            meta_has "agent" && files_to_update+=("${CONFIG_DIR}/agent.toml")
-            meta_has "server" && files_to_update+=("${CONFIG_DIR}/server.toml")
+            meta_has "agent" && files_to_update+=("$(conf_file_for agent)")
+            meta_has "server" && files_to_update+=("$(conf_file_for server)")
             [ ${#files_to_update[@]} -eq 0 ] && error "No managed components found to update log config"
         elif [ "$target" = "agent" ]; then
-            files_to_update=("${CONFIG_DIR}/agent.toml")
+            files_to_update=("$(conf_file_for agent)")
         elif [ "$target" = "server" ]; then
-            files_to_update=("${CONFIG_DIR}/server.toml")
+            files_to_update=("$(conf_file_for server)")
         fi
 
         for file in "${files_to_update[@]}"; do
@@ -1326,17 +2540,21 @@ cmd_config() {
                 fi
             done
         else
-            echo ""
-            echo "  Restart service to apply changes?"
-            read -rp "  [y/N]: " confirm
-            if [[ "$confirm" =~ ^[yY] ]]; then
-                for entry in "${MANAGED_COMPONENTS[@]}"; do
-                    local comp="${entry%%:*}"
-                    local method="${entry##*:}"
-                    if [[ "$target" == "$comp" || "$target" == "both" ]]; then
-                        cmd_service_single "$comp" "$method" "restart"
-                    fi
-                done
+            if [ -t 0 ]; then
+                echo ""
+                echo "$(tr_text restart_apply_q)"
+                read -rp "$(tr_text restart_apply_confirm)" confirm
+                if [[ "$confirm" =~ ^[yY] ]]; then
+                    for entry in "${MANAGED_COMPONENTS[@]}"; do
+                        local comp="${entry%%:*}"
+                        local method="${entry##*:}"
+                        if [[ "$target" == "$comp" || "$target" == "both" ]]; then
+                            cmd_service_single "$comp" "$method" "restart"
+                        fi
+                    done
+                fi
+            else
+                warn "Non-interactive mode detected; services were not restarted. Re-run with -y to restart automatically, or restart manually."
             fi
         fi
         return
@@ -1356,7 +2574,8 @@ cmd_config() {
     [ ${#targets[@]} -eq 0 ] && error "No managed components found."
 
     for comp in "${targets[@]}"; do
-        local file="${CONFIG_DIR}/${comp}.toml"
+        local file
+        file="$(conf_file_for "$comp")"
         echo ""
         echo -e "${BOLD}${comp^} config (${file})${NC}"
         echo "─────────────────────────────────"
@@ -1524,19 +2743,20 @@ EOF
 
 interactive_menu() {
     echo ""
-    echo -e "${BOLD}ServerBee Manager${NC}"
+    echo -e "${BOLD}$(tr_text manager_title)${NC}"
     echo "================="
     echo ""
-    echo "  [1] Install    安装"
-    echo "  [2] Uninstall  卸载"
-    echo "  [3] Upgrade    升级"
-    echo "  [4] Status     查看状态"
-    echo "  [5] Service    服务控制 (start/stop/restart)"
-    echo "  [6] Config     配置管理"
-    echo "  [7] Env        环境变量"
-    echo "  [0] Exit       退出"
+    echo "$(tr_text install_menu)"
+    echo "$(tr_text uninstall_menu)"
+    echo "$(tr_text upgrade_menu)"
+    echo "$(tr_text status_menu)"
+    echo "$(tr_text service_menu)"
+    echo "$(tr_text config_menu)"
+    echo "$(tr_text env_menu)"
+    echo "$(tr_text domain_menu)"
+    echo "$(tr_text exit_menu)"
     echo ""
-    read -rp "Select [0-7]: " choice
+    read -rp "$(tr_text select_menu)" choice
     case "$choice" in
         1) COMMAND="install" ;;
         2) COMMAND="uninstall" ;;
@@ -1545,20 +2765,28 @@ interactive_menu() {
         5) interactive_service_menu ;;
         6) COMMAND="config" ;;
         7) COMMAND="env" ;;
+        8) COMMAND="domain"; COMPONENT="setup" ;;
         0) exit 0 ;;
         *) error "Invalid choice: $choice" ;;
     esac
     require_root
+    migrate_legacy_layout
+    case "$COMMAND" in
+        install|domain) ;;
+        *) check_deps ;;
+    esac
     run_command
 }
 
 interactive_service_menu() {
     echo ""
-    echo "  [1] Start    启动"
-    echo "  [2] Stop     停止"
-    echo "  [3] Restart  重启"
+    echo -e "${BOLD}$(tr_text svc_title)${NC}"
     echo ""
-    read -rp "Select [1-3]: " choice
+    echo "$(tr_text svc_start)"
+    echo "$(tr_text svc_stop)"
+    echo "$(tr_text svc_restart)"
+    echo ""
+    read -rp "$(tr_text svc_select)" choice
     case "$choice" in
         1) COMMAND="start" ;;
         2) COMMAND="stop" ;;
@@ -1570,6 +2798,8 @@ interactive_service_menu() {
 # ─── Command dispatch ─────────────────────────────────────────────────────────
 
 run_command() {
+    configure_docker_dir
+
     case "$COMMAND" in
         install)   cmd_install ;;
         uninstall) cmd_uninstall ;;
@@ -1580,30 +2810,52 @@ run_command() {
         restart)   cmd_service restart ;;
         config)    cmd_config ;;
         env)       cmd_env ;;
+        domain)    cmd_domain ;;
         *) error "Unknown command: $COMMAND" ;;
     esac
 }
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 main() {
-    # Pre-scan for -y flag so check_deps knows whether to auto-install
-    for arg in "$@"; do
-        case "$arg" in --yes|-y) YES=true ;; esac
+    # Pre-scan for -y and --lang before any prompt or dependency handling.
+    local args=("$@")
+    local i
+    for ((i = 0; i < ${#args[@]}; i++)); do
+        case "${args[$i]}" in
+            --yes|-y)
+                YES=true
+                ;;
+            --lang)
+                if [ $((i + 1)) -ge ${#args[@]} ]; then
+                    error "--lang requires a value"
+                fi
+                LANG_CODE="${args[$((i + 1))]}"
+                normalize_lang
+                ;;
+        esac
     done
 
-    check_deps
-
     # Shorthand: first arg not a known command → prepend "install"
-    if [[ $# -gt 0 ]] && ! echo "$KNOWN_COMMANDS" | grep -qw "$1"; then
+    if [[ $# -gt 0 ]] && ! is_known_command "$1"; then
         set -- install "$@"
     fi
 
     if [[ $# -eq 0 ]]; then
+        select_language
         interactive_menu
     else
         COMMAND="$1"; shift
         parse_args "$@"
+        case "$COMMAND" in
+            install|domain) select_language ;;
+            *) detect_lang ;;
+        esac
         require_root
+        migrate_legacy_layout
+        case "$COMMAND" in
+            install|domain) ;;
+            *) check_deps ;;
+        esac
         run_command
     fi
 }

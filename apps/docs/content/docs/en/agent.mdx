@@ -118,6 +118,28 @@ enrollment_code = "<one-time code from Settings>"
 
 When the agent can read a stable machine identifier, it also sends a fingerprint during registration. Repeated registration from the same machine reuses the existing server row instead of creating duplicate placeholders. If a code is lost, expired, or already used, the server responds with HTTP 401 and the agent logs `Registration failed: HTTP 401 ... enrollment code ... expired or already used`; mint a fresh code in Settings to retry.
 
+### Correcting a Wrong Enrollment Code
+
+If the agent was installed with a mistyped enrollment code (or wrong `server_url`) and has **not yet registered** (no `token` saved), fix it without reinstalling. Enrollment codes are single-use, so a typo'd or already-consumed code cannot be reused — generate a fresh one in **Settings** first if needed, then:
+
+```bash
+serverbee config set enrollment_code <new-code> -y
+# if the server URL was also wrong:
+serverbee config set server_url http://your-server-ip:9527 -y
+```
+
+The `-y` flag restarts the agent so it retries registration immediately. Without `-y` the value is written but the service is not restarted; run `serverbee restart agent` afterwards.
+
+If you are unsure of the agent's state, simply re-run the agent installer — it rewrites `agent.toml`:
+
+```bash
+serverbee install agent --method <binary|docker> \
+  --server-url http://your-server-ip:9527 \
+  --enrollment-code <new-code> -y
+```
+
+Once the agent has **already registered** (a `token` is present in `agent.toml`), the enrollment code is no longer used and does not need correcting; point the agent at a different server only by re-registering with a fresh code from that server.
+
 ### Manual Token
 
 If you prefer not to use enrollment codes, you can manually create a server entry in the dashboard and provide the token directly:

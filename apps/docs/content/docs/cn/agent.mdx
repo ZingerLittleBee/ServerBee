@@ -157,6 +157,28 @@ SERVERBEE_ENROLLMENT_CODE=YOUR_ONE_TIME_CODE serverbee-agent
 
 当 Agent 能读取稳定的机器标识时，还会在注册请求中携带指纹。相同机器重复注册时会复用原有服务器记录并轮换 token，而不是继续创建新的占位条目。
 
+### 更正错误的注册码
+
+如果安装时把注册码（或 `server_url`）填错了，且 Agent **尚未注册成功**（配置中还没有 `token`），无需重装即可更正。注册码为单次使用，填错或已被消费的码无法重复使用——必要时先到管理面板「设置」页重新生成一个新码，再执行：
+
+```bash
+serverbee config set enrollment_code <新注册码> -y
+# 如果 server_url 也填错了：
+serverbee config set server_url http://your-server-ip:9527 -y
+```
+
+`-y` 会顺带重启 Agent，使其立即用新码重新尝试注册。不加 `-y` 时只写入配置但不重启服务，需再执行 `serverbee restart agent`。
+
+若不确定 Agent 当前状态，直接重跑 Agent 安装即可，它会重写 `agent.toml`：
+
+```bash
+serverbee install agent --method <binary|docker> \
+  --server-url http://your-server-ip:9527 \
+  --enrollment-code <新注册码> -y
+```
+
+如果 Agent **已注册成功**（`agent.toml` 中已有 `token`），注册码便不再使用，无需更正；要把该 Agent 接到另一台 Server，只能用新 Server 的新码重新注册。
+
 ## 配置文件
 
 Agent 默认读取 `/etc/serverbee/agent.toml` 配置文件。

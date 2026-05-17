@@ -240,6 +240,38 @@ sudo journalctl -u serverbee-server --since "1 hour ago"
 
 ## Nginx 反向代理
 
+### 访问地址和 Cookie 配置
+
+先确定一个对外访问地址，并让浏览器地址、Agent `server_url` 和 Cookie 配置保持一致：
+
+| 场景 | 对外地址 | `auth.secure_cookie` | Docker 环境变量 | Agent 地址 |
+|------|----------|----------------------|-----------------|------------|
+| IP 直连，普通 HTTP | `http://203.0.113.10:9527` | `false` | `SERVERBEE_AUTH__SECURE_COOKIE=false` | `http://203.0.113.10:9527` |
+| 域名 + HTTPS 反向代理 | `https://monitor.example.com` | `true` | `SERVERBEE_AUTH__SECURE_COOKIE=true` 或不设置该变量 | `https://monitor.example.com` |
+
+使用域名访问时，需要先添加 DNS `A` 或 `AAAA` 记录指向服务器 IP，再用 Nginx、Caddy 或 Traefik 终止 HTTPS，并把请求反向代理到 ServerBee 的 `127.0.0.1:9527`。
+
+如果你是通过快速开始脚本安装的 Server，脚本会为了 HTTP 直连写入 `auth.secure_cookie = false`。迁移到 HTTPS 前，请修改 `/etc/serverbee/server.toml`：
+
+```toml
+[auth]
+secure_cookie = true
+```
+
+然后重启 Server：
+
+```bash
+sudo systemctl restart serverbee-server
+```
+
+如果 ServerBee 已经通过安装脚本部署，也可以使用内置命令自动完成 Caddy HTTPS 配置：
+
+```bash
+sudo serverbee domain setup --domain monitor.example.com --email admin@example.com -y
+```
+
+该命令会校验域名 DNS 是否解析到当前服务器，安装并配置 Caddy，把 ServerBee 改为只监听 `127.0.0.1:9527`，并把 `auth.secure_cookie` 设置为 `true`。如果 DNS 还没生效，命令会停止并打印需要添加的 `A`/`AAAA` 记录。
+
 ### 基础配置
 
 ```nginx title="/etc/nginx/sites-available/serverbee"
@@ -400,6 +432,10 @@ server_url = "https://monitor.example.com"
 
 <Callout type="info">
 ServerBee 自身不处理 TLS 终止。所有 HTTPS/WSS 加密由前置的反向代理（Nginx/Caddy）处理。这种架构简化了 Server 的实现，同时也便于统一管理证书。
+</Callout>
+
+<Callout type="warn">
+使用 HTTPS 时，请保持 `auth.secure_cookie = true`。设为 `false` 可能仍然可以登录，但会去掉浏览器的 Secure Cookie 保护，不适合生产环境。
 </Callout>
 
 ## 备份与恢复

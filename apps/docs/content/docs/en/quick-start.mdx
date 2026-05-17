@@ -27,6 +27,8 @@ services:
       - "9527:9527"
     volumes:
       - serverbee-data:/data
+    environment:
+      - SERVERBEE_AUTH__SECURE_COOKIE=false
 
 volumes:
   serverbee-data:
@@ -44,15 +46,51 @@ On first start the server auto-creates an admin account with a randomly generate
 
 The dashboard is now available at `http://your-server-ip:9527`.
 
+<Callout type="info">
+The compose file above disables the `Secure` cookie flag because this quick start uses plain HTTP. When you move behind HTTPS, set `SERVERBEE_AUTH__SECURE_COOKIE=true`.
+</Callout>
+
+## IP Address vs Domain Access
+
+ServerBee can be accessed directly by IP address or through a domain name. The required cookie and URL settings depend on whether the browser uses plain HTTP or HTTPS.
+
+| Access Mode | Browser URL | Server Cookie Setting | Agent `server_url` | Extra Setup |
+|-------------|-------------|-----------------------|--------------------|-------------|
+| Direct IP, plain HTTP | `http://your-server-ip:9527` | `auth.secure_cookie = false` or `SERVERBEE_AUTH__SECURE_COOKIE=false` | `http://your-server-ip:9527` | Open port `9527` in your firewall |
+| Domain with HTTPS | `https://monitor.example.com` | `auth.secure_cookie = true` or `SERVERBEE_AUTH__SECURE_COOKIE=true` | `https://monitor.example.com` | Point DNS to the server IP and put Nginx, Caddy, or Traefik in front of ServerBee |
+
+<Callout type="warn">
+If you started with the quick-start HTTP settings and later move to a domain with HTTPS, change `secure_cookie` back to `true`, restart ServerBee, and update existing agents to use the new `https://` server URL.
+</Callout>
+
+If you already have a domain and its DNS `A` record points to this server, the install script can configure Caddy HTTPS automatically:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server \
+  --domain monitor.example.com \
+  --email admin@example.com \
+  -y
+```
+
+The script first verifies that the domain resolves to the current server. If it does not, installation stops and prints the DNS record you need to add. `--email` is used for Let's Encrypt certificate notices and can be omitted.
+
 ## Option 2: Install Script
 
 Download and run the install script for a quick binary installation:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server -y
 ```
 
 This will download the appropriate binary for your platform, create a systemd service, and start ServerBee automatically.
+
+On first start the server auto-creates an admin account with a randomly generated password and prints it once to the service logs. Retrieve it with:
+
+```bash
+sudo journalctl -u serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS'
+```
+
+The install script writes `auth.secure_cookie = false` so browser login works on the plain HTTP quick-start URL. When you move behind HTTPS, set it back to `true` in `/etc/serverbee/server.toml` and restart the server.
 
 After installation, manage your ServerBee instance with the `serverbee` CLI:
 
@@ -65,16 +103,23 @@ sudo serverbee config set <key> <value>  # Update config
 sudo serverbee uninstall server --purge   # Uninstall + remove data
 ```
 
+Verify the server is running:
+
+```bash
+sudo serverbee status
+sudo journalctl -u serverbee-server -n 80 --no-pager
+```
+
 ## First Login
 
 1. Open your browser and navigate to `http://your-server-ip:9527`
-2. Log in with the default credentials:
+2. Log in with the first-run credentials:
    - **Username:** `admin`
-   - **Password:** `admin` (or the password you configured)
-3. **Change the default password immediately** via Settings > Security
+   - **Password:** the randomly generated password from the startup logs
+3. Complete the required password change on first login
 
 <Callout type="warn">
-If you are using the default password, the server will display a prominent warning in the logs at startup. Always change the default password before exposing the server to the internet.
+The generated password is shown only once in the logs. Copy it before logs rotate, then complete the forced password change before exposing the server to the internet.
 </Callout>
 
 ## Adding Your First Agent
@@ -107,6 +152,13 @@ On its first start, the agent will:
 4. Begin reporting system metrics immediately
 
 You should see the new server appear in your dashboard within a few seconds.
+
+Verify the agent is connected and reporting:
+
+```bash
+sudo serverbee status
+sudo journalctl -u serverbee-agent -n 80 --no-pager
+```
 
 <Callout type="info">
 When the agent can read a stable machine identifier, repeated auto-registration from the same host reuses the existing server entry instead of creating duplicate placeholders.

@@ -60,10 +60,6 @@ max_connections = 10
 session_ttl = 86400
 max_servers = 0
 
-[admin]
-username = "admin"
-password = ""
-
 [rate_limit]
 login_max = 5
 register_max = 3
@@ -105,13 +101,6 @@ file = ""
 |--------|------|--------|------|
 | `session_ttl` | int | `86400` | Session 过期时间，单位秒（默认 24 小时） |
 | `max_servers` | int | `0` | 通过注册码接入允许创建的新服务器软上限（0 表示不限制） |
-
-#### `[admin]` 初始管理员
-
-| 配置项 | 类型 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `username` | string | `"admin"` | 初始管理员用户名 |
-| `password` | string | `""` | 初始管理员密码，留空则自动生成随机密码 |
 
 #### `[rate_limit]` 速率限制
 

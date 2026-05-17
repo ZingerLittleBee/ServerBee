@@ -115,7 +115,7 @@ There is no admin username/password environment variable. On first start (when n
 | `SERVERBEE_DATABASE__PATH` | `serverbee.db` | SQLite database file path (relative to data_dir) |
 | `SERVERBEE_DATABASE__MAX_CONNECTIONS` | `10` | Maximum database connection pool size |
 | `SERVERBEE_AUTH__SESSION_TTL` | `86400` | Session token TTL in seconds (default 24h) |
-| `SERVERBEE_AUTH__SECURE_COOKIE` | `true` | Set Secure flag on session cookies. Set `false` for HTTP-only dev |
+| `SERVERBEE_AUTH__SECURE_COOKIE` | `true` | Set the Secure flag on session cookies. Use `false` only when the browser accesses ServerBee over plain HTTP, such as direct IP quick-start installs |
 | `SERVERBEE_RATE_LIMIT__LOGIN_MAX` | `5` | Max login attempts per IP within 15-minute window |
 | `SERVERBEE_RATE_LIMIT__REGISTER_MAX` | `3` | Max agent registrations per IP within 15-minute window |
 | `SERVERBEE_UPGRADE__RELEASE_BASE_URL` | `https://github.com/ZingerLittleBee/ServerBee/releases` | Base URL for agent upgrade release assets |
@@ -182,14 +182,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 |-----|------|---------|-------------|
 | `session_ttl` | i64 | `86400` | Session cookie lifetime in seconds (24 hours) |
 | `max_servers` | u32 | `0` | Maximum servers allowed via enrollment (0 = no limit). Best-effort soft cap |
-| `secure_cookie` | bool | `true` | Set the `Secure` flag on session cookies. Disable only for HTTP-only development |
-
-### `[admin]` -- Initial Admin Account
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `username` | string | `"admin"` | Admin username (used only on first startup when no users exist) |
-| `password` | string | `""` | Admin password. If empty, a random password is generated and logged |
+| `secure_cookie` | bool | `true` | Set the `Secure` flag on session cookies. Use `false` only when the browser accesses ServerBee over plain HTTP |
 
 ### `[retention]` -- Data Retention
 
@@ -357,11 +350,11 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 ## Example: Minimal Server Configuration
 
 ```toml
-[admin]
-password = "my-secure-password"
+[server]
+data_dir = "./data"
 ```
 
-Everything else uses sensible defaults. This is sufficient to start a working server that listens on port 9527 with a SQLite database in `./data/`.
+Everything else uses sensible defaults. On first startup, ServerBee creates the `admin` user with a random password and prints it once in the server logs.
 
 ## Example: Production Server Configuration
 
@@ -369,10 +362,6 @@ Everything else uses sensible defaults. This is sufficient to start a working se
 [server]
 listen = "127.0.0.1:9527"
 data_dir = "/var/lib/serverbee"
-
-[admin]
-username = "admin"
-password = "a-very-strong-password"
 
 [auth]
 secure_cookie = true
