@@ -11,19 +11,25 @@
 
 可直接复用下面的命令：
 
+注册接口现在要求一次性 enrollment code（旧的共享 `auto_discovery_key` 已移除），每次注册都需要先铸造一个新 code（单次使用）。
+
 ```bash
 # 1. 管理员登录
 curl -s -c /tmp/sb-cookies.txt -X POST http://localhost:9527/api/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"admin123"}'
 
+# 辅助函数：铸造并取出一个一次性 code
+mint() { curl -s -b /tmp/sb-cookies.txt -X POST http://localhost:9527/api/agent/enrollments \
+  -H 'Content-Type: application/json' -d '{}' | grep -o '"code":"[^"]*"' | cut -d'"' -f4; }
+
 # 2. 创建离线占位 server
 curl -s -X POST http://localhost:9527/api/agent/register \
-  -H 'Authorization: Bearer test-key'
+  -H "Authorization: Bearer $(mint)"
 
-# 3. 创建带固定 fingerprint 的 server（可重复调用验证复用）
+# 3. 创建带固定 fingerprint 的 server（每次都铸造新 code；同一 fingerprint 复用同一 server）
 curl -s -X POST http://localhost:9527/api/agent/register \
-  -H 'Authorization: Bearer test-key' \
+  -H "Authorization: Bearer $(mint)" \
   -H 'Content-Type: application/json' \
   -d '{"fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
 ```
