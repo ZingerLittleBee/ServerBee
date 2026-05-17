@@ -7,6 +7,8 @@ INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/serverbee"
 DATA_DIR="/var/lib/serverbee"
 DOCKER_DIR="/opt/serverbee"
+DEFAULT_DOCKER_DIR="/opt/serverbee"
+SNAP_DOCKER_DIR="/var/snap/docker/common/serverbee"
 META_FILE="${CONFIG_DIR}/.install-meta"
 DOCS_URL="https://server-bee-docs.vercel.app"
 CADDY_CONFIG_DIR="/etc/caddy"
@@ -208,6 +210,24 @@ collect_missing_deps() {
             MISSING_DEPS+=("$cmd")
         fi
     done
+}
+
+docker_is_snap() {
+    command -v docker &>/dev/null || return 1
+    local docker_path
+    docker_path=$(command -v docker)
+    case "$(readlink -f "$docker_path" 2>/dev/null || echo "$docker_path")" in
+        /snap/*|/usr/bin/snap) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+configure_docker_dir() {
+    if docker_is_snap; then
+        DOCKER_DIR="$SNAP_DOCKER_DIR"
+    else
+        DOCKER_DIR="$DEFAULT_DOCKER_DIR"
+    fi
 }
 
 # ─── Root check ───────────────────────────────────────────────────────────────
@@ -645,6 +665,7 @@ has_systemd() {
 check_docker() {
     command -v docker &>/dev/null || error "Docker is not installed. Install it first: https://docs.docker.com/get-docker/"
     docker compose version &>/dev/null || error "Docker Compose V2 is not available. Install it first: https://docs.docker.com/compose/install/"
+    configure_docker_dir
 }
 
 check_unmanaged_container() {
@@ -1218,6 +1239,7 @@ print_common_binary_plan() {
 
 print_common_docker_plan() {
     local component="$1"
+    configure_docker_dir
     echo "  - Prerequisite: Docker and Docker Compose V2 must already be installed"
     echo "  - GitHub API: latest ServerBee release metadata"
     echo "  - Docker image: ghcr.io/zingerlittlebee/serverbee-${component}:<latest>"
@@ -2291,6 +2313,8 @@ interactive_service_menu() {
 # ─── Command dispatch ─────────────────────────────────────────────────────────
 
 run_command() {
+    configure_docker_dir
+
     case "$COMMAND" in
         install)   cmd_install ;;
         uninstall) cmd_uninstall ;;
