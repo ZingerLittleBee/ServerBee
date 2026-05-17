@@ -25,6 +25,7 @@ PURGE=false
 SKIP_DNS_CHECK=false
 CONFIG_KEY=""
 CONFIG_VALUE=""
+MISSING_DEPS=()
 
 # ─── Colors ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -37,6 +38,10 @@ NC='\033[0m'
 info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
+
+should_prompt() {
+    [ "$YES" != true ] && [ -t 0 ]
+}
 
 # ─── Dependency check ─────────────────────────────────────────────────────────
 install_deps() {
@@ -81,6 +86,16 @@ check_deps() {
     fi
 }
 
+collect_missing_deps() {
+    MISSING_DEPS=()
+    local cmd
+    for cmd in curl grep sed awk mktemp; do
+        if ! command -v "$cmd" &>/dev/null; then
+            MISSING_DEPS+=("$cmd")
+        fi
+    done
+}
+
 # ─── Root check ───────────────────────────────────────────────────────────────
 require_root() {
     if [ "$(id -u)" -ne 0 ]; then
@@ -90,6 +105,13 @@ require_root() {
 
 # ─── Known subcommands ───────────────────────────────────────────────────────
 KNOWN_COMMANDS="install uninstall upgrade status start stop restart config env domain"
+
+is_known_command() {
+    case "$1" in
+        install|uninstall|upgrade|status|start|stop|restart|config|env|domain) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
 # ─── Argument parsing ─────────────────────────────────────────────────────────
 parse_args() {
@@ -972,10 +994,149 @@ cmd_domain() {
         read -rp "Email for certificate notices (optional): " EMAIL
     fi
 
-    setup_domain
+    run_domain_setup_with_plan
 }
 
 # ─── Install command ──────────────────────────────────────────────────────────
+
+print_missing_deps_plan() {
+    collect_missing_deps
+    if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
+        echo "  - System packages: ${MISSING_DEPS[*]} (required script tools)"
+    fi
+}
+
+print_common_binary_plan() {
+    local component="$1"
+    local os arch filename
+    os=$(detect_os)
+    arch=$(detect_arch)
+    filename="serverbee-${component}-${os}-${arch}"
+
+    echo "  - GitHub API: latest ServerBee release metadata"
+    if [ -f "${INSTALL_DIR}/serverbee-${component}" ]; then
+        echo "  - Binary: existing ${INSTALL_DIR}/serverbee-${component} will be adopted (no binary download)"
+    else
+        echo "  - Binary: https://github.com/${REPO}/releases/download/<latest>/${filename}"
+    fi
+    echo "  - CLI script: https://raw.githubusercontent.com/${REPO}/<latest>/deploy/install.sh"
+}
+
+print_common_docker_plan() {
+    local component="$1"
+    echo "  - Prerequisite: Docker and Docker Compose V2 must already be installed"
+    echo "  - GitHub API: latest ServerBee release metadata"
+    echo "  - Docker image: ghcr.io/zingerlittlebee/serverbee-${component}:<latest>"
+    echo "  - CLI script: https://raw.githubusercontent.com/${REPO}/<latest>/deploy/install.sh"
+}
+
+print_domain_plan() {
+    [ -z "$DOMAIN" ] && return
+
+    echo ""
+    echo "HTTPS domain setup:"
+    echo "  - DNS validation: ${DOMAIN} must resolve to this server"
+    echo "  - Caddy repository: Cloudsmith apt repo on Debian/Ubuntu, or COPR on Fedora/CentOS"
+    echo "  - Caddy apt key: https://dl.cloudsmith.io/public/caddy/stable/gpg.key"
+    echo "  - Caddy apt source: https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt"
+    echo "  - System packages: Caddy and its repository dependencies when missing"
+    echo "  - Caddyfile: ${CADDYFILE}"
+    echo "  - Server bind address: 127.0.0.1:9527"
+    echo "  - secure_cookie: true"
+    echo "  - Public URL: https://${DOMAIN}"
+}
+
+confirm_domain_setup_plan() {
+    echo ""
+    echo -e "${BOLD}Domain setup plan${NC}"
+    echo ""
+    echo "Domain: ${DOMAIN}"
+    [ -n "$EMAIL" ] && echo "Email:  ${EMAIL}"
+    echo ""
+    echo "Will add or download:"
+    print_missing_deps_plan
+    print_domain_plan
+    echo ""
+
+    if ! should_prompt; then
+        info "Proceeding without prompt."
+        return
+    fi
+
+    read -rp "Start domain setup now? [y/N]: " confirm
+    case "$confirm" in
+        [yY]|[yY][eE][sS]) ;;
+        *) error "Domain setup cancelled." ;;
+    esac
+}
+
+run_domain_setup_with_plan() {
+    confirm_domain_setup_plan
+    check_deps
+    setup_domain
+}
+
+print_install_plan() {
+    echo ""
+    echo -e "${BOLD}Installation plan${NC}"
+    echo ""
+    echo "Component: serverbee-${COMPONENT}"
+    echo "Method:    ${METHOD}"
+
+    if [ "$COMPONENT" = "server" ]; then
+        if [ -n "$DOMAIN" ]; then
+            echo "Access:    domain (${DOMAIN})"
+        else
+            echo "Access:    IP / direct port (:9527)"
+        fi
+    else
+        echo "Server URL: ${SERVER_URL}"
+    fi
+
+    echo ""
+    echo "Will add or download:"
+    print_missing_deps_plan
+    case "${COMPONENT}-${METHOD}" in
+        server-binary)
+            print_common_binary_plan "server"
+            echo "  - Config file: ${CONFIG_DIR}/server.toml"
+            echo "  - Data directory: ${DATA_DIR}"
+            if has_systemd; then echo "  - systemd service: serverbee-server"; fi
+            ;;
+        agent-binary)
+            print_common_binary_plan "agent"
+            echo "  - Config file: ${CONFIG_DIR}/agent.toml"
+            if has_systemd; then echo "  - systemd service: serverbee-agent"; fi
+            ;;
+        server-docker)
+            print_common_docker_plan "server"
+            echo "  - Config file: ${CONFIG_DIR}/server.toml"
+            echo "  - Compose file: ${DOCKER_DIR}/docker-compose.server.yml"
+            echo "  - Docker volume: serverbee-data"
+            ;;
+        agent-docker)
+            print_common_docker_plan "agent"
+            echo "  - Config file: ${CONFIG_DIR}/agent.toml"
+            echo "  - Compose file: ${DOCKER_DIR}/docker-compose.agent.yml"
+            ;;
+    esac
+    print_domain_plan
+    echo ""
+}
+
+confirm_install_plan() {
+    print_install_plan
+    if ! should_prompt; then
+        info "Proceeding without prompt."
+        return
+    fi
+
+    read -rp "Start installation now? [y/N]: " confirm
+    case "$confirm" in
+        [yY]|[yY][eE][sS]) ;;
+        *) error "Installation cancelled." ;;
+    esac
+}
 
 cmd_install() {
     # Interactive: prompt for component if not provided
@@ -1063,6 +1224,9 @@ cmd_install() {
             read -rp "Enrollment code: " ENROLLMENT_CODE
         done
     fi
+
+    confirm_install_plan
+    check_deps
 
     info "Installing ${COMPONENT} via ${METHOD}..."
 
@@ -1918,19 +2082,22 @@ main() {
         case "$arg" in --yes|-y) YES=true ;; esac
     done
 
-    check_deps
-
     # Shorthand: first arg not a known command → prepend "install"
-    if [[ $# -gt 0 ]] && ! echo "$KNOWN_COMMANDS" | grep -qw "$1"; then
+    if [[ $# -gt 0 ]] && ! is_known_command "$1"; then
         set -- install "$@"
     fi
 
     if [[ $# -eq 0 ]]; then
+        check_deps
         interactive_menu
     else
         COMMAND="$1"; shift
         parse_args "$@"
         require_root
+        case "$COMMAND" in
+            install|domain) ;;
+            *) check_deps ;;
+        esac
         run_command
     fi
 }
