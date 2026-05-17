@@ -26,7 +26,6 @@ docker run -d \
   --name serverbee \
   -p 9527:9527 \
   -v serverbee-data:/data \
-  -e SERVERBEE_ADMIN__PASSWORD=your_password \
   --restart unless-stopped \
   ghcr.io/zingerlittlebee/serverbee-server:latest
 ```
@@ -152,9 +151,6 @@ file = ""
 # 等同于 server.listen = "0.0.0.0:8080"
 export SERVERBEE_SERVER__LISTEN="0.0.0.0:8080"
 
-# 等同于 admin.password = "my_password"
-export SERVERBEE_ADMIN__PASSWORD="my_password"
-
 # 等同于 retention.records_days = 14
 export SERVERBEE_RETENTION__RECORDS_DAYS=14
 
@@ -176,17 +172,20 @@ ServerBee 使用 SQLite 作为数据存储，选择 SQLite 的原因是部署简
 
 ## 初始管理员账户
 
-Server 首次启动时，如果 `users` 表为空，会自动创建管理员账户：
-
-1. 优先使用配置文件或环境变量中设定的 `admin.username` 和 `admin.password`
-2. 如果未设定密码，系统会生成随机密码并打印到日志中
+Server 首次启动时，如果 `users` 表为空，会自动创建管理员账户。这里没有用户名/密码环境变量：密码始终随机生成，并以醒目的凭据横幅在 Server/容器日志中打印一次。
 
 ```
-INFO  ServerBee admin user created. Username: admin, Password: aB3xK9mP2qR5
+========================================
+  ServerBee initial admin credentials
+  Username: admin
+  Password: aB3xK9mP2qR5
+========================================
 ```
+
+请从日志中获取该密码。首次登录时你将被要求修改它，并可在此时选择一个新的用户名。
 
 <Callout type="warn">
-请务必记录自动生成的密码，并在首次登录后立即修改。
+自动生成的密码只在日志中显示一次。请在日志轮转前记录下来，并在首次登录时完成强制改密，再将 Server 暴露到公网。
 </Callout>
 
 ## GeoIP 设置

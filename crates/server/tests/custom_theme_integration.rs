@@ -4,7 +4,7 @@ use reqwest::{Client, Method, StatusCode};
 use sea_orm::{ConnectOptions, ConnectionTrait, Database};
 use sea_orm_migration::MigratorTrait;
 use serde_json::{Value, json};
-use serverbee_server::config::{AdminConfig, AppConfig, AuthConfig, DatabaseConfig, ServerConfig};
+use serverbee_server::config::{AppConfig, AuthConfig, DatabaseConfig, ServerConfig};
 use serverbee_server::migration::Migrator;
 use serverbee_server::router::create_router;
 use serverbee_server::service::auth::AuthService;
@@ -32,10 +32,6 @@ async fn start_test_server(create_member: bool) -> (String, tempfile::TempDir) {
             secure_cookie: false,
             max_servers: 0,
         },
-        admin: AdminConfig {
-            username: "admin".to_string(),
-            password: "testpass".to_string(),
-        },
         ..AppConfig::default()
     };
 
@@ -60,9 +56,9 @@ async fn start_test_server(create_member: bool) -> (String, tempfile::TempDir) {
         .await
         .expect("Failed to run migrations");
 
-    AuthService::init_admin(&db, &config.admin)
+    AuthService::create_user(&db, "admin", "testpass", "admin")
         .await
-        .expect("Failed to init admin");
+        .expect("Failed to seed admin");
 
     if create_member {
         AuthService::create_user(&db, "member", "memberpass", "member")

@@ -180,7 +180,6 @@ release_base_url = "https://github.com/ZingerLittleBee/ServerBee/releases"
 
 Environment variable examples:
 ```bash
-export SERVERBEE_ADMIN__PASSWORD="my-secure-password"
 export SERVERBEE_AUTH__MAX_SERVERS="50"
 export SERVERBEE_GEOIP__MMDB_PATH="/path/to/GeoLite2-City.mmdb"
 export SERVERBEE_OAUTH__GITHUB__CLIENT_ID="..."
@@ -232,9 +231,10 @@ Callback URL format: `https://your-domain/api/auth/oauth/{provider}/callback`
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/serverbee-server)
 
-1. Click the button above, set `SERVERBEE_ADMIN__PASSWORD`, and deploy
+1. Click the button above and deploy
 2. Add a volume mounted at `/data` to persist data across deploys
 3. Configure your agents to connect to the Railway URL
+4. On first start the server auto-creates an admin account with a randomly generated password. Check the Railway deploy logs for the highlighted credentials banner; you must change this password on first login and may optionally pick a new username.
 
 ### Install Script
 

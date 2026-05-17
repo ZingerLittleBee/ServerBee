@@ -179,7 +179,6 @@ release_base_url = "https://github.com/ZingerLittleBee/ServerBee/releases"
 
 环境变量示例:
 ```bash
-export SERVERBEE_ADMIN__PASSWORD="my-secure-password"
 export SERVERBEE_AUTH__MAX_SERVERS="50"
 export SERVERBEE_GEOIP__MMDB_PATH="/path/to/GeoLite2-City.mmdb"
 export SERVERBEE_OAUTH__GITHUB__CLIENT_ID="..."
@@ -231,9 +230,10 @@ client_secret = "..."
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/serverbee-server)
 
-1. 点击上方按钮，设置 `SERVERBEE_ADMIN__PASSWORD`，然后部署
+1. 点击上方按钮，然后部署
 2. 添加 Volume 挂载到 `/data` 以持久化数据
 3. 将 Agent 配置连接到 Railway 提供的 URL
+4. 首次启动时，Server 会自动创建管理员账号并随机生成密码。在 Railway 部署日志中查找醒目的凭据横幅获取该密码；首次登录时你必须修改此密码，并可选择一个新的用户名。
 
 ### 安装脚本
 
