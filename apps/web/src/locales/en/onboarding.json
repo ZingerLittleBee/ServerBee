@@ -1,0 +1,13 @@
+{
+  "title": "Set up your admin account",
+  "subtitle": "For security, you must change the initial password before continuing.",
+  "username": "Username",
+  "username_hint": "Optional — leave as-is to keep the current username.",
+  "new_password": "New password",
+  "confirm_password": "Confirm new password",
+  "submit": "Save and continue",
+  "saving": "Saving…",
+  "password_required": "New password is required.",
+  "password_mismatch": "The two passwords do not match.",
+  "failed": "Could not complete setup. Please try again."
+}
