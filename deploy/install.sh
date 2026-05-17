@@ -263,9 +263,9 @@ print_dns_mismatch_help() {
     [ -n "$public_ipv4" ] && echo "  A    ${domain} -> ${public_ipv4}"
     [ -n "$public_ipv6" ] && echo "  AAAA ${domain} -> ${public_ipv6}"
     echo ""
-    echo "Waiting for DNS to match before continuing."
+    echo "DNS must match before continuing."
     echo "If this does not match, Caddy/Let's Encrypt certificate issuance will fail."
-    echo "Press Ctrl+C to stop waiting."
+    echo "Update DNS, then press Enter to check again. Press Ctrl+C to stop."
     echo ""
 }
 
@@ -280,7 +280,6 @@ check_domain_points_here() {
     public_ipv4=$(get_public_ipv4)
     public_ipv6=$(get_public_ipv6)
 
-    local interval="${SERVERBEE_DNS_CHECK_INTERVAL:-10}"
     while true; do
         dns_a=$(resolve_domain_a "$domain" || true)
         dns_aaaa=$(resolve_domain_aaaa "$domain" || true)
@@ -291,7 +290,10 @@ check_domain_points_here() {
         fi
 
         print_dns_mismatch_help "$domain" "$public_ipv4" "$public_ipv6" "$dns_a" "$dns_aaaa"
-        sleep "$interval"
+        if ! should_prompt; then
+            error "DNS validation failed for ${domain}. Fix DNS and re-run, or pass --skip-dns-check if you have configured TLS another way."
+        fi
+        read -rp "Press Enter to re-check DNS..." _
     done
 }
 
@@ -1073,6 +1075,8 @@ run_domain_preflight_checks() {
 }
 
 confirm_domain_setup_plan() {
+    run_domain_preflight_checks
+
     echo ""
     echo -e "${BOLD}Domain setup plan${NC}"
     echo ""
@@ -1083,7 +1087,6 @@ confirm_domain_setup_plan() {
     print_missing_deps_plan
     print_domain_plan
     echo ""
-    run_domain_preflight_checks
 
     if ! should_prompt; then
         info "Proceeding without prompt."
@@ -1152,8 +1155,8 @@ print_install_plan() {
 }
 
 confirm_install_plan() {
-    print_install_plan
     run_domain_preflight_checks
+    print_install_plan
 
     if ! should_prompt; then
         info "Proceeding without prompt."
