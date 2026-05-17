@@ -245,6 +245,26 @@ domain_points_to_server() {
     line_contains_value "$dns_a" "$public_ipv4" || line_contains_value "$dns_aaaa" "$public_ipv6"
 }
 
+warn_mismatched_aaaa_if_present() {
+    local domain="$1" dns_aaaa="$2" public_ipv6="$3"
+
+    [ -n "$dns_aaaa" ] || return 0
+    if [ -n "$public_ipv6" ] && line_contains_value "$dns_aaaa" "$public_ipv6"; then
+        return 0
+    fi
+
+    warn "AAAA record for ${domain} does not point to this server."
+    if [ -n "$public_ipv6" ]; then
+        echo "  Current server IPv6: ${public_ipv6}"
+        echo "  DNS AAAA: ${dns_aaaa}"
+        echo "  Fix the AAAA record or remove it if you only want IPv4."
+    else
+        echo "  This server has no detected public IPv6, but DNS has AAAA: ${dns_aaaa}"
+        echo "  Remove the AAAA record unless you have verified IPv6 reaches this server."
+    fi
+    echo "  Caddy/Let's Encrypt may try IPv6 and certificate issuance may fail."
+}
+
 print_dns_mismatch_help() {
     local domain="$1" public_ipv4="$2" public_ipv6="$3" dns_a="$4" dns_aaaa="$5"
 
@@ -286,6 +306,7 @@ check_domain_points_here() {
 
         if domain_points_to_server "$dns_a" "$dns_aaaa" "$public_ipv4" "$public_ipv6"; then
             info "DNS check passed: ${domain} resolves to this server."
+            warn_mismatched_aaaa_if_present "$domain" "$dns_aaaa" "$public_ipv6"
             return
         fi
 
