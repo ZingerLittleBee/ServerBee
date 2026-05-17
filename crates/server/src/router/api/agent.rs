@@ -448,7 +448,7 @@ async fn delete_enrollment(
         (status = 200, description = "Token rotated; old token revoked", body = RotateTokenResponse),
         (status = 404, description = "Server not found"),
     ),
-    security(("session_cookie" = []), ("api_key" = []))
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 async fn rotate_token(
     State(state): State<Arc<AppState>>,

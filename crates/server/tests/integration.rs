@@ -4380,3 +4380,75 @@ async fn test_recovery_job_get_requires_admin_and_start_creates_job() {
     assert_eq!(get_body["data"]["status"], "running");
     assert_eq!(get_body["data"]["stage"], "rebinding");
 }
+
+#[tokio::test]
+async fn test_rotate_token_revokes_old_token_and_404_for_unknown_server() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, old_token) = register_agent(&client, &base_url).await;
+
+    // Rotate the run token via the admin endpoint (admin session on client).
+    let rotate_resp = client
+        .post(format!("{}/api/agent/{}/rotate-token", base_url, server_id))
+        .send()
+        .await
+        .expect("rotate-token request failed");
+    assert_eq!(
+        rotate_resp.status(),
+        200,
+        "rotate-token should succeed for an existing server"
+    );
+    let rotate_body: serde_json::Value = rotate_resp
+        .json()
+        .await
+        .expect("Failed to parse rotate-token response");
+
+    assert_eq!(
+        rotate_body["data"]["server_id"].as_str(),
+        Some(server_id.as_str()),
+        "response echoes the server id"
+    );
+    let new_token = rotate_body["data"]["token"]
+        .as_str()
+        .expect("new token missing");
+    assert!(!new_token.is_empty(), "new token must be non-empty");
+    assert_ne!(
+        new_token, old_token,
+        "rotated token must differ from the old one"
+    );
+
+    // The OLD token must now be rejected on the agent WS upgrade (401).
+    let ws_url = format!(
+        "{}/api/agent/ws?token={}",
+        base_url.replace("http://", "ws://"),
+        old_token
+    );
+    let err = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .expect_err("revoked token must be rejected on agent ws upgrade");
+    match err {
+        tungstenite::Error::Http(resp) => {
+            assert_eq!(
+                resp.status(),
+                401,
+                "revoked agent token should yield a 401 handshake response"
+            );
+        }
+        other => panic!("expected http handshake failure, got {other:?}"),
+    }
+
+    // Rotating a non-existent server id returns 404.
+    let unknown_id = uuid::Uuid::new_v4().to_string();
+    let missing_resp = client
+        .post(format!("{}/api/agent/{}/rotate-token", base_url, unknown_id))
+        .send()
+        .await
+        .expect("rotate-token request for unknown server failed");
+    assert_eq!(
+        missing_resp.status(),
+        404,
+        "rotating an unknown server id should return 404"
+    );
+}
