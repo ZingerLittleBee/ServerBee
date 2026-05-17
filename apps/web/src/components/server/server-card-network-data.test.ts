@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NetworkServerSummary } from '@/lib/network-types'
-import { buildServerCardNetworkState } from './server-card-network-data'
+import { AGGREGATE_TARGET_ID, buildServerCardNetworkState } from './server-card-network-data'
 
 function makeSummary(overrides: Partial<NetworkServerSummary> = {}): NetworkServerSummary {
   return {
@@ -126,9 +126,15 @@ describe('buildServerCardNetworkState', () => {
     expect(state.currentAvgLossRatio).toBe(0.03)
     expect(state.latencyPoints.at(-1)?.value).toBe(40)
     expect(state.lossPoints.at(-1)?.value).toBe(3)
+    // Each historical point carries its own bucket aggregate, not a constant
+    // current-snapshot, so tooltips differ per point.
     expect(state.latencyPoints.at(-1)?.targets).toEqual([
-      { latency: 40, lossRatio: 0.03, targetId: 'target-1', targetName: 'Shanghai' }
+      { latency: 40, lossRatio: 0.03, targetId: AGGREGATE_TARGET_ID, targetName: AGGREGATE_TARGET_ID }
     ])
+    expect(state.latencyPoints.at(-3)?.targets).toEqual([
+      { latency: 10, lossRatio: 0.01, targetId: AGGREGATE_TARGET_ID, targetName: AGGREGATE_TARGET_ID }
+    ])
+    expect(state.latencyPoints.at(-2)?.targets).toEqual([])
   })
 
   it('keeps backend seed data and appends realtime points when live samples arrive', () => {
