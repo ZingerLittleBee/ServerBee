@@ -2,7 +2,9 @@
 
 All server and agent runtime environment variables use the `SERVERBEE_` prefix. Nested config keys use `__` (double underscore) as separator.
 
-Example: TOML `admin.password` → env var `SERVERBEE_ADMIN__PASSWORD`
+Example: TOML `server.listen` → env var `SERVERBEE_SERVER__LISTEN`
+
+> **First-run admin account**: There is no admin username/password env var. On first start (when no users exist) the server auto-creates an admin account with a randomly generated password and prints it once to the server/container logs as a highlighted credentials banner — capture it from the logs. You must change this password on first login, and may optionally choose a different username at that time.
 
 > **Maintainer Note**: When adding or modifying environment variables, update both this file and `apps/docs/content/docs/{en,cn}/configuration.mdx`.
 
@@ -25,7 +27,6 @@ These variables are for local repo tooling and development workflows. They are n
 
 | Environment Variable | TOML Key | Type | Default | Description |
 |---------------------|----------|------|---------|-------------|
-| `SERVERBEE_ADMIN__PASSWORD` | `admin.password` | string | `""` (auto-generated) | Default admin password. Leave empty to auto-generate and print to startup log |
 | `SERVERBEE_SERVER__LISTEN` | `server.listen` | string | `0.0.0.0:9527` | Listen address and port |
 
 ### Common
@@ -34,7 +35,6 @@ These variables are for local repo tooling and development workflows. They are n
 |---------------------|----------|------|---------|-------------|
 | `SERVERBEE_SERVER__DATA_DIR` | `server.data_dir` | string | `./data` | Data directory for SQLite and backups |
 | `SERVERBEE_AUTH__MAX_SERVERS` | `auth.max_servers` | u32 | `0` | Maximum servers allowed via enrollment (0 = no limit). Best-effort soft cap |
-| `SERVERBEE_ADMIN__USERNAME` | `admin.username` | string | `admin` | Default admin username (created on first startup if no users exist) |
 | `SERVERBEE_SCHEDULER__TIMEZONE` | `scheduler.timezone` | string | `UTC` | Timezone for daily traffic aggregation and cron scheduling (e.g. `Asia/Shanghai`) |
 | `SERVERBEE_FEATURE__CUSTOM_THEMES` | `feature.custom_themes` | bool | `true` | Disable user-defined themes when false. Custom refs are read-coerced to `preset:default` |
 | `SERVERBEE_LOG__LEVEL` | `log.level` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |

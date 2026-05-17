@@ -28,9 +28,6 @@ services:
       - "9527:9527"
     volumes:
       - serverbee-data:/data
-    environment:
-      - SERVERBEE_ADMIN__USERNAME=admin
-      - SERVERBEE_ADMIN__PASSWORD=your_secure_password
     restart: unless-stopped
 
 volumes:
@@ -44,7 +41,7 @@ docker compose up -d
 ```
 
 <Callout type="warn">
-务必将 `SERVERBEE_ADMIN__PASSWORD` 修改为你自己的强密码。如果不设置密码，系统会自动生成随机密码并打印到日志中。
+首次启动时，Server 会自动创建管理员账号，随机生成密码，并在容器日志中打印一次。请执行 `docker compose logs serverbee-server` 查找醒目的凭据横幅获取该密码。首次登录时你将被要求修改此密码，并可选择一个新的用户名。
 </Callout>
 
 启动完成后，打开浏览器访问 `http://your-server-ip:9527` 即可进入管理面板。

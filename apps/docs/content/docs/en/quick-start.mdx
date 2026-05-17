@@ -27,9 +27,6 @@ services:
       - "9527:9527"
     volumes:
       - serverbee-data:/data
-    environment:
-      - SERVERBEE_ADMIN__USERNAME=admin
-      - SERVERBEE_ADMIN__PASSWORD=changeme
 
 volumes:
   serverbee-data:
@@ -40,6 +37,10 @@ Then start the server:
 ```bash
 docker compose up -d
 ```
+
+<Callout type="warn">
+On first start the server auto-creates an admin account with a randomly generated password and prints it once to the container logs. Retrieve it with `docker compose logs serverbee-server` and look for the highlighted credentials banner. On first login you are required to change this password and may optionally choose a different username.
+</Callout>
 
 The dashboard is now available at `http://your-server-ip:9527`.
 
