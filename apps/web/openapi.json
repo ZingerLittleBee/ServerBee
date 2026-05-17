@@ -1074,6 +1074,47 @@
         }
       }
     },
+    "/api/auth/onboarding": {
+      "post": {
+        "tags": ["auth"],
+        "operationId": "onboarding",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnboardingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Onboarding complete"
+          },
+          "403": {
+            "description": "Onboarding not required / forbidden"
+          },
+          "409": {
+            "description": "Username already taken"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
     "/api/auth/password": {
       "put": {
         "tags": ["auth"],
@@ -8074,8 +8115,11 @@
       },
       "LoginResponse": {
         "type": "object",
-        "required": ["user_id", "username", "role"],
+        "required": ["user_id", "username", "role", "must_change_password"],
         "properties": {
+          "must_change_password": {
+            "type": "boolean"
+          },
           "role": {
             "type": "string"
           },
@@ -8137,8 +8181,11 @@
       },
       "MeResponse": {
         "type": "object",
-        "required": ["user_id", "username", "role"],
+        "required": ["user_id", "username", "role", "must_change_password"],
         "properties": {
+          "must_change_password": {
+            "type": "boolean"
+          },
           "role": {
             "type": "string"
           },
@@ -8480,6 +8527,18 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "OnboardingRequest": {
+        "type": "object",
+        "required": ["new_password"],
+        "properties": {
+          "new_password": {
+            "type": "string"
+          },
+          "new_username": {
+            "type": ["string", "null"]
           }
         }
       },
