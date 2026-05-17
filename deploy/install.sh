@@ -1046,6 +1046,15 @@ print_domain_plan() {
     echo "  - Public URL: https://${DOMAIN}"
 }
 
+run_domain_preflight_checks() {
+    [ -z "$DOMAIN" ] && return
+
+    echo ""
+    echo "Preflight checks:"
+    validate_domain_name "$DOMAIN"
+    check_domain_points_here "$DOMAIN"
+}
+
 confirm_domain_setup_plan() {
     echo ""
     echo -e "${BOLD}Domain setup plan${NC}"
@@ -1057,6 +1066,7 @@ confirm_domain_setup_plan() {
     print_missing_deps_plan
     print_domain_plan
     echo ""
+    run_domain_preflight_checks
 
     if ! should_prompt; then
         info "Proceeding without prompt."
@@ -1126,6 +1136,8 @@ print_install_plan() {
 
 confirm_install_plan() {
     print_install_plan
+    run_domain_preflight_checks
+
     if ! should_prompt; then
         info "Proceeding without prompt."
         return
