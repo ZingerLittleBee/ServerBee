@@ -14,7 +14,7 @@ export function DataTable<TData>({ table, actionBar, children, className, ...pro
   return (
     <div className={cn('flex w-full min-w-0 flex-col gap-2.5 overflow-hidden', className)} {...props}>
       {children}
-      <div className="min-w-0 max-w-full overflow-hidden rounded-md border" data-testid="data-table-scroll">
+      <div className="min-w-0 max-w-full overflow-x-auto rounded-md border" data-testid="data-table-scroll">
         <Table className="min-w-full table-fixed [&_td]:px-3 [&_th]:px-3">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
