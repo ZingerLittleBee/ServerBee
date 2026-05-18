@@ -292,3 +292,61 @@ fn read_pty_output(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pid_alive(pid: u32) -> bool {
+        std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn close_reaps_child_process() {
+        let (tx, _rx) = mpsc::channel(64);
+        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL));
+        let mut mgr = TerminalManager::new(tx, caps);
+
+        let sid = "reap-test".to_string();
+        mgr.open(sid.clone(), 24, 80);
+
+        let pid = mgr
+            .sessions
+            .get(&sid)
+            .expect("session should exist after open")
+            .child
+            .process_id()
+            .expect("spawned shell should have a pid");
+
+        assert!(
+            pid_alive(pid),
+            "shell process {pid} should be running while the session is open"
+        );
+
+        mgr.close(&sid);
+
+        assert!(
+            mgr.sessions.get(&sid).is_none(),
+            "session should be removed from the manager after close()"
+        );
+
+        // close() kills and reaps the child; allow a brief window for the OS
+        // to finish tearing the process down before asserting it is gone.
+        let mut reaped = false;
+        for _ in 0..50 {
+            if !pid_alive(pid) {
+                reaped = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert!(
+            reaped,
+            "child process {pid} must be killed and reaped by close(), not left orphaned"
+        );
+    }
+}
