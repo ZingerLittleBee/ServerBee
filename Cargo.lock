@@ -3982,6 +3982,7 @@ dependencies = [
  "serde_json",
  "serverbee-common",
  "sha2",
+ "sqlx",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",

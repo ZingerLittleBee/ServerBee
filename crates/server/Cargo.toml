@@ -21,6 +21,7 @@ tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "fs", "set-header"] }
 sea-orm = { version = "1", features = ["sqlx-sqlite", "runtime-tokio-rustls", "macros"] }
 sea-orm-migration = { version = "1", features = ["sqlx-sqlite", "runtime-tokio-rustls"] }
+sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio-rustls"] }
 argon2 = "0.5"
 rand = "0.8"
 base64 = "0.22"

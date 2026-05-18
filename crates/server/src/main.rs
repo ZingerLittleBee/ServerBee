@@ -1,5 +1,8 @@
-use sea_orm::{ConnectOptions, ConnectionTrait, Database};
+use std::time::Duration;
+
+use sea_orm::SqlxSqliteConnector;
 use sea_orm_migration::MigratorTrait;
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use tracing_subscriber::EnvFilter;
 
 use serverbee_server::config::AppConfig;
@@ -36,21 +39,27 @@ async fn main() -> anyhow::Result<()> {
     let data_dir = &config.server.data_dir;
     std::fs::create_dir_all(data_dir)?;
 
-    // Connect database
+    // Connect database. SQLite pragmas are set on the connect options so
+    // they apply to every connection in the pool. journal_mode, synchronous,
+    // foreign_keys and busy_timeout are per-connection settings; running them
+    // once via execute_unprepared previously only configured a single pooled
+    // connection, leaving the rest on sqlx defaults.
     let db_path = format!("{}/{}", data_dir, config.database.path);
-    let db_url = format!("sqlite://{}?mode=rwc", db_path);
 
-    let mut opt = ConnectOptions::new(&db_url);
-    opt.max_connections(config.database.max_connections);
-    opt.sqlx_logging(false);
+    let connect_options = SqliteConnectOptions::new()
+        .filename(&db_path)
+        .create_if_missing(true)
+        .journal_mode(SqliteJournalMode::Wal)
+        .synchronous(SqliteSynchronous::Normal)
+        .foreign_keys(true)
+        .busy_timeout(Duration::from_secs(5));
 
-    let db = Database::connect(opt).await?;
+    let pool = SqlitePoolOptions::new()
+        .max_connections(config.database.max_connections)
+        .connect_with(connect_options)
+        .await?;
 
-    // SQLite pragmas
-    db.execute_unprepared("PRAGMA journal_mode=WAL").await?;
-    db.execute_unprepared("PRAGMA synchronous=NORMAL").await?;
-    db.execute_unprepared("PRAGMA busy_timeout=5000").await?;
-    db.execute_unprepared("PRAGMA foreign_keys=ON").await?;
+    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool);
 
     // Run migrations
     Migrator::up(&db, None).await?;
