@@ -434,9 +434,26 @@ pub async fn push_register(
     let now = Utc::now();
 
     if let Some(existing) = existing {
+        // installation_id is a client-supplied value and must not be treated
+        // as an ownership boundary. A device_token row belongs to whichever
+        // user registered it; legitimate device hand-off already deletes the
+        // previous owner's row when their mobile session is invalidated
+        // (see mobile_auth session cleanup). Reaching here with a different
+        // user_id therefore means a caller is trying to overwrite another
+        // user's push registration via a forged installation_id — reject it.
+        if existing.user_id != session.user_id {
+            tracing::warn!(
+                "Rejected push_register hijack attempt: user {} tried to overwrite installation {} owned by user {}",
+                session.user_id,
+                mobile_session.installation_id,
+                existing.user_id
+            );
+            return Err(AppError::Forbidden(
+                "This device is registered to another account".to_string(),
+            ));
+        }
         let mut model: crate::entity::device_token::ActiveModel = existing.into();
         model.token = Set(body.device_token);
-        model.user_id = Set(session.user_id.clone());
         model.mobile_session_id = Set(mobile_session_id.to_string());
         model.updated_at = Set(now);
         model.update(&state.db).await?;
