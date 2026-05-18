@@ -1924,7 +1924,7 @@ async fn perform_upgrade(
         fail!(UpgradeStage::Downloading, format!("anti-downgrade: {e}"));
     }
 
-    // 2. SPKI pin 规范化
+    // 2. SPKI pin 规范化(非法在此即报错;启动时已 warn,这里再防御一次)
     let spki = match normalize_spki_pin(&upgrade_cfg.release_cert_spki_sha256) {
         Ok(v) => v,
         Err(e) => fail!(UpgradeStage::Downloading, format!("invalid SPKI pin: {e}")),
@@ -1960,7 +1960,7 @@ async fn perform_upgrade(
     let asset = current_asset_name();
     let want_hash = match checksum_for(&checksums, asset) {
         Ok(h) => h,
-        Err(e) => fail!(UpgradeStage::Verifying, format!("{e}")),
+        Err(e) => fail!(UpgradeStage::Verifying, format!("parse checksums: {e}")),
     };
 
     // 6. 下载二进制
@@ -1992,29 +1992,50 @@ async fn perform_upgrade(
     let current_exe = std::env::current_exe()?;
     let tmp_path = current_exe.with_extension("new");
     let backup_path = current_exe.with_extension("bak");
-    {
-        let mut file = std::fs::File::create(&tmp_path)?;
-        file.write_all(&bytes)?;
-        file.sync_all()?;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755))?;
-    }
+
     emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::Installing).await;
-    if backup_path.exists() {
-        std::fs::remove_file(&backup_path)?;
+
+    // 文件交换:任一 I/O 失败都要走 fail!(Installing),否则 Server 永远收不到失败、job 卡死。
+    let swap = || -> anyhow::Result<()> {
+        {
+            let mut file = std::fs::File::create(&tmp_path)?;
+            file.write_all(&bytes)?;
+            file.sync_all()?;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755))?;
+        }
+        if backup_path.exists() {
+            std::fs::remove_file(&backup_path)?;
+        }
+        std::fs::rename(&current_exe, &backup_path)?;
+        std::fs::rename(&tmp_path, &current_exe)?;
+        Ok(())
+    };
+    if let Err(e) = swap() {
+        fail!(UpgradeStage::Installing, format!("install: {e}"));
     }
-    std::fs::rename(&current_exe, &backup_path)?;
-    std::fs::rename(&tmp_path, &current_exe)?;
+
     tracing::info!("Agent binary replaced. Restarting...");
-    emit_upgrade_progress(&tx, job_id, version, UpgradeStage::Restarting).await;
+    emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::Restarting).await;
     let args: Vec<String> = std::env::args().collect();
     let mut cmd = std::process::Command::new(&current_exe);
     if args.len() > 1 {
         cmd.args(&args[1..]);
     }
-    cmd.spawn()?;
+    if let Err(e) = cmd.spawn() {
+        emit_upgrade_failure(
+            &tx,
+            job_id,
+            version.to_string(),
+            UpgradeStage::Restarting,
+            e.to_string(),
+            Some(backup_path.display().to_string()),
+        )
+        .await;
+        return Err(e.into());
+    }
     std::process::exit(0);
 }
