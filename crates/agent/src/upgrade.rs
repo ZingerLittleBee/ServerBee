@@ -35,6 +35,19 @@ pub fn derive_urls(base: &str, version: &str) -> anyhow::Result<(String, String)
     Ok((binary, checksums))
 }
 
+/// 仅当 target 严格大于 current 时返回 Ok。预发布版按 §2.5 决策接受(semver 序)。
+pub fn ensure_upgrade(current: &str, target: &str) -> anyhow::Result<()> {
+    let cur = semver::Version::parse(current.trim_start_matches('v'))
+        .map_err(|e| anyhow::anyhow!("invalid current version {current}: {e}"))?;
+    let tgt = semver::Version::parse(target.trim_start_matches('v'))
+        .map_err(|e| anyhow::anyhow!("invalid target version {target}: {e}"))?;
+    if tgt > cur {
+        Ok(())
+    } else {
+        anyhow::bail!("refusing non-upgrade: target {tgt} is not greater than current {cur}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -63,5 +76,15 @@ mod tests {
     #[test]
     fn derive_urls_rejects_non_https() {
         assert!(derive_urls("http://example.com/releases", "1.0.0").is_err());
+    }
+
+    #[test]
+    fn ensure_upgrade_strictly_greater() {
+        assert!(ensure_upgrade("0.9.2", "0.9.3").is_ok());
+        assert!(ensure_upgrade("0.9.2", "0.9.2").is_err()); // 等于拒绝
+        assert!(ensure_upgrade("0.9.2", "0.9.1").is_err()); // 降级拒绝
+        // 预发布版且 > current:按 §2.5 决策接受
+        assert!(ensure_upgrade("0.9.2", "1.0.0-rc.1").is_ok());
+        assert!(ensure_upgrade("0.9.2", "garbage").is_err());
     }
 }
