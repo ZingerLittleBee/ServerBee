@@ -64,6 +64,34 @@ pub fn checksum_for(checksums: &str, asset_name: &str) -> anyhow::Result<String>
     anyhow::bail!("asset {asset_name} not found in checksums.txt")
 }
 
+/// 规范化并校验配置的 SPKI pin:去首尾空白、转小写,必须 64 位 hex。
+/// 返回 None 表示空串(未启用);Err 表示非法(调用方应 fail-fast)。
+pub fn normalize_spki_pin(raw: &str) -> anyhow::Result<Option<String>> {
+    let s = raw.trim().to_lowercase();
+    if s.is_empty() {
+        return Ok(None);
+    }
+    if s.len() != 64 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        anyhow::bail!(
+            "release_cert_spki_sha256 must be 64 lowercase hex chars, got {} chars",
+            s.len()
+        );
+    }
+    Ok(Some(s))
+}
+
+/// 从 leaf 证书 DER 提取 SubjectPublicKeyInfo DER 并返回其 SHA-256 小写 hex。
+pub fn spki_sha256_hex(cert_der: &[u8]) -> anyhow::Result<String> {
+    use sha2::{Digest, Sha256};
+    let (_, cert) = x509_parser::parse_x509_certificate(cert_der)
+        .map_err(|e| anyhow::anyhow!("parse cert: {e}"))?;
+    let spki_der = cert.tbs_certificate.subject_pki.raw;
+    Ok(hex::encode(Sha256::digest(spki_der)))
+}
+
+#[cfg(test)]
+const TEST_CERT_DER: &[u8] = include_bytes!("testdata/test_cert.der");
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,5 +141,22 @@ mod tests {
             "deadbeef"
         );
         assert!(checksum_for(body, "missing").is_err());
+    }
+
+    #[test]
+    fn normalize_spki_pin_rules() {
+        assert_eq!(normalize_spki_pin("  ").unwrap(), None);
+        let ok = "a".repeat(64);
+        assert_eq!(normalize_spki_pin(&ok.to_uppercase()).unwrap(), Some(ok));
+        assert!(normalize_spki_pin("xyz").is_err());
+        assert!(normalize_spki_pin(&"a".repeat(63)).is_err());
+    }
+
+    #[test]
+    fn spki_hash_is_stable_64_hex() {
+        let h = spki_sha256_hex(TEST_CERT_DER).unwrap();
+        assert_eq!(h.len(), 64);
+        assert!(h.bytes().all(|b| b.is_ascii_hexdigit()));
+        assert_eq!(h, spki_sha256_hex(TEST_CERT_DER).unwrap());
     }
 }
