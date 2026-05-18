@@ -108,8 +108,15 @@ fn default_release_repo() -> String {
 SubjectPublicKeyInfo DER,无 `:`/空白/`0x` 前缀);加载时规范化为去首尾空白
 并转小写后校验。空串=不启用。**非空但格式非法(长度≠64 或含非 hex 字符)→
 Agent 启动即失败(fail-fast)**,而非延迟到升级时才报错——避免运维以为
-pin 生效实则配错。获取方式(写入配置文档):
-`openssl x509 -in cert.pem -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256`。
+pin 生效实则配错。获取方式(写入配置文档,**必须直出纯 hex**——
+`openssl dgst -sha256` 默认输出带 `SHA2-256(stdin)= ` 前缀,整行复制会触发
+fail-fast,故用 `-r` + `awk` 去前缀):
+
+```
+openssl x509 -in cert.pem -pubkey -noout \
+  | openssl pkey -pubin -outform der \
+  | openssl dgst -sha256 -r | awk '{print $1}'
+```
 
 ### 3.2 解析优先级
 
@@ -217,6 +224,11 @@ Agent 镜像里不存在的版本,触发升级后 Agent 拉取 404 而失败(非
 - `agent.toml` 持久化写入设置权限 `0o600`(关联安全发现中
   `crates/agent/src/rebind.rs` 的 Medium:防同机其他用户篡改
   `release_repo_url` 形成本地提权路径)
+- **启动时配置权限检查(Unix)**:对实际加载的 `agent.toml`(`config.rs`
+  Figment 实际命中的那个路径)做权限检查,若 group/world-writable
+  则输出**醒目 warn 日志但继续运行**(不 fail-fast,避免 brick 存量
+  0644 部署,不与 §5.1 破坏性变更叠加)。仅写权限策略不够——既有写入
+  加固不覆盖"启动时读取一个早已 0644 的配置文件"这一面
 
 ## 7. 未来可选增强(本次不做)
 
@@ -232,8 +244,28 @@ Agent 镜像里不存在的版本,触发升级后 Agent 拉取 404 而失败(非
 - `crates/agent/src/main.rs` — `--release-repo` CLI 覆盖
 - `crates/agent/src/capability_policy.rs`(或新模块)— CLI 参数解析
 - `crates/agent/src/reporter.rs` — `perform_upgrade` 重写、专用 client、防降级、SPKI verifier
-- `crates/agent/Cargo.toml` — 新增 `semver` 依赖;确认 webpki-roots 特性
+- `crates/agent/Cargo.toml` — 见 §8.1 依赖决策
 - `crates/common/src/protocol.rs` — `Upgrade` 字段废弃语义标注
 - `crates/server/src/router/api/server.rs` — `trigger_upgrade` 简化
 - `crates/server/src/service/upgrade_release.rs` — 移除 `resolve_asset` / `ReleaseAsset`
 - `ENV.md`、`apps/docs/content/docs/{en,cn}/configuration.mdx` — 配置文档
+
+### 8.1 依赖决策(实现计划须先定稿,不得偷传递依赖)
+
+`crates/agent/Cargo.toml` 现状:`reqwest{rustls-tls}` / `sha2` / `hex` / `url`,
+**无 semver、无 x509 解析器、reqwest 未显式启用 webpki-roots**
+(`tokio-tungstenite` 已用 `rustls-tls-webpki-roots`,但那是另一个 client)。
+需新增 / 确认:
+
+1. **`semver`**(新增):防降级版本比较
+2. **reqwest 根证书库**:确认 reqwest 的 `rustls-tls` 在本项目下解析到的
+   根来源;§2.4 要求升级下载 client 用 **webpki-roots**(忽略 OS 信任库)。
+   实现计划须明确:改用 `rustls-tls-webpki-roots` 特性,或 `use_preconfigured_tls`
+   注入以 `webpki-roots` 构建的 `ClientConfig`
+3. **SPKI 提取依赖**(开放,实现计划须研究并锁定):自定义
+   `ServerCertVerifier` 拿到的是 leaf `CertificateDer`,需从中取
+   SubjectPublicKeyInfo 的 DER 再 SHA-256。候选:`x509-parser` 或
+   RustCrypto `x509-cert`(纯 Rust)。**不得依赖未声明的传递依赖**;
+   计划阶段必须确定选型并评估体积/维护
+
+> 该小节存在的目的:这些依赖不定稿,实现会卡住。计划阶段先做依赖 spike。
