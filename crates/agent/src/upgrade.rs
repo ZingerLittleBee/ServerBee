@@ -89,6 +89,24 @@ pub fn spki_sha256_hex(cert_der: &[u8]) -> anyhow::Result<String> {
     Ok(hex::encode(Sha256::digest(spki_der)))
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum RedirectAction {
+    Follow,
+    StopNonHttps,
+    StopTooMany,
+}
+
+/// 纯决策:重定向目标 scheme + 已发生跳数 → 动作。上限 10 跳。
+pub fn redirect_decision(next_scheme: &str, hops: usize) -> RedirectAction {
+    if next_scheme != "https" {
+        RedirectAction::StopNonHttps
+    } else if hops >= 10 {
+        RedirectAction::StopTooMany
+    } else {
+        RedirectAction::Follow
+    }
+}
+
 #[cfg(test)]
 const TEST_CERT_DER: &[u8] = include_bytes!("testdata/test_cert.der");
 
@@ -158,5 +176,12 @@ mod tests {
         assert_eq!(h.len(), 64);
         assert!(h.bytes().all(|b| b.is_ascii_hexdigit()));
         assert_eq!(h, spki_sha256_hex(TEST_CERT_DER).unwrap());
+    }
+
+    #[test]
+    fn redirect_decision_rules() {
+        assert_eq!(redirect_decision("https", 0), RedirectAction::Follow);
+        assert_eq!(redirect_decision("http", 0), RedirectAction::StopNonHttps);
+        assert_eq!(redirect_decision("https", 10), RedirectAction::StopTooMany);
     }
 }
