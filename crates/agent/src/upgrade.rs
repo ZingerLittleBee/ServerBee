@@ -48,6 +48,22 @@ pub fn ensure_upgrade(current: &str, target: &str) -> anyhow::Result<()> {
     }
 }
 
+/// 从 `sha256sum` 风格的 checksums.txt 文本中取指定 asset 的小写 hex 哈希。
+pub fn checksum_for(checksums: &str, asset_name: &str) -> anyhow::Result<String> {
+    for line in checksums.lines() {
+        let mut parts = line.split_whitespace();
+        let (Some(hash), Some(name)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        // sha256sum 二进制模式前缀 '*'
+        let name = name.strip_prefix('*').unwrap_or(name);
+        if name == asset_name {
+            return Ok(hash.to_lowercase());
+        }
+    }
+    anyhow::bail!("asset {asset_name} not found in checksums.txt")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,5 +102,16 @@ mod tests {
         // 预发布版且 > current:按 §2.5 决策接受
         assert!(ensure_upgrade("0.9.2", "1.0.0-rc.1").is_ok());
         assert!(ensure_upgrade("0.9.2", "garbage").is_err());
+    }
+
+    #[test]
+    fn checksum_for_finds_asset() {
+        let body = "abc123  serverbee-server-linux-amd64\n\
+                    DEADBEEF *serverbee-agent-linux-amd64\n";
+        assert_eq!(
+            checksum_for(body, "serverbee-agent-linux-amd64").unwrap(),
+            "deadbeef"
+        );
+        assert!(checksum_for(body, "missing").is_err());
     }
 }
