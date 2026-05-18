@@ -62,16 +62,23 @@ WebSocket `ServerMessage::Upgrade`。Server **只能提供 `version` 字符串**
   干掉现实中最常见的一类 MITM(企业代理、杀软 TLS 拦截、本地注入根 CA),对 github.com
   默认源同样有效。
 - **可选 SPKI pinning**:配置项 `release_cert_spki_sha256`(默认空=不启用)。设置后,
-  自定义 `ServerCertVerifier` 在标准证书链校验**之后**追加比对 leaf 证书 SPKI 的
-  SHA-256。主要服务于自托管者锁定自己镜像的证书。**不对 github.com 默认源使用**
+  自定义 `ServerCertVerifier` 必须**包裹(委托)**标准 `WebPkiServerVerifier`:
+  先调用其完成完整证书链 + 主机名 + 时间校验,**仅在其返回成功后**再追加比对
+  leaf 证书 SPKI 的 SHA-256,任一步失败即拒绝。**严禁**自行实现链校验或在自定义
+  verifier 里直接返回成功(常见错误:把标准链校验整个替换掉,反而更不安全)。
+  主要服务于自托管者锁定自己镜像的证书。**不对 github.com 默认源使用**
   (GitHub leaf + Fastly CDN 证书频繁轮换,pin 会随轮换失效)。
 
 ### 2.5 已知残留风险(spec 明确接受)
 
 - 合法公共 CA 被胁迫 / 被攻陷,专门为目标主机错签证书(国家级 / CA 级攻击)
 - pinned 仓库 / GitHub 账号本身被攻陷,发布恶意 release
+- 被攻陷 Server 把 `version` 指向 pinned 仓库里**真实存在的预发布版**(如
+  `1.2.0-rc.1`):防降级用 `semver` 严格大于,`1.2.0-rc.1 > 当前稳定版` 成立,
+  会被接受。经决策**接受此残留**(危害较低:目标版本必须本身已存在于可信
+  pinned 仓库;不接受预发布版的 opt-in 留作未来增强 §7)
 
-上述两类仅离线私钥代码签名能堵,本次不做,作为未来可选增强记录在案(§7)。
+前两类仅离线私钥代码签名能堵,本次不做,作为未来可选增强记录在案(§7)。
 
 ## 3. 配置设计
 
@@ -96,6 +103,13 @@ fn default_release_repo() -> String {
 `AgentConfig` 新增 `#[serde(default)] pub upgrade: UpgradeConfig`。
 `UpgradeConfig` 需实现 `Default`(`release_repo_url` 用 `default_release_repo()`,
 `release_cert_spki_sha256` 空串)。
+
+**`release_cert_spki_sha256` 格式规范**:64 字符小写 hex(SHA-256 of
+SubjectPublicKeyInfo DER,无 `:`/空白/`0x` 前缀);加载时规范化为去首尾空白
+并转小写后校验。空串=不启用。**非空但格式非法(长度≠64 或含非 hex 字符)→
+Agent 启动即失败(fail-fast)**,而非延迟到升级时才报错——避免运维以为
+pin 生效实则配错。获取方式(写入配置文档):
+`openssl x509 -in cert.pem -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256`。
 
 ### 3.2 解析优先级
 
@@ -135,16 +149,38 @@ fn default_release_repo() -> String {
 
 ## 5. 协议与 Server 侧改动
 
-- `crates/common/src/protocol.rs:429` `ServerMessage::Upgrade` 的 `download_url`
-  与 `sha256` 字段**保留**(`#[serde(default)]` 已具备老/新兼容能力),
-  在 doc comment 标注废弃语义:Agent 自 vNEXT 起忽略,仅 `version` 有效。
-  保留字段确保新 Agent 兼容老 Server、老 Agent 兼容新 Server
+- `crates/common/src/protocol.rs:429` `ServerMessage::Upgrade`:当前实际只有
+  `job_id` 带 `#[serde(default)]`,`version/download_url/sha256` **均无**。
+  本次给 `download_url`、`sha256` **显式加 `#[serde(default)]`**,并在 doc
+  comment 标注废弃语义:Agent 自 vNEXT 起忽略这两个字段,仅 `version` 有效
 - `crates/server/src/router/api/server.rs:532` `trigger_upgrade`:改为只构造
   `ServerMessage::Upgrade { version, download_url: String::new(), sha256: String::new() }`
-  (废弃字段发空串占位,保持序列化兼容),不再调用 `resolve_asset`
+  (废弃字段发空串占位),不再调用 `resolve_asset`
 - `crates/server/src/service/upgrade_release.rs::resolve_asset` 及 `ReleaseAsset`
-  随之移除(Server 不再决定下载来源)。`latest()` / `fetch_latest()`
-  保留——它仍用于 UI 展示"最新可用版本",与下载来源无关
+  移除(Server 不再决定下载来源)。`latest()` / `fetch_latest()` 保留(见 §5.2)
+
+### 5.1 破坏性变更与迁移(已决策:不做向后兼容)
+
+新 Server 只发 `version`,`download_url`/`sha256` 发空串。**存量旧 Agent
+收到空 `download_url` 会在 `reporter.rs:1906` 因非 `https://` 立即失败,
+无法自动升级。** 这是经决策**有意接受的破坏性变更**:
+
+- 升级到含本变更的 Server 后,所有低于 vNEXT 的存量 Agent **必须人工重装一次**
+  (重新跑安装脚本 / 部署新二进制),之后才进入 pinned-source 自升级体系
+- 必须在 CHANGELOG、release notes、升级文档**显著标注**该一次性人工迁移要求
+- 旧 Agent 在被手动替换前继续运行旧(有漏洞)升级路径——但其只会响应
+  其已连接 Server 的指令,风险等同其本就运行的旧代码
+
+### 5.2 UI "最新版本" 与 Agent pinned 源可能不一致(Finding 4)
+
+Server 的 `latest()` 读 **Server 配置的** release 源,Agent 下载读 **Agent 自己
+pinned 的** `release_repo_url`,二者可被配成不同源。后果:UI 可能展示一个
+Agent 镜像里不存在的版本,触发升级后 Agent 拉取 404 而失败(非安全问题,
+是 UX 误导)。处理:
+
+- UI 文案改为 advisory("最新发布版本(来自 Server 配置源,Agent 实际下载源
+  以其本地配置为准)"),不承诺与 Agent 下载源一致
+- 配置文档明确建议:除非有意分流,Server 与 Agent 的 release 源应配同一仓库
 
 ## 6. 错误处理 / 测试 / 文档
 
@@ -162,16 +198,22 @@ fn default_release_repo() -> String {
 ### 6.2 测试
 
 - 防降级三态:`target > / == / < current` 分别接受 / 拒绝 / 拒绝
-- SPKI verifier:命中放行、不命中拒绝、未配置时不启用走标准校验
+  (含一条:`target` 为预发布版且 `> current` 时按 §2.5 决策**接受**,锁定该行为)
+- SPKI verifier:命中放行、不命中拒绝、未配置时不启用走标准校验;
+  非法 `release_cert_spki_sha256`(长度≠64 / 非 hex)→ 启动 fail-fast
 - 配置优先级:默认 / file / env / CLI 覆盖链(沿用 config 现有测试模式)
-- 老 Server 兼容:`Upgrade` 不带或带废弃 `download_url`/`sha256` 时 Agent 行为正确
+- 协议反序列化:`Upgrade` 省略 `download_url`/`sha256` 时凭 `#[serde(default)]`
+  正常解析;Agent 收到空串时**忽略**而非当 URL 用(防回归到 §5.1 失败路径)
 - URL 推导:各平台 asset 命名 + base 去尾斜杠 + checksums URL 拼接
 - 每跳强制 https 的 redirect policy:https→https 跟随,任一跳非 https 终止
 
 ### 6.3 文档
 
 - 更新 `ENV.md` 与 `apps/docs/content/docs/{en,cn}/configuration.mdx`
-  (CLAUDE.md 强制:env var 变更同步文档),新增 `[upgrade]` 段说明
+  (CLAUDE.md 强制:env var 变更同步文档),新增 `[upgrade]` 段说明,
+  含 `release_cert_spki_sha256` 获取命令(§3.1)与 Server/Agent 同源建议(§5.2)
+- **CHANGELOG + release notes 显著标注 §5.1 破坏性变更**:存量旧 Agent
+  须人工重装一次,否则无法自动升级
 - `agent.toml` 持久化写入设置权限 `0o600`(关联安全发现中
   `crates/agent/src/rebind.rs` 的 Medium:防同机其他用户篡改
   `release_repo_url` 形成本地提权路径)
@@ -181,6 +223,8 @@ fn default_release_repo() -> String {
 - 离线私钥 / Sigstore keyless 代码签名:堵 §2.5 的"公共 CA 被胁迫错签"
   与"仓库账号沦陷"两类残留风险
 - Agent 端自查 pinned 仓库 `releases/latest` 以彻底摆脱 Server 提供版本号
+- 可配置 opt-in:拒绝预发布 / 带 build metadata 的目标版本(堵 §2.5
+  第三类残留——被攻陷 Server 推可信仓库里真实存在的 rc/beta 版)
 
 ## 8. 受影响文件清单
 
