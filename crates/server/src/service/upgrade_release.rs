@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use crate::config::UpgradeConfig;
-use crate::error::AppError;
 
 const SUCCESS_CACHE_TTL: Duration = Duration::from_secs(10 * 60);
 const FAILURE_CACHE_TTL: Duration = Duration::from_secs(60);
@@ -15,12 +14,6 @@ pub struct LatestAgentVersionResponse {
     pub version: Option<String>,
     pub released_at: Option<DateTime<Utc>>,
     pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReleaseAsset {
-    pub download_url: String,
-    pub sha256: String,
 }
 
 #[derive(Debug, Clone)]
@@ -101,64 +94,6 @@ impl UpgradeReleaseService {
 
         *self.cache.write().await = Some(cached);
         response
-    }
-
-    pub async fn resolve_asset(
-        &self,
-        version: &str,
-        asset_name: &str,
-    ) -> Result<ReleaseAsset, AppError> {
-        let version = normalize_release_tag(version);
-        let download_url = format!(
-            "{}/download/v{version}/{asset_name}",
-            self.release_base_url.trim_end_matches('/')
-        );
-        let checksums_url = format!(
-            "{}/download/v{version}/checksums.txt",
-            self.release_base_url.trim_end_matches('/')
-        );
-
-        let checksums_response = self
-            .client
-            .get(&checksums_url)
-            .send()
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to fetch checksums: {e}")))?;
-
-        if !checksums_response.status().is_success() {
-            return Err(AppError::NotFound(format!(
-                "Checksums not found for version v{version} (HTTP {})",
-                checksums_response.status()
-            )));
-        }
-
-        let checksums_body = checksums_response
-            .text()
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to read checksums: {e}")))?;
-
-        let sha256 = checksums_body
-            .lines()
-            .find_map(|line| {
-                let mut parts = line.split_whitespace();
-                let hash = parts.next()?;
-                let name = parts.next()?;
-                if name == asset_name {
-                    Some(hash.to_string())
-                } else {
-                    None
-                }
-            })
-            .ok_or_else(|| {
-                AppError::NotFound(format!(
-                    "Checksum not found for {asset_name} in v{version} release"
-                ))
-            })?;
-
-        Ok(ReleaseAsset {
-            download_url,
-            sha256,
-        })
     }
 
     async fn fetch_latest(&self) -> LatestAgentVersionResponse {
