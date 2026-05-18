@@ -28,9 +28,14 @@ fn install_rustls_crypto_provider() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    rustls::crypto::ring::default_provider()
-        .install_default()
-        .map_err(|_| anyhow::anyhow!("Failed to install rustls ring CryptoProvider"))?;
+    if let Err(_e) = rustls::crypto::ring::default_provider().install_default() {
+        // install_default() returns Err if a process-global provider is already installed
+        // by another code path (e.g. reqwest building a ClientConfig in a parallel test).
+        // If a provider is now present, treat that as success — we just didn't win the race.
+        if rustls::crypto::CryptoProvider::get_default().is_none() {
+            return Err(anyhow::anyhow!("Failed to install rustls ring CryptoProvider"));
+        }
+    }
 
     let _ = RUSTLS_PROVIDER_INSTALLED.set(());
     Ok(())
@@ -115,5 +120,17 @@ mod tests {
     fn install_rustls_crypto_provider_is_idempotent() {
         install_rustls_crypto_provider().expect("first install should succeed");
         install_rustls_crypto_provider().expect("second install should be a no-op");
+    }
+
+    #[test]
+    fn install_is_ok_when_provider_preinstalled() {
+        // Simulate another code path (e.g. reqwest) installing the global provider first.
+        // The result is intentionally ignored — it may fail if a provider is already set.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        // Our function must succeed even though install_default() would now return Err.
+        install_rustls_crypto_provider()
+            .expect("should succeed even when a provider was already installed");
+        install_rustls_crypto_provider()
+            .expect("second call should also succeed (OnceLock fast-path)");
     }
 }
