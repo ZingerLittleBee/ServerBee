@@ -20,8 +20,8 @@ pub enum TerminalEvent {
 struct PtySession {
     writer: Box<dyn Write + Send>,
     master: Box<dyn portable_pty::MasterPty + Send>,
-    _reader_handle: tokio::task::JoinHandle<()>,
-    _child: Box<dyn portable_pty::Child + Send + Sync>,
+    reader_handle: tokio::task::JoinHandle<()>,
+    child: Box<dyn portable_pty::Child + Send + Sync>,
 }
 
 /// Manages PTY terminal sessions on the agent.
@@ -168,8 +168,8 @@ impl TerminalManager {
             PtySession {
                 writer,
                 master: pair.master,
-                _reader_handle: reader_handle,
-                _child: child,
+                reader_handle,
+                child,
             },
         );
 
@@ -228,8 +228,18 @@ impl TerminalManager {
 
     /// Close a terminal session.
     pub fn close(&mut self, session_id: &str) {
-        if let Some(session) = self.sessions.remove(session_id) {
-            session._reader_handle.abort();
+        if let Some(mut session) = self.sessions.remove(session_id) {
+            // Kill the child process and reap it so closed sessions don't
+            // leave orphaned shells / zombie processes behind. Dropping the
+            // PTY master alone only sends EOF/SIGHUP and is not a reliable
+            // way to terminate or wait for the child.
+            if let Err(e) = session.child.kill() {
+                tracing::debug!("Failed to kill terminal child {session_id}: {e}");
+            }
+            if let Err(e) = session.child.wait() {
+                tracing::debug!("Failed to reap terminal child {session_id}: {e}");
+            }
+            session.reader_handle.abort();
             tracing::debug!("Closed terminal session {session_id}");
         }
     }
