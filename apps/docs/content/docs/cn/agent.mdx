@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
   --enrollment-code YOUR_ONE_TIME_CODE
 ```
 
-脚本会自动完成下载、安装、配置和 systemd 服务注册。
+脚本会自动检测架构、下载二进制、生成配置并注册 systemd 服务。安装布局：二进制在 `/opt/serverbee/bin/`，配置在 `/opt/serverbee/etc/agent.toml`，管理 CLI 软链为 `/usr/local/bin/serverbee`。
 
 安装完成后，使用 `serverbee` CLI 管理 Agent（安装时自动部署）：
 
@@ -40,7 +40,7 @@ sudo serverbee uninstall agent -y
 ```
 
 <Callout type="info">
-重复执行 `install agent` 时，如果 `/usr/local/bin/serverbee-agent` 已存在，脚本会直接沿用当前二进制而不会覆盖。需要替换已安装版本时，请使用 `upgrade agent -y`，或先手动覆盖 `/usr/local/bin/serverbee-agent`，再重启服务。
+如果 Agent 已安装，再次执行 `install agent` 会直接报错并提示改用 `upgrade`，不会重复安装。要更新到新版本请用 `sudo serverbee upgrade agent -y`。
 </Callout>
 
 ### 二进制下载
@@ -181,7 +181,7 @@ serverbee install agent --method <binary|docker> \
 
 ## 配置文件
 
-Agent 默认读取 `/etc/serverbee/agent.toml` 配置文件。
+手动运行的 Agent 默认读取 `/etc/serverbee/agent.toml`。通过安装脚本部署时，配置文件位于 `/opt/serverbee/etc/agent.toml`（`/etc/serverbee` 为旧版布局，脚本会自动迁移）。
 
 ```toml title="/etc/serverbee/agent.toml"
 server_url = "http://your-server-ip:9527"

@@ -1,6 +1,6 @@
 ---
-title: Quick Start
-description: Get the ServerBee server and agents running in minutes with the one-line install script.
+title: Quick Install
+description: Install the ServerBee server and agents in minutes with the one-line install script.
 icon: Zap
 ---
 
@@ -29,19 +29,36 @@ The server is the central node: it receives metrics from agents, stores them, an
 
 ### Step 1: Install the server
 
-A single command (handy for scripted deploys):
+There are two quick ways to install the server — pick one based on whether you have a domain.
+
+#### Option A: Install with an IP (plain HTTP)
+
+Fastest to get going; use this when you don't have a domain. You'll reach it at `http://<server-ip>:9527`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server -y
 ```
 
-For the interactive wizard (choose language, binary or Docker), run it with no arguments:
+The script writes `auth.secure_cookie = false` so browser login works over plain HTTP.
+
+#### Option B: Install with a domain (automatic HTTPS)
+
+If you already have a domain whose DNS `A` record points to this server, add `--domain` and the script sets up Caddy and issues an HTTPS certificate for you. You'll reach it at `https://your-domain`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server \
+  --domain monitor.example.com \
+  --email admin@example.com \
+  -y
 ```
 
-The script automatically:
+The script first checks that the domain resolves to this server; if it doesn't resolve or points to a different IP, installation stops and tells you which DNS record to add. `--email` is for Let's Encrypt notices and can be omitted. To add a domain to an already-installed server, run `sudo serverbee domain setup --domain monitor.example.com --email admin@example.com`.
+
+<Callout type="info">
+You can also run it with no arguments for an interactive wizard that prompts for language, binary vs Docker, and whether to configure a domain: `curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash`.
+</Callout>
+
+Either way, the script automatically:
 
 1. Detects the system architecture (amd64 / arm64)
 2. Downloads the matching binary from GitHub Releases
@@ -49,7 +66,6 @@ The script automatically:
 4. Creates the `/opt/serverbee/etc/` config directory and generates a default config (data dir `/opt/serverbee/data/`)
 5. Creates a systemd service unit
 6. Starts the service and enables it on boot
-7. Writes `auth.secure_cookie = false` so browser login works over plain HTTP
 
 <Callout type="info">
 If Docker is available, running the server in Docker is recommended — upgrades and isolation are easier. Just add `--method docker`: `... | sudo bash -s -- server --method docker -y`.
@@ -71,25 +87,12 @@ The password is shown only once — copy it before logs rotate. First login forc
 
 ### Step 3: First login
 
-1. Open `http://your-server-ip:9527` in your browser
+1. Open `http://<server-ip>:9527` in your browser (or `https://your-domain` for the domain method)
 2. Log in with the default account `admin` and the random password from the logs
 3. Complete the forced password change; you can pick a new username while you're at it
 
-### Optional: Domain + automatic HTTPS
-
-If you already have a domain whose DNS `A` record points to this server, the script can set up Caddy and issue an HTTPS certificate for you:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server \
-  --domain monitor.example.com \
-  --email admin@example.com \
-  -y
-```
-
-The script first checks that the domain resolves to this server; if it doesn't resolve or points to a different IP, installation stops and tells you which DNS record to add. `--email` is for Let's Encrypt notices and can be omitted. To add a domain to an already-installed server, run `sudo serverbee domain setup --domain monitor.example.com --email admin@example.com`.
-
 <Callout type="warn">
-Once you're on HTTPS, set `auth.secure_cookie` back to `true` in `/opt/serverbee/etc/server.toml`, restart the server, and update the `server_url` of any agents already connected to the new `https://` address.
+If you installed with an IP over plain HTTP and later want to switch to a domain with HTTPS: run `sudo serverbee domain setup --domain monitor.example.com --email admin@example.com`, set `auth.secure_cookie` back to `true` in `/opt/serverbee/etc/server.toml` and restart the server, then update the `server_url` of any connected agents to the new `https://` address.
 </Callout>
 
 ### Manage the server

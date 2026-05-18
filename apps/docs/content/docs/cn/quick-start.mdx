@@ -1,6 +1,6 @@
 ---
-title: 快速开始
-description: 用一键安装脚本在几分钟内跑起 ServerBee 的 Server 与 Agent。
+title: 快速安装
+description: 用一键安装脚本在几分钟内装好 ServerBee 的 Server 与 Agent。
 icon: Zap
 ---
 
@@ -29,19 +29,36 @@ Server 是中心节点：接收 Agent 上报的指标、落库存储，并提供
 
 ### 第一步：安装 Server
 
-一行命令搞定（适合脚本化部署）：
+Server 有两种快速安装方式，按你是否有域名选一种即可。
+
+#### 方式一：用 IP 安装（明文 HTTP）
+
+最快上手，没有域名时用这种。装完通过 `http://<服务器IP>:9527` 访问：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server -y
 ```
 
-想用交互式向导（按提示选语言、二进制还是 Docker），不带参数运行即可：
+脚本会写入 `auth.secure_cookie = false`，让浏览器在普通 HTTP 下也能正常登录。
+
+#### 方式二：用域名安装（自动 HTTPS）
+
+如果你已有域名，且 DNS `A` 记录已指向这台服务器，加上 `--domain` 即可让脚本自动装好 Caddy 并签发 HTTPS 证书，装完通过 `https://你的域名` 访问：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server \
+  --domain monitor.example.com \
+  --email admin@example.com \
+  -y
 ```
 
-脚本会自动完成：
+脚本会先校验域名是否解析到这台服务器；没解析或指向了别的 IP，安装会中止并提示你该加哪条 DNS 记录。`--email` 用于 Let's Encrypt 证书通知，可以省略。已经装好的 Server 想补配域名，单独执行 `sudo serverbee domain setup --domain monitor.example.com --email admin@example.com` 即可。
+
+<Callout type="info">
+也可以不带参数运行进入交互式向导，按提示选语言、二进制还是 Docker、是否配域名：`curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash`。
+</Callout>
+
+无论哪种方式，脚本都会自动完成：
 
 1. 检测系统架构（amd64 / arm64）
 2. 从 GitHub Releases 下载对应二进制
@@ -49,7 +66,6 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 4. 创建 `/opt/serverbee/etc/` 配置目录并生成默认配置（数据目录 `/opt/serverbee/data/`）
 5. 创建 systemd service unit
 6. 启动服务并设置开机自启
-7. 写入 `auth.secure_cookie = false`，让普通 HTTP 地址也能在浏览器正常登录
 
 <Callout type="info">
 有 Docker 的环境推荐用 Docker 方式跑 Server，升级和隔离都更省心。加上 `--method docker` 即可：`... | sudo bash -s -- server --method docker -y`。
@@ -71,25 +87,12 @@ Docker 方式则用 `sudo serverbee status`，或 `docker logs serverbee-server`
 
 ### 第三步：首次登录
 
-1. 打开浏览器访问 `http://your-server-ip:9527`
+1. 打开浏览器访问 `http://<服务器IP>:9527`（域名方式则是 `https://你的域名`）
 2. 用默认账户 `admin` 和日志里的随机密码登录
 3. 按页面提示完成强制改密，也可以顺便换一个新用户名
 
-### 可选：域名 + HTTPS 自动配置
-
-如果你已有域名，且 DNS `A` 记录已指向这台服务器，脚本可以自动装好 Caddy 并签发 HTTPS 证书：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server \
-  --domain monitor.example.com \
-  --email admin@example.com \
-  -y
-```
-
-脚本会先检查域名是否解析到这台服务器；没解析或指向了别的 IP，安装会中止并提示你该加哪条 DNS 记录。`--email` 用于 Let's Encrypt 证书通知，可以省略。已经装好的 Server 想补配域名，单独执行 `sudo serverbee domain setup --domain monitor.example.com --email admin@example.com` 即可。
-
 <Callout type="warn">
-切到 HTTPS 后，记得把 `/opt/serverbee/etc/server.toml` 里的 `auth.secure_cookie` 改回 `true` 并重启 Server，同时把已接入 Agent 的 `server_url` 换成新的 `https://` 地址。
+如果先用 IP 明文 HTTP 装好，之后想切到域名 HTTPS：执行 `sudo serverbee domain setup --domain monitor.example.com --email admin@example.com` 补配，并把 `/opt/serverbee/etc/server.toml` 里的 `auth.secure_cookie` 改回 `true` 重启 Server，同时把已接入 Agent 的 `server_url` 换成新的 `https://` 地址。
 </Callout>
 
 ### 管理 Server

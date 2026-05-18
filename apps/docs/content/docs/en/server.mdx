@@ -8,7 +8,22 @@ The ServerBee server is the central component that hosts the web dashboard, mana
 
 ## Installation
 
-### Pre-built Binary
+### Install script (recommended)
+
+The easiest path is the one-line install script. It detects the architecture, downloads the binary, generates the config, registers and starts the systemd service, and symlinks the `serverbee` management CLI. The server supports two quick installs:
+
+```bash
+# Option A: install with an IP (plain HTTP), reachable at http://<server-ip>:9527
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server -y
+
+# Option B: install with a domain (automatic Caddy + HTTPS), reachable at https://your-domain
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server \
+  --domain monitor.example.com --email admin@example.com -y
+```
+
+Script layout: binary in `/opt/serverbee/bin/`, config in `/opt/serverbee/etc/server.toml`, data in `/opt/serverbee/data/`, and the management CLI symlinked to `/usr/local/bin/serverbee`. See [Quick Install](/en/docs/quick-start) for the full walkthrough.
+
+### Pre-built Binary (manual)
 
 Download the latest release for your platform from the [releases page](https://github.com/ZingerLittleBee/ServerBee/releases), then run it:
 
@@ -44,6 +59,10 @@ The server reads configuration from TOML files in the following order, with late
 1. `/etc/serverbee/server.toml` (system-wide)
 2. `server.toml` (working directory)
 3. Environment variables with `SERVERBEE_` prefix
+
+<Callout type="info">
+When deployed via the install script, the config lives at `/opt/serverbee/etc/server.toml` and data at `/opt/serverbee/data/` (the script writes these paths explicitly, overriding the built-in defaults below). `/etc/serverbee` and `/var/lib/serverbee` are the legacy layout, only seen on older installs; the script migrates them automatically.
+</Callout>
 
 Here is a `server.toml` showing the most common options and their defaults. See the [Configuration Reference](/en/docs/configuration) for all available options.
 
@@ -256,6 +275,10 @@ scopes = ["openid", "email", "profile"]
 ```
 
 ## Reverse Proxy
+
+<Callout type="info">
+If you don't want to configure a reverse proxy by hand, the install script can do it for you: add `--domain monitor.example.com --email admin@example.com` at install time, or run `sudo serverbee domain setup --domain monitor.example.com --email admin@example.com` on an already-installed server. The script verifies DNS, installs Caddy, writes the Caddyfile, issues an HTTPS certificate, and sets `auth.secure_cookie` to `true`. The manual configuration below is only needed if you want to manage the reverse proxy yourself.
+</Callout>
 
 When running behind a reverse proxy, you must forward WebSocket connections correctly. Here is an nginx example:
 

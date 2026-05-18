@@ -20,23 +20,17 @@ The ServerBee agent is a lightweight Rust binary that runs on each server you wa
 
 ## Installation
 
-### Pre-built Binary
+### Install Script (recommended)
 
-Download the agent binary for your platform from the [releases page](https://github.com/ZingerLittleBee/ServerBee/releases):
-
-```bash
-chmod +x serverbee-agent
-```
-
-### Install Script
-
-Use the install script to download the binary and configure a systemd service automatically:
+The install script detects the architecture, downloads the binary, generates the config, and registers a systemd service automatically:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
   --server-url http://your-server-ip:9527 \
   --enrollment-code YOUR_ONE_TIME_CODE
 ```
+
+Layout: binary in `/opt/serverbee/bin/`, config in `/opt/serverbee/etc/agent.toml`, and the management CLI symlinked to `/usr/local/bin/serverbee`.
 
 After installation, manage the agent with the `serverbee` CLI (automatically installed):
 
@@ -49,8 +43,16 @@ sudo serverbee uninstall agent -y
 ```
 
 <Callout type="info">
-Re-running `install agent` adopts an existing `/usr/local/bin/serverbee-agent` and keeps the current binary in place. When you need to replace an already-installed binary, use `upgrade agent -y` or copy the new binary over `/usr/local/bin/serverbee-agent` manually before restarting the service.
+If the agent is already installed, re-running `install agent` errors out and tells you to use `upgrade` instead — it will not reinstall. To move to a newer version, run `sudo serverbee upgrade agent -y`.
 </Callout>
+
+### Pre-built Binary (manual)
+
+Download the agent binary for your platform from the [releases page](https://github.com/ZingerLittleBee/ServerBee/releases):
+
+```bash
+chmod +x serverbee-agent
+```
 
 ### Build from Source
 
@@ -156,6 +158,10 @@ The agent reads configuration from TOML files in the following order:
 1. `/etc/serverbee/agent.toml` (system-wide, preferred)
 2. `agent.toml` (working directory)
 3. Environment variables with `SERVERBEE_` prefix
+
+<Callout type="info">
+When deployed via the install script, the config lives at `/opt/serverbee/etc/agent.toml` (`/etc/serverbee` is the legacy layout; the script migrates it automatically).
+</Callout>
 
 Here is a complete `agent.toml` with all available options:
 
