@@ -11,6 +11,7 @@ mod rebind;
 mod register;
 mod reporter;
 mod terminal;
+mod upgrade;
 
 use std::sync::OnceLock;
 
