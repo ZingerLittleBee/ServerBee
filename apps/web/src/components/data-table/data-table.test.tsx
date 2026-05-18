@@ -31,6 +31,6 @@ describe('DataTable mobile layout', () => {
 
     expect(container.firstElementChild).toHaveClass('min-w-0', 'overflow-hidden')
     expect(screen.getByTestId('data-table-scroll')).toHaveClass('min-w-0')
-    expect(screen.getByRole('table')).toHaveClass('min-w-max')
+    expect(screen.getByRole('table')).toHaveClass('min-w-full')
   })
 })

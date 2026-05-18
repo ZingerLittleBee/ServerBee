@@ -19,6 +19,8 @@ pub struct AgentConfig {
     pub file: FileConfig,
     #[serde(default)]
     pub ip_change: IpChangeConfig,
+    #[serde(default)]
+    pub upgrade: UpgradeConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -49,6 +51,29 @@ pub struct FileConfig {
     pub max_file_size: u64,
     #[serde(default = "default_deny_patterns")]
     pub deny_patterns: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct UpgradeConfig {
+    #[serde(default = "default_release_repo")]
+    pub release_repo_url: String,
+    #[serde(default)]
+    pub release_cert_spki_sha256: String,
+}
+
+fn default_release_repo() -> String {
+    option_env!("SERVERBEE_RELEASE_REPO")
+        .unwrap_or("https://github.com/ZingerLittleBee/ServerBee/releases")
+        .to_string()
+}
+
+impl Default for UpgradeConfig {
+    fn default() -> Self {
+        Self {
+            release_repo_url: default_release_repo(),
+            release_cert_spki_sha256: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -252,5 +277,26 @@ mod tests {
         super::with_serverbee_token_env(Some("env-token"), || {
             assert!(AgentConfig::token_env_override_present());
         });
+    }
+
+    #[test]
+    fn upgrade_config_defaults_to_official_releases() {
+        let c = UpgradeConfig::default();
+        assert_eq!(
+            c.release_repo_url,
+            "https://github.com/ZingerLittleBee/ServerBee/releases"
+        );
+        assert!(c.release_cert_spki_sha256.is_empty());
+    }
+
+    #[test]
+    fn agent_config_has_upgrade_section_by_default() {
+        let c: AgentConfig = figment::Figment::new()
+            .merge(figment::providers::Toml::string(
+                r#"server_url = "ws://localhost:9527""#,
+            ))
+            .extract()
+            .expect("minimal AgentConfig");
+        assert!(c.upgrade.release_repo_url.starts_with("https://"));
     }
 }

@@ -489,29 +489,6 @@ pub struct UpgradeRequest {
     version: String,
 }
 
-/// Map agent-reported OS string to release asset platform suffix.
-fn map_os(os: &str) -> Option<&'static str> {
-    let lower = os.to_lowercase();
-    if lower.contains("linux") {
-        Some("linux")
-    } else if lower.contains("mac") || lower.contains("darwin") {
-        Some("darwin")
-    } else if lower.contains("windows") {
-        Some("windows")
-    } else {
-        None
-    }
-}
-
-/// Map Rust arch string to release asset arch suffix.
-fn map_arch(arch: &str) -> Option<&'static str> {
-    match arch {
-        "x86_64" => Some("amd64"),
-        "aarch64" => Some("arm64"),
-        _ => None,
-    }
-}
-
 /// Normalize version string: strip optional 'v' prefix.
 fn normalize_version(version: &str) -> &str {
     version.strip_prefix('v').unwrap_or(version)
@@ -551,28 +528,6 @@ async fn trigger_upgrade(
         return Err(AppError::BadRequest("Invalid version format".into()));
     }
 
-    // Get agent platform info
-    let (os_raw, arch_raw) = state.agent_manager.get_agent_platform(&id).ok_or_else(|| {
-        AppError::NotFound("Agent not connected or platform info unavailable".into())
-    })?;
-
-    let os = map_os(&os_raw)
-        .ok_or_else(|| AppError::BadRequest(format!("Unsupported agent OS: {os_raw}")))?;
-    let arch = map_arch(&arch_raw)
-        .ok_or_else(|| AppError::BadRequest(format!("Unsupported agent arch: {arch_raw}")))?;
-
-    // Build asset name
-    let asset_name = if os == "windows" {
-        format!("serverbee-agent-{os}-{arch}.exe")
-    } else {
-        format!("serverbee-agent-{os}-{arch}")
-    };
-
-    let asset = state
-        .upgrade_release_service
-        .resolve_asset(version, &asset_name)
-        .await?;
-
     let sender = state
         .agent_manager
         .get_sender(&id)
@@ -590,8 +545,8 @@ async fn trigger_upgrade(
 
     let msg = ServerMessage::Upgrade {
         version: version.to_string(),
-        download_url: asset.download_url,
-        sha256: asset.sha256,
+        download_url: String::new(),
+        sha256: String::new(),
         job_id: Some(job.job_id.clone()),
     };
     if let Err(_send_error) = sender.send(msg).await {
@@ -1177,22 +1132,6 @@ mod cleanup_tests {
 #[cfg(test)]
 mod upgrade_tests {
     use super::*;
-
-    #[test]
-    fn test_map_os() {
-        assert_eq!(map_os("Linux 5.15.0-123-generic"), Some("linux"));
-        assert_eq!(map_os("macOS 14.1.2 23B92 arm64"), Some("darwin"));
-        assert_eq!(map_os("Mac OS X 13.0"), Some("darwin"));
-        assert_eq!(map_os("Windows 10 Pro 22H2"), Some("windows"));
-        assert_eq!(map_os("FreeBSD 13.2"), None);
-    }
-
-    #[test]
-    fn test_map_arch() {
-        assert_eq!(map_arch("x86_64"), Some("amd64"));
-        assert_eq!(map_arch("aarch64"), Some("arm64"));
-        assert_eq!(map_arch("arm"), None);
-    }
 
     #[test]
     fn test_normalize_version() {

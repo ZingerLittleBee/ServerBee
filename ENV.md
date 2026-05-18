@@ -144,3 +144,10 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | `SERVERBEE_FILE__DENY_PATTERNS` | `file.deny_patterns` | string[] | `*.key,*.pem,id_rsa*,.env*,shadow,passwd` | Glob patterns for files the agent will refuse to access |
 | `SERVERBEE_IP_CHANGE__EXTERNAL_IP_URL` | `ip_change.external_ip_url` | string | `https://api.ipify.org` | URL that returns the agent's external IP as plain text |
 | `SERVERBEE_IP_CHANGE__INTERVAL_SECS` | `ip_change.interval_secs` | u64 | `300` | IP check interval in seconds (default 5 minutes) |
+
+### Upgrade (Agent)
+
+| Environment Variable | TOML Key | Type | Default | Description |
+|---------------------|----------|------|---------|-------------|
+| `SERVERBEE_UPGRADE__RELEASE_REPO_URL` | `upgrade.release_repo_url` | string | `https://github.com/ZingerLittleBee/ServerBee/releases` | Pinned release source base URL the Agent downloads upgrades from. Any HTTPS host mirroring the GitHub releases path layout `{base}/download/v{version}/{asset}` and `{base}/download/v{version}/checksums.txt` works. The compiled-in default can only be changed at build time via the `SERVERBEE_RELEASE_REPO` environment variable when compiling the agent (not a runtime setting). At runtime, override via this `SERVERBEE_UPGRADE__RELEASE_REPO_URL` env var, the `[upgrade] release_repo_url` config, or the `--release-repo` CLI flag |
+| `SERVERBEE_UPGRADE__RELEASE_CERT_SPKI_SHA256` | `upgrade.release_cert_spki_sha256` | string | `""` | Optional TLS certificate SPKI pin for the release host. Must be 64 lowercase hex chars (SHA-256 of the leaf cert SubjectPublicKeyInfo DER). Empty = disabled. If set, the Agent additionally pins the leaf cert SPKI after standard chain validation. Invalid (non-64/non-hex) values are rejected at startup |

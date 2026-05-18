@@ -159,6 +159,13 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | `SERVERBEE_IP_CHANGE__EXTERNAL_IP_URL` | `https://api.ipify.org` | URL that returns the agent's external IP as plain text |
 | `SERVERBEE_IP_CHANGE__INTERVAL_SECS` | `300` | IP check interval in seconds (default 5 minutes) |
 
+#### Upgrade (Agent)
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `SERVERBEE_UPGRADE__RELEASE_REPO_URL` | `https://github.com/ZingerLittleBee/ServerBee/releases` | Pinned release source base URL the Agent downloads upgrades from. Any HTTPS host mirroring the GitHub releases path layout `{base}/download/v{version}/{asset}` and `{base}/download/v{version}/checksums.txt` works. Compile-time default is overridable via the `SERVERBEE_RELEASE_REPO` build-time env |
+| `SERVERBEE_UPGRADE__RELEASE_CERT_SPKI_SHA256` | `""` | Optional TLS certificate SPKI pin for the release host. 64 lowercase hex chars = SHA-256 of the leaf cert SubjectPublicKeyInfo DER. Empty = disabled. If set, the Agent additionally pins the leaf cert SPKI after standard chain validation. Invalid (non-64/non-hex) values are rejected at startup |
+
 ## Server Configuration (server.toml)
 
 ### `[server]` -- Core Server Settings
@@ -344,6 +351,34 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 |-----|------|---------|-------------|
 | `level` | string | `"info"` | Log verbosity: `trace`, `debug`, `info`, `warn`, `error` |
 | `file` | string | `""` | Path to log file. If empty, logs go to stdout only |
+
+### `[upgrade]` -- Upgrade Source (Agent)
+
+The agent downloads upgrades from a locally-pinned release source rather than trusting a URL from the server.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `release_repo_url` | string | `"https://github.com/ZingerLittleBee/ServerBee/releases"` | Base URL for agent upgrade release assets. Must replicate the GitHub releases directory layout: `{base}/download/v{version}/{asset}` for binaries and `{base}/download/v{version}/checksums.txt` for checksum verification. The compile-time default is overridable via the `SERVERBEE_RELEASE_REPO` build-time env var |
+| `release_cert_spki_sha256` | string | `""` | Optional TLS SPKI pin for the release host. Set to 64 lowercase hex characters (SHA-256 of the leaf certificate's SubjectPublicKeyInfo DER encoding). Empty disables pinning. If set, the agent additionally validates the leaf cert SPKI after standard chain validation. Invalid format (non-64-char or non-hex) is rejected at startup |
+
+**Configuration precedence** (highest wins):
+
+1. `--release-repo` CLI flag
+2. `SERVERBEE_UPGRADE__RELEASE_REPO_URL` environment variable
+3. `/etc/serverbee/agent.toml` or `agent.toml` `[upgrade]` section
+4. Compile-time default (official GitHub releases URL)
+
+<Callout type="info">
+The dashboard "latest version" check uses the Server-configured release source (`upgrade.release_base_url` / `upgrade.latest_version_url`). Those are separate Server-side settings used only for the dashboard's "latest version" lookup, and are distinct from the Agent's `[upgrade] release_repo_url`, which governs what the Agent actually downloads. For consistent upgrade behavior, point both the Server and the Agent at the same release repository unless you intentionally want them to track different sources.
+</Callout>
+
+**How to obtain the SPKI pin** for a release host certificate:
+
+```bash
+openssl x509 -in cert.pem -pubkey -noout \
+  | openssl pkey -pubin -outform der \
+  | openssl dgst -sha256 -r | awk '{print $1}'
+```
 
 ---
 
