@@ -22,6 +22,19 @@ pub fn current_asset_name() -> &'static str {
     { "serverbee-agent-unsupported" }
 }
 
+/// 由 release base + 版本号推导 (binary_url, checksums_url)。
+/// base 必须 https://。version 不带前导 v。
+pub fn derive_urls(base: &str, version: &str) -> anyhow::Result<(String, String)> {
+    let base = base.trim_end_matches('/');
+    if !base.starts_with("https://") {
+        anyhow::bail!("release_repo_url must be https://, got: {base}");
+    }
+    let asset = current_asset_name();
+    let binary = format!("{base}/download/v{version}/{asset}");
+    let checksums = format!("{base}/download/v{version}/checksums.txt");
+    Ok((binary, checksums))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -31,5 +44,24 @@ mod tests {
         let name = current_asset_name();
         assert!(name.starts_with("serverbee-agent-"));
         assert_ne!(name, "serverbee-agent-unsupported");
+    }
+
+    #[test]
+    fn derive_urls_builds_github_layout() {
+        let (bin, sums) = derive_urls(
+            "https://github.com/ZingerLittleBee/ServerBee/releases/",
+            "1.2.3",
+        )
+        .unwrap();
+        assert!(bin.contains("/download/v1.2.3/serverbee-agent-"));
+        assert_eq!(
+            sums,
+            "https://github.com/ZingerLittleBee/ServerBee/releases/download/v1.2.3/checksums.txt"
+        );
+    }
+
+    #[test]
+    fn derive_urls_rejects_non_https() {
+        assert!(derive_urls("http://example.com/releases", "1.0.0").is_err());
     }
 }
