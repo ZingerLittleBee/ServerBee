@@ -716,8 +716,11 @@ resolve_domain_aaaa() {
         echo "$SERVERBEE_TEST_DNS_AAAA" | tr ',' '\n' | sed '/^$/d'
         return
     fi
+    # getent ahostsv6 synthesizes IPv4-mapped addresses (::ffff:1.2.3.4) for
+    # hosts that only have an A record; filter those out so a missing AAAA
+    # record isn't mistaken for a misconfigured one.
     if command -v getent &>/dev/null; then
-        getent ahostsv6 "$domain" 2>/dev/null | awk '{print $1}' | sort -u
+        getent ahostsv6 "$domain" 2>/dev/null | awk '{print $1}' | grep -vi '^::ffff:' | sort -u
     elif command -v dig &>/dev/null; then
         dig +short AAAA "$domain" 2>/dev/null | sed '/^$/d'
     elif command -v host &>/dev/null; then
@@ -1462,9 +1465,24 @@ print_agent_result() {
 
 # ─── Domain / HTTPS setup ─────────────────────────────────────────────────────
 
+# The official Caddy package creates /var/lib/caddy on first install, but a
+# prior uninstall/purge can remove it while leaving the caddy user behind. A
+# subsequent package install then skips directory creation, leaving Caddy
+# unable to write its ACME/cert storage. Recreate it defensively.
+ensure_caddy_state_dir() {
+    id caddy &>/dev/null || return 0
+    local caddy_home
+    caddy_home=$(getent passwd caddy | cut -d: -f6)
+    caddy_home="${caddy_home:-/var/lib/caddy}"
+    mkdir -p "$caddy_home"
+    chown -R caddy:caddy "$caddy_home"
+    chmod 0700 "$caddy_home"
+}
+
 install_caddy() {
     if command -v caddy &>/dev/null; then
         info "Caddy is already installed"
+        ensure_caddy_state_dir
         return
     fi
 
@@ -1494,6 +1512,8 @@ install_caddy() {
     else
         error "Cannot install Caddy automatically on this distribution.\n  Install Caddy manually, then configure:\n\n  ${DOMAIN} {\n      reverse_proxy 127.0.0.1:9527\n  }"
     fi
+
+    ensure_caddy_state_dir
 }
 
 check_http_ports_available() {
