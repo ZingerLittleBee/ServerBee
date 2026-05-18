@@ -29,7 +29,6 @@ const MAX_BACKOFF_SECS: u64 = 30;
 const JITTER_FACTOR: f64 = 0.2;
 const MAX_REREGISTER_ATTEMPTS: u32 = 3;
 const DOCKER_RETRY_SECS: u64 = 30;
-pub(crate) const UPGRADE_DOWNLOAD_TIMEOUT_SECS: u64 = 600;
 
 static UPGRADE_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
@@ -1925,7 +1924,7 @@ async fn perform_upgrade(
     tracing::info!("Downloading agent v{version} from {download_url}...");
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(
-            UPGRADE_DOWNLOAD_TIMEOUT_SECS,
+            crate::upgrade::UPGRADE_DOWNLOAD_TIMEOUT_SECS,
         ))
         .build()?;
     let response = client

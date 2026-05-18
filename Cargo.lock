@@ -3931,7 +3931,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
- "webpki-roots 0.26.11",
+ "webpki-roots 1.0.6",
  "windows-sys 0.59.0",
  "x509-parser",
 ]
