@@ -1924,7 +1924,7 @@ async fn perform_upgrade(
         fail!(UpgradeStage::Downloading, format!("anti-downgrade: {e}"));
     }
 
-    // 2. SPKI pin 规范化(非法在此即报错;启动时已 warn,这里再防御一次)
+    // 2. SPKI pin 规范化(启动时已 fail-fast 校验过格式,这里再防御性规范化一次)
     let spki = match normalize_spki_pin(&upgrade_cfg.release_cert_spki_sha256) {
         Ok(v) => v,
         Err(e) => fail!(UpgradeStage::Downloading, format!("invalid SPKI pin: {e}")),

@@ -82,6 +82,15 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    // Fail-fast on malformed SPKI pin (§3.1): non-empty but invalid pin is a
+    // misconfiguration the operator must fix before the agent starts, not something
+    // that should be discovered only at upgrade time.
+    if let Err(e) = crate::upgrade::normalize_spki_pin(&config.upgrade.release_cert_spki_sha256) {
+        eprintln!("Invalid release_cert_spki_sha256: {e}");
+        eprintln!("Fix the value in agent.toml (must be 64 lowercase hex chars) or leave it empty to disable pinning.");
+        std::process::exit(1);
+    }
+
     tracing::info!(
         "ServerBee Agent v{} starting...",
         serverbee_common::constants::VERSION
