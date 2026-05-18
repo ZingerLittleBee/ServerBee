@@ -226,16 +226,11 @@ impl MobileAuthService {
             ));
         }
 
-        // Delete old sessions linked to this mobile_session
-        session::Entity::delete_many()
-            .filter(session::Column::MobileSessionId.eq(&old_session_id))
-            .exec(db)
-            .await?;
-
-        // Delete the old mobile_session
-        mobile_session::Entity::delete_by_id(&old_session_id)
-            .exec(db)
-            .await?;
+        // Delete the old mobile_session along with its linked sessions and
+        // device tokens. device_tokens.mobile_session_id has no ON DELETE
+        // cascade, so deleting the mobile_session without first removing a
+        // device_token created by push_register would fail the foreign key.
+        Self::delete_mobile_session_cascade(db, &old_session_id).await?;
 
         // Issue a fresh token pair
         Self::login_for_user(
