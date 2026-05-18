@@ -293,6 +293,33 @@ mod tests {
         assert!(normalize_spki_pin(&"a".repeat(63)).is_err());
     }
 
+    /// §6.2 startup fail-fast contract: main.rs gates on this function, so its
+    /// Err variants determine what triggers exit(1) at agent startup.
+    #[test]
+    fn spki_pin_startup_gate_semantics() {
+        // Empty / whitespace-only → Ok(None): pinning disabled, no fail-fast.
+        assert_eq!(normalize_spki_pin("").unwrap(), None);
+        assert_eq!(normalize_spki_pin("   ").unwrap(), None);
+
+        // Valid 64 lowercase hex → Ok(Some(...)): pinning enabled, no fail-fast.
+        let valid = "b".repeat(64);
+        assert_eq!(normalize_spki_pin(&valid).unwrap(), Some(valid.clone()));
+        // Uppercase is normalised to lowercase without error.
+        assert_eq!(normalize_spki_pin(&valid.to_uppercase()).unwrap(), Some(valid));
+
+        // Non-empty but wrong length → Err: triggers exit(1) at startup.
+        assert!(normalize_spki_pin("abc123").is_err());
+        assert!(normalize_spki_pin(&"f".repeat(63)).is_err());
+        assert!(normalize_spki_pin(&"f".repeat(65)).is_err());
+
+        // Non-empty, correct length but non-hex chars → Err: triggers exit(1) at startup.
+        let non_hex = "z".repeat(64);
+        assert!(normalize_spki_pin(&non_hex).is_err());
+        // Mixed: 63 valid hex + 1 non-hex.
+        let mixed = format!("{}z", "a".repeat(63));
+        assert!(normalize_spki_pin(&mixed).is_err());
+    }
+
     #[test]
     fn spki_hash_is_stable_64_hex() {
         let h = spki_sha256_hex(TEST_CERT_DER).unwrap();
