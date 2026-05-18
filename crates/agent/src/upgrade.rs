@@ -329,5 +329,15 @@ mod tests {
         let v2 = vec!["bin".into(), "--release-repo=https://x/releases".into()];
         assert_eq!(parse_release_repo_arg(v2), Some("https://x/releases".into()));
         assert_eq!(parse_release_repo_arg(vec!["bin".into()]), None);
+        // --release-repo with no following arg → None
+        assert_eq!(
+            parse_release_repo_arg(vec!["bin".into(), "--release-repo".into()]),
+            None
+        );
+        // empty value via = form → Some("") (downstream https validation rejects it)
+        assert_eq!(
+            parse_release_repo_arg(vec!["bin".into(), "--release-repo=".into()]),
+            Some(String::new())
+        );
     }
 }
