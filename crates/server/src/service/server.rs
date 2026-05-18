@@ -178,7 +178,7 @@ impl ServerService {
     /// ping_tasks, service_monitor, status_page, tasks) are deliberately
     /// excluded: their rows stay valid for the other servers they reference
     /// and are not orphans of this delete.
-    async fn delete_server_scoped_rows<C: ConnectionTrait>(
+    pub(crate) async fn delete_server_scoped_rows<C: ConnectionTrait>(
         conn: &C,
         ids: &[String],
     ) -> Result<(), AppError> {
@@ -228,7 +228,7 @@ impl ServerService {
     /// Reject deleting a server that is the target or source of a currently
     /// running recovery job: tearing its rows out mid-run would leave the
     /// recovery task's guards and browser sync in a stale active state.
-    async fn ensure_no_running_recovery<C: ConnectionTrait>(
+    pub(crate) async fn ensure_no_running_recovery<C: ConnectionTrait>(
         conn: &C,
         ids: &[String],
     ) -> Result<(), AppError> {

@@ -825,65 +825,13 @@ async fn cleanup_orphaned_servers(
         return ok(CleanupResponse { deleted_count: 0 });
     }
 
-    // Tables with server_id FK — delete rows
-    record::Entity::delete_many()
-        .filter(record::Column::ServerId.is_in(&orphan_ids))
-        .exec(&txn)
-        .await?;
-    record_hourly::Entity::delete_many()
-        .filter(record_hourly::Column::ServerId.is_in(&orphan_ids))
-        .exec(&txn)
-        .await?;
-    gpu_record::Entity::delete_many()
-        .filter(gpu_record::Column::ServerId.is_in(&orphan_ids))
-        .exec(&txn)
-        .await?;
-    alert_state::Entity::delete_many()
-        .filter(alert_state::Column::ServerId.is_in(&orphan_ids))
-        .exec(&txn)
-        .await?;
-    network_probe_config::Entity::delete_many()
-        .filter(network_probe_config::Column::ServerId.is_in(&orphan_ids))
-        .exec(&txn)
-        .await?;
-    network_probe_record::Entity::delete_many()
-        .filter(network_probe_record::Column::ServerId.is_in(&orphan_ids))
-        .exec(&txn)
-        .await?;
-    network_probe_record_hourly::Entity::delete_many()
-        .filter(network_probe_record_hourly::Column::ServerId.is_in(&orphan_ids))
-        .exec(&txn)
-        .await?;
-    traffic_state::Entity::delete_many()
-        .filter(traffic_state::Column::ServerId.is_in(&orphan_ids))
-        .exec(&txn)
-        .await?;
-    traffic_hourly::Entity::delete_many()
-        .filter(traffic_hourly::Column::ServerId.is_in(&orphan_ids))
-        .exec(&txn)
-        .await?;
-    traffic_daily::Entity::delete_many()
-        .filter(traffic_daily::Column::ServerId.is_in(&orphan_ids))
-        .exec(&txn)
-        .await?;
-    uptime_daily::Entity::delete_many()
-        .filter(uptime_daily::Column::ServerId.is_in(&orphan_ids))
-        .exec(&txn)
-        .await?;
-    task_result::Entity::delete_many()
-        .filter(task_result::Column::ServerId.is_in(&orphan_ids))
-        .exec(&txn)
-        .await?;
+    // Block cleanup of a candidate that is part of a running recovery, then
+    // purge all server_id-scoped rows (and recovery_job) through the shared
+    // service helper so this path cannot drift from delete_server again.
+    ServerService::ensure_no_running_recovery(&txn, &orphan_ids).await?;
+    ServerService::delete_server_scoped_rows(&txn, &orphan_ids).await?;
     server_tag::Entity::delete_many()
         .filter(server_tag::Column::ServerId.is_in(&orphan_ids))
-        .exec(&txn)
-        .await?;
-    docker_event::Entity::delete_many()
-        .filter(docker_event::Column::ServerId.is_in(&orphan_ids))
-        .exec(&txn)
-        .await?;
-    ping_record::Entity::delete_many()
-        .filter(ping_record::Column::ServerId.is_in(&orphan_ids))
         .exec(&txn)
         .await?;
 
