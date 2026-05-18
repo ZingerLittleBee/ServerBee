@@ -182,6 +182,7 @@ mod tests {
     fn redirect_decision_rules() {
         assert_eq!(redirect_decision("https", 0), RedirectAction::Follow);
         assert_eq!(redirect_decision("http", 0), RedirectAction::StopNonHttps);
+        assert_eq!(redirect_decision("https", 9), RedirectAction::Follow);
         assert_eq!(redirect_decision("https", 10), RedirectAction::StopTooMany);
     }
 }
