@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Agent upgrade source is now pinned on the Agent** -- The Agent downloads upgrade binaries from a locally-configured release source (`[upgrade] release_repo_url` in `agent.toml`, env `SERVERBEE_UPGRADE__RELEASE_REPO_URL`, or `--release-repo` CLI flag) instead of following a download URL supplied by the Server. An optional TLS SPKI pin (`release_cert_spki_sha256`) lets the Agent additionally validate the leaf certificate of the release host after standard chain validation.
+
+### Breaking Changes
+
+> **BREAKING: Agents older than this version cannot auto-upgrade after the Server is updated.**
+>
+> The updated Server sends only a target version number in the upgrade signal; it no longer includes a `download_url`. Pre-feature Agents expect a `download_url` and will fail silently when the field is absent, leaving them unable to self-upgrade.
+>
+> **Required one-time manual action:** After upgrading the Server, any Agent still running a version older than this release must be **manually reinstalled** (re-run the install script or redeploy the new binary). Once the new Agent binary is running, it will self-upgrade normally from its locally-pinned release source for all future upgrades.
+>
+> Agents already running this version or newer are unaffected.
+
 ## [0.9.2] - 2026-05-18
 
 ### Added
