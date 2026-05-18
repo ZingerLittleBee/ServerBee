@@ -17,7 +17,7 @@ icon: Zap
 
 ## 前置条件
 
-- Linux 主机（amd64 / arm64），有 `root` / `sudo` 权限
+- Linux 主机（amd64 / arm64），需以 root 运行（脚本会校验，非 root 直接报错）。普通用户用 `sudo`；已经是 root（如直接以 root 登录或在容器内）可省略命令里的 `sudo`
 - 二进制方式需要 systemd；Docker 方式需要 Docker 20.10+ 与 Compose V2
 - 防火墙放行 Server 的 `9527` 端口，供 Agent 与浏览器访问
 

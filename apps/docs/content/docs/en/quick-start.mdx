@@ -17,7 +17,7 @@ The guide below walks through deployment from two angles: the **Server** and the
 
 ## Prerequisites
 
-- A Linux host (amd64 / arm64) with `root` / `sudo` access
+- A Linux host (amd64 / arm64); the script must run as root (it checks and errors out otherwise). Use `sudo` as a regular user; if you are already root (e.g. logged in as root or inside a container) you can drop the `sudo` from the commands
 - The binary method needs systemd; the Docker method needs Docker 20.10+ and Compose V2
 - The server's port `9527` open in your firewall so agents and browsers can reach it
 
