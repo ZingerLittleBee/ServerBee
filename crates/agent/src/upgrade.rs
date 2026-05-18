@@ -225,6 +225,11 @@ pub fn parse_release_repo_arg<I: IntoIterator<Item = String>>(args: I) -> Option
     None
 }
 
+/// Unix 权限位 → 是否 group/world 可写。
+pub fn is_group_or_world_writable(mode: u32) -> bool {
+    mode & 0o022 != 0
+}
+
 #[cfg(test)]
 const TEST_CERT_DER: &[u8] = include_bytes!("testdata/test_cert.der");
 
@@ -339,5 +344,17 @@ mod tests {
             parse_release_repo_arg(vec!["bin".into(), "--release-repo=".into()]),
             Some(String::new())
         );
+    }
+
+    #[test]
+    fn perm_writable_detection() {
+        // 0o600 rw-------: neither group nor other writable
+        assert!(!is_group_or_world_writable(0o600));
+        // 0o644 rw-r--r--: group/other have no write bit
+        assert!(!is_group_or_world_writable(0o644));
+        // 0o664 rw-rw-r--: group writable
+        assert!(is_group_or_world_writable(0o664));
+        // 0o646 rw-r--rw-: other writable
+        assert!(is_group_or_world_writable(0o646));
     }
 }

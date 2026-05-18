@@ -64,6 +64,24 @@ async fn main() -> anyhow::Result<()> {
 
     install_rustls_crypto_provider()?;
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        for path in ["agent.toml", "/etc/serverbee/agent.toml"] {
+            if let Ok(meta) = std::fs::metadata(path) {
+                let mode = meta.permissions().mode();
+                if crate::upgrade::is_group_or_world_writable(mode) {
+                    tracing::warn!(
+                        "SECURITY: {path} is group/world-writable (mode {:o}); \
+                         another local user could tamper release_repo_url. \
+                         Run: chmod 600 {path}",
+                        mode & 0o777
+                    );
+                }
+            }
+        }
+    }
+
     tracing::info!(
         "ServerBee Agent v{} starting...",
         serverbee_common::constants::VERSION
