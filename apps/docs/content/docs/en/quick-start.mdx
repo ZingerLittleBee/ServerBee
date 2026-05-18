@@ -1,69 +1,83 @@
 ---
 title: Quick Start
-description: Get ServerBee up and running in under 5 minutes.
+description: Get the ServerBee server and agents running in minutes with the one-line install script.
 icon: Zap
 ---
 
-This guide walks you through the fastest path to a working ServerBee installation. Pick whichever method suits your environment.
+The recommended way to deploy ServerBee is the `deploy/install.sh` one-line script. It handles the tedious parts for you — architecture detection, binary downloads, service registration — so it works out of the box:
+
+- **Interactive wizard** — run it with no arguments to pick the language, component, and install method through prompts
+- **Architecture aware** — detects amd64/arm64 and pulls the matching Release binary
+- **systemd integration** — creates and starts the service, enables it on boot
+- **Binary or Docker** — switch with `--method`; Docker is recommended for the server, binary for agents
+- **Automatic HTTPS** — pass `--domain` when installing the server and the script sets up Caddy and issues a certificate
+- **Unified management CLI** — installs a `serverbee` command for upgrades, restarts, config changes, and uninstalls
+
+The guide below walks through deployment from two angles: the **Server** and the **Client (monitored node / Agent)**.
 
 ## Prerequisites
 
-You need one of the following on your server machine:
+- A Linux host (amd64 / arm64) with `root` / `sudo` access
+- The binary method needs systemd; the Docker method needs Docker 20.10+ and Compose V2
+- The server's port `9527` open in your firewall so agents and browsers can reach it
 
-- **Docker and Docker Compose** (recommended for quick setup)
-- A Linux (amd64/arm64) host with systemd, for the install script
+---
 
-## Option 1: Docker Compose (Recommended)
+## Server
 
-This is the fastest way to get started. Create a `docker-compose.yml` file:
+The server is the central node: it receives metrics from agents, stores them, and serves the web dashboard.
 
-```yaml
-services:
-  serverbee-server:
-    image: ghcr.io/zingerlittlebee/serverbee-server:latest
-    container_name: serverbee-server
-    restart: unless-stopped
-    ports:
-      - "9527:9527"
-    volumes:
-      - serverbee-data:/data
-    environment:
-      - SERVERBEE_AUTH__SECURE_COOKIE=false
+### Step 1: Install the server
 
-volumes:
-  serverbee-data:
-```
-
-Then start the server:
+A single command (handy for scripted deploys):
 
 ```bash
-docker compose up -d
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server -y
 ```
 
-<Callout type="warn">
-On first start the server auto-creates an admin account with a randomly generated password and prints it once to the container logs. Retrieve it with `docker compose logs serverbee-server` and look for the highlighted credentials banner. On first login you are required to change this password and may optionally choose a different username.
-</Callout>
+For the interactive wizard (choose language, binary or Docker), run it with no arguments:
 
-The dashboard is now available at `http://your-server-ip:9527`.
+```bash
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash
+```
+
+The script automatically:
+
+1. Detects the system architecture (amd64 / arm64)
+2. Downloads the matching binary from GitHub Releases
+3. Installs the binary to `/opt/serverbee/bin/` and symlinks the management CLI to `/usr/local/bin/serverbee`
+4. Creates the `/opt/serverbee/etc/` config directory and generates a default config (data dir `/opt/serverbee/data/`)
+5. Creates a systemd service unit
+6. Starts the service and enables it on boot
+7. Writes `auth.secure_cookie = false` so browser login works over plain HTTP
 
 <Callout type="info">
-The compose file above disables the `Secure` cookie flag because this quick start uses plain HTTP. When you move behind HTTPS, set `SERVERBEE_AUTH__SECURE_COOKIE=true`.
+If Docker is available, running the server in Docker is recommended — upgrades and isolation are easier. Just add `--method docker`: `... | sudo bash -s -- server --method docker -y`.
 </Callout>
 
-## IP Address vs Domain Access
+### Step 2: Get the first-run admin password
 
-ServerBee can be accessed directly by IP address or through a domain name. The required cookie and URL settings depend on whether the browser uses plain HTTP or HTTPS.
+On its first start the server creates an admin account with a random password and prints it to the logs exactly once:
 
-| Access Mode | Browser URL | Server Cookie Setting | Agent `server_url` | Extra Setup |
-|-------------|-------------|-----------------------|--------------------|-------------|
-| Direct IP, plain HTTP | `http://your-server-ip:9527` | `auth.secure_cookie = false` or `SERVERBEE_AUTH__SECURE_COOKIE=false` | `http://your-server-ip:9527` | Open port `9527` in your firewall |
-| Domain with HTTPS | `https://monitor.example.com` | `auth.secure_cookie = true` or `SERVERBEE_AUTH__SECURE_COOKIE=true` | `https://monitor.example.com` | Point DNS to the server IP and put Nginx, Caddy, or Traefik in front of ServerBee |
+```bash
+sudo journalctl -u serverbee-server --no-pager | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' | tail -n 9
+```
+
+For the Docker method, use `sudo serverbee status` or `docker logs serverbee-server`.
 
 <Callout type="warn">
-If you started with the quick-start HTTP settings and later move to a domain with HTTPS, change `secure_cookie` back to `true`, restart ServerBee, and update existing agents to use the new `https://` server URL.
+The password is shown only once — copy it before logs rotate. First login forces a password change, so do that before exposing the server to the internet.
 </Callout>
 
-If you already have a domain and its DNS `A` record points to this server, the install script can configure Caddy HTTPS automatically:
+### Step 3: First login
+
+1. Open `http://your-server-ip:9527` in your browser
+2. Log in with the default account `admin` and the random password from the logs
+3. Complete the forced password change; you can pick a new username while you're at it
+
+### Optional: Domain + automatic HTTPS
+
+If you already have a domain whose DNS `A` record points to this server, the script can set up Caddy and issue an HTTPS certificate for you:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server \
@@ -72,67 +86,40 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
   -y
 ```
 
-The script first verifies that the domain resolves to the current server. If it does not, installation stops and prints the DNS record you need to add. `--email` is used for Let's Encrypt certificate notices and can be omitted.
-
-## Option 2: Install Script
-
-Download and run the install script for a quick binary installation:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server -y
-```
-
-This will download the appropriate binary for your platform, create a systemd service, and start ServerBee automatically.
-
-On first start the server auto-creates an admin account with a randomly generated password and prints it once to the service logs. Retrieve it with:
-
-```bash
-sudo journalctl -u serverbee-server --no-pager | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' | tail -n 9
-```
-
-The install script writes `auth.secure_cookie = false` so browser login works on the plain HTTP quick-start URL. When you move behind HTTPS, set it back to `true` in `/opt/serverbee/etc/server.toml` and restart the server.
-
-After installation, manage your ServerBee instance with the `serverbee` CLI:
-
-```bash
-sudo serverbee status              # View status
-sudo serverbee upgrade -y           # Upgrade to latest
-sudo serverbee restart              # Restart services
-sudo serverbee config               # View config
-sudo serverbee config set <key> <value>  # Update config
-sudo serverbee uninstall server --purge   # Uninstall + remove data
-```
-
-Verify the server is running:
-
-```bash
-sudo serverbee status
-sudo journalctl -u serverbee-server -n 80 --no-pager
-```
-
-## First Login
-
-1. Open your browser and navigate to `http://your-server-ip:9527`
-2. Log in with the first-run credentials:
-   - **Username:** `admin`
-   - **Password:** the randomly generated password from the startup logs
-3. Complete the required password change on first login
+The script first checks that the domain resolves to this server; if it doesn't resolve or points to a different IP, installation stops and tells you which DNS record to add. `--email` is for Let's Encrypt notices and can be omitted. To add a domain to an already-installed server, run `sudo serverbee domain setup --domain monitor.example.com --email admin@example.com`.
 
 <Callout type="warn">
-The generated password is shown only once in the logs. Copy it before logs rotate, then complete the forced password change before exposing the server to the internet.
+Once you're on HTTPS, set `auth.secure_cookie` back to `true` in `/opt/serverbee/etc/server.toml`, restart the server, and update the `server_url` of any agents already connected to the new `https://` address.
 </Callout>
 
-## Adding Your First Agent
+### Manage the server
 
-### Step 1: Generate a one-time enrollment code
+After installation, use the `serverbee` command to manage the instance:
 
-Sign in to the web UI as an admin, go to **Settings**, and generate a one-time
-**enrollment code**, then copy it. The code is **single-use** and **short-lived**
-(default 10 minute expiry); mint a fresh one each time you onboard a new agent.
+```bash
+sudo serverbee status                     # Status of all components
+sudo serverbee upgrade -y                  # Upgrade to the latest version
+sudo serverbee restart                     # Restart services
+sudo serverbee config                      # View current config
+sudo serverbee config set <key> <value>    # Change config
+sudo serverbee uninstall server --purge    # Uninstall and wipe data
+```
+
+---
+
+## Client (Agent)
+
+The agent is a lightweight probe running on each monitored machine; it reports CPU, memory, disk, and network metrics back to the server.
+
+### Step 1: Generate a one-time enrollment code on the server
+
+Sign in to the dashboard as an admin, go to **Settings**, generate a one-time enrollment code, and copy it.
+
+The code is **single-use** and **short-lived** (10 minute default expiry), and is only needed the first time an agent registers. Generate a fresh one for each new agent.
 
 ### Step 2: Install and start the agent
 
-On the VPS you want to monitor, run the one-line install script, passing the server URL and the one-time enrollment code as parameters:
+On the machine you want to monitor, run the install script and pass the server URL and enrollment code as arguments:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
@@ -140,31 +127,82 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
   --enrollment-code YOUR_ONE_TIME_CODE
 ```
 
-The script downloads the right binary for your platform, writes the configuration, registers a systemd service, and starts the agent automatically.
+The script detects the architecture, downloads the binary, writes the config, registers a systemd service, and brings the agent up.
 
-For collector, logging, and other tunable options, see [Agent Configuration](/en/docs/agent) and the [full configuration reference](/en/docs/configuration).
+<Callout type="info">
+Install agents via the binary method — that's the only way to collect full host metrics. Running the agent in Docker is not recommended.
+</Callout>
 
-On its first start, the agent will:
+On its first start the agent registers with the server: once registration succeeds the code is spent, and the agent receives its own token and writes it back to the config file. Later starts use that persisted token and no longer need the code. If an agent loses its token and has to re-onboard, just generate a new code in Settings.
 
-1. Contact the server and present the one-time enrollment code
-2. Register itself and receive a per-server authentication token (the code is consumed on this first successful registration)
-3. Save the token to the config file for future connections (the enrollment code is no longer needed)
-4. Begin reporting system metrics immediately
+<Callout type="info">
+When the agent can read a stable machine identifier, re-registering from the same host reuses the existing server entry instead of creating a duplicate placeholder.
+</Callout>
 
-You should see the new server appear in your dashboard within a few seconds.
+### Step 3: Verify the connection
 
-Verify the agent is connected and reporting:
+Back in the dashboard, the new server shows up online within seconds and live metrics start flowing. You can also check from the agent machine:
 
 ```bash
 sudo serverbee status
 sudo journalctl -u serverbee-agent -n 80 --no-pager
 ```
 
-<Callout type="info">
-When the agent can read a stable machine identifier, repeated auto-registration from the same host reuses the existing server entry instead of creating duplicate placeholders.
-</Callout>
+### Manage the agent
 
-## What Next?
+```bash
+sudo serverbee status               # Agent status
+sudo serverbee upgrade -y            # Upgrade the agent
+sudo serverbee restart               # Restart the agent
+sudo serverbee uninstall agent       # Uninstall the agent
+```
+
+For collector, logging, and other tunable options, see [Agent Configuration](/en/docs/agent) and the [full configuration reference](/en/docs/configuration).
+
+---
+
+## Accessing by IP vs Domain
+
+ServerBee works with a direct server IP or behind a domain and reverse proxy. What extra setup you need depends on whether the browser ends up on plain HTTP or HTTPS.
+
+| Access Mode | Browser URL | Server Cookie Setting | Agent `server_url` | Extra Setup |
+|-------------|-------------|-----------------------|--------------------|-------------|
+| Direct IP, plain HTTP | `http://your-server-ip:9527` | `auth.secure_cookie = false` or `SERVERBEE_AUTH__SECURE_COOKIE=false` | `http://your-server-ip:9527` | Open port `9527` in your firewall |
+| Domain with HTTPS | `https://monitor.example.com` | `auth.secure_cookie = true` or `SERVERBEE_AUTH__SECURE_COOKIE=true` | `https://monitor.example.com` | Point DNS at the server IP; the script sets up Caddy for you (or configure Nginx/Traefik yourself) |
+
+---
+
+## Alternative: Deploy the server manually with Docker Compose
+
+If you'd rather manage the server with your own Compose file, create a `docker-compose.yml`:
+
+```yaml title="docker-compose.yml"
+services:
+  serverbee-server:
+    image: ghcr.io/zingerlittlebee/serverbee-server:latest
+    container_name: serverbee-server
+    ports:
+      - "9527:9527"
+    volumes:
+      - serverbee-data:/data
+    environment:
+      - SERVERBEE_AUTH__SECURE_COOKIE=false
+    restart: unless-stopped
+
+volumes:
+  serverbee-data:
+```
+
+Start it and read the first-run admin password:
+
+```bash
+docker compose up -d
+docker compose logs serverbee-server
+```
+
+<Callout type="info">
+The example disables the `Secure` cookie flag because this setup uses plain HTTP; once you're on HTTPS, set `SERVERBEE_AUTH__SECURE_COOKIE=true`. Agents should still be onboarded via the `install.sh agent` binary method.
+</Callout>
 
 <Cards>
   <Card title="Server Configuration" href="/en/docs/server" />
