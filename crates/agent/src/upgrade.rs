@@ -113,11 +113,14 @@ pub fn redirect_decision(next_scheme: &str, hops: usize) -> RedirectAction {
     }
 }
 
+/// 升级二进制下载超时(秒)。大文件 + 慢链路留足余量。
+pub(crate) const UPGRADE_DOWNLOAD_TIMEOUT_SECS: u64 = 600;
+
 /// 包裹标准 WebPkiServerVerifier:先完整链校验,成功后再比对 leaf SPKI SHA-256。
 #[derive(Debug)]
 struct SpkiPinVerifier {
     inner: Arc<WebPkiServerVerifier>,
-    want: String, // 64 hex
+    expected_spki_hex: String,
 }
 
 impl ServerCertVerifier for SpkiPinVerifier {
@@ -134,7 +137,7 @@ impl ServerCertVerifier for SpkiPinVerifier {
                 .verify_server_cert(end_entity, intermediates, server_name, ocsp, now)?;
         let got = spki_sha256_hex(end_entity.as_ref())
             .map_err(|e| rustls::Error::General(format!("spki extract: {e}")))?;
-        if got == self.want {
+        if got == self.expected_spki_hex {
             Ok(verified)
         } else {
             Err(rustls::Error::General(
@@ -184,7 +187,7 @@ pub fn build_upgrade_client(spki_pin: Option<&str>) -> anyhow::Result<reqwest::C
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(SpkiPinVerifier {
                 inner,
-                want: pin.to_string(),
+                expected_spki_hex: pin.to_string(),
             }))
             .with_no_client_auth()
     } else {
@@ -203,7 +206,7 @@ pub fn build_upgrade_client(spki_pin: Option<&str>) -> anyhow::Result<reqwest::C
             }
         }))
         .user_agent("ServerBee-Agent")
-        .timeout(std::time::Duration::from_secs(crate::reporter::UPGRADE_DOWNLOAD_TIMEOUT_SECS))
+        .timeout(std::time::Duration::from_secs(UPGRADE_DOWNLOAD_TIMEOUT_SECS))
         .build()?;
     Ok(client)
 }
