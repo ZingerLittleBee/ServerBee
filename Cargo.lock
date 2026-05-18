@@ -3918,6 +3918,7 @@ dependencies = [
  "rand 0.8.5",
  "reqwest 0.12.28",
  "rustls 0.23.37",
+ "semver",
  "serde",
  "serde_json",
  "serverbee-common",
@@ -3930,7 +3931,9 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+ "webpki-roots 0.26.11",
  "windows-sys 0.59.0",
+ "x509-parser",
 ]
 
 [[package]]
