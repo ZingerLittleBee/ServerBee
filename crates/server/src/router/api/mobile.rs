@@ -505,11 +505,16 @@ pub async fn push_unregister(
         .await?
         .ok_or_else(|| AppError::BadRequest("Mobile session not found".to_string()))?;
 
-    // Delete the device token for this installation
+    // Delete the device token for this installation, scoped to the caller's
+    // own user. installation_id is a client-supplied value and must not be
+    // treated as an ownership boundary: filtering by user_id as well prevents
+    // a member from deleting another user's push registration by forging the
+    // victim's installation_id.
     crate::entity::device_token::Entity::delete_many()
         .filter(
             crate::entity::device_token::Column::InstallationId.eq(&mobile_session.installation_id),
         )
+        .filter(crate::entity::device_token::Column::UserId.eq(&session.user_id))
         .exec(&state.db)
         .await?;
 
