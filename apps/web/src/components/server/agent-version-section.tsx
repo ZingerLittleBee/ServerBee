@@ -163,6 +163,7 @@ export function AgentVersionSection({
                 </Badge>
               )}
             </div>
+            {hasUpdate && <p className="text-muted-foreground text-xs">{t('upgrade_latest_version_advisory')}</p>}
             {!upgradeEnabled && isAdmin && <p className="text-muted-foreground text-xs">{t('cap_disabled')}</p>}
           </div>
 

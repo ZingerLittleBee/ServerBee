@@ -27,6 +27,8 @@ vi.mock('@/lib/capabilities', () => ({
 const UPGRADE_LATEST_PATTERN = /upgrade_latest_version/
 const UPGRADE_ERROR_WITH_BACKUP_PATTERN = /upgrade_error_with_backup/
 const UPGRADE_BACKUP_PATH_PATTERN = /upgrade_backup_path/
+const UPGRADE_LATEST_VERSION_ADVISORY_PATTERN =
+  /upgrade_latest_version_advisory|Agent 实际下载源以其本地配置为准|download source follows agent/i
 
 describe('AgentVersionSection', () => {
   beforeEach(() => {
@@ -76,7 +78,7 @@ describe('AgentVersionSection', () => {
         serverId="srv-1"
       />
     )
-    expect(screen.getByText(UPGRADE_LATEST_PATTERN)).toBeDefined()
+    expect(screen.getAllByText(UPGRADE_LATEST_PATTERN).length).toBeGreaterThanOrEqual(1)
   })
 
   it('shows upgrade button for admin when update available and capability enabled', () => {
@@ -265,6 +267,19 @@ describe('AgentVersionSection', () => {
     )
     expect(screen.getByText('upgrade_status_timeout')).toBeDefined()
     expect(screen.getByText(UPGRADE_BACKUP_PATH_PATTERN)).toBeDefined()
+  })
+
+  it('shows advisory that download source follows agent config', () => {
+    render(
+      <AgentVersionSection
+        agentVersion="1.2.3"
+        configuredCapabilities={255}
+        effectiveCapabilities={255}
+        latestVersion="1.3.0"
+        serverId="srv-1"
+      />
+    )
+    expect(screen.getByText(UPGRADE_LATEST_VERSION_ADVISORY_PATTERN)).toBeInTheDocument()
   })
 
   it('disables upgrade button while loading', () => {

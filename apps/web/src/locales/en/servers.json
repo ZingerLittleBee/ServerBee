@@ -266,6 +266,7 @@
 
   "upgrade_current_version": "Current Version",
   "upgrade_latest_version": "Latest",
+  "upgrade_latest_version_advisory": "Latest released version (from server-configured source; each agent's actual download source follows its local config)",
   "upgrade_start": "Upgrade",
   "upgrade_in_progress": "Upgrade in progress",
   "upgrade_stage_downloading": "Downloading",
