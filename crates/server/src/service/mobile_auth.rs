@@ -539,6 +539,78 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_refresh_succeeds_after_push_register() {
+        let (db, _tmp) = setup_test_db().await;
+        let config = default_mobile_config();
+
+        AuthService::create_user(&db, "dave", "pass789", "member")
+            .await
+            .expect("create_user should succeed");
+
+        let first = MobileAuthService::login(
+            &db,
+            &config,
+            MobileLoginParams {
+                username: "dave",
+                password: "pass789",
+                totp_code: None,
+                installation_id: "inst-push",
+                device_name: "Dave's Phone",
+                ip: "127.0.0.1",
+                user_agent: "ServerBee-iOS/1.0",
+            },
+        )
+        .await
+        .expect("login should succeed");
+
+        // Look up the mobile_session created by login.
+        let ms = mobile_session::Entity::find()
+            .filter(mobile_session::Column::InstallationId.eq("inst-push"))
+            .one(&db)
+            .await
+            .unwrap()
+            .expect("mobile_session should exist after login");
+
+        // Mimic push_register: a device_token now references this mobile_session.
+        device_token::ActiveModel {
+            id: Set(Uuid::new_v4().to_string()),
+            user_id: Set(ms.user_id.clone()),
+            mobile_session_id: Set(ms.id.clone()),
+            installation_id: Set("inst-push".to_string()),
+            token: Set("apns-token".to_string()),
+            created_at: Set(Utc::now()),
+            updated_at: Set(Utc::now()),
+        }
+        .insert(&db)
+        .await
+        .expect("seed device_token");
+
+        // Refresh must not fail the foreign key on the dangling device_token.
+        let refreshed = MobileAuthService::refresh(
+            &db,
+            &config,
+            &first.refresh_token,
+            "inst-push",
+            "127.0.0.1",
+            "ServerBee-iOS/1.0",
+        )
+        .await
+        .expect("refresh should succeed even after push_register");
+        assert_ne!(refreshed.access_token, first.access_token);
+
+        // The old mobile_session and its device_token were cascade-deleted.
+        let old_dt = device_token::Entity::find()
+            .filter(device_token::Column::MobileSessionId.eq(&ms.id))
+            .one(&db)
+            .await
+            .unwrap();
+        assert!(
+            old_dt.is_none(),
+            "device_token for the rotated mobile_session must be removed"
+        );
+    }
+
+    #[tokio::test]
     async fn test_refresh_wrong_installation_id() {
         let (db, _tmp) = setup_test_db().await;
         let config = default_mobile_config();
