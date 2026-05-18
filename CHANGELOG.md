@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-05-18
+
+### Fixed
+
+- **Installer prints the correct first-run admin password on reused hosts** -- The bootstrap installer scoped the first-run credential lookup to the current service instance and now reads the most recent banner instead of the oldest, so hosts with prior install history no longer surface a stale, invalid password
+
 ### Changed
+
+- **Documentation reflects the `/opt/serverbee` install layout** -- Quick-start and deployment docs were corrected from the legacy `/etc/serverbee`, `/usr/local/bin`, `/var/lib/serverbee` paths to the actual bootstrap layout (`/opt/serverbee/{bin,etc,data}`), including the secure-cookie and backup/restore instructions
 
 - **Agent upgrade source is now pinned on the Agent** -- The Agent downloads upgrade binaries from a locally-configured release source (`[upgrade] release_repo_url` in `agent.toml`, env `SERVERBEE_UPGRADE__RELEASE_REPO_URL`, or `--release-repo` CLI flag) instead of following a download URL supplied by the Server. An optional TLS SPKI pin (`release_cert_spki_sha256`) lets the Agent additionally validate the leaf certificate of the release host after standard chain validation.
 
