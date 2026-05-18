@@ -171,19 +171,21 @@ impl ServerService {
     ///
     /// These tables intentionally have no foreign key to `servers`, so a
     /// server delete does not cascade and would otherwise leave orphaned
-    /// rows that only age out via the time-based cleanup task. Multi-server
-    /// association tables (alert_rules, incident, maintenance, ping_tasks,
-    /// service_monitor, status_page, tasks) are deliberately excluded: their
-    /// rows stay valid for the other servers they reference and are not
-    /// orphans of this delete.
+    /// rows that only age out via the time-based cleanup task. recovery_job
+    /// rows referencing the server via target/source are purged too (running
+    /// recoveries are blocked separately by [`Self::ensure_no_running_recovery`]).
+    /// Multi-server association tables (alert_rules, incident, maintenance,
+    /// ping_tasks, service_monitor, status_page, tasks) are deliberately
+    /// excluded: their rows stay valid for the other servers they reference
+    /// and are not orphans of this delete.
     async fn delete_server_scoped_rows<C: ConnectionTrait>(
         conn: &C,
         ids: &[String],
     ) -> Result<(), AppError> {
         use crate::entity::{
             alert_state, docker_event, gpu_record, network_probe_config, network_probe_record,
-            network_probe_record_hourly, ping_record, record, record_hourly, task_result,
-            traffic_daily, traffic_hourly, traffic_state, uptime_daily,
+            network_probe_record_hourly, ping_record, record, record_hourly, recovery_job,
+            task_result, traffic_daily, traffic_hourly, traffic_state, uptime_daily,
         };
 
         macro_rules! purge {
@@ -210,18 +212,57 @@ impl ServerService {
         purge!(traffic_state);
         purge!(uptime_daily);
 
+        // recovery_job references servers via two columns, not `server_id`.
+        recovery_job::Entity::delete_many()
+            .filter(
+                Condition::any()
+                    .add(recovery_job::Column::TargetServerId.is_in(ids.iter().cloned()))
+                    .add(recovery_job::Column::SourceServerId.is_in(ids.iter().cloned())),
+            )
+            .exec(conn)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Reject deleting a server that is the target or source of a currently
+    /// running recovery job: tearing its rows out mid-run would leave the
+    /// recovery task's guards and browser sync in a stale active state.
+    async fn ensure_no_running_recovery<C: ConnectionTrait>(
+        conn: &C,
+        ids: &[String],
+    ) -> Result<(), AppError> {
+        use crate::entity::recovery_job;
+
+        let running = recovery_job::Entity::find()
+            .filter(recovery_job::Column::Status.eq("running"))
+            .filter(
+                Condition::any()
+                    .add(recovery_job::Column::TargetServerId.is_in(ids.iter().cloned()))
+                    .add(recovery_job::Column::SourceServerId.is_in(ids.iter().cloned())),
+            )
+            .count(conn)
+            .await?;
+
+        if running > 0 {
+            return Err(AppError::Conflict(
+                "Cannot delete a server that is part of a running recovery job".to_string(),
+            ));
+        }
         Ok(())
     }
 
     /// Delete a server by ID, along with all of its server-scoped data.
     pub async fn delete_server(db: &DatabaseConnection, id: &str) -> Result<(), AppError> {
+        let ids = [id.to_string()];
         let txn = db.begin().await?;
+        Self::ensure_no_running_recovery(&txn, &ids).await?;
         let result = server::Entity::delete_by_id(id).exec(&txn).await?;
         if result.rows_affected == 0 {
             txn.rollback().await?;
             return Err(AppError::NotFound("Server not found".to_string()));
         }
-        Self::delete_server_scoped_rows(&txn, std::slice::from_ref(&id.to_string())).await?;
+        Self::delete_server_scoped_rows(&txn, &ids).await?;
         txn.commit().await?;
         Ok(())
     }
@@ -232,6 +273,7 @@ impl ServerService {
             return Ok(0);
         }
         let txn = db.begin().await?;
+        Self::ensure_no_running_recovery(&txn, ids).await?;
         let result = server::Entity::delete_many()
             .filter(server::Column::Id.is_in(ids.iter().cloned()))
             .exec(&txn)
