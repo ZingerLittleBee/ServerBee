@@ -377,7 +377,7 @@ Agent 从本地固定的发布源下载升级包，不再信任 Server 下发的
 4. `--release-repo` CLI 参数（最高）
 
 <Callout type="info">
-控制台"最新版本"检测使用的是 Server 端配置的发布源（`upgrade.release_base_url` / `upgrade.latest_version_url`）。如需保持一致的升级行为，建议将 Server 和 Agent 指向同一个发布仓库，除非有意让两者追踪不同的发布渠道。
+控制台"最新版本"检测使用的是 Server 端配置的发布源（`upgrade.release_base_url` / `upgrade.latest_version_url`）。这两项是独立的 Server 端设置，仅用于控制台的"最新版本"查询，与决定 Agent 实际下载内容的 Agent 端 `[upgrade] release_repo_url` 是不同的配置。如需保持一致的升级行为，建议将 Server 和 Agent 指向同一个发布仓库，除非有意让两者追踪不同的发布渠道。
 </Callout>
 
 **获取发布源证书的 SPKI Pin**：

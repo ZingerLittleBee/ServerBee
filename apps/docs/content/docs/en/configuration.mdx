@@ -369,7 +369,7 @@ The agent downloads upgrades from a locally-pinned release source rather than tr
 4. Compile-time default (official GitHub releases URL)
 
 <Callout type="info">
-The dashboard "latest version" check uses the Server-configured release source (`upgrade.release_base_url` / `upgrade.latest_version_url`). For consistent upgrade behavior, point both the Server and the Agent at the same release repository unless you intentionally want them to track different sources.
+The dashboard "latest version" check uses the Server-configured release source (`upgrade.release_base_url` / `upgrade.latest_version_url`). Those are separate Server-side settings used only for the dashboard's "latest version" lookup, and are distinct from the Agent's `[upgrade] release_repo_url`, which governs what the Agent actually downloads. For consistent upgrade behavior, point both the Server and the Agent at the same release repository unless you intentionally want them to track different sources.
 </Callout>
 
 **How to obtain the SPKI pin** for a release host certificate:
