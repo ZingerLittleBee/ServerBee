@@ -1,5 +1,11 @@
 //! Pinned-source 自升级:来源推导、防降级、TLS 加固。
 
+use std::sync::Arc;
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::client::WebPkiServerVerifier;
+use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::{DigitallySignedStruct, SignatureScheme};
+
 /// 返回当前构建对应的 release asset 文件名(与 release.yml 命名一致)。
 pub fn current_asset_name() -> &'static str {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
@@ -107,6 +113,101 @@ pub fn redirect_decision(next_scheme: &str, hops: usize) -> RedirectAction {
     }
 }
 
+/// 包裹标准 WebPkiServerVerifier:先完整链校验,成功后再比对 leaf SPKI SHA-256。
+#[derive(Debug)]
+struct SpkiPinVerifier {
+    inner: Arc<WebPkiServerVerifier>,
+    want: String, // 64 hex
+}
+
+impl ServerCertVerifier for SpkiPinVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
+        ocsp: &[u8],
+        now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        let verified =
+            self.inner
+                .verify_server_cert(end_entity, intermediates, server_name, ocsp, now)?;
+        let got = spki_sha256_hex(end_entity.as_ref())
+            .map_err(|e| rustls::Error::General(format!("spki extract: {e}")))?;
+        if got == self.want {
+            Ok(verified)
+        } else {
+            Err(rustls::Error::General(
+                "SPKI pin mismatch for release host".into(),
+            ))
+        }
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        m: &[u8],
+        c: &CertificateDer<'_>,
+        d: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.inner.verify_tls12_signature(m, c, d)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        m: &[u8],
+        c: &CertificateDer<'_>,
+        d: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.inner.verify_tls13_signature(m, c, d)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.inner.supported_verify_schemes()
+    }
+}
+
+fn webpki_root_store() -> rustls::RootCertStore {
+    rustls::RootCertStore {
+        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+    }
+}
+
+/// 升级专用 reqwest client:webpki 根证书库 + 可选 SPKI pin + 每跳强制 https。
+/// `spki_pin`: 已规范化的 64-hex(None=不启用 pin)。
+pub fn build_upgrade_client(spki_pin: Option<&str>) -> anyhow::Result<reqwest::Client> {
+    let roots = webpki_root_store();
+    let tls = if let Some(pin) = spki_pin {
+        let inner = WebPkiServerVerifier::builder(Arc::new(roots))
+            .build()
+            .map_err(|e| anyhow::anyhow!("build webpki verifier: {e}"))?;
+        rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(SpkiPinVerifier {
+                inner,
+                want: pin.to_string(),
+            }))
+            .with_no_client_auth()
+    } else {
+        rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth()
+    };
+
+    let client = reqwest::Client::builder()
+        .use_preconfigured_tls(tls)
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            match redirect_decision(attempt.url().scheme(), attempt.previous().len()) {
+                RedirectAction::Follow => attempt.follow(),
+                RedirectAction::StopNonHttps => attempt.error("non-https redirect blocked"),
+                RedirectAction::StopTooMany => attempt.error("too many redirects"),
+            }
+        }))
+        .user_agent("ServerBee-Agent")
+        .timeout(std::time::Duration::from_secs(crate::reporter::UPGRADE_DOWNLOAD_TIMEOUT_SECS))
+        .build()?;
+    Ok(client)
+}
+
 #[cfg(test)]
 const TEST_CERT_DER: &[u8] = include_bytes!("testdata/test_cert.der");
 
@@ -184,5 +285,16 @@ mod tests {
         assert_eq!(redirect_decision("http", 0), RedirectAction::StopNonHttps);
         assert_eq!(redirect_decision("https", 9), RedirectAction::Follow);
         assert_eq!(redirect_decision("https", 10), RedirectAction::StopTooMany);
+    }
+
+    #[test]
+    fn build_client_without_pin() {
+        assert!(build_upgrade_client(None).is_ok());
+    }
+
+    #[test]
+    fn build_client_with_pin() {
+        let pin = "a".repeat(64);
+        assert!(build_upgrade_client(Some(&pin)).is_ok());
     }
 }
