@@ -166,24 +166,78 @@ impl ServerService {
         Ok(())
     }
 
-    /// Delete a server by ID.
-    pub async fn delete_server(db: &DatabaseConnection, id: &str) -> Result<(), AppError> {
-        let result = server::Entity::delete_by_id(id).exec(db).await?;
-        if result.rows_affected == 0 {
-            return Err(AppError::NotFound("Server not found".to_string()));
+    /// Delete every server-scoped row (raw/aggregated metrics, per-server
+    /// config, traffic, uptime, etc.) for the given server ids.
+    ///
+    /// These tables intentionally have no foreign key to `servers`, so a
+    /// server delete does not cascade and would otherwise leave orphaned
+    /// rows that only age out via the time-based cleanup task. Multi-server
+    /// association tables (alert_rules, incident, maintenance, ping_tasks,
+    /// service_monitor, status_page, tasks) are deliberately excluded: their
+    /// rows stay valid for the other servers they reference and are not
+    /// orphans of this delete.
+    async fn delete_server_scoped_rows<C: ConnectionTrait>(
+        conn: &C,
+        ids: &[String],
+    ) -> Result<(), AppError> {
+        use crate::entity::{
+            alert_state, docker_event, gpu_record, network_probe_config, network_probe_record,
+            network_probe_record_hourly, ping_record, record, record_hourly, task_result,
+            traffic_daily, traffic_hourly, traffic_state, uptime_daily,
+        };
+
+        macro_rules! purge {
+            ($ent:ident) => {
+                $ent::Entity::delete_many()
+                    .filter($ent::Column::ServerId.is_in(ids.iter().cloned()))
+                    .exec(conn)
+                    .await?;
+            };
         }
+
+        purge!(alert_state);
+        purge!(docker_event);
+        purge!(gpu_record);
+        purge!(network_probe_config);
+        purge!(network_probe_record);
+        purge!(network_probe_record_hourly);
+        purge!(ping_record);
+        purge!(record);
+        purge!(record_hourly);
+        purge!(task_result);
+        purge!(traffic_daily);
+        purge!(traffic_hourly);
+        purge!(traffic_state);
+        purge!(uptime_daily);
+
         Ok(())
     }
 
-    /// Batch delete servers by IDs.
+    /// Delete a server by ID, along with all of its server-scoped data.
+    pub async fn delete_server(db: &DatabaseConnection, id: &str) -> Result<(), AppError> {
+        let txn = db.begin().await?;
+        let result = server::Entity::delete_by_id(id).exec(&txn).await?;
+        if result.rows_affected == 0 {
+            txn.rollback().await?;
+            return Err(AppError::NotFound("Server not found".to_string()));
+        }
+        Self::delete_server_scoped_rows(&txn, std::slice::from_ref(&id.to_string())).await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
+    /// Batch delete servers by IDs, along with all of their server-scoped data.
     pub async fn batch_delete(db: &DatabaseConnection, ids: &[String]) -> Result<u64, AppError> {
         if ids.is_empty() {
             return Ok(0);
         }
+        let txn = db.begin().await?;
         let result = server::Entity::delete_many()
             .filter(server::Column::Id.is_in(ids.iter().cloned()))
-            .exec(db)
+            .exec(&txn)
             .await?;
+        Self::delete_server_scoped_rows(&txn, ids).await?;
+        txn.commit().await?;
         Ok(result.rows_affected)
     }
 
