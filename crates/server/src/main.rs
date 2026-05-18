@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use sea_orm::SqlxSqliteConnector;
 use sea_orm_migration::MigratorTrait;
+use sqlx::ConnectOptions;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use tracing_subscriber::EnvFilter;
 
@@ -52,7 +53,11 @@ async fn main() -> anyhow::Result<()> {
         .journal_mode(SqliteJournalMode::Wal)
         .synchronous(SqliteSynchronous::Normal)
         .foreign_keys(true)
-        .busy_timeout(Duration::from_secs(5));
+        .busy_timeout(Duration::from_secs(5))
+        // Preserve the previous sea-orm behavior (sqlx_logging(false)); raw
+        // SqliteConnectOptions otherwise logs every statement at debug and
+        // slow statements at warn.
+        .disable_statement_logging();
 
     let pool = SqlitePoolOptions::new()
         .max_connections(config.database.max_connections)
