@@ -211,6 +211,20 @@ pub fn build_upgrade_client(spki_pin: Option<&str>) -> anyhow::Result<reqwest::C
     Ok(client)
 }
 
+/// 从进程参数解析 `--release-repo <url>`(或 `--release-repo=<url>`),返回覆盖值。
+pub fn parse_release_repo_arg<I: IntoIterator<Item = String>>(args: I) -> Option<String> {
+    let mut it = args.into_iter();
+    while let Some(a) = it.next() {
+        if a == "--release-repo" {
+            return it.next();
+        }
+        if let Some(v) = a.strip_prefix("--release-repo=") {
+            return Some(v.to_string());
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 const TEST_CERT_DER: &[u8] = include_bytes!("testdata/test_cert.der");
 
@@ -299,5 +313,21 @@ mod tests {
     fn build_client_with_pin() {
         let pin = "a".repeat(64);
         assert!(build_upgrade_client(Some(&pin)).is_ok());
+    }
+
+    #[test]
+    fn parse_release_repo_arg_forms() {
+        let v = vec![
+            "bin".into(),
+            "--release-repo".into(),
+            "https://m.example/releases".into(),
+        ];
+        assert_eq!(
+            parse_release_repo_arg(v),
+            Some("https://m.example/releases".into())
+        );
+        let v2 = vec!["bin".into(), "--release-repo=https://x/releases".into()];
+        assert_eq!(parse_release_repo_arg(v2), Some("https://x/releases".into()));
+        assert_eq!(parse_release_repo_arg(vec!["bin".into()]), None);
     }
 }

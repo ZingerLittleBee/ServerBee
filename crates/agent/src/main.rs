@@ -44,6 +44,10 @@ async fn main() -> anyhow::Result<()> {
         std::process::exit(1);
     });
     let capability_overrides = parse_capability_args(std::env::args())?;
+    if let Some(repo) = crate::upgrade::parse_release_repo_arg(std::env::args()) {
+        tracing::info!("release_repo_url overridden by --release-repo CLI flag");
+        config.upgrade.release_repo_url = repo;
+    }
     let agent_local_capabilities = compute_agent_local_capabilities(&capability_overrides);
 
     tracing_subscriber::fmt()
