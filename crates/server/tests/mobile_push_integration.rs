@@ -15,7 +15,7 @@ use serverbee_server::config::{AppConfig, AuthConfig, DatabaseConfig, ServerConf
 use serverbee_server::entity::{device_token, mobile_session, session};
 use serverbee_server::error::AppError;
 use serverbee_server::migration::Migrator;
-use serverbee_server::router::api::mobile::{PushRegisterRequest, push_register};
+use serverbee_server::router::api::mobile::{PushRegisterRequest, push_register, push_unregister};
 use serverbee_server::service::auth::AuthService;
 use serverbee_server::state::AppState;
 
@@ -176,4 +176,65 @@ async fn push_register_rejects_cross_user_overwrite() {
         .expect("row present");
     assert_eq!(row.user_id, alice.id);
     assert_eq!(row.token, "apns-alice-2");
+}
+
+/// A member must not be able to delete another user's push registration by
+/// reusing (forging) the victim's installation_id via push_unregister.
+#[tokio::test]
+async fn push_unregister_rejects_cross_user_delete() {
+    let (state, _tmp) = test_state().await;
+
+    let alice = AuthService::create_user(&state.db, "alice", "pw", "member")
+        .await
+        .expect("create alice");
+    let bob = AuthService::create_user(&state.db, "bob", "pw", "member")
+        .await
+        .expect("create bob");
+
+    let shared_installation = "inst-shared";
+
+    seed_mobile_session(&state, "ms-alice", &alice.id, shared_installation).await;
+    seed_session(&state, "s-alice", &alice.id, "tok-alice", "ms-alice").await;
+    device_token::ActiveModel {
+        id: Set("dt-alice".to_string()),
+        user_id: Set(alice.id.clone()),
+        mobile_session_id: Set("ms-alice".to_string()),
+        installation_id: Set(shared_installation.to_string()),
+        token: Set("apns-alice".to_string()),
+        created_at: Set(Utc::now()),
+        updated_at: Set(Utc::now()),
+    }
+    .insert(&state.db)
+    .await
+    .expect("seed alice device_token");
+
+    seed_mobile_session(&state, "ms-bob", &bob.id, shared_installation).await;
+    seed_session(&state, "s-bob", &bob.id, "tok-bob", "ms-bob").await;
+
+    // Bob attempts to unregister using Alice's installation id.
+    let _ = push_unregister(State(state.clone()), bearer("tok-bob"))
+        .await
+        .expect("handler returns ok even when nothing is deleted");
+
+    // Alice's row must still be there.
+    let row = device_token::Entity::find()
+        .filter(device_token::Column::InstallationId.eq(shared_installation))
+        .one(&state.db)
+        .await
+        .unwrap();
+    assert!(
+        row.is_some(),
+        "Alice's device_token must not be deleted by Bob's forged unregister"
+    );
+
+    // The legitimate owner can still unregister their own device.
+    let _ = push_unregister(State(state.clone()), bearer("tok-alice"))
+        .await
+        .expect("owner unregister ok");
+    let row = device_token::Entity::find()
+        .filter(device_token::Column::InstallationId.eq(shared_installation))
+        .one(&state.db)
+        .await
+        .unwrap();
+    assert!(row.is_none(), "owner unregister should delete their own row");
 }
