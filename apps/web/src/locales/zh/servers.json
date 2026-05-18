@@ -266,6 +266,7 @@
 
   "upgrade_current_version": "当前版本",
   "upgrade_latest_version": "最新",
+  "upgrade_latest_version_advisory": "最新发布版本来自 Server 配置源，Agent 实际下载源以其本地配置为准",
   "upgrade_start": "升级",
   "upgrade_in_progress": "升级进行中",
   "upgrade_stage_downloading": "下载中",
