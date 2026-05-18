@@ -175,6 +175,8 @@ cargo build --release -p serverbee-agent
 
 <Callout type="info">
 如果你不需要手写 unit 文件，更推荐上面的引导安装方式。它会自动生成配置和 systemd unit，后续通过 `serverbee` CLI 统一完成升级、重启和配置修改。
+
+注意：下面的 unit 示例采用自定义路径（`/usr/local/bin`、`/var/lib/serverbee`、`/etc/serverbee`）演示手动部署。引导脚本安装的实际布局不同——二进制在 `/opt/serverbee/bin/`、配置在 `/opt/serverbee/etc/`、数据在 `/opt/serverbee/data/`，且由 `serverbee` CLI 托管，无需手写 unit。
 </Callout>
 
 ### Server 服务
@@ -251,7 +253,7 @@ sudo journalctl -u serverbee-server --since "1 hour ago"
 
 使用域名访问时，需要先添加 DNS `A` 或 `AAAA` 记录指向服务器 IP，再用 Nginx、Caddy 或 Traefik 终止 HTTPS，并把请求反向代理到 ServerBee 的 `127.0.0.1:9527`。
 
-如果你是通过快速开始脚本安装的 Server，脚本会为了 HTTP 直连写入 `auth.secure_cookie = false`。迁移到 HTTPS 前，请修改 `/etc/serverbee/server.toml`：
+如果你是通过快速开始脚本安装的 Server，脚本会为了 HTTP 直连写入 `auth.secure_cookie = false`。迁移到 HTTPS 前，请修改 `/opt/serverbee/etc/server.toml`：
 
 ```toml
 [auth]
@@ -459,14 +461,16 @@ docker cp serverbee-server:/data/backup.db /path/to/backup/
 
 **systemd 环境：**
 
+引导脚本安装的数据目录是 `/opt/serverbee/data`（数据库为 `/opt/serverbee/data/serverbee.db`）。若你是手写 systemd unit 的自定义部署，请替换为你在配置中设置的 `data_dir`。停机操作也可用 `sudo serverbee restart` 代替下面的 `systemctl`。
+
 ```bash
 # 方式一：停机备份
 sudo systemctl stop serverbee-server
-cp -r /var/lib/serverbee /path/to/backup/serverbee-data-$(date +%Y%m%d)
+cp -r /opt/serverbee/data /path/to/backup/serverbee-data-$(date +%Y%m%d)
 sudo systemctl start serverbee-server
 
 # 方式二：SQLite 在线备份（推荐，无需停机）
-sqlite3 /var/lib/serverbee/serverbee.db ".backup '/path/to/backup/serverbee-$(date +%Y%m%d).db'"
+sqlite3 /opt/serverbee/data/serverbee.db ".backup '/path/to/backup/serverbee-$(date +%Y%m%d).db'"
 ```
 
 **定时备份脚本示例：**
@@ -474,7 +478,7 @@ sqlite3 /var/lib/serverbee/serverbee.db ".backup '/path/to/backup/serverbee-$(da
 ```bash title="/usr/local/bin/backup-serverbee.sh"
 #!/bin/bash
 BACKUP_DIR="/path/to/backups"
-DB_PATH="/var/lib/serverbee/serverbee.db"
+DB_PATH="/opt/serverbee/data/serverbee.db"
 DATE=$(date +%Y%m%d_%H%M%S)
 
 # 创建备份
@@ -498,7 +502,7 @@ echo "0 3 * * * /usr/local/bin/backup-serverbee.sh" | sudo tee -a /var/spool/cro
 sudo systemctl stop serverbee-server
 
 # 恢复数据库
-cp /path/to/backup/serverbee-20260314.db /var/lib/serverbee/serverbee.db
+cp /path/to/backup/serverbee-20260314.db /opt/serverbee/data/serverbee.db
 
 # 启动服务
 sudo systemctl start serverbee-server

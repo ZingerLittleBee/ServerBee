@@ -150,6 +150,8 @@ For deployments without Docker, use systemd to manage both the server and agent 
 
 <Callout type="info">
 If you do not need hand-written unit files, prefer the bootstrap installer above. It creates the config files and systemd units for you, then the `serverbee` CLI handles upgrades, restarts, and config edits.
+
+Note: the unit examples below use custom paths (`/usr/local/bin`, `/var/lib/serverbee`, `/etc/serverbee`) to illustrate a manual deployment. The bootstrap installer uses a different layout — binaries in `/opt/serverbee/bin/`, config in `/opt/serverbee/etc/`, data in `/opt/serverbee/data/` — managed by the `serverbee` CLI, with no hand-written units.
 </Callout>
 
 ### Server Service
@@ -243,7 +245,7 @@ Choose one public access URL and keep the browser URL, agent `server_url`, and c
 
 For domain access, create a DNS `A` or `AAAA` record pointing to the server, terminate HTTPS in Nginx, Caddy, or Traefik, and proxy traffic to ServerBee on `127.0.0.1:9527`.
 
-If you installed with the quick-start script, it writes `auth.secure_cookie = false` for direct HTTP access. Before switching that same installation to HTTPS, update `/etc/serverbee/server.toml`:
+If you installed with the quick-start script, it writes `auth.secure_cookie = false` for direct HTTP access. Before switching that same installation to HTTPS, update `/opt/serverbee/etc/server.toml`:
 
 ```toml
 [auth]
@@ -401,16 +403,18 @@ ServerBee stores all data in a single SQLite database file and the configuration
 | Database | `{data_dir}/serverbee.db` | All monitoring data, users, alerts, and settings |
 | WAL file | `{data_dir}/serverbee.db-wal` | Write-ahead log (include if backing up while running) |
 | SHM file | `{data_dir}/serverbee.db-shm` | Shared memory file (include if backing up while running) |
-| Server config | `/etc/serverbee/server.toml` | Server configuration |
-| Agent configs | `/etc/serverbee/agent.toml` | Agent configuration (on each monitored server) |
+| Server config | `/opt/serverbee/etc/server.toml` | Server configuration (install-script default) |
+| Agent configs | `/opt/serverbee/etc/agent.toml` | Agent configuration (on each monitored server) |
 | GeoIP database | Varies | MaxMind MMDB file (if used) |
 
 ### Backup Strategy
 
+The install-script default data directory is `/opt/serverbee/data` (database at `/opt/serverbee/data/serverbee.db`). For a custom hand-written systemd deployment, substitute the `data_dir` you configured.
+
 **Option 1: SQLite backup command (recommended for running server)**
 
 ```bash
-sqlite3 /var/lib/serverbee/serverbee.db ".backup '/backups/serverbee-$(date +%Y%m%d).db'"
+sqlite3 /opt/serverbee/data/serverbee.db ".backup '/backups/serverbee-$(date +%Y%m%d).db'"
 ```
 
 This creates a consistent point-in-time backup without stopping the server.
@@ -419,7 +423,7 @@ This creates a consistent point-in-time backup without stopping the server.
 
 ```bash
 sudo systemctl stop serverbee-server
-cp /var/lib/serverbee/serverbee.db /backups/serverbee-$(date +%Y%m%d).db
+cp /opt/serverbee/data/serverbee.db /backups/serverbee-$(date +%Y%m%d).db
 sudo systemctl start serverbee-server
 ```
 
@@ -444,8 +448,9 @@ To restore from a backup:
 
 ```bash
 sudo systemctl stop serverbee-server
-cp /backups/serverbee-20260314.db /var/lib/serverbee/serverbee.db
-sudo chown serverbee:serverbee /var/lib/serverbee/serverbee.db
+cp /backups/serverbee-20260314.db /opt/serverbee/data/serverbee.db
+# Custom hardened deploys that run as a dedicated user: also re-apply ownership, e.g.
+# sudo chown serverbee:serverbee /opt/serverbee/data/serverbee.db
 sudo systemctl start serverbee-server
 ```
 
@@ -455,7 +460,7 @@ Set up a cron job for daily backups:
 
 ```bash
 # /etc/cron.d/serverbee-backup
-0 2 * * * root sqlite3 /var/lib/serverbee/serverbee.db ".backup '/backups/serverbee-$(date +\%Y\%m\%d).db'" && find /backups -name 'serverbee-*.db' -mtime +30 -delete
+0 2 * * * root sqlite3 /opt/serverbee/data/serverbee.db ".backup '/backups/serverbee-$(date +\%Y\%m\%d).db'" && find /backups -name 'serverbee-*.db' -mtime +30 -delete
 ```
 
 This runs at 2:00 AM daily and deletes backups older than 30 days.

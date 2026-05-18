@@ -90,18 +90,18 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 
 1. 检测系统架构（amd64/arm64）
 2. 从 GitHub Releases 下载对应的二进制文件
-3. 安装到 `/usr/local/bin/`
-4. 创建 `/etc/serverbee/` 配置目录并生成默认配置
+3. 安装二进制到 `/opt/serverbee/bin/`，并把管理 CLI 软链到 `/usr/local/bin/serverbee`
+4. 创建 `/opt/serverbee/etc/` 配置目录并生成默认配置（数据目录为 `/opt/serverbee/data/`）
 5. 创建 systemd service unit
 6. 启动服务并设置开机自启
 
 首次启动时，Server 会自动创建管理员账号并随机生成密码，该密码只会在服务日志中打印一次。使用以下命令查看：
 
 ```bash
-sudo journalctl -u serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS'
+sudo journalctl -u serverbee-server --no-pager | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' | tail -n 9
 ```
 
-安装脚本会写入 `auth.secure_cookie = false`，保证普通 HTTP 快速开始地址可以在浏览器中正常登录。迁移到 HTTPS 后，请在 `/etc/serverbee/server.toml` 中改回 `true` 并重启 Server。
+安装脚本会写入 `auth.secure_cookie = false`，保证普通 HTTP 快速开始地址可以在浏览器中正常登录。迁移到 HTTPS 后，请在 `/opt/serverbee/etc/server.toml` 中改回 `true` 并重启 Server。
 
 **安装 Agent：**
 

@@ -87,10 +87,10 @@ This will download the appropriate binary for your platform, create a systemd se
 On first start the server auto-creates an admin account with a randomly generated password and prints it once to the service logs. Retrieve it with:
 
 ```bash
-sudo journalctl -u serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS'
+sudo journalctl -u serverbee-server --no-pager | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' | tail -n 9
 ```
 
-The install script writes `auth.secure_cookie = false` so browser login works on the plain HTTP quick-start URL. When you move behind HTTPS, set it back to `true` in `/etc/serverbee/server.toml` and restart the server.
+The install script writes `auth.secure_cookie = false` so browser login works on the plain HTTP quick-start URL. When you move behind HTTPS, set it back to `true` in `/opt/serverbee/etc/server.toml` and restart the server.
 
 After installation, manage your ServerBee instance with the `serverbee` CLI:
 
