@@ -426,9 +426,13 @@ pub enum ServerMessage {
         max_hops: u8,
     },
     Ping,
+    /// Agent 自升级。`download_url`/`sha256` 自 pinned-source 版本起**废弃**:
+    /// 新 Agent 忽略,仅 `version` 有效(来源由 Agent 本地配置决定)。
     Upgrade {
         version: String,
+        #[serde(default)]
         download_url: String,
+        #[serde(default)]
         sha256: String,
         #[serde(default)]
         job_id: Option<String>,
@@ -1599,6 +1603,26 @@ mod tests {
                 assert_eq!(agent_version.as_deref(), Some("1.2.3"));
             }
             _ => panic!("Expected AgentInfoUpdated"),
+        }
+    }
+
+    #[test]
+    fn test_upgrade_deserializes_without_deprecated_fields() {
+        let json = r#"{"type":"upgrade","version":"1.0.0"}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ServerMessage::Upgrade {
+                version,
+                download_url,
+                sha256,
+                job_id,
+            } => {
+                assert_eq!(version, "1.0.0");
+                assert_eq!(download_url, "");
+                assert_eq!(sha256, "");
+                assert_eq!(job_id, None);
+            }
+            _ => panic!("expected Upgrade"),
         }
     }
 }

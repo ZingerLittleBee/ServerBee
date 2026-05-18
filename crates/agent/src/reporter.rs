@@ -29,7 +29,6 @@ const MAX_BACKOFF_SECS: u64 = 30;
 const JITTER_FACTOR: f64 = 0.2;
 const MAX_REREGISTER_ATTEMPTS: u32 = 3;
 const DOCKER_RETRY_SECS: u64 = 30;
-const UPGRADE_DOWNLOAD_TIMEOUT_SECS: u64 = 600;
 
 static UPGRADE_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
@@ -623,9 +622,8 @@ impl Reporter {
             }
             ServerMessage::Upgrade {
                 version,
-                download_url,
-                sha256,
                 job_id,
+                ..
             } => {
                 let caps = capabilities.load(Ordering::SeqCst);
                 if !has_capability(caps, CAP_UPGRADE) {
@@ -665,11 +663,12 @@ impl Reporter {
                     return Ok(ServerMessageOutcome::Continue);
                 }
 
-                tracing::info!("Upgrade requested: v{version} from {download_url}");
+                tracing::info!("Upgrade requested: v{version} (pinned source)");
+                let upgrade_cfg = self.config.upgrade.clone();
                 let tx = cmd_result_tx.clone();
                 tokio::spawn(async move {
                     if let Err(e) =
-                        perform_upgrade(&version, &download_url, &sha256, job_id, tx.clone()).await
+                        perform_upgrade(&version, &upgrade_cfg, job_id, tx.clone()).await
                     {
                         tracing::error!("Upgrade to v{version} failed: {e}");
                         UPGRADE_IN_PROGRESS.store(false, Ordering::SeqCst);
@@ -1605,7 +1604,7 @@ async fn derive_primary_ips(
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
-    use crate::config::{CollectorConfig, FileConfig, IpChangeConfig, LogConfig};
+    use crate::config::{CollectorConfig, FileConfig, IpChangeConfig, LogConfig, UpgradeConfig};
     use serverbee_common::constants::{
         CAP_DEFAULT, CAP_EXEC, CAP_FILE, CAP_PING_ICMP, CapabilityDeniedReason,
     };
@@ -1665,6 +1664,7 @@ mod tests {
             log: LogConfig::default(),
             file: FileConfig::default(),
             ip_change: IpChangeConfig::default(),
+            upgrade: UpgradeConfig::default(),
         };
         let err = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Http(
             Response::builder().status(401).body(None).unwrap(),
@@ -1683,6 +1683,7 @@ mod tests {
             log: LogConfig::default(),
             file: FileConfig::default(),
             ip_change: IpChangeConfig::default(),
+            upgrade: UpgradeConfig::default(),
         };
         let err = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Http(
             Response::builder().status(401).body(None).unwrap(),
@@ -1701,6 +1702,7 @@ mod tests {
             log: LogConfig::default(),
             file: FileConfig::default(),
             ip_change: IpChangeConfig::default(),
+            upgrade: UpgradeConfig::default(),
         };
         let err = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Http(
             Response::builder().status(500).body(None).unwrap(),
@@ -1719,6 +1721,7 @@ mod tests {
             log: LogConfig::default(),
             file: FileConfig::default(),
             ip_change: IpChangeConfig::default(),
+            upgrade: UpgradeConfig::default(),
         };
 
         let request = build_ws_request(&config).expect("request should build");
@@ -1890,131 +1893,149 @@ async fn emit_upgrade_failure(
     }
 }
 
-/// Download a new agent binary, verify checksum, replace current binary, and restart.
+/// Pinned-source 升级:Server 仅提供 version;来源由本地 upgrade 配置决定。
 async fn perform_upgrade(
     version: &str,
-    download_url: &str,
-    sha256: &str,
+    upgrade_cfg: &crate::config::UpgradeConfig,
     job_id: Option<String>,
     tx: mpsc::Sender<AgentMessage>,
 ) -> anyhow::Result<()> {
+    use crate::upgrade::{
+        build_upgrade_client, checksum_for, current_asset_name, derive_urls, ensure_upgrade,
+        normalize_spki_pin,
+    };
     use sha2::{Digest, Sha256};
     use std::io::Write;
 
-    emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::Downloading).await;
-
-    // Validate URL scheme
-    if !download_url.starts_with("https://") {
-        let error = format!("Upgrade URL must use HTTPS, got: {download_url}");
-        emit_upgrade_failure(
-            &tx,
-            job_id,
-            version.to_string(),
-            UpgradeStage::Downloading,
-            error.clone(),
-            None,
-        )
-        .await;
-        anyhow::bail!(error);
+    macro_rules! fail {
+        ($stage:expr, $msg:expr) => {{
+            let msg: String = $msg;
+            emit_upgrade_failure(&tx, job_id.clone(), version.to_string(), $stage, msg.clone(), None)
+                .await;
+            anyhow::bail!(msg);
+        }};
     }
 
+    emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::Downloading).await;
+
+    // 1. 防降级
+    let current = serverbee_common::constants::VERSION;
+    if let Err(e) = ensure_upgrade(current, version) {
+        fail!(UpgradeStage::Downloading, format!("anti-downgrade: {e}"));
+    }
+
+    // 2. SPKI pin 规范化(启动时已 fail-fast 校验过格式,这里再防御性规范化一次)
+    let spki = match normalize_spki_pin(&upgrade_cfg.release_cert_spki_sha256) {
+        Ok(v) => v,
+        Err(e) => fail!(UpgradeStage::Downloading, format!("invalid SPKI pin: {e}")),
+    };
+
+    // 3. 推导 URL(忽略 Server 的 download_url/sha256)
+    let (binary_url, checksums_url) =
+        match derive_urls(&upgrade_cfg.release_repo_url, version) {
+            Ok(v) => v,
+            Err(e) => fail!(UpgradeStage::Downloading, format!("derive url: {e}")),
+        };
+
+    // 4. 专用 client
+    let client = match build_upgrade_client(spki.as_deref()) {
+        Ok(c) => c,
+        Err(e) => fail!(UpgradeStage::Downloading, format!("tls client: {e}")),
+    };
+
+    tracing::info!("Downloading agent v{version} from pinned source {binary_url}");
+
+    // 5. 拉 checksums.txt
+    let checksums = match client.get(&checksums_url).send().await {
+        Ok(r) if r.status().is_success() => match r.text().await {
+            Ok(t) => t,
+            Err(e) => fail!(UpgradeStage::Downloading, format!("read checksums: {e}")),
+        },
+        Ok(r) => fail!(
+            UpgradeStage::Downloading,
+            format!("checksums HTTP {}", r.status())
+        ),
+        Err(e) => fail!(UpgradeStage::Downloading, format!("fetch checksums: {e}")),
+    };
+    let asset = current_asset_name();
+    let want_hash = match checksum_for(&checksums, asset) {
+        Ok(h) => h,
+        Err(e) => fail!(UpgradeStage::Verifying, format!("parse checksums: {e}")),
+    };
+
+    // 6. 下载二进制
+    let bytes = match client.get(&binary_url).send().await {
+        Ok(r) if r.status().is_success() => match r.bytes().await {
+            Ok(b) => b,
+            Err(e) => fail!(UpgradeStage::Downloading, format!("read binary: {e}")),
+        },
+        Ok(r) => fail!(
+            UpgradeStage::Downloading,
+            format!("binary HTTP {}", r.status())
+        ),
+        Err(e) => fail!(UpgradeStage::Downloading, format!("fetch binary: {e}")),
+    };
+
+    emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::Verifying).await;
+
+    // 7. 校验哈希(对照已从 pinned 源取得的 checksums)
+    let actual = format!("{:x}", Sha256::digest(&bytes));
+    if actual != want_hash {
+        fail!(
+            UpgradeStage::Verifying,
+            format!("checksum mismatch: expected {want_hash}, got {actual}")
+        );
+    }
+    tracing::info!("Checksum verified against pinned checksums.txt");
+
+    // 8. 落盘 + 替换 + 重启(沿用原逻辑)
     let current_exe = std::env::current_exe()?;
     let tmp_path = current_exe.with_extension("new");
     let backup_path = current_exe.with_extension("bak");
 
-    tracing::info!("Downloading agent v{version} from {download_url}...");
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(
-            UPGRADE_DOWNLOAD_TIMEOUT_SECS,
-        ))
-        .build()?;
-    let response = client
-        .get(download_url)
-        .header("User-Agent", "ServerBee-Agent")
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        let error = format!("Download failed with status {}", response.status());
-        emit_upgrade_failure(
-            &tx,
-            job_id,
-            version.to_string(),
-            UpgradeStage::Downloading,
-            error.clone(),
-            None,
-        )
-        .await;
-        anyhow::bail!(error);
-    }
-
-    let bytes = response.bytes().await?;
-    tracing::info!("Downloaded {} bytes", bytes.len());
-
-    emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::Verifying).await;
-
-    // Mandatory SHA-256 verification
-    let mut hasher = Sha256::new();
-    hasher.update(&bytes);
-    let actual = format!("{:x}", hasher.finalize());
-    if actual != sha256 {
-        let error = format!("Checksum mismatch: expected {sha256}, got {actual}");
-        emit_upgrade_failure(
-            &tx,
-            job_id.clone(),
-            version.to_string(),
-            UpgradeStage::Verifying,
-            error.clone(),
-            None,
-        )
-        .await;
-        anyhow::bail!(error);
-    }
-    tracing::info!("Checksum verified");
-
-    // Write to temporary file
-    {
-        let mut file = std::fs::File::create(&tmp_path)?;
-        file.write_all(&bytes)?;
-        file.sync_all()?;
-    }
-
-    // Set executable permission on Unix
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755))?;
-    }
-
     emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::Installing).await;
 
-    // Backup current binary and replace
-    if backup_path.exists() {
-        std::fs::remove_file(&backup_path)?;
+    // 文件交换:任一 I/O 失败都要走 fail!(Installing),否则 Server 永远收不到失败、job 卡死。
+    let swap = || -> anyhow::Result<()> {
+        {
+            let mut file = std::fs::File::create(&tmp_path)?;
+            file.write_all(&bytes)?;
+            file.sync_all()?;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755))?;
+        }
+        if backup_path.exists() {
+            std::fs::remove_file(&backup_path)?;
+        }
+        std::fs::rename(&current_exe, &backup_path)?;
+        std::fs::rename(&tmp_path, &current_exe)?;
+        Ok(())
+    };
+    if let Err(e) = swap() {
+        fail!(UpgradeStage::Installing, format!("install: {e}"));
     }
-    std::fs::rename(&current_exe, &backup_path)?;
-    std::fs::rename(&tmp_path, &current_exe)?;
 
     tracing::info!("Agent binary replaced. Restarting...");
-    emit_upgrade_progress(&tx, job_id, version, UpgradeStage::Restarting).await;
-
+    emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::Restarting).await;
     let args: Vec<String> = std::env::args().collect();
     let mut cmd = std::process::Command::new(&current_exe);
     if args.len() > 1 {
         cmd.args(&args[1..]);
     }
-    if let Err(error) = cmd.spawn() {
+    if let Err(e) = cmd.spawn() {
         emit_upgrade_failure(
             &tx,
-            None,
+            job_id,
             version.to_string(),
             UpgradeStage::Restarting,
-            error.to_string(),
+            e.to_string(),
             Some(backup_path.display().to_string()),
         )
         .await;
-        return Err(error.into());
+        return Err(e.into());
     }
-
     std::process::exit(0);
 }

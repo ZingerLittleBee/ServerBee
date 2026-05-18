@@ -165,6 +165,13 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 | `SERVERBEE_IP_CHANGE__EXTERNAL_IP_URL` | `https://api.ipify.org` | 返回外部 IP 的查询 URL（纯文本格式） |
 | `SERVERBEE_IP_CHANGE__INTERVAL_SECS` | `300` | IP 检测间隔（秒），默认 5 分钟 |
 
+#### 升级配置（Upgrade，Agent）
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_UPGRADE__RELEASE_REPO_URL` | `https://github.com/ZingerLittleBee/ServerBee/releases` | Agent 下载升级包时使用的固定发布源基础 URL。任何镜像需复现 GitHub Releases 的目录结构：`{base}/download/v{version}/{asset}` 用于下载二进制，`{base}/download/v{version}/checksums.txt` 用于校验。编译时默认值可通过构建环境变量 `SERVERBEE_RELEASE_REPO` 覆盖 |
+| `SERVERBEE_UPGRADE__RELEASE_CERT_SPKI_SHA256` | `""` | 可选的发布源 TLS 证书 SPKI Pin。格式为 64 位小写十六进制字符（叶证书 SubjectPublicKeyInfo DER 的 SHA-256）。留空则禁用。设置后，Agent 在标准证书链验证通过后额外校验叶证书 SPKI。格式非法（非 64 位或含非十六进制字符）时启动即报错 |
+
 ## 完整 server.toml 参考
 
 ```toml title="/etc/serverbee/server.toml"
@@ -353,6 +360,34 @@ refresh_ttl = 2592000
 # client_secret = ""
 ```
 
+## Agent 升级配置（agent.toml `[upgrade]`）
+
+Agent 从本地固定的发布源下载升级包，不再信任 Server 下发的下载地址。
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `release_repo_url` | string | `"https://github.com/ZingerLittleBee/ServerBee/releases"` | Agent 下载升级包的发布源基础 URL。镜像站需复现 GitHub Releases 目录结构：`{base}/download/v{version}/{asset}`（二进制）和 `{base}/download/v{version}/checksums.txt`（校验文件）。编译时默认值可通过构建环境变量 `SERVERBEE_RELEASE_REPO` 覆盖 |
+| `release_cert_spki_sha256` | string | `""` | 可选的发布源 TLS 证书 SPKI Pin。设为 64 位小写十六进制字符（叶证书 SubjectPublicKeyInfo DER 的 SHA-256）。留空禁用。设置后，Agent 在标准证书链验证通过后额外校验叶证书 SPKI。格式非法（非 64 位或含非十六进制字符）时启动即报错 |
+
+**配置优先级**（越后越高，高者覆盖低者）：
+
+1. 编译时默认值（官方 GitHub Releases URL）
+2. `/etc/serverbee/agent.toml` 或 `agent.toml` 中的 `[upgrade]` 节
+3. `SERVERBEE_UPGRADE__RELEASE_REPO_URL` 环境变量
+4. `--release-repo` CLI 参数（最高）
+
+<Callout type="info">
+控制台"最新版本"检测使用的是 Server 端配置的发布源（`upgrade.release_base_url` / `upgrade.latest_version_url`）。这两项是独立的 Server 端设置，仅用于控制台的"最新版本"查询，与决定 Agent 实际下载内容的 Agent 端 `[upgrade] release_repo_url` 是不同的配置。如需保持一致的升级行为，建议将 Server 和 Agent 指向同一个发布仓库，除非有意让两者追踪不同的发布渠道。
+</Callout>
+
+**获取发布源证书的 SPKI Pin**：
+
+```bash
+openssl x509 -in cert.pem -pubkey -noout \
+  | openssl pkey -pubin -outform der \
+  | openssl dgst -sha256 -r | awk '{print $1}'
+```
+
 ## 完整 agent.toml 参考
 
 > **Docker Agent：** 挂载宿主机的 machine-id 以确保指纹识别正确：
@@ -443,6 +478,20 @@ level = "info"
 # 日志文件路径，留空则输出到 stdout
 # 默认: ""
 file = "/var/log/serverbee-agent.log"
+
+# --- 升级配置 ---
+[upgrade]
+# Agent 自动升级时下载 Release 资产的发布源基础 URL
+# 镜像站需复现 GitHub Releases 目录结构：
+#   {base}/download/v{version}/{asset}      — 二进制
+#   {base}/download/v{version}/checksums.txt — 校验文件
+# 默认: "https://github.com/ZingerLittleBee/ServerBee/releases"
+release_repo_url = "https://github.com/ZingerLittleBee/ServerBee/releases"
+
+# 可选的发布源 TLS 证书 SPKI Pin（64 位小写十六进制，叶证书 SPKI DER 的 SHA-256）
+# 留空则禁用，格式非法时启动即报错
+# 默认: ""
+release_cert_spki_sha256 = ""
 ```
 
 ## 重要默认值汇总
