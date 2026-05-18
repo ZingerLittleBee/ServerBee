@@ -243,8 +243,8 @@ declare -A I18N_EN=(
     [lbl_dashboard]="  Dashboard:"
     [lbl_username]="  Username:"
     [lbl_password]="  Password:"
-    [pw_docker]="(auto-generated, check: docker compose -f %s logs serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
-    [pw_systemd]="(auto-generated, check: sudo journalctl -u serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
+    [pw_docker]="(auto-generated, use the LAST block from: docker compose -f %s logs serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' | tail -n 9)"
+    [pw_systemd]="(auto-generated, use the LAST block from: sudo journalctl -u serverbee-server --no-pager | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' | tail -n 9)"
     [pw_proc]="(auto-generated, check process output for 'FIRST-RUN ADMIN CREDENTIALS')"
     [pw_must_change]="  (one-time password — you must change it on first login)"
     [lbl_docs]="  Docs:"
@@ -360,8 +360,8 @@ declare -A I18N_ZH=(
     [lbl_dashboard]="  控制台:"
     [lbl_username]="  用户名:"
     [lbl_password]="  密码:"
-    [pw_docker]="（自动生成，查看: docker compose -f %s logs serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
-    [pw_systemd]="（自动生成，查看: sudo journalctl -u serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS')"
+    [pw_docker]="（自动生成，取最后一段: docker compose -f %s logs serverbee-server | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' | tail -n 9）"
+    [pw_systemd]="（自动生成，取最后一段: sudo journalctl -u serverbee-server --no-pager | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' | tail -n 9）"
     [pw_proc]="（自动生成，在进程输出中查找 'FIRST-RUN ADMIN CREDENTIALS')"
     [pw_must_change]="  （一次性密码 —— 首次登录后必须修改）"
     [lbl_docs]="  文档:"
@@ -1374,7 +1374,7 @@ YAML
 # Echoes the password if found within the timeout, otherwise nothing (e.g.
 # re-install/adopt where the admin already exists, or no captured logs).
 fetch_first_run_password() {
-    local i out pw max
+    local i out pw max inv
     # Docker's first run may pull the image before the container starts and
     # logs the banner, so allow a longer budget; the loop exits as soon as
     # the password is found, keeping the warm-cache path fast.
@@ -1383,14 +1383,25 @@ fetch_first_run_password() {
         if [ "$METHOD" = "docker" ]; then
             out=$(docker compose -f "${DOCKER_DIR}/docker-compose.server.yml" logs --no-color serverbee-server 2>/dev/null)
         elif has_systemd; then
-            out=$(journalctl -u serverbee-server --no-pager 2>/dev/null)
+            # Scope to the CURRENT service invocation so that FIRST-RUN
+            # banners from earlier installs on this host (which carry an
+            # invalid, superseded password) are never picked up.
+            inv=$(systemctl show -p InvocationID --value serverbee-server 2>/dev/null)
+            if [ -n "$inv" ]; then
+                out=$(journalctl _SYSTEMD_INVOCATION_ID="$inv" --no-pager 2>/dev/null)
+            else
+                out=$(journalctl -u serverbee-server --no-pager 2>/dev/null)
+            fi
         else
             return 0
         fi
+        # Take the LAST banner (most recent), not the first: journal output
+        # is chronological, so a stale historical entry must not win.
         pw=$(printf '%s\n' "$out" \
             | sed 's/\x1b\[[0-9;]*m//g' \
             | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' \
-            | grep -m1 'Password:' \
+            | grep 'Password:' \
+            | tail -n1 \
             | sed -E 's/.*Password:[[:space:]]*//' \
             | awk '{print $1}')
         if [ -n "$pw" ]; then
