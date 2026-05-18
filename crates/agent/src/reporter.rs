@@ -1604,7 +1604,7 @@ async fn derive_primary_ips(
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
-    use crate::config::{CollectorConfig, FileConfig, IpChangeConfig, LogConfig};
+    use crate::config::{CollectorConfig, FileConfig, IpChangeConfig, LogConfig, UpgradeConfig};
     use serverbee_common::constants::{
         CAP_DEFAULT, CAP_EXEC, CAP_FILE, CAP_PING_ICMP, CapabilityDeniedReason,
     };
@@ -1664,6 +1664,7 @@ mod tests {
             log: LogConfig::default(),
             file: FileConfig::default(),
             ip_change: IpChangeConfig::default(),
+            upgrade: UpgradeConfig::default(),
         };
         let err = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Http(
             Response::builder().status(401).body(None).unwrap(),
@@ -1682,6 +1683,7 @@ mod tests {
             log: LogConfig::default(),
             file: FileConfig::default(),
             ip_change: IpChangeConfig::default(),
+            upgrade: UpgradeConfig::default(),
         };
         let err = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Http(
             Response::builder().status(401).body(None).unwrap(),
@@ -1700,6 +1702,7 @@ mod tests {
             log: LogConfig::default(),
             file: FileConfig::default(),
             ip_change: IpChangeConfig::default(),
+            upgrade: UpgradeConfig::default(),
         };
         let err = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Http(
             Response::builder().status(500).body(None).unwrap(),
@@ -1718,6 +1721,7 @@ mod tests {
             log: LogConfig::default(),
             file: FileConfig::default(),
             ip_change: IpChangeConfig::default(),
+            upgrade: UpgradeConfig::default(),
         };
 
         let request = build_ws_request(&config).expect("request should build");
