@@ -90,6 +90,13 @@
     "sort_asc": "Asc",
     "sort_desc": "Desc",
     "sort_reset": "Reset",
-    "hide_column": "Hide"
+    "hide_column": "Hide",
+    "rows_selected": "{{selected}} of {{total}} row(s) selected.",
+    "rows_per_page": "Rows per page",
+    "page_of": "Page {{current}} of {{total}}",
+    "go_first_page": "Go to first page",
+    "go_previous_page": "Go to previous page",
+    "go_next_page": "Go to next page",
+    "go_last_page": "Go to last page"
   }
 }
