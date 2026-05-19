@@ -164,9 +164,12 @@ export function DashboardGrid({
       }
       const units = autoUnits[item.i]
       if (units !== undefined) {
-        item.h = units
+        // Auto-height widgets fit their content exactly: height is locked to the
+        // measured content and cannot be adjusted. Only horizontal resize stays.
         item.minH = units
         item.maxH = units
+        item.h = units
+        item.resizeHandles = ['e']
       }
     }
     return layout
@@ -234,18 +237,14 @@ export function DashboardGrid({
   const commitLayoutChange = useCallback(
     (finalLayout: Layout) => {
       setInteractionState('idle')
-      const widgetMap = new Map(widgets.map((w) => [w.id, w]))
       // Convert the fine grid back to coarse persisted units. Auto-height widgets
-      // keep their stored grid_h — their height is content-driven, not user-set.
-      const coarseLayout = finalLayout.map((item) => {
-        const w = widgetMap.get(item.i)
-        const isAuto = w !== undefined && AUTO_HEIGHT_TYPES.has(w.widget_type)
-        return {
-          ...item,
-          y: Math.round(item.y / SCALE),
-          h: isAuto && w ? w.grid_h : Math.round(item.h / SCALE)
-        }
-      })
+      // persist their height too so a user-grown size sticks (the measured
+      // content height still acts as the floor on the next render).
+      const coarseLayout = finalLayout.map((item) => ({
+        ...item,
+        y: Math.round(item.y / SCALE),
+        h: Math.round(item.h / SCALE)
+      }))
       const patch = layoutToPatch(coarseLayout, widgets)
       if (patch.length > 0) {
         onLayoutChange(patch)
@@ -316,7 +315,7 @@ export function DashboardGrid({
                   />
                 )}
                 {isAuto ? (
-                  <div className={isEditing ? 'pointer-events-none' : undefined}>
+                  <div className={cn('flex h-full flex-col justify-center', isEditing && 'pointer-events-none')}>
                     <AutoHeightItem onMeasure={handleMeasure} widgetId={widget.id}>
                       <WidgetRenderer servers={widgetServers} widget={widget} />
                     </AutoHeightItem>
@@ -408,19 +407,28 @@ function AutoHeightItem({
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const el = ref.current
-    if (!el) {
+    const root = ref.current
+    if (!root) {
       return
     }
+    // Observe the inner [data-measure] element: its height is the card's
+    // natural content height (incl. padding), independent of the h-full card
+    // that stretches to fill the cell. Measuring the card itself would be
+    // circular once it fills the resized cell.
+    const target = root.querySelector<HTMLElement>('[data-measure]') ?? root
     const observer = new ResizeObserver(() => {
-      const px = el.offsetHeight
+      const px = target.offsetHeight
       if (px > 0) {
         onMeasure(widgetId, px)
       }
     })
-    observer.observe(el)
+    observer.observe(target)
     return () => observer.disconnect()
   }, [widgetId, onMeasure])
 
-  return <div ref={ref}>{children}</div>
+  return (
+    <div className="h-full w-full" ref={ref}>
+      {children}
+    </div>
+  )
 }

@@ -55,32 +55,36 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
   const title = TOP_N_LABELS[metric] ?? `Top ${METRIC_LABELS[metric] ?? metric}`
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border bg-card p-4">
-      <h3 className="font-semibold text-sm">{title}</h3>
-      <div className="flex flex-col gap-2">
-        {ranked.map((item, index) => {
-          const pct = maxValue > 0 ? (item.value / maxValue) * 100 : 0
-          return (
-            <div className="space-y-1" key={item.id}>
-              <div className="flex items-center justify-between text-xs">
-                <span className="flex items-center gap-1.5 truncate text-muted-foreground">
-                  <span className="font-medium text-foreground">{index + 1}.</span>
-                  {item.name}
-                </span>
-                <span className="ml-2 shrink-0 font-medium">{formatValue(metric, item.value)}</span>
+    <div className="flex h-full flex-col justify-center rounded-lg border bg-card">
+      {/* data-measure: natural content height (incl. padding), measured by the
+          grid to size the cell. Independent of the (h-full) card height. */}
+      <div className="flex flex-col gap-3 p-4" data-measure>
+        <h3 className="font-semibold text-sm">{title}</h3>
+        <div className="flex flex-col gap-2">
+          {ranked.map((item, index) => {
+            const pct = maxValue > 0 ? (item.value / maxValue) * 100 : 0
+            return (
+              <div className="space-y-1" key={item.id}>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="flex items-center gap-1.5 truncate text-muted-foreground">
+                    <span className="font-medium text-foreground">{index + 1}.</span>
+                    {item.name}
+                  </span>
+                  <span className="ml-2 shrink-0 font-medium">{formatValue(metric, item.value)}</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={cn('h-full rounded-full transition-all', getBarColor(index))}
+                    style={{ width: `${Math.min(100, pct)}%` }}
+                  />
+                </div>
               </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                <div
-                  className={cn('h-full rounded-full transition-all', getBarColor(index))}
-                  style={{ width: `${Math.min(100, pct)}%` }}
-                />
-              </div>
-            </div>
-          )
-        })}
-        {ranked.length === 0 && (
-          <div className="flex items-center justify-center py-4 text-muted-foreground text-xs">No online servers</div>
-        )}
+            )
+          })}
+          {ranked.length === 0 && (
+            <div className="flex items-center justify-center py-4 text-muted-foreground text-xs">No online servers</div>
+          )}
+        </div>
       </div>
     </div>
   )
