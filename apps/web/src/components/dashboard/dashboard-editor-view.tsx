@@ -51,6 +51,17 @@ export function DashboardEditorView({
   const cancelEditingRef = useRef(editor.cancelEditing)
   cancelEditingRef.current = editor.cancelEditing
 
+  // While a dialog is open over the live dashboard, freeze the servers snapshot.
+  // The dialog backdrop applies a full-viewport backdrop-filter blur; if the grid
+  // behind keeps repainting on every websocket tick, the browser re-rasterizes the
+  // blurred backdrop every frame, causing severe jank.
+  const dialogOpen = pickerOpen || configOpen
+  const frozenServersRef = useRef(servers)
+  if (!dialogOpen) {
+    frozenServersRef.current = servers
+  }
+  const gridServers = dialogOpen ? frozenServersRef.current : servers
+
   useEffect(() => {
     cancelEditingRef.current()
     setPickerOpen(false)
@@ -196,7 +207,7 @@ export function DashboardEditorView({
           onWidgetDelete={handleWidgetDelete}
           onWidgetEdit={handleWidgetEdit}
           onWidgetToggleStatic={editor.toggleWidgetStatic}
-          servers={servers}
+          servers={gridServers}
           widgets={displayWidgets}
         />
       )}

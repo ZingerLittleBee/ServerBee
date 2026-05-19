@@ -32,6 +32,67 @@
   "dashboard_name_placeholder": "Dashboard name",
   "no_widgets_title": "No widgets yet",
   "no_widgets_description": "Click Edit to start adding widgets to your dashboard",
+  "widgetPicker": {
+    "categories": {
+      "Real-time": "Real-time",
+      "Charts": "Charts",
+      "Status": "Status"
+    },
+    "types": {
+      "stat-number": {
+        "label": "Stat Number",
+        "description": "Single metric value with icon"
+      },
+      "server-cards": {
+        "label": "Server Cards",
+        "description": "Server overview cards grid"
+      },
+      "gauge": {
+        "label": "Gauge",
+        "description": "Circular gauge for a metric"
+      },
+      "line-chart": {
+        "label": "Line Chart",
+        "description": "Time series line chart"
+      },
+      "multi-line": {
+        "label": "Multi Line",
+        "description": "Compare metrics across servers"
+      },
+      "top-n": {
+        "label": "Top N",
+        "description": "Ranked list of servers"
+      },
+      "alert-list": {
+        "label": "Alert List",
+        "description": "Recent alert events"
+      },
+      "service-status": {
+        "label": "Service Status",
+        "description": "Service monitor status dots"
+      },
+      "traffic-bar": {
+        "label": "Traffic Bar",
+        "description": "Daily traffic bar chart"
+      },
+      "disk-io": {
+        "label": "Disk I/O",
+        "description": "Disk I/O read/write chart"
+      },
+      "server-map": {
+        "label": "Server Map",
+        "description": "World map with server locations"
+      },
+      "markdown": {
+        "label": "Markdown",
+        "description": "Custom markdown content"
+      },
+      "uptime-timeline": {
+        "label": "Uptime Timeline",
+        "description": "90-day uptime timeline bar"
+      }
+    }
+  },
   "widgets": {
     "trafficBar": {
       "title": "Traffic",

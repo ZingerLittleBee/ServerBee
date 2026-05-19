@@ -420,6 +420,17 @@ function ServerCardsForm({
   )
 }
 
+function useTrafficDaysOptions(t: (key: string) => string): { label: string; value: string }[] {
+  // Traffic bars are daily aggregates; values are days expressed in hours so
+  // they stay compatible with the stored `hours` config field.
+  return [
+    { label: t('common.timeRange.7days'), value: '168' },
+    { label: t('common.timeRange.30days'), value: '720' },
+    { label: t('common.timeRange.60days'), value: '1440' },
+    { label: t('common.timeRange.90days'), value: '2160' }
+  ]
+}
+
 function TrafficBarForm({
   config,
   servers,
@@ -431,6 +442,7 @@ function TrafficBarForm({
   servers: ServerMetrics[]
   t: (key: string) => string
 }) {
+  const TRAFFIC_DAYS_OPTIONS = useTrafficDaysOptions(t)
   return (
     <>
       <div className="space-y-1.5">
@@ -456,11 +468,25 @@ function TrafficBarForm({
           </SelectContent>
         </Select>
       </div>
-      <RangeSelect
-        onChange={(v) => onChange({ ...config, hours: Number(v) })}
-        t={t}
-        value={String(config.hours ?? '720')}
-      />
+      <div className="space-y-1.5">
+        <Label>{t('widgets.common.labels.timeRange')}</Label>
+        <Select
+          items={TRAFFIC_DAYS_OPTIONS}
+          onValueChange={(v) => v !== null && onChange({ ...config, hours: Number(v) })}
+          value={String(config.hours ?? '720')}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder={t('widgets.common.placeholders.selectRange')} />
+          </SelectTrigger>
+          <SelectContent>
+            {TRAFFIC_DAYS_OPTIONS.map((r) => (
+              <SelectItem key={r.value} value={r.value}>
+                {r.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     </>
   )
 }

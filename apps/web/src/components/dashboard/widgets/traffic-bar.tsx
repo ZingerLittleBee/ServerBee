@@ -27,6 +27,10 @@ interface DailyTrafficItem {
   date: string
 }
 
+interface ServerTrafficResponse {
+  daily: DailyTrafficItem[]
+}
+
 const DEFAULT_DAYS = 30
 
 function useTrafficConfig(t: (key: string) => string): ChartConfig {
@@ -50,24 +54,15 @@ export function TrafficBarWidget({ config, servers }: TrafficBarWidgetProps) {
   const days = hoursToDays(config.hours)
   const hasServerId = server_id != null && server_id.length > 0
 
-  const fromDate = useMemo(() => {
-    const d = new Date()
-    d.setDate(d.getDate() - days)
-    return d.toISOString().slice(0, 10)
-  }, [days])
-
-  const toDate = useMemo(() => new Date().toISOString().slice(0, 10), [])
-
-  // Per-server daily traffic
-  const { data: serverDaily, isLoading: serverLoading } = useQuery<DailyTrafficItem[]>({
-    queryKey: ['traffic', server_id, 'daily', days],
-    queryFn: () =>
-      api.get<DailyTrafficItem[]>(
-        `/api/traffic/${server_id}/daily?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}`
-      ),
+  // Per-server daily traffic (billing-cycle breakdown), client-sliced to `days`
+  const { data: serverResponse, isLoading: serverLoading } = useQuery<ServerTrafficResponse>({
+    queryKey: ['servers', server_id, 'traffic'],
+    queryFn: () => api.get<ServerTrafficResponse>(`/api/servers/${server_id}/traffic`),
     staleTime: 60_000,
     enabled: hasServerId
   })
+
+  const serverDaily = useMemo(() => (serverResponse?.daily ?? []).slice(-days), [serverResponse, days])
 
   // Global overview daily traffic
   const { data: globalDaily, isLoading: globalLoading } = useQuery<DailyTrafficItem[]>({

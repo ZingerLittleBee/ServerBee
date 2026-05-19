@@ -48,7 +48,7 @@ export const WIDGET_TYPES = [
     maxW: 12,
     maxH: 8
   },
-  { id: 'top-n', label: 'Top N', category: 'Real-time', defaultW: 4, defaultH: 4, minW: 3, minH: 3, maxW: 6, maxH: 8 },
+  { id: 'top-n', label: 'Top N', category: 'Real-time', defaultW: 4, defaultH: 2, minW: 3, minH: 2, maxW: 6, maxH: 8 },
   {
     id: 'alert-list',
     label: 'Alert List',

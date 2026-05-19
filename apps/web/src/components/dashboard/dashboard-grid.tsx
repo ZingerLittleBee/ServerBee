@@ -7,8 +7,15 @@ import {
   TrashIcon,
   UnlockIcon
 } from 'lucide-react'
-import { type Ref, useCallback, useEffect, useMemo, useState } from 'react'
-import { GridLayout, type Layout, type ResizeHandleAxis, useContainerWidth } from 'react-grid-layout'
+import { type ReactNode, type Ref, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  GridLayout,
+  getCompactor,
+  type Layout,
+  type LayoutItem,
+  type ResizeHandleAxis,
+  useContainerWidth
+} from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import { Button } from '@/components/ui/button'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
@@ -36,9 +43,55 @@ function isWidgetStatic(configJson: string): boolean {
 }
 
 const COLS = 12
-const ROW_HEIGHT = 80
+// Vertical fine-grain factor: persisted (coarse) grid rows are split into SCALE
+// finer rows so content-sized widgets quantize to ~ROW_HEIGHT px instead of a
+// whole coarse row. Invariant for pixel-identical legacy widgets: the legacy
+// per-row step (80 + 16) must equal SCALE * (ROW_HEIGHT + MARGIN_Y) → 4*(8+16)=96.
+const SCALE = 4
+const ROW_HEIGHT = 8
 const MARGIN: [number, number] = [16, 16]
+const MARGIN_Y = MARGIN[1]
+// Legacy coarse row pixel height, used only for the mobile single-column min-height.
+const MOBILE_ROW_PX = 80
 const MOBILE_BREAKPOINT = 768
+
+// Widgets whose grid cell height should follow their measured content height
+// instead of a fixed/estimated number of rows.
+const AUTO_HEIGHT_TYPES = new Set(['top-n'])
+
+function pxToGridUnits(px: number): number {
+  return Math.max(2, Math.ceil((px + MARGIN_Y) / (ROW_HEIGHT + MARGIN_Y)))
+}
+
+function rectsOverlap(a: Layout[number], b: Layout[number]): boolean {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+}
+
+// The grid uses an identity (no-op) compactor so widgets can be freely placed
+// and aligned across columns. That means a stale persisted layout with
+// overlapping widgets would render overlapped. This sweeps top-to-bottom and
+// pushes only the genuinely-overlapping widgets straight down, leaving every
+// non-colliding widget exactly where it was.
+function deoverlapLayout(layout: Layout): Layout {
+  const placed: LayoutItem[] = []
+  const sorted = [...layout].sort((a, b) => a.y - b.y || a.x - b.x)
+  for (const original of sorted) {
+    const item = { ...original }
+    let collided = true
+    while (collided) {
+      collided = false
+      for (const p of placed) {
+        if (rectsOverlap(item, p)) {
+          item.y = p.y + p.h
+          collided = true
+        }
+      }
+    }
+    placed.push(item)
+  }
+  const byId = new Map(placed.map((it) => [it.i, it]))
+  return layout.map((it) => byId.get(it.i) ?? it)
+}
 
 type InteractionState = 'dragging' | 'idle' | 'resizing'
 
@@ -124,19 +177,93 @@ export function DashboardGrid({
   const isMobile = useIsMobile()
   const { width, containerRef, mounted } = useContainerWidth()
 
-  const baseLayout = useMemo(() => widgetsToLayout(widgets), [widgets])
+  const [autoUnits, setAutoUnits] = useState<Record<string, number>>({})
+
+  const handleMeasure = useCallback((id: string, px: number) => {
+    const units = pxToGridUnits(px)
+    setAutoUnits((prev) => (prev[id] === units ? prev : { ...prev, [id]: units }))
+  }, [])
+
+  // Persisted grid units are coarse (1 row == ROW_HEIGHT*SCALE px). The grid
+  // itself runs at a SCALE-times finer row so content-sized widgets can hug
+  // their content within ~ROW_HEIGHT px instead of a full coarse row. Scale the
+  // vertical axis up here and divide back down on commit.
+  const baseLayout = useMemo(() => {
+    const layout = widgetsToLayout(widgets)
+    for (const item of layout) {
+      item.y *= SCALE
+      item.h *= SCALE
+      if (item.minH !== undefined) {
+        item.minH *= SCALE
+      }
+      if (item.maxH !== undefined) {
+        item.maxH *= SCALE
+      }
+      const units = autoUnits[item.i]
+      if (units !== undefined) {
+        // Auto-height widgets fit their content exactly: height is locked to the
+        // measured content and cannot be adjusted. Only horizontal resize stays.
+        item.minH = units
+        item.maxH = units
+        item.h = units
+        item.resizeHandles = ['e']
+      }
+    }
+    return deoverlapLayout(layout)
+  }, [widgets, autoUnits])
+
   const [liveLayout, setLiveLayout] = useState<Layout>(baseLayout)
   const [interactionState, setInteractionState] = useState<InteractionState>('idle')
 
-  const updateLiveLayout = useCallback((nextLayout: Layout) => {
-    setLiveLayout(nextLayout)
-  }, [])
+  // During drag/resize, freeze the servers snapshot fed to widgets. Otherwise every
+  // websocket tick swaps the servers array reference and re-renders all Recharts
+  // widgets mid-interaction, which janks the drag badly.
+  const isInteracting = interactionState !== 'idle'
+  const frozenServersRef = useRef(servers)
+  if (!isInteracting) {
+    frozenServersRef.current = servers
+  }
+  const widgetServers = isInteracting ? frozenServersRef.current : servers
 
-  useEffect(() => {
-    if (interactionState === 'idle') {
-      updateLiveLayout(baseLayout)
-    }
-  }, [baseLayout, interactionState, updateLiveLayout])
+  const autoIdSet = useMemo(
+    () => new Set(widgets.filter((w) => AUTO_HEIGHT_TYPES.has(w.widget_type)).map((w) => w.id)),
+    [widgets]
+  )
+
+  // No auto-compaction (widgets stay exactly where dropped, so items in
+  // different columns can be aligned freely) and preventCollision blocks
+  // dropping onto another widget (it snaps back), so widgets never overlap.
+  const compactor = useMemo(() => getCompactor(null, false, true), [])
+
+  // Manual position/size persists in coarse units, so snap the live layout to
+  // whole coarse rows (SCALE-aligned) while dragging/resizing. Otherwise the
+  // dropped fine position gets rounded on commit and the widget visibly snaps
+  // back, then ping-pongs with RGL's onLayoutChange echo (the "jitter").
+  // Auto-height widgets keep their measured fine height untouched.
+  const updateLiveLayout = useCallback(
+    (nextLayout: Layout) => {
+      const snapped = nextLayout.map((item) => ({
+        ...item,
+        y: Math.round(item.y / SCALE) * SCALE,
+        h: autoIdSet.has(item.i) ? item.h : Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
+      }))
+      // De-overlap every frame: RGL's identity compactor never resolves
+      // overlaps, and its idle onLayoutChange echo would otherwise re-apply the
+      // raw (overlapping) persisted positions over the de-overlapped layout.
+      setLiveLayout(deoverlapLayout(snapped))
+    },
+    [autoIdSet]
+  )
+
+  // Resync the rendered layout to the widgets-derived one the moment `widgets`
+  // change while idle (e.g. after a save swaps temp ids for server ids). Doing
+  // this in render (guarded) instead of an effect avoids the stale frame that
+  // snapped widgets back to their initial positions and flickered.
+  const prevBaseRef = useRef(baseLayout)
+  if (!isInteracting && prevBaseRef.current !== baseLayout) {
+    prevBaseRef.current = baseLayout
+    setLiveLayout(baseLayout)
+  }
 
   useEffect(() => {
     if (isMobile) {
@@ -154,12 +281,30 @@ export function DashboardGrid({
   const commitLayoutChange = useCallback(
     (finalLayout: Layout) => {
       setInteractionState('idle')
-      const patch = layoutToPatch(finalLayout, widgets)
+      // Convert the fine grid back to coarse persisted units. Auto-height widgets
+      // persist their height too so a user-grown size sticks (the measured
+      // content height still acts as the floor on the next render).
+      // Snap to coarse rows then resolve any residual penetration. preventCollision
+      // can block the move so no patch is emitted; without this the live layout
+      // would keep the penetrating drag position until the next widgets change.
+      const snapped = finalLayout.map((item) => ({
+        ...item,
+        y: Math.round(item.y / SCALE) * SCALE,
+        h: autoIdSet.has(item.i) ? item.h : Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
+      }))
+      const resolved = deoverlapLayout(snapped)
+      setLiveLayout(resolved)
+      const coarseLayout = resolved.map((item) => ({
+        ...item,
+        y: Math.round(item.y / SCALE),
+        h: Math.round(item.h / SCALE)
+      }))
+      const patch = layoutToPatch(coarseLayout, widgets)
       if (patch.length > 0) {
         onLayoutChange(patch)
       }
     },
-    [onLayoutChange, widgets]
+    [autoIdSet, onLayoutChange, widgets]
   )
 
   const sortedWidgets = useMemo(() => {
@@ -182,9 +327,9 @@ export function DashboardGrid({
             )}
             <div
               className={isEditing ? 'pointer-events-none' : undefined}
-              style={{ minHeight: widget.grid_h * ROW_HEIGHT }}
+              style={{ minHeight: widget.grid_h * MOBILE_ROW_PX }}
             >
-              <WidgetRenderer servers={servers} widget={widget} />
+              <WidgetRenderer servers={widgetServers} widget={widget} />
             </div>
           </div>
         ))}
@@ -198,6 +343,7 @@ export function DashboardGrid({
         <GridLayout
           autoSize
           className={cn('dashboard-grid', isEditing && 'dashboard-grid--editing')}
+          compactor={compactor}
           dragConfig={{ enabled: isEditing, bounded: false, threshold: 3 }}
           gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: MARGIN }}
           layout={liveLayout}
@@ -211,21 +357,32 @@ export function DashboardGrid({
           resizeConfig={{ enabled: isEditing, handleComponent: renderResizeHandle, handles: ['s', 'e', 'se'] }}
           width={width}
         >
-          {widgets.map((widget) => (
-            <div className="relative h-full" key={widget.id}>
-              {isEditing && (
-                <EditOverlay
-                  isStatic={isWidgetStatic(widget.config_json)}
-                  onDelete={() => onWidgetDelete(widget.id)}
-                  onEdit={() => onWidgetEdit(widget.id)}
-                  onToggleStatic={onWidgetToggleStatic ? () => onWidgetToggleStatic(widget.id) : undefined}
-                />
-              )}
-              <div className={isEditing ? 'pointer-events-none h-full' : 'h-full'}>
-                <WidgetRenderer servers={servers} widget={widget} />
+          {widgets.map((widget) => {
+            const isAuto = AUTO_HEIGHT_TYPES.has(widget.widget_type)
+            return (
+              <div className="relative h-full" key={widget.id}>
+                {isEditing && (
+                  <EditOverlay
+                    isStatic={isWidgetStatic(widget.config_json)}
+                    onDelete={() => onWidgetDelete(widget.id)}
+                    onEdit={() => onWidgetEdit(widget.id)}
+                    onToggleStatic={onWidgetToggleStatic ? () => onWidgetToggleStatic(widget.id) : undefined}
+                  />
+                )}
+                {isAuto ? (
+                  <div className={cn('flex h-full flex-col justify-center', isEditing && 'pointer-events-none')}>
+                    <AutoHeightItem onMeasure={handleMeasure} widgetId={widget.id}>
+                      <WidgetRenderer servers={widgetServers} widget={widget} />
+                    </AutoHeightItem>
+                  </div>
+                ) : (
+                  <div className={isEditing ? 'pointer-events-none h-full' : 'h-full'}>
+                    <WidgetRenderer servers={widgetServers} widget={widget} />
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            )
+          })}
         </GridLayout>
       )}
     </div>
@@ -287,6 +444,46 @@ function EditOverlay({
       >
         <TrashIcon className="size-3.5" />
       </Button>
+    </div>
+  )
+}
+
+// Measures its content height (the widget card hugs its content, so this is the
+// real height) and reports it so the grid cell can be sized to fit exactly.
+function AutoHeightItem({
+  widgetId,
+  onMeasure,
+  children
+}: {
+  widgetId: string
+  onMeasure: (id: string, px: number) => void
+  children: ReactNode
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const root = ref.current
+    if (!root) {
+      return
+    }
+    // Observe the inner [data-measure] element: its height is the card's
+    // natural content height (incl. padding), independent of the h-full card
+    // that stretches to fill the cell. Measuring the card itself would be
+    // circular once it fills the resized cell.
+    const target = root.querySelector<HTMLElement>('[data-measure]') ?? root
+    const observer = new ResizeObserver(() => {
+      const px = target.offsetHeight
+      if (px > 0) {
+        onMeasure(widgetId, px)
+      }
+    })
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [widgetId, onMeasure])
+
+  return (
+    <div className="h-full w-full" ref={ref}>
+      {children}
     </div>
   )
 }
