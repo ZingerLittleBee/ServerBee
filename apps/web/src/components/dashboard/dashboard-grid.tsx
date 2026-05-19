@@ -7,7 +7,7 @@ import {
   TrashIcon,
   UnlockIcon
 } from 'lucide-react'
-import { type Ref, useCallback, useEffect, useMemo, useState } from 'react'
+import { type Ref, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { GridLayout, type Layout, type ResizeHandleAxis, useContainerWidth } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import { Button } from '@/components/ui/button'
@@ -128,6 +128,16 @@ export function DashboardGrid({
   const [liveLayout, setLiveLayout] = useState<Layout>(baseLayout)
   const [interactionState, setInteractionState] = useState<InteractionState>('idle')
 
+  // During drag/resize, freeze the servers snapshot fed to widgets. Otherwise every
+  // websocket tick swaps the servers array reference and re-renders all Recharts
+  // widgets mid-interaction, which janks the drag badly.
+  const isInteracting = interactionState !== 'idle'
+  const frozenServersRef = useRef(servers)
+  if (!isInteracting) {
+    frozenServersRef.current = servers
+  }
+  const widgetServers = isInteracting ? frozenServersRef.current : servers
+
   const updateLiveLayout = useCallback((nextLayout: Layout) => {
     setLiveLayout(nextLayout)
   }, [])
@@ -184,7 +194,7 @@ export function DashboardGrid({
               className={isEditing ? 'pointer-events-none' : undefined}
               style={{ minHeight: widget.grid_h * ROW_HEIGHT }}
             >
-              <WidgetRenderer servers={servers} widget={widget} />
+              <WidgetRenderer servers={widgetServers} widget={widget} />
             </div>
           </div>
         ))}
@@ -222,7 +232,7 @@ export function DashboardGrid({
                 />
               )}
               <div className={isEditing ? 'pointer-events-none h-full' : 'h-full'}>
-                <WidgetRenderer servers={servers} widget={widget} />
+                <WidgetRenderer servers={widgetServers} widget={widget} />
               </div>
             </div>
           ))}
