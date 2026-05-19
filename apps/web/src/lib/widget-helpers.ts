@@ -72,7 +72,7 @@ export function extractRecordMetric(record: ServerMetricRecord, metric: string, 
 
 export function formatChartTime(time: string): string {
   const date = new Date(time)
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
 export function formatRelativeTime(input: string | number | null): string {
