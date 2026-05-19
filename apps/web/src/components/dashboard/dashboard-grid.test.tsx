@@ -181,9 +181,10 @@ describe('DashboardGrid', () => {
       />
     )
 
-    // Fine units (4x scale), already coarse-row aligned so snapping is a no-op.
+    // Fine units (4x scale), coarse-row aligned (snap no-op) and in separate
+    // columns from w-2 so de-overlap is also a no-op.
     const nextLayout = [
-      { i: 'w-1', x: 1, y: 8, w: 2, h: 8 },
+      { i: 'w-1', x: 5, y: 8, w: 2, h: 8 },
       { i: 'w-2', x: 2, y: 0, w: 3, h: 12 }
     ]
 
@@ -209,9 +210,10 @@ describe('DashboardGrid', () => {
       />
     )
 
-    // Fine units (4x scale), already coarse-row aligned so snapping is a no-op.
+    // Fine units (4x scale), coarse-row aligned (snap no-op) and in separate
+    // columns from w-2 so de-overlap is also a no-op.
     const dragLayout = [
-      { i: 'w-1', x: 1, y: 8, w: 2, h: 8 },
+      { i: 'w-1', x: 5, y: 8, w: 2, h: 8 },
       { i: 'w-2', x: 2, y: 0, w: 3, h: 12 }
     ]
 
@@ -241,18 +243,19 @@ describe('DashboardGrid', () => {
     act(() => {
       getGridLayoutProps().onDragStart?.()
       // The grid runs at a 4x-finer vertical scale, so y/h are in fine units.
+      // w-1 sits in cols 0-1, clear of w-2 (cols 2-4), so de-overlap is a no-op.
       getGridLayoutProps().onDrag?.([
-        { i: 'w-1', x: 1, y: 4, w: 2, h: 8 },
+        { i: 'w-1', x: 0, y: 4, w: 2, h: 8 },
         { i: 'w-2', x: 2, y: 0, w: 3, h: 12 }
       ])
       getGridLayoutProps().onDragStop?.([
-        { i: 'w-1', x: 1, y: 4, w: 2, h: 8 },
+        { i: 'w-1', x: 0, y: 4, w: 2, h: 8 },
         { i: 'w-2', x: 2, y: 0, w: 3, h: 12 }
       ])
     })
 
     expect(onLayoutChange).toHaveBeenCalledTimes(1)
-    expect(onLayoutChange).toHaveBeenCalledWith([{ id: 'w-1', grid_x: 1, grid_y: 1, grid_w: 2, grid_h: 2 }])
+    expect(onLayoutChange).toHaveBeenCalledWith([{ id: 'w-1', grid_x: 0, grid_y: 1, grid_w: 2, grid_h: 2 }])
   })
 
   it('does not overwrite liveLayout from external widget rerenders while dragging', () => {
@@ -309,8 +312,9 @@ describe('DashboardGrid', () => {
     )
 
     // The grid runs at a 4x-finer vertical scale, so y/h are in fine units.
+    // w-1 grows in height only (cols 0-1), clear of w-2, so de-overlap is a no-op.
     const resizeLayout = [
-      { i: 'w-1', x: 0, y: 0, w: 4, h: 12 },
+      { i: 'w-1', x: 0, y: 0, w: 2, h: 12 },
       { i: 'w-2', x: 2, y: 0, w: 3, h: 12 }
     ]
 
@@ -321,7 +325,7 @@ describe('DashboardGrid', () => {
     })
 
     expect(onLayoutChange).toHaveBeenCalledTimes(1)
-    expect(onLayoutChange).toHaveBeenCalledWith([{ id: 'w-1', grid_x: 0, grid_y: 0, grid_w: 4, grid_h: 3 }])
+    expect(onLayoutChange).toHaveBeenCalledWith([{ id: 'w-1', grid_x: 0, grid_y: 0, grid_w: 2, grid_h: 3 }])
   })
 
   it('uses a themed custom resize handle in edit mode', () => {

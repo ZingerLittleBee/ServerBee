@@ -235,13 +235,15 @@ export function DashboardGrid({
   // Auto-height widgets keep their measured fine height untouched.
   const updateLiveLayout = useCallback(
     (nextLayout: Layout) => {
-      setLiveLayout(
-        nextLayout.map((item) => ({
-          ...item,
-          y: Math.round(item.y / SCALE) * SCALE,
-          h: autoIdSet.has(item.i) ? item.h : Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
-        }))
-      )
+      const snapped = nextLayout.map((item) => ({
+        ...item,
+        y: Math.round(item.y / SCALE) * SCALE,
+        h: autoIdSet.has(item.i) ? item.h : Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
+      }))
+      // De-overlap every frame: RGL's identity compactor never resolves
+      // overlaps, and its idle onLayoutChange echo would otherwise re-apply the
+      // raw (overlapping) persisted positions over the de-overlapped layout.
+      setLiveLayout(deoverlapLayout(snapped))
     },
     [autoIdSet]
   )
@@ -275,7 +277,17 @@ export function DashboardGrid({
       // Convert the fine grid back to coarse persisted units. Auto-height widgets
       // persist their height too so a user-grown size sticks (the measured
       // content height still acts as the floor on the next render).
-      const coarseLayout = finalLayout.map((item) => ({
+      // Snap to coarse rows then resolve any residual penetration. preventCollision
+      // can block the move so no patch is emitted; without this the live layout
+      // would keep the penetrating drag position until the next widgets change.
+      const snapped = finalLayout.map((item) => ({
+        ...item,
+        y: Math.round(item.y / SCALE) * SCALE,
+        h: autoIdSet.has(item.i) ? item.h : Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
+      }))
+      const resolved = deoverlapLayout(snapped)
+      setLiveLayout(resolved)
+      const coarseLayout = resolved.map((item) => ({
         ...item,
         y: Math.round(item.y / SCALE),
         h: Math.round(item.h / SCALE)
@@ -285,7 +297,7 @@ export function DashboardGrid({
         onLayoutChange(patch)
       }
     },
-    [onLayoutChange, widgets]
+    [autoIdSet, onLayoutChange, widgets]
   )
 
   const sortedWidgets = useMemo(() => {
