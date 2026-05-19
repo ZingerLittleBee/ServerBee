@@ -36,7 +36,7 @@ export function DataTable<TData>({
         )}
         data-testid="data-table-scroll"
       >
-        <Table className="min-w-full table-fixed [&_td]:px-3 [&_th]:px-3">
+        <Table className="min-w-full table-fixed [&_td:last-child]:pr-5 [&_td]:px-3 [&_th:last-child]:pr-5 [&_th]:px-3">
           <TableHeader className={cn(fillHeight && 'sticky top-0 z-10 bg-background')}>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
