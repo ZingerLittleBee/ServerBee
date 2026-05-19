@@ -34,11 +34,14 @@ import { useServer } from '@/hooks/use-api'
 import { useAuth } from '@/hooks/use-auth'
 import { useCostOverview } from '@/hooks/use-cost'
 import { useDataTable } from '@/hooks/use-data-table'
+import { useScrollViewportHeight } from '@/hooks/use-scroll-viewport-height'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { useTrafficOverview } from '@/hooks/use-traffic-overview'
 import { api } from '@/lib/api-client'
 import type { ServerGroup } from '@/lib/api-schema'
+import { withMockServers } from '@/lib/dev-mock-servers'
 import { countCleanupCandidates } from '@/lib/orphan-server-utils'
+import { cn } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import { CpuCell, DiskCell, MemoryCell, NameCell, NetworkCell, UptimeCell } from './components/index-cells'
 import { getInitialServersView } from './components/mobile-view'
@@ -72,6 +75,7 @@ function ServersListPage() {
   const [addOpen, setAddOpen] = useState(false)
   const navigate = Route.useNavigate()
   const { q: search, view: viewParam } = Route.useSearch()
+  const { ref: fillRef, height: viewportHeight } = useScrollViewportHeight<HTMLDivElement>()
 
   const [viewMode, setViewModeState] = useState<'table' | 'grid'>(() =>
     getInitialServersView(viewParam === 'grid' || viewParam === 'table' ? viewParam : undefined)
@@ -83,13 +87,14 @@ function ServersListPage() {
     navigate({ search: (prev) => ({ ...prev, view: value }) })
   }
 
-  const { data: servers = [] } = useQuery<ServerMetrics[]>({
+  const { data: rawServers = [] } = useQuery<ServerMetrics[]>({
     queryKey: ['servers'],
     queryFn: () => [],
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnMount: false,
     refetchOnWindowFocus: false
   })
+  const servers = useMemo(() => withMockServers(rawServers), [rawServers])
 
   const { data: groups } = useQuery<ServerGroup[]>({
     queryKey: ['server-groups'],
@@ -338,7 +343,14 @@ function ServersListPage() {
   }
 
   return (
-    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
+    <div
+      className={cn(
+        'w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full',
+        viewMode === 'table' && 'flex min-h-0 flex-col'
+      )}
+      ref={fillRef}
+      style={viewMode === 'table' && viewportHeight ? { height: viewportHeight } : undefined}
+    >
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="font-bold text-2xl">{t('title')}</h1>
@@ -444,7 +456,7 @@ function ServersListPage() {
         </div>
       )}
       {servers.length > 0 && viewMode === 'table' && (
-        <DataTable table={table}>
+        <DataTable fillHeight table={table}>
           <DataTableToolbar table={table} />
         </DataTable>
       )}

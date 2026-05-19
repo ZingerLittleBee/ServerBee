@@ -7,16 +7,34 @@ import { cn } from '@/lib/utils'
 
 interface DataTableProps<TData> extends React.ComponentProps<'div'> {
   actionBar?: React.ReactNode
+  /** Fill remaining vertical space with a sticky header and internally scrollable body. */
+  fillHeight?: boolean
   table: TanstackTable<TData>
 }
 
-export function DataTable<TData>({ table, actionBar, children, className, ...props }: DataTableProps<TData>) {
+export function DataTable<TData>({
+  table,
+  actionBar,
+  children,
+  className,
+  fillHeight = false,
+  ...props
+}: DataTableProps<TData>) {
   return (
-    <div className={cn('flex w-full min-w-0 flex-col gap-2.5 overflow-hidden', className)} {...props}>
+    <div
+      className={cn('flex w-full min-w-0 flex-col gap-2.5 overflow-hidden', fillHeight && 'min-h-0 flex-1', className)}
+      {...props}
+    >
       {children}
-      <div className="min-w-0 max-w-full overflow-x-auto rounded-md border" data-testid="data-table-scroll">
+      <div
+        className={cn(
+          'min-w-0 max-w-full rounded-md border',
+          fillHeight ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'overflow-x-auto'
+        )}
+        data-testid="data-table-scroll"
+      >
         <Table className="min-w-full table-fixed [&_td]:px-3 [&_th]:px-3">
-          <TableHeader>
+          <TableHeader className={cn(fillHeight && 'sticky top-0 z-10 bg-background')}>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
