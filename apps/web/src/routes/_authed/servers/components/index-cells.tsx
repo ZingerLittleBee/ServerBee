@@ -133,7 +133,7 @@ export function CpuCell({ server }: { server: ServerMetrics }) {
   const pct = Math.round(Math.min(100, Math.max(0, server.cpu)))
   const pctColor = getBarTextColor(pct)
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="flex max-w-[160px] flex-col gap-0.5">
       <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
         <Cpu aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
         <span>
@@ -141,7 +141,7 @@ export function CpuCell({ server }: { server: ServerMetrics }) {
         </span>
         <span className={cn('ml-auto font-semibold', pctColor)}>{pct}%</span>
       </div>
-      <div className="flex h-4 max-w-[140px] items-center">
+      <div className="flex h-4 items-center">
         <PositionIndicator pct={pct} />
       </div>
     </div>
@@ -155,7 +155,7 @@ export function MemoryCell({ server }: { server: ServerMetrics }) {
   const roundedPct = Math.round(Math.min(100, Math.max(0, pct)))
   const pctColor = getBarTextColor(roundedPct)
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="flex max-w-[160px] flex-col gap-0.5">
       <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
         <MemoryStick aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
         <span>
@@ -163,7 +163,7 @@ export function MemoryCell({ server }: { server: ServerMetrics }) {
         </span>
         <span className={cn('ml-auto font-semibold', pctColor)}>{roundedPct}%</span>
       </div>
-      <div className="flex h-4 max-w-[140px] items-center">
+      <div className="flex h-4 items-center">
         <PositionIndicator pct={pct} />
       </div>
     </div>
