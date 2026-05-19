@@ -69,19 +69,25 @@
 > A 组(01–06)由编排者复验,阻断级全 ✅ 后并行派发 B/C/D/E 子代理完成 07–37。
 > 01-L4 已修复并真机复验;03-S3/S4 用真实 TOTP 复验;04-U5 限流窗口外用 member 复验。
 > B 组上报的 10-IO2 阻断级 ❌ 经编排者源码+真机复核为**误报**(实时模式不显示历史 Disk I/O 图属设计,历史模式 `?range=24h` 正常渲染),已更正为 ✅。
-> 21-A3(告警恢复不发通知)修复已真机端到端复验通过;完整状态机复验另暴露 3 个"整功能不可用"级缺陷(21 告警 re-arm、19-M4 SSL panic、23-UP4 状态页路由)。**此后均已在代码层修复并补 TDD 回归测试**(server lib 506 / 前端 499 全绿、CI clippy 干净)。**当前判定:阻断项清零,待真机端到端复验后可发布 1.0.0(详见下方)**。
+> 5 个阻断级缺陷全部修复并**真机端到端复验通过**(编排者,重建二进制/前端后):01-L4、21-A3、21 re-arm、19-M4 SSL、23-UP4。**最终判定:GO ✅ — 1.0.0 可发布**(唯一剩余非阻断 02-O2 登记为已知问题或低成本同修)。
 
-### 最终复验补充(编排者真机端到端 + 后续代码修复)
+### 最终复验结果(编排者真机端到端,commit d33967ed,重建后)
 
-> 01-L4、21-A3 两个原阻断级修复经真机端到端复验确认生效;完整状态机端到端验证新发现的 3 个严重缺陷(21 re-arm / 19-M4 SSL / 23-UP4 路由)已全部在代码层修复并补回归测试。综合判定:**阻断项全部清零;发布前需对 21/19/23+24+25 做真机端到端复验。**
+| 项 | 结果 | 证据 |
+|----|------|------|
+| 01-L4 登出 | ✅ PASS | 点击 logout→`POST /api/auth/logout`、跳转 `/login`、`/api/auth/me`→401;network-probes 行下拉 Edit/Delete 亦生效 |
+| 21-A3 恢复通知 | ✅ PASS | resolve 时收到 `... resolved` webhook、alert-event status=resolved+resolved_at |
+| 21 re-arm | ✅ PASS | 连续 2 轮 trigger→resolve→re-trigger,`resolved` 标志正确翻转,webhook 每阶段投递,server 日志 `UNIQUE constraint failed: alert_states`/评估中止 = **0** |
+| 19-M4 SSL | ✅ PASS | `example.com:443` /check→200(226ms),`days_remaining:43`、证书全解析,server 日志 0 rustls panic |
+| 23-UP4 状态页路由 | ✅ PASS | 无登录 `/status/fv-final` 渲染自定义页(90 天时间线+事件+维护+品牌/CSS);`/status` 仍为聚合页;连带 24/25 incident/maintenance 生命周期 200 |
 
-### 🚨 发布阻断级 ❌ — 0 项(3 项均已修复,待真机端到端复验)
+### 🚨 发布阻断级 ❌ — 0 项(5 项全部修复并真机复验通过)
 
 | 用例 | 文件 | 处置 |
 |------|------|------|
-| 21 告警 re-arm | 21-alerts.md | ✅ 已修复:`mark_triggered` 盲 INSERT → upsert(复用旧行重新 arm),消除 `UNIQUE(rule_id,server_id)` 冲突;新增回归测试 `test_alert_rearms_after_resolve_cycle`(TDD 红/绿) |
-| 19-M4 SSL 监控 | 19-service-monitor.md | ✅ 已修复:`ssl.rs` 改用显式 `builder_with_provider(ring)`,消除 rustls 0.23 多 provider panic;新增回归测试 `test_ssl_check_builds_tls_config_without_panicking`(TDD 红 panic/绿) |
-| 23-UP4 状态页路由 | 23-uptime.md | ✅ 已修复:`status.tsx` 拆为布局(`<Outlet/>`)+ 新 `status.index.tsx`(`/status/` 聚合页),路由树重生成;前端 typecheck/lint 干净、499 测试全绿 |
+| 21 告警 re-arm | 21-alerts.md | ✅ 已修复并真机复验:`mark_triggered` 盲 INSERT → upsert 复用旧行重新 arm;回归测试 `test_alert_rearms_after_resolve_cycle`;2 轮闭环 0 UNIQUE 错误 |
+| 19-M4 SSL 监控 | 19-service-monitor.md | ✅ 已修复并真机复验:`ssl.rs` 显式 `builder_with_provider(ring)`;真实站点读到证书 43 天到期、0 panic |
+| 23-UP4 状态页路由 | 23-uptime.md | ✅ 已修复并真机复验:`status.tsx` 拆 `<Outlet/>` + `status.index.tsx`;自定义页与聚合页均正常 |
 
 ### 已修复/已澄清并真机复验通过的阻断级用例(均 ✅)
 
@@ -131,4 +137,4 @@
 | ❌ 失败 | 1 — 非阻断(02-O2 弱密码无强度校验) |
 | — 不适用/缺环境 | 69(大部分为 macOS 平台/共享环境限制,非缺陷) |
 | 通过率(不含 —) | 166 / 167 ≈ **99.4%** |
-| **发布判定** | **阻断项全部清零(代码层已修复 + 回归测试)**。5 个阻断级缺陷(01-L4 登出、21-A3 恢复通知、21 告警 re-arm、19-M4 SSL panic、23-UP4 状态页路由)均已修复:server lib 506 测试全绿、前端 499 测试全绿、CI clippy 干净、typecheck/lint 干净,均补充 TDD 回归测试。**发布前必做(真机端到端复验)**:① 21-alerts 完整状态机 trigger→resolve→re-trigger 闭环;② 19 SSL 监控对真实 HTTPS 站点读取证书到期;③ `/status/:slug` 渲染时间线/事件/维护/品牌并连带复验 24-status-page / 25。复验通过即可发布 1.0.0;剩余 1 个非阻断 ❌(02-O2)登记为已知问题或低成本同修。 |
+| **发布判定** | **GO ✅ — 1.0.0 可发布**。5 个阻断级缺陷(01-L4 登出、21-A3 恢复通知、21 告警 re-arm、19-M4 SSL panic、23-UP4 状态页路由)均已修复并补充 TDD 回归测试(server lib 506 全绿、前端 499 全绿、CI clippy 干净、typecheck/lint 干净)。**重建后(`cargo build` + `bun run build`)真机端到端复验全部 PASS**:① 21-alerts 连续 2 轮 trigger→resolve→re-trigger 闭环、webhook 每阶段投递、server 日志 `UNIQUE constraint failed: alert_states` 计数 = 0;② 19-M4 SSL 监控对真实站点 `example.com:443` 返回 days_remaining=43、issuer/指纹齐全、0 条 rustls panic;③ `/status/:slug` 渲染自定义页(90 天 UptimeTimeline + 事件 + 维护 + 品牌/CSS)、`/status` 聚合页仍正常,连带复验 24-status-page / 25 公开事件维护 200。剩余唯一非阻断 ❌ 02-O2(onboarding 弱密码无强度校验,admin 一次性初始化场景)登记为已知问题,建议低成本同修但不阻断发布。**最终结论:1.0.0 GO。** |
