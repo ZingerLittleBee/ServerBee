@@ -29,7 +29,7 @@ Agent 是轻量探针,CPU 开销可忽略,内存稳态在数十 MB 级别。
 内存从冷启动 ~5 MB 在 8 小时内升至 ~27 MB(8h 时当前值 ≈ 峰值,**疑似已接近平台,待 24h 数据确认**)。与 Server 同源:Agent 也是 Rust + tokio,默认 glibc 多 arena 分配器会把已释放内存攒在进程内不归还 OS(sysinfo 每 3s 采集产生大量小分配)。这不是代码层泄漏。若稳态内存需进一步压低,可给 Agent 的 systemd 服务设置 `MALLOC_ARENA_MAX=2`。
 </Callout>
 
-对比参考:同类常驻监控 Agent 中,Netdata 常达数十~上百 MB,Telegraf ~30–50 MB,node_exporter ~15–20 MB。ServerBee Agent 稳态 ~27 MB 内存 + <1% CPU,仍属轻量一档。
+对比参考:同类常驻监控 Agent 中,Netdata 常达数十~上百 MB,Telegraf ~30–50 MB,node_exporter ~15–20 MB。ServerBee Agent 稳态 ~27 MB 内存 + &lt;1% CPU,仍属轻量一档。
 
 ## Server
 

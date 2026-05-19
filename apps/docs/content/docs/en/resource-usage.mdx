@@ -29,7 +29,7 @@ Measurement environment: 4-core AMD EPYC 7B13 / 8 GB / Ubuntu 24.04 (KVM), Agent
 Memory rose from ~5 MB at cold start to ~27 MB over 8 hours (at 8h the current value ≈ the peak, so it **appears to be near a plateau, pending 24h confirmation**). Same root cause as the Server: the Agent is also Rust + tokio, and glibc's default multi-arena allocator hoards freed memory inside the process instead of returning it to the OS (sysinfo produces many small allocations every 3s). This is not a code-level leak. If steady-state memory needs to be reduced further, set `MALLOC_ARENA_MAX=2` on the Agent's systemd service.
 </Callout>
 
-For comparison: among comparable resident monitoring agents, Netdata often reaches tens to hundreds of MB, Telegraf ~30–50 MB, node_exporter ~15–20 MB. The ServerBee Agent's steady-state ~27 MB memory + <1% CPU is still in the lightweight tier.
+For comparison: among comparable resident monitoring agents, Netdata often reaches tens to hundreds of MB, Telegraf ~30–50 MB, node_exporter ~15–20 MB. The ServerBee Agent's steady-state ~27 MB memory + &lt;1% CPU is still in the lightweight tier.
 
 ## Server
 
