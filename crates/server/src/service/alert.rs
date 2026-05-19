@@ -175,19 +175,39 @@ impl AlertStateManager {
                 },
             );
 
-            // Insert to DB
-            let model = alert_state::ActiveModel {
-                id: NotSet,
-                rule_id: Set(rule_id.to_string()),
-                server_id: Set(server_id.to_string()),
-                first_triggered_at: Set(now),
-                last_notified_at: Set(now),
-                count: Set(1),
-                resolved: Set(false),
-                resolved_at: Set(None),
-                updated_at: Set(now),
-            };
-            model.insert(db).await?;
+            // Re-arm the existing row if one is left over from a prior
+            // resolve cycle, otherwise insert a fresh one. A
+            // UNIQUE(rule_id, server_id) constraint means at most one row
+            // can exist, so a blind INSERT here would fail and abort
+            // evaluation forever after the first trigger→resolve.
+            let existing = alert_state::Entity::find()
+                .filter(alert_state::Column::RuleId.eq(rule_id))
+                .filter(alert_state::Column::ServerId.eq(server_id))
+                .one(db)
+                .await?;
+            if let Some(row) = existing {
+                let mut am: alert_state::ActiveModel = row.into();
+                am.first_triggered_at = Set(now);
+                am.last_notified_at = Set(now);
+                am.count = Set(1);
+                am.resolved = Set(false);
+                am.resolved_at = Set(None);
+                am.updated_at = Set(now);
+                am.update(db).await?;
+            } else {
+                let model = alert_state::ActiveModel {
+                    id: NotSet,
+                    rule_id: Set(rule_id.to_string()),
+                    server_id: Set(server_id.to_string()),
+                    first_triggered_at: Set(now),
+                    last_notified_at: Set(now),
+                    count: Set(1),
+                    resolved: Set(false),
+                    resolved_at: Set(None),
+                    updated_at: Set(now),
+                };
+                model.insert(db).await?;
+            }
         }
 
         Ok(())
@@ -1549,5 +1569,44 @@ mod tests {
             !state_manager.is_triggered("rule-1", "srv-1"),
             "state should be cleared after recovery"
         );
+    }
+
+    #[tokio::test]
+    async fn test_alert_rearms_after_resolve_cycle() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-1", "Server Alpha").await;
+
+        let mgr = AlertStateManager::new();
+
+        // First fire.
+        mgr.mark_triggered(&db, "rule-1", "srv-1")
+            .await
+            .expect("first trigger");
+        assert!(mgr.is_triggered("rule-1", "srv-1"));
+
+        // Recover.
+        mgr.mark_resolved(&db, "rule-1", "srv-1")
+            .await
+            .expect("resolve");
+        assert!(!mgr.is_triggered("rule-1", "srv-1"));
+
+        // Re-arm: triggering again must NOT fail on the
+        // UNIQUE(rule_id, server_id) constraint left by the resolved row.
+        mgr.mark_triggered(&db, "rule-1", "srv-1")
+            .await
+            .expect("re-trigger after resolve must succeed");
+        assert!(mgr.is_triggered("rule-1", "srv-1"));
+
+        // Exactly one row, flipped back to firing.
+        let rows = alert_state::Entity::find()
+            .filter(alert_state::Column::RuleId.eq("rule-1"))
+            .filter(alert_state::Column::ServerId.eq("srv-1"))
+            .all(&db)
+            .await
+            .expect("query states");
+        assert_eq!(rows.len(), 1, "no duplicate alert_state rows");
+        assert!(!rows[0].resolved, "re-armed row should be firing again");
+        assert!(rows[0].resolved_at.is_none(), "resolved_at cleared on re-arm");
+        assert_eq!(rows[0].count, 1, "count reset on re-arm");
     }
 }

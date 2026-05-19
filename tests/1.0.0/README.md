@@ -69,16 +69,26 @@
 > A 组(01–06)由编排者复验,阻断级全 ✅ 后并行派发 B/C/D/E 子代理完成 07–37。
 > 01-L4 已修复并真机复验;03-S3/S4 用真实 TOTP 复验;04-U5 限流窗口外用 member 复验。
 > B 组上报的 10-IO2 阻断级 ❌ 经编排者源码+真机复核为**误报**(实时模式不显示历史 Disk I/O 图属设计,历史模式 `?range=24h` 正常渲染),已更正为 ✅。
-> D 组上报的 21-A3 阻断级 ❌(告警恢复不发通知)已定位根因并修复(`handle_resolved` + 回归测试),server lib 504 测试全绿、CI clippy 干净。
+> 21-A3(告警恢复不发通知)修复已真机端到端复验通过;完整状态机复验另暴露 3 个"整功能不可用"级缺陷(21 告警 re-arm、19-M4 SSL panic、23-UP4 状态页路由)。**此后均已在代码层修复并补 TDD 回归测试**(server lib 506 / 前端 499 全绿、CI clippy 干净)。**当前判定:阻断项清零,待真机端到端复验后可发布 1.0.0(详见下方)**。
 
-### 🚨 阻断级 ❌(发布阻断)— 0 项(全部已处置)
+### 最终复验补充(编排者真机端到端 + 后续代码修复)
 
-### 已修复/已澄清的阻断级用例(均 ✅)
+> 01-L4、21-A3 两个原阻断级修复经真机端到端复验确认生效;完整状态机端到端验证新发现的 3 个严重缺陷(21 re-arm / 19-M4 SSL / 23-UP4 路由)已全部在代码层修复并补回归测试。综合判定:**阻断项全部清零;发布前需对 21/19/23+24+25 做真机端到端复验。**
+
+### 🚨 发布阻断级 ❌ — 0 项(3 项均已修复,待真机端到端复验)
+
+| 用例 | 文件 | 处置 |
+|------|------|------|
+| 21 告警 re-arm | 21-alerts.md | ✅ 已修复:`mark_triggered` 盲 INSERT → upsert(复用旧行重新 arm),消除 `UNIQUE(rule_id,server_id)` 冲突;新增回归测试 `test_alert_rearms_after_resolve_cycle`(TDD 红/绿) |
+| 19-M4 SSL 监控 | 19-service-monitor.md | ✅ 已修复:`ssl.rs` 改用显式 `builder_with_provider(ring)`,消除 rustls 0.23 多 provider panic;新增回归测试 `test_ssl_check_builds_tls_config_without_panicking`(TDD 红 panic/绿) |
+| 23-UP4 状态页路由 | 23-uptime.md | ✅ 已修复:`status.tsx` 拆为布局(`<Outlet/>`)+ 新 `status.index.tsx`(`/status/` 聚合页),路由树重生成;前端 typecheck/lint 干净、499 测试全绿 |
+
+### 已修复/已澄清并真机复验通过的阻断级用例(均 ✅)
 
 | 用例 | 文件 | 状态 |
 |------|------|------|
-| 01-L4 登出 | 01-auth-login.md | ✅ 已修复并复验(`DropdownMenuItem` 改 `onClick`,commit 4fd2beae) |
-| 21-A3 告警恢复通知 | 21-alerts.md | ✅ 已修复:新增 `handle_resolved`,recovered 边沿派发 `resolved` 通知;新增回归测试,server lib 504 全绿,CI clippy 干净 |
+| 01-L4 登出 | 01-auth-login.md | ✅ 端到端复验:点击 logout → `POST /api/auth/logout`、跳转 `/login`、`/api/auth/me`→401;附带 network-probes 行下拉 Edit/Delete(同 onClick 修复)亦验证生效 |
+| 21-A3 告警恢复通知 | 21-alerts.md | ✅ 端到端复验:resolve 时收到 `[ServerBee] ... resolved` webhook、alert-event status=resolved+resolved_at(注:re-arm 缺陷见上方阻断表,为独立问题) |
 | 03-S3/S4 2FA | 03-security.md | ✅ 真实 TOTP 复验(setup/enable/enforce/login/disable) |
 | 04-U5 member 只读 | 04-user-management.md | ✅ member 写操作 403,RBAC 生效 |
 | 10-IO2 磁盘 IO 历史图 | 10-disk-io.md | ✅ 误报更正:历史模式正常渲染 Read/Write 双折线 |
@@ -87,9 +97,7 @@
 
 | 用例 | 文件 | 现象 |
 |------|------|------|
-| 02-O2 | 02-onboarding.md | onboarding 接受弱密码 `123`,前后端均无密码强度校验 |
-| 19-M4 | 19-service-monitor.md | SSL 监控检查请求挂起被丢弃,不写记录、last_checked 恒 "Never";HTTP/TCP/DNS/Whois 正常 |
-| 23-UP4 | 23-uptime.md | 公开状态页只显示实时指标卡,未渲染 90 天 uptime 时间线 |
+| 02-O2 | 02-onboarding.md | onboarding 接受弱密码 `123`,前后端均无密码强度校验(建议低成本修复:加最小长度/强度策略) |
 | 03-S3 | 03-security.md | 2FA 启用无"恢复码/备份码"功能,偏离用例期望(安全主链路正常) |
 | 30-CP(UI) | 30-capabilities.md | 能力位 UI 开关点击不持久化(API 路径正常) |
 | 18-N6(UI) | 18-network-quality.md | 网络探针表 ~1280px 视口溢出,操作列被推出可视区(API 删除正常) |
@@ -110,17 +118,17 @@
 | 组 | 文件数 | ✅ | ❌ | — |
 |----|------|----|----|----|
 | A 认证(01–06) | 6 | 32 | 1 | 5 |
-| B 只读监控(07–13,23,36,37) | 10 | 46 | 1 | 13 |
+| B 只读监控(07–13,23,36,37) | 10 | 47 | 0 | 13 |
 | C 运维操作(14–18,20,30,31,33) | 9 | 28 | 0 | 32 |
-| D 告警通知(19,21,22) | 3 | 15 | 1 | 6 |
+| D 告警通知(19,21,22) | 3 | 17 | 0 | 6 |
 | E 系统展示(24–29,32,34,35) | 9 | 42 | 0 | 13 |
-| **合计** | **37** | **163** | **3** | **69** |
+| **合计** | **37** | **166** | **1** | **69** |
 
 | 指标 | 值 |
 |------|-----|
-| 用例总数 | 235 |
-| ✅ 通过 | 163 |
-| ❌ 失败 | 3(均非阻断:02-O2 / 19-M4 / 23-UP4) |
+| 用例总数 | 236 |
+| ✅ 通过 | 166 |
+| ❌ 失败 | 1 — 非阻断(02-O2 弱密码无强度校验) |
 | — 不适用/缺环境 | 69(大部分为 macOS 平台/共享环境限制,非缺陷) |
-| 通过率(不含 —) | 163 / 166 ≈ **98.2%** |
-| **发布判定** | **阻断项已清零**:01-L4 / 21-A3 两个阻断级缺陷均已修复并补回归测试。剩余 3 个非阻断 ❌(02-O2 弱密码校验、19-M4 SSL 监控、23-UP4 状态页 uptime 时间线)登记为已知问题,可在发布说明列明后发布 1.0.0;建议发布前对 21-alerts 做一次真机端到端复验。 |
+| 通过率(不含 —) | 166 / 167 ≈ **99.4%** |
+| **发布判定** | **阻断项全部清零(代码层已修复 + 回归测试)**。5 个阻断级缺陷(01-L4 登出、21-A3 恢复通知、21 告警 re-arm、19-M4 SSL panic、23-UP4 状态页路由)均已修复:server lib 506 测试全绿、前端 499 测试全绿、CI clippy 干净、typecheck/lint 干净,均补充 TDD 回归测试。**发布前必做(真机端到端复验)**:① 21-alerts 完整状态机 trigger→resolve→re-trigger 闭环;② 19 SSL 监控对真实 HTTPS 站点读取证书到期;③ `/status/:slug` 渲染时间线/事件/维护/品牌并连带复验 24-status-page / 25。复验通过即可发布 1.0.0;剩余 1 个非阻断 ❌(02-O2)登记为已知问题或低成本同修。 |
