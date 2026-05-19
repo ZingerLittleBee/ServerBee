@@ -204,24 +204,24 @@ function ServersListPage() {
         id: 'cpu',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_cpu')} />,
         cell: ({ row }) => <CpuCell server={row.original} />,
-        size: 150,
-        meta: { className: 'w-[150px]', cellClassName: 'align-top', label: t('col_cpu') }
+        size: 180,
+        meta: { className: 'w-[180px]', cellClassName: 'align-top', label: t('col_cpu') }
       },
       {
         accessorFn: (row) => (row.mem_total > 0 ? row.mem_used / row.mem_total : 0),
         id: 'memory',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_memory')} />,
         cell: ({ row }) => <MemoryCell server={row.original} />,
-        size: 160,
-        meta: { className: 'w-[160px]', cellClassName: 'align-top', label: t('col_memory') }
+        size: 180,
+        meta: { className: 'w-[180px]', cellClassName: 'align-top', label: t('col_memory') }
       },
       {
         accessorFn: (row) => (row.disk_total > 0 ? row.disk_used / row.disk_total : 0),
         id: 'disk',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_disk')} />,
         cell: ({ row }) => <DiskCell server={row.original} />,
-        size: 172,
-        meta: { className: 'w-[172px]', cellClassName: 'align-top', label: t('col_disk') }
+        size: 184,
+        meta: { className: 'w-[184px]', cellClassName: 'align-top', label: t('col_disk') }
       },
       {
         id: 'network',
@@ -231,8 +231,8 @@ function ServersListPage() {
           const entry = trafficOverview.find((e) => e.server_id === row.original.id)
           return <NetworkCell entry={entry} server={row.original} />
         },
-        size: 172,
-        meta: { className: 'hidden lg:table-cell lg:w-[172px]', cellClassName: 'lg:align-top', label: t('col_network') }
+        size: 184,
+        meta: { className: 'hidden lg:table-cell lg:w-[184px]', cellClassName: 'lg:align-top', label: t('col_network') }
       },
       {
         id: 'cost',
@@ -242,16 +242,16 @@ function ServersListPage() {
         },
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_cost')} />,
         cell: ({ row }) => <CostCell entry={costByServerId.get(row.original.id)} />,
-        size: 156,
-        meta: { className: 'hidden xl:table-cell xl:w-[156px]', cellClassName: 'xl:align-top', label: t('col_cost') }
+        size: 172,
+        meta: { className: 'hidden xl:table-cell xl:w-[172px]', cellClassName: 'xl:align-top', label: t('col_cost') }
       },
       {
         accessorKey: 'uptime',
         id: 'uptime',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_uptime')} />,
         cell: ({ row }) => <UptimeCell server={row.original} />,
-        size: 184,
-        meta: { className: 'hidden xl:table-cell xl:w-[184px]', label: t('col_uptime') }
+        size: 196,
+        meta: { className: 'hidden xl:table-cell xl:w-[196px]', label: t('col_uptime') }
       },
       {
         id: 'group',
