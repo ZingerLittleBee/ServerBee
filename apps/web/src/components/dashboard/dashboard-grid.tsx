@@ -8,7 +8,7 @@ import {
   UnlockIcon
 } from 'lucide-react'
 import { type Ref, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { GridLayout, type Layout, type ResizeHandleAxis, useContainerWidth } from 'react-grid-layout'
+import { GridLayout, getCompactor, type Layout, type ResizeHandleAxis, useContainerWidth } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import { Button } from '@/components/ui/button'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
@@ -54,6 +54,36 @@ const AUTO_HEIGHT_TYPES = new Set(['top-n'])
 
 function pxToGridUnits(px: number): number {
   return Math.max(2, Math.ceil((px + MARGIN_Y) / (ROW_HEIGHT + MARGIN_Y)))
+}
+
+function rectsOverlap(a: Layout[number], b: Layout[number]): boolean {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+}
+
+// The grid uses an identity (no-op) compactor so widgets can be freely placed
+// and aligned across columns. That means a stale persisted layout with
+// overlapping widgets would render overlapped. This sweeps top-to-bottom and
+// pushes only the genuinely-overlapping widgets straight down, leaving every
+// non-colliding widget exactly where it was.
+function deoverlapLayout(layout: Layout): Layout {
+  const placed: Layout = []
+  const sorted = [...layout].sort((a, b) => a.y - b.y || a.x - b.x)
+  for (const original of sorted) {
+    const item = { ...original }
+    let collided = true
+    while (collided) {
+      collided = false
+      for (const p of placed) {
+        if (rectsOverlap(item, p)) {
+          item.y = p.y + p.h
+          collided = true
+        }
+      }
+    }
+    placed.push(item)
+  }
+  const byId = new Map(placed.map((it) => [it.i, it]))
+  return layout.map((it) => byId.get(it.i) ?? it)
 }
 
 type InteractionState = 'dragging' | 'idle' | 'resizing'
@@ -172,7 +202,7 @@ export function DashboardGrid({
         item.resizeHandles = ['e']
       }
     }
-    return layout
+    return deoverlapLayout(layout)
   }, [widgets, autoUnits])
 
   const [liveLayout, setLiveLayout] = useState<Layout>(baseLayout)
@@ -192,6 +222,11 @@ export function DashboardGrid({
     () => new Set(widgets.filter((w) => AUTO_HEIGHT_TYPES.has(w.widget_type)).map((w) => w.id)),
     [widgets]
   )
+
+  // No auto-compaction (widgets stay exactly where dropped, so items in
+  // different columns can be aligned freely) and preventCollision blocks
+  // dropping onto another widget (it snaps back), so widgets never overlap.
+  const compactor = useMemo(() => getCompactor(null, false, true), [])
 
   // Manual position/size persists in coarse units, so snap the live layout to
   // whole coarse rows (SCALE-aligned) while dragging/resizing. Otherwise the
@@ -289,6 +324,7 @@ export function DashboardGrid({
         <GridLayout
           autoSize
           className={cn('dashboard-grid', isEditing && 'dashboard-grid--editing')}
+          compactor={compactor}
           dragConfig={{ enabled: isEditing, bounded: false, threshold: 3 }}
           gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: MARGIN }}
           layout={liveLayout}

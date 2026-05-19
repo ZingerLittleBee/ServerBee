@@ -42,7 +42,8 @@ vi.mock('react-grid-layout', () => ({
     return <div data-testid="grid-layout">{props.children}</div>
   },
   useContainerWidth: () => ({ width: 1200, containerRef: { current: null }, mounted: true }),
-  noCompactor: (layout: unknown) => layout
+  noCompactor: (layout: unknown) => layout,
+  getCompactor: () => ({ type: null, allowOverlap: false, preventCollision: true, compact: (l: unknown) => l })
 }))
 
 vi.mock('react-grid-layout/css/styles.css', () => ({}))
