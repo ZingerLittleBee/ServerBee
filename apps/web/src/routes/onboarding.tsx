@@ -9,6 +9,8 @@ import { useAuth } from '@/hooks/use-auth'
 import { ApiError, api } from '@/lib/api-client'
 import type { OnboardingRequest } from '@/lib/api-schema'
 
+const MIN_PASSWORD_LEN = 8
+
 export const Route = createFileRoute('/onboarding')({
   component: OnboardingPage
 })
@@ -59,6 +61,10 @@ function OnboardingPage() {
     e.preventDefault()
     if (!password) {
       toast.error(t('password_required'))
+      return
+    }
+    if (password.length < MIN_PASSWORD_LEN) {
+      toast.error(t('password_too_short', { min: MIN_PASSWORD_LEN }))
       return
     }
     if (password !== confirm) {
@@ -118,6 +124,7 @@ function OnboardingPage() {
               type="password"
               value={password}
             />
+            <p className="text-muted-foreground text-xs">{t('password_hint', { min: MIN_PASSWORD_LEN })}</p>
           </div>
 
           <div className="space-y-2">
