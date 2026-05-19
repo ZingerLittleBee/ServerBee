@@ -309,6 +309,10 @@ Agent 使用 `sysinfo` 库采集以下系统指标：
 | 系统信息 | OS、内核版本、运行时间 | `sysinfo::System` |
 | 虚拟化 | 虚拟化类型 | `systemd-detect-virt` / DMI |
 
+## 资源开销
+
+Agent 常驻开销极低(个位数 MB 内存 + <1% CPU)。完整的 Agent 与 Server CPU/内存/磁盘/网络实测数据见 [资源开销](/cn/docs/resource-usage)。
+
 ## 断线重连
 
 Agent 与 Server 之间的 WebSocket 连接断开后，会自动尝试重连：

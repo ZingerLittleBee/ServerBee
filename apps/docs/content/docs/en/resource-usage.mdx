@@ -1,0 +1,74 @@
+---
+title: Resource Usage
+description: Measured runtime CPU, memory, disk, and network footprint for the ServerBee Agent and Server.
+icon: Gauge
+---
+
+This page records the measured runtime resource footprint of the ServerBee **Agent** and **Server**, covering CPU, memory, disk, and network. For detailed disk (database) growth capacity planning, see [Storage & Capacity Planning](/en/docs/storage-sizing).
+
+<Callout type="info">
+These values are measured, not estimated. Unless noted otherwise, they were taken on 2026-05-19 using v0.9.3. Usage varies with the collection interval, number of connected Agents, whether GPU/temperature collection is enabled, and dashboard query load — the figures here are stable order-of-magnitude references.
+</Callout>
+
+## Agent
+
+The Agent is a lightweight probe with a very small resident footprint.
+
+| Resource | Measured | Notes |
+|----------|----------|-------|
+| Memory (systemd cgroup, real private memory) | ~4.3 MB, peak ~5.1 MB | Most accurate memory figure |
+| Memory (`ps` RSS, includes shared library mappings) | ~10–11 MB | Overestimate, includes shared libs |
+| CPU | ~0.7% average (single core) | Includes the per-3s collection spike |
+| Threads | 10 | tokio runtime |
+| Binary size | ~11 MB | linux-amd64 release |
+| Network | One `SystemReport` JSON per collection interval (3s default) plus periodic ping/pong; on the order of ≤ 1–2 KB/s | Scales with interval and enabled metrics |
+
+Measurement environment: 4-core AMD EPYC 7B13 / 8 GB / Ubuntu 24.04 (KVM), Agent v0.9.3, 3s collection interval, temperature collection enabled, reporting to a remote Server over an HTTPS WebSocket.
+
+For comparison: among comparable resident monitoring agents, Netdata often reaches tens to hundreds of MB, Telegraf ~30–50 MB, node_exporter ~15–20 MB. The ServerBee Agent's **single-digit MB memory + <1% CPU** is among the lightest.
+
+## Server
+
+Server memory is driven mainly by the number of connected Agents, dashboard/API query load, and the data retention policy.
+
+### Production reference (Railway, real workload)
+
+A production instance with a small number of connected Agents, after setting `MALLOC_ARENA_MAX=2` (suppresses glibc multi-arena memory retention):
+
+| Resource | Measured | Notes |
+|----------|----------|-------|
+| Memory | Steady ~140–170 MB, flat over time with no sustained climb | Healthy level |
+
+<Callout type="warn">
+Without `MALLOC_ARENA_MAX=2` (or switching to jemalloc), glibc's default multi-arena allocator hoards freed memory inside the process instead of returning it to the OS, and long-running RSS climbs continuously (observed climbing to ~800 MB–1 GB over 2–3 days). This is not a code-level memory leak, but setting this environment variable is recommended when deploying the Server.
+</Callout>
+
+### Self-hosted idle reference
+
+A near-idle Server instance (no active Agent connections) on the same VPS:
+
+| Resource | Measured | Notes |
+|----------|----------|-------|
+| Memory (systemd cgroup) | ~15 MB, peak ~23.8 MB | Idle lower-bound reference |
+| Threads | 7 | tokio runtime |
+| CPU | Near zero at idle | Rises with Agent count and query load |
+| Binary size | ~47 MB | linux-amd64 release, embeds the frontend SPA |
+
+### Disk
+
+Server disk usage comes from the SQLite database and grows with the number of servers, enabled features, and retention policy. For the full 30-day capacity formulas and scenario catalog, see [Storage & Capacity Planning](/en/docs/storage-sizing). In production, reserve an extra 10%–20% on top of the base database size as a buffer for WAL and burst writes.
+
+## Caveats
+
+- The Railway memory figure assumes `MALLOC_ARENA_MAX=2` is set; it does not apply otherwise.
+- The self-hosted Server figures were taken near-idle and **do not** represent usage under many Agents or heavy query load — treat them as a lower bound only.
+- Agent network usage is an order-of-magnitude estimate based on protocol behavior; actual values vary with the collection interval and enabled metrics.
+- All values are order-of-magnitude references for capacity planning and anomaly detection (watch the **trend**, not the absolute value: steady = healthy, continuously climbing without recovery = investigate).
+
+## Related Docs
+
+<Cards>
+  <Card title="Storage & Capacity Planning" href="/en/docs/storage-sizing" />
+  <Card title="Agent Setup" href="/en/docs/agent" />
+  <Card title="Deployment Guide" href="/en/docs/deployment" />
+</Cards>
