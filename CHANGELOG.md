@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-05-20
+
+### Added
+
+- **Servers table redesign with bulk actions** -- The Servers page now uses a fill-height table with a sticky header, a single consolidated toolbar row, an optional bulk-actions select column gated behind a toggle, a 2x2 disk/network cell layout, and pagination that hides itself when only one page exists
+- **Per-target network breakdown** -- Server card tooltips show a per-target network traffic breakdown
+- **Offline server cards are dimmed** -- Offline servers are visually de-emphasized with an overlay
+- **Resource usage documentation** -- A new docs page reports the measured Agent and Server footprint, including cold-start vs 8h steady-state memory
+
+### Changed
+
+- **Stronger password policy** -- Login and registration now enforce a minimum password strength policy
+- **SQLite connection hardening** -- Pragmas are applied to every pooled connection and statement logging stays disabled
+- **Agent reaps terminal child processes** -- The Agent reaps the terminal child process on session close
+
+### Fixed
+
+- **Server deletion fully cleans up scoped data** -- Removing a server now cascades server-scoped data, `recovery_job` rows, and `device_tokens`; deletion is blocked while a recovery is running, and orphan-server cleanup routes through the shared deletion helpers
+- **Push registration is scoped to the caller** -- `push_register` and `push_unregister` reject cross-user overwrite and delete attempts; mobile refresh cascades `device_tokens` when it rotates the session
+- **Dashboard and chart rendering** -- Fixed multi-line chart rendering, performance and tooltips; dashboard jank during dialog and drag; server edit wiping the server list; grid layout sync while idle; widget alignment and overlap; and 24-hour time on chart axes and tooltips
+- **Alert recovery notifications** -- A recovery notification is now dispatched when an alert resolves
+- **Deployment and dependency advisories** -- The Caddy state dir is created when missing, mapped AAAA records are ignored, and `aws-lc-sys`/`rustls-webpki` are bumped to patch security advisories
+
 ## [0.9.3] - 2026-05-18
 
 ### Fixed
