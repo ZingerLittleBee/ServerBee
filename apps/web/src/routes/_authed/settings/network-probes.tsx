@@ -312,14 +312,14 @@ export function NetworkProbeSettingsPage() {
                 <DropdownMenuContent align="end" className="w-36">
                   <DropdownMenuItem
                     aria-label={t('edit_target_aria', { defaultValue: 'Edit {{name}}', name: row.original.name })}
-                    onSelect={() => openEditDialog(row.original)}
+                    onClick={() => openEditDialog(row.original)}
                   >
                     <Pencil className="size-3.5" />
                     {t('edit_target')}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     aria-label={t('delete_target_aria', { defaultValue: 'Delete {{name}}', name: row.original.name })}
-                    onSelect={() => setDeleteTargetId(row.original.id)}
+                    onClick={() => setDeleteTargetId(row.original.id)}
                     variant="destructive"
                   >
                     <Trash2 className="size-3.5" />

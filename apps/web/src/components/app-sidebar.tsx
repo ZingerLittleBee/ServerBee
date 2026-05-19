@@ -170,7 +170,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
-                  <DropdownMenuItem onSelect={handleLogout}>
+                  <DropdownMenuItem onClick={handleLogout}>
                     <LogOut />
                     {t('logout')}
                   </DropdownMenuItem>
