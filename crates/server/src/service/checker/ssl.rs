@@ -40,9 +40,27 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
     let mut root_store = rustls::RootCertStore::empty();
     root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
-    let tls_config = ClientConfig::builder()
-        .with_root_certificates(root_store)
-        .with_no_client_auth();
+    // Use an explicit crypto provider: rustls 0.23 cannot auto-select one
+    // when both the aws_lc_rs and ring features are compiled in (via
+    // reqwest's rustls-tls + rustls' default), and ClientConfig::builder()
+    // would panic the worker. ring is always available through reqwest.
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let tls_config = match ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+    {
+        Ok(builder) => builder
+            .with_root_certificates(root_store)
+            .with_no_client_auth(),
+        Err(e) => {
+            let latency = start.elapsed().as_secs_f64() * 1000.0;
+            return CheckResult {
+                success: false,
+                latency: Some(latency),
+                detail: Value::Null,
+                error: Some(format!("TLS configuration error: {e}")),
+            };
+        }
+    };
 
     let connector = TlsConnector::from(Arc::new(tls_config));
 
@@ -243,5 +261,16 @@ mod tests {
         let (host, port) = parse_host_port("example.com", &config);
         assert_eq!(host, "example.com");
         assert_eq!(port, 8443);
+    }
+
+    #[tokio::test]
+    async fn test_ssl_check_builds_tls_config_without_panicking() {
+        // Regression: rustls 0.23 with both aws_lc_rs and ring features
+        // compiled in panics inside ClientConfig::builder() because it
+        // cannot pick a process default provider. The SSL checker must
+        // build its TLS config with an explicit provider and return a
+        // failed result for an unreachable host, never panic the worker.
+        let res = check("nonexistent.invalid:443", &json!({ "timeout": 2 })).await;
+        assert!(!res.success, "unreachable host should fail, not panic");
     }
 }

@@ -13,6 +13,7 @@ import { Route as StatusRouteImport } from './routes/status'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedRouteImport } from './routes/_authed'
+import { Route as StatusIndexRouteImport } from './routes/status.index'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as StatusSlugRouteImport } from './routes/status.$slug'
 import { Route as AuthedTrafficIndexRouteImport } from './routes/_authed/traffic/index'
@@ -60,6 +61,11 @@ const LoginRoute = LoginRouteImport.update({
 const AuthedRoute = AuthedRouteImport.update({
   id: '/_authed',
   getParentRoute: () => rootRouteImport,
+} as any)
+const StatusIndexRoute = StatusIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => StatusRoute,
 } as any)
 const AuthedIndexRoute = AuthedIndexRouteImport.update({
   id: '/',
@@ -218,6 +224,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/status': typeof StatusRouteWithChildren
   '/status/$slug': typeof StatusSlugRoute
+  '/status/': typeof StatusIndexRoute
   '/files/$serverId': typeof AuthedFilesServerIdRoute
   '/network/$serverId': typeof AuthedNetworkServerIdRoute
   '/servers/$id': typeof AuthedServersIdRoute
@@ -248,9 +255,9 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
-  '/status': typeof StatusRouteWithChildren
   '/status/$slug': typeof StatusSlugRoute
   '/': typeof AuthedIndexRoute
+  '/status': typeof StatusIndexRoute
   '/files/$serverId': typeof AuthedFilesServerIdRoute
   '/network/$serverId': typeof AuthedNetworkServerIdRoute
   '/servers/$id': typeof AuthedServersIdRoute
@@ -286,6 +293,7 @@ export interface FileRoutesById {
   '/status': typeof StatusRouteWithChildren
   '/status/$slug': typeof StatusSlugRoute
   '/_authed/': typeof AuthedIndexRoute
+  '/status/': typeof StatusIndexRoute
   '/_authed/files/$serverId': typeof AuthedFilesServerIdRoute
   '/_authed/network/$serverId': typeof AuthedNetworkServerIdRoute
   '/_authed/servers/$id': typeof AuthedServersIdRoute
@@ -321,6 +329,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/status'
     | '/status/$slug'
+    | '/status/'
     | '/files/$serverId'
     | '/network/$serverId'
     | '/servers/$id'
@@ -351,9 +360,9 @@ export interface FileRouteTypes {
   to:
     | '/login'
     | '/onboarding'
-    | '/status'
     | '/status/$slug'
     | '/'
+    | '/status'
     | '/files/$serverId'
     | '/network/$serverId'
     | '/servers/$id'
@@ -388,6 +397,7 @@ export interface FileRouteTypes {
     | '/status'
     | '/status/$slug'
     | '/_authed/'
+    | '/status/'
     | '/_authed/files/$serverId'
     | '/_authed/network/$serverId'
     | '/_authed/servers/$id'
@@ -452,6 +462,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof AuthedRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/status/': {
+      id: '/status/'
+      path: '/'
+      fullPath: '/status/'
+      preLoaderRoute: typeof StatusIndexRouteImport
+      parentRoute: typeof StatusRoute
     }
     '/_authed/': {
       id: '/_authed/'
@@ -731,10 +748,12 @@ const AuthedRouteWithChildren =
 
 interface StatusRouteChildren {
   StatusSlugRoute: typeof StatusSlugRoute
+  StatusIndexRoute: typeof StatusIndexRoute
 }
 
 const StatusRouteChildren: StatusRouteChildren = {
   StatusSlugRoute: StatusSlugRoute,
+  StatusIndexRoute: StatusIndexRoute,
 }
 
 const StatusRouteWithChildren =
