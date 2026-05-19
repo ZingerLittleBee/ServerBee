@@ -12,7 +12,7 @@
 | L6 | 登录限流 | 连续多次错误登录(同 IP) | 触发 15 分钟窗口限流提示 | 否 | ✅ |
 | L7 | Secure Cookie | 生产配置下登录 | Cookie 带 Secure/HttpOnly 标志 | 否 | — |
 
-> ✅ L4(**阻断级**,已修复): 根因为 `app-sidebar.tsx` 的 logout `DropdownMenuItem` 使用了 Radix 的 `onSelect`,而本项目 `DropdownMenuItem` 基于 Base UI `Menu.Item`,其动作回调是 `onClick`,`onSelect` 被静默忽略 → 点击无任何效果。已改为 `onClick`,并补充回归测试 `app-sidebar.test.tsx`(编码 Base UI Menu.Item 契约)。同类 bug 在 `network-probes.tsx` 的编辑/删除下拉项一并修复。全量前端测试 499 通过、typecheck/lint 干净。
+> ✅ L4(**阻断级**,已修复并真机复验): 根因为 `app-sidebar.tsx` 的 logout `DropdownMenuItem` 使用了 Radix 的 `onSelect`,而本项目 `DropdownMenuItem` 基于 Base UI `Menu.Item`,其动作回调是 `onClick`,`onSelect` 被静默忽略 → 点击无任何效果。已改为 `onClick`,并补充回归测试 `app-sidebar.test.tsx`(编码 Base UI Menu.Item 契约)。同类 bug 在 `network-probes.tsx` 的编辑/删除下拉项一并修复。全量前端测试 499 通过、typecheck/lint 干净。复验(commit 4fd2beae,debug 构建运行时从磁盘读 dist):浏览器点击侧边栏 logout → 发出 `POST /api/auth/logout`、跳转 `/login`、`/api/auth/me` 返回 401,会话已清除。
 > — L7: 本轮以 `SERVERBEE_AUTH__SECURE_COOKIE=false` 开发配置启动,未验证生产 Secure 标志。
 > 备注 L2: 凭据错误以原始 JSON `{"error":{"code":"UNAUTHORIZED",...}}` 形式弹出 toast,功能正确但文案未本地化(非阻断 UX)。
 > 备注 L6: 同 IP 连续错误登录返回 429,限流生效;副作用是后续浏览器登录在 15 分钟窗口内被锁,导致部分需 member 登录的用例本轮改用 API 验证。

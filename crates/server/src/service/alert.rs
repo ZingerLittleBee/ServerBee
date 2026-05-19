@@ -501,6 +501,7 @@ impl AlertService {
                 // Recovered
                 state_manager.mark_resolved(db, &rule.id, &srv.id).await?;
                 tracing::info!("Alert '{}' resolved for server '{}'", rule.name, srv.name);
+                Self::handle_resolved(db, config, rule, &srv.id, &srv.name).await;
             }
         }
 
@@ -593,6 +594,37 @@ impl AlertService {
         }
 
         Ok(())
+    }
+
+    /// Send a recovery notification when an alert transitions back to normal.
+    ///
+    /// This branch is edge-triggered: `evaluate_rule` only reaches it on the
+    /// triggered→recovered transition (and `mark_resolved` clears the state),
+    /// so no debounce is needed. Notification failures are logged, never
+    /// propagated, so a flaky channel cannot block alert-state bookkeeping.
+    async fn handle_resolved(
+        db: &DatabaseConnection,
+        config: &crate::config::AppConfig,
+        rule: &alert_rule::Model,
+        server_id: &str,
+        server_name: &str,
+    ) {
+        let Some(ref group_id) = rule.notification_group_id else {
+            return;
+        };
+        let ctx = NotifyContext {
+            server_name: server_name.to_string(),
+            server_id: server_id.to_string(),
+            rule_name: rule.name.clone(),
+            rule_id: rule.id.clone(),
+            event: "resolved".to_string(),
+            message: format!("Alert rule '{}' resolved", rule.name),
+            time: Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            ..Default::default()
+        };
+        if let Err(e) = NotificationService::send_group(db, config, group_id, &ctx).await {
+            tracing::error!("Failed to send alert recovery notification: {e}");
+        }
     }
 
     /// Check event-driven rules (e.g. `ip_changed`) — called from WS handler
@@ -1398,5 +1430,124 @@ mod tests {
         // Request all
         let events_all = AlertService::list_events(&db, 20).await.unwrap();
         assert_eq!(events_all.len(), 5);
+    }
+
+    #[tokio::test]
+    async fn test_recovery_dispatches_resolved_notification() {
+        use crate::entity::{notification, notification_group};
+        use tokio::io::AsyncReadExt;
+
+        let (db, _tmp) = setup_test_db().await;
+
+        // Local webhook sink that captures the first inbound request.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind webhook sink");
+        let port = listener.local_addr().unwrap().port();
+        let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut buf = Vec::new();
+                let mut chunk = [0u8; 1024];
+                // Loopback delivers the small request in one or two reads.
+                for _ in 0..8 {
+                    match tokio::time::timeout(
+                        std::time::Duration::from_millis(300),
+                        socket.read(&mut chunk),
+                    )
+                    .await
+                    {
+                        Ok(Ok(0)) => break,
+                        Ok(Ok(n)) => {
+                            buf.extend_from_slice(&chunk[..n]);
+                            if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                                break;
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+                let _ = socket
+                    .try_write(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+                let _ = tx.send(String::from_utf8_lossy(&buf).into_owned());
+            }
+        });
+
+        insert_test_server(&db, "srv-1", "Server Alpha").await;
+
+        let now = Utc::now();
+        notification::ActiveModel {
+            id: Set("notif-1".to_string()),
+            name: Set("Hook".to_string()),
+            notify_type: Set("webhook".to_string()),
+            config_json: Set(format!(
+                r#"{{"url":"http://127.0.0.1:{port}/","method":"POST"}}"#
+            )),
+            enabled: Set(true),
+            created_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .expect("insert notification");
+
+        notification_group::ActiveModel {
+            id: Set("grp-1".to_string()),
+            name: Set("Group".to_string()),
+            notification_ids_json: Set(r#"["notif-1"]"#.to_string()),
+            created_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .expect("insert notification group");
+
+        // Rule with a CPU threshold that cannot match (no records exist),
+        // so check_server() is false and the recovery branch is taken.
+        let rule = alert_rule::ActiveModel {
+            id: Set("rule-1".to_string()),
+            name: Set("CPU Alert".to_string()),
+            enabled: Set(true),
+            rules_json: Set(r#"[{"rule_type":"cpu","max":90.0}]"#.to_string()),
+            trigger_mode: Set("always".to_string()),
+            notification_group_id: Set(Some("grp-1".to_string())),
+            fail_trigger_tasks: Set(None),
+            recover_trigger_tasks: Set(None),
+            cover_type: Set("all".to_string()),
+            server_ids_json: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .expect("insert rule");
+
+        // Seed the state as already triggered so evaluate_rule sees a
+        // triggered→recovered transition.
+        let state_manager = AlertStateManager::new();
+        state_manager
+            .mark_triggered(&db, "rule-1", "srv-1")
+            .await
+            .expect("seed triggered state");
+
+        let (browser_tx, _) = tokio::sync::broadcast::channel(16);
+        let agent_manager = AgentManager::new(browser_tx);
+        let config = crate::config::AppConfig::default();
+
+        AlertService::evaluate_rule(&db, &config, &agent_manager, &state_manager, &rule)
+            .await
+            .expect("evaluate_rule");
+
+        let payload = tokio::time::timeout(std::time::Duration::from_secs(5), rx)
+            .await
+            .expect("recovery notification was not dispatched within timeout")
+            .expect("webhook sink dropped");
+
+        assert!(
+            payload.contains("resolved"),
+            "recovery webhook payload should carry the resolved event, got: {payload}"
+        );
+        assert!(
+            !state_manager.is_triggered("rule-1", "srv-1"),
+            "state should be cleared after recovery"
+        );
     }
 }
