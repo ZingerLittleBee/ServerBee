@@ -138,6 +138,13 @@ export function DashboardGrid({
   }
   const widgetServers = isInteracting ? frozenServersRef.current : servers
 
+  // When idle, render the layout derived directly from `widgets` so external
+  // updates (e.g. after a save swaps temp ids for server ids) are reflected
+  // immediately. `liveLayout` is only used to keep an in-flight drag/resize
+  // smooth; relying on it while idle leaves a stale frame that snaps widgets
+  // back to their initial positions and flickers until a refetch.
+  const displayLayout = isInteracting ? liveLayout : baseLayout
+
   const updateLiveLayout = useCallback((nextLayout: Layout) => {
     setLiveLayout(nextLayout)
   }, [])
@@ -210,7 +217,7 @@ export function DashboardGrid({
           className={cn('dashboard-grid', isEditing && 'dashboard-grid--editing')}
           dragConfig={{ enabled: isEditing, bounded: false, threshold: 3 }}
           gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: MARGIN }}
-          layout={liveLayout}
+          layout={displayLayout}
           onDrag={updateLiveLayout}
           onDragStart={() => setInteractionState('dragging')}
           onDragStop={commitLayoutChange}
