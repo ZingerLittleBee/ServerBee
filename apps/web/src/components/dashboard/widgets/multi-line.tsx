@@ -16,6 +16,7 @@ import type { ServerMetricRecord } from '@/lib/api-schema'
 import { formatBytes } from '@/lib/utils'
 import {
   extractRecordMetric,
+  formatChartDateTime,
   formatChartTime,
   isNetworkMetric,
   METRIC_LABELS,
@@ -33,6 +34,72 @@ const DEFAULT_INTERVAL = 'raw'
 const REFETCH_INTERVAL = 60_000
 
 const CHART_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)']
+
+const TARGET_POINTS = 300
+const MIN_BUCKET_MS = 60_000
+
+interface Bucket {
+  counts: Map<string, number>
+  sums: Map<string, number>
+  timestamp: string
+}
+
+function accumulateBuckets(
+  serverIds: string[],
+  queries: { data?: ServerMetricRecord[] }[],
+  serverMap: Map<string, ServerMetrics>,
+  metric: string,
+  bucketMs: number
+): Map<number, Bucket> {
+  const buckets = new Map<number, Bucket>()
+
+  for (let i = 0; i < serverIds.length; i++) {
+    const sid = serverIds[i]
+    const records = queries[i]?.data
+    if (!records) {
+      continue
+    }
+    const server = serverMap.get(sid)
+    for (const record of records) {
+      const start = Math.floor(new Date(record.time).getTime() / bucketMs) * bucketMs
+      let bucket = buckets.get(start)
+      if (!bucket) {
+        bucket = { timestamp: new Date(start).toISOString(), sums: new Map(), counts: new Map() }
+        buckets.set(start, bucket)
+      }
+      const value = extractRecordMetric(record, metric, server)
+      bucket.sums.set(sid, (bucket.sums.get(sid) ?? 0) + value)
+      bucket.counts.set(sid, (bucket.counts.get(sid) ?? 0) + 1)
+    }
+  }
+
+  return buckets
+}
+
+// Raw records are ~1 point/minute/server; over a 24h window with several servers
+// that is thousands of SVG points, which makes the chart laggy. Downsample into
+// shared time buckets (averaging per server). Shared bucket keys also let the
+// tooltip show every VPS at the hovered point.
+function buildBucketedRows(
+  serverIds: string[],
+  queries: { data?: ServerMetricRecord[] }[],
+  serverMap: Map<string, ServerMetrics>,
+  metric: string,
+  hours: number
+): Record<string, unknown>[] {
+  const bucketMs = Math.max(MIN_BUCKET_MS, Math.ceil((hours * 3600 * 1000) / TARGET_POINTS))
+  const buckets = accumulateBuckets(serverIds, queries, serverMap, metric, bucketMs)
+
+  return [...buckets.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, bucket]) => {
+      const row: Record<string, unknown> = { timestamp: bucket.timestamp }
+      for (const [sid, sum] of bucket.sums) {
+        row[sid] = sum / (bucket.counts.get(sid) ?? 1)
+      }
+      return row
+    })
+}
 
 export function MultiLineWidget({ config, servers }: MultiLineWidgetProps) {
   const { server_ids = [], metric } = config
@@ -92,29 +159,10 @@ export function MultiLineWidget({ config, servers }: MultiLineWidgetProps) {
     return cfg
   }, [server_ids, serverMap])
 
-  const chartData = useMemo(() => {
-    const timeMap = new Map<string, Record<string, unknown>>()
-
-    for (let i = 0; i < server_ids.length; i++) {
-      const sid = server_ids[i]
-      const records = queries[i]?.data
-      if (!records) {
-        continue
-      }
-      const server = serverMap.get(sid)
-      for (const record of records) {
-        const key = record.time
-        let row = timeMap.get(key)
-        if (!row) {
-          row = { timestamp: key }
-          timeMap.set(key, row)
-        }
-        row[sid] = extractRecordMetric(record, metric, server)
-      }
-    }
-
-    return [...timeMap.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, row]) => row)
-  }, [queries, server_ids, metric, serverMap])
+  const chartData = useMemo(
+    () => buildBucketedRows(server_ids, queries, serverMap, metric, hours),
+    [queries, server_ids, metric, serverMap, hours]
+  )
 
   const label = METRIC_LABELS[metric] ?? metric
 
@@ -144,7 +192,7 @@ export function MultiLineWidget({ config, servers }: MultiLineWidgetProps) {
             <ChartTooltip
               content={
                 <ChartTooltipContent
-                  labelFormatter={(l) => formatChartTime(String(l))}
+                  labelFormatter={(l) => formatChartDateTime(String(l))}
                   valueFormatter={(v) => (isNetwork ? `${formatBytes(v)}/s` : `${Number(v).toFixed(1)}${unit}`)}
                 />
               }
@@ -152,6 +200,7 @@ export function MultiLineWidget({ config, servers }: MultiLineWidgetProps) {
             <ChartLegend content={<ChartLegendContent />} />
             {server_ids.map((sid) => (
               <Line
+                connectNulls
                 dataKey={sid}
                 dot={false}
                 key={sid}

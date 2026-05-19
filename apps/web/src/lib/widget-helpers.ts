@@ -75,6 +75,17 @@ export function formatChartTime(time: string): string {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
+export function formatChartDateTime(time: string): string {
+  const date = new Date(time)
+  return date.toLocaleString([], {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  })
+}
+
 export function formatRelativeTime(input: string | number | null): string {
   if (input === null) {
     return 'Never'
