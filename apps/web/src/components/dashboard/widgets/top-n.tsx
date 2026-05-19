@@ -55,9 +55,9 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
   const title = TOP_N_LABELS[metric] ?? `Top ${METRIC_LABELS[metric] ?? metric}`
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card p-4">
-      <h3 className="mb-3 font-semibold text-sm">{title}</h3>
-      <div className="flex flex-1 flex-col gap-2 overflow-auto">
+    <div className="flex flex-col gap-3 rounded-lg border bg-card p-4">
+      <h3 className="font-semibold text-sm">{title}</h3>
+      <div className="flex flex-col gap-2">
         {ranked.map((item, index) => {
           const pct = maxValue > 0 ? (item.value / maxValue) * 100 : 0
           return (
@@ -79,7 +79,7 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
           )
         })}
         {ranked.length === 0 && (
-          <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">No online servers</div>
+          <div className="flex items-center justify-center py-4 text-muted-foreground text-xs">No online servers</div>
         )}
       </div>
     </div>

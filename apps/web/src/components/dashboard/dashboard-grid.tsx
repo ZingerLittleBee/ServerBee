@@ -36,9 +36,25 @@ function isWidgetStatic(configJson: string): boolean {
 }
 
 const COLS = 12
-const ROW_HEIGHT = 80
+// Vertical fine-grain factor: persisted (coarse) grid rows are split into SCALE
+// finer rows so content-sized widgets quantize to ~ROW_HEIGHT px instead of a
+// whole coarse row. Invariant for pixel-identical legacy widgets: the legacy
+// per-row step (80 + 16) must equal SCALE * (ROW_HEIGHT + MARGIN_Y) → 4*(8+16)=96.
+const SCALE = 4
+const ROW_HEIGHT = 8
 const MARGIN: [number, number] = [16, 16]
+const MARGIN_Y = MARGIN[1]
+// Legacy coarse row pixel height, used only for the mobile single-column min-height.
+const MOBILE_ROW_PX = 80
 const MOBILE_BREAKPOINT = 768
+
+// Widgets whose grid cell height should follow their measured content height
+// instead of a fixed/estimated number of rows.
+const AUTO_HEIGHT_TYPES = new Set(['top-n'])
+
+function pxToGridUnits(px: number): number {
+  return Math.max(2, Math.ceil((px + MARGIN_Y) / (ROW_HEIGHT + MARGIN_Y)))
+}
 
 type InteractionState = 'dragging' | 'idle' | 'resizing'
 
@@ -124,7 +140,38 @@ export function DashboardGrid({
   const isMobile = useIsMobile()
   const { width, containerRef, mounted } = useContainerWidth()
 
-  const baseLayout = useMemo(() => widgetsToLayout(widgets), [widgets])
+  const [autoUnits, setAutoUnits] = useState<Record<string, number>>({})
+
+  const handleMeasure = useCallback((id: string, px: number) => {
+    const units = pxToGridUnits(px)
+    setAutoUnits((prev) => (prev[id] === units ? prev : { ...prev, [id]: units }))
+  }, [])
+
+  // Persisted grid units are coarse (1 row == ROW_HEIGHT*SCALE px). The grid
+  // itself runs at a SCALE-times finer row so content-sized widgets can hug
+  // their content within ~ROW_HEIGHT px instead of a full coarse row. Scale the
+  // vertical axis up here and divide back down on commit.
+  const baseLayout = useMemo(() => {
+    const layout = widgetsToLayout(widgets)
+    for (const item of layout) {
+      item.y *= SCALE
+      item.h *= SCALE
+      if (item.minH !== undefined) {
+        item.minH *= SCALE
+      }
+      if (item.maxH !== undefined) {
+        item.maxH *= SCALE
+      }
+      const units = autoUnits[item.i]
+      if (units !== undefined) {
+        item.h = units
+        item.minH = units
+        item.maxH = units
+      }
+    }
+    return layout
+  }, [widgets, autoUnits])
+
   const [liveLayout, setLiveLayout] = useState<Layout>(baseLayout)
   const [interactionState, setInteractionState] = useState<InteractionState>('idle')
 
@@ -138,22 +185,38 @@ export function DashboardGrid({
   }
   const widgetServers = isInteracting ? frozenServersRef.current : servers
 
-  // When idle, render the layout derived directly from `widgets` so external
-  // updates (e.g. after a save swaps temp ids for server ids) are reflected
-  // immediately. `liveLayout` is only used to keep an in-flight drag/resize
-  // smooth; relying on it while idle leaves a stale frame that snaps widgets
-  // back to their initial positions and flickers until a refetch.
-  const displayLayout = isInteracting ? liveLayout : baseLayout
+  const autoIdSet = useMemo(
+    () => new Set(widgets.filter((w) => AUTO_HEIGHT_TYPES.has(w.widget_type)).map((w) => w.id)),
+    [widgets]
+  )
 
-  const updateLiveLayout = useCallback((nextLayout: Layout) => {
-    setLiveLayout(nextLayout)
-  }, [])
+  // Manual position/size persists in coarse units, so snap the live layout to
+  // whole coarse rows (SCALE-aligned) while dragging/resizing. Otherwise the
+  // dropped fine position gets rounded on commit and the widget visibly snaps
+  // back, then ping-pongs with RGL's onLayoutChange echo (the "jitter").
+  // Auto-height widgets keep their measured fine height untouched.
+  const updateLiveLayout = useCallback(
+    (nextLayout: Layout) => {
+      setLiveLayout(
+        nextLayout.map((item) => ({
+          ...item,
+          y: Math.round(item.y / SCALE) * SCALE,
+          h: autoIdSet.has(item.i) ? item.h : Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
+        }))
+      )
+    },
+    [autoIdSet]
+  )
 
-  useEffect(() => {
-    if (interactionState === 'idle') {
-      updateLiveLayout(baseLayout)
-    }
-  }, [baseLayout, interactionState, updateLiveLayout])
+  // Resync the rendered layout to the widgets-derived one the moment `widgets`
+  // change while idle (e.g. after a save swaps temp ids for server ids). Doing
+  // this in render (guarded) instead of an effect avoids the stale frame that
+  // snapped widgets back to their initial positions and flickered.
+  const prevBaseRef = useRef(baseLayout)
+  if (!isInteracting && prevBaseRef.current !== baseLayout) {
+    prevBaseRef.current = baseLayout
+    setLiveLayout(baseLayout)
+  }
 
   useEffect(() => {
     if (isMobile) {
@@ -171,7 +234,19 @@ export function DashboardGrid({
   const commitLayoutChange = useCallback(
     (finalLayout: Layout) => {
       setInteractionState('idle')
-      const patch = layoutToPatch(finalLayout, widgets)
+      const widgetMap = new Map(widgets.map((w) => [w.id, w]))
+      // Convert the fine grid back to coarse persisted units. Auto-height widgets
+      // keep their stored grid_h — their height is content-driven, not user-set.
+      const coarseLayout = finalLayout.map((item) => {
+        const w = widgetMap.get(item.i)
+        const isAuto = w !== undefined && AUTO_HEIGHT_TYPES.has(w.widget_type)
+        return {
+          ...item,
+          y: Math.round(item.y / SCALE),
+          h: isAuto && w ? w.grid_h : Math.round(item.h / SCALE)
+        }
+      })
+      const patch = layoutToPatch(coarseLayout, widgets)
       if (patch.length > 0) {
         onLayoutChange(patch)
       }
@@ -199,7 +274,7 @@ export function DashboardGrid({
             )}
             <div
               className={isEditing ? 'pointer-events-none' : undefined}
-              style={{ minHeight: widget.grid_h * ROW_HEIGHT }}
+              style={{ minHeight: widget.grid_h * MOBILE_ROW_PX }}
             >
               <WidgetRenderer servers={widgetServers} widget={widget} />
             </div>
@@ -217,7 +292,7 @@ export function DashboardGrid({
           className={cn('dashboard-grid', isEditing && 'dashboard-grid--editing')}
           dragConfig={{ enabled: isEditing, bounded: false, threshold: 3 }}
           gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: MARGIN }}
-          layout={displayLayout}
+          layout={liveLayout}
           onDrag={updateLiveLayout}
           onDragStart={() => setInteractionState('dragging')}
           onDragStop={commitLayoutChange}
@@ -228,21 +303,32 @@ export function DashboardGrid({
           resizeConfig={{ enabled: isEditing, handleComponent: renderResizeHandle, handles: ['s', 'e', 'se'] }}
           width={width}
         >
-          {widgets.map((widget) => (
-            <div className="relative h-full" key={widget.id}>
-              {isEditing && (
-                <EditOverlay
-                  isStatic={isWidgetStatic(widget.config_json)}
-                  onDelete={() => onWidgetDelete(widget.id)}
-                  onEdit={() => onWidgetEdit(widget.id)}
-                  onToggleStatic={onWidgetToggleStatic ? () => onWidgetToggleStatic(widget.id) : undefined}
-                />
-              )}
-              <div className={isEditing ? 'pointer-events-none h-full' : 'h-full'}>
-                <WidgetRenderer servers={widgetServers} widget={widget} />
+          {widgets.map((widget) => {
+            const isAuto = AUTO_HEIGHT_TYPES.has(widget.widget_type)
+            return (
+              <div className="relative h-full" key={widget.id}>
+                {isEditing && (
+                  <EditOverlay
+                    isStatic={isWidgetStatic(widget.config_json)}
+                    onDelete={() => onWidgetDelete(widget.id)}
+                    onEdit={() => onWidgetEdit(widget.id)}
+                    onToggleStatic={onWidgetToggleStatic ? () => onWidgetToggleStatic(widget.id) : undefined}
+                  />
+                )}
+                {isAuto ? (
+                  <div className={isEditing ? 'pointer-events-none' : undefined}>
+                    <AutoHeightItem onMeasure={handleMeasure} widgetId={widget.id}>
+                      <WidgetRenderer servers={widgetServers} widget={widget} />
+                    </AutoHeightItem>
+                  </div>
+                ) : (
+                  <div className={isEditing ? 'pointer-events-none h-full' : 'h-full'}>
+                    <WidgetRenderer servers={widgetServers} widget={widget} />
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            )
+          })}
         </GridLayout>
       )}
     </div>
@@ -306,4 +392,35 @@ function EditOverlay({
       </Button>
     </div>
   )
+}
+
+// Measures its content height (the widget card hugs its content, so this is the
+// real height) and reports it so the grid cell can be sized to fit exactly.
+function AutoHeightItem({
+  widgetId,
+  onMeasure,
+  children
+}: {
+  widgetId: string
+  onMeasure: (id: string, px: number) => void
+  children: ReactNode
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) {
+      return
+    }
+    const observer = new ResizeObserver(() => {
+      const px = el.offsetHeight
+      if (px > 0) {
+        onMeasure(widgetId, px)
+      }
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [widgetId, onMeasure])
+
+  return <div ref={ref}>{children}</div>
 }

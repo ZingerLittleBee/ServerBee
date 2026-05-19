@@ -41,7 +41,8 @@ vi.mock('react-grid-layout', () => ({
     latestGridLayoutProps = props
     return <div data-testid="grid-layout">{props.children}</div>
   },
-  useContainerWidth: () => ({ width: 1200, containerRef: { current: null }, mounted: true })
+  useContainerWidth: () => ({ width: 1200, containerRef: { current: null }, mounted: true }),
+  noCompactor: (layout: unknown) => layout
 }))
 
 vi.mock('react-grid-layout/css/styles.css', () => ({}))
@@ -179,9 +180,10 @@ describe('DashboardGrid', () => {
       />
     )
 
+    // Fine units (4x scale), already coarse-row aligned so snapping is a no-op.
     const nextLayout = [
-      { i: 'w-1', x: 1, y: 2, w: 2, h: 2 },
-      { i: 'w-2', x: 2, y: 0, w: 3, h: 3 }
+      { i: 'w-1', x: 1, y: 8, w: 2, h: 8 },
+      { i: 'w-2', x: 2, y: 0, w: 3, h: 12 }
     ]
 
     act(() => {
@@ -206,9 +208,10 @@ describe('DashboardGrid', () => {
       />
     )
 
+    // Fine units (4x scale), already coarse-row aligned so snapping is a no-op.
     const dragLayout = [
-      { i: 'w-1', x: 1, y: 2, w: 2, h: 2 },
-      { i: 'w-2', x: 2, y: 0, w: 3, h: 3 }
+      { i: 'w-1', x: 1, y: 8, w: 2, h: 8 },
+      { i: 'w-2', x: 2, y: 0, w: 3, h: 12 }
     ]
 
     act(() => {
@@ -236,13 +239,14 @@ describe('DashboardGrid', () => {
 
     act(() => {
       getGridLayoutProps().onDragStart?.()
+      // The grid runs at a 4x-finer vertical scale, so y/h are in fine units.
       getGridLayoutProps().onDrag?.([
-        { i: 'w-1', x: 1, y: 1, w: 2, h: 2 },
-        { i: 'w-2', x: 2, y: 0, w: 3, h: 3 }
+        { i: 'w-1', x: 1, y: 4, w: 2, h: 8 },
+        { i: 'w-2', x: 2, y: 0, w: 3, h: 12 }
       ])
       getGridLayoutProps().onDragStop?.([
-        { i: 'w-1', x: 1, y: 1, w: 2, h: 2 },
-        { i: 'w-2', x: 2, y: 0, w: 3, h: 3 }
+        { i: 'w-1', x: 1, y: 4, w: 2, h: 8 },
+        { i: 'w-2', x: 2, y: 0, w: 3, h: 12 }
       ])
     })
 
@@ -263,9 +267,10 @@ describe('DashboardGrid', () => {
       />
     )
 
+    // Fine units (4x scale), already coarse-row aligned so snapping is a no-op.
     const dragLayout = [
-      { i: 'w-1', x: 5, y: 4, w: 2, h: 2 },
-      { i: 'w-2', x: 2, y: 0, w: 3, h: 3 }
+      { i: 'w-1', x: 5, y: 16, w: 2, h: 8 },
+      { i: 'w-2', x: 2, y: 0, w: 3, h: 12 }
     ]
 
     act(() => {
@@ -302,9 +307,10 @@ describe('DashboardGrid', () => {
       />
     )
 
+    // The grid runs at a 4x-finer vertical scale, so y/h are in fine units.
     const resizeLayout = [
-      { i: 'w-1', x: 0, y: 0, w: 4, h: 3 },
-      { i: 'w-2', x: 2, y: 0, w: 3, h: 3 }
+      { i: 'w-1', x: 0, y: 0, w: 4, h: 12 },
+      { i: 'w-2', x: 2, y: 0, w: 3, h: 12 }
     ]
 
     act(() => {
