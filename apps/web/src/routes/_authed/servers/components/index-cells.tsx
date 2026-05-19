@@ -136,7 +136,7 @@ export function CpuCell({ server }: { server: ServerMetrics }) {
       <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
         <Cpu aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
         <span>
-          {cores != null && `${cores} cores · `}load {server.load1.toFixed(2)}
+          {cores != null && `${cores} · `}load {server.load1.toFixed(2)}
         </span>
         <span className={cn('ml-auto font-semibold', pctColor)}>{pct}%</span>
       </div>

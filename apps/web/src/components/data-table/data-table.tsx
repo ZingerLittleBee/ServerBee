@@ -9,6 +9,8 @@ interface DataTableProps<TData> extends React.ComponentProps<'div'> {
   actionBar?: React.ReactNode
   /** Fill remaining vertical space with a sticky header and internally scrollable body. */
   fillHeight?: boolean
+  /** Optional per-row className, e.g. to dim disabled/offline rows. */
+  rowClassName?: (row: Row<TData>) => string | false | undefined
   table: TanstackTable<TData>
 }
 
@@ -18,6 +20,7 @@ export function DataTable<TData>({
   children,
   className,
   fillHeight = false,
+  rowClassName,
   ...props
 }: DataTableProps<TData>) {
   return (
@@ -55,7 +58,11 @@ export function DataTable<TData>({
           <TableBody>
             {table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow data-state={row.getIsSelected() && 'selected'} key={row.id}>
+                <TableRow
+                  className={cn(rowClassName?.(row))}
+                  data-state={row.getIsSelected() && 'selected'}
+                  key={row.id}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell
                       className={cn(cell.column.columnDef.meta?.className, cell.column.columnDef.meta?.cellClassName)}

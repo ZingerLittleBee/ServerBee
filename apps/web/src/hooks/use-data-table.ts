@@ -234,7 +234,9 @@ export function useDataTable<TData>(props: UseDataTableProps<TData>) {
     ...tableProps,
     columns,
     initialState,
-    pageCount,
+    // -1 is the "auto" sentinel: let TanStack derive the page count from the
+    // client row model so getPageCount/getCanNextPage work for client tables.
+    pageCount: pageCount === -1 ? undefined : pageCount,
     state: {
       pagination,
       sorting,

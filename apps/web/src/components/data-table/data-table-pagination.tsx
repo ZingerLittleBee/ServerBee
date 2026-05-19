@@ -16,7 +16,13 @@ export function DataTablePagination<TData>({
   className,
   ...props
 }: DataTablePaginationProps<TData>) {
-  if (table.getPageCount() <= 1) {
+  const reportedPageCount = table.getPageCount()
+  const { pageSize } = table.getState().pagination
+  const effectivePageCount =
+    reportedPageCount >= 0
+      ? reportedPageCount
+      : Math.ceil(table.getFilteredRowModel().rows.length / Math.max(1, pageSize))
+  if (effectivePageCount <= 1) {
     return null
   }
 
