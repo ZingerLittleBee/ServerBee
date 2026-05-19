@@ -298,7 +298,8 @@ function ServersListPage() {
     pageCount: -1,
     initialState: {
       sorting: [{ id: 'name', desc: false }],
-      pagination: { pageIndex: 0, pageSize: 20 }
+      pagination: { pageIndex: 0, pageSize: 20 },
+      columnVisibility: { group: false }
     },
     getRowId: (row) => row.id
   })
