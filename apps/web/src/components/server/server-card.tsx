@@ -3,8 +3,9 @@ import { memo, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CompactMetric } from '@/components/server/compact-metric'
 import { RingChart } from '@/components/ui/ring-chart'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useCostOverview } from '@/hooks/use-cost'
-import { useNetworkOverview } from '@/hooks/use-network-api'
+import { useNetworkOverview, useNetworkSetting } from '@/hooks/use-network-api'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { useTrafficOverview } from '@/hooks/use-traffic-overview'
@@ -15,7 +16,8 @@ import { countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import { CostFootnote } from './cost-footnote'
 import { NetworkSquareGrid } from './network-square-grid'
-import { buildServerCardNetworkState } from './server-card-network-data'
+import { NetworkTargetBreakdown } from './network-target-breakdown'
+import { buildServerCardNetworkState, type ServerCardTooltipTarget } from './server-card-network-data'
 import { StatusBadge } from './status-badge'
 import { TagChips } from './tag-chips'
 import { UpgradeJobBadge } from './upgrade-job-badge'
@@ -121,10 +123,31 @@ function RingMetric({ color, label, subText, value }: RingMetricProps) {
   )
 }
 
+function NetworkMetricValue({
+  children,
+  targets
+}: {
+  children: React.ReactElement
+  targets: readonly ServerCardTooltipTarget[]
+}) {
+  if (targets.length === 0) {
+    return children
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger render={children} />
+      <TooltipContent className="grid min-w-48 gap-1.5" sideOffset={4}>
+        <NetworkTargetBreakdown targets={targets} />
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 const ServerCardInner = ({ server }: ServerCardProps) => {
   const { t } = useTranslation(['servers'])
   const { data: networkOverview = [] } = useNetworkOverview()
   const { data: realtimeData } = useNetworkRealtime(server.id)
+  const { data: networkSetting } = useNetworkSetting()
   const { data: trafficOverview } = useTrafficOverview()
   const { data: costOverview } = useCostOverview()
   const upgradeJob = useUpgradeJobsStore((state) => state.jobs.get(server.id))
@@ -136,9 +159,10 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
   const osEmoji = osIcon(server.os)
 
   const networkSummary = networkOverview.find((entry) => entry.server_id === server.id)
-  const { currentAvgLatency, currentAvgLossRatio, latencyPoints, lossPoints } = useMemo(
-    () => buildServerCardNetworkState(networkSummary, realtimeData),
-    [networkSummary, realtimeData]
+  const bucketSeconds = Math.max(networkSetting?.interval ?? 60, 60)
+  const { currentAvgLatency, currentAvgLossRatio, currentTargets, latencyPoints, lossPoints } = useMemo(
+    () => buildServerCardNetworkState(networkSummary, realtimeData, bucketSeconds),
+    [networkSummary, realtimeData, bucketSeconds]
   )
 
   const hasNetworkData = latencyPoints.length > 0
@@ -269,20 +293,26 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
         <section aria-label={t('card_network_quality')} className="grid grid-cols-2 gap-x-3 gap-y-1">
           <div className="flex items-baseline justify-between">
             <span className="text-[11px] text-muted-foreground">{t('card_latency')}</span>
-            <span
-              className={`font-semibold text-xs tabular-nums ${latencyColorClass(currentAvgLatency, {
-                failed: isLatencyFailure(currentAvgLossRatio)
-              })}`}
-            >
-              {formatLatency(currentAvgLatency)}
-              <span className="ml-0.5 font-medium text-[10px] text-muted-foreground">ms</span>
-            </span>
+            <NetworkMetricValue targets={currentTargets}>
+              <span
+                className={`cursor-default font-semibold text-xs tabular-nums ${latencyColorClass(currentAvgLatency, {
+                  failed: isLatencyFailure(currentAvgLossRatio)
+                })}`}
+              >
+                {formatLatency(currentAvgLatency)}
+                <span className="ml-0.5 font-medium text-[10px] text-muted-foreground">ms</span>
+              </span>
+            </NetworkMetricValue>
           </div>
           <div className="flex items-baseline justify-between">
             <span className="text-[11px] text-muted-foreground">{t('card_packet_loss')}</span>
-            <span className={`font-semibold text-xs tabular-nums ${getLossTextClassName(currentAvgLossRatio)}`}>
-              {formatPacketLoss(currentAvgLossRatio)}
-            </span>
+            <NetworkMetricValue targets={currentTargets}>
+              <span
+                className={`cursor-default font-semibold text-xs tabular-nums ${getLossTextClassName(currentAvgLossRatio)}`}
+              >
+                {formatPacketLoss(currentAvgLossRatio)}
+              </span>
+            </NetworkMetricValue>
           </div>
           <NetworkSquareGrid kind="latency" points={latencyPoints} />
           <NetworkSquareGrid kind="loss" points={lossPoints} />

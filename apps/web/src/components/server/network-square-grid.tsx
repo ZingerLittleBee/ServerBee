@@ -1,14 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  getLatencySquareColor,
-  getLossSquareColor,
-  isLatencyFailure,
-  LATENCY_UNKNOWN_BAR_COLOR
-} from '@/lib/network-latency-constants'
-import { latencyColorClass } from '@/lib/network-types'
-import { AGGREGATE_TARGET_ID, type ServerCardMetricPoint } from './server-card-network-data'
+import { getLatencySquareColor, getLossSquareColor, LATENCY_UNKNOWN_BAR_COLOR } from '@/lib/network-latency-constants'
+import { NetworkTargetBreakdown } from './network-target-breakdown'
+import type { ServerCardMetricPoint } from './server-card-network-data'
 
 const SQUARE_SIZE = 6
 const SQUARE_GAP = 2
@@ -36,43 +31,17 @@ function getSquareColor(point: ServerCardMetricPoint, kind: 'latency' | 'loss'):
   return getLossSquareColor(point.value)
 }
 
-function formatLatency(ms: number | null): string {
-  if (ms == null) {
-    return '-'
-  }
-  return `${ms.toFixed(0)}ms`
-}
-
-function formatPacketLoss(lossRatio: number | null): string {
-  if (lossRatio == null) {
-    return '-'
-  }
-  return `${(lossRatio * 100).toFixed(1)}%`
-}
-
 function formatTooltipLabel(point: ServerCardMetricPoint, t: (key: string) => string): string {
-  if (point.synthetic) {
+  const parsed = Date.parse(point.timestamp)
+  if (Number.isNaN(parsed)) {
     return t('current_targets')
   }
-  return new Date(point.timestamp).toLocaleTimeString([], {
+  return new Date(parsed).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
     hour12: false
   })
-}
-
-function getLossTextClassName(lossRatio: number | null): string {
-  if (lossRatio == null) {
-    return 'text-muted-foreground'
-  }
-  if (lossRatio < 0.01) {
-    return 'text-emerald-600 dark:text-emerald-400'
-  }
-  if (lossRatio < 0.05) {
-    return 'text-amber-600 dark:text-amber-400'
-  }
-  return 'text-red-600 dark:text-red-400'
 }
 
 function PointTooltip({ point, t }: { point: ServerCardMetricPoint; t: (key: string) => string }) {
@@ -82,22 +51,7 @@ function PointTooltip({ point, t }: { point: ServerCardMetricPoint; t: (key: str
   return (
     <>
       <div className="font-medium">{formatTooltipLabel(point, t)}</div>
-      <div className="grid gap-1.5">
-        {point.targets.map((target) => {
-          const failed = isLatencyFailure(target.lossRatio)
-          return (
-            <div className="flex items-center justify-between gap-3" key={target.targetId}>
-              <span className="truncate text-muted-foreground">
-                {target.targetId === AGGREGATE_TARGET_ID ? t('card_network_avg') : target.targetName}
-              </span>
-              <div className="flex gap-2 font-medium font-mono tabular-nums">
-                <span className={latencyColorClass(target.latency, { failed })}>{formatLatency(target.latency)}</span>
-                <span className={getLossTextClassName(target.lossRatio)}>{formatPacketLoss(target.lossRatio)}</span>
-              </div>
-            </div>
-          )
-        })}
-      </div>
+      <NetworkTargetBreakdown targets={point.targets} />
     </>
   )
 }

@@ -18,11 +18,15 @@ export interface ServerCardMetricPoint {
   value: number | null
 }
 
-export interface ServerCardNetworkState {
+interface ServerCardNetworkTrend {
   currentAvgLatency: number | null
   currentAvgLossRatio: number | null
   latencyPoints: ServerCardMetricPoint[]
   lossPoints: ServerCardMetricPoint[]
+}
+
+export interface ServerCardNetworkState extends ServerCardNetworkTrend {
+  currentTargets: readonly ServerCardTooltipTarget[]
 }
 
 function hasTargetSample(target: NetworkTargetSummary): boolean {
@@ -98,7 +102,7 @@ function padMetricPoints(points: readonly ServerCardMetricPoint[]): ServerCardMe
   ]
 }
 
-function padState(state: ServerCardNetworkState): ServerCardNetworkState {
+function padState(state: ServerCardNetworkTrend): ServerCardNetworkTrend {
   return {
     ...state,
     latencyPoints: padMetricPoints(state.latencyPoints),
@@ -109,7 +113,7 @@ function padState(state: ServerCardNetworkState): ServerCardNetworkState {
 function buildRealtimeState(
   bucketMap: ReadonlyMap<string, ServerCardTooltipTarget[]>,
   targetOrder: ReadonlyMap<string, number>
-): ServerCardNetworkState {
+): ServerCardNetworkTrend {
   const timestamps = [...bucketMap.keys()].sort().slice(-MAX_TREND_POINTS)
   const latencyPoints = timestamps.map((timestamp) => {
     const targets = [...(bucketMap.get(timestamp) ?? [])].sort((left, right) =>
@@ -149,10 +153,27 @@ function buildRealtimeState(
   }
 }
 
+function buildSparklineTimestamps(
+  lastProbeAt: string | null | undefined,
+  bucketSeconds: number,
+  pointCount: number
+): (string | null)[] {
+  const lastMs = lastProbeAt ? Date.parse(lastProbeAt) : Number.NaN
+  if (Number.isNaN(lastMs) || bucketSeconds <= 0) {
+    return Array.from({ length: pointCount }, () => null)
+  }
+  const bucketMs = bucketSeconds * 1000
+  const latestBucketMs = Math.floor(lastMs / bucketMs) * bucketMs
+  return Array.from({ length: pointCount }, (_, index) =>
+    new Date(latestBucketMs - (pointCount - 1 - index) * bucketMs).toISOString()
+  )
+}
+
 function buildFallbackState(
-  summary: Pick<NetworkServerSummary, 'latency_sparkline' | 'loss_sparkline' | 'targets'> | undefined,
-  fallbackTargets: readonly ServerCardTooltipTarget[]
-): ServerCardNetworkState {
+  summary: Pick<NetworkServerSummary, 'latency_sparkline' | 'loss_sparkline' | 'targets' | 'last_probe_at'> | undefined,
+  fallbackTargets: readonly ServerCardTooltipTarget[],
+  bucketSeconds: number
+): ServerCardNetworkTrend {
   const latencySparkline = summary?.latency_sparkline ?? []
   const lossSparkline = summary?.loss_sparkline ?? []
   const pointCount = Math.max(latencySparkline.length, lossSparkline.length, fallbackTargets.length > 0 ? 1 : 0)
@@ -167,24 +188,29 @@ function buildFallbackState(
   }
 
   const startIndex = Math.max(0, pointCount - MAX_TREND_POINTS)
+  const sparklineTimestamps = buildSparklineTimestamps(summary?.last_probe_at, bucketSeconds, pointCount)
   const latencyPoints: ServerCardMetricPoint[] = []
   const lossPoints: ServerCardMetricPoint[] = []
 
   for (let index = startIndex; index < pointCount; index += 1) {
-    const timestamp = buildSyntheticTimestamp(index)
+    const timestamp = sparklineTimestamps[index] ?? buildSyntheticTimestamp(index)
     const latencyValue = latencySparkline[index] ?? null
     const lossValue = lossSparkline[index] ?? null
-    const bucketTargets: ServerCardTooltipTarget[] =
-      latencyValue == null && lossValue == null
-        ? []
-        : [
-            {
-              latency: latencyValue,
-              lossRatio: lossValue ?? 0,
-              targetId: AGGREGATE_TARGET_ID,
-              targetName: AGGREGATE_TARGET_ID
-            }
-          ]
+    let bucketTargets: readonly ServerCardTooltipTarget[]
+    if (fallbackTargets.length > 0) {
+      bucketTargets = fallbackTargets
+    } else if (latencyValue == null && lossValue == null) {
+      bucketTargets = []
+    } else {
+      bucketTargets = [
+        {
+          latency: latencyValue,
+          lossRatio: lossValue ?? 0,
+          targetId: AGGREGATE_TARGET_ID,
+          targetName: AGGREGATE_TARGET_ID
+        }
+      ]
+    }
     latencyPoints.push({
       synthetic: true,
       targets: bucketTargets,
@@ -213,9 +239,9 @@ function buildFallbackState(
 }
 
 function mergeStates(
-  fallbackState: ServerCardNetworkState,
-  realtimeState: ServerCardNetworkState
-): ServerCardNetworkState {
+  fallbackState: ServerCardNetworkTrend,
+  realtimeState: ServerCardNetworkTrend
+): ServerCardNetworkTrend {
   const latencyPoints = [...fallbackState.latencyPoints, ...realtimeState.latencyPoints].slice(-MAX_TREND_POINTS)
   const lossPoints = [...fallbackState.lossPoints, ...realtimeState.lossPoints].slice(-MAX_TREND_POINTS)
 
@@ -230,13 +256,23 @@ function mergeStates(
   }
 }
 
+function selectCurrentTargets(
+  latencyPoints: readonly ServerCardMetricPoint[],
+  fallbackTargets: readonly ServerCardTooltipTarget[]
+): readonly ServerCardTooltipTarget[] {
+  const lastTargets = latencyPoints.at(-1)?.targets ?? []
+  const perTarget = lastTargets.filter((target) => target.targetId !== AGGREGATE_TARGET_ID)
+  return perTarget.length > 0 ? perTarget : fallbackTargets
+}
+
 export function buildServerCardNetworkState(
-  summary: Pick<NetworkServerSummary, 'latency_sparkline' | 'loss_sparkline' | 'targets'> | undefined,
-  realtimeData: Record<string, NetworkProbeResultData[]>
+  summary: Pick<NetworkServerSummary, 'latency_sparkline' | 'loss_sparkline' | 'targets' | 'last_probe_at'> | undefined,
+  realtimeData: Record<string, NetworkProbeResultData[]>,
+  bucketSeconds = 60
 ): ServerCardNetworkState {
   const targetOrder = buildTargetOrder(summary?.targets ?? [])
   const fallbackTargets = buildFallbackTargets(summary?.targets ?? [], targetOrder)
-  const fallbackState = buildFallbackState(summary, fallbackTargets)
+  const fallbackState = buildFallbackState(summary, fallbackTargets, bucketSeconds)
   const hasBackendSparkline =
     (summary?.latency_sparkline?.length ?? 0) > 0 || (summary?.loss_sparkline?.length ?? 0) > 0
   const targetLookup = buildTargetLookup(summary?.targets ?? [])
@@ -258,10 +294,16 @@ export function buildServerCardNetworkState(
     }
   }
 
+  let trend: ServerCardNetworkTrend
   if (bucketMap.size > 0) {
     const realtimeState = buildRealtimeState(bucketMap, targetOrder)
-    return padState(hasBackendSparkline ? mergeStates(fallbackState, realtimeState) : realtimeState)
+    trend = padState(hasBackendSparkline ? mergeStates(fallbackState, realtimeState) : realtimeState)
+  } else {
+    trend = padState(fallbackState)
   }
 
-  return padState(fallbackState)
+  return {
+    ...trend,
+    currentTargets: selectCurrentTargets(trend.latencyPoints, fallbackTargets)
+  }
 }
