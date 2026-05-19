@@ -181,7 +181,13 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
   const costEntry = costOverview?.servers.find((entry) => entry.server_id === server.id)
 
   return (
-    <div className="flex w-full min-w-[320px] max-w-[480px] flex-col gap-2 rounded-lg border bg-card p-3 shadow-sm">
+    <div className="relative flex w-full min-w-[320px] max-w-[480px] flex-col gap-2 rounded-lg border bg-card p-3 shadow-sm">
+      {!server.online && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-10 rounded-lg bg-background/55 backdrop-grayscale"
+        />
+      )}
       <div className="flex items-center justify-between">
         <Link
           className="flex items-center gap-1 truncate border-transparent border-b pb-px hover:border-current"
