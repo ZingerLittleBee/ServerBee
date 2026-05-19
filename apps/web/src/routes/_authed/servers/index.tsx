@@ -303,7 +303,7 @@ function ServersListPage() {
     initialState: {
       sorting: [{ id: 'name', desc: false }],
       pagination: { pageIndex: 0, pageSize: 20 },
-      columnVisibility: { group: false }
+      columnVisibility: { group: false, 'status-dot': false }
     },
     getRowId: (row) => row.id
   })
