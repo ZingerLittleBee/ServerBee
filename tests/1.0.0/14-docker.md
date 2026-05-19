@@ -1,0 +1,17 @@
+# 14 Docker 容器监控与操作 — 冒烟测试
+
+**前置条件**:Agent 主机有 Docker daemon 且 Agent 启用 CAP_DOCKER,至少 1 个运行容器。深度用例见 [../docker.md](../docker.md)。
+
+| # | 测试场景 | 操作步骤 | 预期结果 | 阻断级 | 状态 |
+|---|---------|---------|---------|--------|------|
+| DK1 | 容器列表 | 访问 `/servers/:id/docker` | 列出容器(名称/状态/镜像) | 是 | — |
+| DK2 | 资源统计 | 查看容器 CPU/内存统计 | 实时数值显示 | 是 | — |
+| DK3 | 日志流 | 打开某容器日志 | WebSocket 实时滚动日志 | 是 | — |
+| DK4 | 容器操作 | start/stop/restart 一个测试容器 | 操作生效,状态随之变化 | 是 | — |
+| DK5 | 网络/卷 | 查看 Docker 网络与卷列表 | 正确列出 | 否 | — |
+| DK6 | daemon 不可用 | 停止 Docker daemon | 优雅降级,提示不可用,定期重试 | 否 | — |
+| DK7 | 能力关闭 | 未启用 CAP_DOCKER 访问 docker 页 | 优雅降级:显示 "Docker is not available / Waiting for Docker data from the agent" | 否 | ✅ |
+
+**备注**:测试 agent (0.9.3) agent_local_capabilities=60,本地不支持 CAP_DOCKER(128);服务端 set DOCKER 后 effective 仍=60,DOCKER 能力无法生效,故 DK1–DK5 无法真机验证(原因:agent 本地不支持 Docker 能力,非阻断级缺陷,为环境限制)。DK6 需停 Docker daemon,违反"勿改环境"约束,未执行。DK7 已验证优雅降级正常。
+
+**汇总**:✅ 1 / ❌ 0 / — 6 (—均因测试 agent 本地不支持 DOCKER 能力 / 环境约束)

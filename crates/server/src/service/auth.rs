@@ -29,6 +29,22 @@ impl AuthService {
     /// The fixed username for the auto-provisioned first admin account.
     pub const DEFAULT_ADMIN_USERNAME: &str = "admin";
 
+    /// Minimum length for a user-chosen password.
+    pub const MIN_PASSWORD_LEN: usize = 8;
+
+    /// Validate a user-chosen password against the minimum strength policy.
+    /// Applied wherever a user sets their own password (onboarding, change
+    /// password); not applied to system-generated secrets.
+    pub fn validate_password_strength(password: &str) -> Result<(), AppError> {
+        if password.chars().count() < Self::MIN_PASSWORD_LEN {
+            return Err(AppError::Validation(format!(
+                "Password must be at least {} characters",
+                Self::MIN_PASSWORD_LEN
+            )));
+        }
+        Ok(())
+    }
+
     /// Hash a password using argon2 with a random salt.
     pub fn hash_password(password: &str) -> Result<String, AppError> {
         let salt = SaltString::generate(&mut OsRng);
@@ -474,6 +490,8 @@ impl AuthService {
             ));
         }
 
+        Self::validate_password_strength(new_password)?;
+
         let new_hash = Self::hash_password(new_password)?;
         let mut active: user::ActiveModel = user.into();
         active.password_hash = Set(new_hash);
@@ -505,6 +523,7 @@ impl AuthService {
         if new_password.is_empty() {
             return Err(AppError::Validation("New password is required".to_string()));
         }
+        Self::validate_password_strength(new_password)?;
         if Self::verify_password(new_password, &user.password_hash)? {
             return Err(AppError::Validation(
                 "New password must be different from the current password".to_string(),
@@ -900,6 +919,40 @@ mod tests {
         let admin = seed_must_change_admin(&db).await;
         let r = AuthService::complete_onboarding(&db, &admin.id, "", None).await;
         assert!(r.is_err(), "empty password must be rejected");
+    }
+
+    #[tokio::test]
+    async fn test_complete_onboarding_rejects_weak_password() {
+        let (db, _tmp) = setup_test_db().await;
+        let admin = seed_must_change_admin(&db).await;
+        let r = AuthService::complete_onboarding(&db, &admin.id, "123", None).await;
+        assert!(
+            matches!(r, Err(AppError::Validation(_))),
+            "short/weak password must be rejected with a validation error, got {r:?}"
+        );
+        let after = user::Entity::find_by_id(&admin.id).one(&db).await.unwrap().unwrap();
+        assert!(
+            after.must_change_password,
+            "onboarding must not complete with a weak password"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_change_password_rejects_weak_password() {
+        let (db, _tmp) = setup_test_db().await;
+        let user = AuthService::create_user(&db, "weakp", "old_pass1", "member")
+            .await
+            .expect("create user");
+        let r = AuthService::change_password(&db, &user.id, "old_pass1", "123").await;
+        assert!(
+            matches!(r, Err(AppError::Validation(_))),
+            "weak new password must be rejected, got {r:?}"
+        );
+        let after = user::Entity::find_by_id(&user.id).one(&db).await.unwrap().unwrap();
+        assert!(
+            AuthService::verify_password("old_pass1", &after.password_hash).unwrap(),
+            "password must remain unchanged when new one is rejected"
+        );
     }
 
     #[tokio::test]

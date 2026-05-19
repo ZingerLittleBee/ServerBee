@@ -89,6 +89,13 @@
     "sort_asc": "升序",
     "sort_desc": "降序",
     "sort_reset": "重置排序",
-    "hide_column": "隐藏列"
+    "hide_column": "隐藏列",
+    "rows_selected": "已选 {{selected}} / {{total}} 行",
+    "rows_per_page": "每页行数",
+    "page_of": "第 {{current}} / {{total}} 页",
+    "go_first_page": "首页",
+    "go_previous_page": "上一页",
+    "go_next_page": "下一页",
+    "go_last_page": "末页"
   }
 }

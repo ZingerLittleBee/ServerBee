@@ -31,7 +31,8 @@ vi.mock('@/hooks/use-cost', () => ({
   useCostOverview: (...args: unknown[]) => mockCostOverview(...args)
 }))
 vi.mock('@/hooks/use-network-api', () => ({
-  useNetworkOverview: (...args: unknown[]) => mockNetworkOverview(...args)
+  useNetworkOverview: (...args: unknown[]) => mockNetworkOverview(...args),
+  useNetworkSetting: () => ({ data: { interval: 60 } })
 }))
 vi.mock('@/hooks/use-network-realtime', () => ({
   useNetworkRealtime: (...args: unknown[]) => mockNetworkRealtime(...args)

@@ -1,7 +1,8 @@
 import { Link } from '@tanstack/react-router'
-import { ArrowDown, ArrowUp, Clock, Cpu, HardDrive, MemoryStick, Network } from 'lucide-react'
+import { ArrowDown, ArrowUp, Clock, Cpu, HardDrive, MemoryStick, Network, Sigma } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { StatusDot } from '@/components/server/status-dot'
 import { TagChipRow } from '@/components/server/tag-chip'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
@@ -132,11 +133,11 @@ export function CpuCell({ server }: { server: ServerMetrics }) {
   const pct = Math.round(Math.min(100, Math.max(0, server.cpu)))
   const pctColor = getBarTextColor(pct)
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="flex max-w-[160px] flex-col gap-0.5">
       <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
         <Cpu aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
         <span>
-          {cores != null && `${cores} cores · `}load {server.load1.toFixed(2)}
+          {cores != null && `${cores} · `}load {server.load1.toFixed(2)}
         </span>
         <span className={cn('ml-auto font-semibold', pctColor)}>{pct}%</span>
       </div>
@@ -154,7 +155,7 @@ export function MemoryCell({ server }: { server: ServerMetrics }) {
   const roundedPct = Math.round(Math.min(100, Math.max(0, pct)))
   const pctColor = getBarTextColor(roundedPct)
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="flex max-w-[160px] flex-col gap-0.5">
       <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
         <MemoryStick aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
         <span>
@@ -173,27 +174,27 @@ export function DiskCell({ server }: { server: ServerMetrics }) {
     return <span className="text-muted-foreground">—</span>
   }
   return (
-    <div className="flex flex-col gap-0.5">
-      <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
+    <div className="grid grid-cols-[max-content_max-content] gap-x-1.5 gap-y-0.5 font-mono text-[10px] text-muted-foreground tabular-nums">
+      <span className="flex h-4 items-center gap-1">
         <HardDrive aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
-        <span>
-          {renderBytesValue(server.disk_used)} / {renderBytesValue(server.disk_total)}
+        {renderBytesValue(server.disk_used)}
+      </span>
+      <span className="flex h-4 items-center gap-1">
+        <Sigma aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
+        {renderBytesValue(server.disk_total)}
+      </span>
+      <span className="flex h-4 items-center gap-1">
+        <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-foreground">
+          R
         </span>
-      </div>
-      <div className="flex h-4 items-center gap-2 font-mono text-[10px] text-muted-foreground tabular-nums">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-foreground">
-            R
-          </span>
-          <span className="inline-block w-14">{renderSpeedValue(server.disk_read_bytes_per_sec)}</span>
+        {renderSpeedValue(server.disk_read_bytes_per_sec)}
+      </span>
+      <span className="flex h-4 items-center gap-1">
+        <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-foreground">
+          W
         </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-foreground">
-            W
-          </span>
-          <span className="inline-block w-14">{renderSpeedValue(server.disk_write_bytes_per_sec)}</span>
-        </span>
-      </div>
+        {renderSpeedValue(server.disk_write_bytes_per_sec)}
+      </span>
     </div>
   )
 }
@@ -209,28 +210,30 @@ export function NetworkCell({ server, entry }: NetworkCellProps) {
     netOutTransfer: server.net_out_transfer
   })
   return (
-    <div className="flex flex-col gap-0.5">
-      <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
+    <div className="grid grid-cols-[max-content_max-content] gap-x-1.5 gap-y-0.5 font-mono text-[10px] text-muted-foreground tabular-nums">
+      <span className="flex h-4 items-center gap-1">
         <Network aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
-        <span>
-          {renderBytesValue(used)} / {renderBytesValue(limit)}
-        </span>
-      </div>
+        {renderBytesValue(used)}
+      </span>
+      <span className="flex h-4 items-center gap-1">
+        <Sigma aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
+        {renderBytesValue(limit)}
+      </span>
       {server.online && (
-        <div className="flex h-4 items-center gap-2 font-mono text-[10px] text-muted-foreground tabular-nums">
-          <span className="inline-flex items-center gap-1.5">
+        <>
+          <span className="flex h-4 items-center gap-1">
             <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted text-foreground">
               <ArrowDown aria-hidden="true" className="size-2.5" />
             </span>
-            <span className="inline-block w-14">{renderSpeedValue(server.net_in_speed)}</span>
+            {renderSpeedValue(server.net_in_speed)}
           </span>
-          <span className="inline-flex items-center gap-1.5">
+          <span className="flex h-4 items-center gap-1">
             <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted text-foreground">
               <ArrowUp aria-hidden="true" className="size-2.5" />
             </span>
-            <span className="inline-block w-14">{renderSpeedValue(server.net_out_speed)}</span>
+            {renderSpeedValue(server.net_out_speed)}
           </span>
-        </div>
+        </>
       )}
     </div>
   )
@@ -302,20 +305,23 @@ export function UptimeCell({ server }: { server: ServerMetrics }) {
 export function NameCell({ server, rightSlot }: { rightSlot?: ReactNode; server: ServerMetrics }) {
   const flag = countryCodeToFlag(server.country_code)
   return (
-    <div className="flex min-w-0 flex-col">
-      <div className="flex min-w-0 items-center gap-1.5">
-        <Link
-          className="group/link flex min-w-0 items-center gap-1.5"
-          params={{ id: server.id }}
-          search={{ range: 'realtime' }}
-          to="/servers/$id"
-        >
-          {flag && <span className="text-xs">{flag}</span>}
-          <span className="truncate font-medium group-hover/link:underline">{server.name}</span>
-        </Link>
-        {rightSlot}
+    <div className="flex min-w-0 items-center gap-2">
+      <StatusDot className="flex-none" online={server.online} />
+      <div className="flex min-w-0 flex-col">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Link
+            className="group/link flex min-w-0 items-center gap-1.5"
+            params={{ id: server.id }}
+            search={{ range: 'realtime' }}
+            to="/servers/$id"
+          >
+            {flag && <span className="text-xs">{flag}</span>}
+            <span className="truncate font-medium group-hover/link:underline">{server.name}</span>
+          </Link>
+          {rightSlot}
+        </div>
+        <TagChipRow tags={server.tags} />
       </div>
-      <TagChipRow tags={server.tags} />
     </div>
   )
 }

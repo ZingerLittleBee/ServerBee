@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { RingChart } from './ring-chart'
 
 describe('RingChart', () => {
-  it('renders percentage text', () => {
+  it('renders value text without percent sign', () => {
     render(<RingChart color="#3b82f6" label="CPU" value={72.3} />)
-    expect(screen.getByText('72%')).toBeDefined()
+    expect(screen.getByText('72')).toBeDefined()
   })
 
   it('renders label', () => {
@@ -21,10 +21,10 @@ describe('RingChart', () => {
 
   it('clamps value to 0-100 range', () => {
     const { rerender } = render(<RingChart color="#3b82f6" label="CPU" value={150} />)
-    expect(screen.getByText('100%')).toBeDefined()
+    expect(screen.getByText('100')).toBeDefined()
 
     rerender(<RingChart color="#3b82f6" label="CPU" value={-10} />)
-    expect(screen.getByText('0%')).toBeDefined()
+    expect(screen.getByText('0')).toBeDefined()
   })
 
   it('accepts custom size', () => {

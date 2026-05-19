@@ -8,6 +8,8 @@
   "submit": "Save and continue",
   "saving": "Saving…",
   "password_required": "New password is required.",
+  "password_too_short": "Password must be at least {{min}} characters.",
+  "password_hint": "Use at least {{min}} characters.",
   "password_mismatch": "The two passwords do not match.",
   "failed": "Could not complete setup. Please try again."
 }

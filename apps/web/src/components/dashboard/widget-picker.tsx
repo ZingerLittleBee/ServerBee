@@ -40,22 +40,6 @@ const WIDGET_ICONS: Record<string, typeof Server> = {
   'uptime-timeline': Activity
 }
 
-const WIDGET_DESCRIPTIONS: Record<string, string> = {
-  'stat-number': 'Single metric value with icon',
-  'server-cards': 'Server overview cards grid',
-  gauge: 'Circular gauge for a metric',
-  'line-chart': 'Time series line chart',
-  'multi-line': 'Compare metrics across servers',
-  'top-n': 'Ranked list of servers',
-  'alert-list': 'Recent alert events',
-  'service-status': 'Service monitor status dots',
-  'traffic-bar': 'Daily traffic bar chart',
-  'disk-io': 'Disk I/O read/write chart',
-  'server-map': 'World map with server locations',
-  markdown: 'Custom markdown content',
-  'uptime-timeline': '90-day uptime timeline bar'
-}
-
 const CATEGORY_ORDER: WidgetCategory[] = ['Real-time', 'Charts', 'Status']
 
 export function WidgetPicker({ onSelect, open, onOpenChange }: WidgetPickerProps) {
@@ -87,11 +71,14 @@ export function WidgetPicker({ onSelect, open, onOpenChange }: WidgetPickerProps
               }
               return (
                 <div key={category}>
-                  <h4 className="mb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">{category}</h4>
+                  <h4 className="mb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+                    {t(`widgetPicker.categories.${category}`, category)}
+                  </h4>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {widgets.map((widgetType) => {
                       const Icon = WIDGET_ICONS[widgetType.id] ?? Server
-                      const description = WIDGET_DESCRIPTIONS[widgetType.id] ?? ''
+                      const label = t(`widgetPicker.types.${widgetType.id}.label`, widgetType.label)
+                      const description = t(`widgetPicker.types.${widgetType.id}.description`, '')
                       return (
                         <button
                           className="flex items-start gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/50"
@@ -106,7 +93,7 @@ export function WidgetPicker({ onSelect, open, onOpenChange }: WidgetPickerProps
                             <Icon className="size-4 text-muted-foreground" />
                           </div>
                           <div className="min-w-0">
-                            <p className="font-medium text-sm leading-tight">{widgetType.label}</p>
+                            <p className="font-medium text-sm leading-tight">{label}</p>
                             <p className="mt-0.5 text-muted-foreground text-xs leading-snug">{description}</p>
                           </div>
                         </button>

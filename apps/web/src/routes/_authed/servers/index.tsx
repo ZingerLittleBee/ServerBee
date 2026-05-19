@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
-import { CircleDot, ExternalLink, LayoutGrid, Plus, Search, Table2, Tag, Trash2 } from 'lucide-react'
+import { CircleDot, ExternalLink, LayoutGrid, ListChecks, Plus, Search, Table2, Tag, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -34,11 +34,14 @@ import { useServer } from '@/hooks/use-api'
 import { useAuth } from '@/hooks/use-auth'
 import { useCostOverview } from '@/hooks/use-cost'
 import { useDataTable } from '@/hooks/use-data-table'
+import { useScrollViewportHeight } from '@/hooks/use-scroll-viewport-height'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { useTrafficOverview } from '@/hooks/use-traffic-overview'
 import { api } from '@/lib/api-client'
 import type { ServerGroup } from '@/lib/api-schema'
+import { withMockServers } from '@/lib/dev-mock-servers'
 import { countCleanupCandidates } from '@/lib/orphan-server-utils'
+import { cn } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import { CpuCell, DiskCell, MemoryCell, NameCell, NetworkCell, UptimeCell } from './components/index-cells'
 import { getInitialServersView } from './components/mobile-view'
@@ -70,8 +73,10 @@ function ServersListPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [addOpen, setAddOpen] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
   const navigate = Route.useNavigate()
   const { q: search, view: viewParam } = Route.useSearch()
+  const { ref: fillRef, height: viewportHeight } = useScrollViewportHeight<HTMLDivElement>()
 
   const [viewMode, setViewModeState] = useState<'table' | 'grid'>(() =>
     getInitialServersView(viewParam === 'grid' || viewParam === 'table' ? viewParam : undefined)
@@ -83,13 +88,14 @@ function ServersListPage() {
     navigate({ search: (prev) => ({ ...prev, view: value }) })
   }
 
-  const { data: servers = [] } = useQuery<ServerMetrics[]>({
+  const { data: rawServers = [] } = useQuery<ServerMetrics[]>({
     queryKey: ['servers'],
     queryFn: () => [],
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnMount: false,
     refetchOnWindowFocus: false
   })
+  const servers = useMemo(() => withMockServers(rawServers), [rawServers])
 
   const { data: groups } = useQuery<ServerGroup[]>({
     queryKey: ['server-groups'],
@@ -160,8 +166,11 @@ function ServersListPage() {
             onCheckedChange={(checked) => row.toggleSelected(!!checked)}
           />
         ),
-        size: 36,
-        meta: { className: 'w-9' }
+        minSize: 0,
+        size: selectMode ? 36 : 0,
+        meta: {
+          className: cn('overflow-hidden transition-[width,padding] duration-200', !selectMode && 'px-0!')
+        }
       },
       {
         id: 'status-dot',
@@ -187,7 +196,7 @@ function ServersListPage() {
         cell: ({ row }) => (
           <NameCell rightSlot={<UpgradeBadgeCell serverId={row.original.id} />} server={row.original} />
         ),
-        size: 260,
+        size: 240,
         meta: { className: 'min-w-[200px]', label: t('col_name') }
       },
       {
@@ -195,24 +204,24 @@ function ServersListPage() {
         id: 'cpu',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_cpu')} />,
         cell: ({ row }) => <CpuCell server={row.original} />,
-        size: 130,
-        meta: { className: 'w-[130px]', cellClassName: 'align-top', label: t('col_cpu') }
+        size: 180,
+        meta: { className: 'w-[180px]', cellClassName: 'align-top', label: t('col_cpu') }
       },
       {
         accessorFn: (row) => (row.mem_total > 0 ? row.mem_used / row.mem_total : 0),
         id: 'memory',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_memory')} />,
         cell: ({ row }) => <MemoryCell server={row.original} />,
-        size: 130,
-        meta: { className: 'w-[130px]', cellClassName: 'align-top', label: t('col_memory') }
+        size: 180,
+        meta: { className: 'w-[180px]', cellClassName: 'align-top', label: t('col_memory') }
       },
       {
         accessorFn: (row) => (row.disk_total > 0 ? row.disk_used / row.disk_total : 0),
         id: 'disk',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_disk')} />,
         cell: ({ row }) => <DiskCell server={row.original} />,
-        size: 150,
-        meta: { className: 'w-[150px]', cellClassName: 'align-top', label: t('col_disk') }
+        size: 184,
+        meta: { className: 'w-[184px]', cellClassName: 'align-top', label: t('col_disk') }
       },
       {
         id: 'network',
@@ -222,8 +231,8 @@ function ServersListPage() {
           const entry = trafficOverview.find((e) => e.server_id === row.original.id)
           return <NetworkCell entry={entry} server={row.original} />
         },
-        size: 150,
-        meta: { className: 'hidden lg:table-cell lg:w-[150px]', cellClassName: 'lg:align-top', label: t('col_network') }
+        size: 184,
+        meta: { className: 'hidden lg:table-cell lg:w-[184px]', cellClassName: 'lg:align-top', label: t('col_network') }
       },
       {
         id: 'cost',
@@ -233,16 +242,16 @@ function ServersListPage() {
         },
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_cost')} />,
         cell: ({ row }) => <CostCell entry={costByServerId.get(row.original.id)} />,
-        size: 150,
-        meta: { className: 'hidden xl:table-cell xl:w-[150px]', cellClassName: 'xl:align-top', label: t('col_cost') }
+        size: 172,
+        meta: { className: 'hidden xl:table-cell xl:w-[172px]', cellClassName: 'xl:align-top', label: t('col_cost') }
       },
       {
         accessorKey: 'uptime',
         id: 'uptime',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_uptime')} />,
         cell: ({ row }) => <UptimeCell server={row.original} />,
-        size: 100,
-        meta: { className: 'hidden xl:table-cell xl:w-[100px]', label: t('col_uptime') }
+        size: 196,
+        meta: { className: 'hidden xl:table-cell xl:w-[196px]', label: t('col_uptime') }
       },
       {
         id: 'group',
@@ -284,7 +293,7 @@ function ServersListPage() {
         meta: { className: 'w-10' }
       }
     ],
-    [t, costByServerId, groupMap, groupOptions, statusOptions, trafficOverview]
+    [t, costByServerId, groupMap, groupOptions, statusOptions, trafficOverview, selectMode]
   )
 
   const { table } = useDataTable({
@@ -293,7 +302,8 @@ function ServersListPage() {
     pageCount: -1,
     initialState: {
       sorting: [{ id: 'name', desc: false }],
-      pagination: { pageIndex: 0, pageSize: 20 }
+      pagination: { pageIndex: 0, pageSize: 20 },
+      columnVisibility: { group: false, 'status-dot': false }
     },
     getRowId: (row) => row.id
   })
@@ -337,25 +347,117 @@ function ServersListPage() {
     })
   }
 
-  return (
-    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="font-bold text-2xl">{t('title')}</h1>
-          <p className="text-muted-foreground text-sm">
-            {t('servers_online', { online: servers.filter((s) => s.online).length, total: servers.length })}
-          </p>
-        </div>
-        {isAdmin && (
-          <Button className="sm:self-start" onClick={() => setAddOpen(true)}>
-            <Plus className="size-4" />
-            {t('add_server.button')}
-          </Button>
-        )}
-      </div>
+  const viewToggle = (
+    <ToggleGroup
+      multiple={false}
+      onValueChange={(value) => value.length > 0 && setViewMode(value[0] as 'table' | 'grid')}
+      size="default"
+      value={[viewMode]}
+      variant="outline"
+    >
+      <ToggleGroupItem aria-label={t('common:a11y.table_view')} value="table">
+        <Table2 className="size-4" />
+      </ToggleGroupItem>
+      <ToggleGroupItem aria-label={t('common:a11y.grid_view')} value="grid">
+        <LayoutGrid className="size-4" />
+      </ToggleGroupItem>
+    </ToggleGroup>
+  )
 
+  const cleanupButton = orphanCount > 0 && (
+    <AlertDialog>
+      <AlertDialogTrigger
+        render={
+          <Button disabled={cleanupMutation.isPending} size="default" variant="outline">
+            {t('servers:cleanup_orphans')} ({orphanCount})
+          </Button>
+        }
+      />
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t('servers:cleanup_confirm_title')}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {t('servers:cleanup_confirm_description', { count: orphanCount })}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+          <AlertDialogAction onClick={() => cleanupMutation.mutate()} variant="destructive">
+            {t('common:delete')}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+
+  const batchDeleteButton = selectedCount > 0 && (
+    <AlertDialog>
+      <AlertDialogTrigger
+        render={
+          <Button disabled={batchDeleteMutation.isPending} size="default" variant="destructive">
+            <Trash2 aria-hidden="true" className="size-3.5" />
+            {t('servers:delete_selected', { count: selectedCount })}
+          </Button>
+        }
+      />
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
+          <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+          <AlertDialogAction onClick={handleBatchDelete} variant="destructive">
+            {t('common:delete')}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+
+  const toggleSelectMode = () => {
+    setSelectMode((prev) => {
+      if (prev) {
+        table.toggleAllRowsSelected(false)
+      }
+      return !prev
+    })
+  }
+
+  const selectModeButton = viewMode === 'table' && (
+    <Button onClick={toggleSelectMode} size="default" variant={selectMode ? 'secondary' : 'outline'}>
+      <ListChecks aria-hidden="true" className="size-4" />
+      {selectMode ? t('servers:batch_select_exit') : t('servers:batch_select')}
+    </Button>
+  )
+
+  const addServerButton = isAdmin && (
+    <Button onClick={() => setAddOpen(true)} size="default">
+      <Plus className="size-4" />
+      {t('add_server.button')}
+    </Button>
+  )
+
+  const rowActions = (
+    <>
+      {viewToggle}
+      {cleanupButton}
+      {batchDeleteButton}
+      {addServerButton}
+    </>
+  )
+
+  return (
+    <div
+      className={cn(
+        'w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full',
+        viewMode === 'table' && 'flex min-h-0 flex-col'
+      )}
+      ref={fillRef}
+      style={viewMode === 'table' && viewportHeight ? { height: viewportHeight } : undefined}
+    >
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative min-w-0 flex-1">
+        <div className="relative min-w-0 flex-1 sm:max-w-sm">
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             aria-label={t('servers:search_placeholder')}
@@ -368,71 +470,13 @@ function ServersListPage() {
             value={search}
           />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <ToggleGroup
-            multiple={false}
-            onValueChange={(value) => value.length > 0 && setViewMode(value[0] as 'table' | 'grid')}
-            size="sm"
-            value={[viewMode]}
-            variant="outline"
-          >
-            <ToggleGroupItem aria-label={t('common:a11y.table_view')} value="table">
-              <Table2 className="size-4" />
-            </ToggleGroupItem>
-            <ToggleGroupItem aria-label={t('common:a11y.grid_view')} value="grid">
-              <LayoutGrid className="size-4" />
-            </ToggleGroupItem>
-          </ToggleGroup>
-          {orphanCount > 0 && (
-            <AlertDialog>
-              <AlertDialogTrigger
-                render={
-                  <Button disabled={cleanupMutation.isPending} size="sm" variant="outline">
-                    {t('servers:cleanup_orphans')} ({orphanCount})
-                  </Button>
-                }
-              />
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>{t('servers:cleanup_confirm_title')}</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    {t('servers:cleanup_confirm_description', { count: orphanCount })}
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => cleanupMutation.mutate()} variant="destructive">
-                    {t('common:delete')}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
-          {selectedCount > 0 && (
-            <AlertDialog>
-              <AlertDialogTrigger
-                render={
-                  <Button disabled={batchDeleteMutation.isPending} size="sm" variant="destructive">
-                    <Trash2 aria-hidden="true" className="size-3.5" />
-                    {t('servers:delete_selected', { count: selectedCount })}
-                  </Button>
-                }
-              />
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
-                  <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleBatchDelete} variant="destructive">
-                    {t('common:delete')}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
-        </div>
+        {viewMode === 'table' ? (
+          <DataTableToolbar className="w-full p-0 sm:w-auto sm:flex-1" table={table} trailingActions={selectModeButton}>
+            {rowActions}
+          </DataTableToolbar>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2 sm:ml-auto sm:justify-end">{rowActions}</div>
+        )}
       </div>
 
       {servers.length === 0 && (
@@ -444,9 +488,7 @@ function ServersListPage() {
         </div>
       )}
       {servers.length > 0 && viewMode === 'table' && (
-        <DataTable table={table}>
-          <DataTableToolbar table={table} />
-        </DataTable>
+        <DataTable fillHeight rowClassName={(row) => !row.original.online && 'opacity-45 grayscale'} table={table} />
       )}
       {servers.length > 0 && viewMode === 'grid' && (
         <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>

@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useServerTags, useUpdateServerTags } from '@/hooks/use-server-tags'
+import { applyServerEdit, type ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerGroup, ServerResponse, UpdateServerInput } from '@/lib/api-schema'
 
@@ -116,7 +117,9 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
     mutationFn: (payload: UpdateServerInput) => api.put<ServerResponse>(`/api/servers/${server.id}`, payload),
     onSuccess: (data) => {
       queryClient.setQueryData(['servers', server.id], data)
-      queryClient.invalidateQueries({ queryKey: ['servers'] })
+      queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
+        prev ? applyServerEdit(prev, server.id, { name: data.name, group_id: data.group_id ?? null }) : prev
+      )
     }
   })
 

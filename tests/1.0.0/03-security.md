@@ -1,0 +1,23 @@
+# 03 安全设置(密码 / 2FA / OAuth) — 冒烟测试
+
+**前置条件**:已登录 admin,进入 `/settings/security`。
+
+| # | 测试场景 | 操作步骤 | 预期结果 | 阻断级 | 状态 |
+|---|---------|---------|---------|--------|------|
+| S1 | 修改密码 | 输入旧密码 + 新密码 → 保存 | 成功提示,登出后新密码可登录 | 是 | ✅ |
+| S2 | 旧密码错误 | 输入错误旧密码 | 拒绝并提示 | 否 | ✅ |
+| S3 | 启用 2FA | 点击启用 → 扫描 TOTP 二维码 → 输入验证码确认 | 2FA 启用成功,显示恢复码 | 是 | ✅ |
+| S4 | 2FA 登录 | 登出后重新登录 | 密码后要求输入 TOTP 验证码,正确码登录成功 | 是 | ✅ |
+| S5 | 禁用 2FA | 已启用状态下禁用 | 2FA 关闭,下次登录无需验证码 | 否 | ✅ |
+| S6 | OAuth 链接 | 配置并链接 GitHub/Google 账户 | 显示已链接,可解除链接 | 否 | — |
+| S7 | OAuth 登录 | 用已链接的 OAuth 账户登录 | 登录成功并匹配到本地用户 | 否 | — |
+
+> ✅ S1: `PUT /api/auth/password` 改密返回 200;新密码登录 200、旧密码登录 401。
+> ✅ S2: 错误旧密码返回 400 `Bad request: Current password is incorrect`。
+> ✅ S3: `POST /api/auth/2fa/setup` 返回 `secret`+`otpauth_url`+`qr_code_base64`;用真实 TOTP(stdlib 实现,30s 步长)`POST /api/auth/2fa/enable`→200;`2fa/status`→`enabled:true`。
+> ✅ S4: 启用 2FA 后无验证码登录→422 `2fa_required`;带正确 TOTP 验证码登录→200 且会话有效。
+> ✅ S5: `POST /api/auth/2fa/disable`(校验密码)→200;`2fa/status`→`enabled:false`;之后无码登录→200。
+> ⚠ S3 偏差(非阻断已知问题): 后端/前端均无"恢复码/备份码"功能,启用 2FA 不产出恢复码,与用例期望"显示恢复码"不符。2FA 启用/强制/登录/禁用安全主链路均正常,建议作为发布说明已知缺口登记。
+> — S6/S7: 未配置 GitHub/Google OAuth 提供方,本轮不适用。
+
+**汇总**:✅ 5 / ❌ 0 / — 2

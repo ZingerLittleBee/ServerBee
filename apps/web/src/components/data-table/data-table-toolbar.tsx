@@ -14,9 +14,16 @@ import { cn } from '@/lib/utils'
 
 interface DataTableToolbarProps<TData> extends React.ComponentProps<'div'> {
   table: Table<TData>
+  trailingActions?: React.ReactNode
 }
 
-export function DataTableToolbar<TData>({ table, children, className, ...props }: DataTableToolbarProps<TData>) {
+export function DataTableToolbar<TData>({
+  table,
+  children,
+  className,
+  trailingActions,
+  ...props
+}: DataTableToolbarProps<TData>) {
   const isFiltered = table.getState().columnFilters.length > 0
 
   const columns = React.useMemo(() => table.getAllColumns().filter((column) => column.getCanFilter()), [table])
@@ -37,16 +44,21 @@ export function DataTableToolbar<TData>({ table, children, className, ...props }
           <DataTableToolbarFilter column={column} key={column.id} />
         ))}
         {isFiltered && (
-          <Button aria-label="Reset filters" className="border-dashed" onClick={onReset} size="sm" variant="outline">
+          <Button
+            aria-label="Reset filters"
+            className="h-8 border-dashed"
+            onClick={onReset}
+            size="sm"
+            variant="outline"
+          >
             <X />
             Reset
           </Button>
         )}
+        <DataTableViewOptions align="start" table={table} />
+        {trailingActions}
       </div>
-      <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
-        {children}
-        <DataTableViewOptions align="end" table={table} />
-      </div>
+      <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">{children}</div>
     </div>
   )
 }
