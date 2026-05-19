@@ -431,12 +431,19 @@ function ServersListPage() {
     </Button>
   )
 
-  const actionButtons = (
+  const addServerButton = isAdmin && (
+    <Button onClick={() => setAddOpen(true)} size="default">
+      <Plus className="size-4" />
+      {t('add_server.button')}
+    </Button>
+  )
+
+  const rowActions = (
     <>
       {viewToggle}
       {cleanupButton}
-      {selectModeButton}
       {batchDeleteButton}
+      {addServerButton}
     </>
   )
 
@@ -449,21 +456,6 @@ function ServersListPage() {
       ref={fillRef}
       style={viewMode === 'table' && viewportHeight ? { height: viewportHeight } : undefined}
     >
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="font-bold text-2xl">{t('title')}</h1>
-          <p className="text-muted-foreground text-sm">
-            {t('servers_online', { online: servers.filter((s) => s.online).length, total: servers.length })}
-          </p>
-        </div>
-        {isAdmin && (
-          <Button className="sm:self-start" onClick={() => setAddOpen(true)}>
-            <Plus className="size-4" />
-            {t('add_server.button')}
-          </Button>
-        )}
-      </div>
-
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative min-w-0 flex-1 sm:max-w-sm">
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -479,11 +471,11 @@ function ServersListPage() {
           />
         </div>
         {viewMode === 'table' ? (
-          <DataTableToolbar className="w-full p-0 sm:w-auto sm:flex-1" table={table}>
-            {actionButtons}
+          <DataTableToolbar className="w-full p-0 sm:w-auto sm:flex-1" table={table} trailingActions={selectModeButton}>
+            {rowActions}
           </DataTableToolbar>
         ) : (
-          <div className="flex flex-wrap items-center gap-2">{actionButtons}</div>
+          <div className="flex flex-wrap items-center gap-2 sm:ml-auto sm:justify-end">{rowActions}</div>
         )}
       </div>
 

@@ -27,7 +27,7 @@ export function DataTableViewOptions<TData>({ table, disabled, ...props }: DataT
         render={
           <Button
             aria-label={t('table.toggle_columns')}
-            className="ml-auto hidden h-8 font-normal lg:flex"
+            className="hidden h-8 font-normal lg:flex"
             disabled={disabled}
             role="combobox"
             size="sm"
