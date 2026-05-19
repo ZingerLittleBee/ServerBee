@@ -32,6 +32,67 @@
   "dashboard_name_placeholder": "仪表盘名称",
   "no_widgets_title": "暂无小组件",
   "no_widgets_description": "点击编辑开始向仪表盘添加小组件",
+  "widgetPicker": {
+    "categories": {
+      "Real-time": "实时",
+      "Charts": "图表",
+      "Status": "状态"
+    },
+    "types": {
+      "stat-number": {
+        "label": "数值统计",
+        "description": "带图标的单一指标值"
+      },
+      "server-cards": {
+        "label": "服务器卡片",
+        "description": "服务器概览卡片网格"
+      },
+      "gauge": {
+        "label": "仪表",
+        "description": "单指标环形仪表"
+      },
+      "line-chart": {
+        "label": "折线图",
+        "description": "时间序列折线图"
+      },
+      "multi-line": {
+        "label": "多线图",
+        "description": "跨服务器指标对比"
+      },
+      "top-n": {
+        "label": "Top N",
+        "description": "服务器排名列表"
+      },
+      "alert-list": {
+        "label": "告警列表",
+        "description": "最近告警事件"
+      },
+      "service-status": {
+        "label": "服务状态",
+        "description": "服务监控状态点"
+      },
+      "traffic-bar": {
+        "label": "流量柱状图",
+        "description": "每日流量柱状图"
+      },
+      "disk-io": {
+        "label": "磁盘 I/O",
+        "description": "磁盘读写图表"
+      },
+      "server-map": {
+        "label": "服务器地图",
+        "description": "标注服务器位置的世界地图"
+      },
+      "markdown": {
+        "label": "Markdown",
+        "description": "自定义 Markdown 内容"
+      },
+      "uptime-timeline": {
+        "label": "可用时间线",
+        "description": "90 天可用性时间线"
+      }
+    }
+  },
   "widgets": {
     "trafficBar": {
       "title": "流量",
