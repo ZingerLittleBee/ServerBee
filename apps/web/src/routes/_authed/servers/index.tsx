@@ -200,16 +200,16 @@ function ServersListPage() {
         id: 'cpu',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_cpu')} />,
         cell: ({ row }) => <CpuCell server={row.original} />,
-        size: 130,
-        meta: { className: 'w-[130px]', cellClassName: 'align-top', label: t('col_cpu') }
+        size: 160,
+        meta: { className: 'w-[160px]', cellClassName: 'align-top', label: t('col_cpu') }
       },
       {
         accessorFn: (row) => (row.mem_total > 0 ? row.mem_used / row.mem_total : 0),
         id: 'memory',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_memory')} />,
         cell: ({ row }) => <MemoryCell server={row.original} />,
-        size: 130,
-        meta: { className: 'w-[130px]', cellClassName: 'align-top', label: t('col_memory') }
+        size: 160,
+        meta: { className: 'w-[160px]', cellClassName: 'align-top', label: t('col_memory') }
       },
       {
         accessorFn: (row) => (row.disk_total > 0 ? row.disk_used / row.disk_total : 0),
