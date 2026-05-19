@@ -12,20 +12,24 @@ icon: Gauge
 
 ## Agent
 
-Agent 是轻量探针,常驻开销极低。
+Agent 是轻量探针,CPU 开销可忽略,内存稳态在数十 MB 级别。
 
-| 资源 | 实测值 | 说明 |
-|------|--------|------|
-| 内存(systemd cgroup,真实私有内存) | ~4.3 MB,峰值 ~5.1 MB | 最准确的内存口径 |
-| 内存(`ps` RSS,含共享库映射) | ~10–11 MB | 偏高估,含共享库 |
-| CPU | 平均 ~0.7%(单核) | 含每 3s 采集的瞬时尖峰 |
-| 线程数 | 10 | tokio runtime |
-| 二进制大小 | ~11 MB | linux-amd64 release |
-| 网络 | 每个采集间隔(默认 3s)一条 `SystemReport` JSON,加周期性 ping/pong;数量级 ≤ 1–2 KB/s | 随采集间隔与启用的指标项变化 |
+| 资源 | 冷启动(~90s) | 稳态(运行 8h) | 说明 |
+|------|--------------|----------------|------|
+| 内存(systemd cgroup,真实私有内存) | ~4.3 MB,峰值 ~5.1 MB | **~27 MB,峰值 ~28 MB** | 最准确的内存口径 |
+| 内存(`ps` RSS,含共享库映射) | ~10 MB | **~34 MB** | 偏高估,含共享库 |
+| CPU | ~0.7%(单核) | ~0.5%(单核) | 稳定,含每 3s 采集瞬时尖峰 |
+| 线程数 | 10 | 9–10 | tokio runtime |
+| 二进制大小 | ~11 MB | — | linux-amd64 release |
+| 网络 | 每个采集间隔(默认 3s)一条 `SystemReport` JSON + 周期性 ping/pong;数量级 ≤ 1–2 KB/s | — | 随采集间隔与启用指标项变化 |
 
 测量环境:4 核 AMD EPYC 7B13 / 8 GB / Ubuntu 24.04(KVM),Agent v0.9.3,采集间隔 3s,启用温度采集,经 HTTPS WebSocket 上报至远端 Server。
 
-对比参考:同类常驻监控 Agent 中,Netdata 常达数十~上百 MB,Telegraf ~30–50 MB,node_exporter ~15–20 MB。ServerBee Agent 的**个位数 MB 内存 + <1% CPU** 属于最轻量的一档。
+<Callout type="warn">
+内存从冷启动 ~5 MB 在 8 小时内升至 ~27 MB(8h 时当前值 ≈ 峰值,**疑似已接近平台,待 24h 数据确认**)。与 Server 同源:Agent 也是 Rust + tokio,默认 glibc 多 arena 分配器会把已释放内存攒在进程内不归还 OS(sysinfo 每 3s 采集产生大量小分配)。这不是代码层泄漏。若稳态内存需进一步压低,可给 Agent 的 systemd 服务设置 `MALLOC_ARENA_MAX=2`。
+</Callout>
+
+对比参考:同类常驻监控 Agent 中,Netdata 常达数十~上百 MB,Telegraf ~30–50 MB,node_exporter ~15–20 MB。ServerBee Agent 稳态 ~27 MB 内存 + <1% CPU,仍属轻量一档。
 
 ## Server
 

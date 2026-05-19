@@ -12,20 +12,24 @@ These values are measured, not estimated. Unless noted otherwise, they were take
 
 ## Agent
 
-The Agent is a lightweight probe with a very small resident footprint.
+The Agent is a lightweight probe with negligible CPU cost and a steady-state memory footprint in the tens of MB.
 
-| Resource | Measured | Notes |
-|----------|----------|-------|
-| Memory (systemd cgroup, real private memory) | ~4.3 MB, peak ~5.1 MB | Most accurate memory figure |
-| Memory (`ps` RSS, includes shared library mappings) | ~10–11 MB | Overestimate, includes shared libs |
-| CPU | ~0.7% average (single core) | Includes the per-3s collection spike |
-| Threads | 10 | tokio runtime |
-| Binary size | ~11 MB | linux-amd64 release |
-| Network | One `SystemReport` JSON per collection interval (3s default) plus periodic ping/pong; on the order of ≤ 1–2 KB/s | Scales with interval and enabled metrics |
+| Resource | Cold start (~90s) | Steady state (8h uptime) | Notes |
+|----------|-------------------|--------------------------|-------|
+| Memory (systemd cgroup, real private memory) | ~4.3 MB, peak ~5.1 MB | **~27 MB, peak ~28 MB** | Most accurate memory figure |
+| Memory (`ps` RSS, includes shared library mappings) | ~10 MB | **~34 MB** | Overestimate, includes shared libs |
+| CPU | ~0.7% (single core) | ~0.5% (single core) | Stable, includes the per-3s collection spike |
+| Threads | 10 | 9–10 | tokio runtime |
+| Binary size | ~11 MB | — | linux-amd64 release |
+| Network | One `SystemReport` JSON per collection interval (3s default) plus periodic ping/pong; on the order of ≤ 1–2 KB/s | — | Scales with interval and enabled metrics |
 
 Measurement environment: 4-core AMD EPYC 7B13 / 8 GB / Ubuntu 24.04 (KVM), Agent v0.9.3, 3s collection interval, temperature collection enabled, reporting to a remote Server over an HTTPS WebSocket.
 
-For comparison: among comparable resident monitoring agents, Netdata often reaches tens to hundreds of MB, Telegraf ~30–50 MB, node_exporter ~15–20 MB. The ServerBee Agent's **single-digit MB memory + <1% CPU** is among the lightest.
+<Callout type="warn">
+Memory rose from ~5 MB at cold start to ~27 MB over 8 hours (at 8h the current value ≈ the peak, so it **appears to be near a plateau, pending 24h confirmation**). Same root cause as the Server: the Agent is also Rust + tokio, and glibc's default multi-arena allocator hoards freed memory inside the process instead of returning it to the OS (sysinfo produces many small allocations every 3s). This is not a code-level leak. If steady-state memory needs to be reduced further, set `MALLOC_ARENA_MAX=2` on the Agent's systemd service.
+</Callout>
+
+For comparison: among comparable resident monitoring agents, Netdata often reaches tens to hundreds of MB, Telegraf ~30–50 MB, node_exporter ~15–20 MB. The ServerBee Agent's steady-state ~27 MB memory + <1% CPU is still in the lightweight tier.
 
 ## Server
 
