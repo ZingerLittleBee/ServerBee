@@ -55,6 +55,8 @@
   "servers_online": "{{total}} 台服务器中 {{online}} 台在线",
   "search_placeholder": "搜索服务器\u2026",
   "delete_selected": "删除 {{count}} 项",
+  "batch_select": "批量操作",
+  "batch_select_exit": "退出批量",
   "no_servers_title": "暂无服务器连接",
   "no_servers_description": "服务器通过 Agent 连接后将显示在此处",
   "col_name": "名称",

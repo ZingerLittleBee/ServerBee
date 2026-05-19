@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
-import { CircleDot, ExternalLink, LayoutGrid, Plus, Search, Table2, Tag, Trash2 } from 'lucide-react'
+import { CircleDot, ExternalLink, LayoutGrid, ListChecks, Plus, Search, Table2, Tag, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -73,6 +73,7 @@ function ServersListPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [addOpen, setAddOpen] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
   const navigate = Route.useNavigate()
   const { q: search, view: viewParam } = Route.useSearch()
   const { ref: fillRef, height: viewportHeight } = useScrollViewportHeight<HTMLDivElement>()
@@ -165,8 +166,11 @@ function ServersListPage() {
             onCheckedChange={(checked) => row.toggleSelected(!!checked)}
           />
         ),
-        size: 36,
-        meta: { className: 'w-9' }
+        minSize: 0,
+        size: selectMode ? 36 : 0,
+        meta: {
+          className: cn('overflow-hidden transition-[width,padding] duration-200', !selectMode && 'px-0!')
+        }
       },
       {
         id: 'status-dot',
@@ -289,7 +293,7 @@ function ServersListPage() {
         meta: { className: 'w-10' }
       }
     ],
-    [t, costByServerId, groupMap, groupOptions, statusOptions, trafficOverview]
+    [t, costByServerId, groupMap, groupOptions, statusOptions, trafficOverview, selectMode]
   )
 
   const { table } = useDataTable({
@@ -411,10 +415,27 @@ function ServersListPage() {
     </AlertDialog>
   )
 
+  const toggleSelectMode = () => {
+    setSelectMode((prev) => {
+      if (prev) {
+        table.toggleAllRowsSelected(false)
+      }
+      return !prev
+    })
+  }
+
+  const selectModeButton = viewMode === 'table' && (
+    <Button onClick={toggleSelectMode} size="default" variant={selectMode ? 'secondary' : 'outline'}>
+      <ListChecks aria-hidden="true" className="size-4" />
+      {selectMode ? t('servers:batch_select_exit') : t('servers:batch_select')}
+    </Button>
+  )
+
   const actionButtons = (
     <>
       {viewToggle}
       {cleanupButton}
+      {selectModeButton}
       {batchDeleteButton}
     </>
   )
