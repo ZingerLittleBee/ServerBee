@@ -7,8 +7,15 @@ import {
   TrashIcon,
   UnlockIcon
 } from 'lucide-react'
-import { type Ref, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { GridLayout, getCompactor, type Layout, type ResizeHandleAxis, useContainerWidth } from 'react-grid-layout'
+import { type ReactNode, type Ref, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  GridLayout,
+  getCompactor,
+  type Layout,
+  type LayoutItem,
+  type ResizeHandleAxis,
+  useContainerWidth
+} from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import { Button } from '@/components/ui/button'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
@@ -66,7 +73,7 @@ function rectsOverlap(a: Layout[number], b: Layout[number]): boolean {
 // pushes only the genuinely-overlapping widgets straight down, leaving every
 // non-colliding widget exactly where it was.
 function deoverlapLayout(layout: Layout): Layout {
-  const placed: Layout = []
+  const placed: LayoutItem[] = []
   const sorted = [...layout].sort((a, b) => a.y - b.y || a.x - b.x)
   for (const original of sorted) {
     const item = { ...original }
