@@ -145,6 +145,16 @@ export function setServerDockerAvailability(
   })
 }
 
+export function applyServerEdit(
+  prev: ServerMetrics[],
+  serverId: string,
+  edited: { name: string; group_id: string | null }
+): ServerMetrics[] {
+  return prev.map((server) =>
+    server.id === serverId ? { ...server, name: edited.name, group_id: edited.group_id } : server
+  )
+}
+
 export function setServerCapabilities(
   prev: ServerMetrics[],
   serverId: string,

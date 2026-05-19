@@ -55,6 +55,8 @@
   "servers_online": "{{online}} of {{total}} servers online",
   "search_placeholder": "Search servers\u2026",
   "delete_selected": "Delete {{count}}",
+  "batch_select": "Bulk actions",
+  "batch_select_exit": "Exit bulk",
   "no_servers_title": "No servers connected yet",
   "no_servers_description": "Servers will appear here once they connect via the agent",
   "col_name": "Name",

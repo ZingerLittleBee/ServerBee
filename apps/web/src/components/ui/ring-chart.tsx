@@ -20,7 +20,7 @@ export function RingChart({ value, size, strokeWidth, color, label, compact = fa
   const radius = (VIEWBOX - resolvedStroke) / 2
   const circumference = 2 * Math.PI * radius
   const dashArray = `${(clamped / 100) * circumference} ${circumference}`
-  const labelFontSize = compact ? '9px' : '11px'
+  const labelFontSize = compact ? '10px' : '12px'
 
   return (
     <div style={{ width: resolvedSize }}>
@@ -63,7 +63,7 @@ export function RingChart({ value, size, strokeWidth, color, label, compact = fa
             fontWeight: 700
           }}
         >
-          {clamped.toFixed(0)}%
+          {clamped.toFixed(0)}
         </div>
       </div>
       {!compact && <div className="mt-0.5 text-center text-[10px] text-muted-foreground">{label}</div>}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NetworkServerSummary } from '@/lib/network-types'
-import { AGGREGATE_TARGET_ID, buildServerCardNetworkState } from './server-card-network-data'
+import { buildServerCardNetworkState } from './server-card-network-data'
 
 function makeSummary(overrides: Partial<NetworkServerSummary> = {}): NetworkServerSummary {
   return {
@@ -126,15 +126,28 @@ describe('buildServerCardNetworkState', () => {
     expect(state.currentAvgLossRatio).toBe(0.03)
     expect(state.latencyPoints.at(-1)?.value).toBe(40)
     expect(state.lossPoints.at(-1)?.value).toBe(3)
-    // Each historical point carries its own bucket aggregate, not a constant
-    // current-snapshot, so tooltips differ per point.
-    expect(state.latencyPoints.at(-1)?.targets).toEqual([
-      { latency: 40, lossRatio: 0.03, targetId: AGGREGATE_TARGET_ID, targetName: AGGREGATE_TARGET_ID }
-    ])
-    expect(state.latencyPoints.at(-3)?.targets).toEqual([
-      { latency: 10, lossRatio: 0.01, targetId: AGGREGATE_TARGET_ID, targetName: AGGREGATE_TARGET_ID }
-    ])
-    expect(state.latencyPoints.at(-2)?.targets).toEqual([])
+    // Sparkline-only fallback has no per-target history, so every point
+    // surfaces the per-target snapshot from summary.targets in its tooltip
+    // instead of a single "average" pseudo-target.
+    const perTargetSnapshot = [{ latency: 40, lossRatio: 0.03, targetId: 'target-1', targetName: 'Shanghai' }]
+    expect(state.latencyPoints.at(-1)?.targets).toEqual(perTargetSnapshot)
+    expect(state.latencyPoints.at(-3)?.targets).toEqual(perTargetSnapshot)
+    expect(state.latencyPoints.at(-2)?.targets).toEqual(perTargetSnapshot)
+    expect(state.currentTargets).toEqual(perTargetSnapshot)
+  })
+
+  it('reconstructs bucket-aligned timestamps for sparkline-only points', () => {
+    const summary = makeSummary({
+      last_probe_at: '2026-04-12T10:02:30Z',
+      latency_sparkline: [10, 25, 40],
+      loss_sparkline: [0.01, 0.02, 0.03]
+    })
+
+    const state = buildServerCardNetworkState(summary, {}, 60)
+
+    expect(state.latencyPoints.at(-1)?.timestamp).toBe('2026-04-12T10:02:00.000Z')
+    expect(state.latencyPoints.at(-2)?.timestamp).toBe('2026-04-12T10:01:00.000Z')
+    expect(state.latencyPoints.at(-3)?.timestamp).toBe('2026-04-12T10:00:00.000Z')
   })
 
   it('keeps backend seed data and appends realtime points when live samples arrive', () => {
