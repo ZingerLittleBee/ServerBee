@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { useRecoveryJobsStore } from '@/stores/recovery-jobs-store'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import type { ServerMetrics } from './use-servers-ws'
-import { handleWsMessage, mergeServerUpdate, setServerCapabilities, setServerOnlineStatus } from './use-servers-ws'
+import {
+  applyServerEdit,
+  handleWsMessage,
+  mergeServerUpdate,
+  setServerCapabilities,
+  setServerOnlineStatus
+} from './use-servers-ws'
 
 function makeServer(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
   return {
@@ -109,6 +115,34 @@ describe('setServerOnlineStatus', () => {
     const prev = [makeServer({ id: 's1', online: true })]
     const result = setServerOnlineStatus(prev, 'unknown', false)
     expect(result[0].online).toBe(true)
+  })
+})
+
+describe('applyServerEdit', () => {
+  it('patches name and group_id of the edited server in place', () => {
+    const prev = [
+      makeServer({ id: 's1', name: 'Old', group_id: null }),
+      makeServer({ id: 's2', name: 'Keep', group_id: 'g0' })
+    ]
+    const result = applyServerEdit(prev, 's1', { name: 'New', group_id: 'g1' })
+    expect(result[0].name).toBe('New')
+    expect(result[0].group_id).toBe('g1')
+    expect(result[1].name).toBe('Keep')
+    expect(result[1].group_id).toBe('g0')
+  })
+
+  it('preserves live metrics and online state while editing config', () => {
+    const prev = [makeServer({ id: 's1', name: 'Old', online: true, cpu: 42 })]
+    const result = applyServerEdit(prev, 's1', { name: 'Renamed', group_id: null })
+    expect(result[0].online).toBe(true)
+    expect(result[0].cpu).toBe(42)
+    expect(result[0].group_id).toBeNull()
+  })
+
+  it('returns the list unchanged for an unknown server', () => {
+    const prev = [makeServer({ id: 's1', name: 'Old' })]
+    const result = applyServerEdit(prev, 'missing', { name: 'X', group_id: null })
+    expect(result).toEqual(prev)
   })
 })
 
