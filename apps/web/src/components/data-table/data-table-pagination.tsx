@@ -16,6 +16,10 @@ export function DataTablePagination<TData>({
   className,
   ...props
 }: DataTablePaginationProps<TData>) {
+  if (table.getPageCount() <= 1) {
+    return null
+  }
+
   return (
     <div
       className={cn(
