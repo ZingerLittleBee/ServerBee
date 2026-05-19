@@ -216,8 +216,8 @@ function ServersListPage() {
         id: 'disk',
         header: ({ column }) => <DataTableColumnHeader column={column} label={t('col_disk')} />,
         cell: ({ row }) => <DiskCell server={row.original} />,
-        size: 150,
-        meta: { className: 'w-[150px]', cellClassName: 'align-top', label: t('col_disk') }
+        size: 180,
+        meta: { className: 'w-[180px]', cellClassName: 'align-top', label: t('col_disk') }
       },
       {
         id: 'network',
@@ -227,8 +227,8 @@ function ServersListPage() {
           const entry = trafficOverview.find((e) => e.server_id === row.original.id)
           return <NetworkCell entry={entry} server={row.original} />
         },
-        size: 150,
-        meta: { className: 'hidden lg:table-cell lg:w-[150px]', cellClassName: 'lg:align-top', label: t('col_network') }
+        size: 180,
+        meta: { className: 'hidden lg:table-cell lg:w-[180px]', cellClassName: 'lg:align-top', label: t('col_network') }
       },
       {
         id: 'cost',
