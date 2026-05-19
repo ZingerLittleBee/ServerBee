@@ -141,7 +141,7 @@ export function CpuCell({ server }: { server: ServerMetrics }) {
         </span>
         <span className={cn('ml-auto font-semibold', pctColor)}>{pct}%</span>
       </div>
-      <div className="flex h-4 items-center">
+      <div className="flex h-4 max-w-[140px] items-center">
         <PositionIndicator pct={pct} />
       </div>
     </div>
@@ -163,7 +163,7 @@ export function MemoryCell({ server }: { server: ServerMetrics }) {
         </span>
         <span className={cn('ml-auto font-semibold', pctColor)}>{roundedPct}%</span>
       </div>
-      <div className="flex h-4 items-center">
+      <div className="flex h-4 max-w-[140px] items-center">
         <PositionIndicator pct={pct} />
       </div>
     </div>
