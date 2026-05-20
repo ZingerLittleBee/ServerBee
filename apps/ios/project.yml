@@ -20,6 +20,7 @@ targets:
     settings:
       base:
         INFOPLIST_FILE: ServerBee/Info.plist
+        INFOPLIST_KEY_CFBundleAllowMixedLocalizations: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.serverbee.mobile
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_STRICT_CONCURRENCY: complete
