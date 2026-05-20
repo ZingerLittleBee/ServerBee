@@ -22,6 +22,7 @@ final class ServersViewModel {
     var onlineFilter: OnlineFilter = .all
     var isLoading = false
     var isRefreshing = false
+    var errorMessage: String?
 
     var filteredServers: [ServerStatus] {
         var result = servers
@@ -62,8 +63,13 @@ final class ServersViewModel {
         defer { isLoading = false }
         do {
             servers = try await apiClient.get("/api/servers")
+            errorMessage = nil
         } catch {
             AppLog.viewModel.error("Servers fetch failed: \(String(describing: error), privacy: .public)")
+            errorMessage = String(
+                format: String(localized: "Failed to load servers: %@"),
+                error.localizedDescription
+            )
         }
     }
 
