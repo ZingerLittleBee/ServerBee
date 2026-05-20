@@ -82,6 +82,7 @@ final class AuthViewModel {
                 errorMessage = String(localized: "Connection failed. Please check your server URL.")
             }
         } catch {
+            AppLog.auth.error("Login request failed: \(String(describing: error), privacy: .public)")
             errorMessage = String(localized: "Connection failed. Please check your server URL.")
         }
     }
