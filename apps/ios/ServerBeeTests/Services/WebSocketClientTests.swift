@@ -19,6 +19,7 @@ final class WebSocketClientTests: XCTestCase {
         await fake.enqueueText(#"{"type":"server_online","server_id":"abc"}"#)
 
         await fulfillment(of: [received], timeout: 2.0)
+        await client.close()
     }
 
     func test_connectionState_isConnectingUntilFirstFrame() async throws {
@@ -38,6 +39,7 @@ final class WebSocketClientTests: XCTestCase {
 
         await fulfillment(of: [observed], timeout: 2.0)
         let postState = await client.connectionState
+        await client.close()
         XCTAssertEqual(postState, .connected)
     }
 
@@ -73,6 +75,7 @@ final class WebSocketClientTests: XCTestCase {
         }
 
         let recorded = await delays.values
+        await client.close()
         XCTAssertEqual(recorded.count, 3)
         XCTAssertEqual(recorded[0], 1.0, accuracy: 0.5)
         XCTAssertGreaterThanOrEqual(recorded[1], 1.6)  // ~2s with jitter
@@ -103,6 +106,7 @@ extension WebSocketClientTests {
         // Wait a tick for any zombie scheduleReconnect to fire.
         try await Task.sleep(nanoseconds: 200_000_000)
         let final = built.withLock { $0 }
+        await client.close()
         XCTAssertEqual(final, 2, "expected exactly one transport per connect()")
     }
 
@@ -121,6 +125,7 @@ extension WebSocketClientTests {
         try await Task.sleep(nanoseconds: 100_000_000)
 
         let final = built.withLock { $0 }
+        await client.close()
         XCTAssertEqual(final, 2)
     }
 
@@ -138,6 +143,7 @@ extension WebSocketClientTests {
         try await Task.sleep(nanoseconds: 100_000_000)
 
         let final = built.withLock { $0 }
+        await client.close()
         XCTAssertEqual(final, 1, "should not rebuild while in .connecting/.connected")
     }
 
@@ -162,6 +168,7 @@ extension WebSocketClientTests {
         // second connect call — the old transport must have been cancelled.
         await client.connect(serverUrl: "https://example.test", accessToken: "t")
         let final = index.withLock { $0 }
+        await client.close()
         XCTAssertEqual(final, 2)
     }
 
@@ -183,6 +190,8 @@ extension WebSocketClientTests {
         await fake.enqueueText(#"{"type":"server_online","server_id":"x"}"#)
 
         await fulfillment(of: [observed], timeout: 5.0)
+        await client.setReconnectDelayHook(nil)
+        await client.close()
         XCTAssertGreaterThanOrEqual(fake.pingCount, 1)
     }
 }
