@@ -21,10 +21,9 @@ final class RefreshCoordinatorTests: XCTestCase {
     /// the same token without firing the underlying `refreshFn` more than once.
     ///
     /// NOTE: This test exercises the `RefreshCoordinator` actor directly rather
-    /// than going through `AuthManager.refreshAccessToken()` because the current
-    /// `MobileTokenResponse` model has a `convertFromSnakeCase` + explicit
-    /// `CodingKeys` rawValue conflict that prevents the success-path JSON from
-    /// decoding (a latent bug Plan 5 fixes by removing the rawValues).
+    /// than going through `AuthManager.refreshAccessToken()` because the actor
+    /// is the unit under test for coalescing semantics. HTTP-shaped tests are
+    /// covered by `AuthViewModelPairTests` and friends.
     func testConcurrentCallersCoalesceOnSuccess() async throws {
         let coordinator = RefreshCoordinator()
         actor Counter { var n = 0; func bump() -> Int { n += 1; return n } }

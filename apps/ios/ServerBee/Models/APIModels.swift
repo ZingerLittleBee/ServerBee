@@ -14,19 +14,16 @@ struct Empty: Codable, Sendable {}
 // MARK: - JSON Coding Helpers
 
 extension JSONEncoder {
-    /// Encoder configured for snake_case keys.
-    static let snakeCase: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
-        return encoder
-    }()
+    /// Encoder that relies on explicit `CodingKeys` in each model.
+    ///
+    /// Historically this set `.keyEncodingStrategy = .convertToSnakeCase`,
+    /// which conflicted with the hand-written `CodingKeys` already on every
+    /// model and risked double-conversion if a property's CodingKey was
+    /// itself camelCase. See `Models/README.md`.
+    static let snakeCase: JSONEncoder = JSONEncoder()
 }
 
 extension JSONDecoder {
-    /// Decoder configured for snake_case keys.
-    static let snakeCase: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return decoder
-    }()
+    /// Decoder that relies on explicit `CodingKeys` in each model.
+    static let snakeCase: JSONDecoder = JSONDecoder()
 }
