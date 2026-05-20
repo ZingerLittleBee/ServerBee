@@ -27,6 +27,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.serverbee.mobile
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_STRICT_CONCURRENCY: complete
+        OTHER_LDFLAGS:
+          - "$(inherited)"
+          - "-framework"
+          - AppIntents
       configs:
         Debug:
           CODE_SIGN_ENTITLEMENTS: ServerBee/ServerBee.Debug.entitlements
@@ -52,6 +56,10 @@ targets:
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/ServerBee.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ServerBee"
         SWIFT_VERSION: "6.0"
         SWIFT_STRICT_CONCURRENCY: complete
+        OTHER_LDFLAGS:
+          - "$(inherited)"
+          - "-framework"
+          - AppIntents
 schemes:
   ServerBee:
     build:

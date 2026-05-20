@@ -47,5 +47,5 @@ extension ISO8601DateFormatter {
     /// Tolerant shared parser. Use `.date(from:)` / `.string(from:)` on it.
     /// (Note: this is now a wrapper type with the same method shape, not an
     /// actual `ISO8601DateFormatter` instance.)
-    nonisolated(unsafe) static let shared: TolerantISO8601Parser = TolerantISO8601Parser()
+    static let shared: TolerantISO8601Parser = TolerantISO8601Parser()
 }

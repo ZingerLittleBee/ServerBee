@@ -3,8 +3,8 @@ import SwiftUI
 
 enum Formatters {
     // Foundation formatter classes are documented thread-safe for read-only
-    // use once configured; we cache them as `nonisolated(unsafe)` statics to
-    // avoid the per-call allocation cost (significant for chart rendering).
+    // use once configured; we cache them as statics to avoid the per-call
+    // allocation cost (significant for chart rendering).
     // This mirrors the existing `ISO8601DateFormatter.shared` pattern in
     // `Utilities/Extensions.swift`.
 
@@ -20,7 +20,7 @@ enum Formatters {
 
     /// Cached HH:mm formatter for chart X-axis labels. Recreating
     /// `DateFormatter` on each Chart render hurts scroll performance.
-    nonisolated(unsafe) private static let chartTimeFormatter: DateFormatter = {
+    private static let chartTimeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
         return f

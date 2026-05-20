@@ -4,18 +4,18 @@ import XCTest
 
 @MainActor
 final class DeviceNameProviderTests: XCTestCase {
-    private var defaults: UserDefaults!
     private let suiteName = "DeviceNameProviderTests"
+    private var defaults: UserDefaults {
+        UserDefaults(suiteName: suiteName) ?? .standard
+    }
 
     override func setUp() {
         super.setUp()
         UserDefaults().removePersistentDomain(forName: suiteName)
-        defaults = UserDefaults(suiteName: suiteName)
     }
 
     override func tearDown() {
         UserDefaults().removePersistentDomain(forName: suiteName)
-        defaults = nil
         super.tearDown()
     }
 

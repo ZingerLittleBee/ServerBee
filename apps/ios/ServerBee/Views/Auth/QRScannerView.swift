@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import SwiftUI
 import UIKit
 
@@ -26,16 +26,9 @@ final class QRScannerViewController: UIViewController, @preconcurrency AVCapture
     var onScanned: ((String, String) -> Void)?
     var onDismiss: (() -> Void)?
 
-    /// Serial queue that owns ALL `AVCaptureSession` mutations. Per Apple's
-    /// AVFoundation docs, `beginConfiguration()`, `addInput`, `addOutput`,
-    /// `startRunning()`, and `stopRunning()` must not be interleaved across
-    /// threads. Routing everything through a single serial queue gives us
-    /// that ordering guarantee without `nonisolated(unsafe)`.
-    private let captureQueue = DispatchQueue(label: "com.serverbee.capture", qos: .userInitiated)
-    private let captureSession = AVCaptureSession()
+    private let capture = QRScannerCaptureSession()
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private var hasScanned = false
-    private var isConfigured = false
 
     /// Permission state reflected by the UI. Updated on the main actor so the
     /// view controller can swap to a "denied" panel.
@@ -96,68 +89,24 @@ final class QRScannerViewController: UIViewController, @preconcurrency AVCapture
     // MARK: - Session lifecycle (serial queue only)
 
     private func configureAndStartSession() {
-        captureQueue.async { [weak self] in
-            guard let self else { return }
-            self.configureSessionLocked()
-            if !self.captureSession.isRunning {
-                self.captureSession.startRunning()
+        capture.configureAndStart(
+            delegate: self,
+            onPreviewReady: { [weak self] session in
+                guard let self else { return }
+                let preview = AVCaptureVideoPreviewLayer(session: session)
+                preview.frame = self.view.bounds
+                preview.videoGravity = .resizeAspectFill
+                self.view.layer.insertSublayer(preview, at: 0)
+                self.previewLayer = preview
+            },
+            onError: { [weak self] message in
+                self?.showError(message)
             }
-        }
-    }
-
-    /// Must run on `captureQueue`. Configures inputs/outputs exactly once.
-    private func configureSessionLocked() {
-        guard !isConfigured else { return }
-
-        captureSession.beginConfiguration()
-        defer { captureSession.commitConfiguration() }
-
-        guard let device = AVCaptureDevice.default(for: .video) else {
-            DispatchQueue.main.async { [weak self] in
-                self?.showError(String(localized: "qr_camera_unavailable"))
-            }
-            return
-        }
-        guard let input = try? AVCaptureDeviceInput(device: device),
-              captureSession.canAddInput(input)
-        else {
-            DispatchQueue.main.async { [weak self] in
-                self?.showError(String(localized: "qr_camera_input_failed"))
-            }
-            return
-        }
-        captureSession.addInput(input)
-
-        let metadataOutput = AVCaptureMetadataOutput()
-        guard captureSession.canAddOutput(metadataOutput) else {
-            DispatchQueue.main.async { [weak self] in
-                self?.showError(String(localized: "qr_camera_output_failed"))
-            }
-            return
-        }
-        captureSession.addOutput(metadataOutput)
-        metadataOutput.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
-        metadataOutput.metadataObjectTypes = [.qr]
-
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            let preview = AVCaptureVideoPreviewLayer(session: self.captureSession)
-            preview.frame = self.view.bounds
-            preview.videoGravity = .resizeAspectFill
-            self.view.layer.insertSublayer(preview, at: 0)
-            self.previewLayer = preview
-        }
-
-        isConfigured = true
+        )
     }
 
     private func stopSession() {
-        captureQueue.async { [weak self] in
-            guard let self else { return }
-            if self.captureSession.isRunning {
-                self.captureSession.stopRunning()
-            }
-        }
+        capture.stop()
     }
 
     // MARK: - Dismiss
@@ -277,5 +226,82 @@ final class QRScannerViewController: UIViewController, @preconcurrency AVCapture
             label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             label.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
+    }
+}
+
+private final class QRScannerCaptureSession: @unchecked Sendable {
+    /// Serial queue that owns ALL `AVCaptureSession` mutations. Per Apple's
+    /// AVFoundation docs, `beginConfiguration()`, `addInput`, `addOutput`,
+    /// `startRunning()`, and `stopRunning()` must not be interleaved across
+    /// threads.
+    private let queue = DispatchQueue(label: "com.serverbee.capture", qos: .userInitiated)
+    private let session = AVCaptureSession()
+    private var isConfigured = false
+
+    func configureAndStart(
+        delegate: AVCaptureMetadataOutputObjectsDelegate,
+        onPreviewReady: @MainActor @escaping (AVCaptureSession) -> Void,
+        onError: @MainActor @escaping (String) -> Void
+    ) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.configureLocked(delegate: delegate, onPreviewReady: onPreviewReady, onError: onError)
+            if self.isConfigured, !self.session.isRunning {
+                self.session.startRunning()
+            }
+        }
+    }
+
+    func stop() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            if self.session.isRunning {
+                self.session.stopRunning()
+            }
+        }
+    }
+
+    private func configureLocked(
+        delegate: AVCaptureMetadataOutputObjectsDelegate,
+        onPreviewReady: @MainActor @escaping (AVCaptureSession) -> Void,
+        onError: @MainActor @escaping (String) -> Void
+    ) {
+        guard !isConfigured else { return }
+
+        session.beginConfiguration()
+        defer { session.commitConfiguration() }
+
+        guard let device = AVCaptureDevice.default(for: .video) else {
+            DispatchQueue.main.async {
+                onError(String(localized: "qr_camera_unavailable"))
+            }
+            return
+        }
+        guard let input = try? AVCaptureDeviceInput(device: device),
+              session.canAddInput(input)
+        else {
+            DispatchQueue.main.async {
+                onError(String(localized: "qr_camera_input_failed"))
+            }
+            return
+        }
+        session.addInput(input)
+
+        let metadataOutput = AVCaptureMetadataOutput()
+        guard session.canAddOutput(metadataOutput) else {
+            DispatchQueue.main.async {
+                onError(String(localized: "qr_camera_output_failed"))
+            }
+            return
+        }
+        session.addOutput(metadataOutput)
+        metadataOutput.setMetadataObjectsDelegate(delegate, queue: DispatchQueue.main)
+        metadataOutput.metadataObjectTypes = [.qr]
+
+        DispatchQueue.main.async { [session] in
+            onPreviewReady(session)
+        }
+
+        isConfigured = true
     }
 }
