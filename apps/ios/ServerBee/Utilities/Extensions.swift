@@ -3,14 +3,16 @@ import SwiftUI
 // MARK: - Color Extensions
 
 extension Color {
-    static let serverOnline = Color(red: 0x22 / 255.0, green: 0xC5 / 255.0, blue: 0x5E / 255.0)
-    static let serverOffline = Color(red: 0xEF / 255.0, green: 0x44 / 255.0, blue: 0x44 / 255.0)
-    static let alertFiring = Color(red: 0xF9 / 255.0, green: 0x73 / 255.0, blue: 0x16 / 255.0)
-    static let alertResolved = Color.serverOnline
-    static let cpuColor = Color(red: 0x38 / 255.0, green: 0xBD / 255.0, blue: 0xF8 / 255.0)
-    static let memoryColor = Color(red: 0xA7 / 255.0, green: 0x8B / 255.0, blue: 0xFA / 255.0)
-    static let diskColor = Color(red: 0xFB / 255.0, green: 0xBD / 255.0, blue: 0x23 / 255.0)
-    static let networkColor = Color(red: 0x34 / 255.0, green: 0xD3 / 255.0, blue: 0x99 / 255.0)
+    static let serverOnline = Color("ServerOnline")
+    static let serverOffline = Color("ServerOffline")
+    static let alertFiring = Color("AlertFiring")
+    static let alertResolved = Color("ServerOnline")
+    static let warningAmber = Color("WarningAmber")
+    static let brandAccent = Color("BrandAccent")
+    static let cpuColor = Color("CPUColor")
+    static let memoryColor = Color("MemoryColor")
+    static let diskColor = Color("DiskColor")
+    static let networkColor = Color("NetworkColor")
 }
 
 // MARK: - ISO8601DateFormatter Extension
