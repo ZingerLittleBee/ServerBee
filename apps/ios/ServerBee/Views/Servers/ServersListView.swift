@@ -11,6 +11,8 @@ struct ServersListView: View {
         Group {
             if viewModel.isLoading && viewModel.servers.isEmpty {
                 loadingView
+            } else if let message = viewModel.errorMessage, viewModel.servers.isEmpty {
+                errorView(message: message)
             } else if viewModel.servers.isEmpty {
                 emptyStateView
             } else {
@@ -42,6 +44,21 @@ struct ServersListView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func errorView(message: String) -> some View {
+        ContentUnavailableView {
+            Label(String(localized: "Couldn't load servers"), systemImage: "exclamationmark.triangle")
+        } description: {
+            Text(message)
+        } actions: {
+            Button(String(localized: "Try again")) {
+                Task {
+                    await viewModel.fetchServers(apiClient: apiClient)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+        }
     }
 
     private var emptyStateView: some View {
