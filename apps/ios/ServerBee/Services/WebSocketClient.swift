@@ -3,27 +3,22 @@ import Foundation
 /// A WebSocket client that connects to the ServerBee server's `/api/ws/servers`
 /// endpoint, receives `BrowserMessage` frames, and automatically reconnects
 /// with exponential backoff on disconnection.
-@Observable
-final class WebSocketClient: @unchecked Sendable {
+///
+/// Implemented as an `actor` so all mutable state is serialized.
+actor WebSocketClient {
     enum ConnectionState: Sendable {
         case connecting
         case connected
         case disconnected
     }
 
-    // MARK: - Public state
+    // MARK: - Public observable state
 
     private(set) var connectionState: ConnectionState = .disconnected
 
-    /// Called on the main actor whenever a decoded `BrowserMessage` arrives.
-    var onMessage: (@Sendable (BrowserMessage) -> Void)?
-
-    /// Called before reconnect to obtain a fresh access token.
-    var tokenRefresher: (@Sendable () async -> String?)?
-
     // MARK: - Private state
 
-    private var webSocketTask: URLSessionWebSocketTask?
+    private var transport: WebSocketTransport?
     private var intentionallyClosed = false
     private var reconnectDelay: TimeInterval = 1.0
     private var receiveTask: Task<Void, Never>?
@@ -31,19 +26,43 @@ final class WebSocketClient: @unchecked Sendable {
     private var currentServerUrl: String = ""
     private var currentAccessToken: String = ""
 
+    private var onMessage: (@Sendable (BrowserMessage) -> Void)?
+    private var tokenRefresher: (@Sendable () async -> String?)?
+    private var connectionStateObserver: (@Sendable (ConnectionState) -> Void)?
+
+    private let transportFactory: WebSocketTransportFactory
+
     // MARK: - Constants
 
     private let minReconnectDelay: TimeInterval = 1.0
     private let maxReconnectDelay: TimeInterval = 30.0
     private let jitterFactor: Double = 0.2
 
+    // MARK: - Init
+
+    init(transportFactory: @escaping WebSocketTransportFactory = DefaultWebSocketTransportFactory.factory) {
+        self.transportFactory = transportFactory
+    }
+
+    // MARK: - Configuration
+
+    func setOnMessage(_ handler: (@Sendable (BrowserMessage) -> Void)?) {
+        self.onMessage = handler
+    }
+
+    func setTokenRefresher(_ refresher: (@Sendable () async -> String?)?) {
+        self.tokenRefresher = refresher
+    }
+
+    func setConnectionStateObserver(_ observer: (@Sendable (ConnectionState) -> Void)?) {
+        self.connectionStateObserver = observer
+    }
+
     // MARK: - Public API
 
-    /// Open a WebSocket connection to the given server.
-    /// Calling `connect` while already connected will close the previous
-    /// connection first.
-    func connect(serverUrl: String, accessToken: String) {
-        close()
+    /// Open a WebSocket connection. Closes any prior connection first.
+    func connect(serverUrl: String, accessToken: String) async {
+        await closeInternal()
         intentionallyClosed = false
         reconnectDelay = minReconnectDelay
         currentServerUrl = serverUrl
@@ -52,62 +71,49 @@ final class WebSocketClient: @unchecked Sendable {
     }
 
     /// Intentionally close the connection. No automatic reconnect will happen.
-    func close() {
+    func close() async {
         intentionallyClosed = true
-        receiveTask?.cancel()
-        receiveTask = nil
-        webSocketTask?.cancel(with: .goingAway, reason: nil)
-        webSocketTask = nil
-        connectionState = .disconnected
+        await closeInternal()
     }
 
     // MARK: - Connection lifecycle
 
-    private func establishConnection() {
-        var wsUrl = currentServerUrl
-        if wsUrl.hasPrefix("https://") {
-            wsUrl = "wss://" + wsUrl.dropFirst("https://".count)
-        } else if wsUrl.hasPrefix("http://") {
-            wsUrl = "ws://" + wsUrl.dropFirst("http://".count)
+    private func closeInternal() async {
+        receiveTask?.cancel()
+        transport?.cancel(with: .goingAway, reason: nil)
+        if let task = receiveTask {
+            _ = await task.value
         }
-        // Ensure no trailing slash before appending path.
-        if wsUrl.hasSuffix("/") {
-            wsUrl = String(wsUrl.dropLast())
-        }
-        wsUrl += "/api/ws/servers"
+        receiveTask = nil
+        transport = nil
+        setState(.disconnected)
+    }
 
-        guard let url = URL(string: wsUrl) else {
-            print("[WS] Invalid URL: \(wsUrl)")
+    private func establishConnection() {
+        guard let url = makeWebSocketURL(from: currentServerUrl) else {
+            print("[WS] Invalid URL: \(currentServerUrl)")
             return
         }
 
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(currentAccessToken)", forHTTPHeaderField: "Authorization")
+        setState(.connecting)
 
-        connectionState = .connecting
-
-        let task = URLSession.shared.webSocketTask(with: request)
-        webSocketTask = task
-        task.resume()
-
-        // Optimistic: URLSessionWebSocketTask has no delegate-free onOpen
-        // callback, so we mark connected immediately and rely on the receive
-        // loop to detect actual failures.
-        connectionState = .connected
+        let newTransport = transportFactory(url, currentAccessToken)
+        transport = newTransport
+        newTransport.resume()
+        // NOTE: state moves to .connected only after first successful receive
+        // (see Task 4).
+        setState(.connected)
         reconnectDelay = minReconnectDelay
 
         receiveTask = Task { [weak self] in
-            await self?.receiveLoop()
+            await self?.receiveLoop(on: newTransport)
         }
     }
 
-    // MARK: - Receive loop
-
-    private func receiveLoop() async {
+    private func receiveLoop(on transport: WebSocketTransport) async {
         while !Task.isCancelled {
-            guard let task = webSocketTask else { break }
             do {
-                let message = try await task.receive()
+                let message = try await transport.receive()
                 switch message {
                 case .string(let text):
                     if let data = text.data(using: .utf8) {
@@ -115,9 +121,7 @@ final class WebSocketClient: @unchecked Sendable {
                             let browserMessage = try JSONDecoder.snakeCase.decode(
                                 BrowserMessage.self, from: data
                             )
-                            await MainActor.run { [weak self] in
-                                self?.onMessage?(browserMessage)
-                            }
+                            onMessage?(browserMessage)
                         } catch {
                             print("[WS] Failed to decode message: \(error)")
                         }
@@ -128,14 +132,16 @@ final class WebSocketClient: @unchecked Sendable {
                     break
                 }
             } catch {
-                await MainActor.run { [weak self] in
-                    self?.connectionState = .disconnected
-                }
-                if !intentionallyClosed {
-                    await scheduleReconnect()
-                }
-                break
+                await handleReceiveError()
+                return
             }
+        }
+    }
+
+    private func handleReceiveError() async {
+        setState(.disconnected)
+        if !intentionallyClosed {
+            await scheduleReconnect()
         }
     }
 
@@ -153,21 +159,38 @@ final class WebSocketClient: @unchecked Sendable {
 
         reconnectDelay = min(reconnectDelay * 2, maxReconnectDelay)
 
-        // Refresh token before reconnecting
         if let refresher = tokenRefresher {
             if let newToken = await refresher() {
                 currentAccessToken = newToken
             } else {
-                // Refresh failed — stop reconnecting
-                await MainActor.run { [weak self] in
-                    self?.connectionState = .disconnected
-                }
+                setState(.disconnected)
                 return
             }
         }
 
-        await MainActor.run { [weak self] in
-            self?.establishConnection()
+        establishConnection()
+    }
+
+    // MARK: - URL helpers
+
+    private func makeWebSocketURL(from raw: String) -> URL? {
+        var wsUrl = raw
+        if wsUrl.hasPrefix("https://") {
+            wsUrl = "wss://" + wsUrl.dropFirst("https://".count)
+        } else if wsUrl.hasPrefix("http://") {
+            wsUrl = "ws://" + wsUrl.dropFirst("http://".count)
         }
+        if wsUrl.hasSuffix("/") {
+            wsUrl = String(wsUrl.dropLast())
+        }
+        wsUrl += "/api/ws/servers"
+        return URL(string: wsUrl)
+    }
+
+    // MARK: - State helpers
+
+    private func setState(_ new: ConnectionState) {
+        connectionState = new
+        connectionStateObserver?(new)
     }
 }

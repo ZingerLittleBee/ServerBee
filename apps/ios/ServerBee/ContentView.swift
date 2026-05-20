@@ -35,25 +35,24 @@ struct ContentView: View {
             apiClient = client
             pushManager.configure(apiClient: client)
 
-            // Configure WS token refresher
-            wsClient.tokenRefresher = { [weak authManager] in
+            await wsClient.setTokenRefresher { [weak authManager] in
                 guard let authManager else { return nil }
                 return try? await authManager.refreshAccessToken()
             }
 
-            // Connect WebSocket
-            wsClient.onMessage = { [weak serversViewModel] message in
+            await wsClient.setOnMessage { [weak serversViewModel] message in
                 Task { @MainActor in
                     serversViewModel?.handleWSMessage(message)
                 }
             }
+
             if let serverUrl = authManager.serverUrl,
                let token = authManager.getAccessToken() {
-                wsClient.connect(serverUrl: serverUrl, accessToken: token)
+                await wsClient.connect(serverUrl: serverUrl, accessToken: token)
             }
         }
         .onDisappear {
-            wsClient.close()
+            Task { await wsClient.close() }
         }
     }
 }
