@@ -75,11 +75,15 @@ struct ServerDetailView: View {
     }
 
     private var statusBadge: some View {
-        HStack(spacing: 6) {
+        let label = server.isOnline
+            ? String(localized: "Online")
+            : String(localized: "Offline")
+        return HStack(spacing: 6) {
             Circle()
                 .fill(server.isOnline ? Color.serverOnline : Color.serverOffline)
                 .frame(width: 10, height: 10)
-            Text(server.isOnline ? String(localized: "Online") : String(localized: "Offline"))
+                .accessibilityHidden(true)
+            Text(label)
                 .font(.subheadline.bold())
                 .foregroundStyle(server.isOnline ? Color.serverOnline : Color.serverOffline)
         }
@@ -89,6 +93,9 @@ struct ServerDetailView: View {
             (server.isOnline ? Color.serverOnline : Color.serverOffline).opacity(0.1)
         )
         .clipShape(Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(String(localized: "Status")))
+        .accessibilityValue(Text(label))
     }
 
     // MARK: - Metrics Grid
