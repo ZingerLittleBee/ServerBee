@@ -76,7 +76,23 @@ final class AuthManager {
 
     // MARK: - Logout
 
-    /// Clear all persisted auth state and reset in-memory properties.
+    /// Clear the user's authenticated session.
+    ///
+    /// **Cleared:**
+    /// - Access token (Keychain)
+    /// - Refresh token (Keychain)
+    /// - Persisted `MobileUser` (Keychain)
+    /// - In-memory `user` and `isAuthenticated`
+    ///
+    /// **Preserved on purpose:**
+    /// - `serverUrl` — the user will likely log back into the same server,
+    ///    so we pre-fill the login form rather than forcing them to retype it.
+    /// - `installationId` — a stable device identifier; rotating it would
+    ///    desynchronise push-notification routing and would make the server
+    ///    think this is a brand-new device on next login.
+    ///
+    /// If you need a hard reset (e.g. "Forget this server" affordance), add a
+    /// separate `forgetServer()` API rather than expanding this method.
     func clearAuth() {
         KeychainService.delete(for: KeychainService.accessTokenKey)
         KeychainService.delete(for: KeychainService.refreshTokenKey)
