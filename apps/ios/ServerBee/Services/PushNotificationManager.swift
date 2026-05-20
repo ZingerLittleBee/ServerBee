@@ -22,8 +22,9 @@ protocol PushNotificationManaging: AnyObject {
     func unregister() async
 }
 
+@MainActor
 @Observable
-final class PushNotificationManager: NSObject, PushNotificationManaging, @unchecked Sendable {
+final class PushNotificationManager: NSObject, PushNotificationManaging {
     var permissionGranted = false
     var deviceToken: String?
 
@@ -34,7 +35,6 @@ final class PushNotificationManager: NSObject, PushNotificationManaging, @unchec
     }
 
     /// Request notification permission and register for remote notifications.
-    @MainActor
     func requestPermission() async {
         do {
             let granted = try await UNUserNotificationCenter.current()
@@ -63,7 +63,6 @@ final class PushNotificationManager: NSObject, PushNotificationManaging, @unchec
     }
 
     /// Upload device token to server.
-    @MainActor
     private func registerTokenWithServer(_ token: String) async {
         guard let apiClient else { return }
         do {
@@ -75,7 +74,6 @@ final class PushNotificationManager: NSObject, PushNotificationManaging, @unchec
 
     /// Unregister device token from server (called on logout).
     /// Errors are swallowed — the device token will be re-bound on next register.
-    @MainActor
     func unregister() async {
         guard let apiClient else {
             deviceToken = nil
