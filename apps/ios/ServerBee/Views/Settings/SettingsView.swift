@@ -47,6 +47,7 @@ struct SettingsView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+            DeviceNameRow()
         }
     }
 
