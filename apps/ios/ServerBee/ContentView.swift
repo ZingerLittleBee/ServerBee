@@ -66,7 +66,7 @@ struct ContentView: View {
                 }
                 .tag(ContentView.alertsTabTag)
 
-                SettingsView()
+                SettingsView(wsClient: wsClient)
                     .tabItem {
                         Label("Settings", systemImage: "gearshape")
                     }

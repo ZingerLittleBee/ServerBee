@@ -6,6 +6,10 @@ struct SettingsView: View {
     @Environment(PushNotificationManager.self) private var pushManager
     @State private var viewModel = SettingsViewModel()
 
+    /// Live WebSocket client owned by `ContentView`. Passed in so logout can
+    /// close it before clearing auth and triggering the server logout.
+    let wsClient: WebSocketClient
+
     var body: some View {
         NavigationStack {
             List {
@@ -32,7 +36,8 @@ struct SettingsView: View {
                         await viewModel.logout(
                             authManager: authManager,
                             apiClient: apiClient,
-                            pushManager: pushManager
+                            pushManager: pushManager,
+                            closeWebSocket: { await wsClient.close() }
                         )
                     }
                 }
