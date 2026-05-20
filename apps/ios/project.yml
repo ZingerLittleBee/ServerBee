@@ -1,6 +1,5 @@
 name: ServerBee
 options:
-  bundleIdPrefix: com.serverbee
   deploymentTarget:
     iOS: "17.0"
   xcodeVersion: "16.0"
