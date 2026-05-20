@@ -6,7 +6,6 @@ final class ServerDetailViewModel {
     var server: ServerStatus?
     var records: [MetricRecord] = []
     var isLoading = false
-    var selectedRange = "1h"
 
     /// Set the server from the parent list (avoids a separate network fetch).
     func setServer(_ server: ServerStatus) {
