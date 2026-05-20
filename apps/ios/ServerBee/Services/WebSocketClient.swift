@@ -25,6 +25,7 @@ actor WebSocketClient {
 
     private var currentServerUrl: String = ""
     private var currentAccessToken: String = ""
+    private var connectionEpoch: UInt64 = 0
 
     private var onMessage: (@Sendable (BrowserMessage) -> Void)?
     private var tokenRefresher: (@Sendable () async -> String?)?
@@ -90,6 +91,7 @@ actor WebSocketClient {
     // MARK: - Connection lifecycle
 
     private func closeInternal() async {
+        connectionEpoch &+= 1
         pingTask?.cancel()
         pingTask = nil
         receiveTask?.cancel()
@@ -109,6 +111,8 @@ actor WebSocketClient {
         }
 
         setState(.connecting)
+        connectionEpoch &+= 1
+        let epoch = connectionEpoch
 
         let newTransport = transportFactory(url, currentAccessToken)
         transport = newTransport
@@ -117,15 +121,16 @@ actor WebSocketClient {
         // and reconnectDelay is reset only then (not here).
 
         receiveTask = Task { [weak self] in
-            await self?.receiveLoop(on: newTransport)
+            await self?.receiveLoop(on: newTransport, epoch: epoch)
         }
     }
 
-    private func receiveLoop(on transport: WebSocketTransport) async {
+    private func receiveLoop(on transport: WebSocketTransport, epoch: UInt64) async {
         var sawFirstFrame = false
         while !Task.isCancelled {
             do {
                 let message = try await transport.receive()
+                guard epoch == connectionEpoch else { return }
                 if !sawFirstFrame {
                     sawFirstFrame = true
                     reconnectDelay = minReconnectDelay
@@ -150,13 +155,14 @@ actor WebSocketClient {
                     break
                 }
             } catch {
-                await handleReceiveError()
+                await handleReceiveError(epoch: epoch)
                 return
             }
         }
     }
 
-    private func handleReceiveError() async {
+    private func handleReceiveError(epoch: UInt64) async {
+        guard epoch == connectionEpoch else { return }
         setState(.disconnected)
         if !intentionallyClosed {
             await scheduleReconnect()

@@ -87,6 +87,25 @@ actor DelayRecorder {
 
 @MainActor
 extension WebSocketClientTests {
+    func test_rapidReconnect_doesNotDoubleEstablish() async throws {
+        let built = OSAllocatedUnfairLock(initialState: 0)
+        let factory: WebSocketTransportFactory = { _, _ in
+            built.withLock { $0 += 1 }
+            return FakeWebSocketTransport()
+        }
+        let client = WebSocketClient(transportFactory: factory, pingInterval: 60)
+
+        await client.connect(serverUrl: "https://example.test", accessToken: "tok1")
+        // Immediately reconnect with a new token while the prior receive loop
+        // is still alive.
+        await client.connect(serverUrl: "https://example.test", accessToken: "tok2")
+
+        // Wait a tick for any zombie scheduleReconnect to fire.
+        try await Task.sleep(nanoseconds: 200_000_000)
+        let final = built.withLock { $0 }
+        XCTAssertEqual(final, 2, "expected exactly one transport per connect()")
+    }
+
     func test_pingFailure_triggersReconnect() async throws {
         let fake = FakeWebSocketTransport()
         fake.pingError = URLError(.timedOut)
