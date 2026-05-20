@@ -35,3 +35,4 @@ jobs:
           scheme: ServerBee
           action: build
           working-directory: apps/ios
+          trust-plugins: true
