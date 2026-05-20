@@ -1,0 +1,52 @@
+# apps/ios/.swiftlint.yml
+# Minimal opinionated rule set for ServerBee iOS.
+# Run automatically by the SwiftLintBuildToolPlugin during every Xcode build.
+
+included:
+  - ServerBee
+  - ServerBeeTests
+
+excluded:
+  - ServerBee/Preview Content
+
+disabled_rules:
+  - trailing_whitespace        # noisy on intentionally blank lines
+  - todo                       # we allow TODO comments in WIP branches
+  - opening_brace              # conflicts with SwiftUI builder formatting
+
+opt_in_rules:
+  - empty_count
+  - explicit_init
+  - force_unwrapping           # warn on `!` so we audit each occurrence
+  - first_where
+  - last_where
+  - sorted_first_last
+  - unused_import
+
+line_length:
+  warning: 200
+  error: 300
+  ignores_comments: true
+  ignores_urls: true
+
+identifier_name:
+  min_length:
+    warning: 1                 # accommodate Swift idioms like `x`, `i`, `id`
+  max_length:
+    warning: 50
+    error: 60
+
+type_name:
+  min_length:
+    warning: 3
+  max_length:
+    warning: 50
+    error: 60
+
+function_body_length:
+  warning: 80
+  error: 150
+
+file_length:
+  warning: 500
+  error: 1000
