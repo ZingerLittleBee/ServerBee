@@ -73,6 +73,7 @@ struct ServersListView: View {
                     ForEach(filtered) { server in
                         NavigationLink(value: server) {
                             ServerCardView(server: server)
+                                .equatable()
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)

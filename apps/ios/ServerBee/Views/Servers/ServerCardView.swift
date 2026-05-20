@@ -2,7 +2,18 @@ import SwiftUI
 
 /// A card representing a single server in the servers list.
 /// Shows online status, name, IP, and key metric pills (CPU, Memory, OS).
-struct ServerCardView: View {
+struct ServerCardView: View, Equatable {
+    nonisolated static func == (lhs: ServerCardView, rhs: ServerCardView) -> Bool {
+        lhs.server.id == rhs.server.id &&
+        lhs.server.online == rhs.server.online &&
+        lhs.server.cpuUsage == rhs.server.cpuUsage &&
+        lhs.server.memoryUsed == rhs.server.memoryUsed &&
+        lhs.server.name == rhs.server.name &&
+        lhs.server.lastActiveAt == rhs.server.lastActiveAt &&
+        lhs.server.primaryIP == rhs.server.primaryIP &&
+        lhs.server.os == rhs.server.os
+    }
+
     let server: ServerStatus
 
     var body: some View {
