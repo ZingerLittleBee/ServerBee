@@ -21,6 +21,7 @@ final class AuthViewModel {
         guard !isLoading else { return }
         isLoading = true
         errorMessage = ""
+        defer { isLoading = false }
 
         var normalizedUrl = serverUrlInput.trimmingCharacters(in: .whitespacesAndNewlines)
         if normalizedUrl.hasSuffix("/") {
@@ -43,7 +44,6 @@ final class AuthViewModel {
         do {
             guard let url = URL(string: "\(normalizedUrl)/api/mobile/auth/login") else {
                 errorMessage = String(localized: "Invalid server URL.")
-                isLoading = false
                 return
             }
 
@@ -56,7 +56,11 @@ final class AuthViewModel {
             request.httpBody = try encoder.encode(loginRequest)
 
             let (data, response) = try await URLSession.shared.data(for: request)
-            let httpResponse = response as! HTTPURLResponse
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                errorMessage = String(localized: "Connection failed. Please check your server URL.")
+                return
+            }
 
             switch httpResponse.statusCode {
             case 200:
@@ -84,8 +88,6 @@ final class AuthViewModel {
         } catch {
             errorMessage = String(localized: "Connection failed. Please check your server URL.")
         }
-
-        isLoading = false
     }
 
     func goBackToCredentials() {
