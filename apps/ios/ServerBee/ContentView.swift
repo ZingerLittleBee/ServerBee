@@ -51,9 +51,6 @@ struct ContentView: View {
                 await wsClient.connect(serverUrl: serverUrl, accessToken: token)
             }
         }
-        .onDisappear {
-            Task { await wsClient.close() }
-        }
     }
 }
 

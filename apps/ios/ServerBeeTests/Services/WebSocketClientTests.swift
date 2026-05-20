@@ -106,6 +106,30 @@ extension WebSocketClientTests {
         XCTAssertEqual(final, 2, "expected exactly one transport per connect()")
     }
 
+    func test_secondConnect_replacesTransportWithoutManualClose() async throws {
+        let fake1 = FakeWebSocketTransport()
+        let fake2 = FakeWebSocketTransport()
+        let index = OSAllocatedUnfairLock(initialState: 0)
+        let factory: WebSocketTransportFactory = { _, _ in
+            let i = index.withLock { val -> Int in
+                let cur = val
+                val += 1
+                return cur
+            }
+            return i == 0 ? fake1 : fake2
+        }
+        let client = WebSocketClient(transportFactory: factory, pingInterval: 60)
+
+        await client.connect(serverUrl: "https://example.test", accessToken: "t")
+        await fake1.enqueueText(#"{"type":"server_online","server_id":"a"}"#)
+
+        // Simulate ContentView re-entering: no .onDisappear close, just a
+        // second connect call — the old transport must have been cancelled.
+        await client.connect(serverUrl: "https://example.test", accessToken: "t")
+        let final = index.withLock { $0 }
+        XCTAssertEqual(final, 2)
+    }
+
     func test_pingFailure_triggersReconnect() async throws {
         let fake = FakeWebSocketTransport()
         fake.pingError = URLError(.timedOut)
