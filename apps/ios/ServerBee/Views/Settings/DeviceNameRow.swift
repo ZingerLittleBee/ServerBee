@@ -6,7 +6,7 @@ struct DeviceNameRow: View {
 
     var body: some View {
         HStack {
-            Text(String(localized: "settings_device_name"))
+            Text(String(localized: "Device Name"))
                 .font(.body)
             Spacer()
             TextField(

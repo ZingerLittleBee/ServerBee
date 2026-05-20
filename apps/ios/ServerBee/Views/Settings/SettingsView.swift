@@ -14,13 +14,13 @@ struct SettingsView: View {
                 aboutSection
                 logoutSection
             }
-            .navigationTitle(String(localized: "settings_title"))
+            .navigationTitle(String(localized: "Settings"))
             .confirmationDialog(
-                String(localized: "settings_logout_confirm"),
+                String(localized: "Are you sure you want to log out?"),
                 isPresented: $viewModel.showLogoutConfirmation,
                 titleVisibility: .visible
             ) {
-                Button(String(localized: "settings_logout"), role: .destructive) {
+                Button(String(localized: "Log Out"), role: .destructive) {
                     Task {
                         await viewModel.logout(
                             authManager: authManager,
@@ -29,20 +29,20 @@ struct SettingsView: View {
                         )
                     }
                 }
-                Button(String(localized: "settings_cancel"), role: .cancel) {}
+                Button(String(localized: "Cancel"), role: .cancel) {}
             }
         }
     }
 
     private var accountSection: some View {
-        Section(String(localized: "settings_account")) {
-            LabeledContent(String(localized: "settings_username")) {
+        Section(String(localized: "Account")) {
+            LabeledContent(String(localized: "Username")) {
                 Text(authManager.user?.username ?? "-")
             }
-            LabeledContent(String(localized: "settings_role")) {
+            LabeledContent(String(localized: "Role")) {
                 Text(authManager.user?.role.capitalized ?? "-")
             }
-            LabeledContent(String(localized: "settings_server")) {
+            LabeledContent(String(localized: "Server")) {
                 Text(authManager.serverUrl ?? "-")
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -52,18 +52,18 @@ struct SettingsView: View {
     }
 
     private var preferencesSection: some View {
-        Section(String(localized: "settings_preferences")) {
+        Section(String(localized: "Preferences")) {
             NavigationLink {
                 AppearanceView()
             } label: {
-                Label(String(localized: "settings_appearance"), systemImage: "paintbrush")
+                Label(String(localized: "Appearance"), systemImage: "paintbrush")
             }
         }
     }
 
     private var aboutSection: some View {
-        Section(String(localized: "settings_about")) {
-            LabeledContent(String(localized: "settings_version")) {
+        Section(String(localized: "About")) {
+            LabeledContent(String(localized: "Version")) {
                 Text(appVersion)
             }
         }
@@ -79,7 +79,7 @@ struct SettingsView: View {
                     if viewModel.isLoggingOut {
                         ProgressView()
                     } else {
-                        Text(String(localized: "settings_logout"))
+                        Text(String(localized: "Log Out"))
                     }
                     Spacer()
                 }

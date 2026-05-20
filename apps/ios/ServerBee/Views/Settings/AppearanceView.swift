@@ -15,9 +15,9 @@ enum AppTheme: String, CaseIterable, Sendable {
 
     var localizedName: String {
         switch self {
-        case .system: String(localized: "settings_theme_system")
-        case .light: String(localized: "settings_theme_light")
-        case .dark: String(localized: "settings_theme_dark")
+        case .system: String(localized: "System")
+        case .light: String(localized: "Light")
+        case .dark: String(localized: "Dark")
         }
     }
 }
@@ -51,8 +51,8 @@ struct AppearanceView: View {
 
     var body: some View {
         List {
-            Section(String(localized: "settings_theme")) {
-                Picker(String(localized: "settings_theme"), selection: $theme) {
+            Section(String(localized: "Theme")) {
+                Picker(String(localized: "Theme"), selection: $theme) {
                     ForEach(AppTheme.allCases, id: \.rawValue) { option in
                         Text(option.localizedName).tag(option.rawValue)
                     }
@@ -61,13 +61,13 @@ struct AppearanceView: View {
                 .labelsHidden()
             }
 
-            Section(String(localized: "settings_language")) {
-                Text(String(localized: "settings_language_hint"))
+            Section(String(localized: "Language")) {
+                Text(String(localized: "Change the app language in iOS Settings → ServerBee → Language."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
         }
-        .navigationTitle(String(localized: "settings_appearance"))
+        .navigationTitle(String(localized: "Appearance"))
         .preferredColorScheme(selectedTheme.colorScheme)
     }
 }
