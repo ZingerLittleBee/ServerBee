@@ -26,6 +26,7 @@ struct LoginView: View {
                     VStack(spacing: 16) {
                         if viewModel.step == .credentials {
                             credentialsFields
+                            InsecureURLBanner(serverUrl: viewModel.serverUrlInput)
                         } else {
                             totpFields
                                 .id("totp")
