@@ -23,7 +23,11 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.serverbee.mobile
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_STRICT_CONCURRENCY: complete
-        CODE_SIGN_ENTITLEMENTS: ServerBee/ServerBee.entitlements
+      configs:
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: ServerBee/ServerBee.Debug.entitlements
+        Release:
+          CODE_SIGN_ENTITLEMENTS: ServerBee/ServerBee.Release.entitlements
 
   ServerBeeTests:
     type: bundle.unit-test
