@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AuthManager.self) private var authManager
     @Environment(\.apiClient) private var apiClient
+    @Environment(PushNotificationManager.self) private var pushManager
     @State private var viewModel = SettingsViewModel()
 
     var body: some View {
@@ -21,7 +22,11 @@ struct SettingsView: View {
             ) {
                 Button(String(localized: "settings_logout"), role: .destructive) {
                     Task {
-                        await viewModel.logout(authManager: authManager, apiClient: apiClient)
+                        await viewModel.logout(
+                            authManager: authManager,
+                            apiClient: apiClient,
+                            pushManager: pushManager
+                        )
                     }
                 }
                 Button(String(localized: "settings_cancel"), role: .cancel) {}
