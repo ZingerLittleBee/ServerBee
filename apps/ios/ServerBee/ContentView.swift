@@ -4,6 +4,7 @@ struct ContentView: View {
     @Environment(AuthManager.self) private var authManager
     @Environment(PushNotificationManager.self) private var pushManager
     @Environment(NetworkMonitor.self) private var networkMonitor
+    @Environment(AlertsViewModel.self) private var alertsViewModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var apiClient: APIClient?
     @State private var serversViewModel = ServersViewModel()
@@ -34,9 +35,20 @@ struct ContentView: View {
                 guard let authManager else { return nil }
                 return try? await authManager.refreshAccessToken()
             }
-            await wsClient.setOnMessage { [weak serversViewModel] message in
+            await wsClient.setOnMessage { [weak serversViewModel, weak alertsViewModel] message in
                 Task { @MainActor in
-                    serversViewModel?.handleWSMessage(message)
+                    guard let serversViewModel else { return }
+                    let captureClient = apiClient
+                    let router = WebSocketRouter(
+                        servers: { msg in serversViewModel.handleWSMessage(msg) },
+                        alerts: { msg in
+                            guard case .alertEvent = msg, let alertsViewModel else { return }
+                            if let captureClient {
+                                Task { await alertsViewModel.handleWSAlertEvent(apiClient: captureClient) }
+                            }
+                        }
+                    )
+                    router.dispatch(message)
                 }
             }
             if let serverUrl = authManager.serverUrl,
