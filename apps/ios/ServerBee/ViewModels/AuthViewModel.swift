@@ -37,7 +37,7 @@ final class AuthViewModel {
             username: username,
             password: password,
             installationId: installationId,
-            deviceName: UIDevice.current.name,
+            deviceName: DeviceNameProvider.current(),
             totpCode: step == .totp ? totpCode : nil
         )
 

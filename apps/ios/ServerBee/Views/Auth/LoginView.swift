@@ -118,7 +118,7 @@ struct LoginView: View {
         let body: [String: String] = [
             "code": code,
             "installation_id": InstallationID.getOrCreate(),
-            "device_name": UIDevice.current.name,
+            "device_name": DeviceNameProvider.current(),
         ]
 
         do {
