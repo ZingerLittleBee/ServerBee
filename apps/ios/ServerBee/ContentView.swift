@@ -3,34 +3,28 @@ import SwiftUI
 struct ContentView: View {
     @Environment(AuthManager.self) private var authManager
     @Environment(PushNotificationManager.self) private var pushManager
+    @Environment(NetworkMonitor.self) private var networkMonitor
     @Environment(\.scenePhase) private var scenePhase
     @State private var apiClient: APIClient?
     @State private var serversViewModel = ServersViewModel()
     @State private var wsClient = WebSocketClient()
 
     var body: some View {
-        TabView {
-            NavigationStack {
-                ServersListView()
+        ZStack(alignment: .top) {
+            TabView {
+                NavigationStack { ServersListView() }
+                    .tabItem { Label("Servers", systemImage: "server.rack") }
+                NavigationStack { AlertsListView() }
+                    .tabItem { Label("Alerts", systemImage: "bell.badge") }
+                SettingsView()
+                    .tabItem { Label("Settings", systemImage: "gearshape") }
             }
-            .tabItem {
-                Label("Servers", systemImage: "server.rack")
-            }
+            .environment(\.apiClient, apiClient)
+            .environment(serversViewModel)
 
-            NavigationStack {
-                AlertsListView()
-            }
-            .tabItem {
-                Label("Alerts", systemImage: "bell.badge")
-            }
-
-            SettingsView()
-                .tabItem {
-                    Label("Settings", systemImage: "gearshape")
-                }
+            OfflineBannerView(isConnected: networkMonitor.isConnected)
+                .animation(.easeInOut(duration: 0.2), value: networkMonitor.isConnected)
         }
-        .environment(\.apiClient, apiClient)
-        .environment(serversViewModel)
         .task {
             let client = APIClient(authManager: authManager)
             apiClient = client
@@ -40,13 +34,11 @@ struct ContentView: View {
                 guard let authManager else { return nil }
                 return try? await authManager.refreshAccessToken()
             }
-
             await wsClient.setOnMessage { [weak serversViewModel] message in
                 Task { @MainActor in
                     serversViewModel?.handleWSMessage(message)
                 }
             }
-
             if let serverUrl = authManager.serverUrl,
                let token = authManager.getAccessToken() {
                 await wsClient.connect(serverUrl: serverUrl, accessToken: token)
@@ -65,4 +57,5 @@ struct ContentView: View {
         .environment(AuthManager())
         .environment(AlertsViewModel())
         .environment(PushNotificationManager())
+        .environment(NetworkMonitor())
 }

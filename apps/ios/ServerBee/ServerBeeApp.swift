@@ -7,6 +7,7 @@ struct ServerBeeApp: App {
     @State private var authManager = AuthManager()
     @State private var alertsViewModel = AlertsViewModel()
     @State private var pushManager = PushNotificationManager()
+    @State private var networkMonitor = NetworkMonitor()
 
     var body: some Scene {
         WindowGroup {
@@ -14,9 +15,11 @@ struct ServerBeeApp: App {
                 .environment(authManager)
                 .environment(alertsViewModel)
                 .environment(pushManager)
+                .environment(networkMonitor)
                 .task {
                     appDelegate.pushManager = pushManager
                     UNUserNotificationCenter.current().delegate = appDelegate
+                    networkMonitor.start()
                     await authManager.initialize()
                     if authManager.isAuthenticated {
                         await pushManager.requestPermission()
