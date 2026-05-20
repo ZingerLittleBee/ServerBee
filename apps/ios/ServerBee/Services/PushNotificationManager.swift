@@ -103,4 +103,3 @@ final class PushNotificationManager: NSObject, PushNotificationManaging, @unchec
         return nil
     }
 }
-

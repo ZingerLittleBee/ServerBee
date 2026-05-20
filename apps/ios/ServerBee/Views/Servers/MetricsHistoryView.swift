@@ -199,7 +199,7 @@ struct MetricsHistoryView: View {
             }
             .chartForegroundStyleScale([
                 "In": Color.networkColor,
-                "Out": Color.cpuColor,
+                "Out": Color.cpuColor
             ])
             .timeXAxis()
         }

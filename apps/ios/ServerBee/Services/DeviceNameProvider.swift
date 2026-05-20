@@ -47,7 +47,9 @@ enum DeviceNameProvider {
             return existing
         }
         let alphabet = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
-        let generated = String((0 ..< 4).map { _ in alphabet.randomElement()! })
+        // `alphabet` is a non-empty compile-time constant, so randomElement()
+        // cannot return nil; the fallback exists only to satisfy the linter.
+        let generated = String((0 ..< 4).map { _ in alphabet.randomElement() ?? "A" })
         defaults.set(generated, forKey: suffixKey)
         return generated
     }

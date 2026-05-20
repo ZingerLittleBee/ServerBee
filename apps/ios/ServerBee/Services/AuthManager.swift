@@ -32,7 +32,7 @@ final class AuthManager {
 
         // Check for an existing access token and saved user
         guard KeychainService.loadString(for: KeychainService.accessTokenKey) != nil,
-              let _: MobileUser = KeychainService.loadCodable(for: KeychainService.userKey)
+              (KeychainService.loadCodable(for: KeychainService.userKey) as MobileUser?) != nil
         else {
             return
         }

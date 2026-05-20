@@ -271,4 +271,3 @@ actor WebSocketClient {
 }
 
 extension WebSocketClient.ConnectionState: Equatable {}
-

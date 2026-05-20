@@ -144,7 +144,7 @@ final class AuthViewModel {
         let body: [String: String] = [
             "code": code,
             "installation_id": InstallationID.getOrCreate(),
-            "device_name": DeviceNameProvider.current(),
+            "device_name": DeviceNameProvider.current()
         ]
 
         var request = URLRequest(url: url)

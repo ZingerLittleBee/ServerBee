@@ -175,7 +175,7 @@ final class QRScannerViewController: UIViewController, @preconcurrency AVCapture
             dismissButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
             dismissButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             dismissButton.widthAnchor.constraint(equalToConstant: 44),
-            dismissButton.heightAnchor.constraint(equalToConstant: 44),
+            dismissButton.heightAnchor.constraint(equalToConstant: 44)
         ])
     }
 
@@ -256,7 +256,7 @@ final class QRScannerViewController: UIViewController, @preconcurrency AVCapture
             container.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             container.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             container.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24),
-            container.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24),
+            container.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24)
         ])
     }
 
@@ -275,7 +275,7 @@ final class QRScannerViewController: UIViewController, @preconcurrency AVCapture
 
         NSLayoutConstraint.activate([
             label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            label.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
     }
 }
