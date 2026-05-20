@@ -17,6 +17,7 @@ struct LoginView: View {
                         Image(systemName: "server.rack")
                             .font(.system(size: 60))
                             .foregroundStyle(Color.accentColor)
+                            .accessibilityHidden(true)
                         Text("ServerBee")
                             .font(.largeTitle.bold())
                     }
@@ -73,6 +74,7 @@ struct LoginView: View {
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "qrcode.viewfinder")
+                                    .accessibilityHidden(true)
                                 Text("Scan QR Code")
                                     .fontWeight(.semibold)
                             }

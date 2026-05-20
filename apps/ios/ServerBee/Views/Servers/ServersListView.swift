@@ -89,12 +89,14 @@ struct ServersListView: View {
             Image(systemName: "magnifyingglass")
                 .font(.largeTitle)
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             Text(String(localized: "No matching servers"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 60)
+        .accessibilityElement(children: .combine)
     }
 }
 

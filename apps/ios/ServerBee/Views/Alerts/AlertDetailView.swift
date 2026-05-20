@@ -58,6 +58,7 @@ struct AlertDetailView: View {
                         NavigationLink(value: detail.serverId) {
                             HStack {
                                 Image(systemName: "server.rack")
+                                    .accessibilityHidden(true)
                                 Text(String(localized: "View Server"))
                             }
                             .frame(maxWidth: .infinity)

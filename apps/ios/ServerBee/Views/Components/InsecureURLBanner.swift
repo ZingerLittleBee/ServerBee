@@ -12,7 +12,8 @@ struct InsecureURLBanner: View {
         if shouldShow {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.yellow)
+                    .foregroundStyle(Color.warningAmber)
+                    .accessibilityHidden(true)
                 Text(
                     String(
                         localized:
@@ -24,11 +25,12 @@ struct InsecureURLBanner: View {
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.yellow.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+            .background(Color.warningAmber.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.yellow.opacity(0.5), lineWidth: 1)
+                    .stroke(Color.warningAmber.opacity(0.5), lineWidth: 1)
             )
+            .accessibilityElement(children: .combine)
         }
     }
 

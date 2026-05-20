@@ -8,6 +8,7 @@ struct OfflineBannerView: View {
         if !isConnected {
             HStack(spacing: 6) {
                 Image(systemName: "wifi.slash")
+                    .accessibilityHidden(true)
                 Text("You are currently offline")
             }
             .font(.subheadline)
@@ -15,6 +16,7 @@ struct OfflineBannerView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
             .background(Color.yellow.opacity(0.9))
+            .accessibilityElement(children: .combine)
         }
     }
 }

@@ -184,11 +184,15 @@ struct ServerDetailView: View {
                 Image(systemName: "chevron.right")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
             .padding()
             .background(Color(.systemBackground))
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text(String(localized: "View History")))
+            .accessibilityAddTraits(.isButton)
         }
         .buttonStyle(.plain)
     }
