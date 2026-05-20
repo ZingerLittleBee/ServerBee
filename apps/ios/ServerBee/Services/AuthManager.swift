@@ -92,7 +92,7 @@ final class AuthManager {
     func refreshAccessToken() async throws -> String {
         try await refreshCoordinator.refresh { [self] in
             guard let refreshToken = KeychainService.loadString(for: KeychainService.refreshTokenKey) else {
-                throw AuthError.refreshFailed
+                throw AuthError.refreshUnauthorized
             }
             let response = try await refreshTokens(refreshToken: refreshToken)
             await handleLoginResponse(response)
@@ -104,6 +104,13 @@ final class AuthManager {
 
     /// Directly calls the refresh endpoint using URLSession.
     /// We intentionally bypass `APIClient` here to avoid a circular dependency.
+    ///
+    /// Throws:
+    /// - `.noServerUrl` if no base URL is persisted.
+    /// - `.refreshUnauthorized` if the server returned 401 (refresh token revoked
+    ///    or expired). The caller MUST treat this as a permanent failure.
+    /// - `.refreshNetworkFailure` for transport errors, timeouts, or 5xx — the
+    ///    caller SHOULD retry rather than logging the user out.
     private func refreshTokens(refreshToken: String) async throws -> MobileTokenResponse {
         guard let serverUrl else {
             throw AuthError.noServerUrl
@@ -123,19 +130,36 @@ final class AuthManager {
         )
         request.httpBody = try JSONEncoder.snakeCase.encode(body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200
-        else {
-            throw AuthError.refreshFailed
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw AuthError.refreshNetworkFailure(error)
         }
 
-        let apiResponse = try JSONDecoder.snakeCase.decode(
-            ApiResponse<MobileTokenResponse>.self,
-            from: data
-        )
-        return apiResponse.data
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AuthError.refreshNetworkFailure(nil)
+        }
+
+        switch httpResponse.statusCode {
+        case 200:
+            do {
+                let apiResponse = try JSONDecoder.snakeCase.decode(
+                    ApiResponse<MobileTokenResponse>.self,
+                    from: data
+                )
+                return apiResponse.data
+            } catch {
+                // Server replied 200 but body did not decode — treat as transient.
+                throw AuthError.refreshNetworkFailure(error)
+            }
+        case 401, 403:
+            throw AuthError.refreshUnauthorized
+        default:
+            // 5xx, 408, 429, anything else — let the caller retry.
+            throw AuthError.refreshNetworkFailure(nil)
+        }
     }
 }
 
@@ -178,7 +202,8 @@ private actor RefreshCoordinator {
 
 enum AuthError: Error, LocalizedError {
     case noServerUrl
-    case refreshFailed
+    case refreshUnauthorized           // server returned 401 — credentials revoked
+    case refreshNetworkFailure(Error?) // transient: no network, 5xx, timeout
     case invalidCredentials
     case twoFactorRequired
     case tooManyAttempts
@@ -188,8 +213,10 @@ enum AuthError: Error, LocalizedError {
         switch self {
         case .noServerUrl:
             return "No server URL configured"
-        case .refreshFailed:
-            return "Token refresh failed — please log in again"
+        case .refreshUnauthorized:
+            return "Session expired — please log in again"
+        case .refreshNetworkFailure:
+            return "Could not reach the server — please check your connection"
         case .invalidCredentials:
             return "Invalid username or password"
         case .twoFactorRequired:

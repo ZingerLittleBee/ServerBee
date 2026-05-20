@@ -29,15 +29,13 @@ actor APIClient {
         let (_, httpResponse) = try await performRequest(path, method: "POST", body: body)
 
         if httpResponse.statusCode == 401 {
-            do {
-                _ = try await authManager.refreshAccessToken()
-            } catch {
+            try await refreshOrThrow()
+            let (_, retryResponse) = try await performRequest(path, method: "POST", body: body)
+            if retryResponse.statusCode == 401 {
                 await authManager.clearAuth()
                 throw APIError.unauthorized
             }
-            let (_, retryResponse) = try await performRequest(path, method: "POST", body: body)
             guard (200...299).contains(retryResponse.statusCode) else {
-                await authManager.clearAuth()
                 throw APIError.httpError(statusCode: retryResponse.statusCode, data: Data())
             }
             return
@@ -128,16 +126,12 @@ actor APIClient {
         method: String,
         body: (any Encodable & Sendable)?
     ) async throws -> T {
-        do {
-            _ = try await authManager.refreshAccessToken()
-        } catch {
-            await authManager.clearAuth()
-            throw APIError.unauthorized
-        }
+        try await refreshOrThrow()
 
         let (data, httpResponse) = try await performRequest(path, method: method, body: body)
 
         if httpResponse.statusCode == 401 {
+            // Refresh succeeded but server still rejects — credentials definitely revoked.
             await authManager.clearAuth()
             throw APIError.unauthorized
         }
@@ -153,6 +147,24 @@ actor APIClient {
             throw APIError.decodingError(error)
         }
     }
+
+    /// Run a refresh; classify the failure mode.
+    ///
+    /// - On `.refreshUnauthorized`: clear local auth and surface `.unauthorized`.
+    /// - On `.refreshNetworkFailure`: leave local auth intact and surface
+    ///   `.network` so the caller can show a transient error instead of
+    ///   kicking the user back to the login screen.
+    private func refreshOrThrow() async throws {
+        do {
+            _ = try await authManager.refreshAccessToken()
+        } catch AuthError.refreshUnauthorized {
+            await authManager.clearAuth()
+            throw APIError.unauthorized
+        } catch {
+            // .refreshNetworkFailure, .noServerUrl, or anything else transient.
+            throw APIError.network(error)
+        }
+    }
 }
 
 // MARK: - API Errors
@@ -160,6 +172,7 @@ actor APIClient {
 enum APIError: Error, LocalizedError {
     case noServerUrl
     case unauthorized
+    case network(Error)
     case httpError(statusCode: Int, data: Data)
     case decodingError(Error)
 
@@ -169,6 +182,8 @@ enum APIError: Error, LocalizedError {
             return "No server URL configured"
         case .unauthorized:
             return "Session expired — please log in again"
+        case .network(let error):
+            return "Network error: \(error.localizedDescription)"
         case .httpError(let statusCode, _):
             return "Server returned HTTP \(statusCode)"
         case .decodingError(let error):
