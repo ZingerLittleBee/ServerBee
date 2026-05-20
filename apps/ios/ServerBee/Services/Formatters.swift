@@ -2,33 +2,47 @@ import Foundation
 import SwiftUI
 
 enum Formatters {
+    // Foundation formatter classes are documented thread-safe for read-only
+    // use once configured; we cache them as `nonisolated(unsafe)` statics to
+    // avoid the per-call allocation cost (significant for chart rendering).
+    // This mirrors the existing `ISO8601DateFormatter.shared` pattern in
+    // `Utilities/Extensions.swift`.
+
+    /// Shared formatter for human-readable byte counts (binary 1024 base).
+    /// `ByteCountFormatter` is locale-aware: e.g. zh-Hans prefixes "字节"
+    /// for under-1KB values.
+    nonisolated(unsafe) private static let byteFormatter: ByteCountFormatter = {
+        let f = ByteCountFormatter()
+        f.countStyle = .binary
+        f.allowedUnits = [.useBytes, .useKB, .useMB, .useGB, .useTB]
+        return f
+    }()
+
+    /// Cached HH:mm formatter for chart X-axis labels. Recreating
+    /// `DateFormatter` on each Chart render hurts scroll performance.
+    nonisolated(unsafe) private static let chartTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
+    /// Cached `RelativeDateTimeFormatter` for human-readable elapsed time
+    /// (e.g. "5 minutes ago" / "5 分钟前"). Locale-aware.
+    nonisolated(unsafe) private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .short
+        return f
+    }()
+
     static func formatBytes(_ bytes: Int64) -> String {
-        if bytes < 1024 {
-            return "\(bytes) B"
-        }
-        if bytes < 1_048_576 {
-            return String(format: "%.1f KB", Double(bytes) / 1024)
-        }
-        if bytes < 1_073_741_824 {
-            return String(format: "%.1f MB", Double(bytes) / 1_048_576)
-        }
-        if bytes < 1_099_511_627_776 {
-            return String(format: "%.1f GB", Double(bytes) / 1_073_741_824)
-        }
-        return String(format: "%.1f TB", Double(bytes) / 1_099_511_627_776)
+        byteFormatter.string(fromByteCount: bytes)
     }
 
     static func formatSpeed(_ bytesPerSec: Int64?) -> String {
         guard let bytesPerSec else {
             return "-"
         }
-        if bytesPerSec < 1024 {
-            return "\(bytesPerSec) B/s"
-        }
-        if bytesPerSec < 1_048_576 {
-            return String(format: "%.1f KB/s", Double(bytesPerSec) / 1024)
-        }
-        return String(format: "%.1f MB/s", Double(bytesPerSec) / 1_048_576)
+        return "\(byteFormatter.string(fromByteCount: bytesPerSec))/s"
     }
 
     static func formatUptime(_ seconds: Int64) -> String {
@@ -73,31 +87,15 @@ enum Formatters {
 
     /// Short time label for chart X-axis.
     static func formatChartTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter.string(from: date)
+        chartTimeFormatter.string(from: date)
     }
 
+    /// Locale-aware relative time, e.g. "5 minutes ago" / "5 分钟前".
+    /// Returns the original ISO string if parsing fails.
     static func formatRelativeTime(_ isoString: String) -> String {
         guard let date = ISO8601DateFormatter.shared.date(from: isoString) else {
             return isoString
         }
-
-        let now = Date()
-        let interval = now.timeIntervalSince(date)
-
-        if interval < 60 {
-            return "just now"
-        }
-        if interval < 3600 {
-            let minutes = Int(interval / 60)
-            return "\(minutes)m ago"
-        }
-        if interval < 86_400 {
-            let hours = Int(interval / 3600)
-            return "\(hours)h ago"
-        }
-        let days = Int(interval / 86_400)
-        return "\(days)d ago"
+        return relativeFormatter.localizedString(for: date, relativeTo: Date())
     }
 }
