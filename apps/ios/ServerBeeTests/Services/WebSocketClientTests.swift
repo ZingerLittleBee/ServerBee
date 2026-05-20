@@ -84,3 +84,27 @@ actor DelayRecorder {
     private(set) var values: [TimeInterval] = []
     func record(_ d: TimeInterval) { values.append(d) }
 }
+
+@MainActor
+extension WebSocketClientTests {
+    func test_pingFailure_triggersReconnect() async throws {
+        let fake = FakeWebSocketTransport()
+        fake.pingError = URLError(.timedOut)
+        let client = WebSocketClient(
+            transportFactory: { _, _ in fake },
+            pingInterval: 0.05  // fast for tests
+        )
+
+        let observed = expectation(description: "reconnect attempted")
+        observed.expectedFulfillmentCount = 1
+        await client.setReconnectDelayHook { _ in
+            observed.fulfill()
+        }
+
+        await client.connect(serverUrl: "https://example.test", accessToken: "tok")
+        await fake.enqueueText(#"{"type":"server_online","server_id":"x"}"#)
+
+        await fulfillment(of: [observed], timeout: 5.0)
+        XCTAssertGreaterThanOrEqual(fake.pingCount, 1)
+    }
+}

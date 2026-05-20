@@ -32,6 +32,8 @@ actor WebSocketClient {
     private var reconnectDelayHook: (@Sendable (TimeInterval) async -> Void)?
 
     private let transportFactory: WebSocketTransportFactory
+    private let pingInterval: TimeInterval
+    private var pingTask: Task<Void, Never>?
 
     // MARK: - Constants
 
@@ -41,8 +43,12 @@ actor WebSocketClient {
 
     // MARK: - Init
 
-    init(transportFactory: @escaping WebSocketTransportFactory = DefaultWebSocketTransportFactory.factory) {
+    init(
+        transportFactory: @escaping WebSocketTransportFactory = DefaultWebSocketTransportFactory.factory,
+        pingInterval: TimeInterval = 25.0
+    ) {
         self.transportFactory = transportFactory
+        self.pingInterval = pingInterval
     }
 
     // MARK: - Configuration
@@ -84,6 +90,8 @@ actor WebSocketClient {
     // MARK: - Connection lifecycle
 
     private func closeInternal() async {
+        pingTask?.cancel()
+        pingTask = nil
         receiveTask?.cancel()
         transport?.cancel(with: .goingAway, reason: nil)
         if let task = receiveTask {
@@ -122,6 +130,7 @@ actor WebSocketClient {
                     sawFirstFrame = true
                     reconnectDelay = minReconnectDelay
                     setState(.connected)
+                    startPingTask(on: transport)
                 }
                 switch message {
                 case .string(let text):
@@ -151,6 +160,36 @@ actor WebSocketClient {
         setState(.disconnected)
         if !intentionallyClosed {
             await scheduleReconnect()
+        }
+    }
+
+    // MARK: - Heartbeat
+
+    private func startPingTask(on transport: WebSocketTransport) {
+        pingTask?.cancel()
+        pingTask = Task { [weak self, pingInterval] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(pingInterval * 1_000_000_000))
+                if Task.isCancelled { return }
+                guard let self else { return }
+                let ok = await self.sendHeartbeat(on: transport)
+                if !ok { return }
+            }
+        }
+    }
+
+    private func sendHeartbeat(on transport: WebSocketTransport) async -> Bool {
+        guard let current = self.transport,
+              (current as AnyObject) === (transport as AnyObject) else { return false }
+        do {
+            try await transport.sendPing()
+            return true
+        } catch {
+            print("[WS] Heartbeat ping failed: \(error)")
+            // Force the receive loop to fail by cancelling the transport;
+            // it will trigger scheduleReconnect via handleReceiveError.
+            transport.cancel(with: .abnormalClosure, reason: nil)
+            return false
         }
     }
 
