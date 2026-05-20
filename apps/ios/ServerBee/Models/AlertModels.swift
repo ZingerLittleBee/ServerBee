@@ -6,7 +6,10 @@ enum AlertStatus: String, Codable, Sendable {
 }
 
 struct MobileAlertEvent: Codable, Identifiable, Sendable {
-    var id: String { alertKey }
+    /// Composite ID: `alertKey#status#updatedAt`. Required because the same
+    /// `alertKey` (e.g. "rule:server") is reused across firing→resolved
+    /// transitions, which would otherwise produce duplicate SwiftUI ForEach IDs.
+    var id: String { "\(alertKey)#\(status.rawValue)#\(updatedAt)" }
     let alertKey: String
     let ruleId: String
     let ruleName: String

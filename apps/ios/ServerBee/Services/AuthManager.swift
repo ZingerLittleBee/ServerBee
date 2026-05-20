@@ -3,10 +3,12 @@ import SwiftUI
 
 /// Manages authentication state for the mobile app.
 ///
-/// Reads persisted tokens from the Keychain on launch, attempts to refresh the
-/// session, and exposes reactive state for the UI layer.
+/// Isolated to `@MainActor` so that `@Observable` state is mutated only on the
+/// main thread. Background callers (`APIClient` actor, `WebSocketClient`) hop
+/// via `await` to read `serverUrl` / call `getAccessToken()`.
 @Observable
-final class AuthManager: @unchecked Sendable {
+@MainActor
+final class AuthManager {
     // MARK: - Private
 
     private let refreshCoordinator = RefreshCoordinator()
@@ -21,7 +23,6 @@ final class AuthManager: @unchecked Sendable {
     // MARK: - Lifecycle
 
     /// Called once on app launch. Restores Keychain state and validates the session.
-    @MainActor
     func initialize() async {
         isLoading = true
         defer { isLoading = false }
@@ -31,7 +32,7 @@ final class AuthManager: @unchecked Sendable {
 
         // Check for an existing access token and saved user
         guard KeychainService.loadString(for: KeychainService.accessTokenKey) != nil,
-              let _: MobileUser = KeychainService.loadCodable(for: KeychainService.userKey)
+              (KeychainService.loadCodable(for: KeychainService.userKey) as MobileUser?) != nil
         else {
             return
         }
@@ -58,7 +59,6 @@ final class AuthManager: @unchecked Sendable {
     // MARK: - Login Handling
 
     /// Persist tokens & user from a successful login or refresh response.
-    @MainActor
     func handleLoginResponse(_ response: MobileTokenResponse) {
         try? KeychainService.saveString(response.accessToken, for: KeychainService.accessTokenKey)
         try? KeychainService.saveString(response.refreshToken, for: KeychainService.refreshTokenKey)
@@ -76,8 +76,23 @@ final class AuthManager: @unchecked Sendable {
 
     // MARK: - Logout
 
-    /// Clear all persisted auth state and reset in-memory properties.
-    @MainActor
+    /// Clear the user's authenticated session.
+    ///
+    /// **Cleared:**
+    /// - Access token (Keychain)
+    /// - Refresh token (Keychain)
+    /// - Persisted `MobileUser` (Keychain)
+    /// - In-memory `user` and `isAuthenticated`
+    ///
+    /// **Preserved on purpose:**
+    /// - `serverUrl` — the user will likely log back into the same server,
+    ///    so we pre-fill the login form rather than forcing them to retype it.
+    /// - `installationId` — a stable device identifier; rotating it would
+    ///    desynchronise push-notification routing and would make the server
+    ///    think this is a brand-new device on next login.
+    ///
+    /// If you need a hard reset (e.g. "Forget this server" affordance), add a
+    /// separate `forgetServer()` API rather than expanding this method.
     func clearAuth() {
         KeychainService.delete(for: KeychainService.accessTokenKey)
         KeychainService.delete(for: KeychainService.refreshTokenKey)
@@ -93,7 +108,7 @@ final class AuthManager: @unchecked Sendable {
     func refreshAccessToken() async throws -> String {
         try await refreshCoordinator.refresh { [self] in
             guard let refreshToken = KeychainService.loadString(for: KeychainService.refreshTokenKey) else {
-                throw AuthError.refreshFailed
+                throw AuthError.refreshUnauthorized
             }
             let response = try await refreshTokens(refreshToken: refreshToken)
             await handleLoginResponse(response)
@@ -105,6 +120,13 @@ final class AuthManager: @unchecked Sendable {
 
     /// Directly calls the refresh endpoint using URLSession.
     /// We intentionally bypass `APIClient` here to avoid a circular dependency.
+    ///
+    /// Throws:
+    /// - `.noServerUrl` if no base URL is persisted.
+    /// - `.refreshUnauthorized` if the server returned 401 (refresh token revoked
+    ///    or expired). The caller MUST treat this as a permanent failure.
+    /// - `.refreshNetworkFailure` for transport errors, timeouts, or 5xx — the
+    ///    caller SHOULD retry rather than logging the user out.
     private func refreshTokens(refreshToken: String) async throws -> MobileTokenResponse {
         guard let serverUrl else {
             throw AuthError.noServerUrl
@@ -124,52 +146,77 @@ final class AuthManager: @unchecked Sendable {
         )
         request.httpBody = try JSONEncoder.snakeCase.encode(body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200
-        else {
-            throw AuthError.refreshFailed
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw AuthError.refreshNetworkFailure(error)
         }
 
-        let apiResponse = try JSONDecoder.snakeCase.decode(
-            ApiResponse<MobileTokenResponse>.self,
-            from: data
-        )
-        return apiResponse.data
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AuthError.refreshNetworkFailure(nil)
+        }
+
+        switch httpResponse.statusCode {
+        case 200:
+            do {
+                let apiResponse = try JSONDecoder.snakeCase.decode(
+                    ApiResponse<MobileTokenResponse>.self,
+                    from: data
+                )
+                return apiResponse.data
+            } catch {
+                // Server replied 200 but body did not decode — treat as transient.
+                throw AuthError.refreshNetworkFailure(error)
+            }
+        case 401, 403:
+            throw AuthError.refreshUnauthorized
+        default:
+            // 5xx, 408, 429, anything else — let the caller retry.
+            throw AuthError.refreshNetworkFailure(nil)
+        }
     }
 }
 
 // MARK: - Refresh Coordinator
 
-private actor RefreshCoordinator {
-    private var isRefreshing = false
-    private var waiters: [CheckedContinuation<String, Error>] = []
+/// Serialises concurrent token-refresh attempts.
+///
+/// Semantics:
+/// - At any moment at most one `refreshFn` is in flight (serialised by actor reentrancy).
+/// - While a refresh is in flight, additional callers `await` on the existing
+///   task so we don't hammer the refresh endpoint or burn a one-time-use
+///   refresh token.
+/// - **On success:** every waiter receives the new access token.
+/// - **On failure:** the in-flight attempt's error is propagated ONLY to the
+///   caller who initiated it. Subsequent waiters are released and each gets a
+///   fresh attempt at `refreshFn`. This lets a transient network failure for
+///   the first caller not penalise queued callers — the next one retries.
+///
+/// Internal so tests can drive `refresh(using:)` directly without going
+/// through `AuthManager.refreshAccessToken()` — see RefreshCoordinatorTests.
+actor RefreshCoordinator {
+    private var inFlight: Task<String, Error>?
 
-    func refresh(using refreshFn: @Sendable () async throws -> String) async throws -> String {
-        if isRefreshing {
-            return try await withCheckedThrowingContinuation { continuation in
-                waiters.append(continuation)
+    func refresh(using refreshFn: @Sendable @escaping () async throws -> String) async throws -> String {
+        if let existing = inFlight {
+            do {
+                return try await existing.value
+            } catch {
+                // Leader failed transiently — fall through to start a fresh attempt.
             }
         }
 
-        isRefreshing = true
+        let task = Task { try await refreshFn() }
+        inFlight = task
+
         do {
-            let newToken = try await refreshFn()
-            let pending = waiters
-            waiters = []
-            isRefreshing = false
-            for waiter in pending {
-                waiter.resume(returning: newToken)
-            }
-            return newToken
+            let token = try await task.value
+            inFlight = nil
+            return token
         } catch {
-            let pending = waiters
-            waiters = []
-            isRefreshing = false
-            for waiter in pending {
-                waiter.resume(throwing: error)
-            }
+            inFlight = nil
             throw error
         }
     }
@@ -179,7 +226,8 @@ private actor RefreshCoordinator {
 
 enum AuthError: Error, LocalizedError {
     case noServerUrl
-    case refreshFailed
+    case refreshUnauthorized           // server returned 401 — credentials revoked
+    case refreshNetworkFailure(Error?) // transient: no network, 5xx, timeout
     case invalidCredentials
     case twoFactorRequired
     case tooManyAttempts
@@ -189,8 +237,10 @@ enum AuthError: Error, LocalizedError {
         switch self {
         case .noServerUrl:
             return "No server URL configured"
-        case .refreshFailed:
-            return "Token refresh failed — please log in again"
+        case .refreshUnauthorized:
+            return "Session expired — please log in again"
+        case .refreshNetworkFailure:
+            return "Could not reach the server — please check your connection"
         case .invalidCredentials:
             return "Invalid username or password"
         case .twoFactorRequired:

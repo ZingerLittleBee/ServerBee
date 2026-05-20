@@ -3,63 +3,79 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AuthManager.self) private var authManager
     @Environment(\.apiClient) private var apiClient
+    @Environment(PushNotificationManager.self) private var pushManager
     @State private var viewModel = SettingsViewModel()
+
+    /// Live WebSocket client owned by `ContentView`. Passed in so logout can
+    /// close it before clearing auth and triggering the server logout.
+    let wsClient: WebSocketClient
 
     var body: some View {
         NavigationStack {
             List {
+                if let url = authManager.serverUrl, !url.isEmpty {
+                    Section {
+                        InsecureURLBanner(serverUrl: url)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                    }
+                }
                 accountSection
                 preferencesSection
                 aboutSection
                 logoutSection
             }
-            .navigationTitle(String(localized: "settings_title"))
+            .navigationTitle(String(localized: "Settings"))
             .confirmationDialog(
-                String(localized: "settings_logout_confirm"),
+                String(localized: "Are you sure you want to log out?"),
                 isPresented: $viewModel.showLogoutConfirmation,
                 titleVisibility: .visible
             ) {
-                Button(String(localized: "settings_logout"), role: .destructive) {
+                Button(String(localized: "Log Out"), role: .destructive) {
                     Task {
-                        if let apiClient {
-                            await viewModel.logout(authManager: authManager, apiClient: apiClient)
-                        }
+                        await viewModel.logout(
+                            authManager: authManager,
+                            apiClient: apiClient,
+                            pushManager: pushManager,
+                            closeWebSocket: { await wsClient.close() }
+                        )
                     }
                 }
-                Button(String(localized: "settings_cancel"), role: .cancel) {}
+                Button(String(localized: "Cancel"), role: .cancel) {}
             }
         }
     }
 
     private var accountSection: some View {
-        Section(String(localized: "settings_account")) {
-            LabeledContent(String(localized: "settings_username")) {
+        Section(String(localized: "Account")) {
+            LabeledContent(String(localized: "Username")) {
                 Text(authManager.user?.username ?? "-")
             }
-            LabeledContent(String(localized: "settings_role")) {
+            LabeledContent(String(localized: "Role")) {
                 Text(authManager.user?.role.capitalized ?? "-")
             }
-            LabeledContent(String(localized: "settings_server")) {
+            LabeledContent(String(localized: "Server")) {
                 Text(authManager.serverUrl ?? "-")
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+            DeviceNameRow()
         }
     }
 
     private var preferencesSection: some View {
-        Section(String(localized: "settings_preferences")) {
+        Section(String(localized: "Preferences")) {
             NavigationLink {
                 AppearanceView()
             } label: {
-                Label(String(localized: "settings_appearance"), systemImage: "paintbrush")
+                Label(String(localized: "Appearance"), systemImage: "paintbrush")
             }
         }
     }
 
     private var aboutSection: some View {
-        Section(String(localized: "settings_about")) {
-            LabeledContent(String(localized: "settings_version")) {
+        Section(String(localized: "About")) {
+            LabeledContent(String(localized: "Version")) {
                 Text(appVersion)
             }
         }
@@ -75,7 +91,7 @@ struct SettingsView: View {
                     if viewModel.isLoggingOut {
                         ProgressView()
                     } else {
-                        Text(String(localized: "settings_logout"))
+                        Text(String(localized: "Log Out"))
                     }
                     Spacer()
                 }

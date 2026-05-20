@@ -19,16 +19,20 @@ enum OnlineFilter: String, CaseIterable {
 final class ServersViewModel {
     var servers: [ServerStatus] = []
     var searchQuery = ""
+    var debouncedSearchQuery = ""
     var onlineFilter: OnlineFilter = .all
     var isLoading = false
     var isRefreshing = false
+    var errorMessage: String?
 
     var filteredServers: [ServerStatus] {
         var result = servers
 
         // Search filter (name, ipv4, ipv6 -- case-insensitive)
-        if !searchQuery.isEmpty {
-            let query = searchQuery.lowercased()
+        // Uses `debouncedSearchQuery` so list reordering happens after the
+        // user stops typing, not on every keystroke.
+        if !debouncedSearchQuery.isEmpty {
+            let query = debouncedSearchQuery.lowercased()
             result = result.filter { server in
                 server.name.lowercased().contains(query) ||
                 (server.ipv4?.lowercased().contains(query) ?? false) ||
@@ -39,13 +43,13 @@ final class ServersViewModel {
         // Online filter
         switch onlineFilter {
         case .all: break
-        case .online: result = result.filter { $0.online }
-        case .offline: result = result.filter { !$0.online }
+        case .online: result = result.filter { $0.isOnline }
+        case .offline: result = result.filter { !$0.isOnline }
         }
 
         // Sort: online first, then alphabetical
         result.sort { a, b in
-            if a.online != b.online { return a.online && !b.online }
+            if a.isOnline != b.isOnline { return a.isOnline && !b.isOnline }
             return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
         }
 
@@ -54,7 +58,7 @@ final class ServersViewModel {
 
     /// Online servers count for display in header.
     var onlineCount: Int {
-        servers.filter(\.online).count
+        servers.filter(\.isOnline).count
     }
 
     func fetchServers(apiClient: APIClient) async {
@@ -62,8 +66,13 @@ final class ServersViewModel {
         defer { isLoading = false }
         do {
             servers = try await apiClient.get("/api/servers")
+            errorMessage = nil
         } catch {
-            print("[Servers] Fetch failed: \(error)")
+            AppLog.viewModel.error("Servers fetch failed: \(String(describing: error), privacy: .public)")
+            errorMessage = String(
+                format: String(localized: "Failed to load servers: %@"),
+                error.localizedDescription
+            )
         }
     }
 

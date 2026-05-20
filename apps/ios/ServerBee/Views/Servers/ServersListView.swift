@@ -11,6 +11,8 @@ struct ServersListView: View {
         Group {
             if viewModel.isLoading && viewModel.servers.isEmpty {
                 loadingView
+            } else if let message = viewModel.errorMessage, viewModel.servers.isEmpty {
+                errorView(message: message)
             } else if viewModel.servers.isEmpty {
                 emptyStateView
             } else {
@@ -23,14 +25,17 @@ struct ServersListView: View {
             prompt: String(localized: "Search servers...")
         )
         .refreshable {
-            if let apiClient {
-                await viewModel.refresh(apiClient: apiClient)
-            }
+            await viewModel.refresh(apiClient: apiClient)
         }
         .task {
-            if viewModel.servers.isEmpty, let apiClient {
+            if viewModel.servers.isEmpty {
                 await viewModel.fetchServers(apiClient: apiClient)
             }
+        }
+        .task(id: viewModel.searchQuery) {
+            try? await Task.sleep(for: .milliseconds(250))
+            if Task.isCancelled { return }
+            viewModel.debouncedSearchQuery = viewModel.searchQuery
         }
     }
 
@@ -44,6 +49,21 @@ struct ServersListView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func errorView(message: String) -> some View {
+        ContentUnavailableView {
+            Label(String(localized: "Couldn't load servers"), systemImage: "exclamationmark.triangle")
+        } description: {
+            Text(message)
+        } actions: {
+            Button(String(localized: "Try again")) {
+                Task {
+                    await viewModel.fetchServers(apiClient: apiClient)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+        }
     }
 
     private var emptyStateView: some View {
@@ -71,8 +91,9 @@ struct ServersListView: View {
                     noMatchesView
                 } else {
                     ForEach(filtered) { server in
-                        NavigationLink(value: server) {
+                        NavigationLink(value: ServerNavigationTarget.detailById(server.id)) {
                             ServerCardView(server: server)
+                                .equatable()
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -83,9 +104,6 @@ struct ServersListView: View {
             .padding(.vertical)
         }
         .background(Color(.systemGroupedBackground))
-        .navigationDestination(for: ServerStatus.self) { server in
-            ServerDetailView(server: server)
-        }
     }
 
     private var noMatchesView: some View {
@@ -93,12 +111,14 @@ struct ServersListView: View {
             Image(systemName: "magnifyingglass")
                 .font(.largeTitle)
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             Text(String(localized: "No matching servers"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 60)
+        .accessibilityElement(children: .combine)
     }
 }
 

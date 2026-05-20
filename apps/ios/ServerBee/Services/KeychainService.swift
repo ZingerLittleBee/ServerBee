@@ -5,6 +5,15 @@ import Security
 ///
 /// All items are stored as `kSecClassGenericPassword` entries under the
 /// `com.serverbee.mobile` service namespace.
+///
+/// **Accessibility policy:** items use `kSecAttrAccessibleAfterFirstUnlock`,
+/// which means the token survives device reboots but cannot be read while the
+/// device is locked (good for a background WS reconnect that fires moments
+/// after wake-from-lock). We deliberately do NOT use
+/// `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` because background tasks need
+/// access while the screen may be off, and we do NOT sync to iCloud Keychain
+/// (`kSecAttrSynchronizable` is left unset) — refresh tokens are device-bound
+/// and the server tracks them per `installationId`.
 enum KeychainService {
     // MARK: - Keys
 
@@ -16,6 +25,26 @@ enum KeychainService {
 
     private static let serviceName = "com.serverbee.mobile"
 
+    // MARK: - Codable Configuration
+
+    /// A dedicated encoder for Keychain-persisted payloads.
+    ///
+    /// **Pinned to snake_case** so that adding a snake_case field to a model
+    /// (e.g. `is_admin` on `MobileUser`) does not silently corrupt the
+    /// stored representation. Matches the server's JSON convention used by
+    /// `JSONEncoder.snakeCase` / `JSONDecoder.snakeCase`.
+    private static let encoder: JSONEncoder = {
+        let e = JSONEncoder()
+        e.keyEncodingStrategy = .convertToSnakeCase
+        return e
+    }()
+
+    private static let decoder: JSONDecoder = {
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .convertFromSnakeCase
+        return d
+    }()
+
     // MARK: - Core Operations
 
     /// Save raw data to the Keychain for the given key.
@@ -24,7 +53,7 @@ enum KeychainService {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: key,
+            kSecAttrAccount as String: key
         ]
 
         // Delete any existing item first (SecItemUpdate sometimes fails on mismatched attrs).
@@ -48,7 +77,7 @@ enum KeychainService {
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: key,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecMatchLimit as String: kSecMatchLimitOne
         ]
 
         var result: AnyObject?
@@ -66,7 +95,7 @@ enum KeychainService {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: key,
+            kSecAttrAccount as String: key
         ]
 
         SecItemDelete(query as CFDictionary)
@@ -90,16 +119,16 @@ enum KeychainService {
 
     // MARK: - Codable Convenience
 
-    /// Encode a `Codable` value to JSON and save it to the Keychain.
+    /// Encode a `Codable` value to JSON (snake_case) and save it to the Keychain.
     static func saveCodable<T: Encodable>(_ value: T, for key: String) throws {
-        let data = try JSONEncoder().encode(value)
+        let data = try encoder.encode(value)
         try save(data, for: key)
     }
 
-    /// Load and decode a `Codable` value from the Keychain.
+    /// Load and decode a `Codable` value from the Keychain (snake_case).
     static func loadCodable<T: Decodable>(for key: String) -> T? {
         guard let data = load(for: key) else { return nil }
-        return try? JSONDecoder().decode(T.self, from: data)
+        return try? decoder.decode(T.self, from: data)
     }
 }
 

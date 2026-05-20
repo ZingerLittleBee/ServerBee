@@ -1,66 +1,187 @@
 import SwiftUI
 
 struct ContentView: View {
-    @Environment(AuthManager.self) private var authManager
     @Environment(PushNotificationManager.self) private var pushManager
-    @State private var apiClient: APIClient?
+    @Environment(PushNotificationRouter.self) private var pushRouter
+    @Environment(NetworkMonitor.self) private var networkMonitor
+    @Environment(AlertsViewModel.self) private var alertsViewModel
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var apiClient: APIClient
     @State private var serversViewModel = ServersViewModel()
     @State private var wsClient = WebSocketClient()
 
+    /// Index of the Servers tab.
+    private static let serversTabTag = 0
+    /// Index of the Alerts tab.
+    private static let alertsTabTag = 1
+    /// Index of the Settings tab.
+    private static let settingsTabTag = 2
+
+    @State private var selectedTab: Int = ContentView.serversTabTag
+    @State private var serversPath: [ServerNavigationTarget] = []
+    @State private var alertsPath: [ServerDeepLink] = []
+
+    private let authManager: AuthManager
+
+    init(authManager: AuthManager) {
+        self.authManager = authManager
+        // Construct APIClient synchronously so child views' .task closures
+        // never observe a nil client on first cold start.
+        _apiClient = State(initialValue: APIClient(authManager: authManager))
+    }
+
+    /// Test-only accessor — assert the client was built during init.
+    var apiClientForTest: APIClient { apiClient }
+
     var body: some View {
-        TabView {
-            NavigationStack {
-                ServersListView()
-            }
-            .tabItem {
-                Label("Servers", systemImage: "server.rack")
-            }
-
-            NavigationStack {
-                AlertsListView()
-            }
-            .tabItem {
-                Label("Alerts", systemImage: "bell.badge")
-            }
-
-            SettingsView()
-                .tabItem {
-                    Label("Settings", systemImage: "gearshape")
+        ZStack(alignment: .top) {
+            TabView(selection: $selectedTab) {
+                NavigationStack(path: $serversPath) {
+                    ServersListView()
+                        .navigationDestination(for: ServerNavigationTarget.self) { target in
+                            switch target {
+                            case .detailById(let serverId):
+                                ServerDetailLoaderView(serverId: serverId)
+                            }
+                        }
                 }
-        }
-        .environment(\.apiClient, apiClient)
-        .environment(serversViewModel)
-        .task {
-            let client = APIClient(authManager: authManager)
-            apiClient = client
-            pushManager.configure(apiClient: client)
+                .tabItem {
+                    Label("Servers", systemImage: "server.rack")
+                }
+                .tag(ContentView.serversTabTag)
 
-            // Configure WS token refresher
-            wsClient.tokenRefresher = { [weak authManager] in
+                NavigationStack(path: $alertsPath) {
+                    AlertsListView()
+                        .navigationDestination(for: ServerDeepLink.self) { link in
+                            switch link {
+                            case .alertDetail(let key):
+                                AlertDetailView(alertKey: key)
+                            case .serverDetail:
+                                EmptyView()
+                            }
+                        }
+                }
+                .tabItem {
+                    Label("Alerts", systemImage: "bell.badge")
+                }
+                .tag(ContentView.alertsTabTag)
+
+                SettingsView(wsClient: wsClient)
+                    .tabItem {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                    .tag(ContentView.settingsTabTag)
+            }
+            .environment(\.apiClient, apiClient)
+            .environment(serversViewModel)
+
+            OfflineBannerView(isConnected: networkMonitor.isConnected)
+                .animation(.easeInOut(duration: 0.2), value: networkMonitor.isConnected)
+        }
+        .onChange(of: pushRouter.pendingDeepLink) { _, newValue in
+            guard let link = newValue else { return }
+            handleDeepLink(link)
+            pushRouter.pendingDeepLink = nil
+        }
+        .task {
+            pushManager.configure(apiClient: apiClient)
+
+            await wsClient.setTokenRefresher { [weak authManager] in
                 guard let authManager else { return nil }
                 return try? await authManager.refreshAccessToken()
             }
-
-            // Connect WebSocket
-            wsClient.onMessage = { [weak serversViewModel] message in
+            await wsClient.setOnMessage {
+                [weak serversViewModel, weak alertsViewModel, apiClient] message in
                 Task { @MainActor in
-                    serversViewModel?.handleWSMessage(message)
+                    guard let serversViewModel else { return }
+                    let router = WebSocketRouter(
+                        servers: { msg in serversViewModel.handleWSMessage(msg) },
+                        alerts: { msg in
+                            guard case .alertEvent = msg, let alertsViewModel else { return }
+                            Task { await alertsViewModel.handleWSAlertEvent(apiClient: apiClient) }
+                        }
+                    )
+                    router.dispatch(message)
                 }
             }
             if let serverUrl = authManager.serverUrl,
                let token = authManager.getAccessToken() {
-                wsClient.connect(serverUrl: serverUrl, accessToken: token)
+                await wsClient.connect(serverUrl: serverUrl, accessToken: token)
+            }
+
+            // If a push tap arrived during cold launch BEFORE this view existed,
+            // consume it now.
+            if let link = pushRouter.pendingDeepLink {
+                handleDeepLink(link)
+                pushRouter.pendingDeepLink = nil
             }
         }
-        .onDisappear {
-            wsClient.close()
+        .onChange(of: scenePhase) { old, new in
+            if old == .background && new == .active {
+                Task { await wsClient.reconnectIfNeeded() }
+            }
+        }
+    }
+
+    private func handleDeepLink(_ link: ServerDeepLink) {
+        ContentView.applyDeepLink(
+            link,
+            selectedTab: &selectedTab,
+            serversPath: &serversPath,
+            alertsPath: &alertsPath
+        )
+    }
+
+    /// Pure mapping `ServerDeepLink → (tab, paths)`. Extracted as a static helper
+    /// so tests can exercise the real implementation without instantiating a
+    /// SwiftUI `View`. Keep `handleDeepLink` as the only caller in production.
+    static func applyDeepLink(
+        _ link: ServerDeepLink,
+        selectedTab: inout Int,
+        serversPath: inout [ServerNavigationTarget],
+        alertsPath: inout [ServerDeepLink]
+    ) {
+        switch link {
+        case .serverDetail(let serverId):
+            selectedTab = ContentView.serversTabTag
+            serversPath = [.detailById(serverId)]
+        case .alertDetail(let alertKey):
+            selectedTab = ContentView.alertsTabTag
+            alertsPath = [.alertDetail(alertKey: alertKey)]
+        }
+    }
+}
+
+/// Navigation target for the Servers stack. Wraps a server-id so we can deep
+/// link without needing the full `ServerStatus` model up front.
+enum ServerNavigationTarget: Hashable {
+    case detailById(String)
+}
+
+/// Loads a `ServerStatus` by id from the in-memory `ServersViewModel` and
+/// displays `ServerDetailView`. Shows a fallback if the server is unknown
+/// (e.g. push arrived before WS list refreshed).
+private struct ServerDetailLoaderView: View {
+    let serverId: String
+    @Environment(ServersViewModel.self) private var serversViewModel
+
+    var body: some View {
+        if let server = serversViewModel.servers.first(where: { $0.id == serverId }) {
+            ServerDetailView(server: server)
+        } else {
+            ContentUnavailableView(
+                String(localized: "Server unavailable"),
+                systemImage: "exclamationmark.triangle",
+                description: Text(String(localized: "This server is no longer reporting."))
+            )
         }
     }
 }
 
 #Preview {
-    ContentView()
-        .environment(AuthManager())
+    ContentView(authManager: AuthManager())
         .environment(AlertsViewModel())
         .environment(PushNotificationManager())
+        .environment(PushNotificationRouter())
+        .environment(NetworkMonitor())
 }

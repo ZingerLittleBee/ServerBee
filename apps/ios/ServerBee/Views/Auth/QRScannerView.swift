@@ -1,11 +1,6 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import SwiftUI
-
-/// Wrapper to pass non-Sendable values across concurrency boundaries.
-private struct UncheckedSendable<T>: @unchecked Sendable {
-    let value: T
-    init(_ value: T) { self.value = value }
-}
+import UIKit
 
 struct QRScannerView: UIViewControllerRepresentable {
     let onScanned: (String, String) -> Void
@@ -31,15 +26,25 @@ final class QRScannerViewController: UIViewController, @preconcurrency AVCapture
     var onScanned: ((String, String) -> Void)?
     var onDismiss: (() -> Void)?
 
-    private nonisolated(unsafe) let captureSession = AVCaptureSession()
+    private let capture = QRScannerCaptureSession()
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private var hasScanned = false
+
+    /// Permission state reflected by the UI. Updated on the main actor so the
+    /// view controller can swap to a "denied" panel.
+    enum PermissionState: Equatable {
+        case unknown
+        case authorized
+        case denied
+    }
+
+    private(set) var permissionState: PermissionState = .unknown
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
-        setupCamera()
         setupDismissButton()
+        requestCameraAndStart()
     }
 
     override func viewDidLayoutSubviews() {
@@ -47,64 +52,64 @@ final class QRScannerViewController: UIViewController, @preconcurrency AVCapture
         previewLayer?.frame = view.bounds
     }
 
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        let session = captureSession
-        if !session.isRunning {
-            let sendable = UncheckedSendable(session)
-            DispatchQueue.global(qos: .userInitiated).async {
-                sendable.value.startRunning()
-            }
-        }
-    }
-
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        if captureSession.isRunning {
-            captureSession.stopRunning()
+        stopSession()
+    }
+
+    // MARK: - Permission + start
+
+    private func requestCameraAndStart() {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            permissionState = .authorized
+            configureAndStartSession()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if granted {
+                        self.permissionState = .authorized
+                        self.configureAndStartSession()
+                    } else {
+                        self.permissionState = .denied
+                        self.showPermissionDeniedUI()
+                    }
+                }
+            }
+        case .denied, .restricted:
+            permissionState = .denied
+            showPermissionDeniedUI()
+        @unknown default:
+            permissionState = .denied
+            showPermissionDeniedUI()
         }
     }
 
-    // MARK: - Setup
+    // MARK: - Session lifecycle (serial queue only)
 
-    private func setupCamera() {
-        guard let videoCaptureDevice = AVCaptureDevice.default(for: .video) else {
-            showError("Camera not available")
-            return
-        }
-
-        guard let videoInput = try? AVCaptureDeviceInput(device: videoCaptureDevice) else {
-            showError("Cannot access camera")
-            return
-        }
-
-        guard captureSession.canAddInput(videoInput) else {
-            showError("Cannot configure camera")
-            return
-        }
-        captureSession.addInput(videoInput)
-
-        let metadataOutput = AVCaptureMetadataOutput()
-        guard captureSession.canAddOutput(metadataOutput) else {
-            showError("Cannot configure scanner")
-            return
-        }
-        captureSession.addOutput(metadataOutput)
-
-        metadataOutput.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
-        metadataOutput.metadataObjectTypes = [.qr]
-
-        let preview = AVCaptureVideoPreviewLayer(session: captureSession)
-        preview.frame = view.bounds
-        preview.videoGravity = .resizeAspectFill
-        view.layer.addSublayer(preview)
-        previewLayer = preview
-
-        let sendable = UncheckedSendable(captureSession)
-        DispatchQueue.global(qos: .userInitiated).async {
-            sendable.value.startRunning()
-        }
+    private func configureAndStartSession() {
+        capture.configureAndStart(
+            delegate: self,
+            onPreviewReady: { [weak self] session in
+                guard let self else { return }
+                let preview = AVCaptureVideoPreviewLayer(session: session)
+                preview.frame = self.view.bounds
+                preview.videoGravity = .resizeAspectFill
+                self.view.layer.insertSublayer(preview, at: 0)
+                self.previewLayer = preview
+            },
+            onError: { [weak self] message in
+                self?.showError(message)
+            }
+        )
     }
+
+    private func stopSession() {
+        capture.stop()
+    }
+
+    // MARK: - Dismiss
 
     private func setupDismissButton() {
         let dismissButton = UIButton(type: .system)
@@ -119,7 +124,7 @@ final class QRScannerViewController: UIViewController, @preconcurrency AVCapture
             dismissButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
             dismissButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             dismissButton.widthAnchor.constraint(equalToConstant: 44),
-            dismissButton.heightAnchor.constraint(equalToConstant: 44),
+            dismissButton.heightAnchor.constraint(equalToConstant: 44)
         ])
     }
 
@@ -153,13 +158,61 @@ final class QRScannerViewController: UIViewController, @preconcurrency AVCapture
         }
 
         hasScanned = true
-        captureSession.stopRunning()
+        stopSession()
 
         AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
         onScanned?(serverUrl, code)
     }
 
-    // MARK: - Error Handling
+    // MARK: - Error + permission UI
+
+    fileprivate func showPermissionDeniedUI() {
+        // Clear any previous transient label.
+        view.subviews.filter { $0.tag == 9001 }.forEach { $0.removeFromSuperview() }
+
+        let container = UIStackView()
+        container.tag = 9001
+        container.axis = .vertical
+        container.alignment = .center
+        container.spacing = 12
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let title = UILabel()
+        title.text = String(localized: "qr_permission_denied_title")
+        title.font = .systemFont(ofSize: 18, weight: .semibold)
+        title.textColor = .white
+        title.textAlignment = .center
+        title.numberOfLines = 0
+
+        let body = UILabel()
+        body.text = String(localized: "qr_permission_denied_body")
+        body.font = .systemFont(ofSize: 14)
+        body.textColor = .white.withAlphaComponent(0.85)
+        body.textAlignment = .center
+        body.numberOfLines = 0
+
+        let openSettings = UIButton(type: .system)
+        openSettings.setTitle(String(localized: "qr_open_settings"), for: .normal)
+        openSettings.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
+        openSettings.addTarget(self, action: #selector(openSettingsTapped), for: .touchUpInside)
+
+        container.addArrangedSubview(title)
+        container.addArrangedSubview(body)
+        container.addArrangedSubview(openSettings)
+        view.addSubview(container)
+
+        NSLayoutConstraint.activate([
+            container.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            container.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            container.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24),
+            container.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24)
+        ])
+    }
+
+    @objc private func openSettingsTapped() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+    }
 
     private func showError(_ message: String) {
         let label = UILabel()
@@ -171,7 +224,84 @@ final class QRScannerViewController: UIViewController, @preconcurrency AVCapture
 
         NSLayoutConstraint.activate([
             label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            label.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
+    }
+}
+
+private final class QRScannerCaptureSession: @unchecked Sendable {
+    /// Serial queue that owns ALL `AVCaptureSession` mutations. Per Apple's
+    /// AVFoundation docs, `beginConfiguration()`, `addInput`, `addOutput`,
+    /// `startRunning()`, and `stopRunning()` must not be interleaved across
+    /// threads.
+    private let queue = DispatchQueue(label: "com.serverbee.capture", qos: .userInitiated)
+    private let session = AVCaptureSession()
+    private var isConfigured = false
+
+    func configureAndStart(
+        delegate: AVCaptureMetadataOutputObjectsDelegate,
+        onPreviewReady: @MainActor @escaping (AVCaptureSession) -> Void,
+        onError: @MainActor @escaping (String) -> Void
+    ) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.configureLocked(delegate: delegate, onPreviewReady: onPreviewReady, onError: onError)
+            if self.isConfigured, !self.session.isRunning {
+                self.session.startRunning()
+            }
+        }
+    }
+
+    func stop() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            if self.session.isRunning {
+                self.session.stopRunning()
+            }
+        }
+    }
+
+    private func configureLocked(
+        delegate: AVCaptureMetadataOutputObjectsDelegate,
+        onPreviewReady: @MainActor @escaping (AVCaptureSession) -> Void,
+        onError: @MainActor @escaping (String) -> Void
+    ) {
+        guard !isConfigured else { return }
+
+        session.beginConfiguration()
+        defer { session.commitConfiguration() }
+
+        guard let device = AVCaptureDevice.default(for: .video) else {
+            DispatchQueue.main.async {
+                onError(String(localized: "qr_camera_unavailable"))
+            }
+            return
+        }
+        guard let input = try? AVCaptureDeviceInput(device: device),
+              session.canAddInput(input)
+        else {
+            DispatchQueue.main.async {
+                onError(String(localized: "qr_camera_input_failed"))
+            }
+            return
+        }
+        session.addInput(input)
+
+        let metadataOutput = AVCaptureMetadataOutput()
+        guard session.canAddOutput(metadataOutput) else {
+            DispatchQueue.main.async {
+                onError(String(localized: "qr_camera_output_failed"))
+            }
+            return
+        }
+        session.addOutput(metadataOutput)
+        metadataOutput.setMetadataObjectsDelegate(delegate, queue: DispatchQueue.main)
+        metadataOutput.metadataObjectTypes = [.qr]
+
+        DispatchQueue.main.async { [session] in
+            onPreviewReady(session)
+        }
+
+        isConfigured = true
     }
 }

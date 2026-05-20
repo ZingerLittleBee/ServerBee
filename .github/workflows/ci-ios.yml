@@ -10,6 +10,10 @@ on:
     paths:
       - 'apps/ios/**'
 
+concurrency:
+  group: ci-ios-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: iOS Build
@@ -35,3 +39,4 @@ jobs:
           scheme: ServerBee
           action: build
           working-directory: apps/ios
+          trust-plugins: true

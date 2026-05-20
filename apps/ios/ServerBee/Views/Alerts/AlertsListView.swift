@@ -8,6 +8,8 @@ struct AlertsListView: View {
         Group {
             if viewModel.isLoading && viewModel.events.isEmpty {
                 ProgressView(String(localized: "Loading alerts..."))
+            } else if let message = viewModel.errorMessage, viewModel.events.isEmpty {
+                errorView(message: message)
             } else if viewModel.events.isEmpty {
                 ContentUnavailableView {
                     Label(String(localized: "No Alerts"), systemImage: "bell.slash")
@@ -30,14 +32,27 @@ struct AlertsListView: View {
             AlertDetailView(alertKey: alertKey)
         }
         .refreshable {
-            if let apiClient {
-                await viewModel.refresh(apiClient: apiClient)
-            }
+            await viewModel.refresh(apiClient: apiClient)
         }
         .task {
-            if viewModel.events.isEmpty, let apiClient {
+            if viewModel.events.isEmpty {
                 await viewModel.fetchEvents(apiClient: apiClient)
             }
+        }
+    }
+
+    private func errorView(message: String) -> some View {
+        ContentUnavailableView {
+            Label(String(localized: "Couldn't load alerts"), systemImage: "exclamationmark.triangle")
+        } description: {
+            Text(message)
+        } actions: {
+            Button(String(localized: "Try again")) {
+                Task {
+                    await viewModel.fetchEvents(apiClient: apiClient)
+                }
+            }
+            .buttonStyle(.borderedProminent)
         }
     }
 }

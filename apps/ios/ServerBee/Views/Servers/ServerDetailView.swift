@@ -6,7 +6,7 @@ struct ServerDetailView: View {
 
     private let columns = [
         GridItem(.flexible()),
-        GridItem(.flexible()),
+        GridItem(.flexible())
     ]
 
     var body: some View {
@@ -75,20 +75,27 @@ struct ServerDetailView: View {
     }
 
     private var statusBadge: some View {
-        HStack(spacing: 6) {
+        let label = server.isOnline
+            ? String(localized: "Online")
+            : String(localized: "Offline")
+        return HStack(spacing: 6) {
             Circle()
-                .fill(server.online ? Color.serverOnline : Color.serverOffline)
+                .fill(server.isOnline ? Color.serverOnline : Color.serverOffline)
                 .frame(width: 10, height: 10)
-            Text(server.online ? String(localized: "Online") : String(localized: "Offline"))
+                .accessibilityHidden(true)
+            Text(label)
                 .font(.subheadline.bold())
-                .foregroundStyle(server.online ? Color.serverOnline : Color.serverOffline)
+                .foregroundStyle(server.isOnline ? Color.serverOnline : Color.serverOffline)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(
-            (server.online ? Color.serverOnline : Color.serverOffline).opacity(0.1)
+            (server.isOnline ? Color.serverOnline : Color.serverOffline).opacity(0.1)
         )
         .clipShape(Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(String(localized: "Status")))
+        .accessibilityValue(Text(label))
     }
 
     // MARK: - Metrics Grid
@@ -177,11 +184,15 @@ struct ServerDetailView: View {
                 Image(systemName: "chevron.right")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
             .padding()
             .background(Color(.systemBackground))
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text(String(localized: "View History")))
+            .accessibilityAddTraits(.isButton)
         }
         .buttonStyle(.plain)
     }

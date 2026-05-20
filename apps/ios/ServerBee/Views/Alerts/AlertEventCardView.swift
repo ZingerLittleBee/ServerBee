@@ -42,5 +42,19 @@ struct AlertEventCardView: View {
             }
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(accessibilityLabelText))
+    }
+
+    private var accessibilityLabelText: String {
+        let status = event.status == .firing
+            ? String(localized: "Firing")
+            : String(localized: "Resolved")
+        let relative = Formatters.formatRelativeTime(event.updatedAt)
+        var parts = [status, event.ruleName, event.serverName, relative]
+        if event.triggerCount > 1 {
+            parts.append(String(format: String(localized: "Triggered %d times"), event.triggerCount))
+        }
+        return parts.joined(separator: ", ")
     }
 }
