@@ -1,9 +1,29 @@
 import Foundation
-import UserNotifications
 import UIKit
+import UserNotifications
+
+/// Protocol abstraction so tests can inject a spy.
+@MainActor
+protocol PushNotificationManaging: AnyObject {
+    var permissionGranted: Bool { get }
+    var deviceToken: String? { get }
+
+    func configure(apiClient: APIClient)
+    func requestPermission() async
+
+    nonisolated func didRegisterForRemoteNotifications(deviceToken data: Data)
+    nonisolated func didFailToRegisterForRemoteNotifications(error: Error)
+
+    /// Parse a push payload and return a deep link (or nil if not actionable).
+    nonisolated func handleNotificationResponse(_ response: UNNotificationResponse) -> ServerDeepLink?
+
+    /// Unregister the device token from the server. Must NOT throw — failures
+    /// are logged. Local auth must still clear even if the server call fails.
+    func unregister() async
+}
 
 @Observable
-final class PushNotificationManager: NSObject, @unchecked Sendable {
+final class PushNotificationManager: NSObject, PushNotificationManaging, @unchecked Sendable {
     var permissionGranted = false
     var deviceToken: String?
 
@@ -29,20 +49,21 @@ final class PushNotificationManager: NSObject, @unchecked Sendable {
     }
 
     /// Called when APNs assigns a device token.
-    func didRegisterForRemoteNotifications(deviceToken data: Data) {
+    nonisolated func didRegisterForRemoteNotifications(deviceToken data: Data) {
         let token = data.map { String(format: "%02x", $0) }.joined()
-        self.deviceToken = token
-        Task {
-            await registerTokenWithServer(token)
+        Task { @MainActor in
+            self.deviceToken = token
+            await self.registerTokenWithServer(token)
         }
     }
 
     /// Called when APNs registration fails.
-    func didFailToRegisterForRemoteNotifications(error: Error) {
+    nonisolated func didFailToRegisterForRemoteNotifications(error: Error) {
         print("[Push] Registration failed: \(error)")
     }
 
     /// Upload device token to server.
+    @MainActor
     private func registerTokenWithServer(_ token: String) async {
         guard let apiClient else { return }
         do {
@@ -53,15 +74,33 @@ final class PushNotificationManager: NSObject, @unchecked Sendable {
     }
 
     /// Unregister device token from server (called on logout).
+    /// Errors are swallowed — the device token will be re-bound on next register.
+    @MainActor
     func unregister() async {
-        guard let apiClient else { return }
-        try? await apiClient.postVoid("/api/mobile/push/unregister")
+        guard let apiClient else {
+            deviceToken = nil
+            return
+        }
+        do {
+            try await apiClient.postVoid("/api/mobile/push/unregister")
+        } catch {
+            print("[Push] Failed to unregister token with server: \(error)")
+        }
         deviceToken = nil
     }
 
-    /// Handle notification tap — extract server_id for deep linking.
-    func handleNotificationResponse(_ response: UNNotificationResponse) -> String? {
+    /// Parse a notification tap into a deep link.
+    /// Backend payload (see `crates/server/src/service/apns.rs`) attaches
+    /// `server_id` and optionally `rule_id` as APNs custom data.
+    nonisolated func handleNotificationResponse(_ response: UNNotificationResponse) -> ServerDeepLink? {
         let userInfo = response.notification.request.content.userInfo
-        return userInfo["server_id"] as? String
+        if let serverId = userInfo["server_id"] as? String, !serverId.isEmpty {
+            return .serverDetail(serverId: serverId)
+        }
+        if let ruleId = userInfo["rule_id"] as? String, !ruleId.isEmpty {
+            return .alertDetail(alertKey: ruleId)
+        }
+        return nil
     }
 }
+
