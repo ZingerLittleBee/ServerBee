@@ -3,10 +3,12 @@ import SwiftUI
 
 /// Manages authentication state for the mobile app.
 ///
-/// Reads persisted tokens from the Keychain on launch, attempts to refresh the
-/// session, and exposes reactive state for the UI layer.
+/// Isolated to `@MainActor` so that `@Observable` state is mutated only on the
+/// main thread. Background callers (`APIClient` actor, `WebSocketClient`) hop
+/// via `await` to read `serverUrl` / call `getAccessToken()`.
 @Observable
-final class AuthManager: @unchecked Sendable {
+@MainActor
+final class AuthManager {
     // MARK: - Private
 
     private let refreshCoordinator = RefreshCoordinator()
@@ -21,7 +23,6 @@ final class AuthManager: @unchecked Sendable {
     // MARK: - Lifecycle
 
     /// Called once on app launch. Restores Keychain state and validates the session.
-    @MainActor
     func initialize() async {
         isLoading = true
         defer { isLoading = false }
@@ -58,7 +59,6 @@ final class AuthManager: @unchecked Sendable {
     // MARK: - Login Handling
 
     /// Persist tokens & user from a successful login or refresh response.
-    @MainActor
     func handleLoginResponse(_ response: MobileTokenResponse) {
         try? KeychainService.saveString(response.accessToken, for: KeychainService.accessTokenKey)
         try? KeychainService.saveString(response.refreshToken, for: KeychainService.refreshTokenKey)
@@ -77,7 +77,6 @@ final class AuthManager: @unchecked Sendable {
     // MARK: - Logout
 
     /// Clear all persisted auth state and reset in-memory properties.
-    @MainActor
     func clearAuth() {
         KeychainService.delete(for: KeychainService.accessTokenKey)
         KeychainService.delete(for: KeychainService.refreshTokenKey)

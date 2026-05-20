@@ -89,7 +89,11 @@ actor APIClient {
         method: String,
         body: (any Encodable & Sendable)? = nil
     ) async throws -> (Data, HTTPURLResponse) {
-        guard let serverUrl = authManager.serverUrl else {
+        // AuthManager is @MainActor-isolated; hop to read state.
+        let serverUrl = await authManager.serverUrl
+        let token = await authManager.getAccessToken()
+
+        guard let serverUrl else {
             throw APIError.noServerUrl
         }
         guard let url = URL(string: "\(serverUrl)\(path)") else {
@@ -101,7 +105,7 @@ actor APIClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         // Attach bearer token if available
-        if let token = authManager.getAccessToken() {
+        if let token {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 
