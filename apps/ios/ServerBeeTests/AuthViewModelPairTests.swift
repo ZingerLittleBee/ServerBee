@@ -55,4 +55,84 @@ final class AuthViewModelPairTests: XCTestCase {
         XCTAssertEqual(authManager.serverUrl, "https://srv.example.com")
         XCTAssertEqual(authManager.user?.username, "alice")
     }
+
+    func test_pair_throwsInvalidOrExpiredCode_on400() async {
+        URLProtocolStub.stubResponse = (400, Data())
+        let viewModel = AuthViewModel()
+        let authManager = AuthManager()
+        do {
+            _ = try await viewModel.pair(
+                serverUrl: "https://srv.example.com",
+                code: "x",
+                authManager: authManager,
+                session: session
+            )
+            XCTFail("Expected throw")
+        } catch let error as AuthViewModel.PairError {
+            XCTAssertEqual(error, .invalidOrExpiredCode)
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    func test_pair_throwsValidation_on422_andDoesNotEnterTotpStep() async {
+        URLProtocolStub.stubResponse = (422, Data())
+        let viewModel = AuthViewModel()
+        let authManager = AuthManager()
+        do {
+            _ = try await viewModel.pair(
+                serverUrl: "https://srv.example.com",
+                code: "x",
+                authManager: authManager,
+                session: session
+            )
+            XCTFail("Expected throw")
+        } catch let error as AuthViewModel.PairError {
+            XCTAssertEqual(error, .validation)
+            XCTAssertEqual(viewModel.step, .credentials)
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    func test_pair_throwsRateLimited_on429() async {
+        URLProtocolStub.stubResponse = (429, Data())
+        let viewModel = AuthViewModel()
+        let authManager = AuthManager()
+        do {
+            _ = try await viewModel.pair(
+                serverUrl: "https://srv.example.com",
+                code: "x",
+                authManager: authManager,
+                session: session
+            )
+            XCTFail("Expected throw")
+        } catch let error as AuthViewModel.PairError {
+            XCTAssertEqual(error, .rateLimited)
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    func test_pair_throwsInvalidServerUrl_onBadUrl() async {
+        let viewModel = AuthViewModel()
+        let authManager = AuthManager()
+        do {
+            // Embedded space + control chars are rejected by URL(string:)
+            // across all current iOS versions, so this reliably hits the
+            // `.invalidServerUrl` branch instead of falling through to
+            // transport.
+            _ = try await viewModel.pair(
+                serverUrl: "http://exa mple\u{1F}.com",
+                code: "x",
+                authManager: authManager,
+                session: session
+            )
+            XCTFail("Expected throw")
+        } catch let error as AuthViewModel.PairError {
+            XCTAssertEqual(error, .invalidServerUrl)
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
 }
