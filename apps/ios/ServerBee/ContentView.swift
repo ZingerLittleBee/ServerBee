@@ -55,7 +55,7 @@ struct ContentView: View {
                         .navigationDestination(for: ServerDeepLink.self) { link in
                             switch link {
                             case .alertDetail(let key):
-                                AlertDetailLoaderView(alertKey: key)
+                                AlertDetailView(alertKey: key)
                             case .serverDetail:
                                 EmptyView()
                             }
@@ -124,6 +124,23 @@ struct ContentView: View {
     }
 
     private func handleDeepLink(_ link: ServerDeepLink) {
+        ContentView.applyDeepLink(
+            link,
+            selectedTab: &selectedTab,
+            serversPath: &serversPath,
+            alertsPath: &alertsPath
+        )
+    }
+
+    /// Pure mapping `ServerDeepLink → (tab, paths)`. Extracted as a static helper
+    /// so tests can exercise the real implementation without instantiating a
+    /// SwiftUI `View`. Keep `handleDeepLink` as the only caller in production.
+    static func applyDeepLink(
+        _ link: ServerDeepLink,
+        selectedTab: inout Int,
+        serversPath: inout [ServerNavigationTarget],
+        alertsPath: inout [ServerDeepLink]
+    ) {
         switch link {
         case .serverDetail(let serverId):
             selectedTab = ContentView.serversTabTag
@@ -158,20 +175,6 @@ private struct ServerDetailLoaderView: View {
                 description: Text(String(localized: "This server is no longer reporting."))
             )
         }
-    }
-}
-
-/// Placeholder loader for alert deep links. Replace with the real alert detail
-/// view once it exists; for now it routes back to the list.
-private struct AlertDetailLoaderView: View {
-    let alertKey: String
-
-    var body: some View {
-        ContentUnavailableView(
-            String(localized: "Alert"),
-            systemImage: "bell",
-            description: Text(verbatim: alertKey)
-        )
     }
 }
 
