@@ -6,10 +6,9 @@ import SwiftUI
 struct MetricsHistoryView: View {
     let serverId: String
 
-    @Environment(AuthManager.self) private var authManager
+    @Environment(\.apiClient) private var apiClient
     @State private var viewModel = ServerDetailViewModel()
     @State private var selectedRange = "1h"
-    @State private var apiClient: APIClient?
 
     private let timeRanges = ["1h", "6h", "24h", "7d"]
 
@@ -25,12 +24,9 @@ struct MetricsHistoryView: View {
         .navigationTitle(String(localized: "Metrics History"))
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            let client = APIClient(authManager: authManager)
-            apiClient = client
-            await viewModel.fetchRecords(serverId: serverId, range: selectedRange, apiClient: client)
+            await viewModel.fetchRecords(serverId: serverId, range: selectedRange, apiClient: apiClient)
         }
         .onChange(of: selectedRange) { _, newRange in
-            guard let apiClient else { return }
             Task {
                 await viewModel.fetchRecords(serverId: serverId, range: newRange, apiClient: apiClient)
             }
@@ -298,5 +294,4 @@ private extension View {
     NavigationStack {
         MetricsHistoryView(serverId: "1")
     }
-    .environment(AuthManager())
 }
