@@ -9,6 +9,13 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                if let url = authManager.serverUrl, !url.isEmpty {
+                    Section {
+                        InsecureURLBanner(serverUrl: url)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                    }
+                }
                 accountSection
                 preferencesSection
                 aboutSection
