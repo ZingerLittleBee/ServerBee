@@ -748,6 +748,62 @@
           "stringUnit" : { "state" : "translated", "value" : "语言" }
         }
       }
+    },
+    "qr_camera_unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Camera not available" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "摄像头不可用" } }
+      }
+    },
+    "qr_camera_input_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cannot access camera" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法访问摄像头" } }
+      }
+    },
+    "qr_camera_output_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cannot configure scanner" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法配置扫码器" } }
+      }
+    },
+    "qr_permission_denied_title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Camera permission denied" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "摄像头权限被拒绝" } }
+      }
+    },
+    "qr_permission_denied_body" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "ServerBee needs camera access to scan QR codes. Enable it in Settings." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "ServerBee 需要摄像头权限才能扫描二维码。请在系统设置中开启。" } }
+      }
+    },
+    "qr_open_settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Settings" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开设置" } }
+      }
+    },
+    "settings_device_name" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Device Name" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "设备名称" } }
+      }
+    },
+    "settings_language_hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Change the app language in iOS Settings → ServerBee → Language." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在系统设置 → ServerBee → 语言中切换应用语言。" } }
+      }
     }
   },
   "version" : "1.0"
