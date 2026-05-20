@@ -1,4 +1,5 @@
 import XCTest
+import os
 @testable import ServerBee
 
 @MainActor
@@ -39,4 +40,47 @@ final class WebSocketClientTests: XCTestCase {
         let postState = await client.connectionState
         XCTAssertEqual(postState, .connected)
     }
+
+    func test_reconnectDelay_doublesAcrossFailedAttempts() async throws {
+        let transports = OSAllocatedUnfairLock(initialState: [FakeWebSocketTransport]())
+        let factory: WebSocketTransportFactory = { _, _ in
+            let t = FakeWebSocketTransport()
+            transports.withLock { $0.append(t) }
+            return t
+        }
+        let client = WebSocketClient(transportFactory: factory)
+        await client.setTokenRefresher { "stale" }
+        let delays = DelayRecorder()
+        await client.setReconnectDelayHook { delay in
+            await delays.record(delay)
+        }
+
+        await client.connect(serverUrl: "https://example.test", accessToken: "tok")
+        // Force three failed connection attempts in a row, none of which
+        // ever receive a frame.
+        for i in 0..<3 {
+            // Wait for transport to exist
+            while transports.withLock({ $0.isEmpty }) {
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+            let t = transports.withLock { $0.removeFirst() }
+            await t.failNextReceive(with: URLError(.networkConnectionLost))
+            // Wait until the hook has been invoked i+1 times before driving
+            // the next failure (so the next establishConnection runs first).
+            while await delays.values.count < i + 1 {
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+        }
+
+        let recorded = await delays.values
+        XCTAssertEqual(recorded.count, 3)
+        XCTAssertEqual(recorded[0], 1.0, accuracy: 0.5)
+        XCTAssertGreaterThanOrEqual(recorded[1], 1.6)  // ~2s with jitter
+        XCTAssertGreaterThanOrEqual(recorded[2], 3.2)  // ~4s with jitter
+    }
+}
+
+actor DelayRecorder {
+    private(set) var values: [TimeInterval] = []
+    func record(_ d: TimeInterval) { values.append(d) }
 }

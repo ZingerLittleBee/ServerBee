@@ -29,6 +29,7 @@ actor WebSocketClient {
     private var onMessage: (@Sendable (BrowserMessage) -> Void)?
     private var tokenRefresher: (@Sendable () async -> String?)?
     private var connectionStateObserver: (@Sendable (ConnectionState) -> Void)?
+    private var reconnectDelayHook: (@Sendable (TimeInterval) async -> Void)?
 
     private let transportFactory: WebSocketTransportFactory
 
@@ -56,6 +57,10 @@ actor WebSocketClient {
 
     func setConnectionStateObserver(_ observer: (@Sendable (ConnectionState) -> Void)?) {
         self.connectionStateObserver = observer
+    }
+
+    func setReconnectDelayHook(_ hook: (@Sendable (TimeInterval) async -> Void)?) {
+        self.reconnectDelayHook = hook
     }
 
     // MARK: - Public API
@@ -100,8 +105,8 @@ actor WebSocketClient {
         let newTransport = transportFactory(url, currentAccessToken)
         transport = newTransport
         newTransport.resume()
-        // NOTE: state moves to .connected only after first successful receive.
-        reconnectDelay = minReconnectDelay
+        // NOTE: state moves to .connected only after first successful receive,
+        // and reconnectDelay is reset only then (not here).
 
         receiveTask = Task { [weak self] in
             await self?.receiveLoop(on: newTransport)
@@ -115,6 +120,7 @@ actor WebSocketClient {
                 let message = try await transport.receive()
                 if !sawFirstFrame {
                     sawFirstFrame = true
+                    reconnectDelay = minReconnectDelay
                     setState(.connected)
                 }
                 switch message {
@@ -155,6 +161,7 @@ actor WebSocketClient {
 
         let jitter = 1.0 + (Double.random(in: -1 ... 1) * jitterFactor)
         let delay = min(reconnectDelay * jitter, maxReconnectDelay)
+        await reconnectDelayHook?(delay)
 
         try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
 
