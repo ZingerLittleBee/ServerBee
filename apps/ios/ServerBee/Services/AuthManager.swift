@@ -181,34 +181,42 @@ final class AuthManager {
 
 // MARK: - Refresh Coordinator
 
-private actor RefreshCoordinator {
-    private var isRefreshing = false
-    private var waiters: [CheckedContinuation<String, Error>] = []
+/// Serialises concurrent token-refresh attempts.
+///
+/// Semantics:
+/// - At any moment at most one `refreshFn` is in flight (serialised by actor reentrancy).
+/// - While a refresh is in flight, additional callers `await` on the existing
+///   task so we don't hammer the refresh endpoint or burn a one-time-use
+///   refresh token.
+/// - **On success:** every waiter receives the new access token.
+/// - **On failure:** the in-flight attempt's error is propagated ONLY to the
+///   caller who initiated it. Subsequent waiters are released and each gets a
+///   fresh attempt at `refreshFn`. This lets a transient network failure for
+///   the first caller not penalise queued callers — the next one retries.
+///
+/// Internal so tests can drive `refresh(using:)` directly without going
+/// through `AuthManager.refreshAccessToken()` — see RefreshCoordinatorTests.
+actor RefreshCoordinator {
+    private var inFlight: Task<String, Error>?
 
-    func refresh(using refreshFn: @Sendable () async throws -> String) async throws -> String {
-        if isRefreshing {
-            return try await withCheckedThrowingContinuation { continuation in
-                waiters.append(continuation)
+    func refresh(using refreshFn: @Sendable @escaping () async throws -> String) async throws -> String {
+        if let existing = inFlight {
+            do {
+                return try await existing.value
+            } catch {
+                // Leader failed transiently — fall through to start a fresh attempt.
             }
         }
 
-        isRefreshing = true
+        let task = Task { try await refreshFn() }
+        inFlight = task
+
         do {
-            let newToken = try await refreshFn()
-            let pending = waiters
-            waiters = []
-            isRefreshing = false
-            for waiter in pending {
-                waiter.resume(returning: newToken)
-            }
-            return newToken
+            let token = try await task.value
+            inFlight = nil
+            return token
         } catch {
-            let pending = waiters
-            waiters = []
-            isRefreshing = false
-            for waiter in pending {
-                waiter.resume(throwing: error)
-            }
+            inFlight = nil
             throw error
         }
     }
