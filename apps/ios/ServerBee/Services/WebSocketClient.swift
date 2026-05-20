@@ -126,7 +126,7 @@ actor WebSocketClient {
 
     private func establishConnection() {
         guard let url = makeWebSocketURL(from: currentServerUrl) else {
-            print("[WS] Invalid URL: \(currentServerUrl)")
+            AppLog.ws.error("Invalid URL: \(self.currentServerUrl, privacy: .public)")
             return
         }
 
@@ -166,7 +166,7 @@ actor WebSocketClient {
                             )
                             onMessage?(browserMessage)
                         } catch {
-                            print("[WS] Failed to decode message: \(error)")
+                            AppLog.ws.error("Failed to decode message: \(String(describing: error), privacy: .public)")
                         }
                     }
                 case .data:
@@ -211,7 +211,7 @@ actor WebSocketClient {
             try await transport.sendPing()
             return true
         } catch {
-            print("[WS] Heartbeat ping failed: \(error)")
+            AppLog.ws.error("Heartbeat ping failed: \(String(describing: error), privacy: .public)")
             // Force the receive loop to fail by cancelling the transport;
             // it will trigger scheduleReconnect via handleReceiveError.
             transport.cancel(with: .abnormalClosure, reason: nil)
