@@ -19,6 +19,7 @@ enum OnlineFilter: String, CaseIterable {
 final class ServersViewModel {
     var servers: [ServerStatus] = []
     var searchQuery = ""
+    var debouncedSearchQuery = ""
     var onlineFilter: OnlineFilter = .all
     var isLoading = false
     var isRefreshing = false
@@ -28,8 +29,10 @@ final class ServersViewModel {
         var result = servers
 
         // Search filter (name, ipv4, ipv6 -- case-insensitive)
-        if !searchQuery.isEmpty {
-            let query = searchQuery.lowercased()
+        // Uses `debouncedSearchQuery` so list reordering happens after the
+        // user stops typing, not on every keystroke.
+        if !debouncedSearchQuery.isEmpty {
+            let query = debouncedSearchQuery.lowercased()
             result = result.filter { server in
                 server.name.lowercased().contains(query) ||
                 (server.ipv4?.lowercased().contains(query) ?? false) ||

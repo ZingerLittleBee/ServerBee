@@ -32,6 +32,11 @@ struct ServersListView: View {
                 await viewModel.fetchServers(apiClient: apiClient)
             }
         }
+        .task(id: viewModel.searchQuery) {
+            try? await Task.sleep(for: .milliseconds(250))
+            if Task.isCancelled { return }
+            viewModel.debouncedSearchQuery = viewModel.searchQuery
+        }
     }
 
     // MARK: - Subviews
