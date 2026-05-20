@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @Environment(AuthManager.self) private var authManager
     @Environment(PushNotificationManager.self) private var pushManager
+    @Environment(\.scenePhase) private var scenePhase
     @State private var apiClient: APIClient?
     @State private var serversViewModel = ServersViewModel()
     @State private var wsClient = WebSocketClient()
@@ -49,6 +50,11 @@ struct ContentView: View {
             if let serverUrl = authManager.serverUrl,
                let token = authManager.getAccessToken() {
                 await wsClient.connect(serverUrl: serverUrl, accessToken: token)
+            }
+        }
+        .onChange(of: scenePhase) { old, new in
+            if old == .background && new == .active {
+                Task { await wsClient.reconnectIfNeeded() }
             }
         }
     }

@@ -88,6 +88,26 @@ actor WebSocketClient {
         await closeInternal()
     }
 
+    /// Called from `ScenePhase` listener: if we believe the socket is dead,
+    /// rebuild it without resetting the backoff timer.
+    func reconnectIfNeeded() async {
+        guard !intentionallyClosed else { return }
+        guard !currentServerUrl.isEmpty else { return }
+        if connectionState == .disconnected {
+            await closeInternal()
+            intentionallyClosed = false
+            establishConnection()
+        }
+    }
+
+    #if DEBUG
+    /// Test-only hook to drive the state machine into `.disconnected`.
+    func forceDisconnectedForTesting() async {
+        await closeInternal()
+        intentionallyClosed = false
+    }
+    #endif
+
     // MARK: - Connection lifecycle
 
     private func closeInternal() async {

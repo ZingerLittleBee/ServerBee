@@ -106,6 +106,41 @@ extension WebSocketClientTests {
         XCTAssertEqual(final, 2, "expected exactly one transport per connect()")
     }
 
+    func test_reconnectIfNeeded_whenDisconnected_buildsNewTransport() async throws {
+        let built = OSAllocatedUnfairLock(initialState: 0)
+        let factory: WebSocketTransportFactory = { _, _ in
+            built.withLock { $0 += 1 }
+            return FakeWebSocketTransport()
+        }
+        let client = WebSocketClient(transportFactory: factory, pingInterval: 60)
+        await client.connect(serverUrl: "https://example.test", accessToken: "t")
+        // Simulate a silent drop: forcibly mark disconnected.
+        await client.forceDisconnectedForTesting()
+
+        await client.reconnectIfNeeded()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        let final = built.withLock { $0 }
+        XCTAssertEqual(final, 2)
+    }
+
+    func test_reconnectIfNeeded_whenConnected_isNoop() async throws {
+        let built = OSAllocatedUnfairLock(initialState: 0)
+        let factory: WebSocketTransportFactory = { _, _ in
+            built.withLock { $0 += 1 }
+            return FakeWebSocketTransport()
+        }
+        let client = WebSocketClient(transportFactory: factory, pingInterval: 60)
+        await client.connect(serverUrl: "https://example.test", accessToken: "t")
+        // Mark connected by waiting a tick for the receive loop to spin up.
+        try await Task.sleep(nanoseconds: 50_000_000)
+        await client.reconnectIfNeeded()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        let final = built.withLock { $0 }
+        XCTAssertEqual(final, 1, "should not rebuild while in .connecting/.connected")
+    }
+
     func test_secondConnect_replacesTransportWithoutManualClose() async throws {
         let fake1 = FakeWebSocketTransport()
         let fake2 = FakeWebSocketTransport()
