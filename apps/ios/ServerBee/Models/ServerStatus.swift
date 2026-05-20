@@ -3,7 +3,8 @@ import Foundation
 struct ServerStatus: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let name: String
-    var online: Bool
+    /// Optional: WebSocket partial updates may omit this field. Treat `nil` as "unknown — keep previous state".
+    var online: Bool?
     var cpuUsage: Double?
     var memoryTotal: Int64?
     var memoryUsed: Int64?
@@ -54,6 +55,9 @@ struct ServerStatus: Codable, Identifiable, Hashable, Sendable {
         case groupName = "group_name"
         case lastActiveAt = "last_active_at"
     }
+
+    /// Convenience: treat unknown (`nil`) as offline for view code.
+    var isOnline: Bool { online ?? false }
 }
 
 extension ServerStatus {
@@ -85,8 +89,9 @@ extension ServerStatus {
     }
 
     /// Merge non-nil fields from another status (used for WebSocket partial updates).
+    /// Fields that are `nil` in `other` preserve the local value.
     mutating func merge(from other: ServerStatus) {
-        online = other.online
+        if let v = other.online { online = v }
         if let v = other.cpuUsage { cpuUsage = v }
         if let v = other.memoryTotal { memoryTotal = v }
         if let v = other.memoryUsed { memoryUsed = v }

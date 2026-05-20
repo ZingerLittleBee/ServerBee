@@ -39,13 +39,13 @@ final class ServersViewModel {
         // Online filter
         switch onlineFilter {
         case .all: break
-        case .online: result = result.filter { $0.online }
-        case .offline: result = result.filter { !$0.online }
+        case .online: result = result.filter { $0.isOnline }
+        case .offline: result = result.filter { !$0.isOnline }
         }
 
         // Sort: online first, then alphabetical
         result.sort { a, b in
-            if a.online != b.online { return a.online && !b.online }
+            if a.isOnline != b.isOnline { return a.isOnline && !b.isOnline }
             return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
         }
 
@@ -54,7 +54,7 @@ final class ServersViewModel {
 
     /// Online servers count for display in header.
     var onlineCount: Int {
-        servers.filter(\.online).count
+        servers.filter(\.isOnline).count
     }
 
     func fetchServers(apiClient: APIClient) async {

@@ -77,16 +77,16 @@ struct ServerDetailView: View {
     private var statusBadge: some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(server.online ? Color.serverOnline : Color.serverOffline)
+                .fill(server.isOnline ? Color.serverOnline : Color.serverOffline)
                 .frame(width: 10, height: 10)
-            Text(server.online ? String(localized: "Online") : String(localized: "Offline"))
+            Text(server.isOnline ? String(localized: "Online") : String(localized: "Offline"))
                 .font(.subheadline.bold())
-                .foregroundStyle(server.online ? Color.serverOnline : Color.serverOffline)
+                .foregroundStyle(server.isOnline ? Color.serverOnline : Color.serverOffline)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(
-            (server.online ? Color.serverOnline : Color.serverOffline).opacity(0.1)
+            (server.isOnline ? Color.serverOnline : Color.serverOffline).opacity(0.1)
         )
         .clipShape(Capsule())
     }

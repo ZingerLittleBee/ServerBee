@@ -5,7 +5,7 @@ import SwiftUI
 struct ServerCardView: View, Equatable {
     nonisolated static func == (lhs: ServerCardView, rhs: ServerCardView) -> Bool {
         lhs.server.id == rhs.server.id &&
-        lhs.server.online == rhs.server.online &&
+        lhs.server.isOnline == rhs.server.isOnline &&
         lhs.server.cpuUsage == rhs.server.cpuUsage &&
         lhs.server.memoryUsed == rhs.server.memoryUsed &&
         lhs.server.name == rhs.server.name &&
@@ -21,7 +21,7 @@ struct ServerCardView: View, Equatable {
             // Top row: status dot + name
             HStack(spacing: 8) {
                 Circle()
-                    .fill(server.online ? Color.serverOnline : Color.serverOffline)
+                    .fill(server.isOnline ? Color.serverOnline : Color.serverOffline)
                     .frame(width: 10, height: 10)
 
                 Text(server.name)
@@ -30,7 +30,7 @@ struct ServerCardView: View, Equatable {
 
                 Spacer()
 
-                if let lastActive = server.lastActiveAt, !server.online {
+                if let lastActive = server.lastActiveAt, !server.isOnline {
                     Text(Formatters.formatRelativeTime(lastActive))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
