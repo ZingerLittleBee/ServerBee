@@ -19,4 +19,24 @@ final class WebSocketClientTests: XCTestCase {
 
         await fulfillment(of: [received], timeout: 2.0)
     }
+
+    func test_connectionState_isConnectingUntilFirstFrame() async throws {
+        let fake = FakeWebSocketTransport()
+        let client = WebSocketClient(transportFactory: { _, _ in fake })
+
+        await client.connect(serverUrl: "https://example.test", accessToken: "tok")
+
+        let preState = await client.connectionState
+        XCTAssertEqual(preState, .connecting)
+
+        let observed = expectation(description: "moved to connected")
+        await client.setConnectionStateObserver { state in
+            if state == .connected { observed.fulfill() }
+        }
+        await fake.enqueueText(#"{"type":"server_online","server_id":"x"}"#)
+
+        await fulfillment(of: [observed], timeout: 2.0)
+        let postState = await client.connectionState
+        XCTAssertEqual(postState, .connected)
+    }
 }

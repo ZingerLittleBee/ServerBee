@@ -100,9 +100,7 @@ actor WebSocketClient {
         let newTransport = transportFactory(url, currentAccessToken)
         transport = newTransport
         newTransport.resume()
-        // NOTE: state moves to .connected only after first successful receive
-        // (see Task 4).
-        setState(.connected)
+        // NOTE: state moves to .connected only after first successful receive.
         reconnectDelay = minReconnectDelay
 
         receiveTask = Task { [weak self] in
@@ -111,9 +109,14 @@ actor WebSocketClient {
     }
 
     private func receiveLoop(on transport: WebSocketTransport) async {
+        var sawFirstFrame = false
         while !Task.isCancelled {
             do {
                 let message = try await transport.receive()
+                if !sawFirstFrame {
+                    sawFirstFrame = true
+                    setState(.connected)
+                }
                 switch message {
                 case .string(let text):
                     if let data = text.data(using: .utf8) {
@@ -194,3 +197,6 @@ actor WebSocketClient {
         connectionStateObserver?(new)
     }
 }
+
+extension WebSocketClient.ConnectionState: Equatable {}
+
