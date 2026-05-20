@@ -22,6 +22,13 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!--
+	  ATS is disabled because users connect to self-hosted ServerBee servers
+	  on arbitrary IPs/domains (including LAN-only deployments that cannot
+	  obtain publicly-trusted TLS certificates). The app surfaces a runtime
+	  warning banner when the configured URL is http://. See
+	  apps/ios/AppStoreReviewNotes.md for the review justification.
+	-->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
