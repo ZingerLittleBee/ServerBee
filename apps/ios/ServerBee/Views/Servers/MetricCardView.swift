@@ -8,25 +8,34 @@ struct MetricCardView: View {
     var subtitle: String?
     var valueColor: Color = .primary
 
+    @ScaledMetric(relativeTo: .body) private var verticalPad: CGFloat = 14
+    @ScaledMetric(relativeTo: .body) private var horizontalPad: CGFloat = 14
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
-                .font(.caption)
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.title3.bold())
+                .font(.title2.bold())
                 .foregroundStyle(valueColor)
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
             if let subtitle {
                 Text(subtitle)
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(.tertiary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
+        .padding(.horizontal, horizontalPad)
+        .padding(.vertical, verticalPad)
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(label))
+        .accessibilityValue(Text(subtitle.map { "\(value), \($0)" } ?? value))
     }
 }
 
