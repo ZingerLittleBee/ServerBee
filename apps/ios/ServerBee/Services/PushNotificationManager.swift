@@ -44,7 +44,7 @@ final class PushNotificationManager: NSObject, PushNotificationManaging, @unchec
                 UIApplication.shared.registerForRemoteNotifications()
             }
         } catch {
-            print("[Push] Permission request failed: \(error)")
+            AppLog.push.error("Permission request failed: \(String(describing: error), privacy: .public)")
         }
     }
 
@@ -59,7 +59,7 @@ final class PushNotificationManager: NSObject, PushNotificationManaging, @unchec
 
     /// Called when APNs registration fails.
     nonisolated func didFailToRegisterForRemoteNotifications(error: Error) {
-        print("[Push] Registration failed: \(error)")
+        AppLog.push.error("Registration failed: \(String(describing: error), privacy: .public)")
     }
 
     /// Upload device token to server.
@@ -69,7 +69,7 @@ final class PushNotificationManager: NSObject, PushNotificationManaging, @unchec
         do {
             try await apiClient.postVoid("/api/mobile/push/register", body: ["device_token": token])
         } catch {
-            print("[Push] Failed to register token with server: \(error)")
+            AppLog.push.error("Failed to register token with server: \(String(describing: error), privacy: .public)")
         }
     }
 
@@ -84,7 +84,7 @@ final class PushNotificationManager: NSObject, PushNotificationManaging, @unchec
         do {
             try await apiClient.postVoid("/api/mobile/push/unregister")
         } catch {
-            print("[Push] Failed to unregister token with server: \(error)")
+            AppLog.push.error("Failed to unregister token with server: \(String(describing: error), privacy: .public)")
         }
         deviceToken = nil
     }
