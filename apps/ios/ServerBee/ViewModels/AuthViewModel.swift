@@ -51,9 +51,7 @@ final class AuthViewModel {
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-            let encoder = JSONEncoder()
-            encoder.keyEncodingStrategy = .convertToSnakeCase
-            request.httpBody = try encoder.encode(loginRequest)
+            request.httpBody = try JSONEncoder.snakeCase.encode(loginRequest)
 
             let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -64,9 +62,7 @@ final class AuthViewModel {
 
             switch httpResponse.statusCode {
             case 200:
-                let decoder = JSONDecoder()
-                decoder.keyDecodingStrategy = .convertFromSnakeCase
-                let tokenResponse = try decoder.decode(
+                let tokenResponse = try JSONDecoder.snakeCase.decode(
                     ApiResponse<MobileTokenResponse>.self, from: data
                 ).data
                 authManager.setServerUrl(normalizedUrl)

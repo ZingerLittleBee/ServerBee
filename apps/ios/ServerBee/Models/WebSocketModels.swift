@@ -24,10 +24,10 @@ extension BrowserMessage: Decodable {
     private enum CodingKeys: String, CodingKey {
         case type
         case servers
-        case serverId
+        case serverId = "server_id"
         case capabilities
-        case protocolVersion
-        case alertKey
+        case protocolVersion = "protocol_version"
+        case alertKey = "alert_key"
         case status
     }
 
