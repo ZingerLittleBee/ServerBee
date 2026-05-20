@@ -69,7 +69,7 @@ struct ServersListView: View {
                     noMatchesView
                 } else {
                     ForEach(filtered) { server in
-                        NavigationLink(value: server) {
+                        NavigationLink(value: ServerNavigationTarget.detailById(server.id)) {
                             ServerCardView(server: server)
                                 .equatable()
                                 .contentShape(Rectangle())
@@ -82,9 +82,6 @@ struct ServersListView: View {
             .padding(.vertical)
         }
         .background(Color(.systemGroupedBackground))
-        .navigationDestination(for: ServerStatus.self) { server in
-            ServerDetailView(server: server)
-        }
     }
 
     private var noMatchesView: some View {
