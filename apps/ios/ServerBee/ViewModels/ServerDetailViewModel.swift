@@ -18,7 +18,7 @@ final class ServerDetailViewModel {
         do {
             server = try await apiClient.get("/api/servers/\(serverId)")
         } catch {
-            print("[ServerDetail] Fetch failed: \(error)")
+            AppLog.viewModel.error("ServerDetail fetch failed: \(String(describing: error), privacy: .public)")
         }
     }
 
@@ -29,7 +29,7 @@ final class ServerDetailViewModel {
         do {
             records = try await apiClient.get("/api/servers/\(serverId)/records?range=\(range)")
         } catch {
-            print("[ServerDetail] Records fetch failed: \(error)")
+            AppLog.viewModel.error("ServerDetail records fetch failed: \(String(describing: error), privacy: .public)")
         }
     }
 }

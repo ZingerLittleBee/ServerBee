@@ -13,7 +13,7 @@ final class AlertsViewModel {
         do {
             events = try await apiClient.get("/api/alert-events?limit=\(limit)")
         } catch {
-            print("[Alerts] Fetch failed: \(error)")
+            AppLog.viewModel.error("Alerts fetch failed: \(String(describing: error), privacy: .public)")
         }
     }
 

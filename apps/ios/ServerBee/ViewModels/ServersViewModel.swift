@@ -63,7 +63,7 @@ final class ServersViewModel {
         do {
             servers = try await apiClient.get("/api/servers")
         } catch {
-            print("[Servers] Fetch failed: \(error)")
+            AppLog.viewModel.error("Servers fetch failed: \(String(describing: error), privacy: .public)")
         }
     }
 
