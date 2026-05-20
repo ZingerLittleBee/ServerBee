@@ -11,6 +11,10 @@ settings:
     DEVELOPMENT_LANGUAGE: en
     MARKETING_VERSION: "1.0.0"
     CURRENT_PROJECT_VERSION: 1
+packages:
+  SwiftLintPlugins:
+    url: https://github.com/SimplyDanny/SwiftLintPlugins
+    from: "0.57.0"
 targets:
   ServerBee:
     type: application
@@ -29,6 +33,9 @@ targets:
           CODE_SIGN_ENTITLEMENTS: ServerBee/ServerBee.Debug.entitlements
         Release:
           CODE_SIGN_ENTITLEMENTS: ServerBee/ServerBee.Release.entitlements
+    buildToolPlugins:
+      - plugin: SwiftLintBuildToolPlugin
+        package: SwiftLintPlugins
 
   ServerBeeTests:
     type: bundle.unit-test
