@@ -21,9 +21,7 @@ struct SettingsView: View {
             ) {
                 Button(String(localized: "settings_logout"), role: .destructive) {
                     Task {
-                        if let apiClient {
-                            await viewModel.logout(authManager: authManager, apiClient: apiClient)
-                        }
+                        await viewModel.logout(authManager: authManager, apiClient: apiClient)
                     }
                 }
                 Button(String(localized: "settings_cancel"), role: .cancel) {}

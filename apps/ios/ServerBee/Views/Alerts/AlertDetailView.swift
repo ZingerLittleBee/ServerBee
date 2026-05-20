@@ -74,9 +74,7 @@ struct AlertDetailView: View {
         .navigationTitle(String(localized: "Alert Detail"))
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            if let apiClient {
-                await viewModel.fetchDetail(alertKey: alertKey, apiClient: apiClient)
-            }
+            await viewModel.fetchDetail(alertKey: alertKey, apiClient: apiClient)
         }
     }
 }

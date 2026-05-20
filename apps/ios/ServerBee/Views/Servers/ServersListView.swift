@@ -23,12 +23,10 @@ struct ServersListView: View {
             prompt: String(localized: "Search servers...")
         )
         .refreshable {
-            if let apiClient {
-                await viewModel.refresh(apiClient: apiClient)
-            }
+            await viewModel.refresh(apiClient: apiClient)
         }
         .task {
-            if viewModel.servers.isEmpty, let apiClient {
+            if viewModel.servers.isEmpty {
                 await viewModel.fetchServers(apiClient: apiClient)
             }
         }

@@ -1,14 +1,25 @@
 import SwiftUI
 
 struct ContentView: View {
-    @Environment(AuthManager.self) private var authManager
     @Environment(PushNotificationManager.self) private var pushManager
     @Environment(NetworkMonitor.self) private var networkMonitor
     @Environment(AlertsViewModel.self) private var alertsViewModel
     @Environment(\.scenePhase) private var scenePhase
-    @State private var apiClient: APIClient?
+    @State private var apiClient: APIClient
     @State private var serversViewModel = ServersViewModel()
     @State private var wsClient = WebSocketClient()
+
+    private let authManager: AuthManager
+
+    init(authManager: AuthManager) {
+        self.authManager = authManager
+        // Construct APIClient synchronously so child views' .task closures
+        // never observe a nil client on first cold start.
+        _apiClient = State(initialValue: APIClient(authManager: authManager))
+    }
+
+    /// Test-only accessor — assert the client was built during init.
+    var apiClientForTest: APIClient { apiClient }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -27,25 +38,21 @@ struct ContentView: View {
                 .animation(.easeInOut(duration: 0.2), value: networkMonitor.isConnected)
         }
         .task {
-            let client = APIClient(authManager: authManager)
-            apiClient = client
-            pushManager.configure(apiClient: client)
+            pushManager.configure(apiClient: apiClient)
 
             await wsClient.setTokenRefresher { [weak authManager] in
                 guard let authManager else { return nil }
                 return try? await authManager.refreshAccessToken()
             }
-            await wsClient.setOnMessage { [weak serversViewModel, weak alertsViewModel] message in
+            await wsClient.setOnMessage {
+                [weak serversViewModel, weak alertsViewModel, apiClient] message in
                 Task { @MainActor in
                     guard let serversViewModel else { return }
-                    let captureClient = apiClient
                     let router = WebSocketRouter(
                         servers: { msg in serversViewModel.handleWSMessage(msg) },
                         alerts: { msg in
                             guard case .alertEvent = msg, let alertsViewModel else { return }
-                            if let captureClient {
-                                Task { await alertsViewModel.handleWSAlertEvent(apiClient: captureClient) }
-                            }
+                            Task { await alertsViewModel.handleWSAlertEvent(apiClient: apiClient) }
                         }
                     )
                     router.dispatch(message)
@@ -65,8 +72,7 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView()
-        .environment(AuthManager())
+    ContentView(authManager: AuthManager())
         .environment(AlertsViewModel())
         .environment(PushNotificationManager())
         .environment(NetworkMonitor())

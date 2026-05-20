@@ -30,12 +30,10 @@ struct AlertsListView: View {
             AlertDetailView(alertKey: alertKey)
         }
         .refreshable {
-            if let apiClient {
-                await viewModel.refresh(apiClient: apiClient)
-            }
+            await viewModel.refresh(apiClient: apiClient)
         }
         .task {
-            if viewModel.events.isEmpty, let apiClient {
+            if viewModel.events.isEmpty {
                 await viewModel.fetchEvents(apiClient: apiClient)
             }
         }

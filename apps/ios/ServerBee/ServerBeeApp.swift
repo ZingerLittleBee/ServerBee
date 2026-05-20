@@ -38,7 +38,7 @@ private struct RootView: View {
             if authManager.isLoading {
                 ProgressView()
             } else if authManager.isAuthenticated {
-                ContentView()
+                ContentView(authManager: authManager)
             } else {
                 LoginView()
             }
