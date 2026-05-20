@@ -86,23 +86,6 @@
         }
       }
     },
-    "Change the app language in iOS Settings → ServerBee → Language.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Change the app language in iOS Settings → ServerBee → Language."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在系统设置 → ServerBee → 语言中切换应用语言。"
-          }
-        }
-      }
-    },
     "Dark": {
       "extractionState": "manual",
       "localizations": {
@@ -133,23 +116,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "设备名称"
-          }
-        }
-      }
-    },
-    "Language": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Language"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "语言"
           }
         }
       }

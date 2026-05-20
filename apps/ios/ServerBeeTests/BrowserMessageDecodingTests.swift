@@ -49,6 +49,50 @@ final class BrowserMessageDecodingTests: XCTestCase {
         }
     }
 
+    func test_decode_update_acceptsServerRuntimeMetricPayload() throws {
+        let json = """
+        {
+          "type": "update",
+          "servers": [
+            {
+              "id": "s1",
+              "name": "server-1",
+              "online": true,
+              "cpu": 73.2,
+              "mem_used": 4294967296,
+              "mem_total": 8589934592,
+              "disk_used": 10737418240,
+              "disk_total": 21474836480,
+              "net_in_speed": 12345,
+              "net_out_speed": 67890,
+              "load1": 1.25,
+              "tcp_conn": 34,
+              "udp_conn": 5,
+              "process_count": 128,
+              "country_code": "US"
+            }
+          ]
+        }
+        """
+        let msg = try decode(json)
+        guard case .update(let servers) = msg else {
+            return XCTFail("Expected .update, got \(msg)")
+        }
+
+        XCTAssertEqual(servers[0].cpuUsage, 73.2)
+        XCTAssertEqual(servers[0].memoryUsed, 4_294_967_296)
+        XCTAssertEqual(servers[0].memoryTotal, 8_589_934_592)
+        XCTAssertEqual(servers[0].diskUsed, 10_737_418_240)
+        XCTAssertEqual(servers[0].diskTotal, 21_474_836_480)
+        XCTAssertEqual(servers[0].networkIn, 12_345)
+        XCTAssertEqual(servers[0].networkOut, 67_890)
+        XCTAssertEqual(servers[0].load1, 1.25)
+        XCTAssertEqual(servers[0].tcpCount, 34)
+        XCTAssertEqual(servers[0].udpCount, 5)
+        XCTAssertEqual(servers[0].processCount, 128)
+        XCTAssertEqual(servers[0].country, "US")
+    }
+
     func test_decode_serverOnline() throws {
         let json = #"{"type":"server_online","server_id":"abc-123"}"#
         let msg = try decode(json)
@@ -144,5 +188,27 @@ final class BrowserMessageDecodingTests: XCTestCase {
     func test_decode_missingType_throws() {
         let json = #"{"server_id":"x"}"#
         XCTAssertThrowsError(try decode(json))
+    }
+
+    func test_decode_metricRecord_acceptsServerRecordPayload() throws {
+        let json = """
+        {
+          "time": "2026-05-20T10:30:00Z",
+          "cpu": 42.5,
+          "mem_used": 4294967296,
+          "disk_used": 10737418240,
+          "net_in_speed": 12345,
+          "net_out_speed": 67890
+        }
+        """
+
+        let record = try JSONDecoder.snakeCase.decode(MetricRecord.self, from: Data(json.utf8))
+
+        XCTAssertEqual(record.timestamp, "2026-05-20T10:30:00Z")
+        XCTAssertEqual(record.cpuUsage, 42.5)
+        XCTAssertEqual(record.memoryUsed, 4_294_967_296)
+        XCTAssertEqual(record.diskUsed, 10_737_418_240)
+        XCTAssertEqual(record.networkIn, 12_345)
+        XCTAssertEqual(record.networkOut, 67_890)
     }
 }

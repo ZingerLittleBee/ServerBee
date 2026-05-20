@@ -48,4 +48,32 @@ final class ServerStatusMergeTests: XCTestCase {
         local.merge(from: incoming)
         XCTAssertEqual(local.online, false)
     }
+
+    func test_merge_ignoresZeroCapacityFromRuntimeUpdate() {
+        var local = ServerStatus(
+            id: "s1", name: "Local", online: true,
+            cpuUsage: nil, memoryTotal: 8_589_934_592, memoryUsed: 4_294_967_296,
+            diskTotal: 21_474_836_480, diskUsed: 10_737_418_240, networkIn: nil, networkOut: nil,
+            load1: nil, load5: nil, load15: nil,
+            processCount: nil, tcpCount: nil, udpCount: nil,
+            uptime: nil, os: nil, cpuName: nil, ipv4: nil, ipv6: nil,
+            region: nil, country: nil, groupName: nil, lastActiveAt: nil
+        )
+        let incoming = ServerStatus(
+            id: "s1", name: "Local", online: true,
+            cpuUsage: nil, memoryTotal: 0, memoryUsed: 5_368_709_120,
+            diskTotal: 0, diskUsed: 11_811_160_064, networkIn: nil, networkOut: nil,
+            load1: nil, load5: nil, load15: nil,
+            processCount: nil, tcpCount: nil, udpCount: nil,
+            uptime: nil, os: nil, cpuName: nil, ipv4: nil, ipv6: nil,
+            region: nil, country: nil, groupName: nil, lastActiveAt: nil
+        )
+
+        local.merge(from: incoming)
+
+        XCTAssertEqual(local.memoryTotal, 8_589_934_592)
+        XCTAssertEqual(local.memoryUsed, 5_368_709_120)
+        XCTAssertEqual(local.diskTotal, 21_474_836_480)
+        XCTAssertEqual(local.diskUsed, 11_811_160_064)
+    }
 }
