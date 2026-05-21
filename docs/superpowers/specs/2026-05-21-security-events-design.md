@@ -54,7 +54,7 @@ Non-goals (v1):
                 │            │                                │
                 │            ├──► broadcast::Sender ──► Browser WS
                 │            │                                │
-                │            └──► alert_trigger (event-driven)│
+                │            └──► inline rule eval (event-driven)│
                 │                  • ssh_brute_force_detected │
                 │                  • ssh_new_ip_login         │
                 │                  • port_scan_detected       │
@@ -238,7 +238,11 @@ pub const CAP_DEFAULT: u32 =
     CAP_UPGRADE | CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP | CAP_SECURITY_EVENTS;  // 60 + 256 = 316
 ```
 
-The existing `CAP_DEFAULT` is 60 (includes `CAP_UPGRADE`), so the new default is 316. The `CapabilityDescriptor` registry (`crates/common/src/constants.rs:129-178`) gains a new entry, and `parse_cap_token` / `Display` impls are updated.
+The existing `CAP_DEFAULT` is 60 (includes `CAP_UPGRADE`), so the new default is 316. Three touchpoints in `crates/common/src/constants.rs`:
+
+1. `CapabilityKey` enum (`constants.rs:50`) — add `SecurityEvents` variant; update `FromStr` impl (`constants.rs:89`) to recognize `"security_events"`.
+2. `ALL_CAPABILITIES` registry (`constants.rs:127`) — append a `CapabilityMeta { bit: CAP_SECURITY_EVENTS, key: "security_events", display_name: "Security Events", default_enabled: true, risk_level: "low" }` entry.
+3. `parse_cap` helper (`constants.rs:194` area) — add the `"security_events"` mapping alongside the existing `"icmp" / "tcp" / "http"` cases used by ping aliases.
 
 Backfill (`m20260521_003_backfill_capability_default.rs`): runs `UPDATE servers SET capabilities = capabilities | 256 WHERE capabilities = 60`. The `= 60` predicate scopes the change to rows that were still on the previous default — administrators who set a customized mask (whether stricter or wider) are not silently flipped. Without backfill, freshly upgraded installs whose server rows were written under the old default would silently keep security events disabled.
 
@@ -399,14 +403,25 @@ AgentMessage::SecurityEvent(payload) => {
         }
     };
     if !has_capability(caps, CAP_SECURITY_EVENTS) {
-        AuditLogService::write("security_event_denied", server_id, ...).await.ok();
+        let detail = format!(r#"{{"server_id":"{server_id}"}}"#);
+        let _ = AuditService::log(
+            &state.db,
+            "system",            // not a user-initiated action
+            "security_event_denied",
+            Some(&detail),
+            "",                  // no client IP on agent-side WS frames
+        ).await;
         return;
     }
-    state.security_service.record_event(server_id, payload).await.ok();
+    if let Err(e) = state.security_service.record_event(server_id, payload).await {
+        tracing::error!(server_id, error = %e, "security_event record failed");
+    }
 }
 ```
 
-The `&server_id` is already a `&str` in the handler scope; no extra cloning is needed. The fallback DB query is rare in practice — `SystemInfo` arrives within the first few seconds of a new connection — so we don't pre-fetch the server model just to make the hot path branchless.
+`AuditService::log` is the actual API (`crates/server/src/service/audit.rs:11`); signature is `(db, user_id, action, detail: Option<&str>, ip)`. The `&server_id` is already a `&str` in the handler scope; no extra cloning is needed. The fallback DB query is rare in practice — `SystemInfo` arrives within the first few seconds of a new connection — so we don't pre-fetch the server model just to make the hot path branchless.
+
+`record_event` errors are logged rather than dropped silently. The internal retry policy (§9.2) sits inside `record_event`; only the final exhaustion bubbles out and lands in this `tracing::error!`.
 
 ### 7.2 service::security
 
@@ -582,7 +597,7 @@ case 'security_event': {
 
 ### 8.4 Alert rule UI
 
-`_authed/alerts/` gains three preset cards mirroring the existing `ip_changed` rule form: SSH Brute Force / SSH New IP Login / Port Scan Detected. Each card exposes the relevant `params` knobs + notification group selector.
+The alerts management page is `apps/web/src/routes/_authed/settings/alerts.tsx`. It gains three preset cards mirroring the existing `ip_changed` rule form: SSH Brute Force / SSH New IP Login / Port Scan Detected. Each card exposes the relevant `SecurityRuleParams` knobs + notification group selector.
 
 ### 8.5 Types & i18n
 
@@ -601,7 +616,7 @@ case 'security_event': {
 | `CAP_NET_ADMIN` missing → netlink bind fails | ConntrackWatcher disabled; SSH continues | Agent log warn |
 | `first_seen.json` parse failure | Rename to `.corrupt-<ts>`, rebuild empty | Agent log error |
 | `first_seen.json` disk write failure | Memory state continues; 5min backoff on flush; sustained 24h failure escalates to error log | Agent log error |
-| In-memory queue overflow (WS down) | Cap 1000 entries; drop oldest; on reconnect, batch send. No synthetic event is emitted (there's no matching `SecurityEventType` / evidence schema and we don't want to dilute attack signal). Record drop count to `agent log warn` + `tracing::counter!("security.events.dropped")`. | Agent log warn + metric |
+| In-memory queue overflow (WS down) | Cap 1000 entries; drop oldest; on reconnect, batch send. No synthetic event is emitted (there's no matching `SecurityEventType` / evidence schema and we don't want to dilute attack signal). On every drop emit `tracing::warn!(target = "security", dropped, "security event buffer overflow")` — the project has no `metrics` crate today, so structured tracing is the persistence channel. Adding a metrics counter is in §12 phase-2 work | Agent log warn |
 | Detector state map blowup under DDoS | Per-detector map cap 10000 source IPs; LRU evict; if evicted IP already > 50% of threshold, force-emit | Internal metric |
 
 Principle: partial degradation > full stop. SSH and Scan pipelines are independent.
@@ -614,8 +629,8 @@ Principle: partial degradation > full stop. SSH and Scan pipelines are independe
 | Malformed `source_ip` | Reject before insert, agent WS warn-log, no DB row |
 | Evidence JSON deserialize failure | Drop + audit_log `security_event_malformed` |
 | `browser_tx.send()` errors (no subscribers) | Ignored (broadcast convention) |
-| `alert_trigger` panics | `tokio::spawn` + `catch_unwind` isolates |
-| DB write failure | Retry 3× (100ms, 500ms, 2s), then drop + metric `security_event_drop_total` |
+| Inline alert rule evaluation panics | Each rule loop iteration is wrapped in `tokio::task::spawn_blocking` + `catch_unwind` (or `std::panic::catch_unwind` if synchronous), so one malformed `SecurityRuleParams` does not bring down the WS handler |
+| DB write failure | Retry 3× inside `record_event` (100ms, 500ms, 2s), then return `Err` to the WS handler which logs via `tracing::error!` (no metrics crate in repo — see §9.1) |
 | RecoveryLock freeze period | Deliberate carve-out: `security_event` writes proceed during freeze (append-only, no derived state). Rows landing under a source identity are reconciled by `recovery_merge` (see §7.6). |
 
 ### 9.3 Rate limit (anti-DoS)
@@ -649,7 +664,7 @@ Agent:
 - `journal_watcher` — mocked subprocess stdout; verifies fallback switch
 
 Server:
-- `record_event` happy path on in-memory sqlite — row persisted, broadcast sent, alert_trigger invoked
+- `record_event` happy path on in-memory sqlite — row persisted, broadcast sent, inline rule evaluation runs and (when a matching rule is configured) invokes `NotificationService::send_group`
 - Capability rejection path
 - IP format validation
 - Evidence deserialize failure
@@ -662,14 +677,14 @@ Target: ≥ 80% coverage on new modules (no enforced gate, matches project densi
 - Test server + mock agent WS sends `SecurityEvent`
 - Assert: `GET /api/security/events` returns it
 - Assert: broadcast channel receives `BrowserMessage::SecurityEvent`
-- Assert: configured alert_rule fires + notification dispatched (mock dispatcher)
+- Assert: configured `alert_rule` fires and `NotificationService::send_group` is invoked (test seam: stub the outbound HTTP/email transport, assert the group/payload reaching it)
 - Assert: capability-disabled scenario rejects with audit_log row
 
 ### 10.3 Manual E2E checklist
 
 New `tests/security-events.md`:
 - Lab VPS receives 15 wrong-password SSH attempts → UI shows brute_force within 90s
-- `nmap -p 1-1000 <target>` triggers port_scan event
+- `nmap -p 1-1000 <target>` triggers port_scan event. **Precondition**: on the target VPS, set `security.port_scan.enabled = true` in `agent.toml`, edit `/etc/systemd/system/serverbee-agent.service` to add `CAP_NET_ADMIN` to `AmbientCapabilities` (`AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN`), then `systemctl daemon-reload && systemctl restart serverbee-agent`. Without both steps the watcher stays down and the test will appear to fail silently.
 - Legitimate key login from a brand-new IP → ssh_login with `first_seen=true`, `ssh_new_ip_login` alert fires
 - Disabling `CAP_SECURITY_EVENTS` on a server stops the agent watcher and UI events
 - 10-minute agent offline during an attack → reconnect drains buffered events in order
