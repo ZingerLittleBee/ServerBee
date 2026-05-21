@@ -1,7 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { api } from '@/lib/api-client'
+import { cn } from '@/lib/utils'
 import { formatRelativeTime } from '@/lib/widget-helpers'
 import type { ServiceStatusConfig } from '@/lib/widget-types'
 
@@ -23,38 +26,31 @@ interface ServiceMonitor {
   updated_at: string
 }
 
+type StatusKey = 'healthy' | 'degraded' | 'down' | 'pending'
+
 interface ServiceStatusWidgetProps {
   config: ServiceStatusConfig
 }
 
-function getStatusColor(monitor: ServiceMonitor): string {
-  if (monitor.last_status === null) {
-    return 'bg-gray-400'
-  }
-  if (monitor.last_status === true) {
-    if (monitor.consecutive_failures > 0) {
-      return 'bg-yellow-500'
-    }
-    return 'bg-green-500'
-  }
-  return 'bg-red-500'
+const STATUS_STYLES: Record<StatusKey, { dot: string; pill: string }> = {
+  healthy: { dot: 'bg-green-500', pill: 'bg-green-500/15 text-green-600 dark:text-green-400' },
+  degraded: { dot: 'bg-yellow-500', pill: 'bg-yellow-500/15 text-yellow-600 dark:text-yellow-400' },
+  down: { dot: 'bg-red-500', pill: 'bg-red-500/15 text-red-600 dark:text-red-400' },
+  pending: { dot: 'bg-gray-400', pill: 'bg-muted text-muted-foreground' }
 }
 
-function getStatusLabel(monitor: ServiceMonitor, t: (key: string) => string): string {
+function getStatus(monitor: ServiceMonitor): StatusKey {
   if (monitor.last_status === null) {
-    return t('widgets.serviceStatus.status.pending')
+    return 'pending'
   }
   if (monitor.last_status === true) {
-    if (monitor.consecutive_failures > 0) {
-      return t('widgets.serviceStatus.status.degraded')
-    }
-    return t('widgets.serviceStatus.status.healthy')
+    return monitor.consecutive_failures > 0 ? 'degraded' : 'healthy'
   }
-  return t('widgets.serviceStatus.status.down')
+  return 'down'
 }
 
 export function ServiceStatusWidget({ config }: ServiceStatusWidgetProps) {
-  const { t } = useTranslation('dashboard')
+  const { t } = useTranslation(['dashboard', 'service-monitors'])
   const monitorIds = config.monitor_ids
 
   const { data: monitors } = useQuery<ServiceMonitor[]>({
@@ -74,6 +70,16 @@ export function ServiceStatusWidget({ config }: ServiceStatusWidgetProps) {
     return monitors.filter((m) => idSet.has(m.id))
   }, [monitors, monitorIds])
 
+  const counts = useMemo(() => {
+    const acc: Record<StatusKey, number> = { healthy: 0, degraded: 0, down: 0, pending: 0 }
+    for (const m of filtered) {
+      acc[getStatus(m)] += 1
+    }
+    return acc
+  }, [filtered])
+
+  const orderedStatuses: StatusKey[] = ['down', 'degraded', 'healthy', 'pending']
+
   if (!monitors) {
     return (
       <div className="flex h-full flex-col rounded-lg border bg-card p-4">
@@ -87,31 +93,65 @@ export function ServiceStatusWidget({ config }: ServiceStatusWidgetProps) {
 
   return (
     <div className="flex h-full flex-col rounded-lg border bg-card p-4">
-      <h3 className="mb-3 font-semibold text-sm">{t('widgets.serviceStatus.title')}</h3>
-      <div className="flex flex-1 flex-wrap content-start gap-2 overflow-auto">
-        {filtered.map((monitor) => (
-          <div
-            className="group relative inline-flex items-center justify-center"
-            key={monitor.id}
-            title={`${monitor.name} - ${getStatusLabel(monitor, t)} - Last check: ${formatRelativeTime(monitor.last_checked_at)}`}
-          >
-            <span className={`inline-block size-3.5 rounded-full ${getStatusColor(monitor)} cursor-default`} />
-            <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 rounded-md bg-popover px-2.5 py-1.5 shadow-md ring-1 ring-border group-hover:block">
-              <div className="whitespace-nowrap text-xs">
-                <p className="font-medium">{monitor.name}</p>
-                <p className="text-muted-foreground">
-                  {getStatusLabel(monitor, t)} &middot; {formatRelativeTime(monitor.last_checked_at)}
-                </p>
-              </div>
-            </div>
-          </div>
-        ))}
-        {filtered.length === 0 && (
-          <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">
-            {t('widgets.serviceStatus.empty.noMonitors')}
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h3 className="font-semibold text-sm">{t('widgets.serviceStatus.title')}</h3>
+        {filtered.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {orderedStatuses.map((status) =>
+              counts[status] > 0 ? (
+                <span
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium text-xs tabular-nums',
+                    STATUS_STYLES[status].pill
+                  )}
+                  key={status}
+                >
+                  <span className={cn('size-1.5 rounded-full', STATUS_STYLES[status].dot)} />
+                  {t(`widgets.serviceStatus.summary.${status}`, { count: counts[status] })}
+                </span>
+              ) : null
+            )}
           </div>
         )}
       </div>
+      {filtered.length === 0 ? (
+        <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">
+          {t('widgets.serviceStatus.empty.noMonitors')}
+        </div>
+      ) : (
+        <ScrollArea className="flex-1">
+          <ul className="flex flex-col gap-1">
+            {filtered.map((monitor) => {
+              const status = getStatus(monitor)
+              const typeLabel = t(`service-monitors:monitorTypes.${monitor.monitor_type}`, {
+                defaultValue: monitor.monitor_type.toUpperCase()
+              })
+              const lastChecked = monitor.last_checked_at
+                ? formatRelativeTime(monitor.last_checked_at)
+                : t('widgets.serviceStatus.neverChecked')
+              return (
+                <li key={monitor.id}>
+                  <Link
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/50"
+                    params={{ id: monitor.id }}
+                    to="/service-monitors/$id"
+                  >
+                    <span className={cn('inline-block size-2 shrink-0 rounded-full', STATUS_STYLES[status].dot)} />
+                    <span className="min-w-0 flex-1 truncate font-medium">{monitor.name}</span>
+                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-medium text-[10px] text-muted-foreground uppercase">
+                      {typeLabel}
+                    </span>
+                    <span className="hidden min-w-0 max-w-[40%] shrink truncate text-muted-foreground sm:inline">
+                      {monitor.target}
+                    </span>
+                    <span className="shrink-0 text-muted-foreground tabular-nums">{lastChecked}</span>
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        </ScrollArea>
+      )}
     </div>
   )
 }

@@ -227,14 +227,14 @@ impl Reporter {
         );
         let info = collector.system_info();
         let initial_ips = collect_interface_ips();
-        let (initial_ipv4, initial_ipv6) = derive_primary_ips(
-            &initial_ips,
-            self.config.ip_change.check_external_ip,
-            &self.config.ip_change.external_ip_url,
-        )
-        .await;
-        // Feed the agent's external IP into the firewall guardrail before
-        // any blocklist push can arrive.
+        // Synchronous interface-only scan — never blocks the startup path.
+        // The background `spawn_external_ip_refresh` (after cmd_result_tx
+        // is wired up below) will emit a follow-up IpChanged once the
+        // public IP is discovered.
+        let (initial_ipv4, initial_ipv6) = derive_interface_ips(&initial_ips);
+        // Feed the agent's primary IP into the firewall guardrail before
+        // any blocklist push can arrive. Background discovery may refine
+        // this shortly.
         if let Some(ip) = primary_external_ip(initial_ipv4.as_deref(), initial_ipv6.as_deref()) {
             self.firewall_manager.set_external_ip(Some(ip)).await;
         }
@@ -243,8 +243,8 @@ impl Reporter {
             info: serverbee_common::types::SystemInfo {
                 protocol_version: PROTOCOL_VERSION,
                 features,
-                ipv4: initial_ipv4,
-                ipv6: initial_ipv6,
+                ipv4: initial_ipv4.clone(),
+                ipv6: initial_ipv6.clone(),
                 ..info
             },
             agent_local_capabilities: Some(self.agent_local_capabilities),
@@ -272,6 +272,20 @@ impl Reporter {
         // Channel for background command execution results.
         let (cmd_result_tx, mut cmd_result_rx) = mpsc::channel::<AgentMessage>(32);
 
+        // Fire-and-forget: refine the just-sent SystemInfo IPs with an
+        // externally-observed public IP. If discovery yields something
+        // different, an IpChanged is emitted via cmd_result_tx and forwarded
+        // by the main select! loop below. Startup is never blocked on
+        // potentially-slow public IP services.
+        spawn_external_ip_refresh(
+            self.config.ip_change.external_ip_urls.clone(),
+            initial_ips.clone(),
+            initial_ipv4,
+            initial_ipv6,
+            cmd_result_tx.clone(),
+            Arc::clone(&self.firewall_manager),
+        );
+
         // External agent-message source (e.g. SecurityManager). Optional —
         // non-Linux builds and unit tests skip this. The borrow is held
         // for the lifetime of this connection only; the receiver itself
@@ -287,8 +301,7 @@ impl Reporter {
         } else {
             Vec::new()
         };
-        let ip_check_external = self.config.ip_change.check_external_ip;
-        let ip_external_url = self.config.ip_change.external_ip_url.clone();
+        let ip_external_urls = self.config.ip_change.external_ip_urls.clone();
 
         // Main loop: send reports and handle server messages
         let mut report_interval = interval(Duration::from_secs(report_interval as u64));
@@ -390,29 +403,27 @@ impl Reporter {
                         .await?;
                     }
                 }
-                // IP change detection
+                // IP change detection — spawned off the WS hot path so a
+                // slow external-IP service can never block report/ping/
+                // terminal traffic.
                 _ = ip_check_interval.tick(), if ip_change_enabled => {
                     let new_ips = collect_interface_ips();
                     if new_ips != cached_ips {
-                        tracing::info!("IP change detected");
-                        let (primary_ipv4, primary_ipv6) =
-                            derive_primary_ips(&new_ips, ip_check_external, &ip_external_url).await;
-                        // Update the firewall guardrail's idea of our own
-                        // external IP whenever the primary address changes.
-                        let own_ip = primary_external_ip(
-                            primary_ipv4.as_deref(),
-                            primary_ipv6.as_deref(),
+                        tracing::info!("IP change detected (interface delta)");
+                        let (old_v4, old_v6) = derive_interface_ips(&cached_ips);
+                        cached_ips = new_ips.clone();
+                        // Pass the previously-reported IPs as baseline so
+                        // the spawned task emits exactly one IpChanged
+                        // covering both the interface delta and any
+                        // external override discovered.
+                        spawn_external_ip_refresh(
+                            ip_external_urls.clone(),
+                            new_ips,
+                            old_v4,
+                            old_v6,
+                            cmd_result_tx.clone(),
+                            Arc::clone(&self.firewall_manager),
                         );
-                        self.firewall_manager.set_external_ip(own_ip).await;
-                        let msg = AgentMessage::IpChanged {
-                            ipv4: primary_ipv4,
-                            ipv6: primary_ipv6,
-                            interfaces: new_ips.clone(),
-                        };
-                        let json = serde_json::to_string(&msg)?;
-                        write.send(Message::Text(json.into())).await?;
-                        tracing::debug!("Sent IpChanged");
-                        cached_ips = new_ips;
                     }
                 }
                 // Docker retry (reconnect when docker is unavailable)
@@ -1627,55 +1638,120 @@ fn primary_external_ip(ipv4: Option<&str>, ipv6: Option<&str>) -> Option<IpAddr>
     None
 }
 
-async fn derive_primary_ips(
-    interfaces: &[NetworkInterface],
-    check_external: bool,
-    external_url: &str,
-) -> (Option<String>, Option<String>) {
-    let mut primary_ipv4: Option<String> = None;
-    let mut primary_ipv6: Option<String> = None;
+fn is_private_ipv4_str(s: &str) -> bool {
+    s.parse::<std::net::Ipv4Addr>()
+        .map(|v4| v4.is_private() || v4.is_link_local() || v4.is_loopback())
+        .unwrap_or(false)
+}
 
-    // Pick first non-loopback address from interfaces
+fn is_private_ipv6_str(s: &str) -> bool {
+    s.parse::<std::net::Ipv6Addr>()
+        .map(|v6| {
+            let seg = v6.segments();
+            // Unique local fc00::/7, link-local fe80::/10, loopback ::1
+            (seg[0] & 0xfe00) == 0xfc00 || (seg[0] & 0xffc0) == 0xfe80 || v6.is_loopback()
+        })
+        .unwrap_or(false)
+}
+
+/// Pure interface-list scan. Synchronous and fast — never touches the network.
+/// Prefers the first public (routable) address; remembers the first private
+/// one as a fallback so containerised agents on a docker bridge still report
+/// something for the UI even before external discovery completes.
+fn derive_interface_ips(interfaces: &[NetworkInterface]) -> (Option<String>, Option<String>) {
+    let mut public_ipv4: Option<String> = None;
+    let mut private_ipv4: Option<String> = None;
+    let mut public_ipv6: Option<String> = None;
+    let mut private_ipv6: Option<String> = None;
+
     for iface in interfaces {
-        if primary_ipv4.is_none() {
-            for ip in &iface.ipv4 {
-                if ip != "127.0.0.1" {
-                    primary_ipv4 = Some(ip.clone());
-                    break;
+        for ip in &iface.ipv4 {
+            if is_private_ipv4_str(ip) {
+                if private_ipv4.is_none() {
+                    private_ipv4 = Some(ip.clone());
                 }
+            } else if public_ipv4.is_none() {
+                public_ipv4 = Some(ip.clone());
             }
         }
-        if primary_ipv6.is_none() {
-            for ip in &iface.ipv6 {
-                if ip != "::1" {
-                    primary_ipv6 = Some(ip.clone());
-                    break;
+        for ip in &iface.ipv6 {
+            if is_private_ipv6_str(ip) {
+                if private_ipv6.is_none() {
+                    private_ipv6 = Some(ip.clone());
                 }
+            } else if public_ipv6.is_none() {
+                public_ipv6 = Some(ip.clone());
             }
         }
-        if primary_ipv4.is_some() && primary_ipv6.is_some() {
+        if public_ipv4.is_some() && public_ipv6.is_some() {
             break;
         }
     }
 
-    // Optionally query external IP
-    if check_external {
-        match fetch_external_ip(external_url).await {
-            Ok(ext_ip) => {
-                // Override primary with externally visible IP
-                if ext_ip.contains(':') {
-                    primary_ipv6 = Some(ext_ip);
-                } else {
-                    primary_ipv4 = Some(ext_ip);
+    (public_ipv4.or(private_ipv4), public_ipv6.or(private_ipv6))
+}
+
+/// Overlay an externally-observed IP on top of interface-derived primaries.
+/// Replaces whichever stack the external IP belongs to.
+fn apply_external_ip(
+    ipv4: Option<String>,
+    ipv6: Option<String>,
+    external: Option<String>,
+) -> (Option<String>, Option<String>) {
+    match external {
+        Some(ext) if ext.contains(':') => (ipv4, Some(ext)),
+        Some(ext) => (Some(ext), ipv6),
+        None => (ipv4, ipv6),
+    }
+}
+
+/// Discover the agent's public IP in the background and emit an
+/// `IpChanged` message via `cmd_result_tx` when the merged result differs
+/// from `baseline_*`. Fire-and-forget; the WS hot path is never blocked.
+fn spawn_external_ip_refresh(
+    urls: Vec<String>,
+    interfaces: Vec<NetworkInterface>,
+    baseline_ipv4: Option<String>,
+    baseline_ipv6: Option<String>,
+    cmd_result_tx: mpsc::Sender<AgentMessage>,
+    firewall_manager: Arc<FirewallManager>,
+) {
+    tokio::spawn(async move {
+        let (iface_v4, iface_v6) = derive_interface_ips(&interfaces);
+        let external = if urls.is_empty() {
+            None
+        } else {
+            match fetch_external_ip(&urls).await {
+                Ok(ip) => Some(ip),
+                Err(e) => {
+                    tracing::debug!("External IP discovery failed: {e}");
+                    None
                 }
             }
-            Err(e) => {
-                tracing::warn!("Failed to fetch external IP: {e}");
-            }
+        };
+        let (new_v4, new_v6) = apply_external_ip(iface_v4, iface_v6, external);
+        if new_v4 == baseline_ipv4 && new_v6 == baseline_ipv6 {
+            return;
         }
-    }
-
-    (primary_ipv4, primary_ipv6)
+        tracing::info!(
+            "IP refresh: ipv4 {:?} -> {:?}, ipv6 {:?} -> {:?}",
+            baseline_ipv4,
+            new_v4,
+            baseline_ipv6,
+            new_v6
+        );
+        if let Some(ip) = primary_external_ip(new_v4.as_deref(), new_v6.as_deref()) {
+            firewall_manager.set_external_ip(Some(ip)).await;
+        }
+        let msg = AgentMessage::IpChanged {
+            ipv4: new_v4,
+            ipv6: new_v6,
+            interfaces,
+        };
+        if cmd_result_tx.send(msg).await.is_err() {
+            tracing::debug!("IpChanged emission dropped: channel closed");
+        }
+    });
 }
 
 #[cfg(test)]
@@ -1901,16 +1977,134 @@ HOST: agent                       Loss%   Snt   Last   Avg  Best  Wrst StDev
         let hops = parse_traceroute_output("");
         assert!(hops.is_empty());
     }
+
+    #[test]
+    fn test_is_private_ipv4_str_classifies_docker_bridge_and_rfc1918() {
+        assert!(is_private_ipv4_str("172.17.0.1"));
+        assert!(is_private_ipv4_str("172.18.0.1"));
+        assert!(is_private_ipv4_str("10.0.0.5"));
+        assert!(is_private_ipv4_str("192.168.1.1"));
+        assert!(is_private_ipv4_str("169.254.1.1"));
+        assert!(is_private_ipv4_str("127.0.0.1"));
+        assert!(!is_private_ipv4_str("8.8.8.8"));
+        assert!(!is_private_ipv4_str("203.0.113.1"));
+    }
+
+    #[test]
+    fn test_is_private_ipv6_str_classifies_ula_link_local_and_loopback() {
+        assert!(is_private_ipv6_str("::1"));
+        assert!(is_private_ipv6_str("fe80::1"));
+        assert!(is_private_ipv6_str("fc00::1"));
+        assert!(is_private_ipv6_str("fd12:3456:789a::1"));
+        assert!(!is_private_ipv6_str("2001:db8::1"));
+        assert!(!is_private_ipv6_str("2606:4700:4700::1111"));
+    }
+
+    #[test]
+    fn test_derive_interface_ips_prefers_public_over_docker_bridge() {
+        // Simulate an agent inside a docker container: docker0 has the bridge gateway,
+        // eth0 has the real public IP. We must pick the public one, not 172.17.0.1.
+        let interfaces = vec![
+            NetworkInterface {
+                name: "docker0".to_string(),
+                ipv4: vec!["172.17.0.1".to_string()],
+                ipv6: vec![],
+            },
+            NetworkInterface {
+                name: "eth0".to_string(),
+                ipv4: vec!["203.0.113.42".to_string()],
+                ipv6: vec!["2001:db8::1".to_string()],
+            },
+        ];
+        let (v4, v6) = derive_interface_ips(&interfaces);
+        assert_eq!(v4.as_deref(), Some("203.0.113.42"));
+        assert_eq!(v6.as_deref(), Some("2001:db8::1"));
+    }
+
+    #[test]
+    fn test_derive_interface_ips_falls_back_to_private_when_no_public_available() {
+        // If only private/docker addresses exist, still report one so the UI has
+        // something to display. The server-side GeoIP path will detect and skip
+        // it for country resolution.
+        let interfaces = vec![NetworkInterface {
+            name: "docker0".to_string(),
+            ipv4: vec!["172.17.0.1".to_string()],
+            ipv6: vec!["fe80::1".to_string()],
+        }];
+        let (v4, v6) = derive_interface_ips(&interfaces);
+        assert_eq!(v4.as_deref(), Some("172.17.0.1"));
+        assert_eq!(v6.as_deref(), Some("fe80::1"));
+    }
+
+    #[test]
+    fn test_apply_external_ip_overrides_matching_stack() {
+        // External IPv4 should replace ipv4 only.
+        let (v4, v6) = apply_external_ip(
+            Some("172.17.0.1".to_string()),
+            Some("2001:db8::1".to_string()),
+            Some("203.0.113.42".to_string()),
+        );
+        assert_eq!(v4.as_deref(), Some("203.0.113.42"));
+        assert_eq!(v6.as_deref(), Some("2001:db8::1"));
+
+        // External IPv6 should replace ipv6 only.
+        let (v4, v6) = apply_external_ip(
+            Some("10.0.0.1".to_string()),
+            None,
+            Some("2606:4700::1".to_string()),
+        );
+        assert_eq!(v4.as_deref(), Some("10.0.0.1"));
+        assert_eq!(v6.as_deref(), Some("2606:4700::1"));
+
+        // No external IP → pass-through.
+        let (v4, v6) = apply_external_ip(
+            Some("10.0.0.1".to_string()),
+            Some("fe80::1".to_string()),
+            None,
+        );
+        assert_eq!(v4.as_deref(), Some("10.0.0.1"));
+        assert_eq!(v6.as_deref(), Some("fe80::1"));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_external_ip_rejects_invalid_payload() {
+        // Reachable endpoint that returns HTML rather than an IP — must be rejected
+        // rather than being trusted as a primary IP.
+        let result = fetch_external_ip_once("https://example.com").await;
+        assert!(result.is_err(), "non-IP response must be rejected");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_external_ip_returns_err_on_empty_url_list() {
+        let urls: Vec<String> = vec![];
+        let result = fetch_external_ip(&urls).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_external_ip_falls_through_to_next_url_on_failure() {
+        // First URL is unroutable / fails fast; the next one must be attempted.
+        // Use a non-existent local port to fail quickly without hitting the
+        // network.
+        let urls = vec![
+            "http://127.0.0.1:1/never".to_string(),
+            "http://127.0.0.1:2/never".to_string(),
+        ];
+        let result = fetch_external_ip(&urls).await;
+        // Both fail — but the function should have *tried* both and surfaced
+        // the last error, not panicked or hung.
+        assert!(result.is_err());
+    }
 }
 
-/// Fetch external IP address from a remote service.
+/// Fetch external IP address from a single remote service.
 /// Limits response to 256 bytes via streaming to prevent memory exhaustion
 /// even when the server omits Content-Length.
-async fn fetch_external_ip(url: &str) -> anyhow::Result<String> {
+async fn fetch_external_ip_once(url: &str) -> anyhow::Result<String> {
     const MAX_IP_RESPONSE: usize = 256;
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(5))
         .build()?;
     let mut resp = client.get(url).send().await?;
 
@@ -1934,7 +2128,30 @@ async fn fetch_external_ip(url: &str) -> anyhow::Result<String> {
     }
 
     let ip = String::from_utf8_lossy(&buf).trim().to_string();
+    // Validate before returning so a misbehaving endpoint can't poison the
+    // primary IP with HTML / garbage.
+    if ip.parse::<std::net::IpAddr>().is_err() {
+        anyhow::bail!("External IP response is not a valid IP: {ip:?}");
+    }
     Ok(ip)
+}
+
+/// Try each URL in order; return the first successful, validated response.
+async fn fetch_external_ip(urls: &[String]) -> anyhow::Result<String> {
+    if urls.is_empty() {
+        anyhow::bail!("No external IP URLs configured");
+    }
+    let mut last_err: Option<anyhow::Error> = None;
+    for url in urls {
+        match fetch_external_ip_once(url).await {
+            Ok(ip) => return Ok(ip),
+            Err(e) => {
+                tracing::debug!("External IP query to {url} failed: {e}");
+                last_err = Some(e);
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("All external IP services failed")))
 }
 
 async fn emit_upgrade_progress(

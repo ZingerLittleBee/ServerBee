@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { UptimeDailyEntry } from '@/lib/api-schema'
 import { cn } from '@/lib/utils'
 import { computeUptimeColor, formatUptimeTooltip, type UptimeColor } from '@/lib/widget-helpers'
@@ -56,22 +57,22 @@ export function UptimeTimeline({
           const color = computeUptimeColor(entry.online_minutes, entry.total_minutes, yellowThreshold, redThreshold)
           const tooltip = formatUptimeTooltip(entry)
           return (
-            <div
-              className={cn('group relative flex-1 rounded-[2px]', COLOR_MAP[color])}
-              data-segment={color}
-              key={entry.date || `pad-${i.toString()}`}
-              title={`${tooltip.date || t('uptime_no_data')} - ${tooltip.percentage} - ${tooltip.duration}`}
-            >
-              <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 rounded-md bg-popover px-2.5 py-1.5 shadow-md ring-1 ring-border group-hover:block">
-                <div className="whitespace-nowrap text-xs">
+            <Tooltip key={entry.date || `pad-${i.toString()}`}>
+              <TooltipTrigger
+                className={cn('flex-1 rounded-[2px] focus:outline-none', COLOR_MAP[color])}
+                data-segment={color}
+                type="button"
+              />
+              <TooltipContent>
+                <div className="text-xs">
                   <p className="font-medium">{tooltip.date || t('uptime_no_data')}</p>
                   <p className="text-muted-foreground">
                     {tooltip.percentage} &middot; {tooltip.duration}
                   </p>
                   <p className="text-muted-foreground">{tooltip.incidents}</p>
                 </div>
-              </div>
-            </div>
+              </TooltipContent>
+            </Tooltip>
           )
         })}
       </div>

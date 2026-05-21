@@ -59,6 +59,10 @@ const MOBILE_BREAKPOINT = 768
 // instead of a fixed/estimated number of rows.
 const AUTO_HEIGHT_TYPES = new Set(['top-n'])
 
+// Widgets that must stay square (1:1 in coarse grid units). Width and height
+// are locked together during resize so the radial visual stays balanced.
+const SQUARE_TYPES = new Set(['gauge'])
+
 function pxToGridUnits(px: number): number {
   return Math.max(2, Math.ceil((px + MARGIN_Y) / (ROW_HEIGHT + MARGIN_Y)))
 }
@@ -184,6 +188,11 @@ export function DashboardGrid({
     setAutoUnits((prev) => (prev[id] === units ? prev : { ...prev, [id]: units }))
   }, [])
 
+  const squareIdSet = useMemo(
+    () => new Set(widgets.filter((w) => SQUARE_TYPES.has(w.widget_type)).map((w) => w.id)),
+    [widgets]
+  )
+
   // Persisted grid units are coarse (1 row == ROW_HEIGHT*SCALE px). The grid
   // itself runs at a SCALE-times finer row so content-sized widgets can hug
   // their content within ~ROW_HEIGHT px instead of a full coarse row. Scale the
@@ -208,22 +217,28 @@ export function DashboardGrid({
         item.h = units
         item.resizeHandles = ['e']
       }
+      if (squareIdSet.has(item.i)) {
+        // Square widgets resize on the corner only and snap to w === h on commit.
+        item.resizeHandles = ['se']
+      }
     }
     return deoverlapLayout(layout)
-  }, [widgets, autoUnits])
+  }, [widgets, autoUnits, squareIdSet])
 
   const [liveLayout, setLiveLayout] = useState<Layout>(baseLayout)
   const [interactionState, setInteractionState] = useState<InteractionState>('idle')
 
-  // During drag/resize, freeze the servers snapshot fed to widgets. Otherwise every
-  // websocket tick swaps the servers array reference and re-renders all Recharts
-  // widgets mid-interaction, which janks the drag badly.
+  // While editing (or actively dragging/resizing), freeze the servers snapshot fed
+  // to widgets. Otherwise every websocket tick swaps the servers array reference
+  // and re-renders all Recharts widgets, which janks drag and makes resize handles
+  // flicker over the moving chart.
   const isInteracting = interactionState !== 'idle'
+  const shouldFreeze = isInteracting || isEditing
   const frozenServersRef = useRef(servers)
-  if (!isInteracting) {
+  if (!shouldFreeze) {
     frozenServersRef.current = servers
   }
-  const widgetServers = isInteracting ? frozenServersRef.current : servers
+  const widgetServers = shouldFreeze ? frozenServersRef.current : servers
 
   const autoIdSet = useMemo(
     () => new Set(widgets.filter((w) => AUTO_HEIGHT_TYPES.has(w.widget_type)).map((w) => w.id)),
@@ -242,17 +257,25 @@ export function DashboardGrid({
   // Auto-height widgets keep their measured fine height untouched.
   const updateLiveLayout = useCallback(
     (nextLayout: Layout) => {
-      const snapped = nextLayout.map((item) => ({
-        ...item,
-        y: Math.round(item.y / SCALE) * SCALE,
-        h: autoIdSet.has(item.i) ? item.h : Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
-      }))
+      const snapped = nextLayout.map((item) => {
+        const base = {
+          ...item,
+          y: Math.round(item.y / SCALE) * SCALE,
+          h: autoIdSet.has(item.i) ? item.h : Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
+        }
+        if (squareIdSet.has(item.i)) {
+          // Lock height to width (in fine units, h = w * SCALE) so the gauge
+          // stays a coarse-unit square no matter which dimension the user drags.
+          base.h = base.w * SCALE
+        }
+        return base
+      })
       // De-overlap every frame: RGL's identity compactor never resolves
       // overlaps, and its idle onLayoutChange echo would otherwise re-apply the
       // raw (overlapping) persisted positions over the de-overlapped layout.
       setLiveLayout(deoverlapLayout(snapped))
     },
-    [autoIdSet]
+    [autoIdSet, squareIdSet]
   )
 
   // Resync the rendered layout to the widgets-derived one the moment `widgets`
@@ -287,11 +310,17 @@ export function DashboardGrid({
       // Snap to coarse rows then resolve any residual penetration. preventCollision
       // can block the move so no patch is emitted; without this the live layout
       // would keep the penetrating drag position until the next widgets change.
-      const snapped = finalLayout.map((item) => ({
-        ...item,
-        y: Math.round(item.y / SCALE) * SCALE,
-        h: autoIdSet.has(item.i) ? item.h : Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
-      }))
+      const snapped = finalLayout.map((item) => {
+        const base = {
+          ...item,
+          y: Math.round(item.y / SCALE) * SCALE,
+          h: autoIdSet.has(item.i) ? item.h : Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
+        }
+        if (squareIdSet.has(item.i)) {
+          base.h = base.w * SCALE
+        }
+        return base
+      })
       const resolved = deoverlapLayout(snapped)
       setLiveLayout(resolved)
       const coarseLayout = resolved.map((item) => ({
@@ -304,7 +333,7 @@ export function DashboardGrid({
         onLayoutChange(patch)
       }
     },
-    [autoIdSet, onLayoutChange, widgets]
+    [autoIdSet, squareIdSet, onLayoutChange, widgets]
   )
 
   const sortedWidgets = useMemo(() => {

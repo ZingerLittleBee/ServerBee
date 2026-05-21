@@ -2404,8 +2404,8 @@ cmd_service() {
 
 # Config key mapping
 REJECTED_KEYS="admin.password admin.username"
-ARRAY_KEYS="file.root_paths file.deny_patterns server.trusted_proxies oauth.oidc.scopes"
-AGENT_KEYS="server_url enrollment_code token collector.interval collector.enable_gpu collector.enable_temperature file.enabled file.max_file_size ip_change.enabled ip_change.check_external_ip ip_change.external_ip_url ip_change.interval_secs"
+ARRAY_KEYS="file.root_paths file.deny_patterns server.trusted_proxies oauth.oidc.scopes ip_change.external_ip_urls"
+AGENT_KEYS="server_url enrollment_code token collector.interval collector.enable_gpu collector.enable_temperature file.enabled file.max_file_size ip_change.enabled ip_change.external_ip_urls ip_change.interval_secs"
 SERVER_KEYS="file.max_upload_size server.listen server.data_dir auth.session_ttl auth.secure_cookie geoip.mmdb_path retention.records_days retention.records_hourly_days retention.gpu_records_days retention.ping_records_days retention.network_probe_days retention.network_probe_hourly_days retention.audit_logs_days retention.traffic_hourly_days retention.traffic_daily_days retention.task_results_days retention.docker_events_days retention.service_monitor_days database.path database.max_connections rate_limit.login_max rate_limit.register_max scheduler.timezone upgrade.release_base_url oauth.base_url oauth.allow_registration oauth.github.client_id oauth.github.client_secret oauth.google.client_id oauth.google.client_secret oauth.oidc.issuer_url oauth.oidc.client_id oauth.oidc.client_secret"
 LOG_KEYS="log.level log.file"
 

@@ -12,9 +12,11 @@ use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
+use crate::router::utils::extract_client_ip;
 use crate::service::alert::AlertService;
 use crate::service::audit::AuditService;
 use crate::service::auth::AuthService;
+use crate::service::geoip;
 use crate::service::network_probe::NetworkProbeService;
 use crate::service::ping::PingService;
 use crate::service::record::RecordService;
@@ -59,6 +61,17 @@ async fn agent_ws_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     ws: WebSocketUpgrade,
 ) -> Response {
+    // Honor X-Forwarded-For when the TCP source is a trusted proxy (e.g. Railway,
+    // Cloudflare). Without this, behind-proxy deployments record the LB's
+    // internal IP as the agent's remote_addr and GeoIP can never resolve a
+    // country.
+    let client_ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    );
+    let addr = SocketAddr::new(client_ip, addr.port());
+
     let query_present = query.token.as_ref().is_some_and(|token| !token.is_empty());
     let auth_present = headers.get("authorization").is_some();
 
@@ -356,18 +369,23 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             info,
             agent_local_capabilities,
         } => {
-            // Resolve GeoIP — prefer agent-reported public IP, fall back to remote_addr
-            let ip = info
-                .ipv4
-                .as_deref()
-                .or(info.ipv6.as_deref())
-                .and_then(|ip| ip.parse::<std::net::IpAddr>().ok())
-                .or_else(|| {
-                    state
-                        .agent_manager
-                        .get_remote_addr(server_id)
-                        .map(|addr| addr.ip())
-                });
+            // Resolve GeoIP. Walk the candidate chain agent ipv4 → ipv6 →
+            // remote_addr and skip loopback/private addresses — GeoIP can't
+            // resolve those (e.g. agents inside a docker container report the
+            // bridge gateway 172.17.0.1 as their primary IP).
+            let parse = |s: Option<&str>| s.and_then(|v| v.parse::<std::net::IpAddr>().ok());
+            let candidates = [
+                parse(info.ipv4.as_deref()),
+                parse(info.ipv6.as_deref()),
+                state
+                    .agent_manager
+                    .get_remote_addr(server_id)
+                    .map(|addr| addr.ip()),
+            ];
+            let ip = candidates
+                .into_iter()
+                .flatten()
+                .find(|ip| !ip.is_loopback() && !geoip::is_private(ip));
 
             let (region, country_code) = match ip {
                 Some(ip) => {
@@ -1148,11 +1166,23 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                             );
                         }
 
-                        // Re-run GeoIP lookup based on the new IPs
-                        let ip_to_lookup = ipv4
-                            .as_deref()
-                            .or(ipv6.as_deref())
-                            .and_then(|ip| ip.parse::<std::net::IpAddr>().ok());
+                        // Re-run GeoIP lookup. Same private/loopback filter as
+                        // the SystemInfo path; fall back to remote_addr when
+                        // the agent only knows internal/bridge addresses.
+                        let parse =
+                            |s: Option<&str>| s.and_then(|v| v.parse::<std::net::IpAddr>().ok());
+                        let candidates = [
+                            parse(ipv4.as_deref()),
+                            parse(ipv6.as_deref()),
+                            state
+                                .agent_manager
+                                .get_remote_addr(server_id)
+                                .map(|addr| addr.ip()),
+                        ];
+                        let ip_to_lookup = candidates
+                            .into_iter()
+                            .flatten()
+                            .find(|ip| !ip.is_loopback() && !geoip::is_private(ip));
                         if let Some(ip) = ip_to_lookup {
                             let geo = {
                                 let guard = state.geoip.read().unwrap();

@@ -120,7 +120,14 @@
         "degraded": "降级",
         "healthy": "健康",
         "down": "故障"
-      }
+      },
+      "summary": {
+        "healthy": "{{count}} 健康",
+        "degraded": "{{count}} 降级",
+        "down": "{{count}} 故障",
+        "pending": "{{count}} 待检查"
+      },
+      "neverChecked": "未检查"
     },
     "serverMap": {
       "title": "服务器地图",

@@ -25,7 +25,7 @@ export const WIDGET_TYPES = [
     maxH: 1
   },
   { id: 'server-cards', label: 'Server Cards', category: 'Real-time', defaultW: 12, defaultH: 6, minW: 4, minH: 3 },
-  { id: 'gauge', label: 'Gauge', category: 'Real-time', defaultW: 3, defaultH: 3, minW: 2, minH: 2, maxW: 6, maxH: 6 },
+  { id: 'gauge', label: 'Gauge', category: 'Real-time', defaultW: 2, defaultH: 2, minW: 2, minH: 2, maxW: 6, maxH: 6 },
   {
     id: 'line-chart',
     label: 'Line Chart',

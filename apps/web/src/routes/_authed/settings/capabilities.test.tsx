@@ -158,6 +158,7 @@ describe('CapabilitiesPage', () => {
       'RemoteExecHighRisk',
       'FileManagerHighRisk',
       'DockerManagementHighRisk',
+      'cap_firewall_blockHighRisk',
       'AutoUpgradeLowRisk',
       'ICMPPingLowRisk',
       'TCPProbeLowRisk',

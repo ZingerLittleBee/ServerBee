@@ -75,7 +75,7 @@ export function UptimeTimelineWidget({ config, servers }: UptimeTimelineWidgetPr
   return (
     <div className="flex h-full flex-col rounded-lg border bg-card p-4">
       <h3 className="mb-3 font-semibold text-sm">{t('widgets.uptimeTimeline.title')}</h3>
-      <div className="flex-1 space-y-3 overflow-auto">
+      <div className="flex-1 space-y-3 overflow-y-auto overflow-x-hidden">
         {serverIds.map((id, i) => {
           const uptimeData = queries[i]?.data ?? []
           const pct = computeAggregateUptime(uptimeData)

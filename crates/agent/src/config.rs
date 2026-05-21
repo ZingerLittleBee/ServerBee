@@ -162,10 +162,8 @@ impl Default for UpgradeConfig {
 pub struct IpChangeConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
-    #[serde(default)]
-    pub check_external_ip: bool,
-    #[serde(default = "default_external_ip_url")]
-    pub external_ip_url: String,
+    #[serde(default = "default_external_ip_urls")]
+    pub external_ip_urls: Vec<String>,
     #[serde(default = "default_ip_interval")]
     pub interval_secs: u64,
 }
@@ -174,15 +172,21 @@ impl Default for IpChangeConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            check_external_ip: false,
-            external_ip_url: default_external_ip_url(),
+            external_ip_urls: default_external_ip_urls(),
             interval_secs: default_ip_interval(),
         }
     }
 }
 
-fn default_external_ip_url() -> String {
-    "https://api.ipify.org".to_string()
+fn default_external_ip_urls() -> Vec<String> {
+    // Try multiple public IP services in order — the first to respond wins.
+    // Spread across independent operators so any single outage is recoverable.
+    vec![
+        "https://api.ipify.org".to_string(),
+        "https://ifconfig.me/ip".to_string(),
+        "https://icanhazip.com".to_string(),
+        "https://checkip.amazonaws.com".to_string(),
+    ]
 }
 
 fn default_ip_interval() -> u64 {
@@ -340,17 +344,31 @@ mod tests {
             config.enabled,
             "IP change detection should be enabled by default"
         );
-        assert!(
-            !config.check_external_ip,
-            "external IP checking should be disabled by default"
-        );
         assert_eq!(
             config.interval_secs, 300,
             "default interval should be 300 seconds"
         );
+        assert!(
+            config.external_ip_urls.len() >= 2,
+            "should default to multiple external IP services for redundancy"
+        );
         assert_eq!(
-            config.external_ip_url, "https://api.ipify.org",
-            "default external IP URL should be api.ipify.org"
+            config.external_ip_urls.first().map(String::as_str),
+            Some("https://api.ipify.org"),
+            "ipify is the primary service"
+        );
+        // Independent operators so a single-provider outage is recoverable
+        assert!(
+            config
+                .external_ip_urls
+                .iter()
+                .any(|u| u.contains("ifconfig.me"))
+        );
+        assert!(
+            config
+                .external_ip_urls
+                .iter()
+                .any(|u| u.contains("icanhazip"))
         );
     }
 
