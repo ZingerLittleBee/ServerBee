@@ -35,7 +35,7 @@
 | IP1 | 被动检测 — remote_addr 变更 | Agent 断线 → 从不同 IP 重连 | 审计日志出现 ip_changed 记录 | — |
 | IP2 | 被动检测 — last_remote_addr 更新 | Agent 连接 → GET /api/servers/:id | last_remote_addr 字段有值 | — |
 | IP3 | 主动检测 — NIC 变更 | Agent 运行中 → 添加/移除网络接口 | 5 分钟内检测到变更 | — |
-| IP4 | 主动检测 — 外部 IP (可选) | 配置 check_external_ip=true | 公网 IP 变化时上报 | — |
+| IP4 | 主动检测 — 外部 IP | Agent 启动或 NIC 变更 | 通过 external_ip_urls 列表查到的公网 IP 上报 | — |
 | IP5 | 事件驱动告警 | 创建 ip_changed 告警规则 → 关联通知组 | IP 变更时触发通知 | — |
 | IP6 | 告警规则覆盖范围 | 创建 cover_type=include 规则 | 仅指定服务器触发 | — |
 | IP7 | Browser 推送 | Dashboard 打开时 → IP 变更 | WS 推送 ServerIpChanged 消息 | — |

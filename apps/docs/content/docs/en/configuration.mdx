@@ -152,7 +152,6 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | `SERVERBEE_FILE__ENABLED` | `false` | Enable file management on this agent |
 | `SERVERBEE_FILE__ROOT_PATHS` | `[]` | Allowed root paths (comma-separated, e.g. `/home,/var/log`). Empty rejects all file operations |
 | `SERVERBEE_IP_CHANGE__ENABLED` | `true` | Enable periodic IP change detection |
-| `SERVERBEE_IP_CHANGE__CHECK_EXTERNAL_IP` | `false` | Also query an external URL to detect public/NAT IP changes |
 | `SERVERBEE_LOG__LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `SERVERBEE_LOG__FILE` | `""` | Log file path. Empty means stdout only |
 
@@ -165,7 +164,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | `SERVERBEE_TOKEN` | auto-populated | Agent auth token. Auto-populated after registration, do not set manually |
 | `SERVERBEE_FILE__MAX_FILE_SIZE` | `1073741824` | Max file size in bytes for read/download (default 1GB) |
 | `SERVERBEE_FILE__DENY_PATTERNS` | `*.key,*.pem,...` | Glob patterns for files the agent refuses to access |
-| `SERVERBEE_IP_CHANGE__EXTERNAL_IP_URL` | `https://api.ipify.org` | URL that returns the agent's external IP as plain text |
+| `SERVERBEE_IP_CHANGE__EXTERNAL_IP_URLS` | `["https://api.ipify.org","https://ifconfig.me/ip","https://icanhazip.com","https://checkip.amazonaws.com"]` | Ordered list of public IP services tried at startup and on every IP-change tick. First success wins. Required for agents behind NAT or in containers where interface enumeration can't see the routable IP. Set to `[]` to skip external lookups for air-gapped deployments |
 | `SERVERBEE_IP_CHANGE__INTERVAL_SECS` | `300` | IP check interval in seconds (default 5 minutes) |
 
 #### Upgrade (Agent)
@@ -371,8 +370,7 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `enabled` | bool | `true` | Enable periodic IP change detection. Agent enumerates NIC addresses and reports changes |
-| `check_external_ip` | bool | `false` | Also query an external URL to detect public/NAT IP changes |
-| `external_ip_url` | string | `"https://api.ipify.org"` | URL that returns the agent's external IP as plain text (used when `check_external_ip` is true) |
+| `external_ip_urls` | string[] | `["https://api.ipify.org", "https://ifconfig.me/ip", "https://icanhazip.com", "https://checkip.amazonaws.com"]` | Ordered list of services that return the agent's public IP. Tried in sequence at startup and on every check; first success wins. Required for agents behind NAT or in containers. Set to `[]` to disable external lookups (air-gapped deployments) |
 | `interval_secs` | u64 | `300` | IP check interval in seconds (default 5 minutes) |
 
 ### `[log]` -- Logging
@@ -477,7 +475,8 @@ deny_patterns = ["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]
 
 [ip_change]
 enabled = true
-check_external_ip = false
+# external_ip_urls defaults to a curated list of public IP services.
+# Override only to point at internal mirrors or to disable (set to []).
 
 [log]
 level = "info"

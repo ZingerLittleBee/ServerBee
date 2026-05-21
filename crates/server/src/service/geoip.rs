@@ -177,10 +177,15 @@ pub async fn download_dbip(data_dir: &str) -> Result<GeoIpService, String> {
     Ok(service)
 }
 
-fn is_private(ip: &IpAddr) -> bool {
+pub(crate) fn is_private(ip: &IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => v4.is_private() || v4.is_link_local(),
-        IpAddr::V6(_) => false,
+        IpAddr::V6(v6) => {
+            // Unique local fc00::/7 and link-local fe80::/10 are non-routable
+            // and produce no useful GeoIP result.
+            let seg = v6.segments();
+            (seg[0] & 0xfe00) == 0xfc00 || (seg[0] & 0xffc0) == 0xfe80
+        }
     }
 }
 
@@ -219,9 +224,17 @@ mod tests {
 
     #[test]
     fn test_is_private_ipv6() {
-        // IPv6 always returns false in current implementation
+        // Link-local and ULA are non-routable
+        assert!(is_private(&"fe80::1".parse().unwrap()));
+        assert!(is_private(&"fc00::1".parse().unwrap()));
+        assert!(is_private(&"fd12:3456:789a::1".parse().unwrap()));
+
+        // Loopback is handled separately by `is_loopback()` in `lookup`,
+        // so it's not classified as "private" here.
         assert!(!is_private(&"::1".parse().unwrap()));
-        assert!(!is_private(&"fe80::1".parse().unwrap()));
+
+        // Global unicast
         assert!(!is_private(&"2001:db8::1".parse().unwrap()));
+        assert!(!is_private(&"2606:4700:4700::1111".parse().unwrap()));
     }
 }

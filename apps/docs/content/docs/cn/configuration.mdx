@@ -158,7 +158,6 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 | `SERVERBEE_FILE__ENABLED` | `false` | 启用文件管理功能 |
 | `SERVERBEE_FILE__ROOT_PATHS` | `[]` | 允许浏览的根路径（逗号分隔，如 `/home,/var/log`），留空则拒绝所有文件操作 |
 | `SERVERBEE_IP_CHANGE__ENABLED` | `true` | 启用周期性 IP 变更检测 |
-| `SERVERBEE_IP_CHANGE__CHECK_EXTERNAL_IP` | `false` | 同时查询外部 URL 检测公网/NAT IP 变更 |
 | `SERVERBEE_LOG__LEVEL` | `info` | 日志级别：`trace`/`debug`/`info`/`warn`/`error` |
 | `SERVERBEE_LOG__FILE` | `""` | 日志文件路径，留空输出到 stdout |
 
@@ -171,7 +170,7 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 | `SERVERBEE_TOKEN` | 注册后自动填充 | Agent 认证 Token，无需手动设置 |
 | `SERVERBEE_FILE__MAX_FILE_SIZE` | `1073741824` | 文件读取/下载的最大字节数（默认 1GB） |
 | `SERVERBEE_FILE__DENY_PATTERNS` | `*.key,*.pem,...` | 拒绝访问的文件名 glob 模式 |
-| `SERVERBEE_IP_CHANGE__EXTERNAL_IP_URL` | `https://api.ipify.org` | 返回外部 IP 的查询 URL（纯文本格式） |
+| `SERVERBEE_IP_CHANGE__EXTERNAL_IP_URLS` | `["https://api.ipify.org","https://ifconfig.me/ip","https://icanhazip.com","https://checkip.amazonaws.com"]` | 外部 IP 查询服务列表，按顺序逐个尝试直到首个成功。在容器、NAT 或网卡看不到公网地址的环境下是必需的。完全离线部署可设为空数组跳过外部查询 |
 | `SERVERBEE_IP_CHANGE__INTERVAL_SECS` | `300` | IP 检测间隔（秒），默认 5 分钟 |
 
 #### 升级配置（Upgrade，Agent）
@@ -489,14 +488,17 @@ deny_patterns = ["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]
 # 默认: true
 enabled = true
 
-# 是否同时查询外部 URL 检测公网/NAT IP 变更
-# 默认: false
-check_external_ip = false
-
-# 返回外部 IP 的查询 URL（纯文本格式）
-# 仅在 check_external_ip = true 时使用
-# 默认: "https://api.ipify.org"
-external_ip_url = "https://api.ipify.org"
+# 外部 IP 查询服务列表
+# Agent 启动和每次 IP 检测时按顺序逐个尝试，首个成功即采用
+# 在容器、NAT 或网卡看不到公网地址的环境下是必需的
+# 完全离线部署可设为空数组 [] 跳过外部查询
+# 默认: 4 个独立运营商，规避单点失效
+external_ip_urls = [
+    "https://api.ipify.org",
+    "https://ifconfig.me/ip",
+    "https://icanhazip.com",
+    "https://checkip.amazonaws.com",
+]
 
 # IP 检测间隔（秒）
 # 默认: 300 (5 分钟)
