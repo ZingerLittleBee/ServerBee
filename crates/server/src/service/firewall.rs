@@ -626,4 +626,171 @@ mod tests {
         // fc00::/7 covers fc00::/8 and fd00::/8 — the RFC4193 unique-local range.
         assert!(FirewallService::is_protected("fc00::/7", &[]).is_some());
     }
+
+    // ── auto_block coverage-aware dedup ──
+
+    use crate::config::AppConfig;
+    use crate::entity::{alert_rule, audit_log, block_list};
+    use crate::service::agent_manager::AgentManager;
+    use crate::service::alert::AlertRuleAction;
+    use crate::test_utils::setup_test_db;
+    use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+    use serverbee_common::security::{
+        DetectorSource, SecurityEventPayload, SecurityEventType, SecurityEvidence, Severity,
+    };
+
+    fn make_payload(source_ip: &str) -> SecurityEventPayload {
+        SecurityEventPayload {
+            event_type: SecurityEventType::SshBruteForce,
+            severity: Severity::High,
+            source_ip: source_ip.to_string(),
+            source_port: None,
+            username: None,
+            started_at: 1_700_000_000,
+            ended_at: 1_700_000_060,
+            first_seen: false,
+            detector_source: DetectorSource::Journal,
+            evidence: SecurityEvidence::SshBruteForce {
+                failed_count: 47,
+                distinct_users: 3,
+                sample_users: vec!["root".into()],
+                invalid_user_count: 8,
+                window_seconds: 60,
+                threshold: 10,
+            },
+        }
+    }
+
+    fn make_rule(id: &str) -> alert_rule::Model {
+        let now = chrono::Utc::now();
+        alert_rule::Model {
+            id: id.to_string(),
+            name: "test-rule".to_string(),
+            enabled: true,
+            rules_json: "[]".to_string(),
+            trigger_mode: "always".to_string(),
+            notification_group_id: None,
+            fail_trigger_tasks: None,
+            recover_trigger_tasks: None,
+            cover_type: "all".to_string(),
+            server_ids_json: None,
+            actions_json: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    async fn fetch_audits(
+        db: &sea_orm::DatabaseConnection,
+        action: &str,
+    ) -> Vec<audit_log::Model> {
+        audit_log::Entity::find()
+            .filter(audit_log::Column::Action.eq(action))
+            .all(db)
+            .await
+            .unwrap()
+    }
+
+    fn make_service(
+        db: sea_orm::DatabaseConnection,
+    ) -> (FirewallService, AgentManager) {
+        let (browser_tx, _) = broadcast::channel(16);
+        let config = Arc::new(AppConfig::default());
+        let svc = FirewallService::new(db, config, browser_tx.clone());
+        let mgr = AgentManager::new(browser_tx);
+        (svc, mgr)
+    }
+
+    #[tokio::test]
+    async fn auto_block_skips_when_existing_row_covers() {
+        let (db, _tmp) = setup_test_db().await;
+        let now = chrono::Utc::now();
+
+        // Pre-seed an `all`-coverage row for the same canonical target.
+        block_list::ActiveModel {
+            id: Set("existing-1".into()),
+            target: Set("203.0.113.5/32".into()),
+            family: Set(4),
+            cover_type: Set("all".into()),
+            server_ids_json: Set(None),
+            comment: Set(None),
+            origin: Set("manual".into()),
+            origin_event_id: Set(None),
+            origin_rule_id: Set(None),
+            created_by: Set(None),
+            created_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let (svc, mgr) = make_service(db.clone());
+        let rule = make_rule("rule-1");
+        let payload = make_payload("203.0.113.5");
+        let action = AlertRuleAction::BlockSourceIp {
+            cover_type: "all".into(),
+            server_ids_json: None,
+            comment: None,
+        };
+        let result = svc
+            .auto_block("srv-A", &rule, &payload, "evt-1", &action, &mgr)
+            .await
+            .unwrap();
+        assert!(result.is_none(), "expected silent dedup, got {result:?}");
+
+        // No new row.
+        let rows = block_list::Entity::find().all(&db).await.unwrap();
+        assert_eq!(rows.len(), 1);
+
+        // No conflict audit either.
+        let conflicts = fetch_audits(&db, "firewall_auto_block_skipped_conflict").await;
+        assert!(conflicts.is_empty(), "should not write conflict audit when covered");
+    }
+
+    #[tokio::test]
+    async fn auto_block_skips_with_conflict_when_existing_row_does_not_cover() {
+        let (db, _tmp) = setup_test_db().await;
+        let now = chrono::Utc::now();
+
+        // Pre-seed an `include`-coverage row that only includes srv-B.
+        block_list::ActiveModel {
+            id: Set("existing-2".into()),
+            target: Set("203.0.113.7/32".into()),
+            family: Set(4),
+            cover_type: Set("include".into()),
+            server_ids_json: Set(Some(r#"["srv-B"]"#.into())),
+            comment: Set(None),
+            origin: Set("manual".into()),
+            origin_event_id: Set(None),
+            origin_rule_id: Set(None),
+            created_by: Set(None),
+            created_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let (svc, mgr) = make_service(db.clone());
+        let rule = make_rule("rule-2");
+        let payload = make_payload("203.0.113.7");
+        let action = AlertRuleAction::BlockSourceIp {
+            cover_type: "all".into(),
+            server_ids_json: None,
+            comment: None,
+        };
+
+        let result = svc
+            .auto_block("srv-A", &rule, &payload, "evt-2", &action, &mgr)
+            .await
+            .unwrap();
+        assert!(result.is_none(), "should skip without creating a new row");
+
+        // No new row.
+        let rows = block_list::Entity::find().all(&db).await.unwrap();
+        assert_eq!(rows.len(), 1);
+
+        // Conflict audit written.
+        let conflicts = fetch_audits(&db, "firewall_auto_block_skipped_conflict").await;
+        assert_eq!(conflicts.len(), 1, "expected one conflict audit entry");
+    }
 }

@@ -382,7 +382,20 @@ mod tests {
     ) -> (SecurityService, broadcast::Receiver<BrowserMessage>) {
         let (browser_tx, rx) = broadcast::channel(16);
         let mgr = Arc::new(AlertStateManager::new());
-        let svc = SecurityService::new(db, browser_tx, mgr, config);
+        let firewall = Arc::new(FirewallService::new(
+            db.clone(),
+            config.clone(),
+            browser_tx.clone(),
+        ));
+        let agent_manager = Arc::new(AgentManager::new(browser_tx.clone()));
+        let svc = SecurityService::new(
+            db,
+            browser_tx,
+            mgr,
+            config,
+            firewall,
+            agent_manager,
+        );
         (svc, rx)
     }
 
