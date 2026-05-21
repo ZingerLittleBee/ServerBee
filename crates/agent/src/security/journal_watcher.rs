@@ -222,6 +222,97 @@ async fn run_auth_log_tail(out_tx: mpsc::Sender<AuthAttempt>) -> io::Result<()> 
     }
 }
 
+/// Stream blocked-source IPs out of the kernel log.
+///
+/// Looks for the common UFW / iptables / nftables blob formats and extracts
+/// the `SRC=...` IP. Each blocked IP is forwarded on `out_tx` so the scan
+/// detector can attach `blocked_count` to emitted events.
+#[cfg(target_os = "linux")]
+pub async fn run_kernel_stream(out_tx: mpsc::Sender<String>) {
+    let mut backoff = Duration::from_secs(1);
+    loop {
+        let result = run_journalctl_kernel(out_tx.clone()).await;
+        match result {
+            Ok(()) => tracing::warn!("kernel firewall stream ended cleanly; retrying"),
+            Err(e) => {
+                tracing::warn!(error = %e, "kernel firewall stream error; retrying after backoff")
+            }
+        }
+        tokio::time::sleep(backoff).await;
+        backoff = (backoff * 2).min(Duration::from_secs(60));
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub async fn run_kernel_stream(_out_tx: mpsc::Sender<String>) {
+    futures_util::future::pending::<()>().await;
+}
+
+#[cfg(target_os = "linux")]
+async fn run_journalctl_kernel(out_tx: mpsc::Sender<String>) -> io::Result<()> {
+    let mut child = spawn_journalctl_kernel()?;
+    let stdout = child.stdout.take().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::Other, "journalctl -k stdout missing")
+    })?;
+    let reader = BufReader::new(stdout);
+    let result = drain_kernel_json(reader, out_tx).await;
+    let _ = child.kill().await;
+    result
+}
+
+#[cfg(target_os = "linux")]
+fn spawn_journalctl_kernel() -> io::Result<Child> {
+    Command::new("journalctl")
+        .args(["-k", "-f", "--output=json", "-n", "0"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+}
+
+/// Read kernel journal JSON lines and forward extracted source IPs.
+///
+/// Public for tests; the production path constructs the reader from
+/// `journalctl -k`'s stdout.
+pub async fn drain_kernel_json<R: AsyncRead + Unpin>(
+    reader: BufReader<R>,
+    out_tx: mpsc::Sender<String>,
+) -> io::Result<()> {
+    let mut lines = reader.lines();
+    while let Some(line) = lines.next_line().await? {
+        if let Some(msg) = extract_message(&line) {
+            if let Some(ip) = extract_blocked_ip(&msg) {
+                if out_tx.send(ip).await.is_err() {
+                    break;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Extract `SRC=...` from a UFW / iptables / nftables kernel log line.
+/// Returns `None` for lines that don't look like a firewall block.
+fn extract_blocked_ip(msg: &str) -> Option<String> {
+    if !msg.contains("[UFW BLOCK]")
+        && !msg.contains("iptables")
+        && !msg.contains("nftables")
+        && !msg.contains("nf_log")
+    {
+        return None;
+    }
+    let idx = msg.find("SRC=")?;
+    let rest = &msg[idx + 4..];
+    let end = rest
+        .find(|c: char| c.is_whitespace())
+        .unwrap_or(rest.len());
+    let ip = &rest[..end];
+    if ip.is_empty() {
+        None
+    } else {
+        Some(ip.to_string())
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn pick_auth_log_path() -> Option<std::path::PathBuf> {
     for p in ["/var/log/auth.log", "/var/log/secure"] {
@@ -296,6 +387,36 @@ mod tests {
         let b = rx.recv().await.unwrap();
         assert_eq!(b.source_ip, "5.6.7.8");
         assert!(rx.recv().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn drain_kernel_json_extracts_ufw_block() {
+        let input = concat!(
+            r#"{"MESSAGE":"[UFW BLOCK] IN=eth0 OUT= MAC=... SRC=203.0.113.5 DST=10.0.0.1 LEN=40 ..."}"#,
+            "\n",
+            r#"{"MESSAGE":"unrelated kernel chatter"}"#,
+            "\n",
+            r#"{"MESSAGE":"iptables denied: IN=eth0 SRC=198.51.100.7 DST=10.0.0.1"}"#,
+            "\n",
+        );
+        let (tx, mut rx) = mpsc::channel::<String>(8);
+        let reader = BufReader::new(input.as_bytes());
+        drain_kernel_json(reader, tx).await.unwrap();
+        assert_eq!(rx.recv().await.unwrap(), "203.0.113.5");
+        assert_eq!(rx.recv().await.unwrap(), "198.51.100.7");
+        assert!(rx.recv().await.is_none());
+    }
+
+    #[test]
+    fn extract_blocked_ip_handles_nftables() {
+        let msg = "nftables drop: IN=eth0 SRC=10.20.30.40 DST=10.0.0.1 PROTO=TCP";
+        assert_eq!(extract_blocked_ip(msg).as_deref(), Some("10.20.30.40"));
+    }
+
+    #[test]
+    fn extract_blocked_ip_returns_none_on_unrelated() {
+        assert!(extract_blocked_ip("ATA bus error").is_none());
+        assert!(extract_blocked_ip("[UFW BLOCK] missing src").is_none());
     }
 
     #[test]
