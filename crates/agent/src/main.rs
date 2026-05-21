@@ -4,6 +4,7 @@ mod config;
 mod docker;
 mod file_manager;
 mod fingerprint;
+mod firewall;
 mod network_prober;
 mod pinger;
 mod probe_utils;

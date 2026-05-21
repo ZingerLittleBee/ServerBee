@@ -3904,6 +3904,7 @@ name = "serverbee-agent"
 version = "0.9.4"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64 0.22.1",
  "bollard",
  "chrono",
@@ -3927,6 +3928,7 @@ dependencies = [
  "sha2",
  "sysinfo",
  "tempfile",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-tungstenite 0.26.2",
  "tracing",
