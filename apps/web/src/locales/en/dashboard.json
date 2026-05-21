@@ -120,7 +120,14 @@
         "degraded": "Degraded",
         "healthy": "Healthy",
         "down": "Down"
-      }
+      },
+      "summary": {
+        "healthy": "{{count}} healthy",
+        "degraded": "{{count}} degraded",
+        "down": "{{count}} down",
+        "pending": "{{count}} pending"
+      },
+      "neverChecked": "never"
     },
     "serverMap": {
       "title": "Server Map",
