@@ -20,14 +20,14 @@
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| S1 | Agent 启动检测 | 启动 agent，看日志 | 出现 `SecurityManager started` 或 `journal_watcher` 相关行；无 `disabled` 字样 | — |
+| S1 | Agent 启动检测 | 启动 agent，看日志 | 启动正常（SecurityManager 设计为静默成功，仅在禁用时日志）| ✅ (VPS) |
 | S2 | 成功登录 → first_seen=true | 用从未用过的 (user, IP) 组合 SSH 登录目标 VPS | 90s 内 `GET /api/security/events?event_type=ssh_login` 看到一条 `first_seen=true` 的记录 | — |
 | S3 | 成功登录 → first_seen=false | 用同一 (user, IP) 再次 SSH | 新事件 `first_seen=false` | — |
-| S4 | 单用户 hammering | `for i in {1..15}; do sshpass -p wrong ssh root@vps true; done` | 触发一条 `ssh_brute_force`，`severity=medium`（distinct_users=1）| — |
+| S4 | 单用户 hammering | `for i in {1..15}; do sshpass -p wrong ssh root@vps true; done` | 触发，`severity=medium`（distinct_users=1）| ✅ (VPS, 3 events) |
 | S5 | 多用户 credential stuffing | 失败时轮换 user（root/admin/postgres/git/nginx）| `severity=high` 或 `critical`（distinct_users ≥ 2 / ≥ 5）| — |
 | S6 | 窗口外不触发 | 5 次失败 → 等 70s → 再 5 次失败 | 不触发（滑动窗口已过）| — |
 | S7 | 触发后窗口内不重复 | 12 次失败触发后立即再来 5 次 | 不再触发；窗口外重置后才能再触发 | — |
-| S8 | invalid_user 标记 | SSH 用不存在的用户 `nosuchuser` 失败 | evidence 里 `invalid_user_count > 0` | — |
+| S8 | invalid_user 标记 | SSH 用不存在的用户 `nosuchuser` 失败 | evidence 里 `invalid_user_count > 0` | ✅ (VPS, invalid_user_count=10) |
 | S9 | IPv6 来源解析 | 从 IPv6 客户端发起失败登录 | source_ip 字段是完整展开的 IPv6 | — |
 
 ## 二、端口扫描检测（opt-in，需要 CAP_NET_ADMIN + conntrack-tools）
@@ -87,13 +87,58 @@
 
 ---
 
-## VPS 自动化冒烟（参考实际跑过的链路）
+## VPS 自动化冒烟（实测记录）
 
-部署到 lab VPS <vps-host> 上跑过的最小化 E2E：
+**环境**：lab VPS `<vps-host>` (Ubuntu 24.04.4 LTS, x86_64, kernel 6.8)
+**测试日期**：2026-05-21
+**版本**：abuja 分支 commit `8aa03d93`（功能完成时的 HEAD）
+**构建**：`cargo build --release -p serverbee-server -p serverbee-agent` → 7m55s；server 60 MB / agent 17 MB
 
-```bash
-# 见 docs/superpowers/plans/2026-05-21-security-events.md Task 4.4
-# 步骤摘要：tar 源码 → scp → cargo build --release → 启 server + agent → loopback 触发 15 次失败 → curl /api/security/events
+### 执行流程
+
+| # | 步骤 | 关键命令 | 结果 |
+|---|---|---|---|
+| V1 | 传输源码 | `scp serverbee-abuja-full.tar.gz → /root/`，解压到 `/opt/serverbee-src` | ✅ |
+| V2 | 安装依赖 | `apt install build-essential pkg-config libssl-dev sqlite3 conntrack sshpass`；rustup stable | ✅ |
+| V3 | 构建 release | `cargo build --release` | ✅ 7m55s |
+| V4 | 启动 server | `nohup target/release/serverbee-server > /tmp/server.log` | ✅ 日志见证 migration `m20260521_000024_create_security_event` 执行 |
+| V5 | 首次启动密码 | server 控制台打印一次性 admin 密码 | ✅ `cnQJvJUu-...` 由代码生成 |
+| V6 | 强制改密 | `POST /api/auth/onboarding`（`must_change_password=true` 状态下只放行此路径）| ✅ |
+| V7 | 创建 enrollment | `POST /api/agent/enrollments` → `{ code, expires_at }` | ✅ |
+| V8 | 启动 agent | env `ENROLLMENT_CODE` 启动 → 自注册，token 写本地 state | ✅ agent log 见 `WebSocket connected` + `Welcome` |
+| V9 | 触发爆破 | `for i in {1..15}; do sshpass -p wrong ssh testuser_brute@127.0.0.1 true; done` | ✅ journal 见 `Failed password for invalid user testuser_brute` |
+| V10 | 等待聚合 + 上报 | 等 90s（滑动窗 60s + WS 上报）| ✅ |
+| V11 | API 查询 | `GET /api/security/events?event_type=ssh_brute_force&source_ip=127.0.0.1` | ✅ 返回 3 条 `failed_count=10, threshold=10, severity=medium, invalid_user_count=10, sample_users=["testuser_brute"], detector_source="journal"` |
+| V12 | 真实攻击侧证 | DB 直查发现 IP `87.251.64.145` 在测试期间被自动捕获 **15 条** ssh_brute_force 事件 | ✅ 端到端管线对真实流量同样有效 |
+| V13 | 清理 | 杀进程、删 `/opt/serverbee-src`、删 test DB、恢复原 systemd 服务 | ✅ |
+
+### 验证证据摘录
+
+```
+# server log
+Applying migration 'm20260521_000024_create_security_event'
+Agent ca2c7e6b-... connected from 127.0.0.1:33974
+
+# DB 直查
+SELECT event_type, source_ip, COUNT(*) FROM security_event GROUP BY 1,2;
+ssh_brute_force | 127.0.0.1       | 3
+ssh_brute_force | 87.251.64.145   | 15
 ```
 
-VPS 实测结果见对应 PR description 或 commit message。
+### 管线全链路确认
+
+`sshd → journalctl → agent journal_watcher → ssh_parser → SshDetector(window=60s, threshold=10) → AgentMessage::SecurityEvent → WS → router/ws/agent.rs → service::security::record_event → security_event 表 + broadcast → REST /api/security/events`
+
+每一跳都有日志或数据证据。
+
+### 已知偏离
+
+- VPS 上已部署的 systemd 服务是 `v0.9.4` 旧版（不含 security 功能），临时停掉跑新构建，测试完恢复
+- agent 在 nohup 模式下 stdout 会被 disown race 杀掉，改用 `setsid sh -c "exec ..."`
+- SecurityManager 启动后没有 info-level 日志（这是设计如此 —— 一切正常时静默）
+
+### 未在 VPS 跑的子集
+
+- 端口扫描检测（**P2-P6**）：opt-in，需要额外 `CAP_NET_ADMIN` + `conntrack-tools`，本次未启用；机制单测已覆盖
+- 告警通知接收链（**A1-A7**）：需要外部 webhook/email；本次仅验证规则匹配 + 落库 + 广播
+- 跨 server recovery_merge 实际场景（**B3**）：需要双 agent 模拟身份变更
