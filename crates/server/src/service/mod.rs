@@ -26,6 +26,7 @@ pub mod record;
 pub mod recovery_job;
 pub mod recovery_lock;
 pub mod recovery_merge;
+pub mod firewall;
 pub mod security;
 pub mod server;
 pub mod server_tag;
