@@ -17,7 +17,7 @@ import type {
   TrafficBarConfig,
   UptimeTimelineConfig
 } from '@/lib/widget-types'
-
+import { areWidgetServerDependenciesEqual } from './widget-render-dependencies'
 import { AlertListWidget } from './widgets/alert-list'
 import { DiskIoWidget } from './widgets/disk-io'
 import { GaugeWidget } from './widgets/gauge'
@@ -119,7 +119,19 @@ function WidgetContent({ widget, servers }: WidgetRendererProps) {
   }
 }
 
-const MemoizedWidgetContent = memo(WidgetContent)
+function areWidgetContentPropsEqual(prev: WidgetRendererProps, next: WidgetRendererProps): boolean {
+  if (
+    prev.widget.id !== next.widget.id ||
+    prev.widget.widget_type !== next.widget.widget_type ||
+    prev.widget.config_json !== next.widget.config_json
+  ) {
+    return false
+  }
+
+  return areWidgetServerDependenciesEqual(next.widget, prev.servers, next.servers)
+}
+
+const MemoizedWidgetContent = memo(WidgetContent, areWidgetContentPropsEqual)
 
 export function WidgetRenderer({ widget, servers }: WidgetRendererProps) {
   return (
