@@ -137,11 +137,23 @@ Evidence JSON schemas:
 }
 ```
 
-Retention: reuse existing cleanup task. New config field `retention.security_events_days` on `RetentionConfig` (default 30), following the existing naming pattern (`records_days`, `audit_logs_days`, `service_monitor_days`, …). Env override: `SERVERBEE_RETENTION__SECURITY_EVENTS_DAYS`.
+Retention: reuse existing cleanup task. New config field `retention.security_event_days` on `RetentionConfig` (default 30), following the existing naming pattern (`records_days`, `audit_logs_days`, `service_monitor_days`, …). Env override: `SERVERBEE_RETENTION__SECURITY_EVENT_DAYS`.
 
-Recovery: `security_events` is added to `recovery_merge::merge_server_history_on_connection` so that when a server identity is rebound, security history follows. Because of this, agent writes do **not** bypass `RecoveryLockService` — they queue in the agent's existing reconnect buffer and drain after the freeze releases.
+Recovery: `security_event` is added to `recovery_merge::merge_server_history_on_connection` so that when a server identity is rebound, security history follows. Concretely:
 
-Migrations: `m20260521_001_create_security_event.rs` for the table; `m20260521_002_extend_alert_state_event_key.rs` adds `alert_state.event_key VARCHAR NULL` (see §7.3); `m20260521_003_backfill_capability_default.rs` sets `server.effective_capabilities = effective_capabilities | 256` for every existing row so default-on takes effect on upgrades. Each `up()` only; `down()` returns `Ok(())` per project convention.
+- `RecoveryLockService` is **not** consulted on `security_event` inserts. The agent has no ack/backpressure protocol — if the server silently dropped writes during freeze, events would be lost forever. Allowing the writes lets the row land under the source identity; `merge_server_history_on_connection` then reconciles it onto the target identity when recovery completes (same model used for `records` and `network_probe_record`).
+- The freeze remains in force for the tables that *need* the guard (record aggregation, traffic counters): writes that depend on prior state must be paused while history is being merged. `security_event` is append-only with no derived state, so it is safe to write during freeze.
+- This is the deliberate carve-out, documented in `service::security` source.
+
+Migrations:
+
+1. `m20260521_001_create_security_event.rs` — creates the table.
+2. `m20260521_002_extend_alert_state_event_key.rs` — adds `alert_states.event_key TEXT NOT NULL DEFAULT ''`, drops the existing unique index `idx_alert_states_rule_id_server_id` (`crates/server/src/migration/m20260312_000001_init.rs:579`), and recreates it as `idx_alert_states_rule_id_server_id_event_key` covering `(rule_id, server_id, event_key)`. We use `NOT NULL DEFAULT ''` because SQLite's UNIQUE treats multiple NULLs as distinct, which would bypass dedupe — legacy metric rules pass `event_key=""`, security rules pass the source IP.
+3. `m20260521_003_backfill_capability_default.rs` — `UPDATE servers SET capabilities = capabilities | 256 WHERE capabilities = 60` (the previous default). This is **scoped to rows still on the old default** so administrators who explicitly set a custom mask (lower or higher) are not silently expanded. Operators who want security events on a customized server enable it from the UI like any other capability.
+
+Each `up()` only; `down()` returns `Ok(())` per project convention.
+
+**Note on column naming**: the actual column is `servers.capabilities` (`i32`), not `effective_capabilities`. The "effective" mask is composed at runtime by `AgentManager::get_effective_capabilities(server_id)` (`crates/server/src/service/agent_manager.rs:500`), which ANDs the server-side configured mask with the agent's locally advertised mask. Spec snippets that check capability membership go through that helper.
 
 ## 5. Protocol (crates/common)
 
@@ -249,10 +261,10 @@ pub const CAP_DEFAULT: u32 =
 
 The existing `CAP_DEFAULT` is 60 (includes `CAP_UPGRADE`), so the new default is 316. The `CapabilityDescriptor` registry (`crates/common/src/constants.rs:129-178`) gains a new entry, and `parse_cap_token` / `Display` impls are updated.
 
-Backfill: `m20260521_003_backfill_capability_default.rs` runs `UPDATE servers SET effective_capabilities = effective_capabilities | 256 WHERE effective_capabilities & 256 = 0`. Without this, agents that upgrade in place stay disabled because their server row was created with the older mask.
+Backfill (`m20260521_003_backfill_capability_default.rs`): runs `UPDATE servers SET capabilities = capabilities | 256 WHERE capabilities = 60`. The `= 60` predicate scopes the change to rows that were still on the previous default — administrators who set a customized mask (whether stricter or wider) are not silently flipped. Without backfill, freshly upgraded installs whose server rows were written under the old default would silently keep security events disabled.
 
 Defence in depth:
-- Server rejects `SecurityEvent` when the per-server effective capabilities mask does not contain `CAP_SECURITY_EVENTS` (logged to `audit_log`).
+- Server rejects `SecurityEvent` when `agent_manager.get_effective_capabilities(server_id)` lacks `CAP_SECURITY_EVENTS` (logged to `audit_log`). If the agent connection is gone we fall back to reading `servers.capabilities` directly.
 - Agent self-disables the watcher if its local effective capability mask lacks the bit.
 
 ## 6. Agent Implementation
@@ -392,13 +404,18 @@ crates/server/src/
 ```rust
 // router/ws/agent.rs
 AgentMessage::SecurityEvent(payload) => {
-    if !has_capability(server.effective_capabilities, CAP_SECURITY_EVENTS) {
-        audit_log.write("security_event_denied", &server.id, ...).await?;
+    let caps = state.agent_manager
+        .get_effective_capabilities(&server_id)
+        .unwrap_or_else(|| u32::try_from(server.capabilities).unwrap_or(0));
+    if !has_capability(caps, CAP_SECURITY_EVENTS) {
+        audit_log.write("security_event_denied", &server_id, ...).await?;
         return;
     }
-    state.security_service.record_event(&server.id, payload).await.ok();
+    state.security_service.record_event(&server_id, payload).await.ok();
 }
 ```
+
+`get_effective_capabilities` returns `Some(u32)` only when both the server-side mask and the agent-local mask have been populated for the connection. In the rare case the agent has not yet sent its `SystemInfo`, we fall back to `servers.capabilities` directly.
 
 ### 7.2 service::security
 
@@ -407,7 +424,9 @@ pub struct SecurityService {
     db: DatabaseConnection,
     browser_tx: broadcast::Sender<BrowserMessage>,
     alert_state_manager: Arc<AlertStateManager>,
-    notification_dispatcher: Arc<NotificationDispatcher>,
+    // Notifications are dispatched via NotificationService::send_group
+    // (crates/server/src/service/notification.rs:323), called directly when a
+    // rule fires — there is no separate dispatcher type in the codebase today.
 }
 
 impl SecurityService {
@@ -449,21 +468,32 @@ pub struct SecurityRuleParams {
 fn default_dedupe_secs() -> u32 { 600 }
 ```
 
-New `rule_type` values: `ssh_brute_force_detected`, `ssh_new_ip_login` (fires only when `first_seen=true`), `port_scan_detected`. All existing rule_type strings remain untouched; the existing metric-based 60s `alert_evaluator` ignores the new types because it dispatches on `rule_type`.
+New `rule_type` values: `ssh_brute_force_detected`, `ssh_new_ip_login` (fires only when `first_seen=true`), `port_scan_detected`. All existing rule_type strings remain untouched.
 
-**Dedupe model**: existing `AlertStateManager.triggered: DashMap<(String, String), TriggeredInfo>` keys by `(rule_id, server_id)`. For security rules, collapsing on `(rule_id, server_id)` would merge "IP A scanning" and "IP B scanning" into one alert state, defeating per-attacker visibility. Solution:
+`EVENT_DRIVEN_RULE_TYPES` (`crates/server/src/service/alert.rs:15`) currently contains only `"ip_changed"`; we extend it to:
 
-- Migration `m20260521_002_extend_alert_state_event_key.rs` adds `alert_state.event_key VARCHAR NULL`.
-- `AlertStateManager.triggered` becomes `DashMap<(String, String, Option<String>), TriggeredInfo>` (third element = `event_key`; `None` for legacy metric-based rules, preserving their semantics).
-- All existing `is_triggered` / `get_info` / `mark_triggered` / `mark_resolved` helpers gain an `event_key: Option<&str>` parameter; metric rules pass `None`, security rules pass `Some(source_ip)`.
+```rust
+const EVENT_DRIVEN_RULE_TYPES: &[&str] =
+    &["ip_changed", "ssh_brute_force_detected", "ssh_new_ip_login", "port_scan_detected"];
+```
+
+This is what the metric-based 60s `alert_evaluator` uses to skip event-driven rules (see `alert.rs:468-475`). Without extending it, the periodic evaluator would attempt to handle the new types as metrics and likely no-op them, but the safer contract is to keep the registry authoritative.
+
+**Multi-item semantics**: `rules_json` allows multiple `AlertRuleItem`s per rule. Today the metric evaluator ORs items (any threshold trips). For security types, mixing items inside one rule has ambiguous meaning — e.g., "ssh_brute_force_detected AND port_scan_detected" doesn't map naturally to a single event. We therefore **forbid mixing security rule types with non-security types within one `alert_rule`**, and forbid more than one security item per rule. The validator in `service::alert` enforces this on `CreateAlertRule` / `UpdateAlertRule`. Rationale: each security preset becomes one focused rule (matches the proposed three-card UI in §8.4) and dedupe semantics stay unambiguous.
+
+**Dedupe model**: existing `AlertStateManager.triggered: DashMap<(String, String), TriggeredInfo>` keys by `(rule_id, server_id)`. The existing unique index `idx_alert_states_rule_id_server_id` (`crates/server/src/migration/m20260312_000001_init.rs:579`) enforces this at the DB level. For security rules, collapsing on `(rule_id, server_id)` would merge "IP A scanning" and "IP B scanning" into one alert state, defeating per-attacker visibility. Solution:
+
+- Migration `m20260521_002_extend_alert_state_event_key.rs` adds `alert_states.event_key TEXT NOT NULL DEFAULT ''`, drops `idx_alert_states_rule_id_server_id`, and creates `idx_alert_states_rule_id_server_id_event_key UNIQUE(rule_id, server_id, event_key)`. `NOT NULL DEFAULT ''` is required because SQLite UNIQUE treats multiple NULLs as distinct — using NULL would bypass dedupe.
+- `AlertStateManager.triggered` becomes `DashMap<(String, String, String), TriggeredInfo>` (third element = `event_key`; `""` for legacy metric-based rules, preserving their semantics; `source_ip` for security rules).
+- All existing `is_triggered` / `get_info` / `mark_triggered` / `mark_resolved` helpers gain an `event_key: &str` parameter; call sites in the metric evaluator pass `""`, security call sites pass the source IP.
 
 **Push-based trigger flow**:
 
 1. `record_event` (after broadcast) loads `alert_rules` where `enabled=true` and `cover_type/server_ids_json` covers this `server_id`.
-2. For each rule's `rules_json`, iterate `AlertRuleItem`s, match by `rule_type`, apply `SecurityRuleParams` filter (min_failed_count, min_distinct_ports, exclude_users/cidrs).
-3. On hit, call `alert_state_manager.mark_triggered(db, &rule_id, &server_id, Some(&source_ip))`. If `now - last_notified_at < dedupe_window_seconds`, skip notification. Otherwise dispatch through the existing `NotificationDispatcher`.
+2. For each rule's `rules_json`, find the single security `AlertRuleItem` (validator guarantees ≤1), match by `rule_type`, apply `SecurityRuleParams` filter (`min_failed_count`, `min_distinct_ports`, `exclude_users`, `exclude_cidrs`).
+3. On hit, call `alert_state_manager.mark_triggered(db, &rule_id, &server_id, &source_ip)`. If `now - last_notified_at < dedupe_window_seconds`, skip notification. Otherwise dispatch via `NotificationService::send_group` (`crates/server/src/service/notification.rs:323`), using the rule's `notification_group_id`.
 
-Relationship to the existing 60s `alert_evaluator`: complementary. Metric-based rules keep running on the 60s loop with `event_key = None`; security rules use push-based triggering for low latency.
+Relationship to the existing 60s `alert_evaluator`: complementary. Metric-based rules keep running on the 60s loop with `event_key=""`; security rules use push-based triggering with `event_key=source_ip` for low latency.
 
 ### 7.4 REST API
 
@@ -485,13 +515,13 @@ DELETE /api/security/events/:id   (admin only)
 No new background task. The existing `cleanup` task gains a step:
 
 ```rust
-let cutoff = Utc::now() - Duration::days(config.retention.security_events_days as i64);
+let cutoff = Utc::now() - Duration::days(config.retention.security_event_days as i64);
 security_event::Entity::delete_many()
     .filter(security_event::Column::CreatedAt.lt(cutoff))
     .exec(&db).await?;
 ```
 
-Config: new field `retention.security_events_days: u32` on `RetentionConfig` (`crates/server/src/config.rs:113`), default `30`, following the existing naming convention. Env override: `SERVERBEE_RETENTION__SECURITY_EVENTS_DAYS`.
+Config: new field `retention.security_event_days: u32` on `RetentionConfig` (`crates/server/src/config.rs:113`), default `30`, following the existing naming convention. Env override: `SERVERBEE_RETENTION__SECURITY_EVENT_DAYS`.
 
 ### 7.6 Recovery merge
 
@@ -500,7 +530,7 @@ Config: new field `retention.security_events_days: u32` on `RetentionConfig` (`c
 ```rust
 Self::merge_raw_table_on_connection(
     db,
-    "security_events",
+    "security_event",
     "created_at",
     target_server_id,
     source_server_id,
@@ -574,7 +604,7 @@ case 'security_event': {
 | `CAP_NET_ADMIN` missing → netlink bind fails | ConntrackWatcher disabled; SSH continues | Agent log warn |
 | `first_seen.json` parse failure | Rename to `.corrupt-<ts>`, rebuild empty | Agent log error |
 | `first_seen.json` disk write failure | Memory state continues; 5min backoff on flush; sustained 24h failure escalates to error log | Agent log error |
-| In-memory queue overflow (WS down) | Cap 1000 entries; drop oldest; on reconnect, batch send; emit one synthetic `buffer_overflow` event with discarded count | Logged + 1 metadata event |
+| In-memory queue overflow (WS down) | Cap 1000 entries; drop oldest; on reconnect, batch send. No synthetic event is emitted (there's no matching `SecurityEventType` / evidence schema and we don't want to dilute attack signal). Record drop count to `agent log warn` + `tracing::counter!("security.events.dropped")`. | Agent log warn + metric |
 | Detector state map blowup under DDoS | Per-detector map cap 10000 source IPs; LRU evict; if evicted IP already > 50% of threshold, force-emit | Internal metric |
 
 Principle: partial degradation > full stop. SSH and Scan pipelines are independent.
@@ -589,7 +619,7 @@ Principle: partial degradation > full stop. SSH and Scan pipelines are independe
 | `browser_tx.send()` errors (no subscribers) | Ignored (broadcast convention) |
 | `alert_trigger` panics | `tokio::spawn` + `catch_unwind` isolates |
 | DB write failure | Retry 3× (100ms, 500ms, 2s), then drop + metric `security_event_drop_total` |
-| RecoveryLock freeze period | No bypass. The agent's existing reconnect buffer holds events; `recovery_merge` reconciles rows written under a source identity (see §7.6) |
+| RecoveryLock freeze period | Deliberate carve-out: `security_event` writes proceed during freeze (append-only, no derived state). Rows landing under a source identity are reconciled by `recovery_merge` (see §7.6). |
 
 ### 9.3 Rate limit (anti-DoS)
 
@@ -616,7 +646,7 @@ Principle: partial degradation > full stop. SSH and Scan pipelines are independe
 
 Agent:
 - `ssh_parser` — table-driven across Debian/Ubuntu/RHEL/Alpine sshd output, IPv6, long usernames, special chars. Fixtures in `tests/fixtures/sshd_logs/*.txt`.
-- `ssh_detector` — injected `Clock` trait to simulate time; verifies threshold trip, distinct_user gate, post-trip silence, scope of cleanup
+- `ssh_detector` — injected `Clock` trait to simulate time; verifies threshold trip on **single-user hammering** (one username × `failed_threshold` attempts must fire), severity escalation table (1 user → medium, 2-4 → high, ≥5 → critical), post-trip silence within window, scope of cleanup
 - `scan_detector` — same shape; verifies distinct-port threshold, single-port repeat does not trip, sliding window correctness
 - `first_seen_store` — load/save/corruption recovery/LRU eviction
 - `journal_watcher` — mocked subprocess stdout; verifies fallback switch
@@ -667,7 +697,7 @@ Phase ordering (single PR may be too big; split into 3 PRs):
 3. **Server & UI PR** — `service::security`, REST API, alert rule kinds, frontend pages.
 
 Documentation updates that ship alongside:
-- `ENV.md` — `SERVERBEE_SECURITY__MAX_EVENTS_PER_MINUTE` and `SERVERBEE_RETENTION__SECURITY_EVENTS_DAYS`
+- `ENV.md` — `SERVERBEE_SECURITY__MAX_EVENTS_PER_MINUTE` and `SERVERBEE_RETENTION__SECURITY_EVENT_DAYS`
 - `apps/docs/content/docs/{en,cn}/configuration.mdx` — same env block
 - `apps/docs/content/docs/{en,cn}/` — new "Security Events" page covering detection mechanics, the explicit privilege model (default-on capability vs opt-in `CAP_NET_ADMIN` for conntrack), the systemd-unit edit for scan detection, and false-positive tuning
 - `tests/security-events.md` — E2E checklist
