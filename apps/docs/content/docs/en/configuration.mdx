@@ -98,6 +98,7 @@ There is no admin username/password environment variable. On first start (when n
 | `SERVERBEE_RETENTION__TASK_RESULTS_DAYS` | `7` | Task results retention in days |
 | `SERVERBEE_RETENTION__DOCKER_EVENTS_DAYS` | `7` | Docker event records retention in days |
 | `SERVERBEE_RETENTION__SERVICE_MONITOR_DAYS` | `30` | Service monitor records retention in days |
+| `SERVERBEE_RETENTION__SECURITY_EVENT_DAYS` | `30` | Security event records retention in days |
 
 #### Mobile (Optional)
 
@@ -207,6 +208,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | `task_results_days` | u32 | `7` | Days to keep task execution results |
 | `docker_events_days` | u32 | `7` | Days to keep Docker event records |
 | `service_monitor_days` | u32 | `30` | Days to keep service monitor check records |
+| `security_event_days` | u32 | `30` | Days to keep security event records (SSH login/brute force, port scan) |
 
 <Callout type="info">
 Raw metric records are collected every 60 seconds and retained for 7 days by default. The hourly aggregator computes averages so you can keep long-term trends for 90 days without excessive storage. Adjust these values based on your disk space and monitoring needs.
