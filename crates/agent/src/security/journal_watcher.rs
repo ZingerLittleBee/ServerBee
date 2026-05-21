@@ -116,12 +116,11 @@ pub async fn drain_journalctl_json<R: AsyncRead + Unpin>(
 ) -> io::Result<()> {
     let mut lines = reader.lines();
     while let Some(line) = lines.next_line().await? {
-        if let Some(msg) = extract_message(&line) {
-            if let Some(attempt) = parse_sshd_line(&msg) {
-                if out_tx.send(attempt).await.is_err() {
-                    break;
-                }
-            }
+        if let Some(msg) = extract_message(&line)
+            && let Some(attempt) = parse_sshd_line(&msg)
+            && out_tx.send(attempt).await.is_err()
+        {
+            break;
         }
     }
     Ok(())
@@ -162,12 +161,11 @@ pub async fn drain_auth_log<R: AsyncBufRead + Unpin>(
         // auth.log lines look like:
         // `Mar 12 13:14:15 host sshd[123]: Failed password for ...`
         // We strip everything up to the first sshd[NNN]: prefix.
-        if let Some(msg) = strip_syslog_prefix(buf.trim_end()) {
-            if let Some(attempt) = parse_sshd_line(msg) {
-                if out_tx.send(attempt).await.is_err() {
-                    break;
-                }
-            }
+        if let Some(msg) = strip_syslog_prefix(buf.trim_end())
+            && let Some(attempt) = parse_sshd_line(msg)
+            && out_tx.send(attempt).await.is_err()
+        {
+            break;
         }
     }
     Ok(())
@@ -279,12 +277,11 @@ pub async fn drain_kernel_json<R: AsyncRead + Unpin>(
 ) -> io::Result<()> {
     let mut lines = reader.lines();
     while let Some(line) = lines.next_line().await? {
-        if let Some(msg) = extract_message(&line) {
-            if let Some(ip) = extract_blocked_ip(&msg) {
-                if out_tx.send(ip).await.is_err() {
-                    break;
-                }
-            }
+        if let Some(msg) = extract_message(&line)
+            && let Some(ip) = extract_blocked_ip(&msg)
+            && out_tx.send(ip).await.is_err()
+        {
+            break;
         }
     }
     Ok(())
@@ -357,10 +354,7 @@ mod tests {
     #[tokio::test]
     async fn drain_journalctl_json_handles_binary_message() {
         // journalctl emits non-UTF8 fields as a byte array.
-        let bytes: Vec<u8> = b"Failed password for root from 1.2.3.4 port 22 ssh2"
-            .iter()
-            .map(|b| *b as u8)
-            .collect();
+        let bytes: Vec<u8> = b"Failed password for root from 1.2.3.4 port 22 ssh2".to_vec();
         let array_str = serde_json::to_string(&bytes).unwrap();
         let line = format!(r#"{{"MESSAGE":{array_str}}}"#);
         let (tx, mut rx) = mpsc::channel(4);

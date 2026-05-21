@@ -123,10 +123,10 @@ pub async fn drain_conntrack_events<R: AsyncRead + Unpin>(
 ) -> io::Result<()> {
     let mut lines = reader.lines();
     while let Some(line) = lines.next_line().await? {
-        if let Some(ev) = parse_conntrack_line(&line) {
-            if out_tx.send(ev).await.is_err() {
-                break;
-            }
+        if let Some(ev) = parse_conntrack_line(&line)
+            && out_tx.send(ev).await.is_err()
+        {
+            break;
         }
     }
     Ok(())

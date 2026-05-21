@@ -290,8 +290,10 @@ mod tests {
 
     #[tokio::test]
     async fn start_returns_empty_when_disabled_in_config() {
-        let mut cfg = SecurityConfig::default();
-        cfg.enabled = false;
+        let cfg = SecurityConfig {
+            enabled: false,
+            ..SecurityConfig::default()
+        };
         let (tx, _rx) = mpsc::channel(8);
         let mgr = SecurityManager::start(cfg, CAP_DEFAULT, tx).await.unwrap();
         assert_eq!(mgr.handle_count(), 0);

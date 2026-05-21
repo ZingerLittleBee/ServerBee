@@ -100,10 +100,10 @@ impl FirstSeenStore {
         if !self.dirty {
             return Ok(());
         }
-        if let Some(parent) = self.path.parent() {
-            if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent)?;
-            }
+        if let Some(parent) = self.path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            fs::create_dir_all(parent)?;
         }
         let payload = Persisted {
             entries: self
@@ -113,8 +113,7 @@ impl FirstSeenStore {
                 .collect(),
         };
         let tmp = self.path.with_extension("tmp");
-        let bytes = serde_json::to_vec(&payload)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let bytes = serde_json::to_vec(&payload).map_err(io::Error::other)?;
         fs::write(&tmp, &bytes)?;
         fs::rename(&tmp, &self.path)?;
         self.dirty = false;
