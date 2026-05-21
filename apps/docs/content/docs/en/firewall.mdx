@@ -27,6 +27,25 @@ The server rejects targets that overlap a protected range:
 
 A `409` response with the matched reason is returned in those cases.
 
+<Callout type="warn">
+**Protect your own public IP.** The "agent external IP" guardrail relies on the IPv4 /
+IPv6 address each agent reports about itself. On hosts where the agent's primary
+interface is a private bridge (Docker, NAT VPS, multi-homed), the reported address may
+**not** be the real public IP — and the guardrail will not catch an attempt to block it.
+
+To be safe, **add your VPS's public IP (or CIDR) to `firewall.allow_list` in
+`server.toml`**. Anything that overlaps this list is refused at create time, no matter
+who requests it. Example:
+
+```toml
+[firewall]
+allow_list = ["198.51.100.42", "203.0.113.0/29"]
+```
+
+This is also the way to protect your bastion / admin IPs from accidental auto-block
+actions.
+</Callout>
+
 ## Auto-block from alerts
 
 Brute-force and port-scan alert rules can append a `block_source_ip` action that auto-inserts the event's source IP. See [Security Events → Auto-block source IP](/en/docs/security-events).
