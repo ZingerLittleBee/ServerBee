@@ -56,7 +56,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("release_repo_url overridden by --release-repo CLI flag");
         config.upgrade.release_repo_url = repo;
     }
-    let agent_local_capabilities = compute_agent_local_capabilities(&capability_overrides);
+    let mut agent_local_capabilities = compute_agent_local_capabilities(&capability_overrides);
 
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -98,6 +98,19 @@ async fn main() -> anyhow::Result<()> {
         "ServerBee Agent v{} starting...",
         serverbee_common::constants::VERSION
     );
+
+    // Probe local firewall capability once at startup. If `nft` is missing or
+    // the agent lacks CAP_NET_ADMIN, the firewall block bit stays off so the
+    // server never tries to push blocklist messages at this agent.
+    let firewall_local = crate::firewall::probe_local_capability().await;
+    if firewall_local {
+        agent_local_capabilities |= serverbee_common::constants::CAP_FIREWALL_BLOCK;
+        tracing::info!("Local firewall capability probed: nft available");
+    } else {
+        tracing::info!(
+            "Local firewall capability probed: nft unavailable (binary, kernel, or privileges missing)"
+        );
+    }
 
     let machine_fingerprint = fingerprint::generate();
     if !machine_fingerprint.is_empty() {

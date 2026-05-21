@@ -20,6 +20,8 @@ use crate::collector::Collector;
 use crate::config::AgentConfig;
 use crate::docker::DockerManager;
 use crate::file_manager::{FileEvent, FileManager};
+use crate::firewall::FirewallManager;
+use crate::firewall::nft::CliNftExecutor;
 use crate::network_prober::NetworkProber;
 use crate::pinger::PingManager;
 use crate::register;
@@ -41,14 +43,24 @@ pub struct Reporter {
     config: AgentConfig,
     fingerprint: String,
     agent_local_capabilities: u32,
+    firewall_manager: Arc<FirewallManager>,
 }
 
 impl Reporter {
     pub fn new(config: AgentConfig, fingerprint: String, agent_local_capabilities: u32) -> Self {
+        let firewall_local = has_capability(
+            agent_local_capabilities,
+            serverbee_common::constants::CAP_FIREWALL_BLOCK,
+        );
+        let firewall_manager = Arc::new(FirewallManager::new(
+            Arc::new(CliNftExecutor),
+            firewall_local,
+        ));
         Self {
             config,
             fingerprint,
             agent_local_capabilities,
+            firewall_manager,
         }
     }
 
@@ -228,6 +240,11 @@ impl Reporter {
             &self.config.ip_change.external_ip_url,
         )
         .await;
+        // Feed the agent's external IP into the firewall guardrail before
+        // any blocklist push can arrive.
+        if let Some(ip) = primary_external_ip(initial_ipv4.as_deref(), initial_ipv6.as_deref()) {
+            self.firewall_manager.set_external_ip(Some(ip)).await;
+        }
         let info_msg = AgentMessage::SystemInfo {
             msg_id: uuid::Uuid::new_v4().to_string(),
             info: serverbee_common::types::SystemInfo {
@@ -387,6 +404,13 @@ impl Reporter {
                         tracing::info!("IP change detected");
                         let (primary_ipv4, primary_ipv6) =
                             derive_primary_ips(&new_ips, ip_check_external, &ip_external_url).await;
+                        // Update the firewall guardrail's idea of our own
+                        // external IP whenever the primary address changes.
+                        let own_ip = primary_external_ip(
+                            primary_ipv4.as_deref(),
+                            primary_ipv6.as_deref(),
+                        );
+                        self.firewall_manager.set_external_ip(own_ip).await;
                         let msg = AgentMessage::IpChanged {
                             ipv4: primary_ipv4,
                             ipv6: primary_ipv6,
@@ -1136,12 +1160,18 @@ impl Reporter {
                     write.send(Message::Text(json.into())).await?;
                 }
             }
-            // Firewall blocklist variants — handled in Phase 3.
-            ServerMessage::BlocklistSync { .. }
+            // Firewall blocklist variants — dispatched to the FirewallManager
+            // state machine; any returned ack is sent straight back over the
+            // WebSocket.
+            msg @ (ServerMessage::BlocklistSync { .. }
             | ServerMessage::BlocklistAdd { .. }
             | ServerMessage::BlocklistRemove { .. }
-            | ServerMessage::BlocklistReset => {
-                tracing::debug!("Firewall message received before Phase 3 wiring; ignoring");
+            | ServerMessage::BlocklistReset) => {
+                if let Some(reply) = self.firewall_manager.handle(msg).await {
+                    let json = serde_json::to_string(&reply)?;
+                    write.send(Message::Text(json.into())).await?;
+                    tracing::debug!("Sent firewall blocklist ack");
+                }
             }
         }
 
@@ -1587,6 +1617,23 @@ fn collect_interface_ips() -> Vec<NetworkInterface> {
 
 /// Derive primary IPv4/IPv6 from the interface list.
 /// If `check_external` is true, also query the external IP service.
+/// Convert the primary IPv4/IPv6 strings emitted by `derive_primary_ips` into
+/// a single parsed `IpAddr`, preferring IPv4 (matches the server-side guardrail
+/// convention). Returns `None` when both inputs are missing or unparseable.
+fn primary_external_ip(ipv4: Option<&str>, ipv6: Option<&str>) -> Option<IpAddr> {
+    if let Some(s) = ipv4
+        && let Ok(ip) = s.parse::<IpAddr>()
+    {
+        return Some(ip);
+    }
+    if let Some(s) = ipv6
+        && let Ok(ip) = s.parse::<IpAddr>()
+    {
+        return Some(ip);
+    }
+    None
+}
+
 async fn derive_primary_ips(
     interfaces: &[NetworkInterface],
     check_external: bool,
