@@ -95,6 +95,19 @@ type WsMessage =
       event_id: string
       event: SecurityEventDto
     }
+  | {
+      type: 'blocklist_changed'
+      kind: 'created' | 'deleted'
+      block_id: string
+      target: string
+    }
+  | {
+      type: 'firewall_apply_state_changed'
+      block_id: string
+      server_id: string
+      state: 'present' | 'absent' | 'failed'
+      reason?: string | null
+    }
 
 export type { ServerMetrics }
 
@@ -380,6 +393,39 @@ function prependSecurityEventToInfinite(
   return { ...prev, pages: [updatedFirst, ...rest] }
 }
 
+const FIREWALL_DEBOUNCE_TIMERS = new Map<string, ReturnType<typeof setTimeout>>()
+
+function debounceInvalidate(queryClient: QueryClient, queryKey: readonly unknown[], delayMs: number): void {
+  const cacheKey = JSON.stringify(queryKey)
+  const existing = FIREWALL_DEBOUNCE_TIMERS.get(cacheKey)
+  if (existing) {
+    clearTimeout(existing)
+  }
+  const handle = setTimeout(() => {
+    FIREWALL_DEBOUNCE_TIMERS.delete(cacheKey)
+    queryClient.invalidateQueries({ queryKey: queryKey as unknown as unknown[] }).catch(() => undefined)
+  }, delayMs)
+  FIREWALL_DEBOUNCE_TIMERS.set(cacheKey, handle)
+}
+
+function handleFirewallMessage(raw: { type: string } & Record<string, unknown>, queryClient: QueryClient): void {
+  if (raw.type === 'blocklist_changed') {
+    if (typeof raw.block_id !== 'string' || typeof raw.target !== 'string') {
+      return
+    }
+    debounceInvalidate(queryClient, ['firewall', 'blocks'], 1000)
+    queryClient.invalidateQueries({ queryKey: ['firewall', 'stats'] }).catch(() => undefined)
+    return
+  }
+  if (raw.type === 'firewall_apply_state_changed') {
+    if (typeof raw.block_id !== 'string' || typeof raw.server_id !== 'string' || typeof raw.state !== 'string') {
+      return
+    }
+    queryClient.invalidateQueries({ queryKey: ['firewall', 'block', raw.block_id] }).catch(() => undefined)
+    debounceInvalidate(queryClient, ['firewall', 'activity'], 500)
+  }
+}
+
 function handleSecurityEventMessage(raw: { type: string } & Record<string, unknown>, queryClient: QueryClient): void {
   if (raw.type !== 'security_event') {
     return
@@ -449,6 +495,10 @@ export function handleWsMessage(raw: unknown, queryClient: QueryClient): void {
       break
     case 'security_event':
       handleSecurityEventMessage(raw, queryClient)
+      break
+    case 'blocklist_changed':
+    case 'firewall_apply_state_changed':
+      handleFirewallMessage(raw, queryClient)
       break
     case 'upgrade_progress': {
       if (
