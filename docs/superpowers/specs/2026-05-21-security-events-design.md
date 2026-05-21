@@ -87,7 +87,8 @@ New table `security_event`:
 ```rust
 // crates/server/src/entity/security_event.rs
 pub struct Model {
-    pub id: String,                     // ULID, matches the project's existing PK convention
+    pub id: String,                     // UUID v4 string, matches `Uuid::new_v4().to_string()`
+                                        // pattern used across the codebase (e.g. alert.rs:284)
     pub server_id: String,              // FK → server.id (String per project convention)
     pub event_type: String,             // "ssh_login" | "ssh_brute_force" | "port_scan"
     pub severity: String,               // "info" | "low" | "medium" | "high" | "critical"
@@ -206,31 +207,9 @@ pub enum SecurityEvidence {
 
 ### 5.2 ServerMessage (config push)
 
-```rust
-pub enum ServerMessage {
-    // ... existing variants
-    SecurityConfigSync(SecurityConfig),
-}
+**v1 deliberately does not add a `SecurityConfigSync` variant.** Detection thresholds live entirely in the agent's local `agent.toml` (see §6.6) with built-in defaults. We considered a server → agent push channel, but shipping it cleanly requires server-side persistence (new table or `app_config` rows), CRUD API, UI, and propagation on rule edit. That is more surface area than the v1 problem (alerting on detected attacks) justifies.
 
-pub struct SecurityConfig {
-    pub ssh_brute_force: BruteForceConfig,
-    pub port_scan: PortScanConfig,
-}
-
-pub struct BruteForceConfig {
-    pub window_seconds: u32,       // default 60
-    pub failed_threshold: u32,     // default 10
-    // distinct_users is derived from observations and only affects severity assignment,
-    // not whether the event fires. See §6.4 for the severity table.
-}
-
-pub struct PortScanConfig {
-    pub window_seconds: u32,           // default 30
-    pub distinct_port_threshold: u32,  // default 20
-}
-```
-
-Sent right after `Welcome` if the server has `CAP_SECURITY_EVENTS`; resent whenever server-side config changes.
+Phase 2 will add `ServerMessage::SecurityConfigSync` together with the server-side config store. The protocol additions are listed in §12 so detectors can be designed to read configuration through an `Arc<RwLock<SecurityConfig>>` from day one, making the future push wire-up a drop-in.
 
 ### 5.3 BrowserMessage
 
@@ -286,14 +265,16 @@ crates/agent/src/security/
 
 ```rust
 pub struct SecurityManager {
-    tx: mpsc::Sender<AgentMessage>,           // → Reporter
-    config: Arc<RwLock<SecurityConfig>>,      // updated by SecurityConfigSync
+    tx: mpsc::Sender<AgentMessage>,        // → Reporter
+    config: Arc<RwLock<SecurityConfig>>,   // loaded once from agent.toml; the RwLock
+                                           // shape lets phase-2 SecurityConfigSync
+                                           // swap thresholds without restarting watchers
     journal_handle: Option<JoinHandle<()>>,
     conntrack_handle: Option<JoinHandle<()>>,
 }
 ```
 
-Start conditions: local capability includes `CAP_SECURITY_EVENTS` AND target_os is Linux.
+Start conditions: local capability includes `CAP_SECURITY_EVENTS` AND `target_os = "linux"`.
 
 ### 6.2 JournalWatcher
 
@@ -385,7 +366,7 @@ window_seconds = 30
 distinct_port_threshold = 20
 ```
 
-Precedence: server-pushed `SecurityConfigSync` > local toml > built-in defaults. `SecurityConfigSync` does **not** override `security.port_scan.enabled` — that flag is a local privilege opt-in and must not be flippable from the control plane.
+Precedence (v1): local `agent.toml` > built-in defaults. There is no server-side override path in v1 — see §5.2 and §12. When phase-2 adds `SecurityConfigSync`, `security.port_scan.enabled` will be excluded from the syncable set: it is a local privilege opt-in and must not be flippable from the control plane.
 
 ## 7. Server Implementation
 
@@ -402,20 +383,30 @@ crates/server/src/
 ### 7.1 WS entry point
 
 ```rust
-// router/ws/agent.rs
+// router/ws/agent.rs — inside handle_agent_message(state, server_id, msg)
 AgentMessage::SecurityEvent(payload) => {
-    let caps = state.agent_manager
-        .get_effective_capabilities(&server_id)
-        .unwrap_or_else(|| u32::try_from(server.capabilities).unwrap_or(0));
+    // handle_agent_message only carries server_id (not the server model),
+    // matching how other branches like PingResult / TerminalOutput operate.
+    let caps = match state.agent_manager.get_effective_capabilities(server_id) {
+        Some(c) => c,
+        None => {
+            // Agent has not yet sent SystemInfo on this connection. Cheap DB lookup
+            // by primary key; cached server snapshots are not part of AppState.
+            match server::Entity::find_by_id(server_id).one(&state.db).await {
+                Ok(Some(s)) => u32::try_from(s.capabilities).unwrap_or(0),
+                _ => 0,
+            }
+        }
+    };
     if !has_capability(caps, CAP_SECURITY_EVENTS) {
-        audit_log.write("security_event_denied", &server_id, ...).await?;
+        AuditLogService::write("security_event_denied", server_id, ...).await.ok();
         return;
     }
-    state.security_service.record_event(&server_id, payload).await.ok();
+    state.security_service.record_event(server_id, payload).await.ok();
 }
 ```
 
-`get_effective_capabilities` returns `Some(u32)` only when both the server-side mask and the agent-local mask have been populated for the connection. In the rare case the agent has not yet sent its `SystemInfo`, we fall back to `servers.capabilities` directly.
+The `&server_id` is already a `&str` in the handler scope; no extra cloning is needed. The fallback DB query is rare in practice — `SystemInfo` arrives within the first few seconds of a new connection — so we don't pre-fetch the server model just to make the hot path branchless.
 
 ### 7.2 service::security
 
@@ -432,7 +423,7 @@ pub struct SecurityService {
 impl SecurityService {
     pub async fn record_event(&self, server_id: &str, p: SecurityEventPayload) -> Result<String> {
         // 1. Validate (IP format, evidence shape, allowed event_type)
-        // 2. Insert security_event row (ULID id)
+        // 2. Insert security_event row (UUID id)
         // 3. Broadcast BrowserMessage::SecurityEvent
         // 4. Evaluate matching alert rules inline (push-based, low-latency).
     }
@@ -479,7 +470,7 @@ const EVENT_DRIVEN_RULE_TYPES: &[&str] =
 
 This is what the metric-based 60s `alert_evaluator` uses to skip event-driven rules (see `alert.rs:468-475`). Without extending it, the periodic evaluator would attempt to handle the new types as metrics and likely no-op them, but the safer contract is to keep the registry authoritative.
 
-**Multi-item semantics**: `rules_json` allows multiple `AlertRuleItem`s per rule. Today the metric evaluator ORs items (any threshold trips). For security types, mixing items inside one rule has ambiguous meaning — e.g., "ssh_brute_force_detected AND port_scan_detected" doesn't map naturally to a single event. We therefore **forbid mixing security rule types with non-security types within one `alert_rule`**, and forbid more than one security item per rule. The validator in `service::alert` enforces this on `CreateAlertRule` / `UpdateAlertRule`. Rationale: each security preset becomes one focused rule (matches the proposed three-card UI in §8.4) and dedupe semantics stay unambiguous.
+**Multi-item semantics**: `rules_json` allows multiple `AlertRuleItem`s per rule. The metric evaluator's `check_server` (`crates/server/src/service/alert.rs:531`) requires **all** items to match (AND semantics — `if !matched { return false }`). For event-driven security types, AND across mixed types is meaningless — a single inbound `SecurityEvent` can only satisfy one type. We therefore **forbid mixing security rule types with non-security types within one `alert_rule`**, and forbid more than one security item per rule. The validator in `service::alert` enforces this on `CreateAlertRule` / `UpdateAlertRule`. Rationale: each security preset becomes one focused rule (matches the three-card UI in §8.4) and dedupe semantics stay unambiguous.
 
 **Dedupe model**: existing `AlertStateManager.triggered: DashMap<(String, String), TriggeredInfo>` keys by `(rule_id, server_id)`. The existing unique index `idx_alert_states_rule_id_server_id` (`crates/server/src/migration/m20260312_000001_init.rs:579`) enforces this at the DB level. For security rules, collapsing on `(rule_id, server_id)` would merge "IP A scanning" and "IP B scanning" into one alert state, defeating per-attacker visibility. Solution:
 
@@ -491,7 +482,13 @@ This is what the metric-based 60s `alert_evaluator` uses to skip event-driven ru
 
 1. `record_event` (after broadcast) loads `alert_rules` where `enabled=true` and `cover_type/server_ids_json` covers this `server_id`.
 2. For each rule's `rules_json`, find the single security `AlertRuleItem` (validator guarantees ≤1), match by `rule_type`, apply `SecurityRuleParams` filter (`min_failed_count`, `min_distinct_ports`, `exclude_users`, `exclude_cidrs`).
-3. On hit, call `alert_state_manager.mark_triggered(db, &rule_id, &server_id, &source_ip)`. If `now - last_notified_at < dedupe_window_seconds`, skip notification. Otherwise dispatch via `NotificationService::send_group` (`crates/server/src/service/notification.rs:323`), using the rule's `notification_group_id`.
+3. On hit, mirror the order used by `handle_triggered` (`crates/server/src/service/alert.rs:574`):
+   1. Read `alert_state_manager.get_info(&rule_id, &server_id, &source_ip)`.
+   2. Compute `should_notify`: `info.is_none() || (now - info.last_notified_at) >= dedupe_window_seconds`.
+   3. Call `alert_state_manager.mark_triggered(db, &rule_id, &server_id, &source_ip)` to bump count and update `last_notified_at`.
+   4. If `should_notify`, dispatch via `NotificationService::send_group` (`crates/server/src/service/notification.rs:323`) using the rule's `notification_group_id`.
+
+   Reversing read/mark would clobber `last_notified_at` and dedupe every notification away forever.
 
 Relationship to the existing 60s `alert_evaluator`: complementary. Metric-based rules keep running on the 60s loop with `event_key=""`; security rules use push-based triggering with `event_key=source_ip` for low latency.
 
@@ -590,7 +587,7 @@ case 'security_event': {
 ### 8.5 Types & i18n
 
 - DTOs flow into `api-types.gen.ts` via `bun run generate:api-types`
-- WS message types added to `apps/web/src/types/ws.ts` (mirrors `BrowserMessage`)
+- WS message types are currently inlined in `apps/web/src/hooks/use-servers-ws.ts:55` (the `WsMessage` union). Add `{ type: 'security_event'; server_id: string; event_id: string; event: SecurityEventPayload }` as a new union arm there. No new types module is created — splitting that union out is a separate refactor and out of scope for this spec.
 - `apps/web/src/locales/{en,zh}/security.json` — ~30 strings
 
 ## 9. Error Handling & Edge Cases
@@ -706,8 +703,9 @@ Documentation updates that ship alongside:
 
 Out of scope for v1 but kept reachable:
 
-- `SecurityRollup` agent message — periodic per-window compact stats (top-N offending IPs, blocked-conn counts)
-- Cross-server correlation: detect IPs scanning multiple agents from the same fleet
-- IP reputation enrichment (ASN, country, abuse score)
-- Notification suppression / event coalescing across rules
-- Whitelist management UI (per-IP / per-CIDR exemptions)
+- **`ServerMessage::SecurityConfigSync` + server-side config store** — push threshold overrides from the control plane. Requires: a new `security_config` table (or rows in existing `config`), CRUD REST endpoints under `/api/security/config`, a Settings page UI, and propagation hook in agent_manager when the server boots / config changes. `security.port_scan.enabled` is excluded from the syncable set.
+- `SecurityRollup` agent message — periodic per-window compact stats (top-N offending IPs, blocked-conn counts).
+- Cross-server correlation: detect IPs scanning multiple agents from the same fleet.
+- IP reputation enrichment (ASN, country, abuse score).
+- Notification suppression / event coalescing across rules.
+- Whitelist management UI (per-IP / per-CIDR exemptions).
