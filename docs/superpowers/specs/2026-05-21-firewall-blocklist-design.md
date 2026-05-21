@@ -143,6 +143,11 @@ pub enum ServerMessage {
     BlocklistSync { entries: Vec<BlockEntry> },
     BlocklistAdd { entry: BlockEntry },
     BlocklistRemove { id: String },
+    /// Explicit "wipe everything" — independent of capability mask, agent
+    /// always honors it. Used when capability bit transitions off, when an
+    /// admin wants to force a clean slate, or on server-side data corruption
+    /// recovery. The agent flushes both nft sets, clears `desired`, and acks.
+    BlocklistReset,
 }
 
 pub enum AgentMessage {
@@ -150,13 +155,32 @@ pub enum AgentMessage {
     BlocklistAck {
         results: Vec<BlocklistAckItem>,
     },
+    /// Sent in response to BlocklistReset. Confirms the wipe happened (or
+    /// reports why it could not).
+    BlocklistResetAck { ok: bool, reason: Option<String> },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BlocklistAckItem {
     pub id: String,
-    pub applied: bool,
-    pub reason: Option<String>, // populated when applied = false
+    /// Authoritative agent-observed state for this entry after the op.
+    pub state: BlocklistEntryState,
+    /// Populated only when state = Failed.
+    pub reason: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BlocklistEntryState {
+    /// The target is currently in the nft set on this agent.
+    Present,
+    /// The target is absent from the nft set on this agent (either never
+    /// applied, or just removed).
+    Absent,
+    /// The agent tried to act on this entry and failed. `reason` describes
+    /// the failure. Server keeps the entry in `block_list` and retries on
+    /// the next Sync.
+    Failed,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -169,7 +193,9 @@ pub struct BlockEntry {
 
 `BlockEntry` does **not** carry `cover_type` / `server_ids_json` — the server already filters before sending, so the agent applies whatever it receives.
 
-`BlocklistAck` carries **both successes and failures** so the server has authoritative per-agent apply state. For incremental ops (`BlocklistAdd` / `BlocklistRemove`) the ack contains one item. For `BlocklistSync` the ack batches all entries the agent attempted to apply (one item per entry, both old and new), so a single Sync results in exactly one Ack message with N items. This keeps WS volume bounded (1 ack per reconcile) while letting the server stop inferring "not applied" from audit logs.
+`BlocklistAck` carries **per-entry final state** so the server has authoritative per-agent apply state. The `state` enum distinguishes `present` (added) from `absent` (removed) — both are "successful" but mean different things in the apply-state map and the audit log. `failed` keeps server's view consistent with reality and triggers retry on the next Sync.
+
+For `BlocklistAdd` the ack contains one `Present` (or `Failed`) item. For `BlocklistRemove` the ack contains one `Absent` (or `Failed`) item. For `BlocklistSync` the ack contains one item **per incoming entry** plus one item per just-removed entry — see § 6.2 for why ack-on-unchanged matters for apply-state reconstruction after a server restart.
 
 ---
 
@@ -205,7 +231,7 @@ Same overlap test as tier 1.
 
 ### 4.3 Tier 3 — agent-side (subset)
 
-Before issuing `nft add element` the agent re-runs **tier 1 (hard-coded) + its own external IP**. This is intentionally a subset of the server-side check: the agent does not see `firewall.allow_list`, `server.trusted_proxies`, or other agents' external IPs. The server-side tiers run first, so the agent tier is a backstop against bugs / version skew, not the primary gatekeeper. On hit, the agent emits `BlocklistAck { applied: false, reason: "guardrail: …" }` for that entry.
+Before issuing `nft add element` the agent re-runs **tier 1 (hard-coded) + its own external IP**. This is intentionally a subset of the server-side check: the agent does not see `firewall.allow_list`, `server.trusted_proxies`, or other agents' external IPs. The server-side tiers run first, so the agent tier is a backstop against bugs / version skew, not the primary gatekeeper. On hit, the agent emits `BlocklistAckItem { state: Failed, reason: "guardrail: …" }` for that entry.
 
 ### 4.4 Audit on rejection
 
@@ -213,13 +239,17 @@ Before issuing `nft add element` the agent re-runs **tier 1 (hard-coded) + its o
 |---|---|
 | `firewall_block_created` | Row inserted (manual or auto) |
 | `firewall_block_deleted` | Row deleted via REST |
-| `firewall_block_applied_agent` | `BlocklistAckItem { applied: true }` received |
-| `firewall_block_rejected_server` | Tier 1 / Tier 2 reject |
-| `firewall_block_rejected_agent` | Tier 3 reject (`BlocklistAckItem { applied: false }`) |
+| `firewall_block_applied_agent` | Ack `state=Present` for an entry the agent was asked to add |
+| `firewall_block_removed_agent` | Ack `state=Absent` for an entry the agent was asked to remove |
+| `firewall_block_rejected_server` | Tier 1 / Tier 2 reject (REST or auto-block) |
+| `firewall_block_rejected_agent` | Ack `state=Failed` (agent guardrail or nft error) |
 | `firewall_auto_block_skipped_conflict` | Auto-block dedup found a row that does **not** cover the current server (§ 5.2 step 2) |
 | `firewall_auto_rule_removed` | Alert rule with action was deleted; existing `block_list` rows are kept |
+| `firewall_reset_acked` | `BlocklistResetAck { ok: true }` received |
 
 Detail JSON includes `target`, `reason` (when applicable), `server_id` (for per-agent events), and `origin_rule_id` / `origin_event_id` for auto-block-derived rows.
+
+To disambiguate add vs remove acks the server tracks "what was the last op sent to this agent for this id" in the same in-memory `agent_apply_state` map (§ 6.1) and emits the right audit. An ack for an id the server never sent (e.g. stale agent state during a protocol upgrade) is dropped with a debug log.
 
 ### 4.5 UI feedback
 
@@ -326,106 +356,157 @@ if has_capability(caps, CAP_FIREWALL_BLOCK) {
 
 **On capability bit transition** (`CapabilitiesSync` changes the effective capability mask for this connection):
 - bit went **on** → push a fresh `BlocklistSync` so the agent installs the current set.
-- bit went **off** → push `ServerMessage::BlocklistSync { entries: [] }`. Agent treats an empty Sync as "drop everything", which combined with § 6.3 below means flushing the nft sets and emitting one batched ack. This mirrors the Docker capability-revoke cleanup pattern in `ws::agent` — the connection stays open, but the feature data is wiped.
+- bit went **off** → push `ServerMessage::BlocklistReset`. The agent honors `BlocklistReset` regardless of its local capability state (the bit may have flipped off mid-flight, and we still want the existing kernel rules wiped).
 
-**On `BlocklistAck`**: for each item, write either `firewall_block_applied_agent` (`applied=true`) or `firewall_block_rejected_agent` (`applied=false`) audit, log accordingly. Do **not** delete the `block_list` row on a single-agent rejection — another agent may apply it fine (different external IP). Server keeps an `agent_apply_state` map (`(block_id, server_id) → {applied, reason, at}`) in memory only, derived from acks since boot, that the REST `GET /api/firewall/blocks/:id` enriches into per-agent status. Historical state is reconstructible from the audit log.
+**On agent first-ever connect** (no `agent_apply_state` yet) — push `BlocklistReset` followed by `BlocklistSync`. The reset clears any leftover kernel state from a previous agent install / packaging quirk; the Sync re-installs the canonical set. After this, the in-memory apply state reflects ground truth.
+
+**On `BlocklistAck`**: for each item, look up the prior op the server sent for `(id, server_id)`:
+- `state=Present` and last op was `Add` (or `Sync` that included it) → audit `firewall_block_applied_agent`, set `agent_apply_state[(id, server_id)] = Present`.
+- `state=Absent` and last op was `Remove` (or `Sync` that excluded it) → audit `firewall_block_removed_agent`, set `agent_apply_state[(id, server_id)] = Absent`.
+- `state=Failed` → audit `firewall_block_rejected_agent`, set apply-state to `Failed { reason }`. Do **not** delete the `block_list` row; next Sync diff re-attempts (another agent may apply it fine, and the failing agent may succeed after operator action).
+- Other combinations (e.g. `Present` for a Remove op) → log warn, drop.
+
+**`agent_apply_state`** is `Arc<RwLock<HashMap<(block_id, server_id), ApplyState>>>` in `AppState`, in-memory only. Populated from acks since boot. The REST `GET /api/firewall/blocks/:id` joins this map for per-agent display. Historical state is reconstructible from the audit log if needed.
+
+**On `BlocklistResetAck { ok: true }`**: audit `firewall_reset_acked`; drop all `agent_apply_state` entries with `server_id == this server`. `ok: false` is logged at warn and the apply state is left untouched (the kernel may still contain entries).
 
 ### 6.2 Agent side `FirewallManager`
 
 ```rust
 pub struct FirewallManager {
-    /// Entries successfully applied to nft. Only mutated after a successful apply.
+    /// Entries the agent has confirmed are in the kernel nft set. Mutated
+    /// only after a successful apply_add / apply_remove.
     desired: HashMap<String, BlockEntry>,
-    /// One-shot resource bootstrap state — see § 6.3.
+    /// Resource-bootstrap state — see § 6.3. Reset to false on Reset, so
+    /// the next Sync re-detects kernel resources.
     nft_ready: bool,
+    /// Agent's own external IP, used by tier-3 guardrail.
     external_ip: OnceLock<IpAddr>,
 }
 ```
+
+**Cardinal rules**:
+1. An entry is in `desired` **only if** the agent has just observed a successful kernel mutation for it. Treat `desired` as a cache of confirmed kernel state, not as authoritative truth about the kernel.
+2. `BlocklistReset` and the cleanup paths must **never** be gated by capability bit or `desired` being empty. They are unconditional kernel wipes.
+3. Every entry of every incoming `BlocklistSync` produces exactly one ack item. Including unchanged entries — that is how the server rebuilds `agent_apply_state` after a server restart.
 
 Message handling:
 
 ```rust
 match msg {
-    BlocklistSync { entries } => {
-        if entries.is_empty() && self.desired.is_empty() && !self.nft_ready {
-            // Common case before any block ever existed; nothing to do.
-            ack_batch(vec![]);
-            return;
+    BlocklistReset => {
+        // Always honored. Never gated by capability or desired.
+        match self.unconditional_wipe().await {
+            Ok(()) => {
+                self.desired.clear();
+                self.nft_ready = false; // force re-detect on next Sync
+                send(BlocklistResetAck { ok: true, reason: None });
+            }
+            Err(reason) => {
+                send(BlocklistResetAck { ok: false, reason: Some(reason) });
+            }
         }
-        self.ensure_nft_resources()?;
+    }
 
-        let incoming: HashMap<_, _> =
+    BlocklistSync { entries } => {
+        self.ensure_nft_resources()?;
+        let incoming: HashMap<String, BlockEntry> =
             entries.into_iter().map(|e| (e.id.clone(), e)).collect();
-        let to_add:    Vec<&BlockEntry> = incoming.values()
-            .filter(|e| !self.desired.contains_key(&e.id))
-            .collect();
-        let to_remove: Vec<BlockEntry>  = self.desired.values()
+
+        let to_remove: Vec<BlockEntry> = self.desired.values()
             .filter(|e| !incoming.contains_key(&e.id))
             .cloned().collect();
 
-        let mut results = Vec::with_capacity(to_add.len() + to_remove.len());
-        for e in to_add {
-            match self.apply_add(e).await {
+        let mut results = Vec::with_capacity(incoming.len() + to_remove.len());
+
+        // For every incoming entry: re-affirm via idempotent add. If it was
+        // already present (EEXIST) the agent reports Present without an
+        // actual kernel mutation. This makes Sync the source of truth
+        // re-establishment after server restart even when no diff exists.
+        for e in incoming.values() {
+            if let Err(r) = self.tier3_guardrail(&e.target) {
+                results.push(item(&e.id, Failed, Some(r)));
+                self.desired.remove(&e.id); // ensure not claimed as confirmed
+                continue;
+            }
+            match self.apply_add(e).await {  // EEXIST → Ok(())
                 Ok(()) => {
                     self.desired.insert(e.id.clone(), e.clone());
-                    results.push(BlocklistAckItem { id: e.id.clone(), applied: true, reason: None });
+                    results.push(item(&e.id, Present, None));
                 }
                 Err(reason) => {
-                    // NOT inserted into desired — next Sync will retry.
-                    results.push(BlocklistAckItem { id: e.id.clone(), applied: false, reason: Some(reason) });
+                    self.desired.remove(&e.id);
+                    results.push(item(&e.id, Failed, Some(reason)));
                 }
             }
         }
-        for e in to_remove {
-            // Best-effort: a "delete-missing" is treated as success (§ 6.3).
-            let _ = self.apply_remove(&e).await;
-            self.desired.remove(&e.id);
-            results.push(BlocklistAckItem { id: e.id, applied: true, reason: None });
+
+        for e in &to_remove {
+            match self.apply_remove(e).await {  // ENOENT → Ok(()); other errors propagate
+                Ok(()) => {
+                    self.desired.remove(&e.id);
+                    results.push(item(&e.id, Absent, None));
+                }
+                Err(reason) => {
+                    // Kernel still has it — do NOT clear desired or claim Absent.
+                    results.push(item(&e.id, Failed, Some(reason)));
+                }
+            }
         }
 
-        // Special case: empty incoming on capability-revoke also flushes the
-        // sets entirely so leftover rules from the previous capability=on
-        // window cannot keep dropping traffic.
-        if incoming.is_empty() {
-            self.flush_sets().await;     // `nft flush set ...` for both v4 / v6
-            self.desired.clear();
-        }
-
-        ack_batch(results);
+        send(BlocklistAck { results });
     }
 
     BlocklistAdd { entry } => {
         self.ensure_nft_resources()?;
         if let Err(r) = self.tier3_guardrail(&entry.target) {
-            ack_single(entry.id, false, Some(r));
+            send(BlocklistAck { results: vec![item(&entry.id, Failed, Some(r))] });
             return;
         }
-        match self.apply_add(&entry).await {
+        match self.apply_add(&entry).await {  // EEXIST → Ok(())
             Ok(()) => {
                 self.desired.insert(entry.id.clone(), entry.clone());
-                ack_single(entry.id, true, None);
+                send(BlocklistAck { results: vec![item(&entry.id, Present, None)] });
             }
             Err(reason) => {
-                // NOT inserted; next Sync re-attempts.
-                ack_single(entry.id, false, Some(reason));
+                send(BlocklistAck { results: vec![item(&entry.id, Failed, Some(reason))] });
             }
         }
     }
 
     BlocklistRemove { id } => {
-        let entry = self.desired.remove(&id);
-        match entry {
-            Some(e) => {
-                let _ = self.apply_remove(&e).await; // delete-missing = success
-                ack_single(id, true, None);
+        // Use the entry from `desired` if known (for v4/v6 routing). If
+        // unknown, ack Absent — kernel by construction doesn't have it
+        // unless server / agent state diverged, in which case the next
+        // Sync will reconcile.
+        let entry = self.desired.get(&id).cloned();
+        let Some(entry) = entry else {
+            send(BlocklistAck { results: vec![item(&id, Absent, None)] });
+            return;
+        };
+        match self.apply_remove(&entry).await {  // ENOENT → Ok(())
+            Ok(()) => {
+                self.desired.remove(&id);
+                send(BlocklistAck { results: vec![item(&id, Absent, None)] });
             }
-            None => ack_single(id, true, None), // unknown id = already absent
+            Err(reason) => {
+                // Keep desired — kernel may still contain it.
+                send(BlocklistAck { results: vec![item(&id, Failed, Some(reason))] });
+            }
         }
     }
 }
 ```
 
-Key invariant: **`desired` only contains entries the agent has confirmed in the kernel nft set.** Application failure leaves the entry out of `desired`, so the next `BlocklistSync` diff retries it.
+`unconditional_wipe` runs:
+```text
+nft flush set inet serverbee block_v4   # ENOENT → ok
+nft flush set inet serverbee block_v6   # ENOENT → ok
+nft delete table inet serverbee         # ENOENT → ok; full teardown
+```
+Errors that are not ENOENT propagate as the reason in `BlocklistResetAck { ok: false }`.
+
+Key invariant: **`desired` only contains entries the agent has confirmed in the kernel nft set.** Application or removal failure leaves the entry in the appropriate state, so the next `BlocklistSync` diff retries it.
 
 ### 6.3 `nft` invocation
 
@@ -453,34 +534,42 @@ Mapping:
 
 | `nft` stderr signal | Mapped to |
 |---|---|
-| `Error: File exists` on `add element` | success |
-| `Error: No such file or directory` on `delete element` | success |
-| `Error: Could not process rule: Operation not permitted` | failure (likely missing root) — `CapabilityDenied` |
-| `Error: Could not process rule: No such file or directory` on resource ops | failure (kernel module missing) — `CapabilityDenied` |
+| `Error: File exists` on `add element` | success (idempotent re-add) |
+| `Error: No such file or directory` on `delete element` / `flush set` / `delete table` | success (already absent) |
+| `Error: Could not process rule: Operation not permitted` | failure with `reason: "permission denied — agent needs root or CAP_NET_ADMIN"` |
+| `Error: Could not process rule: No such file or directory` on resource ops (`add table` etc.) | failure with `reason: "nft kernel module unavailable"` |
 | Any other non-zero exit | failure, `reason` = first stderr line |
 
-**Set flush** (used on capability-revoke / empty-Sync case):
+All commands run via `tokio::process::Command`. Failures surface as `BlocklistAckItem { state: Failed, reason }` per offending entry. They do **not** trigger `CapabilityDenied`: that message is reserved for "operation not allowed by capability mask", not "kernel says no". Agent advertises the firewall capability only when local probes succeed; runtime kernel errors are reported entry-by-entry. See § 6.5 below for capability advertisement.
 
-```bash
-nft flush set inet serverbee block_v4
-nft flush set inet serverbee block_v6
-```
+### 6.5 Capability advertisement
 
-All commands run via `tokio::process::Command`. Each invocation captures stderr; non-success cases become `BlocklistAck { applied: false, reason }` for the offending entry (or a `CapabilityDenied` ServerMessage when the entire pipeline can't function).
+`CAP_FIREWALL_BLOCK` operates on **two** capability layers, mirroring how `CAP_DOCKER` is currently handled:
+
+1. **Effective capability** (server-controlled) — the existing `capabilities` u32 on the `server` row. Admin sets this in the UI.
+2. **Local capability** (agent-controlled) — whether the agent's host can actually execute the feature. Reported in the existing `SystemInfo.capabilities_local` field at connect time. For firewall: requires `nft` binary present AND a self-test write to a throwaway probe set succeeds (proves root/CAP_NET_ADMIN). Probed once at agent startup, cached.
+
+The effective capability used by `has_capability` checks is the **bitwise AND** of the two. Server only sends `Blocklist*` messages when both bits are set. If local cap is missing, the UI shows the firewall toggle as "unavailable on this host" with the probe error.
+
+The agent never tries to "best-effort" firewall ops it knows it cannot perform — it advertises `false` locally and the server omits the messages entirely.
 
 ### 6.4 Failure matrix
 
 | Scenario | Behavior |
 |---|---|
-| Agent offline at CRUD time | No push; next `BlocklistSync` carries the delta |
-| Agent ack `applied = false` | Server audits, in-memory `agent_apply_state` records the failure; entry stays out of agent `desired` so next Sync diff re-tries it |
-| Agent ack `applied = true` | Server audits `firewall_block_applied_agent`; `agent_apply_state` updated |
-| `nft` missing or unprivileged | Agent emits `CapabilityDenied`; server UI shows "firewall capability unavailable" |
-| Server restart | Agent reconnects → full Sync → state is restored |
+| Agent offline at CRUD time | No push; next `BlocklistSync` carries the delta and rebuilds full apply state |
+| Ack `state=Failed` for an add | Server audits `firewall_block_rejected_agent`, in-memory `agent_apply_state` records Failed; entry stays out of agent `desired` so next Sync diff re-tries it |
+| Ack `state=Failed` for a remove | Server audits `firewall_block_rejected_agent`; agent keeps the entry in `desired` so next Sync re-attempts removal. Importantly, server does **not** mark the block as cleared anywhere |
+| Ack `state=Present` | Audit `firewall_block_applied_agent`; apply_state updated |
+| Ack `state=Absent` after a remove op | Audit `firewall_block_removed_agent`; apply_state updated |
+| Local cap probe fails (no nft / no root) | Agent advertises `local capability = false`; server omits firewall messages entirely. UI shows "firewall unavailable on this host" |
+| Server restart | Agent reconnects → first contact triggers `Reset + Sync`; ack-on-unchanged re-populates apply_state |
 | Agent restart | Same — agent does not persist blocklist; resource bootstrap runs again, idempotent |
-| Capability bit toggled off mid-session | Server pushes empty Sync → agent flushes both sets, clears `desired` |
+| Effective cap toggled off mid-session | Server pushes `BlocklistReset`; agent flushes sets, drops table, clears `desired`. The reset is unconditional (not gated by current local/effective cap state) |
+| Effective cap toggled on mid-session | Server pushes `BlocklistSync` with the current set |
 | Duplicate target | `UNIQUE(target)` rejects at insert; auto-block dedup checks coverage scope before skipping (§ 5.2 step 2) |
-| Mid-Sync WS drop | Sync abandoned; next reconnect retries from scratch with the same diff algorithm |
+| Mid-Sync WS drop | Sync abandoned; next reconnect retries the full Sync algorithm |
+| Old agent (no firewall support) | Server `protocol_version` gate: only agents reporting `protocol_version >= FIREWALL_MIN_PROTOCOL` and local cap = true receive `Blocklist*` (§ 12) |
 
 ---
 
@@ -505,16 +594,31 @@ All endpoints annotated `#[utoipa::path]` with `ToSchema` DTOs; appear in Swagge
 `crates/common/src/protocol.rs::BrowserMessage`:
 
 ```rust
-BlocklistChanged {
-    kind: String, // "created" | "deleted"
-    entry: BlockListItem,
+pub enum BrowserMessage {
+    // existing variants...
+    /// Row created or deleted (REST or auto-block path).
+    BlocklistChanged {
+        kind: BlocklistChangeKind,   // "created" | "deleted"
+        entry: BlockListItem,
+    },
+    /// Per-agent apply state changed (ack arrived). Driven by acks; the
+    /// UI uses this to refresh the per-agent dots in the detail drawer
+    /// and the activity log without polling.
+    FirewallApplyStateChanged {
+        block_id: String,
+        server_id: String,
+        state: BlocklistEntryState,   // present | absent | failed
+        reason: Option<String>,
+    },
 }
 ```
 
 Frontend `apps/web/src/hooks/use-servers-ws.ts` reacts:
 
-- Invalidate `['firewall', 'blocks']` (debounced 1s)
-- Invalidate `['firewall', 'stats']`
+- `BlocklistChanged` → invalidate `['firewall', 'blocks']` (debounced 1s) + `['firewall', 'stats']`.
+- `FirewallApplyStateChanged` → invalidate `['firewall', 'block', block_id]` (the detail query) + `['firewall', 'activity']` (debounced 500ms; bursts are common during Sync).
+
+Bandwidth-wise: each ack item produces one BrowserMessage. A 100-entry Sync from a freshly reconnected agent produces 100 messages — bounded and rare (only at reconnect / capability transition). Steady-state CRUD produces one per op.
 
 ---
 
@@ -580,16 +684,20 @@ New file `apps/web/src/locales/{en,zh}/firewall.json`, approx. 30 keys (`blockli
 
 ### 11.2 Integration (`crates/server/tests/integration.rs`)
 
-- `POST /api/firewall/blocks` → row inserted, mock agent receives `BlocklistAdd`, ack (applied=true) written, audit `firewall_block_applied_agent`
+- `POST /api/firewall/blocks` → row inserted, mock agent receives `BlocklistAdd`, ack `state=Present` written, audit `firewall_block_applied_agent`
 - `POST` with non-canonical target (`1.2.3.4/24`) → row stored as `1.2.3.0/24`; second POST with `1.2.3.0/24` → 409 dup
 - Guardrail rejection paths return 409 with localized reason key
-- Auto-block end-to-end: insert security_event → matching rule with action → block_list row appears
+- Auto-block end-to-end: insert security_event → matching rule with action → block_list row appears, `BlocklistAdd` pushed, apply state recorded from ack
 - Auto-block dedup with non-covering existing row → audit `firewall_auto_block_skipped_conflict`, no insert
-- Agent reconnect → `BlocklistSync` carries expected entries; failed-apply entries retry on subsequent Sync
-- Capability bit turned off mid-session → empty `BlocklistSync` pushed → agent ack stream shows all entries removed; agent `desired` cleared (verified via test hook)
-- DELETE → row gone, mock agent receives `BlocklistRemove`, ack
+- Agent reconnect (server has prior in-memory apply_state cleared) → Sync includes every covered entry, agent acks `Present` for unchanged, apply_state fully rebuilt from acks
+- Failed-apply ack — agent simulates nft permission error → server records Failed, next Sync includes the entry, ack `Present` second time succeeds
+- Effective cap turned off mid-session → `BlocklistReset` pushed → agent acks `ok=true` → server clears apply_state for that server; emits `FirewallApplyStateChanged` per affected block
+- Effective cap on while local cap is false → no firewall messages emitted
+- DELETE → row gone, mock agent receives `BlocklistRemove`, ack `state=Absent`, audit `firewall_block_removed_agent`
+- Failed-remove ack — agent simulates nft permission error on delete → server records Failed, **block_list row stays**, retries on next Sync
 - Member (non-admin) on `POST` / `DELETE` → 403
 - Recovery merge that rewrites `srv-A → srv-B` updates `block_list.server_ids_json` accordingly
+- Old agent (protocol_version < FIREWALL_MIN_PROTOCOL) → no firewall messages sent regardless of effective cap; UI surfaces version mismatch hint
 
 ### 11.3 E2E manual (`tests/firewall-block.md`)
 
@@ -606,8 +714,11 @@ New file `apps/web/src/locales/{en,zh}/firewall.json`, approx. 30 keys (`blockli
 
 - No legacy data to migrate. New columns/tables introduced with non-breaking defaults.
 - `CAP_FIREWALL_BLOCK` defaults to **off** for existing and new agents. Admins must explicitly opt in per agent (Settings → Capabilities).
-- Agent without the capability bit silently ignores `BlocklistSync` / `Add` / `Remove`.
-- Versioning: agents that pre-date this branch will not have the `BlocklistSync` variant — protocol uses `#[serde(other)]` fallthrough so old agents ignore unknown messages. Server side checks the agent's protocol version stored at `Hello`.
+- **Protocol version gate**: bump `PROTOCOL_VERSION` (constant in `crates/common/src/protocol.rs`) to a new value `FIREWALL_MIN_PROTOCOL`. The server gates `Blocklist*` and `BlocklistReset` emission on `effective_capability.firewall && agent.protocol_version >= FIREWALL_MIN_PROTOCOL`. This is the only barrier between new servers and old agents; we do **not** rely on `#[serde(other)]` for forward compatibility on the agent side, because today's agent parser errors out on unknown variants rather than silently dropping them. Adding a serde shim now would be a separate change and is not required for v1 if we honor the version gate.
+- Agent without local cap (`nft` missing / not root): the agent self-reports `local capability = false` via `SystemInfo.capabilities_local`. Server omits all firewall messages. The agent never receives a message it cannot serve.
+- `BlocklistReset` is gated only by **effective capability transition**, not by current local cap. If a host had local cap=true at some prior point and the kernel may contain stale `serverbee` rules, the server still needs a way to clean up. Concretely:
+  - When **effective cap** flips off (admin disabled it), server pushes `Reset` once. Agent honors it if local cap is currently true; if local cap is currently false, agent acks `ok=false reason="nft unavailable"` and the operator must clean up manually (or restore local cap).
+  - The reset is **not** an emergency back-door that bypasses local capability — if `nft` is missing, the cleanup is moot anyway.
 
 ---
 
