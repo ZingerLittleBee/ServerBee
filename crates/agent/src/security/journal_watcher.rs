@@ -66,7 +66,7 @@ async fn run_journalctl_sshd(out_tx: mpsc::Sender<AuthAttempt>) -> io::Result<()
     let stdout = child
         .stdout
         .take()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "journalctl stdout missing"))?;
+        .ok_or_else(|| io::Error::other("journalctl stdout missing"))?;
     let reader = BufReader::new(stdout);
     let result = drain_journalctl_json(reader, out_tx).await;
     let _ = child.kill().await;
@@ -196,12 +196,11 @@ async fn run_auth_log_tail(out_tx: mpsc::Sender<AuthAttempt>) -> io::Result<()> 
                 tokio::time::sleep(Duration::from_millis(500)).await;
             }
             Ok(_) => {
-                if let Some(msg) = strip_syslog_prefix(buf.trim_end()) {
-                    if let Some(attempt) = parse_sshd_line(msg) {
-                        if out_tx.send(attempt).await.is_err() {
-                            return Ok(());
-                        }
-                    }
+                if let Some(msg) = strip_syslog_prefix(buf.trim_end())
+                    && let Some(attempt) = parse_sshd_line(msg)
+                    && out_tx.send(attempt).await.is_err()
+                {
+                    return Ok(());
                 }
             }
             Err(e) => return Err(e),
@@ -238,9 +237,10 @@ pub async fn run_kernel_stream(_out_tx: mpsc::Sender<String>) {
 #[cfg(target_os = "linux")]
 async fn run_journalctl_kernel(out_tx: mpsc::Sender<String>) -> io::Result<()> {
     let mut child = spawn_journalctl_kernel()?;
-    let stdout = child.stdout.take().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::Other, "journalctl -k stdout missing")
-    })?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| io::Error::other("journalctl -k stdout missing"))?;
     let reader = BufReader::new(stdout);
     let result = drain_kernel_json(reader, out_tx).await;
     let _ = child.kill().await;

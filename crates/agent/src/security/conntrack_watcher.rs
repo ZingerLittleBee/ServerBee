@@ -27,7 +27,7 @@ pub async fn start_conntrack_stream(out_tx: mpsc::Sender<ConntrackEvent>) -> io:
     let stdout = child
         .stdout
         .take()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "conntrack stdout missing"))?;
+        .ok_or_else(|| io::Error::other("conntrack stdout missing"))?;
     let _ = drain_conntrack_events(BufReader::new(stdout), out_tx.clone()).await;
     let _ = child.kill().await;
 
