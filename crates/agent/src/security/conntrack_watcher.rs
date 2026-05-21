@@ -1,22 +1,5 @@
-//! Conntrack new-connection stream.
-//!
-//! Linux ships an excellent `conntrack -E -e NEW` event mode that emits
-//! one line per new flow tracked by netfilter. We consume it as a
-//! subprocess and forward `(source_ip, dst_port)` to the scan detector.
-//!
-//! The plan originally suggested binding to `NETLINK_NETFILTER` directly,
-//! but as of `netlink-packet-netfilter` 0.2 only the nflog subprotocol is
-//! implemented; conntrack parsing would require hand-rolling
-//! nfnetlink_cttuple decoding, which is significant complexity for a
-//! feature that's already opt-in. Using the conntrack CLI keeps the
-//! surface small and testable.
-//!
-//! Failure modes:
-//! * `conntrack` binary missing or unprivileged → spawn returns an error
-//!   on the first attempt, which the manager treats as "scan detection
-//!   not available; keep brute-force detection running".
-//! * Subprocess crash after first success → caller re-spawns with the
-//!   usual exponential backoff.
+//! Streams `conntrack -E -e NEW` and forwards `(source_ip, dst_port)` to
+//! the scan detector. CLI-based (no netlink) to keep the surface small.
 
 use std::io;
 

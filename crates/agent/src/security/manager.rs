@@ -1,14 +1,6 @@
-//! Top-level wiring for the security pipeline.
-//!
-//! Responsibilities:
-//! * Honour `CAP_SECURITY_EVENTS` and the agent's `SecurityConfig.enabled`.
-//! * Spawn the journal watcher → ssh detector → first-seen → AgentMessage
-//!   pipeline.
-//! * If `port_scan.enabled`, additionally spawn the conntrack watcher
-//!   (which is best-effort — if conntrack cannot be started we log a
-//!   warning and continue with brute-force-only detection).
-//!
-//! On non-Linux platforms `start` is a no-op: no handles are spawned.
+//! Wires the security pipeline: journal watcher → SSH detector → first-seen
+//! lookup → `AgentMessage::SecurityEvent`. Optionally spawns the conntrack
+//! watcher and scan detector when `port_scan.enabled`. No-op off-Linux.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -158,7 +150,19 @@ async fn run_ssh_pipeline(
         Duration::from_secs(cfg.window_seconds as u64),
         cfg.failed_threshold,
     );
-    while let Some(attempt) = rx.recv().await {
+    let mut sweep_interval = tokio::time::interval(Duration::from_secs(10));
+    sweep_interval.tick().await;
+    loop {
+        let attempt = tokio::select! {
+            maybe = rx.recv() => match maybe {
+                Some(a) => a,
+                None => return,
+            },
+            _ = sweep_interval.tick() => {
+                detector.sweep();
+                continue;
+            }
+        };
         let emit = detector.observe(attempt);
         match emit {
             DetectorEmit::None => {}

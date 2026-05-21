@@ -70,6 +70,24 @@ impl SshDetector {
         }
     }
 
+    /// Evict IPs whose deques are empty or contain only entries older than the
+    /// window. Prevents unbounded growth under "spray" attacks where each
+    /// source IP attempts once and never returns.
+    pub fn sweep(&mut self) {
+        let now = (self.clock)();
+        let cutoff = now.checked_sub(self.window).unwrap_or(now);
+        self.per_ip.retain(|_, q| {
+            while let Some((ts, _)) = q.front() {
+                if *ts < cutoff {
+                    q.pop_front();
+                } else {
+                    break;
+                }
+            }
+            !q.is_empty()
+        });
+    }
+
     pub fn observe(&mut self, attempt: AuthAttempt) -> DetectorEmit {
         match attempt.outcome {
             AuthOutcome::Success { auth_method } => DetectorEmit::Login {

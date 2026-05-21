@@ -1,14 +1,7 @@
-//! Persistent `(user, ip)` first-seen registry used to flag the very first
-//! successful SSH login from a new tuple.
-//!
-//! Persisted as a JSON object on disk; keys are `format!("{user}\x00{ip}")`
-//! and values are the unix-second timestamp of the first observation. We cap
-//! the map to a configurable LRU window so a long-lived agent never grows
-//! unbounded. Reads of a corrupted on-disk file silently start fresh — first
-//! observations after a corruption are still considered "first", but that is
-//! the documented behaviour.
+//! Persistent `(user, ip)` registry used to flag the first successful SSH
+//! login from a new tuple. Capped at `cap`, LRU-evicted, atomic-write flushed.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -19,8 +12,8 @@ pub struct FirstSeenStore {
     path: PathBuf,
     cap: usize,
     map: HashMap<String, i64>,
-    /// Insertion order, oldest first. Used for LRU eviction.
-    order: Vec<String>,
+    /// Insertion order, oldest first. Used for LRU eviction (O(1) pop_front).
+    order: VecDeque<String>,
     dirty: bool,
 }
 
@@ -38,7 +31,7 @@ impl FirstSeenStore {
                     error = %e,
                     "first_seen store corrupted or unreadable; starting fresh"
                 );
-                (HashMap::new(), Vec::new())
+                (HashMap::new(), VecDeque::new())
             }
         };
         Self {
@@ -50,24 +43,23 @@ impl FirstSeenStore {
         }
     }
 
-    fn load_from(path: &Path) -> io::Result<(HashMap<String, i64>, Vec<String>)> {
+    fn load_from(path: &Path) -> io::Result<(HashMap<String, i64>, VecDeque<String>)> {
         let bytes = match fs::read(path) {
             Ok(b) => b,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                return Ok((HashMap::new(), Vec::new()));
+                return Ok((HashMap::new(), VecDeque::new()));
             }
             Err(e) => return Err(e),
         };
         if bytes.is_empty() {
-            return Ok((HashMap::new(), Vec::new()));
+            return Ok((HashMap::new(), VecDeque::new()));
         }
         let raw: Persisted = serde_json::from_slice(&bytes)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        // Validate map and rebuild order (entries appear in serialization order).
         let mut map = HashMap::with_capacity(raw.entries.len());
-        let mut order = Vec::with_capacity(raw.entries.len());
+        let mut order = VecDeque::with_capacity(raw.entries.len());
         for (k, v) in raw.entries {
-            order.push(k.clone());
+            order.push_back(k.clone());
             map.insert(k, v);
         }
         Ok((map, order))
@@ -81,14 +73,12 @@ impl FirstSeenStore {
             return false;
         }
         self.map.insert(key.clone(), now_ts);
-        self.order.push(key);
+        self.order.push_back(key);
         while self.map.len() > self.cap {
-            if let Some(old) = self.order.first().cloned() {
-                self.order.remove(0);
-                self.map.remove(&old);
-            } else {
+            let Some(old) = self.order.pop_front() else {
                 break;
-            }
+            };
+            self.map.remove(&old);
         }
         self.dirty = true;
         true

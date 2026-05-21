@@ -1,19 +1,11 @@
-//! `SecurityService` — persistence, broadcast, and inline alert evaluation
-//! for security events emitted by agents.
-//!
-//! Push-based pipeline (spec §7.3): WS handler delivers a
-//! [`SecurityEventPayload`] → [`SecurityService::record_event`] validates &
-//! inserts a row (with retry), fans out a [`BrowserMessage::SecurityEvent`] to
-//! browser subscribers, then walks enabled alert rules covering this server,
-//! evaluating matching security items inline and dispatching notifications
-//! via [`NotificationService::send_group`] subject to per-`(rule, server,
-//! source_ip)` dedupe.
+//! Persistence, browser broadcast, and inline alert evaluation for security
+//! events emitted by agents.
 
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::time::Duration;
 
 use chrono::{DateTime, TimeZone, Utc};
+use ipnet::IpNet;
 use sea_orm::*;
 use serverbee_common::protocol::{BrowserMessage, SecurityEventBroadcast};
 use serverbee_common::security::{SecurityEventPayload, SecurityEventType};
@@ -25,14 +17,10 @@ use crate::entity::{alert_rule, security_event, server};
 use crate::error::AppError;
 use crate::service::alert::{
     AlertRuleItem, AlertStateManager, SECURITY_RULE_TYPES, SecurityRuleParams,
+    rule_covers_server,
 };
 use crate::service::maintenance::MaintenanceService;
 use crate::service::notification::{NotificationService, NotifyContext};
-
-/// Retry backoff schedule used for `security_event` inserts under transient DB
-/// contention. See spec §9.2 — final exhaustion bubbles up to the WS handler
-/// which logs via `tracing::error!`.
-const INSERT_RETRY_BACKOFFS_MS: &[u64] = &[100, 500, 2000];
 
 pub struct SecurityService {
     pub db: DatabaseConnection,
@@ -63,44 +51,37 @@ impl SecurityService {
         server_id: &str,
         payload: SecurityEventPayload,
     ) -> Result<String, AppError> {
-        // 1. Validate source_ip parses as an IP. IPv6 stays in the form the
-        //    agent emitted; deduplication uses the literal string.
-        Self::validate_source_ip(&payload.source_ip)?;
+        payload
+            .source_ip
+            .parse::<IpAddr>()
+            .map_err(|_| AppError::BadRequest(format!("invalid source_ip: {}", payload.source_ip)))?;
 
-        // 2. Encode evidence to JSON for storage.
         let evidence_json = serde_json::to_string(&payload.evidence).map_err(|e| {
             AppError::BadRequest(format!("invalid security_event evidence: {e}"))
         })?;
 
         let event_id = Uuid::new_v4().to_string();
         let now = Utc::now();
-        let started_at = unix_to_utc(payload.started_at);
-        let ended_at = unix_to_utc(payload.ended_at);
-        let event_type_str = event_type_to_str(payload.event_type).to_string();
-        let severity_str = severity_to_str(payload.severity).to_string();
-        let detector_source_str = detector_source_to_str(payload.detector_source).to_string();
 
-        let active = security_event::ActiveModel {
+        security_event::ActiveModel {
             id: Set(event_id.clone()),
             server_id: Set(server_id.to_string()),
-            event_type: Set(event_type_str.clone()),
-            severity: Set(severity_str.clone()),
+            event_type: Set(event_type_to_str(payload.event_type).to_string()),
+            severity: Set(severity_to_str(payload.severity).to_string()),
             source_ip: Set(payload.source_ip.clone()),
             source_port: Set(payload.source_port.map(|p| p as i32)),
             username: Set(payload.username.clone()),
-            started_at: Set(started_at),
-            ended_at: Set(ended_at),
+            started_at: Set(unix_to_utc(payload.started_at)),
+            ended_at: Set(unix_to_utc(payload.ended_at)),
             first_seen: Set(payload.first_seen),
-            detector_source: Set(detector_source_str),
+            detector_source: Set(detector_source_to_str(payload.detector_source).to_string()),
             evidence: Set(evidence_json),
             created_at: Set(now),
-        };
+        }
+        .insert(&self.db)
+        .await?;
 
-        // 3. Insert with bounded retry.
-        Self::insert_with_retry(&self.db, active).await?;
-
-        // 4. Broadcast — `send` only fails when there are no subscribers,
-        //    which is normal startup state. Ignore.
+        // send() only fails when no subscribers exist — normal at startup.
         let _ = self
             .browser_tx
             .send(BrowserMessage::SecurityEvent(SecurityEventBroadcast {
@@ -109,7 +90,6 @@ impl SecurityService {
                 event: payload.clone(),
             }));
 
-        // 5. Inline alert evaluation. Failure must not break persistence.
         if let Err(e) = self.evaluate_rules(server_id, &payload).await {
             tracing::error!(server_id, error = %e, "security alert evaluation failed");
         }
@@ -117,55 +97,11 @@ impl SecurityService {
         Ok(event_id)
     }
 
-    fn validate_source_ip(ip: &str) -> Result<(), AppError> {
-        ip.parse::<IpAddr>()
-            .map(|_| ())
-            .map_err(|_| AppError::BadRequest(format!("invalid source_ip: {ip}")))
-    }
-
-    async fn insert_with_retry(
-        db: &DatabaseConnection,
-        active: security_event::ActiveModel,
-    ) -> Result<(), AppError> {
-        let mut last_err: Option<DbErr> = None;
-        // First attempt + N retries.
-        for (idx, backoff_ms) in std::iter::once(&0u64)
-            .chain(INSERT_RETRY_BACKOFFS_MS.iter())
-            .enumerate()
-        {
-            if *backoff_ms > 0 {
-                tokio::time::sleep(Duration::from_millis(*backoff_ms)).await;
-            }
-            match active.clone().insert(db).await {
-                Ok(_) => return Ok(()),
-                Err(e) => {
-                    tracing::warn!(
-                        attempt = idx,
-                        error = %e,
-                        "security_event insert failed; retrying"
-                    );
-                    last_err = Some(e);
-                }
-            }
-        }
-        Err(AppError::from(
-            last_err.unwrap_or_else(|| DbErr::Custom("retry exhausted".into())),
-        ))
-    }
-
     async fn evaluate_rules(
         &self,
         server_id: &str,
         payload: &SecurityEventPayload,
     ) -> Result<(), AppError> {
-        let event_type_key = event_type_to_rule_type(payload.event_type);
-
-        let rules = alert_rule::Entity::find()
-            .filter(alert_rule::Column::Enabled.eq(true))
-            .all(&self.db)
-            .await?;
-
-        // Skip evaluation entirely if the server is in maintenance.
         if MaintenanceService::is_in_maintenance(&self.db, server_id)
             .await
             .unwrap_or(false)
@@ -173,8 +109,17 @@ impl SecurityService {
             return Ok(());
         }
 
+        let event_type_key = event_type_to_rule_type(payload.event_type);
+
+        let rules = alert_rule::Entity::find()
+            .filter(alert_rule::Column::Enabled.eq(true))
+            .all(&self.db)
+            .await?;
+
+        let mut cached_server_name: Option<String> = None;
+
         for rule in &rules {
-            if !covers_server(&rule.cover_type, rule.server_ids_json.as_deref(), server_id) {
+            if !rule_covers_server(&rule.cover_type, &rule.server_ids_json, server_id) {
                 continue;
             }
 
@@ -200,15 +145,12 @@ impl SecurityService {
                 continue;
             }
 
-            // §7.3 dedupe order:
-            //   1. read state, 2. compute should_notify,
-            //   3. mark_triggered, 4. send_group if should_notify.
             let event_key = payload.source_ip.as_str();
             let now = Utc::now();
-            let info = self
+            let should_notify = match self
                 .alert_state_manager
-                .get_info(&rule.id, server_id, event_key);
-            let should_notify = match info {
+                .get_info(&rule.id, server_id, event_key)
+            {
                 None => true,
                 Some(prev) => {
                     let window = chrono::Duration::seconds(params.dedupe_window_seconds as i64);
@@ -228,11 +170,16 @@ impl SecurityService {
                 continue;
             };
 
-            let server_name = server::Entity::find_by_id(server_id)
-                .one(&self.db)
-                .await?
-                .map(|s| s.name)
-                .unwrap_or_else(|| "Unknown".to_string());
+            if cached_server_name.is_none() {
+                cached_server_name = Some(
+                    server::Entity::find_by_id(server_id)
+                        .one(&self.db)
+                        .await?
+                        .map(|s| s.name)
+                        .unwrap_or_else(|| "Unknown".to_string()),
+                );
+            }
+            let server_name = cached_server_name.clone().unwrap();
 
             let ctx = NotifyContext {
                 server_name,
@@ -259,36 +206,6 @@ impl SecurityService {
         }
 
         Ok(())
-    }
-}
-
-impl Default for SecurityRuleParams {
-    fn default() -> Self {
-        Self {
-            min_failed_count: None,
-            min_distinct_ports: None,
-            exclude_users: Vec::new(),
-            exclude_cidrs: Vec::new(),
-            dedupe_window_seconds: 600,
-        }
-    }
-}
-
-fn covers_server(cover_type: &str, server_ids_json: Option<&str>, server_id: &str) -> bool {
-    match cover_type {
-        "include" => {
-            let ids: Vec<String> = server_ids_json
-                .and_then(|s| serde_json::from_str(s).ok())
-                .unwrap_or_default();
-            ids.iter().any(|id| id == server_id)
-        }
-        "exclude" => {
-            let ids: Vec<String> = server_ids_json
-                .and_then(|s| serde_json::from_str(s).ok())
-                .unwrap_or_default();
-            !ids.iter().any(|id| id == server_id)
-        }
-        _ => true,
     }
 }
 
@@ -333,54 +250,19 @@ fn matches_security_params(
     }
 }
 
-/// Lightweight CIDR membership check (IPv4 + IPv6) sufficient for exclusion
-/// rules. Invalid entries are silently skipped so a typo in the rule does not
+/// Returns true when `ip` matches any of the given CIDRs (or bare IPs).
+/// Invalid entries are silently skipped so a typo in the rule does not
 /// block alerts.
 fn ip_in_any_cidr(ip: &str, cidrs: &[String]) -> bool {
     let Ok(addr) = ip.parse::<IpAddr>() else {
         return false;
     };
-    cidrs.iter().any(|cidr| ip_in_cidr(addr, cidr))
-}
-
-fn ip_in_cidr(addr: IpAddr, cidr: &str) -> bool {
-    let Some((net_str, prefix_str)) = cidr.split_once('/') else {
-        return cidr
-            .parse::<IpAddr>()
-            .map(|other| other == addr)
-            .unwrap_or(false);
-    };
-    let Ok(prefix) = prefix_str.parse::<u8>() else {
-        return false;
-    };
-    let Ok(net_addr) = net_str.parse::<IpAddr>() else {
-        return false;
-    };
-    match (addr, net_addr) {
-        (IpAddr::V4(a), IpAddr::V4(n)) => {
-            if prefix > 32 {
-                return false;
-            }
-            if prefix == 0 {
-                return true;
-            }
-            let mask: u32 = u32::MAX.checked_shl(32 - prefix as u32).unwrap_or(0);
-            (u32::from(a) & mask) == (u32::from(n) & mask)
-        }
-        (IpAddr::V6(a), IpAddr::V6(n)) => {
-            if prefix > 128 {
-                return false;
-            }
-            if prefix == 0 {
-                return true;
-            }
-            let a_bits = u128::from(a);
-            let n_bits = u128::from(n);
-            let mask: u128 = u128::MAX.checked_shl(128 - prefix as u32).unwrap_or(0);
-            (a_bits & mask) == (n_bits & mask)
-        }
-        _ => false,
-    }
+    cidrs.iter().any(|c| {
+        c.parse::<IpNet>()
+            .map(|net| net.contains(&addr))
+            .or_else(|_| c.parse::<IpAddr>().map(|other| other == addr))
+            .unwrap_or(false)
+    })
 }
 
 fn unix_to_utc(secs: i64) -> DateTime<Utc> {

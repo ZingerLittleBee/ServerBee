@@ -72,6 +72,18 @@ fn default_dedupe_secs() -> u32 {
     600
 }
 
+impl Default for SecurityRuleParams {
+    fn default() -> Self {
+        Self {
+            min_failed_count: None,
+            min_distinct_ports: None,
+            exclude_users: Vec::new(),
+            exclude_cidrs: Vec::new(),
+            dedupe_window_seconds: default_dedupe_secs(),
+        }
+    }
+}
+
 /// Validate the shape of `AlertRuleItem`s for create/update paths.
 ///
 /// Security rule types are restricted to one item per rule and may not be
@@ -801,7 +813,11 @@ impl AlertService {
 const VALID_COVER_TYPES: &[&str] = &["all", "include", "exclude"];
 
 /// Check if a rule's cover_type/server_ids covers a specific server (pure, no DB).
-fn rule_covers_server(cover_type: &str, server_ids_json: &Option<String>, server_id: &str) -> bool {
+pub(crate) fn rule_covers_server(
+    cover_type: &str,
+    server_ids_json: &Option<String>,
+    server_id: &str,
+) -> bool {
     match cover_type {
         "include" => {
             let ids: Vec<String> = server_ids_json

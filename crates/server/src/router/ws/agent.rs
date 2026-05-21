@@ -1216,22 +1216,24 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             );
         }
         AgentMessage::SecurityEvent(payload) => {
-            use crate::entity::server;
-            use sea_orm::EntityTrait;
-
-            // Resolve effective capabilities for this server. The hot path
-            // (`get_effective_capabilities`) returns `Some` once the agent has
-            // sent `SystemInfo` over this connection; before that we fall back
-            // to a primary-key lookup on the server table.
+            // The hot-path cache is populated once the agent sends `SystemInfo`
+            // on the current connection; before that, fall back to the DB row.
             let caps = match state.agent_manager.get_effective_capabilities(server_id) {
                 Some(c) => c,
-                None => match server::Entity::find_by_id(server_id).one(&state.db).await {
-                    Ok(Some(s)) => u32::try_from(s.capabilities).unwrap_or(0),
-                    _ => 0,
-                },
+                None => {
+                    use crate::entity::server;
+                    use sea_orm::EntityTrait;
+                    server::Entity::find_by_id(server_id)
+                        .one(&state.db)
+                        .await
+                        .ok()
+                        .flatten()
+                        .and_then(|s| u32::try_from(s.capabilities).ok())
+                        .unwrap_or(0)
+                }
             };
             if !has_capability(caps, CAP_SECURITY_EVENTS) {
-                let detail = format!(r#"{{"server_id":"{server_id}"}}"#);
+                let detail = serde_json::json!({ "server_id": server_id }).to_string();
                 if let Err(e) = AuditService::log(
                     &state.db,
                     "system",

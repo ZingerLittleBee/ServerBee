@@ -1,19 +1,8 @@
-//! Journal / auth.log line streamer.
-//!
-//! Two sources for sshd events:
-//! * `journalctl -f --output=json -n 0 ...sshd...` (preferred on systemd hosts)
-//! * Tailing `/var/log/auth.log` or `/var/log/secure` (fallback)
-//!
-//! In both cases we extract the line text and feed it into
-//! [`crate::security::ssh_parser::parse_sshd_line`], sending successful
-//! parses on `out_tx`.
-//!
-//! Both paths run under an exponential-backoff retry loop so transient
-//! subprocess crashes or file-open failures do not kill the manager.
-//!
-//! For tests we expose [`drain_journalctl_json`] which accepts any
-//! `AsyncBufRead`, so the parsing pipeline can be unit-tested without
-//! invoking `journalctl`.
+//! Streams sshd events from `journalctl -f` (preferred) or by tailing
+//! `/var/log/auth.log` / `/var/log/secure` (fallback), parses them via
+//! [`crate::security::ssh_parser`], and forwards `AuthAttempt`s on `out_tx`.
+//! Both paths auto-recover from transient subprocess/file failures via
+//! exponential backoff.
 
 use std::io;
 
