@@ -8,11 +8,14 @@
 #![allow(dead_code)]
 
 pub mod first_seen_store;
+pub mod scan_detector;
 pub mod ssh_detector;
 pub mod ssh_parser;
 
 #[allow(unused_imports)]
 pub use first_seen_store::FirstSeenStore;
+#[allow(unused_imports)]
+pub use scan_detector::{ScanDetector, ScanEmit};
 #[allow(unused_imports)]
 pub use ssh_detector::{DetectorEmit, SshDetector};
 #[allow(unused_imports)]
