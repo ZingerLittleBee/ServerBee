@@ -3,6 +3,7 @@ pub mod alert_rule;
 pub mod alert_state;
 pub mod api_key;
 pub mod audit_log;
+pub mod block_list;
 pub mod config;
 pub mod custom_theme;
 pub mod dashboard;
