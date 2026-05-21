@@ -283,8 +283,9 @@ async fn update_server(
     Json(input): Json<UpdateServerInput>,
 ) -> Result<Json<ApiResponse<ServerResponse>>, AppError> {
     use serverbee_common::constants::{
-        CAP_DOCKER, CAP_PING_HTTP, CAP_PING_ICMP, CAP_PING_TCP, has_capability,
+        CAP_DOCKER, CAP_FIREWALL_BLOCK, CAP_PING_HTTP, CAP_PING_ICMP, CAP_PING_TCP, has_capability,
     };
+    use serverbee_common::firewall::FIREWALL_MIN_PROTOCOL;
     let user_id = &current_user.user_id;
     let ip = extract_client_ip(
         &ConnectInfo(addr),
@@ -369,6 +370,29 @@ async fn update_server(
                     server_id: id.clone(),
                     available: false,
                 });
+        }
+
+        // Firewall capability transitioned — sync the agent's view to ours.
+        let was_fw = has_capability(old, CAP_FIREWALL_BLOCK);
+        let now_fw = has_capability(new_caps, CAP_FIREWALL_BLOCK);
+        if was_fw != now_fw
+            && let Some(pv) = state.agent_manager.get_protocol_version(&id)
+            && pv >= FIREWALL_MIN_PROTOCOL
+        {
+            if now_fw {
+                if let Err(e) = state
+                    .firewall
+                    .push_sync_to(&id, &state.agent_manager)
+                    .await
+                {
+                    tracing::warn!(server_id = %id, error = %e, "firewall sync push failed");
+                }
+            } else {
+                state
+                    .firewall
+                    .push_reset_to(&id, &state.agent_manager)
+                    .await;
+            }
         }
 
         // Audit log
@@ -723,6 +747,29 @@ async fn batch_update_capabilities(
                     server_id: server_id.clone(),
                     available: false,
                 });
+        }
+
+        // Firewall capability transitioned — sync the agent's view to ours.
+        let was_fw = has_capability(old_caps, CAP_FIREWALL_BLOCK);
+        let now_fw = has_capability(new_caps, CAP_FIREWALL_BLOCK);
+        if was_fw != now_fw
+            && let Some(pv) = state.agent_manager.get_protocol_version(server_id)
+            && pv >= serverbee_common::firewall::FIREWALL_MIN_PROTOCOL
+        {
+            if now_fw {
+                if let Err(e) = state
+                    .firewall
+                    .push_sync_to(server_id, &state.agent_manager)
+                    .await
+                {
+                    tracing::warn!(server_id, error = %e, "firewall sync push failed");
+                }
+            } else {
+                state
+                    .firewall
+                    .push_reset_to(server_id, &state.agent_manager)
+                    .await;
+            }
         }
 
         // Audit log
