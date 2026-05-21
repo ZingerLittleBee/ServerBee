@@ -4,6 +4,7 @@ import { AlertTriangle, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { SecurityAlertPresets } from '@/components/security/alert-presets'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -226,7 +227,11 @@ function AlertsPage() {
     <div>
       <h1 className="mb-6 font-bold text-2xl">{t('alerts.title')}</h1>
 
-      <div className="max-w-2xl space-y-6">
+      <div className="max-w-4xl space-y-6">
+        <div className="rounded-lg border bg-card p-6">
+          <SecurityAlertPresets />
+        </div>
+
         <div className="rounded-lg border bg-card p-6">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-semibold text-lg">{t('alerts.rules')}</h2>
