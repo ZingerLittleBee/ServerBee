@@ -16,6 +16,7 @@ use uuid::Uuid;
 use crate::entity::block_list;
 use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
+use crate::service::alert::{ORIGIN_AUTO, ORIGIN_MANUAL};
 use crate::service::audit::AuditService;
 use crate::service::db_error::is_unique_violation;
 use crate::service::firewall::FirewallService;
@@ -51,7 +52,7 @@ pub struct CreateBlockReq {
 }
 
 fn default_cover() -> String {
-    "all".into()
+    crate::service::alert::COVER_TYPE_ALL.to_string()
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -71,10 +72,17 @@ pub struct BlockListItem {
 
 impl From<block_list::Model> for BlockListItem {
     fn from(m: block_list::Model) -> Self {
-        let server_ids = m
-            .server_ids_json
-            .as_deref()
-            .and_then(|s| serde_json::from_str(s).ok());
+        let server_ids = m.server_ids_json.as_deref().and_then(|s| {
+            serde_json::from_str(s)
+                .map_err(|e| {
+                    tracing::warn!(
+                        block_id = %m.id,
+                        error = %e,
+                        "failed to parse block_list.server_ids_json; treating as None"
+                    );
+                })
+                .ok()
+        });
         Self {
             id: m.id,
             target: m.target,
@@ -130,6 +138,8 @@ async fn list_blocks(
     Query(q): Query<ListQuery>,
 ) -> Result<Json<ApiResponse<ListResp>>, AppError> {
     let limit = q.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT);
+    // TODO(stability): tie-break cursor on (created_at, id) so two rows sharing
+    // a `created_at` millisecond do not skip / duplicate across pages.
     let mut find = block_list::Entity::find().order_by_desc(block_list::Column::CreatedAt);
     if let Some(o) = q.origin.as_deref() {
         find = find.filter(block_list::Column::Origin.eq(o));
@@ -225,7 +235,7 @@ async fn create_block(
         cover_type: Set(req.cover_type.clone()),
         server_ids_json: Set(server_ids_json),
         comment: Set(req.comment.clone()),
-        origin: Set("manual".into()),
+        origin: Set(ORIGIN_MANUAL.to_string()),
         origin_event_id: Set(None),
         origin_rule_id: Set(None),
         created_by: Set(Some(current_user.user_id.clone())),
@@ -249,19 +259,22 @@ async fn create_block(
         &current_user.user_id,
         "firewall_block_created",
         Some(
-            &serde_json::json!({ "id": model.id, "target": model.target, "origin": "manual" })
-                .to_string(),
+            &serde_json::json!({
+                "id": model.id,
+                "target": model.target,
+                "origin": ORIGIN_MANUAL,
+            })
+            .to_string(),
         ),
         "",
     )
     .await
     .ok();
 
-    let item: BlockListItem = model.into();
-    state.firewall.broadcast_changed_created(&item);
-    state.firewall.push_add_to_covered_agents(&item).await;
+    state.firewall.broadcast_changed_created(&model);
+    state.firewall.push_add_to_covered_agents(&model).await;
 
-    ok(item)
+    ok(BlockListItem::from(model))
 }
 
 #[utoipa::path(
@@ -316,11 +329,15 @@ async fn delete_block(
 async fn stats(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<StatsResp>>, AppError> {
+    // TODO(perf): collapse these 3 COUNT queries into a single grouped query
+    // once the dashboard widget for firewall stats lands in Phase 4.
     let total = block_list::Entity::find().count(&state.db).await? as i64;
     let auto = block_list::Entity::find()
-        .filter(block_list::Column::Origin.eq("auto"))
+        .filter(block_list::Column::Origin.eq(ORIGIN_AUTO))
         .count(&state.db)
         .await? as i64;
+    // `manual` is derived as `total - auto`; ORIGIN_MANUAL is used at the
+    // create-block site to populate `block_list.origin`.
     let v6 = block_list::Entity::find()
         .filter(block_list::Column::Family.eq(6))
         .count(&state.db)

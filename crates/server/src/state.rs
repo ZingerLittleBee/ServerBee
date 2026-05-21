@@ -181,13 +181,11 @@ impl AppState {
             alert_state_manager.clone(),
             config_arc.clone(),
         ));
-        let firewall = Arc::new(FirewallService {
-            db: db.clone(),
-            config: config_arc,
-            apply_state: Arc::new(tokio::sync::RwLock::new(Default::default())),
-            external_ips: Arc::new(tokio::sync::RwLock::new(Default::default())),
-            browser_tx: browser_tx.clone(),
-        });
+        let firewall = Arc::new(FirewallService::new(
+            db.clone(),
+            config_arc,
+            browser_tx.clone(),
+        ));
         Ok(Arc::new(Self {
             db,
             agent_manager,

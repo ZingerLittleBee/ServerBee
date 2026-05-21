@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use chrono::{DateTime, Utc};
 use ipnet::IpNet;
@@ -13,6 +13,7 @@ use serverbee_common::firewall::BlocklistEntryState;
 use tokio::sync::{RwLock, broadcast};
 
 use crate::config::AppConfig;
+use crate::entity::block_list;
 use crate::error::AppError;
 
 /// `(block_id, server_id) → ApplyState` derived from acks since boot.
@@ -42,19 +43,46 @@ const PROTECTED_CIDRS: &[&str] = &[
     "::/128",
 ];
 
+/// Parsed form of [`PROTECTED_CIDRS`]. Built once on first access so the hot
+/// path through [`FirewallService::is_protected`] does not re-parse the 12
+/// hard-coded strings on every call. Stable since Rust 1.80.
+static PROTECTED_NETS: LazyLock<Vec<IpNet>> = LazyLock::new(|| {
+    PROTECTED_CIDRS
+        .iter()
+        .map(|s| s.parse().expect("hard-coded valid CIDR"))
+        .collect()
+});
+
 #[allow(dead_code)]
 pub struct FirewallService {
-    pub db: DatabaseConnection,
-    pub config: Arc<AppConfig>,
-    pub apply_state: ApplyStateMap,
+    pub(crate) db: DatabaseConnection,
+    pub(crate) config: Arc<AppConfig>,
+    pub(crate) apply_state: ApplyStateMap,
     /// Each connected agent's external IP, populated by `service::security` /
     /// the agent WS handler once Task 2.x is wired up.
-    pub external_ips: Arc<RwLock<HashSet<IpAddr>>>,
+    pub(crate) external_ips: Arc<RwLock<HashSet<IpAddr>>>,
     /// BrowserMessage broadcast handle — re-uses the existing `AppState.browser_tx`.
-    pub browser_tx: broadcast::Sender<serverbee_common::protocol::BrowserMessage>,
+    pub(crate) browser_tx: broadcast::Sender<serverbee_common::protocol::BrowserMessage>,
 }
 
 impl FirewallService {
+    /// Construct a `FirewallService` with internally-managed `apply_state` and
+    /// `external_ips` maps. Callers only supply the externally-owned dependencies
+    /// (`db`, `config`, `browser_tx`), keeping the apply-state invariants encapsulated.
+    pub fn new(
+        db: DatabaseConnection,
+        config: Arc<AppConfig>,
+        browser_tx: broadcast::Sender<serverbee_common::protocol::BrowserMessage>,
+    ) -> Self {
+        Self {
+            db,
+            config,
+            apply_state: Arc::new(RwLock::new(HashMap::new())),
+            external_ips: Arc::new(RwLock::new(HashSet::new())),
+            browser_tx,
+        }
+    }
+
     /// Parse and canonicalize a client-supplied target.
     /// Returns `(target_canonical, family)` where `family` is 4 or 6.
     pub fn canonicalize_target(input: &str) -> Result<(String, u8), AppError> {
@@ -86,10 +114,9 @@ impl FirewallService {
             Ok(n) => n,
             Err(_) => return Some("invalid CIDR".into()),
         };
-        for p in PROTECTED_CIDRS {
-            let prot: IpNet = p.parse().expect("hard-coded valid");
-            if Self::overlaps(&target, &prot) {
-                return Some(format!("hits hard-coded guardrail: {p}"));
+        for prot in PROTECTED_NETS.iter() {
+            if Self::overlaps(&target, prot) {
+                return Some(format!("hits hard-coded guardrail: {prot}"));
             }
         }
         for raw in extra_allow {
@@ -122,18 +149,18 @@ impl FirewallService {
     }
 
     /// Broadcast a `BlocklistChanged { kind: Created }` to subscribed browsers.
-    pub fn broadcast_changed_created(&self, item: &crate::router::api::firewall::BlockListItem) {
+    pub fn broadcast_changed_created(&self, row: &block_list::Model) {
         let _ = self.browser_tx.send(
             serverbee_common::protocol::BrowserMessage::BlocklistChanged {
                 kind: serverbee_common::firewall::BlocklistChangeKind::Created,
-                block_id: item.id.clone(),
-                target: item.target.clone(),
+                block_id: row.id.clone(),
+                target: row.target.clone(),
             },
         );
     }
 
     /// Broadcast a `BlocklistChanged { kind: Deleted }` to subscribed browsers.
-    pub fn broadcast_changed_deleted(&self, row: &crate::entity::block_list::Model) {
+    pub fn broadcast_changed_deleted(&self, row: &block_list::Model) {
         let _ = self.browser_tx.send(
             serverbee_common::protocol::BrowserMessage::BlocklistChanged {
                 kind: serverbee_common::firewall::BlocklistChangeKind::Deleted,
@@ -145,20 +172,15 @@ impl FirewallService {
 
     /// Push a `BlocklistAdd` to every covered, online agent. No-op until
     /// Task 2.x wires `agent_manager` into this service.
-    pub async fn push_add_to_covered_agents(
-        &self,
-        _item: &crate::router::api::firewall::BlockListItem,
-    ) {
-        // Task 2.x: resolve covered server_ids → look up agent senders on
-        // AgentManager → emit ServerMessage::BlocklistAdd { entry: BlockEntry }.
+    pub async fn push_add_to_covered_agents(&self, _row: &block_list::Model) {
+        // Task 2.x: resolve covered server_ids (cover_type + server_ids_json on
+        // the row) → look up agent senders on AgentManager → emit
+        // ServerMessage::BlocklistAdd { entry: BlockEntry }.
     }
 
     /// Push a `BlocklistRemove` to every covered, online agent. No-op until
     /// Task 2.x wires `agent_manager` into this service.
-    pub async fn push_remove_to_covered_agents(
-        &self,
-        _row: &crate::entity::block_list::Model,
-    ) {
+    pub async fn push_remove_to_covered_agents(&self, _row: &block_list::Model) {
         // Task 2.x.
     }
 }
@@ -223,5 +245,16 @@ mod tests {
     fn protected_allow_list_bare_ip() {
         let allow = vec!["203.0.113.5".to_string()];
         assert!(FirewallService::is_protected("203.0.113.5/32", &allow).is_some());
+    }
+
+    #[test]
+    fn protected_ipv6_loopback() {
+        assert!(FirewallService::is_protected("::1/128", &[]).is_some());
+    }
+
+    #[test]
+    fn protected_ipv6_ula() {
+        // fc00::/7 covers fc00::/8 and fd00::/8 — the RFC4193 unique-local range.
+        assert!(FirewallService::is_protected("fc00::/7", &[]).is_some());
     }
 }

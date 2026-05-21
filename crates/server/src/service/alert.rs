@@ -28,6 +28,23 @@ pub const SECURITY_RULE_TYPES: &[&str] = &[
     "port_scan_detected",
 ];
 
+/// Cover-type discriminants shared across alert_rule and block_list.
+pub const COVER_TYPE_ALL: &str = "all";
+pub const COVER_TYPE_INCLUDE: &str = "include";
+pub const COVER_TYPE_EXCLUDE: &str = "exclude";
+/// All accepted `cover_type` values for alert_rule and block_list inputs.
+pub const VALID_COVER_TYPES: &[&str] =
+    &[COVER_TYPE_ALL, COVER_TYPE_INCLUDE, COVER_TYPE_EXCLUDE];
+
+/// `origin` discriminants for block_list rows.
+pub const ORIGIN_MANUAL: &str = "manual";
+pub const ORIGIN_AUTO: &str = "auto";
+
+/// Security rule types whose payload carries a `source_ip` and may attach a
+/// `block_source_ip` action.
+pub const SOURCE_IP_RULE_TYPES: &[&str] =
+    &["ssh_brute_force_detected", "port_scan_detected"];
+
 // ── Alert Rule Types ──
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, utoipa::ToSchema)]
@@ -69,7 +86,7 @@ pub enum AlertRuleAction {
 }
 
 fn default_action_cover_type() -> String {
-    "all".to_string()
+    COVER_TYPE_ALL.to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
@@ -155,11 +172,10 @@ pub fn validate_actions(
                         "invalid cover_type '{cover_type}' on action"
                     )));
                 }
-                let allowed = ["ssh_brute_force_detected", "port_scan_detected"];
                 if rules.is_empty()
                     || !rules
                         .iter()
-                        .all(|r| allowed.contains(&r.rule_type.as_str()))
+                        .all(|r| SOURCE_IP_RULE_TYPES.contains(&r.rule_type.as_str()))
                 {
                     return Err(AppError::Validation(
                         "block_source_ip is only allowed on \
@@ -194,7 +210,7 @@ fn default_trigger_mode() -> String {
 }
 
 fn default_cover_type() -> String {
-    "all".to_string()
+    COVER_TYPE_ALL.to_string()
 }
 
 fn default_true() -> bool {
@@ -905,8 +921,6 @@ impl AlertService {
 }
 
 // ── Helpers ──
-
-const VALID_COVER_TYPES: &[&str] = &["all", "include", "exclude"];
 
 /// Check if a rule's cover_type/server_ids covers a specific server (pure, no DB).
 pub(crate) fn rule_covers_server(
@@ -1945,5 +1959,34 @@ mod tests {
             },
         ];
         assert!(validate_actions(&rules, &actions).is_err());
+    }
+
+    #[test]
+    fn validate_actions_empty_actions_is_ok() {
+        // No actions should always validate, regardless of rules — including
+        // empty rules (the early-return branch must not require security rules
+        // just to allow zero actions).
+        assert!(validate_actions(&[], &[]).is_ok());
+        let rules = vec![AlertRuleItem {
+            rule_type: "cpu".into(),
+            min: Some(80.0),
+            ..Default::default()
+        }];
+        assert!(validate_actions(&rules, &[]).is_ok());
+    }
+
+    #[test]
+    fn validate_actions_rejects_invalid_cover_type() {
+        let rules = vec![AlertRuleItem {
+            rule_type: "ssh_brute_force_detected".into(),
+            ..Default::default()
+        }];
+        let actions = vec![AlertRuleAction::BlockSourceIp {
+            cover_type: "everyone".into(),
+            server_ids_json: None,
+            comment: None,
+        }];
+        let err = validate_actions(&rules, &actions).unwrap_err();
+        assert!(format!("{err}").contains("invalid cover_type"));
     }
 }
