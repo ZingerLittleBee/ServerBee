@@ -1,112 +1,127 @@
 ---
 title: Security Events
-description: Detect SSH logins, SSH brute-force attempts, and port scans on each agent and turn them into alerts.
+description: Detect SSH logins, SSH brute-force attempts, and port scans on each agent, then turn them into alerts.
 icon: ShieldAlert
 ---
 
-ServerBee agents detect three categories of host-level security events and stream them to the server, where they can be browsed, filtered, and used as alert triggers. Detection runs entirely on the agent — no logs leave the host beyond the structured event metadata.
+Agents detect host-level intrusion signals and stream structured events to the server. Raw logs never leave the host — only the parsed event metadata is reported. Events are browsable in the UI and can drive notifications through the standard alert pipeline.
 
 ## Event Types
 
-| Type | What it detects | Severity |
-|------|-----------------|----------|
-| `ssh_login` | A successful SSH login. Marked `first_seen=true` if the `(user, source IP)` pair has not been seen before | `info` |
-| `ssh_brute_force` | Repeated failed SSH attempts from the same source IP within a sliding window | `medium` / `high` / `critical` (escalates with the number of distinct usernames) |
-| `port_scan` | A single source IP touching many distinct destination ports within a sliding window | `medium` |
+| Type | Trigger | Severity |
+|------|---------|----------|
+| `ssh_login` | Successful SSH login. Marked `first_seen=true` when the `(user, source IP)` pair is new | `info` |
+| `ssh_brute_force` | Repeated SSH failures from one source IP within a sliding window | `medium` / `high` / `critical` |
+| `port_scan` | One source IP hitting many distinct destination ports within a sliding window | `medium` |
 
-Each event carries structured evidence (failed count, distinct users, scanned ports, etc.) and a detector source (`journal`, `auth_log`, `conntrack`, `nflog`).
+Each event carries structured evidence (failed count, distinct users, scanned ports, …) and a detector source — one of `journal`, `auth_log`, `conntrack`, or `nflog`.
 
 ## Requirements
 
-- **Linux only.** Detection relies on systemd journal / `/var/log/auth.log` for SSH and on `conntrack` for port scans.
-- **`CAP_SECURITY_EVENTS` capability** must be enabled on the server (bit `256`, on by default for new agents).
-- For port-scan detection, install the `conntrack` CLI on the host (`apt install conntrack` / `dnf install conntrack-tools`) and set `security.port_scan.enabled = true`.
+- **Linux only.** SSH detection reads systemd journal or `/var/log/auth.log`; port-scan detection uses `conntrack`.
+- **`CAP_SECURITY_EVENTS`** must be enabled on each server (bit `256`, on by default for new agents). See [Capabilities](/en/docs/capabilities).
+- For port-scan detection, install the `conntrack` CLI and set `security.port_scan.enabled = true`:
+  ```bash
+  # Debian / Ubuntu
+  apt install conntrack
+  # RHEL / Fedora
+  dnf install conntrack-tools
+  ```
 
 ## Viewing Events
 
-- **Overview**: `/security` lists events across all servers with KPI cards (last 24h counts by type), a 7-day timeline, and a filterable table (event type, severity, source IP, time range).
-- **Per-server**: each server detail page has a **Security** tab showing the same view scoped to that server.
-- **Event detail**: clicking a row opens a drawer with the full evidence payload, the detector source, and a GeoIP lookup of the source IP (if GeoIP is configured).
-- **Real-time push**: new events appear immediately via WebSocket; no refresh required.
+| Where | Path | What it shows |
+|-------|------|---------------|
+| Overview | `/security` | KPI cards (24h counts by type), 7-day timeline, filterable table |
+| Per-server | Server detail → **Security** tab | Same view scoped to one server |
+| Event detail | Click any row | Full evidence payload, detector source, GeoIP lookup (when configured) |
+
+New events appear in real time over WebSocket — no refresh required.
 
 ## Detector Tuning
 
-Detection thresholds are configured on the agent and apply per host. Defaults are deliberately conservative to avoid noise on busy bastions.
+Thresholds live on the agent and apply per host. Defaults are conservative to avoid noise on busy bastions.
 
 | TOML Key | Env Var | Default | Notes |
 |----------|---------|---------|-------|
 | `security.enabled` | `SERVERBEE_SECURITY__ENABLED` | `true` | Master switch for all detectors |
-| `security.ssh.window_seconds` | `SERVERBEE_SECURITY__SSH__WINDOW_SECONDS` | `60` | Sliding window for SSH brute-force counting |
-| `security.ssh.failed_threshold` | `SERVERBEE_SECURITY__SSH__FAILED_THRESHOLD` | `10` | Failures in the window that trigger one `ssh_brute_force` event. Queue clears after firing |
-| `security.port_scan.enabled` | `SERVERBEE_SECURITY__PORT_SCAN__ENABLED` | `false` | Requires `conntrack` CLI |
+| `security.ssh.window_seconds` | `SERVERBEE_SECURITY__SSH__WINDOW_SECONDS` | `60` | Sliding window for SSH failure counting |
+| `security.ssh.failed_threshold` | `SERVERBEE_SECURITY__SSH__FAILED_THRESHOLD` | `10` | Failures in the window that fire one `ssh_brute_force` event. Queue clears after firing |
+| `security.port_scan.enabled` | `SERVERBEE_SECURITY__PORT_SCAN__ENABLED` | `false` | Off by default. Requires `conntrack` CLI |
 | `security.port_scan.window_seconds` | `SERVERBEE_SECURITY__PORT_SCAN__WINDOW_SECONDS` | `30` | Sliding window for distinct-port counting |
-| `security.port_scan.distinct_port_threshold` | `SERVERBEE_SECURITY__PORT_SCAN__DISTINCT_PORT_THRESHOLD` | `20` | Distinct ports from one source IP that trigger one `port_scan` event |
+| `security.port_scan.distinct_port_threshold` | `SERVERBEE_SECURITY__PORT_SCAN__DISTINCT_PORT_THRESHOLD` | `20` | Distinct ports from one source IP that fire one `port_scan` event |
 | `security.data_dir` | `SERVERBEE_SECURITY__DATA_DIR` | `/var/lib/serverbee/security` | Persistent `first_seen` store for `(user, IP)` pairs |
 
-See [Configuration](/en/docs/configuration) for the full env var reference.
+Full env var reference: [Configuration → Security (Agent)](/en/docs/configuration).
 
 <Callout type="info">
-sshd often writes two failure lines per attempt (`Invalid user ...` + `Failed password ...`). With the default `failed_threshold=10` you'll see one `ssh_brute_force` event roughly every 5 real failed attempts from the same IP.
+sshd typically writes two failure lines per attempt (`Invalid user …` followed by `Failed password …`). With the default `failed_threshold=10`, expect roughly one `ssh_brute_force` event per **5** real failed attempts from the same IP.
 </Callout>
 
-## Severity Escalation (SSH brute force)
+## Brute-Force Severity
 
-`ssh_brute_force` severity reflects how many distinct usernames the attacker tried in the window:
+Severity escalates with the number of distinct usernames an attacker tries inside the window — a strong signal of credential stuffing:
 
 | Distinct usernames | Severity |
 |--------------------|----------|
 | 1 | `medium` |
 | 2 – 4 | `high` |
-| ≥ 5 | `critical` (credential stuffing) |
+| ≥ 5 | `critical` |
 
-The event evidence also reports `invalid_user_count` and a `sample_users` array (first 5 distinct names) so you can quickly spot common scan patterns.
+Evidence also reports `invalid_user_count` and a `sample_users` array (first 5 distinct names) for quick pattern spotting.
 
-## Alerting on Security Events
+## Alerting
 
-Three event-driven rule types are available in **Settings → Alerts**:
+Three event-driven rule types live under **Settings → Alerts**:
 
 | Rule Type | Fires on |
 |-----------|----------|
-| `ssh_login_detected` | Any `ssh_login` event (optionally only when `first_seen=true`) |
-| `ssh_brute_force_detected` | Any `ssh_brute_force` event matching the configured minimum severity |
+| `ssh_login_detected` | Any `ssh_login` event |
+| `ssh_brute_force_detected` | Any `ssh_brute_force` event |
 | `port_scan_detected` | Any `port_scan` event |
 
 ### Quick setup
 
-The Alerts page exposes three **preset cards** for one-click setup. Each preset creates an event-driven rule with sensible defaults; you only pick the notification group and (optionally) restrict it to specific servers.
+The Alerts page surfaces three **preset cards** for one-click rule creation. Each preset ships with sensible defaults — pick a notification group and, optionally, the servers it applies to.
 
 ### Filters
 
-Each security rule supports:
+Every security rule supports:
 
-- **`severity_min`** — only fire above a threshold (e.g., `high` for brute force)
-- **`exclude_cidrs`** — suppress events from trusted networks (e.g., `["10.0.0.0/8", "192.168.0.0/16"]`)
-- **`first_seen_only`** (SSH login only) — only notify on never-before-seen `(user, IP)` pairs
+- **`severity_min`** — minimum severity required to fire (e.g. `high` for brute force).
+- **`exclude_cidrs`** — suppress events from trusted networks, e.g. `["10.0.0.0/8", "192.168.0.0/16"]`.
+- **`first_seen_only`** *(SSH login only)* — fire only on never-before-seen `(user, IP)` pairs.
 
 ### Deduplication
 
-Notifications are deduplicated per `(rule_id, server_id, event_key)`. The `event_key` includes the source IP, so two different attackers hitting the same server still produce two notifications, while the same attacker triggering repeatedly within the dedupe window produces one.
+Notifications are deduplicated per `(rule_id, server_id, event_key)`. The `event_key` includes the source IP, so:
+
+- Two different attackers on the same server → **two** notifications.
+- The same attacker re-triggering inside the dedupe window → **one** notification.
 
 <Callout type="warn">
-Security rule types cannot be mixed with metric rules in a single alert rule, and only one security item per rule is allowed. The validator enforces this — use separate rules for separate event types.
+Security rule types cannot be combined with metric rules in the same alert rule, and each rule allows **one** security item. The validator rejects mixed or duplicated configurations — create one rule per event type.
 </Callout>
 
 ## Retention
 
-Security events are retained for **30 days** by default. Adjust with `retention.security_event_days` (env: `SERVERBEE_RETENTION__SECURITY_EVENT_DAYS`). Old events are purged daily by the cleanup task.
+Security events are kept for **30 days** by default. Tune with `retention.security_event_days` (env: `SERVERBEE_RETENTION__SECURITY_EVENT_DAYS`). The cleanup task purges expired rows daily.
 
 ## Data Flow
 
-```
+```text
 sshd / kernel
-  ↓ (journal / auth.log / conntrack)
+     │   (journal · auth.log · conntrack)
+     ▼
 agent detector
-  ↓ (AgentMessage::SecurityEvent over WebSocket)
-server: security_event table + alert evaluator + broadcast
-  ↓
-browser: /security page + Security tab + WebSocket push
-  ↓
-notification group (Email / Webhook / Telegram / ...)
+     │   AgentMessage::SecurityEvent  (WebSocket)
+     ▼
+server   ─►  security_event table
+         ─►  alert evaluator  ─►  notification group
+         ─►  browser broadcast (WebSocket)
+                    │
+                    ▼
+              /security  +  Security tab
 ```
 
 <Cards>
