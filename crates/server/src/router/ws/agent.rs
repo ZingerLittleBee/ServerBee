@@ -552,6 +552,18 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     .mark_succeeded(UpgradeLookup::from_job(&job), None);
             }
 
+            // Record agent's external IP so the firewall guardrail's
+            // dynamic allow-list keeps the agent from blocking itself.
+            let fw_ip = info
+                .ipv4
+                .as_deref()
+                .or(info.ipv6.as_deref())
+                .and_then(|s| s.parse::<std::net::IpAddr>().ok());
+            state
+                .firewall
+                .note_agent_external_ip(server_id, fw_ip)
+                .await;
+
             // Send Ack
             if let Some(tx) = state.agent_manager.get_sender(server_id) {
                 let _ = tx.send(ServerMessage::Ack { msg_id }).await;
@@ -1077,6 +1089,18 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             ipv6,
             interfaces: _,
         } => {
+            // Refresh the firewall guardrail's dynamic allow-list with the
+            // agent's new external IP. Done first so that any later auto-block
+            // evaluation in this scope sees the up-to-date value.
+            let fw_ip = ipv4
+                .as_deref()
+                .or(ipv6.as_deref())
+                .and_then(|s| s.parse::<std::net::IpAddr>().ok());
+            state
+                .firewall
+                .note_agent_external_ip(server_id, fw_ip)
+                .await;
+
             match ServerService::get_server(&state.db, server_id).await {
                 Ok(srv) => {
                     let old_ipv4 = srv.ipv4.clone();

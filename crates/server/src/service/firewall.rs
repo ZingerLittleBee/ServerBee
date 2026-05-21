@@ -2,7 +2,7 @@
 //! agent-apply-state logic. CRUD wiring lives in `router::api::firewall`;
 //! WS push is invoked from there and from auto-block (`service::security`).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::{Arc, LazyLock};
 
@@ -58,9 +58,10 @@ pub struct FirewallService {
     pub(crate) db: DatabaseConnection,
     pub(crate) config: Arc<AppConfig>,
     pub(crate) apply_state: ApplyStateMap,
-    /// Each connected agent's external IP, populated by `service::security` /
-    /// the agent WS handler once Task 2.x is wired up.
-    pub(crate) external_ips: Arc<RwLock<HashSet<IpAddr>>>,
+    /// Each connected agent's external IP, populated by the agent WS handler
+    /// when a `SystemInfo` or `IpChanged` arrives. Keyed by `server_id` so we
+    /// can update an agent's reported IP in place and drop it on disconnect.
+    pub(crate) external_ips: Arc<RwLock<HashMap<String, IpAddr>>>,
     /// BrowserMessage broadcast handle — re-uses the existing `AppState.browser_tx`.
     pub(crate) browser_tx: broadcast::Sender<serverbee_common::protocol::BrowserMessage>,
 }
@@ -78,7 +79,7 @@ impl FirewallService {
             db,
             config,
             apply_state: Arc::new(RwLock::new(HashMap::new())),
-            external_ips: Arc::new(RwLock::new(HashSet::new())),
+            external_ips: Arc::new(RwLock::new(HashMap::new())),
             browser_tx,
         }
     }
@@ -141,11 +142,36 @@ impl FirewallService {
         a.contains(&b.network()) || b.contains(&a.network())
     }
 
-    /// Tier-2.5 runtime allow-list. Currently empty; Task 2.x fills this in
-    /// with `[server] trusted_proxies` plus each connected agent's reported
-    /// external IP, both of which we must never accidentally block.
+    /// Tier-2.5 runtime allow-list. Merges `[server] trusted_proxies` with
+    /// each connected agent's most recently reported external IP, both of
+    /// which we must never accidentally block.
     pub async fn collect_dynamic_allow(&self) -> Vec<String> {
-        Vec::new()
+        let mut out: Vec<String> = self
+            .config
+            .server
+            .trusted_proxies
+            .iter()
+            .map(|n| n.to_string())
+            .collect();
+        let g = self.external_ips.read().await;
+        for ip in g.values() {
+            out.push(ip.to_string());
+        }
+        out
+    }
+
+    /// Record/update/clear an agent's last reported external IP.
+    /// Called from the agent WS handler on `SystemInfo` and `IpChanged`.
+    pub async fn note_agent_external_ip(&self, server_id: &str, ip: Option<IpAddr>) {
+        let mut g = self.external_ips.write().await;
+        match ip {
+            Some(ip) => {
+                g.insert(server_id.to_string(), ip);
+            }
+            None => {
+                g.remove(server_id);
+            }
+        }
     }
 
     /// Broadcast a `BlocklistChanged { kind: Created }` to subscribed browsers.
