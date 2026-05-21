@@ -173,6 +173,20 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 | `SERVERBEE_UPGRADE__RELEASE_REPO_URL` | `https://github.com/ZingerLittleBee/ServerBee/releases` | Agent 下载升级包时使用的固定发布源基础 URL。任何镜像需复现 GitHub Releases 的目录结构：`{base}/download/v{version}/{asset}` 用于下载二进制，`{base}/download/v{version}/checksums.txt` 用于校验。编译时默认值可通过构建环境变量 `SERVERBEE_RELEASE_REPO` 覆盖 |
 | `SERVERBEE_UPGRADE__RELEASE_CERT_SPKI_SHA256` | `""` | 可选的发布源 TLS 证书 SPKI Pin。格式为 64 位小写十六进制字符（叶证书 SubjectPublicKeyInfo DER 的 SHA-256）。留空则禁用。设置后，Agent 在标准证书链验证通过后额外校验叶证书 SPKI。格式非法（非 64 位或含非十六进制字符）时启动即报错 |
 
+#### 安全事件检测（Security，Agent）
+
+调优 Agent 端的安全事件检测器（SSH 登录 / 爆破、端口扫描）。检测完全在 Agent 上完成，Server 仅负责存储事件与评估告警规则。由于各主机的流量特征不同，建议按机器单独配置。
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_SECURITY__ENABLED` | `true` | 安全事件检测器总开关。设为 `false` 时 Agent 不再上报任何 `security_event` 消息 |
+| `SERVERBEE_SECURITY__SSH__WINDOW_SECONDS` | `60` | SSH 爆破检测的滑动窗口长度（秒）|
+| `SERVERBEE_SECURITY__SSH__FAILED_THRESHOLD` | `10` | 窗口内累计失败次数达到该值即触发 `ssh_brute_force` 事件。触发后队列清空，需要重新累积 |
+| `SERVERBEE_SECURITY__PORT_SCAN__ENABLED` | `false` | 是否启用端口扫描检测。需要系统安装 `conntrack` CLI（仅 Linux）|
+| `SERVERBEE_SECURITY__PORT_SCAN__WINDOW_SECONDS` | `30` | 端口扫描检测的滑动窗口长度（秒）|
+| `SERVERBEE_SECURITY__PORT_SCAN__DISTINCT_PORT_THRESHOLD` | `20` | 同一源 IP 在窗口内命中的不同目标端口数达到该值即触发 `port_scan` 事件 |
+| `SERVERBEE_SECURITY__DATA_DIR` | `/var/lib/serverbee/security` | 用于持久化 `first_seen` 存储的目录，用来标记 `ssh_login` 事件是否为新 (user, IP) 组合 |
+
 ## 完整 server.toml 参考
 
 ```toml title="/etc/serverbee/server.toml"

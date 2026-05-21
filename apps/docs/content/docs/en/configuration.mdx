@@ -167,6 +167,20 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | `SERVERBEE_UPGRADE__RELEASE_REPO_URL` | `https://github.com/ZingerLittleBee/ServerBee/releases` | Pinned release source base URL the Agent downloads upgrades from. Any HTTPS host mirroring the GitHub releases path layout `{base}/download/v{version}/{asset}` and `{base}/download/v{version}/checksums.txt` works. Compile-time default is overridable via the `SERVERBEE_RELEASE_REPO` build-time env |
 | `SERVERBEE_UPGRADE__RELEASE_CERT_SPKI_SHA256` | `""` | Optional TLS certificate SPKI pin for the release host. 64 lowercase hex chars = SHA-256 of the leaf cert SubjectPublicKeyInfo DER. Empty = disabled. If set, the Agent additionally pins the leaf cert SPKI after standard chain validation. Invalid (non-64/non-hex) values are rejected at startup |
 
+#### Security (Agent)
+
+Tunes the agent-side security event detectors (SSH login / brute force, port scan). Detection runs entirely on the agent; the server only stores events and evaluates alert rules. Configure per-host since traffic profiles differ.
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `SERVERBEE_SECURITY__ENABLED` | `true` | Master switch for all security detectors. When `false` the agent emits no `security_event` messages |
+| `SERVERBEE_SECURITY__SSH__WINDOW_SECONDS` | `60` | Sliding window length (seconds) for SSH brute-force detection |
+| `SERVERBEE_SECURITY__SSH__FAILED_THRESHOLD` | `10` | Failed SSH attempts within the window that trigger an `ssh_brute_force` event. Queue clears after firing |
+| `SERVERBEE_SECURITY__PORT_SCAN__ENABLED` | `false` | Enable port-scan detection. Requires `conntrack` CLI installed (Linux) |
+| `SERVERBEE_SECURITY__PORT_SCAN__WINDOW_SECONDS` | `30` | Sliding window length (seconds) for port-scan detection |
+| `SERVERBEE_SECURITY__PORT_SCAN__DISTINCT_PORT_THRESHOLD` | `20` | Distinct destination ports hit by a single source IP within the window that trigger a `port_scan` event |
+| `SERVERBEE_SECURITY__DATA_DIR` | `/var/lib/serverbee/security` | Directory for the persistent `first_seen` store used to mark `ssh_login` events as new (user, IP) combinations |
+
 ## Server Configuration (server.toml)
 
 ### `[server]` -- Core Server Settings

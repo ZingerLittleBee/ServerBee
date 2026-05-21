@@ -152,3 +152,17 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 |---------------------|----------|------|---------|-------------|
 | `SERVERBEE_UPGRADE__RELEASE_REPO_URL` | `upgrade.release_repo_url` | string | `https://github.com/ZingerLittleBee/ServerBee/releases` | Pinned release source base URL the Agent downloads upgrades from. Any HTTPS host mirroring the GitHub releases path layout `{base}/download/v{version}/{asset}` and `{base}/download/v{version}/checksums.txt` works. The compiled-in default can only be changed at build time via the `SERVERBEE_RELEASE_REPO` environment variable when compiling the agent (not a runtime setting). At runtime, override via this `SERVERBEE_UPGRADE__RELEASE_REPO_URL` env var, the `[upgrade] release_repo_url` config, or the `--release-repo` CLI flag |
 | `SERVERBEE_UPGRADE__RELEASE_CERT_SPKI_SHA256` | `upgrade.release_cert_spki_sha256` | string | `""` | Optional TLS certificate SPKI pin for the release host. Must be 64 lowercase hex chars (SHA-256 of the leaf cert SubjectPublicKeyInfo DER). Empty = disabled. If set, the Agent additionally pins the leaf cert SPKI after standard chain validation. Invalid (non-64/non-hex) values are rejected at startup |
+
+### Security (Agent)
+
+Tunes the agent-side security event detectors (SSH login / brute force, port scan). Detection runs entirely on the agent; the server only stores events and evaluates alert rules. Configure per-host since traffic profiles differ.
+
+| Environment Variable | TOML Key | Type | Default | Description |
+|---------------------|----------|------|---------|-------------|
+| `SERVERBEE_SECURITY__ENABLED` | `security.enabled` | bool | `true` | Master switch for all security detectors. When `false` the agent emits no `security_event` messages |
+| `SERVERBEE_SECURITY__SSH__WINDOW_SECONDS` | `security.ssh.window_seconds` | u32 | `60` | Sliding window length (seconds) for SSH brute-force detection |
+| `SERVERBEE_SECURITY__SSH__FAILED_THRESHOLD` | `security.ssh.failed_threshold` | u32 | `10` | Number of failed SSH attempts within the window that triggers an `ssh_brute_force` event. Queue clears after firing |
+| `SERVERBEE_SECURITY__PORT_SCAN__ENABLED` | `security.port_scan.enabled` | bool | `false` | Enable port-scan detection. Requires `conntrack` CLI installed (Linux) |
+| `SERVERBEE_SECURITY__PORT_SCAN__WINDOW_SECONDS` | `security.port_scan.window_seconds` | u32 | `30` | Sliding window length (seconds) for port-scan detection |
+| `SERVERBEE_SECURITY__PORT_SCAN__DISTINCT_PORT_THRESHOLD` | `security.port_scan.distinct_port_threshold` | u32 | `20` | Distinct destination ports hit by a single source IP within the window that triggers a `port_scan` event |
+| `SERVERBEE_SECURITY__DATA_DIR` | `security.data_dir` | string | `/var/lib/serverbee/security` | Directory for the persistent `first_seen` store used to mark `ssh_login` events as new (user, IP) combinations |
