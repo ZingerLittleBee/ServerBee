@@ -66,8 +66,8 @@ These constraints are deliberate to keep v1 small and auditable. The data model 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | TEXT PRIMARY KEY | UUID v4 |
-| `target` | TEXT NOT NULL | `1.2.3.4` / `10.0.0.0/24` / `2001:db8::/32` |
-| `family` | INTEGER NOT NULL | `4` or `6` |
+| `target` | TEXT NOT NULL | Canonical `IpNet` string. See § 2.5 |
+| `family` | INTEGER NOT NULL | `4` or `6`, **derived** from `target` parse, not accepted from clients |
 | `cover_type` | TEXT NOT NULL | `all` / `include` / `exclude` (reuses `alert_rule` semantics) |
 | `server_ids_json` | TEXT NULL | JSON array, used by `include` / `exclude` |
 | `comment` | TEXT NULL | free-text or rendered template |
@@ -79,7 +79,7 @@ These constraints are deliberate to keep v1 small and auditable. The data model 
 
 Indexes:
 
-- `UNIQUE(target)` — same target must not appear twice. Prevents conflicting cover_type rows.
+- `UNIQUE(target)` — same canonical target must not appear twice. Combined with § 2.5 canonicalization, this prevents `1.2.3.4` and `1.2.3.4/32` from being two rows.
 - `INDEX(created_at DESC)` — list pagination.
 - `INDEX(origin)` — UI filter.
 
@@ -104,7 +104,7 @@ Only one action allowed per rule. Only `block_source_ip` defined in v1.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `firewall.allow_list` | string[] | `[]` | CIDRs the server refuses to enqueue into any block_list (third guardrail tier) |
+| `firewall.allow_list` | string[] | `[]` | CIDRs the server refuses to enqueue into any block_list (server-side guardrail, § 4.2) |
 
 Env var: `SERVERBEE_FIREWALL__ALLOW_LIST` (comma-separated).
 
@@ -115,6 +115,21 @@ Env var: `SERVERBEE_FIREWALL__ALLOW_LIST` (comma-separated).
 - `m20260521_000029_extend_capability_mask` — bump `CAP_VALID_MASK` reference (data unchanged; this is mostly a comment/marker migration since the column is `INTEGER NOT NULL DEFAULT`).
 
 Only `up()` is implemented; `down()` returns `Ok(())` (matches existing convention).
+
+### 2.5 Target canonicalization
+
+Client input goes through `FirewallService::canonicalize_target(input) -> (target, family)` before any insert / dedup / guardrail check:
+
+1. Parse `input` first as `IpAddr`. On success, convert to `IpNet` via the host-bit prefix (`/32` for v4, `/128` for v6).
+2. Otherwise parse as `IpNet`. Reject anything else.
+3. Re-emit using `IpNet::network()` + prefix length — this collapses `1.2.3.4/24` → `1.2.3.0/24`, `001:0db8::/32` → `1:db8::/32`, and `1.2.3.4` → `1.2.3.4/32`.
+4. `family` is derived from the parsed variant; clients **must not** supply it.
+
+Both the REST handler and the auto-block path call this. The `target` column always stores the canonical form, so `UNIQUE(target)` is meaningful. Display in the UI strips the trailing `/32` / `/128` for single hosts.
+
+### 2.6 `RecoveryMergeService` integration
+
+When `recovery_merge` rewrites server IDs (e.g. after a recovery merge merges agent `srv-A → srv-B`), it must rewrite `block_list.server_ids_json` alongside the existing tables. The plan adds `block_list` to `recovery_merge::rewrite_server_id`'s table list so coverage scopes follow the merge.
 
 ---
 
@@ -133,29 +148,36 @@ pub enum ServerMessage {
 pub enum AgentMessage {
     // existing variants...
     BlocklistAck {
-        id: String,
-        applied: bool,
-        reason: Option<String>, // populated only when applied = false
+        results: Vec<BlocklistAckItem>,
     },
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct BlocklistAckItem {
+    pub id: String,
+    pub applied: bool,
+    pub reason: Option<String>, // populated when applied = false
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BlockEntry {
     pub id: String,
-    pub target: String,
-    pub family: u8, // 4 or 6
+    pub target: String, // canonical IpNet string
+    pub family: u8,     // 4 or 6
 }
 ```
 
 `BlockEntry` does **not** carry `cover_type` / `server_ids_json` — the server already filters before sending, so the agent applies whatever it receives.
 
-`BlocklistAck` is sent **only when `applied = false`**. Successful application is silent to keep WS traffic minimal under steady state.
+`BlocklistAck` carries **both successes and failures** so the server has authoritative per-agent apply state. For incremental ops (`BlocklistAdd` / `BlocklistRemove`) the ack contains one item. For `BlocklistSync` the ack batches all entries the agent attempted to apply (one item per entry, both old and new), so a single Sync results in exactly one Ack message with N items. This keeps WS volume bounded (1 ack per reconcile) while letting the server stop inferring "not applied" from audit logs.
 
 ---
 
-## 4. Guardrails (3 tiers)
+## 4. Guardrails (overlapping)
 
-Misconfigured rules can lock the operator out. Three independent checks reject the same set; any one tripping aborts the insert.
+Misconfigured rules can lock the operator out. Two server-side tiers cover the full protected set; the agent re-checks an overlapping subset as a last line of defense. Any tier tripping aborts the insert/apply.
+
+The agent does **not** see the full server-side allow_list, trusted_proxies, or other agents' external IPs — sending that data over WS is more attack surface than it's worth. Agent tier knowledge is intentionally a subset; the server's authoritative check still runs first.
 
 ### 4.1 Tier 1 — server-side hard-coded
 
@@ -181,18 +203,23 @@ Built at startup from:
 
 Same overlap test as tier 1.
 
-### 4.3 Tier 3 — agent-side
+### 4.3 Tier 3 — agent-side (subset)
 
-Before issuing `nft add element` the agent re-runs **tier 1 only + its own external IP** (the agent does not know the server's full allow_list). On hit, the agent sends `BlocklistAck { applied: false, reason: "guardrail: …" }`.
+Before issuing `nft add element` the agent re-runs **tier 1 (hard-coded) + its own external IP**. This is intentionally a subset of the server-side check: the agent does not see `firewall.allow_list`, `server.trusted_proxies`, or other agents' external IPs. The server-side tiers run first, so the agent tier is a backstop against bugs / version skew, not the primary gatekeeper. On hit, the agent emits `BlocklistAck { applied: false, reason: "guardrail: …" }` for that entry.
 
 ### 4.4 Audit on rejection
 
 | Action | When |
 |---|---|
-| `firewall_block_rejected_server` | Tier 1/2 reject |
-| `firewall_block_rejected_agent` | Tier 3 reject |
+| `firewall_block_created` | Row inserted (manual or auto) |
+| `firewall_block_deleted` | Row deleted via REST |
+| `firewall_block_applied_agent` | `BlocklistAckItem { applied: true }` received |
+| `firewall_block_rejected_server` | Tier 1 / Tier 2 reject |
+| `firewall_block_rejected_agent` | Tier 3 reject (`BlocklistAckItem { applied: false }`) |
+| `firewall_auto_block_skipped_conflict` | Auto-block dedup found a row that does **not** cover the current server (§ 5.2 step 2) |
+| `firewall_auto_rule_removed` | Alert rule with action was deleted; existing `block_list` rows are kept |
 
-Detail JSON includes `target`, `reason`, and (for auto-block) `origin_rule_id`.
+Detail JSON includes `target`, `reason` (when applicable), `server_id` (for per-agent events), and `origin_rule_id` / `origin_event_id` for auto-block-derived rows.
 
 ### 4.5 UI feedback
 
@@ -204,29 +231,52 @@ Detail JSON includes `target`, `reason`, and (for auto-block) `origin_rule_id`.
 
 ### 5.1 Hook into SecurityService
 
-Inside the existing `SecurityService::evaluate_rules` loop (in `crates/server/src/service/security.rs`), after `send_group` and the dedupe `mark_triggered` call, iterate the rule's `actions_json`:
+`SecurityService` currently holds `db`, `browser_tx`, `alert_state_manager`, `config`. The plan extends it to also hold `Arc<AgentManager>` and an `Arc<FirewallService>` (or equivalent). These are constructed once in `AppState::new` and injected — no need for `state` to be passed into the service.
+
+Inside `evaluate_rules`, the existing per-rule loop currently does:
+
+```
+... match against item, params, evidence ...
+mark_triggered(...)
+if !should_notify { continue; }                // dedupe window
+let Some(group_id) = rule.notification_group_id else { continue; };
+send_group(...)
+```
+
+Auto-block runs **after `mark_triggered` and before the `should_notify` / `notification_group_id` early-exits** — actions must fire on every rule match, regardless of whether a notification is being suppressed by dedupe or whether a notification group is configured. Concretely:
 
 ```rust
-for action in actions {
+mark_triggered(...).await?;
+
+// NEW: actions run on every match, independent of notification state.
+for action in deserialize_actions(&rule.actions_json) {
     match action {
-        BlockSourceIp { cover_type, server_ids_json, comment } => {
-            FirewallService::auto_block(
-                &self.db,
-                rule, payload, action,
-                &state.agent_manager,
-            ).await?;
+        AlertRuleAction::BlockSourceIp { cover_type, server_ids_json, comment } => {
+            if let Err(e) = self.firewall.auto_block(
+                rule, payload, &cover_type, server_ids_json.as_deref(), comment.as_deref(),
+            ).await {
+                tracing::error!(rule_id=%rule.id, error=%e, "auto_block failed");
+            }
         }
     }
 }
+
+if !should_notify { continue; }
+let Some(ref group_id) = rule.notification_group_id else { continue; };
+NotificationService::send_group(...).await
 ```
 
 ### 5.2 `FirewallService::auto_block` steps
 
-1. **Dedup check**: `SELECT id FROM block_list WHERE target = $1`. Existing row → skip silently (no second audit entry, no re-broadcast). Rationale: repeated brute-force events from the same IP must not generate row churn.
-2. **Guardrail** (tier 1 + 2). Reject → audit `firewall_block_rejected_server`, return without error so notification still went out normally.
-3. **Insert** `block_list` row with `origin = "auto"`, `origin_event_id`, `origin_rule_id`, rendered `comment` (placeholders `{rule_name}`, `{event_type}`, `{severity}`).
-4. **Audit** `firewall_block_created` with detail `{ id, target, origin, rule_id }`.
-5. **Push to covered online agents**: iterate `agent_manager.online_agents()`, filter by `rule_covers_server(row.cover_type, row.server_ids_json, &agent_id)` AND by `has_capability(caps, CAP_FIREWALL_BLOCK)`, send `BlocklistAdd`. Offline agents will pick it up on next `BlocklistSync`.
+1. **Canonicalize** `payload.source_ip` via § 2.5 → `(target, family)`.
+2. **Dedup-with-scope check**: `SELECT id, cover_type, server_ids_json FROM block_list WHERE target = $1`.
+   - If no row → continue to step 3.
+   - If row exists AND `rule_covers_server(existing.cover_type, existing.server_ids_json, payload.server_id)` is true → genuinely redundant; skip silently.
+   - If row exists but does **not** cover the current server, then this attacker is hitting a server not covered by the existing row. We must not pretend the IP is blocked. Write audit `firewall_auto_block_skipped_conflict` with detail `{ target, existing_id, current_server_id }` and skip. The operator can broaden the existing row's coverage manually. (Rationale: silently widening coverage from `include[srv-A]` to `all` would surprise the operator who narrowed it on purpose.)
+3. **Guardrail** (tier 1 + 2). Reject → audit `firewall_block_rejected_server`, return `Ok(())`. The caller's notification path continues unaffected.
+4. **Insert** `block_list` row with canonical `target`, derived `family`, `origin = "auto"`, `origin_event_id`, `origin_rule_id`, rendered `comment` (placeholders `{rule_name}`, `{event_type}`, `{severity}`).
+5. **Audit** `firewall_block_created` with detail `{ id, target, origin, rule_id, event_id }`.
+6. **Push to covered online agents**: iterate `agent_manager.online_agents()`, filter by `rule_covers_server(row.cover_type, row.server_ids_json, &agent_id)` AND by `has_capability(caps, CAP_FIREWALL_BLOCK)`, send `BlocklistAdd`. Offline agents pick it up on next `BlocklistSync`.
 
 ### 5.3 Validator
 
@@ -274,15 +324,19 @@ if has_capability(caps, CAP_FIREWALL_BLOCK) {
 
 **On CRUD**: send `BlocklistAdd` / `BlocklistRemove` to every online agent currently covered. Offline agents are not chased — they reconcile on next Sync.
 
-**On `BlocklistAck { applied: false, .. }`**: write `firewall_block_rejected_agent` audit, log warn. Do **not** delete the row — another agent may apply it fine (different external IP).
+**On capability bit transition** (`CapabilitiesSync` changes the effective capability mask for this connection):
+- bit went **on** → push a fresh `BlocklistSync` so the agent installs the current set.
+- bit went **off** → push `ServerMessage::BlocklistSync { entries: [] }`. Agent treats an empty Sync as "drop everything", which combined with § 6.3 below means flushing the nft sets and emitting one batched ack. This mirrors the Docker capability-revoke cleanup pattern in `ws::agent` — the connection stays open, but the feature data is wiped.
+
+**On `BlocklistAck`**: for each item, write either `firewall_block_applied_agent` (`applied=true`) or `firewall_block_rejected_agent` (`applied=false`) audit, log accordingly. Do **not** delete the `block_list` row on a single-agent rejection — another agent may apply it fine (different external IP). Server keeps an `agent_apply_state` map (`(block_id, server_id) → {applied, reason, at}`) in memory only, derived from acks since boot, that the REST `GET /api/firewall/blocks/:id` enriches into per-agent status. Historical state is reconstructible from the audit log.
 
 ### 6.2 Agent side `FirewallManager`
 
 ```rust
 pub struct FirewallManager {
-    /// Desired state per server: id → target
+    /// Entries successfully applied to nft. Only mutated after a successful apply.
     desired: HashMap<String, BlockEntry>,
-    /// nft resources are initialized once per process
+    /// One-shot resource bootstrap state — see § 6.3.
     nft_ready: bool,
     external_ip: OnceLock<IpAddr>,
 }
@@ -293,71 +347,140 @@ Message handling:
 ```rust
 match msg {
     BlocklistSync { entries } => {
+        if entries.is_empty() && self.desired.is_empty() && !self.nft_ready {
+            // Common case before any block ever existed; nothing to do.
+            ack_batch(vec![]);
+            return;
+        }
         self.ensure_nft_resources()?;
-        let desired_now: HashMap<_, _> =
-            entries.iter().map(|e| (e.id.clone(), e.clone())).collect();
-        let to_add:    Vec<&BlockEntry> = desired_now.values()
+
+        let incoming: HashMap<_, _> =
+            entries.into_iter().map(|e| (e.id.clone(), e)).collect();
+        let to_add:    Vec<&BlockEntry> = incoming.values()
             .filter(|e| !self.desired.contains_key(&e.id))
             .collect();
         let to_remove: Vec<BlockEntry>  = self.desired.values()
-            .filter(|e| !desired_now.contains_key(&e.id))
+            .filter(|e| !incoming.contains_key(&e.id))
             .cloned().collect();
-        for e in to_add    { self.apply_add(e).await; }
-        for e in to_remove { self.apply_remove(&e).await; }
-        self.desired = desired_now;
+
+        let mut results = Vec::with_capacity(to_add.len() + to_remove.len());
+        for e in to_add {
+            match self.apply_add(e).await {
+                Ok(()) => {
+                    self.desired.insert(e.id.clone(), e.clone());
+                    results.push(BlocklistAckItem { id: e.id.clone(), applied: true, reason: None });
+                }
+                Err(reason) => {
+                    // NOT inserted into desired — next Sync will retry.
+                    results.push(BlocklistAckItem { id: e.id.clone(), applied: false, reason: Some(reason) });
+                }
+            }
+        }
+        for e in to_remove {
+            // Best-effort: a "delete-missing" is treated as success (§ 6.3).
+            let _ = self.apply_remove(&e).await;
+            self.desired.remove(&e.id);
+            results.push(BlocklistAckItem { id: e.id, applied: true, reason: None });
+        }
+
+        // Special case: empty incoming on capability-revoke also flushes the
+        // sets entirely so leftover rules from the previous capability=on
+        // window cannot keep dropping traffic.
+        if incoming.is_empty() {
+            self.flush_sets().await;     // `nft flush set ...` for both v4 / v6
+            self.desired.clear();
+        }
+
+        ack_batch(results);
     }
+
     BlocklistAdd { entry } => {
         self.ensure_nft_resources()?;
         if let Err(r) = self.tier3_guardrail(&entry.target) {
-            ack(entry.id, false, Some(r));
+            ack_single(entry.id, false, Some(r));
             return;
         }
-        self.nft_add_element(&entry).await?;
-        self.desired.insert(entry.id.clone(), entry);
+        match self.apply_add(&entry).await {
+            Ok(()) => {
+                self.desired.insert(entry.id.clone(), entry.clone());
+                ack_single(entry.id, true, None);
+            }
+            Err(reason) => {
+                // NOT inserted; next Sync re-attempts.
+                ack_single(entry.id, false, Some(reason));
+            }
+        }
     }
+
     BlocklistRemove { id } => {
-        if let Some(entry) = self.desired.remove(&id) {
-            let _ = self.nft_del_element(&entry).await;
+        let entry = self.desired.remove(&id);
+        match entry {
+            Some(e) => {
+                let _ = self.apply_remove(&e).await; // delete-missing = success
+                ack_single(id, true, None);
+            }
+            None => ack_single(id, true, None), // unknown id = already absent
         }
     }
 }
 ```
 
+Key invariant: **`desired` only contains entries the agent has confirmed in the kernel nft set.** Application failure leaves the entry out of `desired`, so the next `BlocklistSync` diff retries it.
+
 ### 6.3 `nft` invocation
 
-Idempotent init (run once per process, after first `BlocklistSync`):
+**Resource bootstrap (`ensure_nft_resources`)** — fully idempotent. Run on first need, then short-circuited by `nft_ready = true`. Each resource is detected before mutating:
 
-```bash
-nft add table inet serverbee
-nft add set inet serverbee block_v4 '{ type ipv4_addr; flags interval; }'
-nft add set inet serverbee block_v6 '{ type ipv6_addr; flags interval; }'
-nft add chain inet serverbee input '{ type filter hook input priority -10; }'
-nft add rule  inet serverbee input ip  saddr @block_v4 drop
-nft add rule  inet serverbee input ip6 saddr @block_v6 drop
+```text
+exists table inet serverbee?      no → nft add table inet serverbee
+exists set block_v4?              no → nft add set ... block_v4 ipv4_addr/interval
+exists set block_v6?              no → nft add set ... block_v6 ipv6_addr/interval
+exists chain input?               no → nft add chain ... input filter hook input priority -10
+chain has the v4 drop rule?       no → nft add rule  ... ip  saddr @block_v4 drop
+chain has the v6 drop rule?       no → nft add rule  ... ip6 saddr @block_v6 drop
 ```
 
-The two `add rule` invocations are guarded with `nft -j list chain inet serverbee input` to detect existing identical rules.
+Detection uses `nft -j list ruleset` once and inspects the JSON. Any subsequent `nft add` that races with another process and returns `EEXIST` is treated as success (the kernel state is what we wanted).
 
-Per-entry add/remove:
+**Per-entry add / remove** — same EEXIST / ENOENT lenience:
 
 ```bash
-nft add element    inet serverbee block_v4 '{ 1.2.3.4 }'
-nft delete element inet serverbee block_v4 '{ 1.2.3.4 }'
+nft add element    inet serverbee block_v4 '{ 1.2.3.4 }'   # already exists → ok
+nft delete element inet serverbee block_v4 '{ 1.2.3.4 }'   # not present   → ok
 ```
 
-All commands run via `tokio::process::Command`. Failures bubble up as `BlocklistAck { applied: false, reason }`.
+Mapping:
+
+| `nft` stderr signal | Mapped to |
+|---|---|
+| `Error: File exists` on `add element` | success |
+| `Error: No such file or directory` on `delete element` | success |
+| `Error: Could not process rule: Operation not permitted` | failure (likely missing root) — `CapabilityDenied` |
+| `Error: Could not process rule: No such file or directory` on resource ops | failure (kernel module missing) — `CapabilityDenied` |
+| Any other non-zero exit | failure, `reason` = first stderr line |
+
+**Set flush** (used on capability-revoke / empty-Sync case):
+
+```bash
+nft flush set inet serverbee block_v4
+nft flush set inet serverbee block_v6
+```
+
+All commands run via `tokio::process::Command`. Each invocation captures stderr; non-success cases become `BlocklistAck { applied: false, reason }` for the offending entry (or a `CapabilityDenied` ServerMessage when the entire pipeline can't function).
 
 ### 6.4 Failure matrix
 
 | Scenario | Behavior |
 |---|---|
 | Agent offline at CRUD time | No push; next `BlocklistSync` carries the delta |
-| Agent ack `applied = false` | Server audits, UI marks entry as "not applied on srv-X" (derived from audit) |
+| Agent ack `applied = false` | Server audits, in-memory `agent_apply_state` records the failure; entry stays out of agent `desired` so next Sync diff re-tries it |
+| Agent ack `applied = true` | Server audits `firewall_block_applied_agent`; `agent_apply_state` updated |
 | `nft` missing or unprivileged | Agent emits `CapabilityDenied`; server UI shows "firewall capability unavailable" |
 | Server restart | Agent reconnects → full Sync → state is restored |
-| Agent restart | Same — agent does not persist blocklist |
-| Duplicate target | `UNIQUE(target)` rejects at insert; auto-block dedup skips |
-| Mid-Sync WS drop | Sync abandoned; next reconnect retries from scratch |
+| Agent restart | Same — agent does not persist blocklist; resource bootstrap runs again, idempotent |
+| Capability bit toggled off mid-session | Server pushes empty Sync → agent flushes both sets, clears `desired` |
+| Duplicate target | `UNIQUE(target)` rejects at insert; auto-block dedup checks coverage scope before skipping (§ 5.2 step 2) |
+| Mid-Sync WS drop | Sync abandoned; next reconnect retries from scratch with the same diff algorithm |
 
 ---
 
@@ -446,20 +569,27 @@ New file `apps/web/src/locales/{en,zh}/firewall.json`, approx. 30 keys (`blockli
 
 ### 11.1 Rust unit
 
+- `service::firewall::canonicalize_target` — `1.2.3.4` → `1.2.3.4/32`, `1.2.3.4/24` → `1.2.3.0/24`, IPv6 case-fold, garbage rejected
 - `service::firewall::is_protected` — IPv4 / IPv6 overlap edge cases (target ⊃ protected, target ⊂ protected, disjoint)
-- `service::firewall::FirewallService::auto_block` — dedup, guardrail rejection, normal path (with in-memory DB + mock agent manager)
-- `agent::firewall::nft` — mock `tokio::process::Command` (or extract a `NftExecutor` trait): verify generated command strings, error surfacing
-- `agent::firewall::reconcile` — diff algorithm: empty → full, full → empty, partial overlap, idempotent re-sync
-- `service::alert::validate_alert_rule` — action + rule_type compatibility, max 1 action, forbidden combinations
+- `service::firewall::FirewallService::auto_block` — coverage-aware dedup (existing row covers / does not cover scope), guardrail rejection, normal path (with in-memory DB + mock agent manager)
+- `agent::firewall::nft` — mock `tokio::process::Command` (extract a `NftExecutor` trait): verify generated command strings, EEXIST / ENOENT lenience, error mapping
+- `agent::firewall::reconcile` — diff algorithm: empty → full, full → empty, partial overlap, idempotent re-sync, **failed-apply entry stays out of `desired` and retries on next Sync**
+- `agent::firewall::FirewallManager` — capability-off Sync (empty entries) triggers `nft flush set` and clears `desired`
+- `service::alert::validate_alert_rule` — action + rule_type compatibility, max 1 action, forbidden combinations (`ssh_new_ip_login` + block)
+- `service::recovery_merge` — `block_list.server_ids_json` is rewritten alongside other server_id-bearing tables
 
 ### 11.2 Integration (`crates/server/tests/integration.rs`)
 
-- `POST /api/firewall/blocks` → row inserted, mock agent receives `BlocklistAdd`, ack written
+- `POST /api/firewall/blocks` → row inserted, mock agent receives `BlocklistAdd`, ack (applied=true) written, audit `firewall_block_applied_agent`
+- `POST` with non-canonical target (`1.2.3.4/24`) → row stored as `1.2.3.0/24`; second POST with `1.2.3.0/24` → 409 dup
 - Guardrail rejection paths return 409 with localized reason key
 - Auto-block end-to-end: insert security_event → matching rule with action → block_list row appears
-- Agent reconnect → `BlocklistSync` carries expected entries
+- Auto-block dedup with non-covering existing row → audit `firewall_auto_block_skipped_conflict`, no insert
+- Agent reconnect → `BlocklistSync` carries expected entries; failed-apply entries retry on subsequent Sync
+- Capability bit turned off mid-session → empty `BlocklistSync` pushed → agent ack stream shows all entries removed; agent `desired` cleared (verified via test hook)
 - DELETE → row gone, mock agent receives `BlocklistRemove`, ack
 - Member (non-admin) on `POST` / `DELETE` → 403
+- Recovery merge that rewrites `srv-A → srv-B` updates `block_list.server_ids_json` accordingly
 
 ### 11.3 E2E manual (`tests/firewall-block.md`)
 
@@ -483,8 +613,5 @@ New file `apps/web/src/locales/{en,zh}/firewall.json`, approx. 30 keys (`blockli
 
 ## 13. Open questions deferred to plan stage
 
-- Audit log retention: should `firewall_*` events follow `retention.audit_logs_days` (180d) or get their own knob? **Tentative: reuse audit_logs retention.**
-- Should `BlocklistAck { applied: true }` be sent (currently silent)? Trade-off: confirmation latency vs WS noise. **Tentative: keep silent; rely on UI inference from audit + capability state.**
-- Should we ship a "panic unblock" emergency endpoint that clears the entire set without confirmation? **Tentative: no — `DELETE` per entry is sufficient and `nft flush set inet serverbee block_v4` is a one-liner if an operator needs it from shell.**
-
-These three points are noted but do not block plan writing.
+- Audit log retention: `firewall_*` events follow `retention.audit_logs_days` (180d). Separate knob can be added later if needed.
+- Emergency "panic unblock" endpoint: not in v1. `DELETE` per entry is sufficient; `nft flush set inet serverbee block_v4` is a one-liner if an operator needs to bypass the API.
