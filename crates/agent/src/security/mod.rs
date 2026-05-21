@@ -8,6 +8,7 @@
 #![allow(dead_code)]
 
 pub mod first_seen_store;
+pub mod journal_watcher;
 pub mod scan_detector;
 pub mod ssh_detector;
 pub mod ssh_parser;
