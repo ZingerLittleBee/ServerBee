@@ -17,6 +17,7 @@ pub struct Model {
     pub recover_trigger_tasks: Option<String>,
     pub cover_type: String,
     pub server_ids_json: Option<String>,
+    pub actions_json: Option<String>,
     #[schema(value_type = String, format = DateTime)]
     pub created_at: DateTimeUtc,
     #[schema(value_type = String, format = DateTime)]

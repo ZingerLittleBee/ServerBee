@@ -396,6 +396,7 @@ impl AlertService {
             recover_trigger_tasks: Set(None),
             cover_type: Set(input.cover_type),
             server_ids_json: Set(server_ids_json),
+            actions_json: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         };
