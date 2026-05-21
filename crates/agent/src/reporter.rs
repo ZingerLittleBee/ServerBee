@@ -1136,6 +1136,13 @@ impl Reporter {
                     write.send(Message::Text(json.into())).await?;
                 }
             }
+            // Firewall blocklist variants — handled in Phase 3.
+            ServerMessage::BlocklistSync { .. }
+            | ServerMessage::BlocklistAdd { .. }
+            | ServerMessage::BlocklistRemove { .. }
+            | ServerMessage::BlocklistReset => {
+                tracing::debug!("Firewall message received before Phase 3 wiring; ignoring");
+            }
         }
 
         Ok(ServerMessageOutcome::Continue)
