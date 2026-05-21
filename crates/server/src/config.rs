@@ -36,6 +36,8 @@ pub struct AppConfig {
     pub resend: ResendConfig,
     #[serde(default)]
     pub feature: FeatureConfig,
+    #[serde(default)]
+    pub firewall: FirewallConfig,
 }
 
 impl Default for AppConfig {
@@ -55,6 +57,7 @@ impl Default for AppConfig {
             mobile: MobileConfig::default(),
             resend: ResendConfig::default(),
             feature: FeatureConfig::default(),
+            firewall: FirewallConfig::default(),
         }
     }
 }
@@ -328,6 +331,57 @@ pub struct ResendConfig {
     pub api_key: String,
 }
 
+/// Firewall guardrail configuration. The `allow_list` is "tier 2" of the
+/// server-side block guardrail: any CIDR or bare IP that overlaps an entry
+/// here will be refused by `POST /api/firewall/blocks`. Tier 1 (hard-coded
+/// loopback / RFC1918 / link-local / multicast / IPv6 site-local) lives in
+/// `service::firewall`.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct FirewallConfig {
+    /// CIDRs and bare IPs the server refuses to enqueue into any `block_list`.
+    /// Accepts a TOML array, or a comma-separated string when loaded from an
+    /// environment variable. See
+    /// `docs/superpowers/specs/2026-05-21-firewall-blocklist-design.md` § 4.2.
+    #[serde(default, deserialize_with = "deserialize_csv_or_seq")]
+    pub allow_list: Vec<String>,
+}
+
+/// Accept either a TOML sequence (`["a", "b"]`) or a comma-separated string
+/// (`"a,b"`). Comma-separated form is what Figment hands us when the value
+/// comes from an environment variable like `SERVERBEE_FIREWALL__ALLOW_LIST`.
+fn deserialize_csv_or_seq<'de, D>(de: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{Error, Visitor};
+    use std::fmt;
+
+    struct CsvOrSeq;
+    impl<'de> Visitor<'de> for CsvOrSeq {
+        type Value = Vec<String>;
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("a sequence of strings or a comma-separated string")
+        }
+        fn visit_str<E: Error>(self, v: &str) -> Result<Self::Value, E> {
+            Ok(v.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect())
+        }
+        fn visit_string<E: Error>(self, v: String) -> Result<Self::Value, E> {
+            self.visit_str(&v)
+        }
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+            let mut out = Vec::new();
+            while let Some(item) = seq.next_element::<String>()? {
+                out.push(item);
+            }
+            Ok(out)
+        }
+    }
+    de.deserialize_any(CsvOrSeq)
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct FeatureConfig {
     #[serde(default = "default_true")]
@@ -496,6 +550,24 @@ mod tests {
     fn test_app_config_default_enables_custom_themes() {
         let cfg = AppConfig::default();
         assert!(cfg.feature.custom_themes);
+    }
+
+    #[test]
+    fn firewall_allow_list_from_env() {
+        figment::Jail::expect_with(|jail| {
+            jail.set_env(
+                "SERVERBEE_FIREWALL__ALLOW_LIST",
+                "203.0.113.0/24,198.51.100.5",
+            );
+            let cfg: AppConfig = figment::Figment::new()
+                .merge(figment::providers::Env::prefixed("SERVERBEE_").split("__"))
+                .extract()?;
+            assert_eq!(
+                cfg.firewall.allow_list,
+                vec!["203.0.113.0/24", "198.51.100.5"]
+            );
+            Ok(())
+        });
     }
 
     #[test]
