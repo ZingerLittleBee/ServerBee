@@ -138,6 +138,7 @@ pub enum AgentMessage {
     },
     Report(SystemReport),
     PingResult(PingResult),
+    SecurityEvent(crate::security::SecurityEventPayload),
     TaskResult {
         msg_id: String,
         #[serde(flatten)]
@@ -447,6 +448,13 @@ pub enum ServerMessage {
     },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecurityEventBroadcast {
+    pub server_id: String,
+    pub event_id: String,
+    pub event: crate::security::SecurityEventPayload,
+}
+
 /// Server -> Browser messages
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -475,6 +483,7 @@ pub enum BrowserMessage {
         agent_local_capabilities: Option<u32>,
         effective_capabilities: Option<u32>,
     },
+    SecurityEvent(SecurityEventBroadcast),
     AgentInfoUpdated {
         server_id: String,
         protocol_version: u32,

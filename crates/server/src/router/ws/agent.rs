@@ -1213,6 +1213,10 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 },
             );
         }
+        AgentMessage::SecurityEvent(_payload) => {
+            // Handler implemented in Phase 2 (server-side persistence + broadcast).
+            tracing::debug!("Received SecurityEvent from {server_id} (handler pending)");
+        }
     }
 }
 
