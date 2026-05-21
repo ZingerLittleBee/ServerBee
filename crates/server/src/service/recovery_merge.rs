@@ -562,6 +562,14 @@ impl RecoveryMergeService {
             source_server_id,
         )
         .await?;
+        Self::merge_raw_table_on_connection(
+            db,
+            "security_event",
+            "created_at",
+            target_server_id,
+            source_server_id,
+        )
+        .await?;
 
         Self::merge_unique_key_table_on_connection(
             db,
@@ -1510,6 +1518,54 @@ mod tests {
             .await
             .unwrap();
         assert!(source_states.is_empty());
+    }
+
+    #[tokio::test]
+    async fn merge_security_events_rebinds_source_to_target() {
+        use crate::entity::security_event;
+
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "target-1", "Target").await;
+        insert_test_server(&db, "source-1", "Source").await;
+
+        let now = Utc::now();
+        security_event::ActiveModel {
+            id: Set("evt-1".to_string()),
+            server_id: Set("source-1".to_string()),
+            event_type: Set("ssh_brute_force".to_string()),
+            severity: Set("high".to_string()),
+            source_ip: Set("203.0.113.5".to_string()),
+            source_port: Set(None),
+            username: Set(None),
+            started_at: Set(now),
+            ended_at: Set(now),
+            first_seen: Set(false),
+            detector_source: Set("journal".to_string()),
+            evidence: Set("{}".to_string()),
+            created_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        RecoveryMergeService::merge_server_history_on_db(&db, "target-1", "source-1")
+            .await
+            .unwrap();
+
+        let target_rows = security_event::Entity::find()
+            .filter(security_event::Column::ServerId.eq("target-1"))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(target_rows.len(), 1);
+        assert_eq!(target_rows[0].id, "evt-1");
+
+        let source_rows = security_event::Entity::find()
+            .filter(security_event::Column::ServerId.eq("source-1"))
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(source_rows.is_empty());
     }
 
     #[tokio::test]
