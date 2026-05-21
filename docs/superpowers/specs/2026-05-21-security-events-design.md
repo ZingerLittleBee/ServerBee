@@ -1,0 +1,630 @@
+# Security Events: SSH Login / Brute Force / Port Scan
+
+- **Date**: 2026-05-21
+- **Status**: Draft (pending implementation plan)
+- **Scope**: Linux agents only
+
+## 1. Goal
+
+Detect and report security-relevant events from the host where the agent runs, surface them in the web UI in real time, and let users wire them into the existing alert / notification pipeline. First wave of events:
+
+- **SSH login (success)** — every successful authentication, with a `first_seen` flag indicating "this (user, source_ip) is new for this server".
+- **SSH brute force** — agent-side sliding-window detection over failed authentication attempts.
+- **Port scan** — agent-side sliding-window detection over distinct destination ports touched by the same source IP.
+
+Non-goals (v1):
+- macOS / Windows support.
+- Active blocking (no firewall rule injection, no fail2ban replacement).
+- Cross-server correlation (kept as an explicit phase-2 evolution path).
+- Compact statistical rollups (protocol leaves room; not implemented in v1).
+
+## 2. Architecture
+
+```
+                ┌──────────────────────────────────────────────┐
+   Linux        │ Agent (crates/agent/src/security/)           │
+   VPS          │                                              │
+                │  ┌─────────────────┐   ┌─────────────────┐   │
+   sshd ───────►│  │ JournalWatcher  │   │ ConntrackWatch  │◄──┼── netlink
+   journal      │  │ (journalctl -f) │   │ (nfnetlink)     │   │
+                │  └────────┬────────┘   └────────┬────────┘   │
+                │           ▼                     ▼            │
+                │  ┌──────────────────────────────────────┐    │
+                │  │  Detector (sliding-window engine)    │    │
+                │  │  ├ SshAuthDetector                   │    │
+                │  │  │   • emit ssh_login (always)       │    │
+                │  │  │   • emit ssh_brute_force (≥thr)   │    │
+                │  │  │   • track (user, src_ip) → first  │    │
+                │  │  └ PortScanDetector                  │    │
+                │  │      • emit port_scan (≥thr)         │    │
+                │  └──────────────┬───────────────────────┘    │
+                │                 ▼                            │
+                │       AgentMessage::SecurityEvent            │
+                └───────────────┬──────────────────────────────┘
+                                │ WebSocket (JSON)
+                                ▼
+                ┌─────────────────────────────────────────────┐
+   Server       │  router/ws/agent  →  service::security      │
+                │            │                                │
+                │            ▼                                │
+                │   ┌──────────────────┐                      │
+                │   │ security_event   │ sea-orm entity       │
+                │   │ table            │                      │
+                │   └────────┬─────────┘                      │
+                │            │                                │
+                │            ├──► broadcast::Sender ──► Browser WS
+                │            │                                │
+                │            └──► alert_trigger (event-driven)│
+                │                  • ssh_brute_force_detected │
+                │                  • ssh_new_ip_login         │
+                │                  • port_scan_detected       │
+                │                  └──► notification          │
+                └─────────────────────────────────────────────┘
+```
+
+Key properties:
+- Events are pushed in real time, not bundled into the 60s `Report` envelope.
+- Agent buffers events in a bounded in-memory queue when WS is down; oldest entries are dropped first.
+- Detection and aggregation live in the agent for v1. Server is a sink + dispatcher. Protocol is shaped so phase-2 can add `SecurityRollup` without breaking v1.
+
+## 3. Decisions Locked In
+
+| Dimension | Decision | Rationale |
+|---|---|---|
+| Platforms | Linux only | 99% VPS install base; macOS/Windows detection has very different mechanics |
+| SSH source | systemd-journal primary, `/var/log/auth.log` fallback | Every modern distro ships systemd; file fallback covers exotic containers |
+| Port scan source | nfnetlink_conntrack primary, kernel firewall log supplementary | Zero-config detection of SYN floods to distinct ports; firewall log adds visibility into blocked traffic |
+| Aggregation tier | Agent-local in v1, two-tier architecture | Keep raw event volume off the wire; protocol leaves room for server-side rollups |
+| Login success reporting | All successful logins + `first_seen` boolean | Full audit trail; server decides whether to alert |
+| Capability flag | New `CAP_SECURITY_EVENTS` (bit 8 = 256), included in `CAP_DEFAULT` | Opt-out for privacy-sensitive deployments; default-on for VPS users |
+| Alert integration | Event-driven rules with preset kinds | Mirrors existing `ip_changed` rule pattern |
+| Implementation flavor | Hybrid — `journalctl` subprocess + Rust netlink for conntrack | `journalctl` is universally available; `conntrack-tools` often is not |
+
+## 4. Data Model
+
+New table `security_event`:
+
+```rust
+// crates/server/src/entity/security_event.rs
+pub struct Model {
+    pub id: i64,                        // PK, auto-increment
+    pub server_id: i64,                 // FK → server.id
+    pub event_type: String,             // "ssh_login" | "ssh_brute_force" | "port_scan"
+    pub severity: String,               // "info" | "low" | "medium" | "high" | "critical"
+    pub source_ip: String,              // IPv4/IPv6, fully expanded for v6
+    pub source_port: Option<i32>,       // ssh_login only
+    pub username: Option<String>,
+    pub started_at: DateTime,           // event window start
+    pub ended_at: DateTime,             // ssh_login: == started_at; aggregated: window close
+    pub first_seen: bool,               // ssh_login only: (server, user, src_ip) new locally
+    pub detector_source: String,        // "journal" | "auth_log" | "conntrack" | "firewall_log"
+    pub evidence: Json,
+    pub created_at: DateTime,           // server insert time
+}
+```
+
+Indexes:
+
+- `(server_id, created_at DESC)` — primary query path
+- `(source_ip, created_at DESC)` — phase-2 cross-server correlation
+- `(event_type, created_at DESC)` — type filter
+- `(server_id, event_type, source_ip, started_at)` — alert dedupe lookups
+
+Evidence JSON schemas:
+
+```jsonc
+// ssh_login
+{ "auth_method": "publickey" | "password" | "keyboard-interactive" }
+
+// ssh_brute_force
+{
+  "failed_count": 47,
+  "distinct_users": 12,
+  "sample_users": ["root", "admin", "ubuntu", "test", "git"],  // cap 10
+  "invalid_user_count": 8,
+  "window_seconds": 60,
+  "threshold": 10
+}
+
+// port_scan
+{
+  "distinct_ports": 134,
+  "sample_ports": [22, 80, 443, 3306, 5432, 6379, 8080, 9000, 27017, 11211],  // cap 20
+  "total_attempts": 287,
+  "window_seconds": 30,
+  "threshold": 20,
+  "blocked_count": 134  // 0 if firewall_log not contributing
+}
+```
+
+Retention: reuse existing cleanup task. New config `cleanup.security_event_days` (default 30).
+
+Migration: `m20260521_001_create_security_event.rs`. `up()` only; `down()` returns `Ok(())` per project convention.
+
+## 5. Protocol (crates/common)
+
+### 5.1 AgentMessage
+
+```rust
+pub enum AgentMessage {
+    // ... existing variants
+    SecurityEvent(SecurityEventPayload),
+}
+
+pub struct SecurityEventPayload {
+    pub event_type: SecurityEventType,
+    pub severity: Severity,
+    pub source_ip: String,
+    pub source_port: Option<u16>,
+    pub username: Option<String>,
+    pub started_at: i64,          // unix seconds, UTC
+    pub ended_at: i64,
+    pub first_seen: bool,
+    pub detector_source: DetectorSource,
+    pub evidence: SecurityEvidence,
+}
+
+pub enum SecurityEventType { SshLogin, SshBruteForce, PortScan }
+pub enum Severity { Info, Low, Medium, High, Critical }
+pub enum DetectorSource { Journal, AuthLog, Conntrack, FirewallLog }
+
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SecurityEvidence {
+    SshLogin { auth_method: SshAuthMethod },
+    SshBruteForce {
+        failed_count: u32,
+        distinct_users: u32,
+        sample_users: Vec<String>,
+        invalid_user_count: u32,
+        window_seconds: u32,
+        threshold: u32,
+    },
+    PortScan {
+        distinct_ports: u32,
+        sample_ports: Vec<u16>,
+        total_attempts: u32,
+        window_seconds: u32,
+        threshold: u32,
+        blocked_count: u32,
+    },
+}
+```
+
+### 5.2 ServerMessage (config push)
+
+```rust
+pub enum ServerMessage {
+    // ... existing variants
+    SecurityConfigSync(SecurityConfig),
+}
+
+pub struct SecurityConfig {
+    pub ssh_brute_force: BruteForceConfig,
+    pub port_scan: PortScanConfig,
+}
+
+pub struct BruteForceConfig {
+    pub window_seconds: u32,       // default 60
+    pub failed_threshold: u32,     // default 10
+    pub min_distinct_users: u32,   // default 3
+}
+
+pub struct PortScanConfig {
+    pub window_seconds: u32,           // default 30
+    pub distinct_port_threshold: u32,  // default 20
+}
+```
+
+Sent right after `Welcome` if the server has `CAP_SECURITY_EVENTS`; resent whenever server-side config changes.
+
+### 5.3 BrowserMessage
+
+```rust
+pub enum BrowserMessage {
+    // ... existing variants
+    SecurityEvent(SecurityEventBroadcast),
+}
+
+pub struct SecurityEventBroadcast {
+    pub server_id: i64,
+    pub event_id: i64,
+    pub event: SecurityEventPayload,
+}
+```
+
+Broadcast after successful DB insert.
+
+### 5.4 Capability bits
+
+```rust
+// crates/common/src/capability.rs
+pub const CAP_SECURITY_EVENTS: u32 = 1 << 8;       // 256
+pub const CAP_VALID_MASK: u32 = 0x1FF;             // bits 0-8 (9 bits total)
+pub const CAP_DEFAULT: u32 =
+    CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP | CAP_SECURITY_EVENTS;  // 56 + 256 = 312
+```
+
+Defence in depth:
+- Server rejects `SecurityEvent` when the per-server effective capabilities mask does not contain `CAP_SECURITY_EVENTS` (logged to `audit_log`).
+- Agent self-disables the watcher if its local effective capability mask lacks the bit.
+
+## 6. Agent Implementation
+
+Directory layout:
+
+```
+crates/agent/src/security/
+├── mod.rs                — SecurityManager (life-cycle, config sync)
+├── journal_watcher.rs    — journalctl subprocess wrapper + line parsing
+├── conntrack_watcher.rs  — nfnetlink_conntrack subscription
+├── ssh_parser.rs         — sshd log line → AuthAttempt
+├── ssh_detector.rs       — sliding window → SshBruteForce / SshLogin
+├── scan_detector.rs      — sliding window → PortScan
+└── first_seen_store.rs   — persistent (user, source_ip) set
+```
+
+### 6.1 SecurityManager
+
+```rust
+pub struct SecurityManager {
+    tx: mpsc::Sender<AgentMessage>,           // → Reporter
+    config: Arc<RwLock<SecurityConfig>>,      // updated by SecurityConfigSync
+    journal_handle: Option<JoinHandle<()>>,
+    conntrack_handle: Option<JoinHandle<()>>,
+}
+```
+
+Start conditions: local capability includes `CAP_SECURITY_EVENTS` AND target_os is Linux.
+
+### 6.2 JournalWatcher
+
+Boot sequence:
+
+1. Probe `journalctl --version`. On success, spawn `journalctl -f --output=json -n 0 _COMM=sshd _COMM=kernel`. Read stdout line by line and parse with `serde_json` into `JournalEntry`.
+2. On failure, fall back to tailing `/var/log/auth.log` (Debian/Ubuntu) or `/var/log/secure` (RHEL). Use the `notify` crate to watch inode changes for logrotate compatibility.
+3. Route entries: `_TRANSPORT=stdout` with `_COMM=sshd` → `ssh_parser`; `_TRANSPORT=kernel` matching `[UFW BLOCK]` / `iptables LOG` → `FirewallDrop`.
+
+Regex set (ssh_parser):
+
+- `Accepted (publickey|password|keyboard-interactive) for (\S+) from (\S+) port (\d+)` → success
+- `Failed password for (?:invalid user )?(\S+) from (\S+) port (\d+)` → failure (`invalid user` flagged)
+- `Invalid user (\S+) from (\S+) port (\d+)` → failure + invalid_user
+
+Subprocess crash → exponential backoff 1s → 30s, matching the reporter style.
+
+### 6.3 ConntrackWatcher
+
+Dependencies: `netlink-sys` + `netlink-packet-netfilter` (or equivalent maintained crate).
+
+```rust
+let mut socket = NetlinkSocket::new(NETLINK_NETFILTER)?;
+socket.bind(&SocketAddr::new(0, NF_NETLINK_CONNTRACK_NEW))?;
+loop {
+    let msg = socket.recv().await?;
+    if let Ok(event) = parse_conntrack_new(&msg) {
+        if event.protocol == IPPROTO_TCP && event.state == TCP_SYN_SENT {
+            scan_detector_tx.send(ConntrackEvent { src_ip, dst_port, ts }).await?;
+        }
+    }
+}
+```
+
+Requires `CAP_NET_ADMIN`. The systemd unit sets `AmbientCapabilities=CAP_NET_ADMIN`. If bind fails, scan detection disables but SSH detection continues — graceful degradation, never an all-or-nothing failure.
+
+### 6.4 Detectors
+
+**SshDetector**:
+- State: `HashMap<src_ip, VecDeque<AuthAttempt>>`
+- On each attempt, pop entries older than `window_seconds`
+- Emit `ssh_brute_force` when queue size ≥ `failed_threshold` AND `distinct(usernames) ≥ min_distinct_users` (prevents tripping on a legitimate user mistyping a password); clear the IP's queue post-emit to avoid duplicates within the window
+- Success → check `first_seen_store` for `(user, src_ip)` → emit `ssh_login` immediately
+- Background sweep every 5 min: drop IPs idle > 10 min
+
+**PortScanDetector**:
+- State: `HashMap<src_ip, (HashSet<dst_port>, VecDeque<ts>)>`
+- Rebuild the per-IP port set every 5s to drop expired entries (simpler than per-port reference counting)
+- Emit `port_scan` when `distinct_ports ≥ threshold`; clear IP state post-emit
+
+### 6.5 FirstSeenStore
+
+- File: `<agent_data_dir>/security/first_seen.json`
+- Data: `HashMap<(username, source_ip), unix_ts>` (key uses `\x00` separator)
+- Memory-backed reads; batched writes (every 10s or every 100 changes), atomic `tmp + rename`
+- Load on startup; corrupted file → rename to `.corrupt-<ts>`, reset to empty
+- Size cap: 10000 entries, LRU-evict to 8000 when full
+
+### 6.6 Agent config
+
+`agent.toml`:
+
+```toml
+[security]
+enabled = true
+data_dir = "/var/lib/serverbee/security"
+
+[security.ssh]
+window_seconds = 60
+failed_threshold = 10
+min_distinct_users = 3
+
+[security.port_scan]
+window_seconds = 30
+distinct_port_threshold = 20
+```
+
+Precedence: server-pushed `SecurityConfigSync` > local toml > built-in defaults.
+
+## 7. Server Implementation
+
+Layout:
+
+```
+crates/server/src/
+├── entity/security_event.rs           — entity
+├── migration/m20260521_001_*.rs       — table creation
+├── service/security.rs                — insert + broadcast + alert trigger
+└── router/api/security.rs             — REST queries
+```
+
+### 7.1 WS entry point
+
+```rust
+// router/ws/agent.rs
+AgentMessage::SecurityEvent(payload) => {
+    if !has_capability(server.effective_capabilities, CAP_SECURITY_EVENTS) {
+        audit_log.write("security_event_denied", server.id, ...).await?;
+        return;
+    }
+    state.security_service.record_event(server.id, payload).await.ok();
+}
+```
+
+### 7.2 service::security
+
+```rust
+pub struct SecurityService {
+    db: DatabaseConnection,
+    browser_tx: broadcast::Sender<BrowserMessage>,
+    alert_trigger: AlertTriggerHandle,
+}
+
+impl SecurityService {
+    pub async fn record_event(&self, server_id: i64, p: SecurityEventPayload) -> Result<()> {
+        // 1. Validate (IP format, evidence shape)
+        // 2. Insert row
+        // 3. Broadcast BrowserMessage::SecurityEvent
+        // 4. Fire alert_trigger.notify_security_event(server_id, event_id)
+    }
+}
+```
+
+### 7.3 Alert rule integration
+
+`alert_rule.kind` gains three values:
+
+- `ssh_brute_force_detected`
+- `ssh_new_ip_login` — fires when `first_seen=true`
+- `port_scan_detected`
+
+`alert_rule.params` JSON:
+
+```jsonc
+// ssh_brute_force_detected
+{ "min_failed_count": 20, "dedupe_window_seconds": 600 }
+
+// ssh_new_ip_login
+{ "exclude_users": ["nagios", "backup"], "exclude_cidrs": ["10.0.0.0/8"] }
+
+// port_scan_detected
+{ "min_distinct_ports": 50, "dedupe_window_seconds": 600 }
+```
+
+Trigger flow:
+
+1. `record_event` calls `alert_trigger.notify_security_event(server_id, event_id)`
+2. AlertTrigger spawns a lightweight task: load `enabled=true` rules whose `kind` matches and whose `server_filter` covers this server
+3. Apply per-rule filter (params + dedupe), on hit reuse the existing `alert_state` transition + `notification_dispatcher`
+4. Dedupe key: `(rule_id, server_id, source_ip)`. Skip if `now - alert_state.last_triggered_at < dedupe_window_seconds`
+
+Relationship to the existing 60s `alert_evaluator`: complementary. Metric-based rules keep running on the 60s loop; security events use push-based triggering for low latency.
+
+### 7.4 REST API
+
+```
+GET    /api/security/events?server_id=&event_type=&source_ip=&severity=
+                            &since=&until=&cursor=&limit=  (default 50, max 200)
+GET    /api/security/events/:id
+GET    /api/security/stats?server_id=&since=&until=
+                          &group_by=event_type|source_ip|day
+DELETE /api/security/events/:id   (admin only)
+```
+
+- Reads on `read_router`; DELETE on `write_router` + `require_admin`
+- `#[utoipa::path]` on every endpoint; DTOs `#[derive(ToSchema)]`
+- Responses wrapped as `Json<ApiResponse<T>>` per project convention
+
+### 7.5 Cleanup
+
+No new background task. The existing `cleanup` task gains a step:
+
+```rust
+let cutoff = Utc::now() - Duration::days(config.cleanup.security_event_days);
+security_event::Entity::delete_many()
+    .filter(security_event::Column::CreatedAt.lt(cutoff))
+    .exec(&db).await?;
+```
+
+Config: `cleanup.security_event_days` (default 30). Env override: `SERVERBEE_CLEANUP__SECURITY_EVENT_DAYS`.
+
+## 8. Frontend (apps/web)
+
+### 8.1 Routes & navigation
+
+New top-level sidebar entry **Security** (icon `ShieldAlert`).
+
+```
+apps/web/src/routes/_authed/security/
+├── index.tsx       — global timeline across all servers
+└── $serverId.tsx   — per-server detail
+```
+
+Server detail page (`_authed/servers/$id.tsx`) gains a "Security" tab with the last 50 events and a link to the full timeline.
+
+### 8.2 Overview page layout
+
+- Time range switcher (24h / 7d / 30d / custom)
+- KPI cards: Brute Force / Port Scans / New IP Logins / Top Attacker IP
+- Stacked bar chart (Recharts) over time, stacked by `event_type`
+- Filter bar: server, event_type, severity, source_ip, first_seen toggle
+- Data table (TanStack Table) with cursor pagination, wrapped in shadcn `<ScrollArea>` per project rule (no naked `overflow-auto`)
+
+Interactions:
+- Row click → Drawer with full evidence JSON and an external link to `https://www.virustotal.com/gui/ip-address/<ip>` (`target="_blank" rel="noopener"`)
+- Clicking a `source_ip` cell injects it into the filter bar
+- Type badges color-coded: brute_force = red, port_scan = orange, ssh_login = blue (with dot when `first_seen=true`)
+
+### 8.3 Realtime updates
+
+`use-servers-ws.ts` handles `security_event`:
+
+```ts
+case 'security_event': {
+  queryClient.setQueryData<EventPage>(
+    ['security', 'events', filterKey],
+    (old) => old ? { ...old, items: [msg.event, ...old.items].slice(0, 200) } : old
+  );
+  queryClient.invalidateQueries({ queryKey: ['security', 'stats'] });
+  if (msg.event.severity === 'high' || msg.event.severity === 'critical') {
+    toast.warning(t('security.attack_detected', { ip: msg.event.source_ip }));
+  }
+}
+```
+
+### 8.4 Alert rule UI
+
+`_authed/alerts/` gains three preset cards mirroring the existing `ip_changed` rule form: SSH Brute Force / SSH New IP Login / Port Scan Detected. Each card exposes the relevant `params` knobs + notification group selector.
+
+### 8.5 Types & i18n
+
+- DTOs flow into `api-types.gen.ts` via `bun run generate:api-types`
+- WS message types added to `apps/web/src/types/ws.ts` (mirrors `BrowserMessage`)
+- `apps/web/src/locales/{en,zh}/security.json` — ~30 strings
+
+## 9. Error Handling & Edge Cases
+
+### 9.1 Agent failure modes
+
+| Failure | Handling | User visibility |
+|---|---|---|
+| `journalctl` subprocess crashes | 1s → 30s exponential backoff restart, also attempt auth.log fallback | Agent log warn |
+| Neither systemd nor auth.log present (minimal containers) | SshDetector disabled; PortScan continues | Agent log info |
+| `CAP_NET_ADMIN` missing → netlink bind fails | ConntrackWatcher disabled; SSH continues | Agent log warn |
+| `first_seen.json` parse failure | Rename to `.corrupt-<ts>`, rebuild empty | Agent log error |
+| `first_seen.json` disk write failure | Memory state continues; 5min backoff on flush; sustained 24h failure escalates to error log | Agent log error |
+| In-memory queue overflow (WS down) | Cap 1000 entries; drop oldest; on reconnect, batch send; emit one synthetic `buffer_overflow` event with discarded count | Logged + 1 metadata event |
+| Detector state map blowup under DDoS | Per-detector map cap 10000 source IPs; LRU evict; if evicted IP already > 50% of threshold, force-emit | Internal metric |
+
+Principle: partial degradation > full stop. SSH and Scan pipelines are independent.
+
+### 9.2 Server failure modes
+
+| Failure | Handling |
+|---|---|
+| `SecurityEvent` received without `CAP_SECURITY_EVENTS` | Silent drop + audit_log `security_event_denied` |
+| Malformed `source_ip` | Reject before insert, agent WS warn-log, no DB row |
+| Evidence JSON deserialize failure | Drop + audit_log `security_event_malformed` |
+| `browser_tx.send()` errors (no subscribers) | Ignored (broadcast convention) |
+| `alert_trigger` panics | `tokio::spawn` + `catch_unwind` isolates |
+| DB write failure | Retry 3× (100ms, 500ms, 2s), then drop + metric `security_event_drop_total` |
+| RecoveryLock freeze period | Security event writes **bypass** the freeze (security data freshness > write consistency). Explicit code comment documents the carve-out |
+
+### 9.3 Rate limit (anti-DoS)
+
+- Per-agent: max 100 `SecurityEvent` per minute (DashMap sliding window)
+- Overflow → drop + audit `security_event_rate_limited`
+- Pure backstop; agent-side aggregation makes this effectively unreachable in normal operation
+- Override: `SERVERBEE_SECURITY__MAX_EVENTS_PER_MINUTE`
+
+### 9.4 IPv6 / private IPs
+
+- Stored as strings (not BLOB) for LIKE search and CSV export
+- IPv6 stored fully expanded to avoid `::1` vs `0:0:...:1` mismatches
+- Private IPs (10/8, 172.16/12, 192.168/16, 127/8, fe80::/10) are not filtered out; LAN attacks are real. UI default filter has a "public IPs only" toggle, on by default.
+
+### 9.5 Timezone
+
+- Internal timestamps: UTC (`DateTime<Utc>`)
+- API responses: ISO 8601 with `Z` suffix
+- Frontend renders using `config.scheduler.timezone` or browser locale
+
+## 10. Testing
+
+### 10.1 Unit tests (Rust)
+
+Agent:
+- `ssh_parser` — table-driven across Debian/Ubuntu/RHEL/Alpine sshd output, IPv6, long usernames, special chars. Fixtures in `tests/fixtures/sshd_logs/*.txt`.
+- `ssh_detector` — injected `Clock` trait to simulate time; verifies threshold trip, distinct_user gate, post-trip silence, scope of cleanup
+- `scan_detector` — same shape; verifies distinct-port threshold, single-port repeat does not trip, sliding window correctness
+- `first_seen_store` — load/save/corruption recovery/LRU eviction
+- `journal_watcher` — mocked subprocess stdout; verifies fallback switch
+
+Server:
+- `record_event` happy path on in-memory sqlite — row persisted, broadcast sent, alert_trigger invoked
+- Capability rejection path
+- IP format validation
+- Evidence deserialize failure
+
+Target: ≥ 80% coverage on new modules (no enforced gate, matches project density).
+
+### 10.2 Integration tests
+
+`crates/server/tests/integration/security.rs`:
+- Test server + mock agent WS sends `SecurityEvent`
+- Assert: `GET /api/security/events` returns it
+- Assert: broadcast channel receives `BrowserMessage::SecurityEvent`
+- Assert: configured alert_rule fires + notification dispatched (mock dispatcher)
+- Assert: capability-disabled scenario rejects with audit_log row
+
+### 10.3 Manual E2E checklist
+
+New `tests/security-events.md`:
+- Lab VPS receives 15 wrong-password SSH attempts → UI shows brute_force within 90s
+- `nmap -p 1-1000 <target>` triggers port_scan event
+- Legitimate key login from a brand-new IP → ssh_login with `first_seen=true`, `ssh_new_ip_login` alert fires
+- Disabling `CAP_SECURITY_EVENTS` on a server stops the agent watcher and UI events
+- 10-minute agent offline during an attack → reconnect drains buffered events in order
+
+### 10.4 Frontend tests
+
+- `vitest`: `use-security-events` hook cache merge, filter logic, WS handler dispatch
+- No full-page E2E (matches current web test density)
+
+### 10.5 Benchmarks (criterion)
+
+- `ssh_detector` ≥ 100k attempts/s
+- `conntrack_watcher` sustains 10k events/s without drops (verified with `nft` injection)
+- Server `record_event` P99 < 50ms on in-memory sqlite baseline
+
+## 11. Rollout
+
+Phase ordering (single PR may be too big; split into 3 PRs):
+
+1. **Foundation PR** — protocol additions (capability bit, message variants), `security_event` entity + migration, capability default change. Backwards-compatible: old agents simply never send the new message.
+2. **Agent PR** — `crates/agent/src/security/` module, config plumbing, integration with reporter.
+3. **Server & UI PR** — `service::security`, REST API, alert rule kinds, frontend pages.
+
+Documentation updates that ship alongside:
+- `ENV.md` — `SERVERBEE_SECURITY__*` and `SERVERBEE_CLEANUP__SECURITY_EVENT_DAYS`
+- `apps/docs/content/docs/{en,cn}/configuration.mdx` — same env block
+- `apps/docs/content/docs/{en,cn}/` — new "Security Events" page covering detection mechanics, false-positive tuning, and the `CAP_NET_ADMIN` requirement for conntrack
+- `tests/security-events.md` — E2E checklist
+
+## 12. Open Items for Phase 2
+
+Out of scope for v1 but kept reachable:
+
+- `SecurityRollup` agent message — periodic per-window compact stats (top-N offending IPs, blocked-conn counts)
+- Cross-server correlation: detect IPs scanning multiple agents from the same fleet
+- IP reputation enrichment (ASN, country, abuse score)
+- Notification suppression / event coalescing across rules
+- Whitelist management UI (per-IP / per-CIDR exemptions)
