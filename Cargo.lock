@@ -3913,6 +3913,7 @@ dependencies = [
  "futures-util",
  "gethostname",
  "hex",
+ "ipnet",
  "libc",
  "nvml-wrapper",
  "once_cell",
