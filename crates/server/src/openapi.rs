@@ -225,6 +225,12 @@ impl Modify for SecurityAddon {
         crate::router::api::security::get_event,
         crate::router::api::security::stats,
         crate::router::api::security::delete_event,
+        // firewall
+        crate::router::api::firewall::list_blocks,
+        crate::router::api::firewall::get_block,
+        crate::router::api::firewall::create_block,
+        crate::router::api::firewall::delete_block,
+        crate::router::api::firewall::stats,
     ),
     components(
         schemas(
@@ -418,6 +424,11 @@ impl Modify for SecurityAddon {
             crate::router::api::security::SecurityEventDto,
             crate::router::api::security::SecurityEventList,
             crate::router::api::security::StatsBucket,
+            // firewall
+            crate::router::api::firewall::CreateBlockReq,
+            crate::router::api::firewall::BlockListItem,
+            crate::router::api::firewall::ListResp,
+            crate::router::api::firewall::StatsResp,
         ),
     ),
     tags(
@@ -450,6 +461,7 @@ impl Modify for SecurityAddon {
         (name = "uptime", description = "Uptime statistics"),
         (name = "files", description = "File management"),
         (name = "security", description = "Security events (SSH brute force, port scans, new IP logins)"),
+        (name = "firewall", description = "Firewall blocklist (manual & auto-blocked IPs/CIDRs)"),
     ),
     security(
         ("session_cookie" = []),

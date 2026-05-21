@@ -16,6 +16,7 @@ use crate::service::geoip::GeoIpService;
 use crate::service::high_risk_audit::{
     DockerLogsAuditContext, ExecAuditContext, TerminalAuditContext,
 };
+use crate::service::firewall::FirewallService;
 use crate::service::recovery_lock::RecoveryLockService;
 use crate::service::security::SecurityService;
 use crate::service::task_scheduler::TaskScheduler;
@@ -68,6 +69,9 @@ pub struct AppState {
     /// Service that persists agent-emitted security events and dispatches
     /// inline alert notifications.
     pub security_service: Arc<SecurityService>,
+    /// Firewall blocklist service. CRUD wiring lives in
+    /// `router::api::firewall`; WS push is invoked from there.
+    pub firewall: Arc<FirewallService>,
     /// In-memory freeze gate for agent-originated writes during recovery.
     pub recovery_lock: RecoveryLockService,
     /// Pending mobile pairing codes for QR login, keyed by code.
@@ -175,8 +179,15 @@ impl AppState {
             db.clone(),
             browser_tx.clone(),
             alert_state_manager.clone(),
-            config_arc,
+            config_arc.clone(),
         ));
+        let firewall = Arc::new(FirewallService {
+            db: db.clone(),
+            config: config_arc,
+            apply_state: Arc::new(tokio::sync::RwLock::new(Default::default())),
+            external_ips: Arc::new(tokio::sync::RwLock::new(Default::default())),
+            browser_tx: browser_tx.clone(),
+        });
         Ok(Arc::new(Self {
             db,
             agent_manager,
@@ -195,6 +206,7 @@ impl AppState {
             task_scheduler,
             alert_state_manager,
             security_service,
+            firewall,
             recovery_lock: RecoveryLockService::new(),
             pending_pairs: DashMap::new(),
             terminal_audit_contexts: DashMap::new(),

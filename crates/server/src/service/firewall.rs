@@ -113,6 +113,54 @@ impl FirewallService {
         // overlap iff a contains b's network or b contains a's network
         a.contains(&b.network()) || b.contains(&a.network())
     }
+
+    /// Tier-2.5 runtime allow-list. Currently empty; Task 2.x fills this in
+    /// with `[server] trusted_proxies` plus each connected agent's reported
+    /// external IP, both of which we must never accidentally block.
+    pub async fn collect_dynamic_allow(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Broadcast a `BlocklistChanged { kind: Created }` to subscribed browsers.
+    pub fn broadcast_changed_created(&self, item: &crate::router::api::firewall::BlockListItem) {
+        let _ = self.browser_tx.send(
+            serverbee_common::protocol::BrowserMessage::BlocklistChanged {
+                kind: serverbee_common::firewall::BlocklistChangeKind::Created,
+                block_id: item.id.clone(),
+                target: item.target.clone(),
+            },
+        );
+    }
+
+    /// Broadcast a `BlocklistChanged { kind: Deleted }` to subscribed browsers.
+    pub fn broadcast_changed_deleted(&self, row: &crate::entity::block_list::Model) {
+        let _ = self.browser_tx.send(
+            serverbee_common::protocol::BrowserMessage::BlocklistChanged {
+                kind: serverbee_common::firewall::BlocklistChangeKind::Deleted,
+                block_id: row.id.clone(),
+                target: row.target.clone(),
+            },
+        );
+    }
+
+    /// Push a `BlocklistAdd` to every covered, online agent. No-op until
+    /// Task 2.x wires `agent_manager` into this service.
+    pub async fn push_add_to_covered_agents(
+        &self,
+        _item: &crate::router::api::firewall::BlockListItem,
+    ) {
+        // Task 2.x: resolve covered server_ids → look up agent senders on
+        // AgentManager → emit ServerMessage::BlocklistAdd { entry: BlockEntry }.
+    }
+
+    /// Push a `BlocklistRemove` to every covered, online agent. No-op until
+    /// Task 2.x wires `agent_manager` into this service.
+    pub async fn push_remove_to_covered_agents(
+        &self,
+        _row: &crate::entity::block_list::Model,
+    ) {
+        // Task 2.x.
+    }
 }
 
 #[cfg(test)]

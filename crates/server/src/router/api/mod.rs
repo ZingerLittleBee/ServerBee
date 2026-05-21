@@ -7,6 +7,7 @@ pub mod cost;
 pub mod dashboard;
 pub mod docker;
 pub mod file;
+pub mod firewall;
 pub mod geoip;
 pub mod incident;
 pub mod maintenance_api;
@@ -71,6 +72,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 .merge(alert::alert_events_router())
                 .merge(geoip::read_router())
                 .merge(security::read_router())
+                .merge(firewall::read_router())
                 // Admin-only routes (write operations + management)
                 .merge(
                     Router::new()
@@ -105,6 +107,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                         .merge(geoip::write_router())
                         .merge(maintenance_api::router())
                         .merge(security::write_router())
+                        .merge(firewall::write_router())
                         .merge(status_page::write_router())
                         .layer(middleware::from_fn(require_admin)),
                 )
