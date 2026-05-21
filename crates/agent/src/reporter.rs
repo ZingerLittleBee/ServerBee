@@ -52,12 +52,25 @@ impl Reporter {
         }
     }
 
+    /// Convenience wrapper around [`Self::run_with_external`] for tests
+    /// and historical callers that don't need a security stream.
+    #[cfg(test)]
+    #[allow(dead_code)]
     pub async fn run(&mut self) {
+        self.run_with_external(None).await
+    }
+
+    /// Run with an optional external agent-message stream attached
+    /// (currently sourced from [`crate::security::SecurityManager`]).
+    pub async fn run_with_external(
+        &mut self,
+        mut external_rx: Option<mpsc::Receiver<AgentMessage>>,
+    ) {
         let mut backoff_secs: u64 = 1;
         let mut reregister_attempts: u32 = 0;
 
         loop {
-            match self.connect_and_report().await {
+            match self.connect_and_report(&mut external_rx).await {
                 Ok(()) => {
                     tracing::info!("Connection closed normally, reconnecting...");
                     backoff_secs = 1;
@@ -112,7 +125,10 @@ impl Reporter {
         }
     }
 
-    async fn connect_and_report(&mut self) -> anyhow::Result<()> {
+    async fn connect_and_report(
+        &mut self,
+        external_rx: &mut Option<mpsc::Receiver<AgentMessage>>,
+    ) -> anyhow::Result<()> {
         use serverbee_common::constants::*;
 
         tracing::info!("Connecting to {}...", build_ws_url(&self.config)?);
@@ -243,8 +259,13 @@ impl Reporter {
         let (file_tx, mut file_rx) = mpsc::channel::<FileEvent>(16);
         let file_manager = FileManager::new(self.config.file.clone(), Arc::clone(&capabilities));
 
-        // Channel for background command execution results
+        // Channel for background command execution results.
         let (cmd_result_tx, mut cmd_result_rx) = mpsc::channel::<AgentMessage>(32);
+
+        // External agent-message source (e.g. SecurityManager). Optional —
+        // non-Linux builds and unit tests skip this. The borrow is held
+        // for the lifetime of this connection only; the receiver itself
+        // lives across reconnects.
 
         // IP change detection setup
         let ip_change_enabled = self.config.ip_change.enabled;
@@ -282,6 +303,16 @@ impl Reporter {
                     let json = serde_json::to_string(&cmd_msg)?;
                     write.send(Message::Text(json.into())).await?;
                     tracing::debug!("Sent background command result");
+                }
+                Some(external_msg) = async {
+                    match external_rx.as_mut() {
+                        Some(rx) => rx.recv().await,
+                        None => std::future::pending::<Option<AgentMessage>>().await,
+                    }
+                } => {
+                    let json = serde_json::to_string(&external_msg)?;
+                    write.send(Message::Text(json.into())).await?;
+                    tracing::debug!("Sent external agent message");
                 }
                 Some(term_event) = term_rx.recv() => {
                     let msg = match term_event {

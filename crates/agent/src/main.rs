@@ -21,6 +21,7 @@ use tracing_subscriber::EnvFilter;
 use crate::capability_policy::{compute_agent_local_capabilities, parse_capability_args};
 use crate::config::AgentConfig;
 use crate::reporter::Reporter;
+use crate::security::SecurityManager;
 
 static RUSTLS_PROVIDER_INSTALLED: OnceLock<()> = OnceLock::new();
 
@@ -123,8 +124,27 @@ async fn main() -> anyhow::Result<()> {
         config.token = token;
     }
 
+    // Start the security pipeline before connecting; it owns a long-lived
+    // mpsc::Sender that the reporter forwards over the WebSocket.
+    let (security_tx, security_rx) = tokio::sync::mpsc::channel::<
+        serverbee_common::protocol::AgentMessage,
+    >(128);
+    let _security_manager = match SecurityManager::start(
+        config.security.clone(),
+        agent_local_capabilities,
+        security_tx,
+    )
+    .await
+    {
+        Ok(m) => Some(m),
+        Err(e) => {
+            tracing::warn!(error = %e, "SecurityManager failed to start; continuing without it");
+            None
+        }
+    };
+
     let mut reporter = Reporter::new(config, machine_fingerprint, agent_local_capabilities);
-    reporter.run().await;
+    reporter.run_with_external(Some(security_rx)).await;
     Ok(())
 }
 
