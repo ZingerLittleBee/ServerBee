@@ -135,6 +135,8 @@ pub struct RetentionConfig {
     pub docker_events_days: u32,
     #[serde(default = "default_30")]
     pub service_monitor_days: u32,
+    #[serde(default = "default_30")]
+    pub security_event_days: u32,
 }
 
 impl Default for RetentionConfig {
@@ -152,6 +154,7 @@ impl Default for RetentionConfig {
             task_results_days: 7,
             docker_events_days: 7,
             service_monitor_days: 30,
+            security_event_days: 30,
         }
     }
 }
