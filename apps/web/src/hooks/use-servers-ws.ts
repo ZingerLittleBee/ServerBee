@@ -1,6 +1,9 @@
+import type { InfiniteData } from '@tanstack/react-query'
 import { useQueryClient } from '@tanstack/react-query'
+import i18next from 'i18next'
 import { useEffect, useRef } from 'react'
-import type { RecoveryJobResponse } from '@/lib/api-schema'
+import { toast } from 'sonner'
+import type { RecoveryJobResponse, SecurityEventDto, SecurityEventList } from '@/lib/api-schema'
 import type { NetworkProbeResultData } from '@/lib/network-types'
 import { WsClient } from '@/lib/ws-client'
 import type {
@@ -12,6 +15,7 @@ import { useRecoveryJobsStore } from '@/stores/recovery-jobs-store'
 import { type UpgradeJob, useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 
 const MAX_DOCKER_EVENTS = 100
+const MAX_SECURITY_EVENTS_IN_CACHE = 200
 
 interface ServerMetrics {
   agent_local_capabilities?: number | null
@@ -84,6 +88,12 @@ type WsMessage =
       stage?: string
       error?: string | null
       backup_path?: string | null
+    }
+  | {
+      type: 'security_event'
+      server_id: string
+      event_id: string
+      event: SecurityEventDto
     }
 
 export type { ServerMetrics }
@@ -352,6 +362,54 @@ function handleDockerMessage(raw: { type: string } & Record<string, unknown>, qu
   }
 }
 
+function prependSecurityEventToInfinite(
+  prev: InfiniteData<SecurityEventList> | undefined,
+  event: SecurityEventDto
+): InfiniteData<SecurityEventList> | undefined {
+  if (!prev || prev.pages.length === 0) {
+    return prev
+  }
+  const [firstPage, ...rest] = prev.pages
+  if (firstPage.items.some((existing) => existing.id === event.id)) {
+    return prev
+  }
+  const combined = [event, ...firstPage.items]
+  const capped =
+    combined.length > MAX_SECURITY_EVENTS_IN_CACHE ? combined.slice(0, MAX_SECURITY_EVENTS_IN_CACHE) : combined
+  const updatedFirst: SecurityEventList = { ...firstPage, items: capped }
+  return { ...prev, pages: [updatedFirst, ...rest] }
+}
+
+function handleSecurityEventMessage(raw: { type: string } & Record<string, unknown>, queryClient: QueryClient): void {
+  if (raw.type !== 'security_event') {
+    return
+  }
+  if (typeof raw.server_id !== 'string' || typeof raw.event_id !== 'string') {
+    return
+  }
+  if (typeof raw.event !== 'object' || raw.event === null) {
+    return
+  }
+  const event = raw.event as SecurityEventDto
+  if (typeof event.id !== 'string' || typeof event.severity !== 'string') {
+    return
+  }
+
+  queryClient.setQueriesData<InfiniteData<SecurityEventList>>({ queryKey: ['security', 'events'] }, (prev) =>
+    prependSecurityEventToInfinite(prev, event)
+  )
+  queryClient.invalidateQueries({ queryKey: ['security', 'stats'] })
+
+  const severity = event.severity
+  if (severity === 'high' || severity === 'critical') {
+    const message = i18next.t('security:toast.attack_detected', {
+      defaultValue: 'Security event detected from {{ip}}',
+      ip: event.source_ip
+    })
+    toast.warning(message)
+  }
+}
+
 export function handleWsMessage(raw: unknown, queryClient: QueryClient): void {
   if (!isWsMessageLike(raw)) {
     console.warn('WS: unexpected message shape', raw)
@@ -388,6 +446,9 @@ export function handleWsMessage(raw: unknown, queryClient: QueryClient): void {
     case 'docker_event':
     case 'docker_availability_changed':
       handleDockerMessage(raw, queryClient)
+      break
+    case 'security_event':
+      handleSecurityEventMessage(raw, queryClient)
       break
     case 'upgrade_progress': {
       if (
