@@ -220,6 +220,11 @@ impl Modify for SecurityAddon {
         crate::router::api::file::start_download,
         crate::router::api::file::upload_file,
         crate::router::api::file::cancel_transfer,
+        // security
+        crate::router::api::security::list_events,
+        crate::router::api::security::get_event,
+        crate::router::api::security::stats,
+        crate::router::api::security::delete_event,
     ),
     components(
         schemas(
@@ -409,6 +414,10 @@ impl Modify for SecurityAddon {
             crate::router::api::traceroute::TriggerTracerouteResponse,
             crate::router::api::traceroute::TracerouteResultResponse,
             serverbee_common::types::TracerouteHop,
+            // security
+            crate::router::api::security::SecurityEventDto,
+            crate::router::api::security::SecurityEventList,
+            crate::router::api::security::StatsBucket,
         ),
     ),
     tags(
@@ -440,6 +449,7 @@ impl Modify for SecurityAddon {
         (name = "cost", description = "VPS cost insights and value scoring"),
         (name = "uptime", description = "Uptime statistics"),
         (name = "files", description = "File management"),
+        (name = "security", description = "Security events (SSH brute force, port scans, new IP logins)"),
     ),
     security(
         ("session_cookie" = []),
