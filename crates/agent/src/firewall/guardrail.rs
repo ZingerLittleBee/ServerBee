@@ -4,27 +4,13 @@
 use std::net::IpAddr;
 
 use ipnet::IpNet;
-
-const PROTECTED: &[&str] = &[
-    "127.0.0.0/8",
-    "10.0.0.0/8",
-    "172.16.0.0/12",
-    "192.168.0.0/16",
-    "169.254.0.0/16",
-    "0.0.0.0/8",
-    "224.0.0.0/4",
-    "::1/128",
-    "fc00::/7",
-    "fe80::/10",
-    "ff00::/8",
-    "::/128",
-];
+use serverbee_common::firewall::PROTECTED_CIDRS;
 
 pub fn check(target_cidr: &str, own_external_ip: Option<IpAddr>) -> Result<(), String> {
     let net: IpNet = target_cidr
         .parse()
         .map_err(|_| format!("invalid CIDR: {target_cidr}"))?;
-    for p in PROTECTED {
+    for p in PROTECTED_CIDRS {
         let prot: IpNet = p.parse().expect("hard-coded valid");
         if prot.contains(&net.network()) || net.contains(&prot.network()) {
             return Err(format!("guardrail: {p}"));

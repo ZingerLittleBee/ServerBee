@@ -7,6 +7,24 @@ use serde::{Deserialize, Serialize};
 /// any `Blocklist*` or `BlocklistReset` messages.
 pub const FIREWALL_MIN_PROTOCOL: u32 = 2;
 
+/// Hard-coded protected CIDR ranges. These are refused by both the server
+/// (tier 1 guardrail) and the agent (tier 3 guardrail). Defense-in-depth:
+/// adding a CIDR here protects both sides automatically.
+pub const PROTECTED_CIDRS: &[&str] = &[
+    "127.0.0.0/8",
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "169.254.0.0/16",
+    "0.0.0.0/8",
+    "224.0.0.0/4",
+    "::1/128",
+    "fc00::/7",
+    "fe80::/10",
+    "ff00::/8",
+    "::/128",
+];
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct BlockEntry {

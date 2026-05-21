@@ -9,7 +9,7 @@ use std::sync::{Arc, LazyLock};
 use chrono::{DateTime, Utc};
 use ipnet::IpNet;
 use sea_orm::DatabaseConnection;
-use serverbee_common::firewall::BlocklistEntryState;
+use serverbee_common::firewall::{BlocklistEntryState, PROTECTED_CIDRS};
 use tokio::sync::{RwLock, broadcast};
 
 use crate::config::AppConfig;
@@ -25,22 +25,6 @@ pub struct ApplyState {
     pub reason: Option<String>,
     pub at: DateTime<Utc>,
 }
-
-/// Hard-coded protected CIDRs (tier 1).
-const PROTECTED_CIDRS: &[&str] = &[
-    "127.0.0.0/8",
-    "10.0.0.0/8",
-    "172.16.0.0/12",
-    "192.168.0.0/16",
-    "169.254.0.0/16",
-    "0.0.0.0/8",
-    "224.0.0.0/4",
-    "::1/128",
-    "fc00::/7",
-    "fe80::/10",
-    "ff00::/8",
-    "::/128",
-];
 
 /// Parsed form of [`PROTECTED_CIDRS`]. Built once on first access so the hot
 /// path through [`FirewallService::is_protected`] does not re-parse the 12
