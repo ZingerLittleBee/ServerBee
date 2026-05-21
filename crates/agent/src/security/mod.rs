@@ -7,7 +7,10 @@
 
 #![allow(dead_code)]
 
+pub mod ssh_detector;
 pub mod ssh_parser;
 
+#[allow(unused_imports)]
+pub use ssh_detector::{DetectorEmit, SshDetector};
 #[allow(unused_imports)]
 pub use ssh_parser::{AuthAttempt, AuthMethodHint, AuthOutcome, parse_sshd_line};
