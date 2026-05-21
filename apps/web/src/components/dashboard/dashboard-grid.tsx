@@ -215,15 +215,17 @@ export function DashboardGrid({
   const [liveLayout, setLiveLayout] = useState<Layout>(baseLayout)
   const [interactionState, setInteractionState] = useState<InteractionState>('idle')
 
-  // During drag/resize, freeze the servers snapshot fed to widgets. Otherwise every
-  // websocket tick swaps the servers array reference and re-renders all Recharts
-  // widgets mid-interaction, which janks the drag badly.
+  // While editing (or actively dragging/resizing), freeze the servers snapshot fed
+  // to widgets. Otherwise every websocket tick swaps the servers array reference
+  // and re-renders all Recharts widgets, which janks drag and makes resize handles
+  // flicker over the moving chart.
   const isInteracting = interactionState !== 'idle'
+  const shouldFreeze = isInteracting || isEditing
   const frozenServersRef = useRef(servers)
-  if (!isInteracting) {
+  if (!shouldFreeze) {
     frozenServersRef.current = servers
   }
-  const widgetServers = isInteracting ? frozenServersRef.current : servers
+  const widgetServers = shouldFreeze ? frozenServersRef.current : servers
 
   const autoIdSet = useMemo(
     () => new Set(widgets.filter((w) => AUTO_HEIGHT_TYPES.has(w.widget_type)).map((w) => w.id)),
