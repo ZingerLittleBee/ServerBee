@@ -152,7 +152,7 @@ pub async fn ensure_resources(exec: &dyn NftExecutor) -> Result<(), NftError> {
     let listing = exec
         .list_json(&["chain", "inet", "serverbee", "input"])
         .await?;
-    if !listing.contains("\"set\":\"block_v4\"") {
+    if !chain_has_set_drop_rule(&listing, "block_v4") {
         exec.run(
             &[
                 "add", "rule", "inet", "serverbee", "input", "ip", "saddr", "@block_v4", "drop",
@@ -161,7 +161,7 @@ pub async fn ensure_resources(exec: &dyn NftExecutor) -> Result<(), NftError> {
         )
         .await?;
     }
-    if !listing.contains("\"set\":\"block_v6\"") {
+    if !chain_has_set_drop_rule(&listing, "block_v6") {
         exec.run(
             &[
                 "add", "rule", "inet", "serverbee", "input", "ip6", "saddr", "@block_v6", "drop",
@@ -171,6 +171,39 @@ pub async fn ensure_resources(exec: &dyn NftExecutor) -> Result<(), NftError> {
         .await?;
     }
     Ok(())
+}
+
+/// Returns true when the `nft -j list chain ...` output contains a rule
+/// matching against the named set. Parsed structurally instead of via
+/// substring matching so reformatted JSON or unrelated string occurrences
+/// can't false-positive or false-negative the check.
+fn chain_has_set_drop_rule(listing: &str, set_name: &str) -> bool {
+    let v: serde_json::Value = match serde_json::from_str(listing) {
+        Ok(v) => v,
+        Err(_) => return false, // treat malformed listing as "rule missing" → safe to add
+    };
+    let items = v
+        .get("nftables")
+        .and_then(|n| n.as_array())
+        .cloned()
+        .unwrap_or_default();
+    for item in items {
+        let Some(rule) = item.get("rule") else {
+            continue;
+        };
+        let Some(expr) = rule.get("expr").and_then(|e| e.as_array()) else {
+            continue;
+        };
+        for stmt in expr {
+            if let Some(m) = stmt.get("match")
+                && let Some(set) = m.get("right").and_then(|r| r.get("set"))
+                && set.as_str() == Some(set_name)
+            {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 pub async fn add_element(exec: &dyn NftExecutor, entry: &BlockEntry) -> Result<(), NftError> {
@@ -247,8 +280,8 @@ mod tests {
             Ok(())
         }
         async fn list_json(&self, _args: &[&str]) -> Result<String, NftError> {
-            // Pretend the chain has no rules yet.
-            Ok("[]".into())
+            // Pretend the chain has no rules yet (real nft shape).
+            Ok(r#"{"nftables":[]}"#.into())
         }
     }
 
@@ -293,5 +326,25 @@ mod tests {
             "Error: No such file or directory",
             NftOp::DeleteElement
         ));
+    }
+
+    #[test]
+    fn chain_has_set_drop_rule_detects_rule() {
+        let listing = r#"{"nftables":[{"rule":{"expr":[{"match":{"left":{},"op":"==","right":{"set":"block_v4"}}},{"drop":null}]}}]}"#;
+        assert!(super::chain_has_set_drop_rule(listing, "block_v4"));
+        assert!(!super::chain_has_set_drop_rule(listing, "block_v6"));
+    }
+
+    #[test]
+    fn chain_has_set_drop_rule_handles_empty() {
+        assert!(!super::chain_has_set_drop_rule(
+            r#"{"nftables":[]}"#,
+            "block_v4"
+        ));
+    }
+
+    #[test]
+    fn chain_has_set_drop_rule_handles_malformed() {
+        assert!(!super::chain_has_set_drop_rule("not json", "block_v4"));
     }
 }

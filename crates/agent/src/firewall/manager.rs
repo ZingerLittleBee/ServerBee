@@ -253,7 +253,7 @@ mod tests {
             Ok(())
         }
         async fn list_json(&self, _: &[&str]) -> Result<String, NftError> {
-            Ok("[]".into())
+            Ok(r#"{"nftables":[]}"#.into())
         }
     }
 
@@ -268,7 +268,7 @@ mod tests {
             }
         }
         async fn list_json(&self, _: &[&str]) -> Result<String, NftError> {
-            Ok("[]".into())
+            Ok(r#"{"nftables":[]}"#.into())
         }
     }
 
