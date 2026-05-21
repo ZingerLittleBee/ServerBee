@@ -101,6 +101,10 @@ vi.mock('@/components/uptime/uptime-timeline', () => ({
   UptimeTimeline: () => <div data-testid="uptime-timeline">uptime</div>
 }))
 
+vi.mock('@/components/security/server-security-tab', () => ({
+  ServerSecurityTab: () => <div data-testid="server-security-tab">security</div>
+}))
+
 const mockUseServer = vi.fn()
 const mockUseServerRecords = vi.fn()
 const mockUseUptimeDaily = vi.fn()
