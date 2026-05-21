@@ -46,29 +46,29 @@ export function GaugeWidget({ config, servers }: GaugeWidgetProps) {
   }
 
   return (
-    <div className="flex h-full flex-col items-center justify-center rounded-lg border bg-card p-2">
-      <ResponsiveContainer height="100%" width="100%">
-        <RadialBarChart
-          barSize={10}
-          cx="50%"
-          cy="50%"
-          data={data}
-          endAngle={-270}
-          innerRadius="70%"
-          outerRadius="90%"
-          startAngle={90}
-        >
-          <PolarAngleAxis angleAxisId={0} domain={[0, max]} tick={false} type="number" />
-          <RadialBar angleAxisId={0} background={{ fill: 'var(--color-muted)' }} cornerRadius={5} dataKey="value" />
-          <text dominantBaseline="middle" textAnchor="middle" x="50%" y="45%">
-            <tspan className="fill-foreground font-bold text-2xl">{value.toFixed(1)}%</tspan>
-          </text>
-          <text dominantBaseline="middle" textAnchor="middle" x="50%" y="58%">
-            <tspan className="fill-muted-foreground text-xs">{label}</tspan>
-          </text>
-        </RadialBarChart>
-      </ResponsiveContainer>
-      <p className="truncate text-muted-foreground text-xs">{server.name}</p>
+    <div className="flex h-full flex-col rounded-lg border bg-card p-3">
+      <h3 className="truncate font-semibold text-sm">{label}</h3>
+      <div className="min-h-0 flex-1">
+        <ResponsiveContainer height="100%" width="100%">
+          <RadialBarChart
+            barSize={10}
+            cx="50%"
+            cy="50%"
+            data={data}
+            endAngle={-270}
+            innerRadius="70%"
+            outerRadius="90%"
+            startAngle={90}
+          >
+            <PolarAngleAxis angleAxisId={0} domain={[0, max]} tick={false} type="number" />
+            <RadialBar angleAxisId={0} background={{ fill: 'var(--color-muted)' }} cornerRadius={5} dataKey="value" />
+            <text dominantBaseline="middle" textAnchor="middle" x="50%" y="50%">
+              <tspan className="fill-foreground font-bold text-2xl">{value.toFixed(1)}%</tspan>
+            </text>
+          </RadialBarChart>
+        </ResponsiveContainer>
+      </div>
+      <p className="truncate text-center text-muted-foreground text-xs">{server.name}</p>
     </div>
   )
 }
