@@ -10,6 +10,7 @@ mod probe_utils;
 mod rebind;
 mod register;
 mod reporter;
+mod security;
 mod terminal;
 mod upgrade;
 
