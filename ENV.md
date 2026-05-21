@@ -92,6 +92,14 @@ These variables are for local repo tooling and development workflows. They are n
 | `SERVERBEE_MOBILE__ACCESS_TTL` | `mobile.access_ttl` | i64 | `900` | Mobile access token lifetime in seconds (15 min) |
 | `SERVERBEE_MOBILE__REFRESH_TTL` | `mobile.refresh_ttl` | i64 | `2592000` | Mobile refresh token lifetime in seconds (30 days) |
 
+### Firewall (Optional)
+
+Tier-2 guardrail for the firewall blocklist feature. CIDRs / IPs listed here are refused by `POST /api/firewall/blocks` even if a server administrator tries to insert them. Tier 1 (hard-coded protected ranges: loopback, RFC 1918, link-local, multicast, unspecified) is always enforced inside `service::firewall`.
+
+| Environment Variable | TOML Key | Type | Default | Description |
+|---------------------|----------|------|---------|-------------|
+| `SERVERBEE_FIREWALL__ALLOW_LIST` | `firewall.allow_list` | string[] | `[]` | CIDRs / IPs the server refuses to insert into `block_list`. Tier-2 guardrail. Tier 1 (loopback + RFC 1918 + link-local + multicast + unspecified) is hard-coded and always applied |
+
 ### Internal
 
 > The following variables have sensible defaults and rarely need modification. Only adjust when you have a specific requirement.

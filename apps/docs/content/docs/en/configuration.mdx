@@ -107,6 +107,14 @@ There is no admin username/password environment variable. On first start (when n
 | `SERVERBEE_MOBILE__ACCESS_TTL` | `900` | Mobile access token lifetime in seconds (15 min) |
 | `SERVERBEE_MOBILE__REFRESH_TTL` | `2592000` | Mobile refresh token lifetime in seconds (30 days) |
 
+#### Firewall (Optional)
+
+Tier-2 guardrail for the [Firewall Blocklist](/en/docs/firewall) feature. CIDRs / IPs listed here are refused by `POST /api/firewall/blocks` even if an administrator tries to insert them. Tier 1 (hard-coded protected ranges: loopback, RFC 1918, link-local, multicast, unspecified) is always enforced.
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `SERVERBEE_FIREWALL__ALLOW_LIST` | `[]` | CIDRs / IPs the server refuses to insert into `block_list`. Tier-2 guardrail layered on top of the hard-coded Tier-1 protected ranges |
+
 #### Internal
 
 > The following variables have sensible defaults and rarely need modification. Only adjust when you have a specific requirement.
@@ -317,6 +325,12 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 |-----|------|---------|-------------|
 | `access_ttl` | i64 | `900` | Mobile access token lifetime in seconds (default 15 minutes) |
 | `refresh_ttl` | i64 | `2592000` | Mobile refresh token lifetime in seconds (default 30 days) |
+
+### `[firewall]` -- Firewall Blocklist Guardrail
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `allow_list` | string[] | `[]` | CIDRs / IPs the server refuses to insert into `block_list`. Tier-2 guardrail on top of the hard-coded Tier-1 protected ranges (loopback + RFC 1918 + link-local + multicast + unspecified). See [Firewall Blocklist](/en/docs/firewall) |
 
 ---
 
