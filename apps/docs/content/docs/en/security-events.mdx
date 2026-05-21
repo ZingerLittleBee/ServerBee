@@ -103,6 +103,14 @@ Notifications are deduplicated per `(rule_id, server_id, event_key)`. The `event
 Security rule types cannot be combined with metric rules in the same alert rule, and each rule allows **one** security item. The validator rejects mixed or duplicated configurations — create one rule per event type.
 </Callout>
 
+### Auto-block source IP
+
+Brute-force and port-scan alert rules can optionally carry a `block_source_ip` action that auto-creates a `block_list` row from the triggering event's source IP. Only `ssh_brute_force_detected` and `port_scan_detected` rules accept this action — `ssh_login_detected` is intentionally forbidden because a legitimate first-time login would lock the user out.
+
+The auto-block row uses `origin = "auto"` and stores the triggering `origin_event_id`. It is deduplicated by canonical target: if a manual or earlier auto-block already covers the triggering server, the action is silently skipped; if a row exists but does **not** cover the triggering server, the conflict is recorded in the audit log as `firewall_auto_block_skipped_conflict` and no new row is created.
+
+See [Firewall Blocklist](/en/docs/firewall) for the full feature, guardrails, and audit-log reference.
+
 ## Retention
 
 Security events are kept for **30 days** by default. Tune with `retention.security_event_days` (env: `SERVERBEE_RETENTION__SECURITY_EVENT_DAYS`). The cleanup task purges expired rows daily.

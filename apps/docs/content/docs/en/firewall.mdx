@@ -1,0 +1,83 @@
+---
+title: Firewall Blocklist
+description: Block inbound traffic from IPs and CIDRs across one or more agents via nftables.
+icon: Shield
+---
+
+ServerBee can centrally manage an inbound-traffic blocklist. The server holds the canonical list; each opted-in agent applies it via `nftables`.
+
+## Requirements
+
+- **Linux only** — agent uses the `nft` CLI.
+- **`CAP_FIREWALL_BLOCK`** (bit `512`) must be enabled on each server. **Disabled by default.**
+- Agent process needs root or `CAP_NET_ADMIN`.
+
+## Manual blocking
+
+Settings → Firewall → **Add block**. Enter an IP (`1.2.3.4`) or a CIDR (`10.0.0.0/8`). Choose the scope (`All servers`, `Selected`, `All except`). Optionally add a comment.
+
+The server rejects targets that overlap a protected range:
+
+- Loopback (`127.0.0.0/8`, `::1`)
+- RFC 1918 (`10/8`, `172.16/12`, `192.168/16`, `fc00::/7`, `fe80::/10`)
+- Multicast / unspecified
+- Any CIDR in `firewall.allow_list` (`server.toml`)
+- `server.trusted_proxies`
+- Any agent's reported external IP
+
+A `409` response with the matched reason is returned in those cases.
+
+## Auto-block from alerts
+
+Brute-force and port-scan alert rules can append a `block_source_ip` action that auto-inserts the event's source IP. See [Security Events → Auto-block source IP](/en/docs/security-events).
+
+Auto-block is deduplicated by canonical target. If a row already exists and covers the triggering server, the auto-block is silently skipped. If it exists but does not cover the triggering server, the conflict is audited (`firewall_auto_block_skipped_conflict`) and no row is created — the operator can broaden the existing row manually.
+
+## Agent execution
+
+Each opted-in agent maintains an `inet serverbee` nftables table:
+
+```text
+table inet serverbee {
+    set block_v4 { type ipv4_addr; flags interval; }
+    set block_v6 { type ipv6_addr; flags interval; }
+    chain input {
+        type filter hook input priority -10;
+        ip  saddr @block_v4 drop
+        ip6 saddr @block_v6 drop
+    }
+}
+```
+
+The server pushes incremental adds/removes over WebSocket. On agent reconnect or capability transition, the server sends a `Reset` followed by a full `Sync`. The agent acks the result of each entry; failures keep the row eligible for retry on the next sync.
+
+## Removing the cleanup
+
+To stop using the feature and clean up nftables state:
+
+1. Disable `CAP_FIREWALL_BLOCK` for the agent in Capabilities settings.
+2. The server pushes `BlocklistReset` to the agent, which flushes both sets and drops the `inet serverbee` table.
+
+Manual cleanup (from the host shell):
+
+```bash
+nft delete table inet serverbee
+```
+
+## Audit log
+
+Every action — `firewall_block_created`, `firewall_block_deleted`, `firewall_block_applied_agent`, `firewall_block_removed_agent`, `firewall_block_rejected_server`, `firewall_block_rejected_agent`, `firewall_auto_block_skipped_conflict`, `firewall_reset_acked` — is recorded in the audit log and visible in the Firewall page's Activity tab.
+
+## Limitations
+
+- nftables only — no iptables fallback
+- IPv4 and IPv6, no domain names
+- Permanent blocks — no scheduled expiry
+- `input` chain only — does not filter `forward` / `output`
+
+<Cards>
+  <Card title="Capabilities" href="/en/docs/capabilities" />
+  <Card title="Security Events" href="/en/docs/security-events" />
+  <Card title="Alerts & Notifications" href="/en/docs/alerts" />
+  <Card title="Configuration" href="/en/docs/configuration" />
+</Cards>
