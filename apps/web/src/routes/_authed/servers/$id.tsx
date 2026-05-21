@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeft, BarChart3, Container, FileText, Pencil, Terminal as TerminalIcon } from 'lucide-react'
+import { ArrowLeft, BarChart3, Container, FileText, Pencil, ShieldAlert, Terminal as TerminalIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ServerSecurityTab } from '@/components/security/server-security-tab'
 import { AgentVersionSection } from '@/components/server/agent-version-section'
 import { CapabilitiesDialog } from '@/components/server/capabilities-dialog'
 import { CostInsightBar } from '@/components/server/cost-insight-bar'
@@ -655,6 +656,10 @@ export function ServerDetailPage() {
               {t('traffic_tab')}
             </TabsTrigger>
           )}
+          <TabsTrigger value="security">
+            <ShieldAlert aria-hidden="true" className="mr-1 size-3.5" />
+            {t('security_tab', { defaultValue: 'Security' })}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="metrics">
@@ -679,6 +684,10 @@ export function ServerDetailPage() {
             <TrafficTab billingCycle={server.billing_cycle} serverId={id} />
           </TabsContent>
         )}
+
+        <TabsContent value="security">
+          <ServerSecurityTab serverId={id} />
+        </TabsContent>
       </Tabs>
 
       <ServerEditDialog onClose={() => setEditOpen(false)} open={editOpen} server={server} />

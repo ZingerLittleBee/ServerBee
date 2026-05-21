@@ -3449,6 +3449,268 @@
         ]
       }
     },
+    "/api/security/events": {
+      "get": {
+        "tags": ["security"],
+        "operationId": "list_events",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"]
+            }
+          },
+          {
+            "name": "event_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"]
+            }
+          },
+          {
+            "name": "source_ip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"]
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"]
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "ISO-8601 timestamp (`>=` filter on created_at).",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "description": "ISO-8601 timestamp (`<=` filter on created_at).",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor from `next_cursor` of the previous response.",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": ["integer", "null"],
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated security events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityEventList"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/security/events/{id}": {
+      "get": {
+        "tags": ["security"],
+        "operationId": "get_event",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Security event id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Security event",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityEventDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["security"],
+        "operationId": "delete_event",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Security event id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          },
+          "403": {
+            "description": "Forbidden — admin only"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/security/stats": {
+      "get": {
+        "tags": ["security"],
+        "operationId": "stats",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"]
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"],
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "group_by",
+            "in": "query",
+            "description": "One of `event_type`, `source_ip`, `day`. Defaults to `event_type`.",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Cap on returned buckets. Defaults to 50, max 500.",
+            "required": false,
+            "schema": {
+              "type": ["integer", "null"],
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregated counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StatsBucket"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
     "/api/server-groups": {
       "get": {
         "tags": ["server-groups"],
@@ -6713,6 +6975,17 @@
           },
           "rule_type": {
             "type": "string"
+          },
+          "security": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SecurityRuleParams",
+                "description": "Parameters for security-typed rules (`ssh_brute_force_detected`,\n`ssh_new_ip_login`, `port_scan_detected`). Ignored for metric rules."
+              }
+            ]
           }
         }
       },
@@ -8846,6 +9119,115 @@
           }
         }
       },
+      "SecurityEventDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "server_id",
+          "event_type",
+          "severity",
+          "source_ip",
+          "started_at",
+          "ended_at",
+          "first_seen",
+          "detector_source",
+          "evidence",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "detector_source": {
+            "type": "string"
+          },
+          "ended_at": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "evidence": {},
+          "first_seen": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "source_ip": {
+            "type": "string"
+          },
+          "source_port": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "username": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "SecurityEventList": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SecurityEventDto"
+            }
+          },
+          "next_cursor": {
+            "type": ["string", "null"],
+            "description": "Opaque cursor for the next page. `None` when there are no more rows."
+          }
+        }
+      },
+      "SecurityRuleParams": {
+        "type": "object",
+        "properties": {
+          "dedupe_window_seconds": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Notification dedupe window per (rule, server, source_ip).",
+            "minimum": 0
+          },
+          "exclude_cidrs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "CIDRs excluded from `ssh_new_ip_login`."
+          },
+          "exclude_users": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Usernames excluded from `ssh_new_ip_login`."
+          },
+          "min_distinct_ports": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "Minimum distinct ports scanned to fire (`port_scan_detected`).",
+            "minimum": 0
+          },
+          "min_failed_count": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "Minimum failed attempts to fire (`ssh_brute_force_detected`).",
+            "minimum": 0
+          }
+        }
+      },
       "ServerCostInsights": {
         "type": "object",
         "required": ["server_id", "configured"],
@@ -9590,6 +9972,19 @@
         "properties": {
           "entry": {
             "$ref": "#/components/schemas/FileEntry"
+          }
+        }
+      },
+      "StatsBucket": {
+        "type": "object",
+        "required": ["key", "count"],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "key": {
+            "type": "string"
           }
         }
       },
@@ -11106,6 +11501,10 @@
     {
       "name": "files",
       "description": "File management"
+    },
+    {
+      "name": "security",
+      "description": "Security events (SSH brute force, port scans, new IP logins)"
     }
   ]
 }

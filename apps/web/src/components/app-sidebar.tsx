@@ -17,6 +17,8 @@ import {
   Radar,
   Settings,
   Shield,
+  ShieldAlert,
+  ShieldBan,
   Smartphone,
   Terminal,
   Users,
@@ -52,7 +54,8 @@ const monitorItems = [
   { to: '/', labelKey: 'nav_dashboard', icon: LayoutDashboard },
   { to: '/servers', labelKey: 'nav_servers', icon: List },
   { to: '/network', labelKey: 'nav_network', icon: Wifi },
-  { to: '/traffic', labelKey: 'nav_traffic', icon: BarChart3 }
+  { to: '/traffic', labelKey: 'nav_traffic', icon: BarChart3 },
+  { to: '/security', labelKey: 'nav_security_events', icon: ShieldAlert }
 ] as const
 
 const settingsItems = [
@@ -65,6 +68,7 @@ const settingsItems = [
   { to: '/settings/network-probes', labelKey: 'nav_network_probes', icon: Globe, adminOnly: true },
   { to: '/settings/tasks', labelKey: 'nav_commands', icon: Terminal, adminOnly: true },
   { to: '/settings/capabilities', labelKey: 'nav_capabilities', icon: Shield, adminOnly: true },
+  { to: '/settings/firewall', labelKey: 'nav_firewall', icon: ShieldBan, adminOnly: true },
   { to: '/settings/mobile-devices', labelKey: 'nav_mobile_devices', icon: Smartphone },
   { to: '/settings/api-keys', labelKey: 'nav_api_keys', icon: Key },
   { to: '/settings/security', labelKey: 'nav_security', icon: Shield },

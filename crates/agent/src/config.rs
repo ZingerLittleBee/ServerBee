@@ -21,6 +21,88 @@ pub struct AgentConfig {
     pub ip_change: IpChangeConfig,
     #[serde(default)]
     pub upgrade: UpgradeConfig,
+    #[serde(default)]
+    pub security: SecurityConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SecurityConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_security_data_dir")]
+    pub data_dir: String,
+    #[serde(default)]
+    pub ssh: SshDetectorConfig,
+    #[serde(default)]
+    pub port_scan: PortScanConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SshDetectorConfig {
+    #[serde(default = "default_ssh_window")]
+    pub window_seconds: u32,
+    #[serde(default = "default_ssh_threshold")]
+    pub failed_threshold: u32,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PortScanConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_scan_window")]
+    pub window_seconds: u32,
+    #[serde(default = "default_scan_threshold")]
+    pub distinct_port_threshold: u32,
+}
+
+fn default_security_data_dir() -> String {
+    "/var/lib/serverbee/security".to_string()
+}
+
+fn default_ssh_window() -> u32 {
+    60
+}
+
+fn default_ssh_threshold() -> u32 {
+    10
+}
+
+fn default_scan_window() -> u32 {
+    30
+}
+
+fn default_scan_threshold() -> u32 {
+    20
+}
+
+impl Default for SshDetectorConfig {
+    fn default() -> Self {
+        Self {
+            window_seconds: default_ssh_window(),
+            failed_threshold: default_ssh_threshold(),
+        }
+    }
+}
+
+impl Default for PortScanConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            window_seconds: default_scan_window(),
+            distinct_port_threshold: default_scan_threshold(),
+        }
+    }
+}
+
+impl Default for SecurityConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            data_dir: default_security_data_dir(),
+            ssh: SshDetectorConfig::default(),
+            port_scan: PortScanConfig::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -298,5 +380,57 @@ mod tests {
             .extract()
             .expect("minimal AgentConfig");
         assert!(c.upgrade.release_repo_url.starts_with("https://"));
+    }
+
+    #[test]
+    fn security_config_defaults_are_sensible() {
+        let s = SecurityConfig::default();
+        assert!(s.enabled);
+        assert_eq!(s.data_dir, "/var/lib/serverbee/security");
+        assert_eq!(s.ssh.window_seconds, 60);
+        assert_eq!(s.ssh.failed_threshold, 10);
+        assert!(!s.port_scan.enabled);
+        assert_eq!(s.port_scan.window_seconds, 30);
+        assert_eq!(s.port_scan.distinct_port_threshold, 20);
+    }
+
+    #[test]
+    fn agent_config_includes_security_defaults() {
+        let c: AgentConfig = figment::Figment::new()
+            .merge(figment::providers::Toml::string(
+                r#"server_url = "ws://localhost:9527""#,
+            ))
+            .extract()
+            .expect("minimal AgentConfig");
+        assert!(c.security.enabled);
+        assert_eq!(c.security.ssh.failed_threshold, 10);
+        assert!(!c.security.port_scan.enabled);
+    }
+
+    #[test]
+    fn security_config_overrides_from_toml() {
+        let c: AgentConfig = figment::Figment::new()
+            .merge(figment::providers::Toml::string(
+                r#"
+server_url = "ws://localhost:9527"
+[security]
+enabled = false
+data_dir = "/tmp/sb"
+[security.ssh]
+window_seconds = 30
+failed_threshold = 5
+[security.port_scan]
+enabled = true
+distinct_port_threshold = 50
+"#,
+            ))
+            .extract()
+            .expect("AgentConfig with security overrides");
+        assert!(!c.security.enabled);
+        assert_eq!(c.security.data_dir, "/tmp/sb");
+        assert_eq!(c.security.ssh.window_seconds, 30);
+        assert_eq!(c.security.ssh.failed_threshold, 5);
+        assert!(c.security.port_scan.enabled);
+        assert_eq!(c.security.port_scan.distinct_port_threshold, 50);
     }
 }

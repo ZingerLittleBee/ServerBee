@@ -4,12 +4,14 @@ mod config;
 mod docker;
 mod file_manager;
 mod fingerprint;
+mod firewall;
 mod network_prober;
 mod pinger;
 mod probe_utils;
 mod rebind;
 mod register;
 mod reporter;
+mod security;
 mod terminal;
 mod upgrade;
 
@@ -20,6 +22,7 @@ use tracing_subscriber::EnvFilter;
 use crate::capability_policy::{compute_agent_local_capabilities, parse_capability_args};
 use crate::config::AgentConfig;
 use crate::reporter::Reporter;
+use crate::security::SecurityManager;
 
 static RUSTLS_PROVIDER_INSTALLED: OnceLock<()> = OnceLock::new();
 
@@ -53,7 +56,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("release_repo_url overridden by --release-repo CLI flag");
         config.upgrade.release_repo_url = repo;
     }
-    let agent_local_capabilities = compute_agent_local_capabilities(&capability_overrides);
+    let mut agent_local_capabilities = compute_agent_local_capabilities(&capability_overrides);
 
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -96,6 +99,19 @@ async fn main() -> anyhow::Result<()> {
         serverbee_common::constants::VERSION
     );
 
+    // Probe local firewall capability once at startup. If `nft` is missing or
+    // the agent lacks CAP_NET_ADMIN, the firewall block bit stays off so the
+    // server never tries to push blocklist messages at this agent.
+    let firewall_local = crate::firewall::probe_local_capability().await;
+    if firewall_local {
+        agent_local_capabilities |= serverbee_common::constants::CAP_FIREWALL_BLOCK;
+        tracing::info!("Local firewall capability probed: nft available");
+    } else {
+        tracing::info!(
+            "Local firewall capability probed: nft unavailable (binary, kernel, or privileges missing)"
+        );
+    }
+
     let machine_fingerprint = fingerprint::generate();
     if !machine_fingerprint.is_empty() {
         tracing::info!(
@@ -122,8 +138,27 @@ async fn main() -> anyhow::Result<()> {
         config.token = token;
     }
 
+    // Start the security pipeline before connecting; it owns a long-lived
+    // mpsc::Sender that the reporter forwards over the WebSocket.
+    let (security_tx, security_rx) = tokio::sync::mpsc::channel::<
+        serverbee_common::protocol::AgentMessage,
+    >(128);
+    let _security_manager = match SecurityManager::start(
+        config.security.clone(),
+        agent_local_capabilities,
+        security_tx,
+    )
+    .await
+    {
+        Ok(m) => Some(m),
+        Err(e) => {
+            tracing::warn!(error = %e, "SecurityManager failed to start; continuing without it");
+            None
+        }
+    };
+
     let mut reporter = Reporter::new(config, machine_fingerprint, agent_local_capabilities);
-    reporter.run().await;
+    reporter.run_with_external(Some(security_rx)).await;
     Ok(())
 }
 

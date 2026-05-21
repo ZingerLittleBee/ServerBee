@@ -8,7 +8,7 @@ ServerBee 支持为每台 Agent 独立控制可用功能。通过功能开关（
 
 ## 功能列表
 
-ServerBee 定义了 8 个功能位，分为两个风险等级：
+ServerBee 定义了 10 个功能位，分为两个风险等级。有效掩码为 `1023`（bits 0..=9）。
 
 ### 高风险功能（默认关闭）
 
@@ -18,6 +18,7 @@ ServerBee 定义了 8 个功能位，分为两个风险等级：
 | **Remote Exec** | `CAP_EXEC` (2) | 允许远程执行命令 |
 | **File Manager** | `CAP_FILE` (64) | 允许远程文件浏览、编辑、上传/下载 |
 | **Docker Management** | `CAP_DOCKER` (128) | 允许 Docker 容器监控、日志流、容器操作 |
+| **Firewall Blocklist** | `CAP_FIREWALL_BLOCK` (512) | 允许 Agent 应用 Server 下发的 nftables 黑名单。需要 root 或 `CAP_NET_ADMIN`，并在主机安装 `nft` CLI。详见 [防火墙黑名单](/cn/docs/firewall) |
 
 <Callout type="warn">
 这些功能涉及在目标服务器上执行任意代码或访问文件系统，因此默认关闭。请仅在信任的服务器上启用。
@@ -35,8 +36,9 @@ ServerBee 定义了 8 个功能位，分为两个风险等级：
 | **ICMP Ping** | `CAP_PING_ICMP` (8) | 允许执行 ICMP 探测任务 |
 | **TCP Probe** | `CAP_PING_TCP` (16) | 允许执行 TCP 端口探测任务 |
 | **HTTP Probe** | `CAP_PING_HTTP` (32) | 允许执行 HTTP 探测任务 |
+| **Security Events** | `CAP_SECURITY_EVENTS` (256) | 允许 Agent 上报 SSH 登录 / 爆破 / 端口扫描事件（详见 [安全事件检测](/cn/docs/security-events)）|
 
-新注册的 Agent 默认 capabilities 值为 `60`（即自动升级和三个 Ping 功能全部启用）。
+新注册的 Agent 默认 capabilities 值为 `316`（自动升级 + 三个 Ping 功能 + 安全事件检测）。
 
 ## 配置方式
 
@@ -74,10 +76,12 @@ curl -X PUT https://your-server/api/servers/batch-capabilities \
 ```
 
 capabilities 值是各功能位的按位或（OR）结果。例如：
-- `60` = 自动升级 + ICMP + TCP + HTTP（默认值）
-- `255` = 全部功能启用
-- `188` = 自动升级 + ICMP + TCP + HTTP + Docker
-- `124` = 自动升级 + ICMP + TCP + HTTP + 文件管理
+- `316` = 自动升级 + ICMP + TCP + HTTP + 安全事件检测（默认值）
+- `1023` = 全部功能启用（完整有效掩码，bits 0..=9）
+- `444` = 默认值 + Docker
+- `380` = 默认值 + 文件管理
+- `828` = 默认值 + 防火墙黑名单
+- `60` = 旧版默认值（无安全事件检测）
 - `0` = 全部功能禁用
 
 ## 双重验证机制

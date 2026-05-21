@@ -78,6 +78,9 @@ ServerBee 支持 14 种以上的告警指标：
 | `offline` | 服务器持续离线超过指定时长后触发 |
 | `expiration` | 服务器 `expired_at` 距今小于等于指定天数时触发 |
 | `ip_changed` | Agent 上报 IP 变化事件时触发（事件驱动，不参与每分钟轮询） |
+| `ssh_login_detected` | 成功 SSH 登录事件触发；支持 `first_seen_only` 过滤。详见 [安全事件检测](/cn/docs/security-events) |
+| `ssh_brute_force_detected` | SSH 爆破事件触发；支持 `severity_min`（medium/high/critical）和 `exclude_cidrs` 过滤 |
+| `port_scan_detected` | 单一源 IP 的端口扫描事件触发；支持 `severity_min` 和 `exclude_cidrs` 过滤 |
 
 ## 阈值配置
 

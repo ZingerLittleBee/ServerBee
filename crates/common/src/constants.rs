@@ -42,9 +42,12 @@ pub const CAP_PING_TCP: u32 = 1 << 4; // 16
 pub const CAP_PING_HTTP: u32 = 1 << 5; // 32
 pub const CAP_FILE: u32 = 1 << 6; // 64
 pub const CAP_DOCKER: u32 = 1 << 7; // 128
+pub const CAP_SECURITY_EVENTS: u32 = 1 << 8; // 256
+pub const CAP_FIREWALL_BLOCK: u32 = 1 << 9; // 512
 
-pub const CAP_DEFAULT: u32 = CAP_UPGRADE | CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP; // 60
-pub const CAP_VALID_MASK: u32 = 0b1111_1111; // 255
+pub const CAP_DEFAULT: u32 =
+    CAP_UPGRADE | CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP | CAP_SECURITY_EVENTS; // 316 — firewall NOT in default
+pub const CAP_VALID_MASK: u32 = 0b11_1111_1111; // 1023 — bits 0..=9
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CapabilityKey {
@@ -56,6 +59,8 @@ pub enum CapabilityKey {
     PingHttp,
     File,
     Docker,
+    SecurityEvents,
+    FirewallBlock,
 }
 
 impl CapabilityKey {
@@ -69,6 +74,8 @@ impl CapabilityKey {
             Self::PingHttp => "ping_http",
             Self::File => "file",
             Self::Docker => "docker",
+            Self::SecurityEvents => "security_events",
+            Self::FirewallBlock => "firewall_block",
         }
     }
 
@@ -82,6 +89,8 @@ impl CapabilityKey {
             Self::PingHttp => CAP_PING_HTTP,
             Self::File => CAP_FILE,
             Self::Docker => CAP_DOCKER,
+            Self::SecurityEvents => CAP_SECURITY_EVENTS,
+            Self::FirewallBlock => CAP_FIREWALL_BLOCK,
         }
     }
 }
@@ -99,6 +108,8 @@ impl std::str::FromStr for CapabilityKey {
             "ping_http" => Ok(Self::PingHttp),
             "file" => Ok(Self::File),
             "docker" => Ok(Self::Docker),
+            "security_events" => Ok(Self::SecurityEvents),
+            "firewall_block" => Ok(Self::FirewallBlock),
             _ => Err(format!("unknown capability: {value}")),
         }
     }
@@ -181,6 +192,20 @@ pub const ALL_CAPABILITIES: &[CapabilityMeta] = &[
         default_enabled: false,
         risk_level: "high",
     },
+    CapabilityMeta {
+        bit: CAP_SECURITY_EVENTS,
+        key: "security_events",
+        display_name: "Security Events",
+        default_enabled: true,
+        risk_level: "low",
+    },
+    CapabilityMeta {
+        bit: CAP_FIREWALL_BLOCK,
+        key: "firewall_block",
+        display_name: "Firewall Blocklist",
+        default_enabled: false,
+        risk_level: "high",
+    },
 ];
 
 /// Check if a specific capability bit is set.
@@ -246,12 +271,46 @@ mod tests {
 
     #[test]
     fn test_valid_mask() {
-        assert_eq!(CAP_VALID_MASK, 255);
+        assert_eq!(CAP_VALID_MASK, 1023);
         for meta in ALL_CAPABILITIES {
             assert!(meta.bit & CAP_VALID_MASK == meta.bit);
         }
         let invalid_bit = 1 << ALL_CAPABILITIES.len();
         assert_ne!(invalid_bit & !CAP_VALID_MASK, 0);
+    }
+
+    #[test]
+    fn cap_firewall_block_bit() {
+        assert_eq!(CAP_FIREWALL_BLOCK, 512);
+        assert_eq!(CAP_VALID_MASK & CAP_FIREWALL_BLOCK, CAP_FIREWALL_BLOCK);
+        assert_eq!(CAP_DEFAULT & CAP_FIREWALL_BLOCK, 0); // not in default
+    }
+
+    #[test]
+    fn cap_default_includes_security_events() {
+        assert!(has_capability(CAP_DEFAULT, CAP_SECURITY_EVENTS));
+        assert_eq!(CAP_DEFAULT, 316);
+    }
+
+    #[test]
+    fn cap_valid_mask_covers_new_bit() {
+        assert_eq!(CAP_VALID_MASK & CAP_SECURITY_EVENTS, CAP_SECURITY_EVENTS);
+    }
+
+    #[test]
+    fn all_capabilities_includes_security_events() {
+        let entry = ALL_CAPABILITIES
+            .iter()
+            .find(|m| m.bit == CAP_SECURITY_EVENTS);
+        assert!(entry.is_some());
+        assert_eq!(entry.unwrap().key, "security_events");
+        assert!(entry.unwrap().default_enabled);
+    }
+
+    #[test]
+    fn capability_key_security_events_round_trip() {
+        let key: CapabilityKey = "security_events".parse().unwrap();
+        assert_eq!(key.to_bit(), CAP_SECURITY_EVENTS);
     }
 
     #[test]

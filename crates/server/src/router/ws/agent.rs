@@ -22,7 +22,9 @@ use crate::service::recovery_merge::RecoveryMergeService;
 use crate::service::server::ServerService;
 use crate::service::upgrade_tracker::UpgradeLookup;
 use crate::state::AppState;
-use serverbee_common::constants::{MAX_WS_MESSAGE_SIZE, effective_capabilities};
+use serverbee_common::constants::{
+    CAP_SECURITY_EVENTS, MAX_WS_MESSAGE_SIZE, effective_capabilities, has_capability,
+};
 use serverbee_common::protocol::{AgentMessage, BrowserMessage, ServerMessage};
 use serverbee_common::types::NetworkProbeTarget as NetworkProbeTargetDto;
 
@@ -550,6 +552,18 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     .mark_succeeded(UpgradeLookup::from_job(&job), None);
             }
 
+            // Record agent's external IP so the firewall guardrail's
+            // dynamic allow-list keeps the agent from blocking itself.
+            let fw_ip = info
+                .ipv4
+                .as_deref()
+                .or(info.ipv6.as_deref())
+                .and_then(|s| s.parse::<std::net::IpAddr>().ok());
+            state
+                .firewall
+                .note_agent_external_ip(server_id, fw_ip)
+                .await;
+
             // Send Ack
             if let Some(tx) = state.agent_manager.get_sender(server_id) {
                 let _ = tx.send(ServerMessage::Ack { msg_id }).await;
@@ -561,6 +575,32 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                         .send(ServerMessage::DockerStartStats { interval_secs: 3 })
                         .await;
                     let _ = tx.send(ServerMessage::DockerEventsStart).await;
+                }
+            }
+
+            // Firewall blocklist: on every fresh SystemInfo, drop whatever the
+            // agent may have leftover from a previous boot, then resend the
+            // authoritative set. Gated on capability + protocol version.
+            {
+                use serverbee_common::constants::{CAP_FIREWALL_BLOCK, has_capability};
+                use serverbee_common::firewall::FIREWALL_MIN_PROTOCOL;
+
+                let caps = state
+                    .agent_manager
+                    .get_effective_capabilities(server_id)
+                    .unwrap_or(0);
+                if has_capability(caps, CAP_FIREWALL_BLOCK) && agent_pv >= FIREWALL_MIN_PROTOCOL {
+                    state
+                        .firewall
+                        .push_reset_to(server_id, &state.agent_manager)
+                        .await;
+                    if let Err(e) = state
+                        .firewall
+                        .push_sync_to(server_id, &state.agent_manager)
+                        .await
+                    {
+                        tracing::warn!(server_id, error = %e, "firewall sync push failed");
+                    }
                 }
             }
         }
@@ -1075,6 +1115,18 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             ipv6,
             interfaces: _,
         } => {
+            // Refresh the firewall guardrail's dynamic allow-list with the
+            // agent's new external IP. Done first so that any later auto-block
+            // evaluation in this scope sees the up-to-date value.
+            let fw_ip = ipv4
+                .as_deref()
+                .or(ipv6.as_deref())
+                .and_then(|s| s.parse::<std::net::IpAddr>().ok());
+            state
+                .firewall
+                .note_agent_external_ip(server_id, fw_ip)
+                .await;
+
             match ServerService::get_server(&state.db, server_id).await {
                 Ok(srv) => {
                     let old_ipv4 = srv.ipv4.clone();
@@ -1212,6 +1264,53 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     error,
                 },
             );
+        }
+        AgentMessage::SecurityEvent(payload) => {
+            // The hot-path cache is populated once the agent sends `SystemInfo`
+            // on the current connection; before that, fall back to the DB row.
+            let caps = match state.agent_manager.get_effective_capabilities(server_id) {
+                Some(c) => c,
+                None => {
+                    use crate::entity::server;
+                    use sea_orm::EntityTrait;
+                    server::Entity::find_by_id(server_id)
+                        .one(&state.db)
+                        .await
+                        .ok()
+                        .flatten()
+                        .and_then(|s| u32::try_from(s.capabilities).ok())
+                        .unwrap_or(0)
+                }
+            };
+            if !has_capability(caps, CAP_SECURITY_EVENTS) {
+                let detail = serde_json::json!({ "server_id": server_id }).to_string();
+                if let Err(e) = AuditService::log(
+                    &state.db,
+                    "system",
+                    "security_event_denied",
+                    Some(&detail),
+                    "",
+                )
+                .await
+                {
+                    tracing::warn!(server_id, error = %e, "audit log for security_event_denied failed");
+                }
+                return;
+            }
+            if let Err(e) = state.security_service.record_event(server_id, payload).await {
+                tracing::error!(server_id, error = %e, "security_event record failed");
+            }
+        }
+        AgentMessage::BlocklistAck { results } => {
+            for item in results {
+                state.firewall.record_ack(server_id, item, &state.db).await;
+            }
+        }
+        AgentMessage::BlocklistResetAck { ok, reason } => {
+            state
+                .firewall
+                .record_reset_ack(server_id, ok, reason, &state.db)
+                .await;
         }
     }
 }
@@ -1744,6 +1843,110 @@ mod tests {
             timeout(Duration::from_millis(50), browser_rx.recv())
                 .await
                 .is_err()
+        );
+    }
+
+    // ── SecurityEvent capability gating ──
+
+    async fn insert_server_with_caps(
+        db: &sea_orm::DatabaseConnection,
+        id: &str,
+        name: &str,
+        capabilities: u32,
+    ) {
+        let now = Utc::now();
+        let token_hash = AuthService::hash_password("test").unwrap();
+        server::ActiveModel {
+            id: Set(id.to_string()),
+            token_hash: Set(token_hash),
+            token_prefix: Set("serverbee_test".to_string()),
+            name: Set(name.to_string()),
+            weight: Set(0),
+            hidden: Set(false),
+            capabilities: Set(capabilities as i32),
+            protocol_version: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+    }
+
+    fn security_event_payload(ip: &str) -> serverbee_common::security::SecurityEventPayload {
+        use serverbee_common::security::{
+            DetectorSource, SecurityEventPayload, SecurityEventType, SecurityEvidence, Severity,
+        };
+        SecurityEventPayload {
+            event_type: SecurityEventType::SshBruteForce,
+            severity: Severity::High,
+            source_ip: ip.to_string(),
+            source_port: None,
+            username: None,
+            started_at: 1_700_000_000,
+            ended_at: 1_700_000_060,
+            first_seen: false,
+            detector_source: DetectorSource::Journal,
+            evidence: SecurityEvidence::SshBruteForce {
+                failed_count: 12,
+                distinct_users: 1,
+                sample_users: vec!["root".into()],
+                invalid_user_count: 0,
+                window_seconds: 60,
+                threshold: 10,
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn security_event_persists_when_capability_granted() {
+        use crate::entity::security_event;
+        use serverbee_common::constants::CAP_SECURITY_EVENTS;
+
+        let (db, _tmp) = setup_test_db().await;
+        insert_server_with_caps(&db, "srv-1", "Srv", CAP_SECURITY_EVENTS).await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+
+        handle_agent_message(
+            &state,
+            "srv-1",
+            AgentMessage::SecurityEvent(security_event_payload("203.0.113.5")),
+        )
+        .await;
+
+        let rows = security_event::Entity::find().all(&db).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].source_ip, "203.0.113.5");
+    }
+
+    #[tokio::test]
+    async fn security_event_denied_audits_when_capability_missing() {
+        use crate::entity::{audit_log, security_event};
+
+        let (db, _tmp) = setup_test_db().await;
+        // capabilities = 0 → CAP_SECURITY_EVENTS bit cleared.
+        insert_server_with_caps(&db, "srv-1", "Srv", 0).await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+
+        handle_agent_message(
+            &state,
+            "srv-1",
+            AgentMessage::SecurityEvent(security_event_payload("203.0.113.6")),
+        )
+        .await;
+
+        let rows = security_event::Entity::find().all(&db).await.unwrap();
+        assert!(rows.is_empty(), "should not persist without capability");
+
+        let logs = audit_log::Entity::find().all(&db).await.unwrap();
+        assert!(
+            logs.iter().any(|l| l.action == "security_event_denied"),
+            "expected security_event_denied audit row, got {logs:?}"
         );
     }
 }

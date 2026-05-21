@@ -1079,6 +1079,54 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/security/events': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_events']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/security/events/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_event']
+    put?: never
+    post?: never
+    delete: operations['delete_event']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/security/stats': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['stats']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/server-groups': {
     parameters: {
       query?: never
@@ -1923,6 +1971,7 @@ export interface components {
       /** Format: double */
       min?: number | null
       rule_type: string
+      security?: null | components['schemas']['SecurityRuleParams']
     }
     AlertStateResponse: {
       /** Format: int32 */
@@ -2622,6 +2671,48 @@ export interface components {
        */
       token: string
     }
+    SecurityEventDto: {
+      created_at: string
+      detector_source: string
+      ended_at: string
+      event_type: string
+      evidence: unknown
+      first_seen: boolean
+      id: string
+      server_id: string
+      severity: string
+      source_ip: string
+      /** Format: int32 */
+      source_port?: number | null
+      started_at: string
+      username?: string | null
+    }
+    SecurityEventList: {
+      items: components['schemas']['SecurityEventDto'][]
+      /** @description Opaque cursor for the next page. `None` when there are no more rows. */
+      next_cursor?: string | null
+    }
+    SecurityRuleParams: {
+      /**
+       * Format: int32
+       * @description Notification dedupe window per (rule, server, source_ip).
+       */
+      dedupe_window_seconds?: number
+      /** @description CIDRs excluded from `ssh_new_ip_login`. */
+      exclude_cidrs?: string[]
+      /** @description Usernames excluded from `ssh_new_ip_login`. */
+      exclude_users?: string[]
+      /**
+       * Format: int32
+       * @description Minimum distinct ports scanned to fire (`port_scan_detected`).
+       */
+      min_distinct_ports?: number | null
+      /**
+       * Format: int32
+       * @description Minimum failed attempts to fire (`ssh_brute_force_detected`).
+       */
+      min_failed_count?: number | null
+    }
     ServerCostInsights: {
       billing_cycle?: string | null
       configured: boolean
@@ -2891,6 +2982,11 @@ export interface components {
     }
     StatResponse: {
       entry: components['schemas']['FileEntry']
+    }
+    StatsBucket: {
+      /** Format: int64 */
+      count: number
+      key: string
     }
     StatusGroup: {
       id: string
@@ -4129,6 +4225,41 @@ export interface operations {
       }
     }
   }
+  delete_event: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Security event id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Forbidden — admin only */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   delete_file: {
     parameters: {
       query?: never
@@ -4870,6 +5001,36 @@ export interface operations {
         content: {
           'application/json': components['schemas']['DashboardWithWidgets']
         }
+      }
+    }
+  }
+  get_event: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Security event id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Security event */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SecurityEventDto']
+        }
+      }
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
       }
     }
   }
@@ -5908,6 +6069,38 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['EnrollmentSummary'][]
+        }
+      }
+    }
+  }
+  list_events: {
+    parameters: {
+      query?: {
+        server_id?: string | null
+        event_type?: string | null
+        source_ip?: string | null
+        severity?: string | null
+        /** @description ISO-8601 timestamp (`>=` filter on created_at). */
+        since?: string | null
+        /** @description ISO-8601 timestamp (`<=` filter on created_at). */
+        until?: string | null
+        /** @description Opaque cursor from `next_cursor` of the previous response. */
+        cursor?: string | null
+        limit?: number | null
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Paginated security events */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SecurityEventList']
         }
       }
     }
@@ -7306,6 +7499,34 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
+      }
+    }
+  }
+  stats: {
+    parameters: {
+      query?: {
+        server_id?: string | null
+        since?: string | null
+        until?: string | null
+        /** @description One of `event_type`, `source_ip`, `day`. Defaults to `event_type`. */
+        group_by?: string | null
+        /** @description Cap on returned buckets. Defaults to 50, max 500. */
+        limit?: number | null
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Aggregated counts */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['StatsBucket'][]
+        }
       }
     }
   }

@@ -4,7 +4,7 @@ use std::time::Duration;
 use chrono::{Duration as ChronoDuration, Utc};
 use sea_orm::*;
 
-use crate::entity::{audit_log, ping_record};
+use crate::entity::{audit_log, ping_record, security_event};
 use crate::service::network_probe::NetworkProbeService;
 use crate::service::record::RecordService;
 use crate::service::service_monitor::ServiceMonitorService;
@@ -116,6 +116,9 @@ pub async fn run(state: Arc<AppState>) {
             _ => {}
         }
 
+        // Clean up security events
+        cleanup_security_events(&state.db, retention.security_event_days).await;
+
         // Clean up expired/consumed agent enrollment codes
         match crate::service::enrollment::EnrollmentService::prune(&state.db).await {
             Ok(n) if n > 0 => tracing::info!("Pruned {n} expired/consumed enrollments"),
@@ -141,6 +144,24 @@ async fn cleanup_ping_records(db: &DatabaseConnection, retention_days: u32) {
             tracing::info!("Cleaned up {} expired ping records", result.rows_affected);
         }
         Err(e) => tracing::error!("Failed to clean up ping records: {e}"),
+        _ => {}
+    }
+}
+
+async fn cleanup_security_events(db: &DatabaseConnection, retention_days: u32) {
+    let cutoff = Utc::now() - ChronoDuration::days(retention_days as i64);
+    match security_event::Entity::delete_many()
+        .filter(security_event::Column::CreatedAt.lt(cutoff))
+        .exec(db)
+        .await
+    {
+        Ok(result) if result.rows_affected > 0 => {
+            tracing::info!(
+                "Cleaned up {} expired security events",
+                result.rows_affected
+            );
+        }
+        Err(e) => tracing::error!("Failed to clean up security events: {e}"),
         _ => {}
     }
 }

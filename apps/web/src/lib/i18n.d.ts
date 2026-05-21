@@ -14,6 +14,7 @@ declare module 'i18next' {
       common: typeof enCommon
       dashboard: typeof enDashboard
       file: typeof enFile
+      firewall: typeof enFirewall
       servers: typeof enServers
       terminal: typeof enTerminal
       settings: typeof enSettings

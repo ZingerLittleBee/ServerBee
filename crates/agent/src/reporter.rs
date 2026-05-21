@@ -20,6 +20,8 @@ use crate::collector::Collector;
 use crate::config::AgentConfig;
 use crate::docker::DockerManager;
 use crate::file_manager::{FileEvent, FileManager};
+use crate::firewall::FirewallManager;
+use crate::firewall::nft::CliNftExecutor;
 use crate::network_prober::NetworkProber;
 use crate::pinger::PingManager;
 use crate::register;
@@ -41,23 +43,39 @@ pub struct Reporter {
     config: AgentConfig,
     fingerprint: String,
     agent_local_capabilities: u32,
+    firewall_manager: Arc<FirewallManager>,
 }
 
 impl Reporter {
     pub fn new(config: AgentConfig, fingerprint: String, agent_local_capabilities: u32) -> Self {
+        let firewall_manager = Arc::new(FirewallManager::new(Arc::new(CliNftExecutor)));
         Self {
             config,
             fingerprint,
             agent_local_capabilities,
+            firewall_manager,
         }
     }
 
+    /// Convenience wrapper around [`Self::run_with_external`] for tests
+    /// and historical callers that don't need a security stream.
+    #[cfg(test)]
+    #[allow(dead_code)]
     pub async fn run(&mut self) {
+        self.run_with_external(None).await
+    }
+
+    /// Run with an optional external agent-message stream attached
+    /// (currently sourced from [`crate::security::SecurityManager`]).
+    pub async fn run_with_external(
+        &mut self,
+        mut external_rx: Option<mpsc::Receiver<AgentMessage>>,
+    ) {
         let mut backoff_secs: u64 = 1;
         let mut reregister_attempts: u32 = 0;
 
         loop {
-            match self.connect_and_report().await {
+            match self.connect_and_report(&mut external_rx).await {
                 Ok(()) => {
                     tracing::info!("Connection closed normally, reconnecting...");
                     backoff_secs = 1;
@@ -112,7 +130,10 @@ impl Reporter {
         }
     }
 
-    async fn connect_and_report(&mut self) -> anyhow::Result<()> {
+    async fn connect_and_report(
+        &mut self,
+        external_rx: &mut Option<mpsc::Receiver<AgentMessage>>,
+    ) -> anyhow::Result<()> {
         use serverbee_common::constants::*;
 
         tracing::info!("Connecting to {}...", build_ws_url(&self.config)?);
@@ -212,6 +233,11 @@ impl Reporter {
             &self.config.ip_change.external_ip_url,
         )
         .await;
+        // Feed the agent's external IP into the firewall guardrail before
+        // any blocklist push can arrive.
+        if let Some(ip) = primary_external_ip(initial_ipv4.as_deref(), initial_ipv6.as_deref()) {
+            self.firewall_manager.set_external_ip(Some(ip)).await;
+        }
         let info_msg = AgentMessage::SystemInfo {
             msg_id: uuid::Uuid::new_v4().to_string(),
             info: serverbee_common::types::SystemInfo {
@@ -243,8 +269,13 @@ impl Reporter {
         let (file_tx, mut file_rx) = mpsc::channel::<FileEvent>(16);
         let file_manager = FileManager::new(self.config.file.clone(), Arc::clone(&capabilities));
 
-        // Channel for background command execution results
+        // Channel for background command execution results.
         let (cmd_result_tx, mut cmd_result_rx) = mpsc::channel::<AgentMessage>(32);
+
+        // External agent-message source (e.g. SecurityManager). Optional —
+        // non-Linux builds and unit tests skip this. The borrow is held
+        // for the lifetime of this connection only; the receiver itself
+        // lives across reconnects.
 
         // IP change detection setup
         let ip_change_enabled = self.config.ip_change.enabled;
@@ -282,6 +313,16 @@ impl Reporter {
                     let json = serde_json::to_string(&cmd_msg)?;
                     write.send(Message::Text(json.into())).await?;
                     tracing::debug!("Sent background command result");
+                }
+                Some(external_msg) = async {
+                    match external_rx.as_mut() {
+                        Some(rx) => rx.recv().await,
+                        None => std::future::pending::<Option<AgentMessage>>().await,
+                    }
+                } => {
+                    let json = serde_json::to_string(&external_msg)?;
+                    write.send(Message::Text(json.into())).await?;
+                    tracing::debug!("Sent external agent message");
                 }
                 Some(term_event) = term_rx.recv() => {
                     let msg = match term_event {
@@ -356,6 +397,13 @@ impl Reporter {
                         tracing::info!("IP change detected");
                         let (primary_ipv4, primary_ipv6) =
                             derive_primary_ips(&new_ips, ip_check_external, &ip_external_url).await;
+                        // Update the firewall guardrail's idea of our own
+                        // external IP whenever the primary address changes.
+                        let own_ip = primary_external_ip(
+                            primary_ipv4.as_deref(),
+                            primary_ipv6.as_deref(),
+                        );
+                        self.firewall_manager.set_external_ip(own_ip).await;
                         let msg = AgentMessage::IpChanged {
                             ipv4: primary_ipv4,
                             ipv6: primary_ipv6,
@@ -1105,6 +1153,19 @@ impl Reporter {
                     write.send(Message::Text(json.into())).await?;
                 }
             }
+            // Firewall blocklist variants — dispatched to the FirewallManager
+            // state machine; any returned ack is sent straight back over the
+            // WebSocket.
+            msg @ (ServerMessage::BlocklistSync { .. }
+            | ServerMessage::BlocklistAdd { .. }
+            | ServerMessage::BlocklistRemove { .. }
+            | ServerMessage::BlocklistReset) => {
+                if let Some(reply) = self.firewall_manager.handle(msg).await {
+                    let json = serde_json::to_string(&reply)?;
+                    write.send(Message::Text(json.into())).await?;
+                    tracing::debug!("Sent firewall blocklist ack");
+                }
+            }
         }
 
         Ok(ServerMessageOutcome::Continue)
@@ -1549,6 +1610,23 @@ fn collect_interface_ips() -> Vec<NetworkInterface> {
 
 /// Derive primary IPv4/IPv6 from the interface list.
 /// If `check_external` is true, also query the external IP service.
+/// Convert the primary IPv4/IPv6 strings emitted by `derive_primary_ips` into
+/// a single parsed `IpAddr`, preferring IPv4 (matches the server-side guardrail
+/// convention). Returns `None` when both inputs are missing or unparseable.
+fn primary_external_ip(ipv4: Option<&str>, ipv6: Option<&str>) -> Option<IpAddr> {
+    if let Some(s) = ipv4
+        && let Ok(ip) = s.parse::<IpAddr>()
+    {
+        return Some(ip);
+    }
+    if let Some(s) = ipv6
+        && let Ok(ip) = s.parse::<IpAddr>()
+    {
+        return Some(ip);
+    }
+    None
+}
+
 async fn derive_primary_ips(
     interfaces: &[NetworkInterface],
     check_external: bool,
@@ -1604,7 +1682,9 @@ async fn derive_primary_ips(
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
-    use crate::config::{CollectorConfig, FileConfig, IpChangeConfig, LogConfig, UpgradeConfig};
+    use crate::config::{
+        CollectorConfig, FileConfig, IpChangeConfig, LogConfig, SecurityConfig, UpgradeConfig,
+    };
     use serverbee_common::constants::{
         CAP_DEFAULT, CAP_EXEC, CAP_FILE, CAP_PING_ICMP, CapabilityDeniedReason,
     };
@@ -1665,6 +1745,7 @@ mod tests {
             file: FileConfig::default(),
             ip_change: IpChangeConfig::default(),
             upgrade: UpgradeConfig::default(),
+            security: SecurityConfig::default(),
         };
         let err = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Http(
             Response::builder().status(401).body(None).unwrap(),
@@ -1684,6 +1765,7 @@ mod tests {
             file: FileConfig::default(),
             ip_change: IpChangeConfig::default(),
             upgrade: UpgradeConfig::default(),
+            security: SecurityConfig::default(),
         };
         let err = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Http(
             Response::builder().status(401).body(None).unwrap(),
@@ -1703,6 +1785,7 @@ mod tests {
             file: FileConfig::default(),
             ip_change: IpChangeConfig::default(),
             upgrade: UpgradeConfig::default(),
+            security: SecurityConfig::default(),
         };
         let err = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Http(
             Response::builder().status(500).body(None).unwrap(),
@@ -1722,6 +1805,7 @@ mod tests {
             file: FileConfig::default(),
             ip_change: IpChangeConfig::default(),
             upgrade: UpgradeConfig::default(),
+            security: SecurityConfig::default(),
         };
 
         let request = build_ws_request(&config).expect("request should build");

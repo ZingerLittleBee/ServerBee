@@ -23,6 +23,11 @@ mod m20260430_000020_add_status_page_theme_ref;
 mod m20260430_000021_custom_theme_ref_integrity;
 mod m20260517_000022_create_agent_enrollment;
 mod m20260517_000023_add_must_change_password;
+mod m20260521_000024_create_security_event;
+mod m20260521_000025_extend_alert_state_event_key;
+mod m20260521_000026_backfill_capability_default;
+mod m20260521_000027_create_block_list;
+mod m20260521_000028_extend_alert_rule_actions;
 
 pub struct Migrator;
 
@@ -52,6 +57,11 @@ impl MigratorTrait for Migrator {
             Box::new(m20260430_000021_custom_theme_ref_integrity::Migration),
             Box::new(m20260517_000022_create_agent_enrollment::Migration),
             Box::new(m20260517_000023_add_must_change_password::Migration),
+            Box::new(m20260521_000024_create_security_event::Migration),
+            Box::new(m20260521_000025_extend_alert_state_event_key::Migration),
+            Box::new(m20260521_000026_backfill_capability_default::Migration),
+            Box::new(m20260521_000027_create_block_list::Migration),
+            Box::new(m20260521_000028_extend_alert_rule_actions::Migration),
         ]
     }
 }

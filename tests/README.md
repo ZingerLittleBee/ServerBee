@@ -48,6 +48,8 @@ docker compose up -d
 | [service-monitor.md](service-monitor.md) | 服务监控 | `/settings/service-monitors`, `/service-monitors/:id` |
 | [scheduled-tasks.md](scheduled-tasks.md) | 定时任务 | `/settings/tasks` (Scheduled tab) |
 | [security.md](security.md) | 安全设置（密码、2FA、OAuth） | `/settings/security` |
+| [security-events.md](security-events.md) | 安全事件检测（SSH 登录/爆破、端口扫描） | `/security`, `/security/$serverId`, `/settings/alerts` |
+| [firewall-block.md](firewall-block.md) | 防火墙黑名单（手动 + 自动） | `/settings/firewall`, `/security`, `/settings/alerts` |
 | [alerts-notifications.md](alerts-notifications.md) | 告警 & 通知 + IP 变更 | `/settings/alerts`, `/settings/notifications` |
 | [uptime.md](uptime.md) | Uptime 90 天时间线 | `/status/:slug`, `/servers/:id`, Dashboard widget |
 | [general-settings.md](general-settings.md) | 通用设置（Key、备份） | `/settings` |

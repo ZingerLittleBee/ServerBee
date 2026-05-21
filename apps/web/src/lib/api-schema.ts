@@ -54,6 +54,12 @@ export type AlertRule = S['AlertRule']
 export type AlertRuleItem = S['AlertRuleItem']
 export type CreateAlertRule = S['CreateAlertRule']
 export type UpdateAlertRule = S['UpdateAlertRule']
+export type SecurityRuleParams = S['SecurityRuleParams']
+
+// Security events
+export type SecurityEventDto = S['SecurityEventDto']
+export type SecurityEventList = S['SecurityEventList']
+export type StatsBucket = S['StatsBucket']
 
 export interface AlertStateResponse {
   count: number

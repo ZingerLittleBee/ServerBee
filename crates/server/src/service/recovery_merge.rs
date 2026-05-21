@@ -562,6 +562,14 @@ impl RecoveryMergeService {
             source_server_id,
         )
         .await?;
+        Self::merge_raw_table_on_connection(
+            db,
+            "security_event",
+            "created_at",
+            target_server_id,
+            source_server_id,
+        )
+        .await?;
 
         Self::merge_unique_key_table_on_connection(
             db,
@@ -709,6 +717,7 @@ impl RecoveryMergeService {
             ("maintenance", "server_ids_json"),
             ("incident", "server_ids_json"),
             ("status_page", "server_ids_json"),
+            ("block_list", "server_ids_json"),
         ];
 
         for (table, column) in tables {
@@ -1513,6 +1522,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn merge_security_events_rebinds_source_to_target() {
+        use crate::entity::security_event;
+
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "target-1", "Target").await;
+        insert_test_server(&db, "source-1", "Source").await;
+
+        let now = Utc::now();
+        security_event::ActiveModel {
+            id: Set("evt-1".to_string()),
+            server_id: Set("source-1".to_string()),
+            event_type: Set("ssh_brute_force".to_string()),
+            severity: Set("high".to_string()),
+            source_ip: Set("203.0.113.5".to_string()),
+            source_port: Set(None),
+            username: Set(None),
+            started_at: Set(now),
+            ended_at: Set(now),
+            first_seen: Set(false),
+            detector_source: Set("journal".to_string()),
+            evidence: Set("{}".to_string()),
+            created_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        RecoveryMergeService::merge_server_history_on_db(&db, "target-1", "source-1")
+            .await
+            .unwrap();
+
+        let target_rows = security_event::Entity::find()
+            .filter(security_event::Column::ServerId.eq("target-1"))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(target_rows.len(), 1);
+        assert_eq!(target_rows[0].id, "evt-1");
+
+        let source_rows = security_event::Entity::find()
+            .filter(security_event::Column::ServerId.eq("source-1"))
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(source_rows.is_empty());
+    }
+
+    #[tokio::test]
     async fn merge_server_history_can_be_rolled_back_atomically() {
         let (db, _tmp) = setup_test_db().await;
         insert_test_server(&db, "target-1", "Target").await;
@@ -1584,6 +1641,7 @@ mod tests {
             recover_trigger_tasks: Set(None),
             cover_type: Set("include".to_string()),
             server_ids_json: Set(Some(r#"["target-1","source-1","source-1"]"#.to_string())),
+            actions_json: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         }
@@ -1629,6 +1687,44 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(monitor.server_ids_json.as_deref(), Some(r#"["target-1"]"#));
+    }
+
+    #[tokio::test]
+    async fn rewrites_block_list_server_ids() {
+        use crate::entity::block_list;
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "target-1", "Target").await;
+        insert_test_server(&db, "source-1", "Source").await;
+
+        block_list::ActiveModel {
+            id: Set("blk-1".to_string()),
+            target: Set("1.2.3.4/32".to_string()),
+            family: Set(4),
+            cover_type: Set("include".to_string()),
+            server_ids_json: Set(Some(r#"["source-1","other-1"]"#.to_string())),
+            comment: Set(None),
+            origin: Set("manual".to_string()),
+            origin_event_id: Set(None),
+            origin_rule_id: Set(None),
+            created_by: Set(None),
+            created_at: Set(Utc::now()),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        RecoveryMergeService::rewrite_server_ids_json_tables(&db, "target-1", "source-1")
+            .await
+            .unwrap();
+
+        let row = block_list::Entity::find_by_id("blk-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        let ids: Vec<String> =
+            serde_json::from_str(row.server_ids_json.as_deref().unwrap()).unwrap();
+        assert_eq!(ids, vec!["target-1", "other-1"]);
     }
 
     #[tokio::test]

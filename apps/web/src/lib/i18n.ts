@@ -6,9 +6,11 @@ import enCommon from '@/locales/en/common.json'
 import enDashboard from '@/locales/en/dashboard.json'
 import enDocker from '@/locales/en/docker.json'
 import enFile from '@/locales/en/file.json'
+import enFirewall from '@/locales/en/firewall.json'
 import enLogin from '@/locales/en/login.json'
 import enNetwork from '@/locales/en/network.json'
 import enOnboarding from '@/locales/en/onboarding.json'
+import enSecurity from '@/locales/en/security.json'
 import enServers from '@/locales/en/servers.json'
 import enServiceMonitors from '@/locales/en/service-monitors.json'
 import enSettings from '@/locales/en/settings.json'
@@ -19,9 +21,11 @@ import zhCommon from '@/locales/zh/common.json'
 import zhDashboard from '@/locales/zh/dashboard.json'
 import zhDocker from '@/locales/zh/docker.json'
 import zhFile from '@/locales/zh/file.json'
+import zhFirewall from '@/locales/zh/firewall.json'
 import zhLogin from '@/locales/zh/login.json'
 import zhNetwork from '@/locales/zh/network.json'
 import zhOnboarding from '@/locales/zh/onboarding.json'
+import zhSecurity from '@/locales/zh/security.json'
 import zhServers from '@/locales/zh/servers.json'
 import zhServiceMonitors from '@/locales/zh/service-monitors.json'
 import zhSettings from '@/locales/zh/settings.json'
@@ -38,6 +42,7 @@ i18next
         dashboard: enDashboard,
         docker: enDocker,
         file: enFile,
+        firewall: enFirewall,
         servers: enServers,
         'service-monitors': enServiceMonitors,
         terminal: enTerminal,
@@ -45,13 +50,15 @@ i18next
         login: enLogin,
         status: enStatus,
         network: enNetwork,
-        onboarding: enOnboarding
+        onboarding: enOnboarding,
+        security: enSecurity
       },
       zh: {
         common: zhCommon,
         dashboard: zhDashboard,
         docker: zhDocker,
         file: zhFile,
+        firewall: zhFirewall,
         servers: zhServers,
         'service-monitors': zhServiceMonitors,
         terminal: zhTerminal,
@@ -59,7 +66,8 @@ i18next
         login: zhLogin,
         status: zhStatus,
         network: zhNetwork,
-        onboarding: zhOnboarding
+        onboarding: zhOnboarding,
+        security: zhSecurity
       }
     },
     fallbackLng: 'en',

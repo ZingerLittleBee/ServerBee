@@ -1,0 +1,139 @@
+---
+title: 安全事件检测
+description: 在 Agent 上检测 SSH 登录、SSH 爆破和端口扫描，并将其作为告警触发源。
+icon: ShieldAlert
+---
+
+Agent 在每台主机上检测三类主机级入侵信号，并将结构化事件流式上报到 Server。原始日志不会离开主机，只有解析后的事件元数据被上报。事件既可在控制台浏览，也可接入标准告警通道触发通知。
+
+## 事件类型
+
+| 类型 | 触发条件 | 严重度 |
+|------|----------|--------|
+| `ssh_login` | 一次成功的 SSH 登录。`(user, source IP)` 组合首次出现时标记 `first_seen=true` | `info` |
+| `ssh_brute_force` | 同一源 IP 在滑动窗口内累计大量 SSH 失败尝试 | `medium` / `high` / `critical` |
+| `port_scan` | 同一源 IP 在滑动窗口内命中大量不同的目标端口 | `medium` |
+
+每个事件都附带结构化证据（失败次数、用户名集合、扫描端口等）和检测来源 —— 取值之一：`journal`、`auth_log`、`conntrack`、`nflog`。
+
+## 前置条件
+
+- **仅支持 Linux。** SSH 检测读取 systemd journal 或 `/var/log/auth.log`；端口扫描检测依赖 `conntrack`。
+- 每台服务器需启用 **`CAP_SECURITY_EVENTS`**（位值 `256`，新 Agent 默认启用）。详见 [Capabilities](/cn/docs/capabilities)。
+- 端口扫描检测需安装 `conntrack` CLI，并将 `security.port_scan.enabled` 设为 `true`：
+  ```bash
+  # Debian / Ubuntu
+  apt install conntrack
+  # RHEL / Fedora
+  dnf install conntrack-tools
+  ```
+
+## 查看事件
+
+| 入口 | 路径 | 内容 |
+|------|------|------|
+| 总览 | `/security` | 24 小时分类 KPI、7 天时间线、可筛选事件表 |
+| 单机 | 服务器详情 → **Security** Tab | 仅当前服务器范围的同款视图 |
+| 详情 | 点击任意行 | 完整证据、检测来源、源 IP GeoIP（若已配置）|
+
+新事件通过 WebSocket 实时显示，无需刷新。
+
+## 检测器调优
+
+阈值在 Agent 上配置，按主机生效。默认值偏保守，避免在繁忙跳板机上产生噪音。
+
+| TOML 键 | 环境变量 | 默认值 | 说明 |
+|---------|----------|--------|------|
+| `security.enabled` | `SERVERBEE_SECURITY__ENABLED` | `true` | 安全检测器总开关 |
+| `security.ssh.window_seconds` | `SERVERBEE_SECURITY__SSH__WINDOW_SECONDS` | `60` | SSH 失败计数的滑动窗口（秒）|
+| `security.ssh.failed_threshold` | `SERVERBEE_SECURITY__SSH__FAILED_THRESHOLD` | `10` | 窗口内失败累计达到该值即触发一个 `ssh_brute_force` 事件，触发后队列清空 |
+| `security.port_scan.enabled` | `SERVERBEE_SECURITY__PORT_SCAN__ENABLED` | `false` | 默认关闭。需要 `conntrack` CLI |
+| `security.port_scan.window_seconds` | `SERVERBEE_SECURITY__PORT_SCAN__WINDOW_SECONDS` | `30` | 不同端口计数的滑动窗口（秒）|
+| `security.port_scan.distinct_port_threshold` | `SERVERBEE_SECURITY__PORT_SCAN__DISTINCT_PORT_THRESHOLD` | `20` | 同一源 IP 在窗口内命中的不同端口数达到该值即触发一个 `port_scan` 事件 |
+| `security.data_dir` | `SERVERBEE_SECURITY__DATA_DIR` | `/var/lib/serverbee/security` | 持久化 `first_seen` 存储目录，记录已知 `(user, IP)` 组合 |
+
+完整环境变量参考：[配置 → 安全事件检测（Security，Agent）](/cn/docs/configuration)。
+
+<Callout type="info">
+sshd 对一次失败尝试通常会写两行日志（`Invalid user …` 后跟 `Failed password …`）。在默认 `failed_threshold=10` 下，同一 IP 每发起约 **5** 次真实失败尝试就会产生一个 `ssh_brute_force` 事件。
+</Callout>
+
+## 爆破严重度
+
+严重度按攻击者在窗口内尝试过的不同用户名数量升级 —— 这是典型的撞库信号：
+
+| 不同用户名数 | 严重度 |
+|--------------|--------|
+| 1 | `medium` |
+| 2 – 4 | `high` |
+| ≥ 5 | `critical` |
+
+事件证据还包含 `invalid_user_count`（无效用户失败次数）和 `sample_users`（前 5 个不同用户名样本），便于快速识别扫库特征。
+
+## 配置告警
+
+**Settings → Alerts** 提供三种事件驱动规则：
+
+| 规则类型 | 触发于 |
+|----------|--------|
+| `ssh_login_detected` | 任意 `ssh_login` 事件 |
+| `ssh_brute_force_detected` | 任意 `ssh_brute_force` 事件 |
+| `port_scan_detected` | 任意 `port_scan` 事件 |
+
+### 快速创建
+
+Alerts 页面提供三张 **预设卡片**，一键创建规则。预设已填入合理默认值，只需选择通知组并（可选）指定生效的服务器范围。
+
+### 过滤参数
+
+每条安全规则支持：
+
+- **`severity_min`** —— 触发所需的最低严重度（例如爆破规则可设为 `high`）。
+- **`exclude_cidrs`** —— 屏蔽来自可信网段的事件，例如 `["10.0.0.0/8", "192.168.0.0/16"]`。
+- **`first_seen_only`** *（仅 `ssh_login`）* —— 仅在出现新 `(user, IP)` 组合时通知。
+
+### 去重
+
+通知按 `(rule_id, server_id, event_key)` 维度去重。`event_key` 包含源 IP,所以:
+
+- 两个不同攻击者命中同一台服务器 → **两次** 通知。
+- 同一攻击者在去重窗口内反复触发 → **一次** 通知。
+
+<Callout type="warn">
+安全规则不能与指标规则共存于同一条 alert rule，且每条规则只允许 **一个** 安全 item。校验器会拒绝混合或重复配置 —— 请按事件类型分别建规则。
+</Callout>
+
+### 自动封禁来源 IP
+
+爆破和端口扫描类规则可以附带一个 `block_source_ip` 动作，把触发事件的来源 IP 自动写入 `block_list`。只有 `ssh_brute_force_detected` 和 `port_scan_detected` 规则允许携带该动作；`ssh_login_detected` 故意被禁用，因为一次合法的首次登录会把用户自己锁死。
+
+自动写入的记录使用 `origin = "auto"` 并保留触发的 `origin_event_id`。系统按规范化目标做去重：若已有手工或更早的自动封禁覆盖了触发事件所在的服务器，则静默跳过；若已存在但 **未** 覆盖该服务器，则把冲突记入审计日志 `firewall_auto_block_skipped_conflict`，并且不创建新的记录。
+
+完整功能、护栏与审计日志，详见 [防火墙黑名单](/cn/docs/firewall)。
+
+## 数据保留
+
+安全事件默认保留 **30 天**。可通过 `retention.security_event_days`（环境变量 `SERVERBEE_RETENTION__SECURITY_EVENT_DAYS`）调整。清理任务每天自动清除过期数据。
+
+## 数据链路
+
+```text
+sshd / 内核
+     │   (journal · auth.log · conntrack)
+     ▼
+Agent 检测器
+     │   AgentMessage::SecurityEvent  (WebSocket)
+     ▼
+Server   ─►  security_event 表
+         ─►  告警评估器  ─►  通知组
+         ─►  浏览器广播 (WebSocket)
+                    │
+                    ▼
+            /security  +  Security Tab
+```
+
+<Cards>
+  <Card title="告警与通知" href="/cn/docs/alerts" />
+  <Card title="Capabilities" href="/cn/docs/capabilities" />
+  <Card title="配置" href="/cn/docs/configuration" />
+</Cards>

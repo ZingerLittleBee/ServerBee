@@ -1,0 +1,99 @@
+---
+title: 防火墙黑名单
+description: 通过 nftables 在一台或多台 Agent 上集中封禁来源 IP / CIDR 的入站流量。
+icon: Shield
+---
+
+ServerBee 可以集中管理入站流量的黑名单。Server 持有权威列表，每台开启该功能的 Agent 通过 `nftables` 应用规则。
+
+## 前置条件
+
+- **仅支持 Linux** —— Agent 使用 `nft` CLI。
+- 每台目标服务器必须启用 **`CAP_FIREWALL_BLOCK`**（位值 `512`）。**默认关闭。**
+- Agent 进程需要 root 或 `CAP_NET_ADMIN`。
+
+## 手动封禁
+
+Settings → Firewall → **Add block**。填入 IP（`1.2.3.4`）或 CIDR（`10.0.0.0/8`），选择覆盖范围（`All servers` / `Selected` / `All except`），可选填备注。
+
+Server 会拒绝命中保留段的目标：
+
+- 回环地址（`127.0.0.0/8`、`::1`）
+- RFC 1918（`10/8`、`172.16/12`、`192.168/16`、`fc00::/7`、`fe80::/10`）
+- 组播 / 未指定地址
+- `server.toml` 中 `firewall.allow_list` 列出的任意 CIDR
+- `server.trusted_proxies`
+- 任意 Agent 上报的外网 IP
+
+命中以上任意条件时返回 `409`，body 中包含具体原因。
+
+<Callout type="warn">
+**记得保护好你自己的公网 IP。** "Agent 外网 IP" 这条护栏依赖每个 Agent 上报自己的 IPv4 / IPv6
+地址。如果 Agent 所在主机的主网卡是私网桥接（Docker、NAT VPS、多网卡），上报的地址可能
+**不是** 真正的公网 IP —— 这时护栏就拦不住误封自身的请求。
+
+最稳妥的做法是 **把你的 VPS 公网 IP（或网段）写进 `server.toml` 的
+`firewall.allow_list`**，列在里面的目标在创建阶段就会被拒绝，谁来请求都一样。示例：
+
+```toml
+[firewall]
+allow_list = ["198.51.100.42", "203.0.113.0/29"]
+```
+
+同样可以用这份白名单保护跳板机 / 管理员办公网 IP，防止被自动封禁动作误伤。
+</Callout>
+
+## 告警触发自动封禁
+
+爆破和端口扫描类告警规则可以追加 `block_source_ip` 动作，把事件来源 IP 自动写入黑名单。详见 [安全事件检测 → 自动封禁来源 IP](/cn/docs/security-events)。
+
+自动封禁按规范化目标做去重。如果已有记录覆盖了触发该事件的服务器，则静默跳过；如果存在但 **未** 覆盖该服务器，冲突会写入审计日志（`firewall_auto_block_skipped_conflict`），不会新建记录 —— 操作员可手工扩大已有记录的覆盖范围。
+
+## Agent 执行
+
+每台开启该功能的 Agent 维护一张 `inet serverbee` nftables 表：
+
+```text
+table inet serverbee {
+    set block_v4 { type ipv4_addr; flags interval; }
+    set block_v6 { type ipv6_addr; flags interval; }
+    chain input {
+        type filter hook input priority -10;
+        ip  saddr @block_v4 drop
+        ip6 saddr @block_v6 drop
+    }
+}
+```
+
+Server 通过 WebSocket 增量下发增删操作。Agent 重连或 capability 切换时，Server 会先发 `Reset` 再发完整 `Sync`。每条规则的执行结果由 Agent ack；失败的条目保留在下一次 sync 中重试。
+
+## 清理与下线
+
+停止使用该功能并清理 nftables 状态的步骤：
+
+1. 在 Capabilities 设置中关闭 Agent 的 `CAP_FIREWALL_BLOCK`。
+2. Server 会向 Agent 推送 `BlocklistReset`，Agent 清空两个 set 并删除 `inet serverbee` 表。
+
+主机侧手工清理：
+
+```bash
+nft delete table inet serverbee
+```
+
+## 审计日志
+
+所有动作都会写入审计日志，并在 Firewall 页面 Activity Tab 中展示：`firewall_block_created`、`firewall_block_deleted`、`firewall_block_applied_agent`、`firewall_block_removed_agent`、`firewall_block_rejected_server`、`firewall_block_rejected_agent`、`firewall_auto_block_skipped_conflict`、`firewall_reset_acked`。
+
+## 限制
+
+- 只支持 nftables，不回退 iptables
+- 支持 IPv4 / IPv6，不支持域名
+- 永久封禁，不支持定时过期
+- 仅 `input` 链，不过滤 `forward` / `output`
+
+<Cards>
+  <Card title="功能开关" href="/cn/docs/capabilities" />
+  <Card title="安全事件检测" href="/cn/docs/security-events" />
+  <Card title="告警与通知" href="/cn/docs/alerts" />
+  <Card title="配置参考" href="/cn/docs/configuration" />
+</Cards>

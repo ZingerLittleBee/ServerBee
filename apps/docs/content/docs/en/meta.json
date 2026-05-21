@@ -16,6 +16,8 @@
     "terminal",
     "file-manager",
     "ping",
+    "security-events",
+    "firewall",
     "capabilities",
     "status-page",
     "custom-themes",

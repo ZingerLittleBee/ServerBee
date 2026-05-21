@@ -1,0 +1,91 @@
+{
+  "page_title": "安全事件",
+  "placeholder_overview": "正在加载安全概览…",
+  "per_server_title": "服务器安全事件",
+  "per_server": {
+    "back": "← 返回安全概览",
+    "subtitle": "安全事件"
+  },
+  "range": {
+    "24h": "24 小时",
+    "7d": "7 天",
+    "30d": "30 天"
+  },
+  "filter": {
+    "server": "服务器",
+    "server_all": "全部服务器",
+    "event_type": "事件类型",
+    "event_type_all": "全部类型",
+    "severity": "严重程度",
+    "severity_all": "全部严重程度",
+    "source_ip": "来源 IP",
+    "first_seen_only": "仅首次出现的登录"
+  },
+  "event_type": {
+    "ssh_brute_force": "SSH 爆破",
+    "port_scan": "端口扫描",
+    "ssh_login": "SSH 登录"
+  },
+  "severity": {
+    "critical": "严重",
+    "high": "高",
+    "medium": "中",
+    "low": "低",
+    "info": "信息"
+  },
+  "kpi": {
+    "brute_force": "爆破事件",
+    "port_scans": "端口扫描",
+    "new_ip_logins": "新 IP 登录",
+    "top_attacker": "Top 攻击者 IP",
+    "no_data": "—"
+  },
+  "table": {
+    "created_at": "时间",
+    "event_type": "事件",
+    "severity": "严重程度",
+    "source_ip": "来源 IP",
+    "username": "用户",
+    "detector": "检测源",
+    "empty": "时间范围内没有安全事件。",
+    "load_more": "加载更多",
+    "loading_more": "加载中…"
+  },
+  "drawer": {
+    "title": "事件详情",
+    "evidence": "证据",
+    "external_lookup": "在 VirusTotal 查询 IP"
+  },
+  "tab": {
+    "recent_label": "本机最近 50 条安全事件",
+    "view_all": "查看全部"
+  },
+  "timeline": {
+    "title": "事件时序"
+  },
+  "preset": {
+    "section_title": "安全预设",
+    "section_hint": "基于 agent 上报的 SecurityEvent 快速创建告警规则。",
+    "brute_force_title": "SSH 爆破",
+    "brute_force_description": "agent 检测到 SSH 爆破时通知。",
+    "new_ip_login_title": "新 SSH 来源",
+    "new_ip_login_description": "成功 SSH 登录来自从未见过的 (用户, IP) 组合时通知。",
+    "port_scan_title": "端口扫描",
+    "port_scan_description": "agent 检测到针对本机的端口扫描时通知。",
+    "configure": "配置",
+    "field_name": "规则名称",
+    "field_group": "通知组",
+    "field_group_none": "无",
+    "field_min_failed": "最少失败次数",
+    "field_min_ports": "最少不同端口",
+    "field_exclude_users": "排除用户（逗号分隔）",
+    "field_exclude_cidrs": "排除 CIDR（逗号分隔）",
+    "field_dedupe": "去重窗口（秒）",
+    "cancel": "取消",
+    "create": "创建规则",
+    "creating": "正在创建…",
+    "created": "已创建告警规则",
+    "create_failed": "创建告警规则失败",
+    "name_required": "请输入名称"
+  }
+}

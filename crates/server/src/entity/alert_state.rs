@@ -8,6 +8,8 @@ pub struct Model {
     pub id: i64,
     pub rule_id: String,
     pub server_id: String,
+    #[sea_orm(default_value = "")]
+    pub event_key: String,
     pub first_triggered_at: DateTimeUtc,
     pub last_notified_at: DateTimeUtc,
     pub count: i32,

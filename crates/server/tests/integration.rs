@@ -2237,7 +2237,7 @@ async fn test_file_capability_enforcement() {
     let client = http_client();
     login_admin(&client, &base_url).await;
 
-    // Register an agent — default capabilities = CAP_DEFAULT (56), no CAP_FILE
+    // Register an agent — default capabilities = CAP_DEFAULT (316), no CAP_FILE
     let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
@@ -4384,6 +4384,507 @@ async fn test_rotate_token_revokes_old_token_and_404_for_unknown_server() {
         404,
         "rotating an unknown server id should return 404"
     );
+}
+
+mod firewall_tests {
+    //! Integration tests for the firewall blocklist feature. Exercises the
+    //! full REST + WS pipeline: guardrail, dedup, cap/proto gating, ack
+    //! handling, and reset/sync on (re)connect & cap transition.
+    use super::*;
+    use serverbee_common::constants::{CAP_FIREWALL_BLOCK, CAP_VALID_MASK};
+
+    /// Send a `SystemInfo` with a caller-chosen `protocol_version` so the
+    /// "old agent" scenario can pin v1.
+    async fn send_system_info_pv(
+        sink: &mut futures_util::stream::SplitSink<
+            tokio_tungstenite::WebSocketStream<
+                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+            >,
+            tungstenite::Message,
+        >,
+        msg_id: &str,
+        agent_local_capabilities: Option<u32>,
+        protocol_version: u32,
+    ) {
+        let system_info = json!({
+            "type": "system_info",
+            "msg_id": msg_id,
+            "cpu_name": "Test CPU",
+            "cpu_cores": 4,
+            "cpu_arch": "x86_64",
+            "os": "Ubuntu 22.04",
+            "kernel_version": "5.15.0",
+            "mem_total": 8_000_000_000_i64,
+            "swap_total": 0_i64,
+            "disk_total": 50_000_000_000_i64,
+            "ipv4": "203.0.113.10",
+            "ipv6": null,
+            "virtualization": "kvm",
+            "agent_version": "0.1.0",
+            "protocol_version": protocol_version,
+            "features": [],
+            "agent_local_capabilities": agent_local_capabilities
+        });
+
+        sink.send(tungstenite::Message::Text(system_info.to_string().into()))
+            .await
+            .expect("send SystemInfo");
+    }
+
+    /// Drain messages from `reader` until a `system_info` `Ack` for `msg_id`
+    /// is observed. Returns every non-ack message read along the way (in
+    /// order) so the caller can inspect post-connect server pushes such as
+    /// `BlocklistReset` / `BlocklistSync`.
+    async fn drain_through_ack(
+        reader: &mut futures_util::stream::SplitStream<
+            tokio_tungstenite::WebSocketStream<
+                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+            >,
+        >,
+        msg_id: &str,
+        extra_after_ack: usize,
+    ) -> Vec<serde_json::Value> {
+        let mut collected: Vec<serde_json::Value> = Vec::new();
+        let mut acked = false;
+        let mut extra_remaining = extra_after_ack;
+        loop {
+            let msg = tokio::time::timeout(Duration::from_secs(3), reader.next())
+                .await
+                .expect("timeout waiting for ws message")
+                .expect("ws closed")
+                .expect("ws read error");
+            let text = match msg {
+                tungstenite::Message::Text(t) => t.to_string(),
+                tungstenite::Message::Ping(_) | tungstenite::Message::Pong(_) => continue,
+                other => panic!("unexpected message kind: {:?}", other),
+            };
+            let parsed: serde_json::Value = serde_json::from_str(&text).expect("parse json");
+            if parsed["type"] == "ack" && parsed["msg_id"] == msg_id {
+                acked = true;
+                if extra_remaining == 0 {
+                    break;
+                }
+                continue;
+            }
+            collected.push(parsed);
+            if acked {
+                extra_remaining -= 1;
+                if extra_remaining == 0 {
+                    break;
+                }
+            }
+        }
+        collected
+    }
+
+    /// Read a single text frame from the agent ws and parse it as JSON.
+    /// Returns None on timeout.
+    async fn try_recv_one(
+        reader: &mut futures_util::stream::SplitStream<
+            tokio_tungstenite::WebSocketStream<
+                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+            >,
+        >,
+        ms: u64,
+    ) -> Option<serde_json::Value> {
+        loop {
+            let msg = tokio::time::timeout(Duration::from_millis(ms), reader.next())
+                .await
+                .ok()??
+                .ok()?;
+            return match msg {
+                tungstenite::Message::Text(t) => serde_json::from_str(t.as_str()).ok(),
+                tungstenite::Message::Ping(_) | tungstenite::Message::Pong(_) => continue,
+                _ => None,
+            };
+        }
+    }
+
+    /// Update a server's configured capability bitmask via the admin REST API.
+    async fn set_caps(
+        admin: &reqwest::Client,
+        base_url: &str,
+        server_id: &str,
+        caps: u32,
+    ) {
+        // Use the batch endpoint so we can set bits unconditionally without
+        // depending on the current value. set = caps, unset = ~caps masked.
+        let unset = (!caps) & CAP_VALID_MASK;
+        let resp = admin
+            .put(format!("{}/api/servers/batch-capabilities", base_url))
+            .json(&json!({
+                "server_ids": [server_id],
+                "set": caps,
+                "unset": unset,
+            }))
+            .send()
+            .await
+            .expect("PUT /api/servers/batch-capabilities failed");
+        assert_eq!(resp.status(), 200, "set_caps should succeed");
+    }
+
+    /// Register an agent and return (client cookied as admin, server_id, token).
+    async fn register_for_admin(base_url: &str) -> (reqwest::Client, String, String) {
+        let admin = http_client();
+        login_admin(&admin, base_url).await;
+        let (server_id, token) = register_agent(&admin, base_url).await;
+        (admin, server_id, token)
+    }
+
+    #[tokio::test]
+    async fn post_block_inserts_and_pushes() {
+        let (base_url, _tmp) = start_test_server().await;
+        let (admin, server_id, token) = register_for_admin(&base_url).await;
+        // Grant CAP_FIREWALL_BLOCK on the server's configured caps.
+        set_caps(
+            &admin,
+            &base_url,
+            &server_id,
+            serverbee_common::constants::CAP_DEFAULT | CAP_FIREWALL_BLOCK,
+        )
+        .await;
+
+        // Connect the agent and declare it locally supports CAP_FIREWALL_BLOCK.
+        let (mut sink, mut reader) = connect_agent(&base_url, &token).await;
+        // Read Welcome.
+        let _welcome = recv_agent_text(&mut reader).await;
+        send_system_info_pv(
+            &mut sink,
+            "pb-1",
+            Some(serverbee_common::constants::CAP_DEFAULT | CAP_FIREWALL_BLOCK),
+            serverbee_common::constants::PROTOCOL_VERSION,
+        )
+        .await;
+        // First-connect path issues an extra BlocklistReset+BlocklistSync after
+        // the ack. Drain through both extras to leave the stream clean.
+        let _ = drain_through_ack(&mut reader, "pb-1", 2).await;
+
+        // Now POST a block and assert the agent receives BlocklistAdd.
+        let resp = admin
+            .post(format!("{}/api/firewall/blocks", base_url))
+            .json(&json!({ "target": "203.0.113.4", "cover_type": "all" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200, "POST block should 200");
+
+        let push = try_recv_one(&mut reader, 2000)
+            .await
+            .expect("expected BlocklistAdd push");
+        assert_eq!(push["type"], "blocklist_add");
+        assert_eq!(push["entry"]["target"], "203.0.113.4/32");
+    }
+
+    #[tokio::test]
+    async fn guardrail_returns_409_for_loopback() {
+        let (base_url, _tmp) = start_test_server().await;
+        let admin = http_client();
+        login_admin(&admin, &base_url).await;
+
+        let resp = admin
+            .post(format!("{}/api/firewall/blocks", base_url))
+            .json(&json!({ "target": "127.0.0.1", "cover_type": "all" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 409);
+    }
+
+    #[tokio::test]
+    async fn duplicate_target_returns_409() {
+        let (base_url, _tmp) = start_test_server().await;
+        let admin = http_client();
+        login_admin(&admin, &base_url).await;
+
+        let first = admin
+            .post(format!("{}/api/firewall/blocks", base_url))
+            .json(&json!({ "target": "198.51.100.0/24", "cover_type": "all" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(first.status(), 200);
+
+        // Same canonical CIDR — must conflict on the UNIQUE(target) index.
+        let dup = admin
+            .post(format!("{}/api/firewall/blocks", base_url))
+            .json(&json!({ "target": "198.51.100.7/24", "cover_type": "all" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(dup.status(), 409);
+    }
+
+    #[tokio::test]
+    async fn member_post_returns_403() {
+        let (base_url, _tmp) = start_test_server().await;
+        let admin = http_client();
+        login_admin(&admin, &base_url).await;
+        // Create member user.
+        let resp = admin
+            .post(format!("{}/api/users", base_url))
+            .json(&json!({
+                "username": "fwmember",
+                "password": "memberpass123",
+                "role": "member"
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+
+        let member = http_client();
+        let login = member
+            .post(format!("{}/api/auth/login", base_url))
+            .json(&json!({ "username": "fwmember", "password": "memberpass123" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(login.status(), 200);
+
+        let post = member
+            .post(format!("{}/api/firewall/blocks", base_url))
+            .json(&json!({ "target": "198.51.100.42", "cover_type": "all" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(post.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn agent_connect_triggers_reset_then_sync() {
+        let (base_url, _tmp) = start_test_server().await;
+        let (admin, server_id, token) = register_for_admin(&base_url).await;
+
+        // Pre-insert a block before the agent connects.
+        let resp = admin
+            .post(format!("{}/api/firewall/blocks", base_url))
+            .json(&json!({ "target": "203.0.113.55", "cover_type": "all" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+
+        // Grant CAP_FIREWALL_BLOCK before WS connect.
+        set_caps(
+            &admin,
+            &base_url,
+            &server_id,
+            serverbee_common::constants::CAP_DEFAULT | CAP_FIREWALL_BLOCK,
+        )
+        .await;
+
+        let (mut sink, mut reader) = connect_agent(&base_url, &token).await;
+        let _welcome = recv_agent_text(&mut reader).await;
+        send_system_info_pv(
+            &mut sink,
+            "connect-sync",
+            Some(serverbee_common::constants::CAP_DEFAULT | CAP_FIREWALL_BLOCK),
+            serverbee_common::constants::PROTOCOL_VERSION,
+        )
+        .await;
+
+        let extras = drain_through_ack(&mut reader, "connect-sync", 2).await;
+        // Reset, then Sync are appended after the ack handler runs.
+        let types: Vec<&str> = extras
+            .iter()
+            .map(|m| m["type"].as_str().unwrap_or(""))
+            .collect();
+        assert!(
+            types.contains(&"blocklist_reset"),
+            "expected blocklist_reset, got {types:?}"
+        );
+        assert!(
+            types.contains(&"blocklist_sync"),
+            "expected blocklist_sync, got {types:?}"
+        );
+        let sync = extras
+            .iter()
+            .find(|m| m["type"] == "blocklist_sync")
+            .unwrap();
+        let entries = sync["entries"].as_array().unwrap();
+        assert_eq!(entries.len(), 1, "expected exactly one synced entry");
+        assert_eq!(entries[0]["target"], "203.0.113.55/32");
+    }
+
+    #[tokio::test]
+    async fn cap_off_triggers_reset_no_sync() {
+        let (base_url, _tmp) = start_test_server().await;
+        let (admin, server_id, token) = register_for_admin(&base_url).await;
+        set_caps(
+            &admin,
+            &base_url,
+            &server_id,
+            serverbee_common::constants::CAP_DEFAULT | CAP_FIREWALL_BLOCK,
+        )
+        .await;
+
+        let (mut sink, mut reader) = connect_agent(&base_url, &token).await;
+        let _welcome = recv_agent_text(&mut reader).await;
+        send_system_info_pv(
+            &mut sink,
+            "off-1",
+            Some(serverbee_common::constants::CAP_DEFAULT | CAP_FIREWALL_BLOCK),
+            serverbee_common::constants::PROTOCOL_VERSION,
+        )
+        .await;
+        let _initial = drain_through_ack(&mut reader, "off-1", 2).await;
+
+        // Turn the firewall capability OFF and expect a BlocklistReset push.
+        set_caps(
+            &admin,
+            &base_url,
+            &server_id,
+            serverbee_common::constants::CAP_DEFAULT,
+        )
+        .await;
+
+        // Drain messages, looking for the reset. CapabilitiesSync also arrives.
+        let mut saw_reset = false;
+        let mut saw_sync = false;
+        for _ in 0..6 {
+            match try_recv_one(&mut reader, 1500).await {
+                Some(m) => {
+                    match m["type"].as_str().unwrap_or("") {
+                        "blocklist_reset" => saw_reset = true,
+                        "blocklist_sync" => saw_sync = true,
+                        _ => {}
+                    }
+                }
+                None => break,
+            }
+        }
+        assert!(saw_reset, "expected BlocklistReset on cap on→off");
+        assert!(!saw_sync, "no BlocklistSync should be sent when cap turned off");
+    }
+
+    #[tokio::test]
+    async fn ack_failed_records_audit_and_keeps_row() {
+        let (base_url, _tmp) = start_test_server().await;
+        let (admin, server_id, token) = register_for_admin(&base_url).await;
+        set_caps(
+            &admin,
+            &base_url,
+            &server_id,
+            serverbee_common::constants::CAP_DEFAULT | CAP_FIREWALL_BLOCK,
+        )
+        .await;
+
+        let (mut sink, mut reader) = connect_agent(&base_url, &token).await;
+        let _welcome = recv_agent_text(&mut reader).await;
+        send_system_info_pv(
+            &mut sink,
+            "ack-1",
+            Some(serverbee_common::constants::CAP_DEFAULT | CAP_FIREWALL_BLOCK),
+            serverbee_common::constants::PROTOCOL_VERSION,
+        )
+        .await;
+        let _drain = drain_through_ack(&mut reader, "ack-1", 2).await;
+
+        let resp = admin
+            .post(format!("{}/api/firewall/blocks", base_url))
+            .json(&json!({ "target": "203.0.113.99", "cover_type": "all" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let body: serde_json::Value = resp.json().await.unwrap();
+        let id = body["data"]["id"].as_str().unwrap().to_string();
+
+        // Consume the BlocklistAdd that the server just pushed.
+        let _add = try_recv_one(&mut reader, 2000)
+            .await
+            .expect("expected BlocklistAdd push");
+
+        // Send a failed BlocklistAck.
+        let ack = json!({
+            "type": "blocklist_ack",
+            "results": [{
+                "id": id,
+                "state": "failed",
+                "reason": "nft permission denied",
+            }]
+        });
+        sink.send(tungstenite::Message::Text(ack.to_string().into()))
+            .await
+            .unwrap();
+
+        // Allow time for the server to process the ack and write audit.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Row still exists.
+        let get = admin
+            .get(format!("{}/api/firewall/blocks/{}", base_url, id))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(get.status(), 200, "row must still exist after failed ack");
+
+        // Audit log contains firewall_block_rejected_agent.
+        let entries = list_audit_entries(&admin, &base_url).await;
+        assert!(
+            entries
+                .iter()
+                .any(|e| e["action"] == "firewall_block_rejected_agent"),
+            "expected firewall_block_rejected_agent audit entry, got {entries:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn old_agent_no_firewall_messages() {
+        let (base_url, _tmp) = start_test_server().await;
+        let (admin, server_id, token) = register_for_admin(&base_url).await;
+        // Pre-insert a block so a sync would otherwise have content.
+        let resp = admin
+            .post(format!("{}/api/firewall/blocks", base_url))
+            .json(&json!({ "target": "203.0.113.77", "cover_type": "all" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        set_caps(
+            &admin,
+            &base_url,
+            &server_id,
+            serverbee_common::constants::CAP_DEFAULT | CAP_FIREWALL_BLOCK,
+        )
+        .await;
+
+        let (mut sink, mut reader) = connect_agent(&base_url, &token).await;
+        let _welcome = recv_agent_text(&mut reader).await;
+        // SystemInfo with protocol_version = 1 → below FIREWALL_MIN_PROTOCOL = 2.
+        send_system_info_pv(
+            &mut sink,
+            "old-1",
+            Some(serverbee_common::constants::CAP_DEFAULT | CAP_FIREWALL_BLOCK),
+            1,
+        )
+        .await;
+        let extras = drain_through_ack(&mut reader, "old-1", 0).await;
+        let types: Vec<&str> = extras
+            .iter()
+            .map(|m| m["type"].as_str().unwrap_or(""))
+            .collect();
+        assert!(
+            !types.iter().any(|t| t.starts_with("blocklist_")),
+            "no blocklist_* messages expected for protocol v1, got {types:?}"
+        );
+
+        // Even after a fresh POST, no push should arrive at this old agent.
+        let resp = admin
+            .post(format!("{}/api/firewall/blocks", base_url))
+            .json(&json!({ "target": "203.0.113.78", "cover_type": "all" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let leak = try_recv_one(&mut reader, 500).await;
+        assert!(
+            !leak
+                .as_ref()
+                .is_some_and(|m| m["type"].as_str().unwrap_or("").starts_with("blocklist_")),
+            "old protocol agent must not receive blocklist_* push, saw {leak:?}"
+        );
+    }
 }
 
 mod onboarding_tests {

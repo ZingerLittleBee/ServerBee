@@ -53,6 +53,9 @@ An alert rule consists of:
 | `transfer_all_cycle` | Total traffic per cycle | Triggers when combined transfer >= `cycle_limit` bytes |
 | `expiration` | Server expiration date | Triggers when expired_at is within `duration` days |
 | `ip_changed` | Agent IP address changed | Event-driven rule; triggers when the agent reports an IP change event |
+| `ssh_login_detected` | Successful SSH login | Event-driven; supports `first_seen_only` filter. See [Security Events](/en/docs/security-events) |
+| `ssh_brute_force_detected` | SSH brute-force burst | Event-driven; supports `severity_min` (medium/high/critical) and `exclude_cidrs` |
+| `port_scan_detected` | Port scan from a single IP | Event-driven; supports `severity_min` and `exclude_cidrs` |
 
 ### Threshold Configuration
 

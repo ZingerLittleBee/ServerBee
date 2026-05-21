@@ -83,6 +83,7 @@ These variables are for local repo tooling and development workflows. They are n
 | `SERVERBEE_RETENTION__TASK_RESULTS_DAYS` | `retention.task_results_days` | u32 | `7` | Task results retention in days |
 | `SERVERBEE_RETENTION__DOCKER_EVENTS_DAYS` | `retention.docker_events_days` | u32 | `7` | Docker event records retention in days |
 | `SERVERBEE_RETENTION__SERVICE_MONITOR_DAYS` | `retention.service_monitor_days` | u32 | `30` | Service monitor records retention in days |
+| `SERVERBEE_RETENTION__SECURITY_EVENT_DAYS` | `retention.security_event_days` | u32 | `30` | Security event records (SSH login / brute force / port scan) retention in days |
 
 ### Mobile (Optional)
 
@@ -90,6 +91,14 @@ These variables are for local repo tooling and development workflows. They are n
 |---------------------|----------|------|---------|-------------|
 | `SERVERBEE_MOBILE__ACCESS_TTL` | `mobile.access_ttl` | i64 | `900` | Mobile access token lifetime in seconds (15 min) |
 | `SERVERBEE_MOBILE__REFRESH_TTL` | `mobile.refresh_ttl` | i64 | `2592000` | Mobile refresh token lifetime in seconds (30 days) |
+
+### Firewall (Optional)
+
+Tier-2 guardrail for the firewall blocklist feature. CIDRs / IPs listed here are refused by `POST /api/firewall/blocks` even if a server administrator tries to insert them. Tier 1 (hard-coded protected ranges: loopback, RFC 1918, link-local, multicast, unspecified) is always enforced inside `service::firewall`.
+
+| Environment Variable | TOML Key | Type | Default | Description |
+|---------------------|----------|------|---------|-------------|
+| `SERVERBEE_FIREWALL__ALLOW_LIST` | `firewall.allow_list` | string[] | `[]` | CIDRs / IPs the server refuses to insert into `block_list`. Tier-2 guardrail. Tier 1 (loopback + RFC 1918 + link-local + multicast + unspecified) is hard-coded and always applied |
 
 ### Internal
 
@@ -151,3 +160,17 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 |---------------------|----------|------|---------|-------------|
 | `SERVERBEE_UPGRADE__RELEASE_REPO_URL` | `upgrade.release_repo_url` | string | `https://github.com/ZingerLittleBee/ServerBee/releases` | Pinned release source base URL the Agent downloads upgrades from. Any HTTPS host mirroring the GitHub releases path layout `{base}/download/v{version}/{asset}` and `{base}/download/v{version}/checksums.txt` works. The compiled-in default can only be changed at build time via the `SERVERBEE_RELEASE_REPO` environment variable when compiling the agent (not a runtime setting). At runtime, override via this `SERVERBEE_UPGRADE__RELEASE_REPO_URL` env var, the `[upgrade] release_repo_url` config, or the `--release-repo` CLI flag |
 | `SERVERBEE_UPGRADE__RELEASE_CERT_SPKI_SHA256` | `upgrade.release_cert_spki_sha256` | string | `""` | Optional TLS certificate SPKI pin for the release host. Must be 64 lowercase hex chars (SHA-256 of the leaf cert SubjectPublicKeyInfo DER). Empty = disabled. If set, the Agent additionally pins the leaf cert SPKI after standard chain validation. Invalid (non-64/non-hex) values are rejected at startup |
+
+### Security (Agent)
+
+Tunes the agent-side security event detectors (SSH login / brute force, port scan). Detection runs entirely on the agent; the server only stores events and evaluates alert rules. Configure per-host since traffic profiles differ.
+
+| Environment Variable | TOML Key | Type | Default | Description |
+|---------------------|----------|------|---------|-------------|
+| `SERVERBEE_SECURITY__ENABLED` | `security.enabled` | bool | `true` | Master switch for all security detectors. When `false` the agent emits no `security_event` messages |
+| `SERVERBEE_SECURITY__SSH__WINDOW_SECONDS` | `security.ssh.window_seconds` | u32 | `60` | Sliding window length (seconds) for SSH brute-force detection |
+| `SERVERBEE_SECURITY__SSH__FAILED_THRESHOLD` | `security.ssh.failed_threshold` | u32 | `10` | Number of failed SSH attempts within the window that triggers an `ssh_brute_force` event. Queue clears after firing |
+| `SERVERBEE_SECURITY__PORT_SCAN__ENABLED` | `security.port_scan.enabled` | bool | `false` | Enable port-scan detection. Requires `conntrack` CLI installed (Linux) |
+| `SERVERBEE_SECURITY__PORT_SCAN__WINDOW_SECONDS` | `security.port_scan.window_seconds` | u32 | `30` | Sliding window length (seconds) for port-scan detection |
+| `SERVERBEE_SECURITY__PORT_SCAN__DISTINCT_PORT_THRESHOLD` | `security.port_scan.distinct_port_threshold` | u32 | `20` | Distinct destination ports hit by a single source IP within the window that triggers a `port_scan` event |
+| `SERVERBEE_SECURITY__DATA_DIR` | `security.data_dir` | string | `/var/lib/serverbee/security` | Directory for the persistent `first_seen` store used to mark `ssh_login` events as new (user, IP) combinations |

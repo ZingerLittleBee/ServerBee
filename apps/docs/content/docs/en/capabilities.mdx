@@ -8,7 +8,7 @@ ServerBee supports per-agent capability toggles that let administrators control 
 
 ## Capability List
 
-ServerBee defines 8 capability bits, divided into two risk levels:
+ServerBee defines 10 capability bits, divided into two risk levels. The valid mask is `1023` (bits 0..=9).
 
 ### High Risk (Disabled by Default)
 
@@ -18,6 +18,7 @@ ServerBee defines 8 capability bits, divided into two risk levels:
 | **Remote Exec** | `CAP_EXEC` (2) | Allow remote command execution |
 | **File Manager** | `CAP_FILE` (64) | Allow remote file browsing, editing, upload/download |
 | **Docker Management** | `CAP_DOCKER` (128) | Allow Docker container monitoring, log streaming, and container actions |
+| **Firewall Blocklist** | `CAP_FIREWALL_BLOCK` (512) | Allow agent to apply the server-pushed nftables blocklist. Requires root or `CAP_NET_ADMIN` plus the `nft` CLI on the host. See [Firewall Blocklist](/en/docs/firewall) |
 
 <Callout type="warn">
 These capabilities involve executing arbitrary code or accessing the filesystem on the target server. They are disabled by default. Only enable them on trusted servers.
@@ -35,8 +36,9 @@ File Manager requires additional agent-side configuration (`root_paths`, `deny_p
 | **ICMP Ping** | `CAP_PING_ICMP` (8) | Allow ICMP probe tasks |
 | **TCP Probe** | `CAP_PING_TCP` (16) | Allow TCP port probe tasks |
 | **HTTP Probe** | `CAP_PING_HTTP` (32) | Allow HTTP probe tasks |
+| **Security Events** | `CAP_SECURITY_EVENTS` (256) | Allow agent to report SSH login / brute-force / port-scan events (see [Security Events](/en/docs/security-events)) |
 
-Newly registered agents default to a capabilities value of `60` (auto upgrade plus all three ping capabilities enabled).
+Newly registered agents default to a capabilities value of `316` (auto upgrade + all three ping capabilities + security events).
 
 ## Configuration
 
@@ -74,10 +76,12 @@ curl -X PUT https://your-server/api/servers/batch-capabilities \
 ```
 
 The capabilities value is a bitwise OR of individual capability bits. Examples:
-- `60` = Auto Upgrade + ICMP + TCP + HTTP (default)
-- `255` = all capabilities enabled
-- `188` = Auto Upgrade + ICMP + TCP + HTTP + Docker
-- `124` = Auto Upgrade + ICMP + TCP + HTTP + File Manager
+- `316` = Auto Upgrade + ICMP + TCP + HTTP + Security Events (default)
+- `1023` = all capabilities enabled (full valid mask, bits 0..=9)
+- `444` = default + Docker
+- `380` = default + File Manager
+- `828` = default + Firewall Blocklist
+- `60` = legacy default (no Security Events)
 - `0` = all capabilities disabled
 
 ## Defense in Depth

@@ -3901,9 +3901,10 @@ dependencies = [
 
 [[package]]
 name = "serverbee-agent"
-version = "0.9.3"
+version = "0.9.4"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64 0.22.1",
  "bollard",
  "chrono",
@@ -3912,10 +3913,13 @@ dependencies = [
  "futures-util",
  "gethostname",
  "hex",
+ "ipnet",
  "libc",
  "nvml-wrapper",
+ "once_cell",
  "portable-pty",
  "rand 0.8.5",
+ "regex",
  "reqwest 0.12.28",
  "rustls 0.23.37",
  "semver",
@@ -3925,6 +3929,7 @@ dependencies = [
  "sha2",
  "sysinfo",
  "tempfile",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-tungstenite 0.26.2",
  "tracing",
@@ -3938,7 +3943,7 @@ dependencies = [
 
 [[package]]
 name = "serverbee-common"
-version = "0.9.3"
+version = "0.9.4"
 dependencies = [
  "chrono",
  "serde",
@@ -3949,7 +3954,7 @@ dependencies = [
 
 [[package]]
 name = "serverbee-server"
-version = "0.9.3"
+version = "0.9.4"
 dependencies = [
  "a2",
  "anyhow",

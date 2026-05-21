@@ -12,11 +12,42 @@ use crate::service::maintenance::MaintenanceService;
 use crate::service::notification::{NotificationService, NotifyContext};
 
 /// Rule types that are event-driven (not evaluated on a polling interval).
-const EVENT_DRIVEN_RULE_TYPES: &[&str] = &["ip_changed"];
+const EVENT_DRIVEN_RULE_TYPES: &[&str] = &[
+    "ip_changed",
+    "ssh_brute_force_detected",
+    "ssh_new_ip_login",
+    "port_scan_detected",
+];
+
+/// Security-typed alert rules. They must not be mixed with non-security items
+/// (AND semantics across different event types is meaningless) and at most one
+/// security item is allowed per rule.
+pub const SECURITY_RULE_TYPES: &[&str] = &[
+    "ssh_brute_force_detected",
+    "ssh_new_ip_login",
+    "port_scan_detected",
+];
+
+/// Cover-type discriminants shared across alert_rule and block_list.
+pub const COVER_TYPE_ALL: &str = "all";
+pub const COVER_TYPE_INCLUDE: &str = "include";
+pub const COVER_TYPE_EXCLUDE: &str = "exclude";
+/// All accepted `cover_type` values for alert_rule and block_list inputs.
+pub const VALID_COVER_TYPES: &[&str] =
+    &[COVER_TYPE_ALL, COVER_TYPE_INCLUDE, COVER_TYPE_EXCLUDE];
+
+/// `origin` discriminants for block_list rows.
+pub const ORIGIN_MANUAL: &str = "manual";
+pub const ORIGIN_AUTO: &str = "auto";
+
+/// Security rule types whose payload carries a `source_ip` and may attach a
+/// `block_source_ip` action.
+pub const SOURCE_IP_RULE_TYPES: &[&str] =
+    &["ssh_brute_force_detected", "port_scan_detected"];
 
 // ── Alert Rule Types ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct AlertRuleItem {
     pub rule_type: String,
     #[serde(default)]
@@ -29,6 +60,133 @@ pub struct AlertRuleItem {
     pub cycle_interval: Option<String>,
     #[serde(default)]
     pub cycle_limit: Option<i64>,
+    /// Parameters for security-typed rules (`ssh_brute_force_detected`,
+    /// `ssh_new_ip_login`, `port_scan_detected`). Ignored for metric rules.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security: Option<SecurityRuleParams>,
+}
+
+/// Side-effect action attached to an alert rule. Currently only
+/// `block_source_ip` is supported, which is restricted to security rules whose
+/// payload carries a `source_ip` (`ssh_brute_force_detected` /
+/// `port_scan_detected`).
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AlertRuleAction {
+    /// Auto-block the `source_ip` from the triggering security event.
+    /// Only valid on `ssh_brute_force_detected` / `port_scan_detected` rules.
+    BlockSourceIp {
+        #[serde(default = "default_action_cover_type")]
+        cover_type: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        server_ids_json: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        comment: Option<String>,
+    },
+}
+
+fn default_action_cover_type() -> String {
+    COVER_TYPE_ALL.to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct SecurityRuleParams {
+    /// Minimum failed attempts to fire (`ssh_brute_force_detected`).
+    #[serde(default)]
+    pub min_failed_count: Option<u32>,
+    /// Minimum distinct ports scanned to fire (`port_scan_detected`).
+    #[serde(default)]
+    pub min_distinct_ports: Option<u32>,
+    /// Usernames excluded from `ssh_new_ip_login`.
+    #[serde(default)]
+    pub exclude_users: Vec<String>,
+    /// CIDRs excluded from `ssh_new_ip_login`.
+    #[serde(default)]
+    pub exclude_cidrs: Vec<String>,
+    /// Notification dedupe window per (rule, server, source_ip).
+    #[serde(default = "default_dedupe_secs")]
+    pub dedupe_window_seconds: u32,
+}
+
+fn default_dedupe_secs() -> u32 {
+    600
+}
+
+impl Default for SecurityRuleParams {
+    fn default() -> Self {
+        Self {
+            min_failed_count: None,
+            min_distinct_ports: None,
+            exclude_users: Vec::new(),
+            exclude_cidrs: Vec::new(),
+            dedupe_window_seconds: default_dedupe_secs(),
+        }
+    }
+}
+
+/// Validate the shape of `AlertRuleItem`s for create/update paths.
+///
+/// Security rule types are restricted to one item per rule and may not be
+/// mixed with other rule types because `check_server` uses AND semantics
+/// across items (`crates/server/src/service/alert.rs`).
+pub fn validate_alert_rule_items(items: &[AlertRuleItem]) -> Result<(), AppError> {
+    let security_count = items
+        .iter()
+        .filter(|i| SECURITY_RULE_TYPES.contains(&i.rule_type.as_str()))
+        .count();
+    let non_security_count = items.len() - security_count;
+    if security_count > 0 && non_security_count > 0 {
+        return Err(AppError::BadRequest(
+            "cannot mix security rule types with other items".to_string(),
+        ));
+    }
+    if security_count > 1 {
+        return Err(AppError::BadRequest(
+            "only one security item per alert_rule is supported".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Validate `AlertRuleAction`s. At most one action per rule. `block_source_ip`
+/// is only allowed when every item in the rule is one of
+/// `ssh_brute_force_detected` / `port_scan_detected` (i.e. payloads that carry
+/// a `source_ip`).
+pub fn validate_actions(
+    rules: &[AlertRuleItem],
+    actions: &[AlertRuleAction],
+) -> Result<(), AppError> {
+    if actions.is_empty() {
+        return Ok(());
+    }
+    if actions.len() > 1 {
+        return Err(AppError::Validation(
+            "at most one action per alert_rule".to_string(),
+        ));
+    }
+    for a in actions {
+        match a {
+            AlertRuleAction::BlockSourceIp { cover_type, .. } => {
+                if !VALID_COVER_TYPES.contains(&cover_type.as_str()) {
+                    return Err(AppError::Validation(format!(
+                        "invalid cover_type '{cover_type}' on action"
+                    )));
+                }
+                if rules.is_empty()
+                    || !rules
+                        .iter()
+                        .all(|r| SOURCE_IP_RULE_TYPES.contains(&r.rule_type.as_str()))
+                {
+                    return Err(AppError::Validation(
+                        "block_source_ip is only allowed on \
+                         ssh_brute_force_detected / port_scan_detected rules"
+                            .to_string(),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
@@ -43,6 +201,8 @@ pub struct CreateAlertRule {
     pub server_ids: Option<Vec<String>>,
     #[serde(default = "default_true")]
     pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<AlertRuleAction>,
 }
 
 fn default_trigger_mode() -> String {
@@ -50,7 +210,7 @@ fn default_trigger_mode() -> String {
 }
 
 fn default_cover_type() -> String {
-    "all".to_string()
+    COVER_TYPE_ALL.to_string()
 }
 
 fn default_true() -> bool {
@@ -66,6 +226,8 @@ pub struct UpdateAlertRule {
     pub cover_type: Option<String>,
     pub server_ids: Option<Option<Vec<String>>>,
     pub enabled: Option<bool>,
+    #[serde(default)]
+    pub actions: Option<Vec<AlertRuleAction>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
@@ -90,7 +252,7 @@ pub struct TriggeredInfo {
 }
 
 pub struct AlertStateManager {
-    triggered: DashMap<(String, String), TriggeredInfo>,
+    triggered: DashMap<(String, String, String), TriggeredInfo>,
 }
 
 impl Default for AlertStateManager {
@@ -116,7 +278,7 @@ impl AlertStateManager {
         let triggered = DashMap::new();
         for s in states {
             triggered.insert(
-                (s.rule_id, s.server_id),
+                (s.rule_id, s.server_id, s.event_key),
                 TriggeredInfo {
                     first_triggered_at: s.first_triggered_at,
                     last_notified_at: s.last_notified_at,
@@ -128,14 +290,26 @@ impl AlertStateManager {
         Ok(Self { triggered })
     }
 
-    pub fn is_triggered(&self, rule_id: &str, server_id: &str) -> bool {
-        self.triggered
-            .contains_key(&(rule_id.to_string(), server_id.to_string()))
+    pub fn is_triggered(&self, rule_id: &str, server_id: &str, event_key: &str) -> bool {
+        self.triggered.contains_key(&(
+            rule_id.to_string(),
+            server_id.to_string(),
+            event_key.to_string(),
+        ))
     }
 
-    pub fn get_info(&self, rule_id: &str, server_id: &str) -> Option<TriggeredInfo> {
+    pub fn get_info(
+        &self,
+        rule_id: &str,
+        server_id: &str,
+        event_key: &str,
+    ) -> Option<TriggeredInfo> {
         self.triggered
-            .get(&(rule_id.to_string(), server_id.to_string()))
+            .get(&(
+                rule_id.to_string(),
+                server_id.to_string(),
+                event_key.to_string(),
+            ))
             .map(|r| r.clone())
     }
 
@@ -144,9 +318,14 @@ impl AlertStateManager {
         db: &DatabaseConnection,
         rule_id: &str,
         server_id: &str,
+        event_key: &str,
     ) -> Result<(), AppError> {
         let now = Utc::now();
-        let key = (rule_id.to_string(), server_id.to_string());
+        let key = (
+            rule_id.to_string(),
+            server_id.to_string(),
+            event_key.to_string(),
+        );
 
         if let Some(mut info) = self.triggered.get_mut(&key) {
             info.count += 1;
@@ -162,6 +341,7 @@ impl AlertStateManager {
                 .col_expr(alert_state::Column::UpdatedAt, Expr::value(now))
                 .filter(alert_state::Column::RuleId.eq(rule_id))
                 .filter(alert_state::Column::ServerId.eq(server_id))
+                .filter(alert_state::Column::EventKey.eq(event_key))
                 .filter(alert_state::Column::Resolved.eq(false))
                 .exec(db)
                 .await?;
@@ -177,12 +357,14 @@ impl AlertStateManager {
 
             // Re-arm the existing row if one is left over from a prior
             // resolve cycle, otherwise insert a fresh one. A
-            // UNIQUE(rule_id, server_id) constraint means at most one row
-            // can exist, so a blind INSERT here would fail and abort
-            // evaluation forever after the first trigger→resolve.
+            // UNIQUE(rule_id, server_id, event_key) constraint means at most
+            // one row can exist per dimension, so a blind INSERT here would
+            // fail and abort evaluation forever after the first
+            // trigger→resolve.
             let existing = alert_state::Entity::find()
                 .filter(alert_state::Column::RuleId.eq(rule_id))
                 .filter(alert_state::Column::ServerId.eq(server_id))
+                .filter(alert_state::Column::EventKey.eq(event_key))
                 .one(db)
                 .await?;
             if let Some(row) = existing {
@@ -199,6 +381,7 @@ impl AlertStateManager {
                     id: NotSet,
                     rule_id: Set(rule_id.to_string()),
                     server_id: Set(server_id.to_string()),
+                    event_key: Set(event_key.to_string()),
                     first_triggered_at: Set(now),
                     last_notified_at: Set(now),
                     count: Set(1),
@@ -218,9 +401,14 @@ impl AlertStateManager {
         db: &DatabaseConnection,
         rule_id: &str,
         server_id: &str,
+        event_key: &str,
     ) -> Result<(), AppError> {
         let now = Utc::now();
-        let key = (rule_id.to_string(), server_id.to_string());
+        let key = (
+            rule_id.to_string(),
+            server_id.to_string(),
+            event_key.to_string(),
+        );
 
         self.triggered.remove(&key);
 
@@ -230,6 +418,7 @@ impl AlertStateManager {
             .col_expr(alert_state::Column::UpdatedAt, Expr::value(now))
             .filter(alert_state::Column::RuleId.eq(rule_id))
             .filter(alert_state::Column::ServerId.eq(server_id))
+            .filter(alert_state::Column::EventKey.eq(event_key))
             .filter(alert_state::Column::Resolved.eq(false))
             .exec(db)
             .await?;
@@ -273,11 +462,21 @@ impl AlertService {
         input: CreateAlertRule,
     ) -> Result<alert_rule::Model, AppError> {
         validate_cover_type(&input.cover_type)?;
+        validate_alert_rule_items(&input.rules)?;
+        validate_actions(&input.rules, &input.actions)?;
         let rules_json = serde_json::to_string(&input.rules)
             .map_err(|e| AppError::Validation(format!("Invalid rules: {e}")))?;
         let server_ids_json = input
             .server_ids
             .map(|ids| serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string()));
+        let actions_json = if input.actions.is_empty() {
+            None
+        } else {
+            Some(
+                serde_json::to_string(&input.actions)
+                    .map_err(|e| AppError::Validation(format!("Invalid actions: {e}")))?,
+            )
+        };
         let now = Utc::now();
 
         let model = alert_rule::ActiveModel {
@@ -291,6 +490,7 @@ impl AlertService {
             recover_trigger_tasks: Set(None),
             cover_type: Set(input.cover_type),
             server_ids_json: Set(server_ids_json),
+            actions_json: Set(actions_json),
             created_at: Set(now),
             updated_at: Set(now),
         };
@@ -303,16 +503,22 @@ impl AlertService {
         input: UpdateAlertRule,
     ) -> Result<alert_rule::Model, AppError> {
         let existing = Self::get(db, id).await?;
+        let existing_rules: Vec<AlertRuleItem> =
+            serde_json::from_str(&existing.rules_json).unwrap_or_default();
         let mut model: alert_rule::ActiveModel = existing.into();
 
         if let Some(name) = input.name {
             model.name = Set(name);
         }
-        if let Some(rules) = input.rules {
+        let effective_rules: Vec<AlertRuleItem> = if let Some(rules) = input.rules {
+            validate_alert_rule_items(&rules)?;
             let rules_json = serde_json::to_string(&rules)
                 .map_err(|e| AppError::Validation(format!("Invalid rules: {e}")))?;
             model.rules_json = Set(rules_json);
-        }
+            rules
+        } else {
+            existing_rules
+        };
         if let Some(trigger_mode) = input.trigger_mode {
             model.trigger_mode = Set(trigger_mode);
         }
@@ -330,6 +536,18 @@ impl AlertService {
         }
         if let Some(enabled) = input.enabled {
             model.enabled = Set(enabled);
+        }
+        if let Some(actions) = input.actions {
+            validate_actions(&effective_rules, &actions)?;
+            let actions_json = if actions.is_empty() {
+                None
+            } else {
+                Some(
+                    serde_json::to_string(&actions)
+                        .map_err(|e| AppError::Validation(format!("Invalid actions: {e}")))?,
+                )
+            };
+            model.actions_json = Set(actions_json);
         }
         model.updated_at = Set(Utc::now());
 
@@ -517,9 +735,11 @@ impl AlertService {
                     continue;
                 }
                 Self::handle_triggered(db, config, state_manager, rule, &srv.id, &srv.name).await?;
-            } else if state_manager.is_triggered(&rule.id, &srv.id) {
+            } else if state_manager.is_triggered(&rule.id, &srv.id, "") {
                 // Recovered
-                state_manager.mark_resolved(db, &rule.id, &srv.id).await?;
+                state_manager
+                    .mark_resolved(db, &rule.id, &srv.id, "")
+                    .await?;
                 tracing::info!("Alert '{}' resolved for server '{}'", rule.name, srv.name);
                 Self::handle_resolved(db, config, rule, &srv.id, &srv.name).await;
             }
@@ -580,10 +800,10 @@ impl AlertService {
         server_name: &str,
     ) -> Result<(), AppError> {
         let should_notify = match rule.trigger_mode.as_str() {
-            "once" => !state_manager.is_triggered(&rule.id, server_id),
+            "once" => !state_manager.is_triggered(&rule.id, server_id, ""),
             _ => {
                 // "always" — but debounce 5 minutes
-                match state_manager.get_info(&rule.id, server_id) {
+                match state_manager.get_info(&rule.id, server_id, "") {
                     Some(info) => {
                         let elapsed = Utc::now() - info.last_notified_at;
                         elapsed >= Duration::minutes(5)
@@ -594,7 +814,7 @@ impl AlertService {
         };
 
         state_manager
-            .mark_triggered(db, &rule.id, server_id)
+            .mark_triggered(db, &rule.id, server_id, "")
             .await?;
 
         if should_notify && let Some(ref group_id) = rule.notification_group_id {
@@ -702,10 +922,12 @@ impl AlertService {
 
 // ── Helpers ──
 
-const VALID_COVER_TYPES: &[&str] = &["all", "include", "exclude"];
-
 /// Check if a rule's cover_type/server_ids covers a specific server (pure, no DB).
-fn rule_covers_server(cover_type: &str, server_ids_json: &Option<String>, server_id: &str) -> bool {
+pub(crate) fn rule_covers_server(
+    cover_type: &str,
+    server_ids_json: &Option<String>,
+    server_id: &str,
+) -> bool {
     match cover_type {
         "include" => {
             let ids: Vec<String> = server_ids_json
@@ -1225,6 +1447,7 @@ mod tests {
             duration: Some(300),
             cycle_interval: None,
             cycle_limit: None,
+            security: None,
         };
 
         let json = serde_json::to_string(&item).expect("serialize");
@@ -1288,15 +1511,73 @@ mod tests {
     #[test]
     fn test_event_driven_rule_types() {
         assert!(EVENT_DRIVEN_RULE_TYPES.contains(&"ip_changed"));
+        assert!(EVENT_DRIVEN_RULE_TYPES.contains(&"ssh_brute_force_detected"));
+        assert!(EVENT_DRIVEN_RULE_TYPES.contains(&"ssh_new_ip_login"));
+        assert!(EVENT_DRIVEN_RULE_TYPES.contains(&"port_scan_detected"));
         assert!(!EVENT_DRIVEN_RULE_TYPES.contains(&"cpu"));
         assert!(!EVENT_DRIVEN_RULE_TYPES.contains(&"offline"));
+    }
+
+    // ── validate_alert_rule_items ──
+
+    fn item(rule_type: &str) -> AlertRuleItem {
+        AlertRuleItem {
+            rule_type: rule_type.to_string(),
+            min: None,
+            max: None,
+            duration: None,
+            cycle_interval: None,
+            cycle_limit: None,
+            security: None,
+        }
+    }
+
+    #[test]
+    fn test_validate_rejects_mixing_security_and_metric() {
+        let items = vec![item("ssh_brute_force_detected"), item("cpu")];
+        let err = validate_alert_rule_items(&items).expect_err("should reject mix");
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn test_validate_rejects_multiple_security_items() {
+        let items = vec![
+            item("ssh_brute_force_detected"),
+            item("ssh_new_ip_login"),
+        ];
+        let err = validate_alert_rule_items(&items).expect_err("should reject multi-security");
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn test_validate_accepts_single_security_item() {
+        let items = vec![item("port_scan_detected")];
+        validate_alert_rule_items(&items).expect("single security item is valid");
+    }
+
+    #[test]
+    fn test_validate_accepts_all_metric_items() {
+        let items = vec![item("cpu"), item("memory"), item("offline")];
+        validate_alert_rule_items(&items).expect("metric-only is valid");
+    }
+
+    #[test]
+    fn test_validate_accepts_empty() {
+        validate_alert_rule_items(&[]).expect("empty list is valid");
+    }
+
+    #[test]
+    fn test_security_rule_params_default_dedupe() {
+        let json = r#"{"min_failed_count": 10}"#;
+        let p: SecurityRuleParams = serde_json::from_str(json).expect("parse");
+        assert_eq!(p.dedupe_window_seconds, 600);
     }
 
     #[test]
     fn test_alert_state_manager_new() {
         let mgr = AlertStateManager::new();
-        assert!(!mgr.is_triggered("any-rule", "any-server"));
-        assert!(mgr.get_info("any-rule", "any-server").is_none());
+        assert!(!mgr.is_triggered("any-rule", "any-server", ""));
+        assert!(mgr.get_info("any-rule", "any-server", "").is_none());
     }
 
     // ── list_events ──
@@ -1339,6 +1620,7 @@ mod tests {
             recover_trigger_tasks: Set(None),
             cover_type: Set("all".to_string()),
             server_ids_json: Set(None),
+            actions_json: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         }
@@ -1362,6 +1644,7 @@ mod tests {
             id: NotSet,
             rule_id: Set(rule_id.to_string()),
             server_id: Set(server_id.to_string()),
+            event_key: Set(String::new()),
             first_triggered_at: Set(first_triggered_at),
             last_notified_at: Set(now),
             count: Set(count),
@@ -1533,6 +1816,7 @@ mod tests {
             recover_trigger_tasks: Set(None),
             cover_type: Set("all".to_string()),
             server_ids_json: Set(None),
+            actions_json: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         }
@@ -1544,7 +1828,7 @@ mod tests {
         // triggered→recovered transition.
         let state_manager = AlertStateManager::new();
         state_manager
-            .mark_triggered(&db, "rule-1", "srv-1")
+            .mark_triggered(&db, "rule-1", "srv-1", "")
             .await
             .expect("seed triggered state");
 
@@ -1566,7 +1850,7 @@ mod tests {
             "recovery webhook payload should carry the resolved event, got: {payload}"
         );
         assert!(
-            !state_manager.is_triggered("rule-1", "srv-1"),
+            !state_manager.is_triggered("rule-1", "srv-1", ""),
             "state should be cleared after recovery"
         );
     }
@@ -1579,23 +1863,23 @@ mod tests {
         let mgr = AlertStateManager::new();
 
         // First fire.
-        mgr.mark_triggered(&db, "rule-1", "srv-1")
+        mgr.mark_triggered(&db, "rule-1", "srv-1", "")
             .await
             .expect("first trigger");
-        assert!(mgr.is_triggered("rule-1", "srv-1"));
+        assert!(mgr.is_triggered("rule-1", "srv-1", ""));
 
         // Recover.
-        mgr.mark_resolved(&db, "rule-1", "srv-1")
+        mgr.mark_resolved(&db, "rule-1", "srv-1", "")
             .await
             .expect("resolve");
-        assert!(!mgr.is_triggered("rule-1", "srv-1"));
+        assert!(!mgr.is_triggered("rule-1", "srv-1", ""));
 
         // Re-arm: triggering again must NOT fail on the
-        // UNIQUE(rule_id, server_id) constraint left by the resolved row.
-        mgr.mark_triggered(&db, "rule-1", "srv-1")
+        // UNIQUE(rule_id, server_id, event_key) constraint left by the resolved row.
+        mgr.mark_triggered(&db, "rule-1", "srv-1", "")
             .await
             .expect("re-trigger after resolve must succeed");
-        assert!(mgr.is_triggered("rule-1", "srv-1"));
+        assert!(mgr.is_triggered("rule-1", "srv-1", ""));
 
         // Exactly one row, flipped back to firing.
         let rows = alert_state::Entity::find()
@@ -1608,5 +1892,101 @@ mod tests {
         assert!(!rows[0].resolved, "re-armed row should be firing again");
         assert!(rows[0].resolved_at.is_none(), "resolved_at cleared on re-arm");
         assert_eq!(rows[0].count, 1, "count reset on re-arm");
+    }
+
+    // ── AlertRuleAction validator ──
+
+    #[test]
+    fn validate_actions_forbids_with_metric_rule() {
+        let rules = vec![AlertRuleItem {
+            rule_type: "cpu".into(),
+            min: Some(80.0),
+            ..Default::default()
+        }];
+        let actions = vec![AlertRuleAction::BlockSourceIp {
+            cover_type: "all".into(),
+            server_ids_json: None,
+            comment: None,
+        }];
+        let err = validate_actions(&rules, &actions).unwrap_err();
+        assert!(format!("{err}").contains("ssh_brute_force_detected"));
+    }
+
+    #[test]
+    fn validate_actions_forbids_ssh_new_ip_login() {
+        let rules = vec![AlertRuleItem {
+            rule_type: "ssh_new_ip_login".into(),
+            ..Default::default()
+        }];
+        let actions = vec![AlertRuleAction::BlockSourceIp {
+            cover_type: "all".into(),
+            server_ids_json: None,
+            comment: None,
+        }];
+        assert!(validate_actions(&rules, &actions).is_err());
+    }
+
+    #[test]
+    fn validate_actions_allows_brute_force() {
+        let rules = vec![AlertRuleItem {
+            rule_type: "ssh_brute_force_detected".into(),
+            ..Default::default()
+        }];
+        let actions = vec![AlertRuleAction::BlockSourceIp {
+            cover_type: "all".into(),
+            server_ids_json: None,
+            comment: None,
+        }];
+        assert!(validate_actions(&rules, &actions).is_ok());
+    }
+
+    #[test]
+    fn validate_actions_rejects_more_than_one() {
+        let rules = vec![AlertRuleItem {
+            rule_type: "ssh_brute_force_detected".into(),
+            ..Default::default()
+        }];
+        let actions = vec![
+            AlertRuleAction::BlockSourceIp {
+                cover_type: "all".into(),
+                server_ids_json: None,
+                comment: None,
+            },
+            AlertRuleAction::BlockSourceIp {
+                cover_type: "all".into(),
+                server_ids_json: None,
+                comment: None,
+            },
+        ];
+        assert!(validate_actions(&rules, &actions).is_err());
+    }
+
+    #[test]
+    fn validate_actions_empty_actions_is_ok() {
+        // No actions should always validate, regardless of rules — including
+        // empty rules (the early-return branch must not require security rules
+        // just to allow zero actions).
+        assert!(validate_actions(&[], &[]).is_ok());
+        let rules = vec![AlertRuleItem {
+            rule_type: "cpu".into(),
+            min: Some(80.0),
+            ..Default::default()
+        }];
+        assert!(validate_actions(&rules, &[]).is_ok());
+    }
+
+    #[test]
+    fn validate_actions_rejects_invalid_cover_type() {
+        let rules = vec![AlertRuleItem {
+            rule_type: "ssh_brute_force_detected".into(),
+            ..Default::default()
+        }];
+        let actions = vec![AlertRuleAction::BlockSourceIp {
+            cover_type: "everyone".into(),
+            server_ids_json: None,
+            comment: None,
+        }];
+        let err = validate_actions(&rules, &actions).unwrap_err();
+        assert!(format!("{err}").contains("invalid cover_type"));
     }
 }

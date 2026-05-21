@@ -177,6 +177,7 @@
   "cap_ping_http": "HTTP Probe",
   "cap_file": "File Manager",
   "cap_docker": "Docker Management",
+  "cap_firewall_block": "Firewall Block",
   "detail_capabilities": "Capabilities",
 
   "edit_title": "Edit Server",

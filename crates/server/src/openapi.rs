@@ -220,6 +220,17 @@ impl Modify for SecurityAddon {
         crate::router::api::file::start_download,
         crate::router::api::file::upload_file,
         crate::router::api::file::cancel_transfer,
+        // security
+        crate::router::api::security::list_events,
+        crate::router::api::security::get_event,
+        crate::router::api::security::stats,
+        crate::router::api::security::delete_event,
+        // firewall
+        crate::router::api::firewall::list_blocks,
+        crate::router::api::firewall::get_block,
+        crate::router::api::firewall::create_block,
+        crate::router::api::firewall::delete_block,
+        crate::router::api::firewall::stats,
     ),
     components(
         schemas(
@@ -409,6 +420,15 @@ impl Modify for SecurityAddon {
             crate::router::api::traceroute::TriggerTracerouteResponse,
             crate::router::api::traceroute::TracerouteResultResponse,
             serverbee_common::types::TracerouteHop,
+            // security
+            crate::router::api::security::SecurityEventDto,
+            crate::router::api::security::SecurityEventList,
+            crate::router::api::security::StatsBucket,
+            // firewall
+            crate::router::api::firewall::CreateBlockReq,
+            crate::router::api::firewall::BlockListItem,
+            crate::router::api::firewall::ListResp,
+            crate::router::api::firewall::StatsResp,
         ),
     ),
     tags(
@@ -440,6 +460,8 @@ impl Modify for SecurityAddon {
         (name = "cost", description = "VPS cost insights and value scoring"),
         (name = "uptime", description = "Uptime statistics"),
         (name = "files", description = "File management"),
+        (name = "security", description = "Security events (SSH brute force, port scans, new IP logins)"),
+        (name = "firewall", description = "Firewall blocklist (manual & auto-blocked IPs/CIDRs)"),
     ),
     security(
         ("session_cookie" = []),
