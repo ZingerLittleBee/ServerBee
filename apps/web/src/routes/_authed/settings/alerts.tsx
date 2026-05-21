@@ -24,6 +24,15 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { AlertRule, AlertRuleItem, AlertStateResponse, NotificationGroup } from '@/lib/api-schema'
 
+interface BlockSourceIpAction {
+  comment?: string | null
+  cover_type: string
+  server_ids_json?: string | null
+  type: 'block_source_ip'
+}
+
+const AUTO_BLOCK_RULE_TYPES = new Set(['ssh_brute_force_detected', 'port_scan_detected'])
+
 export const Route = createFileRoute('/_authed/settings/alerts')({
   component: AlertsPage
 })
@@ -91,6 +100,15 @@ function AlertsPage() {
   const [serverIds, setServerIds] = useState<string[]>([])
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null)
   const [deleteRuleId, setDeleteRuleId] = useState<string | null>(null)
+  const [autoBlockEnabled, setAutoBlockEnabled] = useState(false)
+  const [autoBlockCoverType, setAutoBlockCoverType] = useState<'all' | 'exclude' | 'include'>('all')
+  const [autoBlockServerIds, setAutoBlockServerIds] = useState<string[]>([])
+  const [autoBlockComment, setAutoBlockComment] = useState('')
+
+  const autoBlockEligible = useMemo(
+    () => ruleItems.length > 0 && ruleItems.every((item) => AUTO_BLOCK_RULE_TYPES.has(item.rule_type)),
+    [ruleItems]
+  )
 
   const ruleTypes = [
     { label: t('alerts.metric_cpu'), value: 'cpu' },
@@ -142,6 +160,7 @@ function AlertsPage() {
 
   const createMutation = useMutation({
     mutationFn: (input: {
+      actions?: BlockSourceIpAction[]
       cover_type: string
       name: string
       notification_group_id: string | null
@@ -193,6 +212,10 @@ function AlertsPage() {
     setRuleItems([{ rule_type: 'cpu', min: 90 }])
     setCoverType('all')
     setServerIds([])
+    setAutoBlockEnabled(false)
+    setAutoBlockCoverType('all')
+    setAutoBlockServerIds([])
+    setAutoBlockComment('')
     setShowForm(false)
   }
 
@@ -201,13 +224,29 @@ function AlertsPage() {
     if (name.trim().length === 0 || ruleItems.length === 0) {
       return
     }
+    const actions: BlockSourceIpAction[] =
+      autoBlockEligible && autoBlockEnabled
+        ? [
+            {
+              type: 'block_source_ip',
+              cover_type: autoBlockCoverType,
+              server_ids_json:
+                autoBlockCoverType === 'all' || autoBlockServerIds.length === 0
+                  ? null
+                  : JSON.stringify(autoBlockServerIds),
+              comment: autoBlockComment.trim().length > 0 ? autoBlockComment.trim() : null
+            }
+          ]
+        : []
+
     createMutation.mutate({
       name: name.trim(),
       trigger_mode: triggerMode,
       notification_group_id: groupId || null,
       rules: ruleItems,
       cover_type: coverType,
-      server_ids: coverType === 'include' || coverType === 'exclude' ? serverIds : []
+      server_ids: coverType === 'include' || coverType === 'exclude' ? serverIds : [],
+      actions: actions.length > 0 ? actions : undefined
     })
   }
 
@@ -458,6 +497,102 @@ function AlertsPage() {
                   </div>
                 ))}
               </div>
+
+              {autoBlockEligible && (
+                <Collapsible className="rounded-md border bg-background p-3" open={autoBlockEnabled}>
+                  <CollapsibleTrigger
+                    render={
+                      <button
+                        className="flex w-full items-center justify-between text-left"
+                        onClick={() => setAutoBlockEnabled((v) => !v)}
+                        type="button"
+                      />
+                    }
+                  >
+                    <span className="flex items-center gap-2">
+                      <Checkbox
+                        checked={autoBlockEnabled}
+                        onCheckedChange={(checked) => setAutoBlockEnabled(checked === true)}
+                      />
+                      <span className="font-medium text-sm">
+                        {t('alerts.auto_block_title', { defaultValue: 'Auto-block source IP' })}
+                      </span>
+                    </span>
+                    <ChevronDown aria-hidden="true" className="size-4 text-muted-foreground" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="mt-3 space-y-3">
+                    <p className="text-muted-foreground text-xs">
+                      {t('alerts.auto_block_hint', {
+                        defaultValue:
+                          'When the rule fires, push a block_source_ip action that drops the offending IP via the firewall.'
+                      })}
+                    </p>
+                    <div className="space-y-2">
+                      <Select
+                        items={{
+                          all: t('alerts.all_servers'),
+                          include: t('alerts.include_servers'),
+                          exclude: t('alerts.exclude_servers')
+                        }}
+                        onValueChange={(val) => {
+                          if (val === null) {
+                            return
+                          }
+                          const v = val as 'all' | 'exclude' | 'include'
+                          setAutoBlockCoverType(v)
+                          if (v === 'all') {
+                            setAutoBlockServerIds([])
+                          }
+                        }}
+                        value={autoBlockCoverType}
+                      >
+                        <SelectTrigger
+                          aria-label={t('alerts.auto_block_scope', { defaultValue: 'Auto-block scope' })}
+                          className="h-9 w-full"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">{t('alerts.all_servers')}</SelectItem>
+                          <SelectItem value="include">{t('alerts.include_servers')}</SelectItem>
+                          <SelectItem value="exclude">{t('alerts.exclude_servers')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {(autoBlockCoverType === 'include' || autoBlockCoverType === 'exclude') && (
+                        <div className="flex flex-wrap gap-2 rounded-md border p-2">
+                          {servers && servers.length > 0 ? (
+                            servers.map((s) => (
+                              // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
+                              <label className="flex items-center gap-1.5 text-sm" key={s.id}>
+                                <Checkbox
+                                  checked={autoBlockServerIds.includes(s.id)}
+                                  onCheckedChange={(checked) => {
+                                    setAutoBlockServerIds((prev) =>
+                                      checked ? [...prev, s.id] : prev.filter((id) => id !== s.id)
+                                    )
+                                  }}
+                                />
+                                {s.name}
+                              </label>
+                            ))
+                          ) : (
+                            <span className="text-muted-foreground text-xs">{t('alerts.no_servers')}</span>
+                          )}
+                        </div>
+                      )}
+                      <Textarea
+                        aria-label={t('alerts.auto_block_comment', { defaultValue: 'Auto-block comment' })}
+                        onChange={(e) => setAutoBlockComment(e.target.value)}
+                        placeholder={t('alerts.auto_block_comment_placeholder', {
+                          defaultValue: 'Reason added to every auto-created block (optional)'
+                        })}
+                        rows={2}
+                        value={autoBlockComment}
+                      />
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
 
               <div className="flex gap-2">
                 <Button disabled={createMutation.isPending} size="sm" type="submit">

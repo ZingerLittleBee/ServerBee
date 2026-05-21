@@ -19,6 +19,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { api } from '@/lib/api-client'
 import type { AlertRule, AlertRuleItem, NotificationGroup } from '@/lib/api-schema'
 
+interface BlockSourceIpAction {
+  comment?: string | null
+  cover_type: string
+  server_ids_json?: string | null
+  type: 'block_source_ip'
+}
+
+const AUTO_BLOCK_KINDS: PresetKind[] = ['ssh_brute_force_detected', 'port_scan_detected']
+
 type PresetKind = 'ssh_brute_force_detected' | 'ssh_new_ip_login' | 'port_scan_detected'
 
 interface PresetDef {
@@ -62,6 +71,7 @@ const PRESETS: PresetDef[] = [
 ]
 
 interface CreateAlertInput {
+  actions?: BlockSourceIpAction[]
   cover_type: string
   name: string
   notification_group_id: string | null
@@ -171,6 +181,8 @@ function PresetDialog({ preset }: { preset: PresetDef }) {
   const [excludeUsers, setExcludeUsers] = useState<string>('')
   const [excludeCidrs, setExcludeCidrs] = useState<string>('')
   const [dedupe, setDedupe] = useState<string>('600')
+  const supportsAutoBlock = AUTO_BLOCK_KINDS.includes(preset.kind)
+  const [autoBlock, setAutoBlock] = useState<boolean>(supportsAutoBlock)
 
   const queryClient = useQueryClient()
 
@@ -205,13 +217,17 @@ function PresetDialog({ preset }: { preset: PresetDef }) {
       excludeCidrs
     })
 
+    const actions: BlockSourceIpAction[] =
+      supportsAutoBlock && autoBlock ? [{ type: 'block_source_ip', cover_type: 'all' }] : []
+
     createMutation.mutate({
       cover_type: 'all',
       name: name.trim(),
       notification_group_id: groupId || null,
       rules: [{ rule_type: preset.kind, security: security as AlertRuleItem['security'] }],
       server_ids: [],
-      trigger_mode: 'always'
+      trigger_mode: 'always',
+      actions: actions.length > 0 ? actions : undefined
     })
   }
 
@@ -328,6 +344,14 @@ function PresetDialog({ preset }: { preset: PresetDef }) {
               value={dedupe}
             />
           </div>
+
+          {supportsAutoBlock && (
+            // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={autoBlock} onCheckedChange={(checked) => setAutoBlock(checked === true)} />
+              <span>{t('preset.field_auto_block', { defaultValue: 'Auto-block source IP on every match' })}</span>
+            </label>
+          )}
         </div>
 
         <DialogFooter>

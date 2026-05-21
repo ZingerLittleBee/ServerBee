@@ -44,6 +44,10 @@ function SecurityIndexPage() {
   const [sourceIp, setSourceIp] = useState<string>('')
   const [firstSeenOnly, setFirstSeenOnly] = useState(false)
   const [activeEvent, setActiveEvent] = useState<SecurityEventDto | null>(null)
+  const [blockOpen, setBlockOpen] = useState(false)
+  const [blockInitial, setBlockInitial] = useState<AddBlockInitialValues | undefined>(undefined)
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
 
   const since = useMemo(() => computeSince(range), [range])
 
@@ -159,12 +163,21 @@ function SecurityIndexPage() {
         hasNextPage={eventsQuery.hasNextPage}
         isFetchingNextPage={eventsQuery.isFetchingNextPage}
         isLoading={eventsQuery.isLoading}
+        onBlockSourceIp={
+          isAdmin
+            ? (event) => {
+                setBlockInitial({ target: event.source_ip, cover_type: 'all' })
+                setBlockOpen(true)
+              }
+            : undefined
+        }
         onFetchNextPage={() => eventsQuery.fetchNextPage()}
         onRowClick={(event) => setActiveEvent(event)}
         onSourceIpClick={(ip) => setSourceIp(ip)}
       />
 
       <SecurityEventDetailDrawer event={activeEvent} onOpenChange={(open) => !open && setActiveEvent(null)} />
+      <AddBlockDrawer initialValues={blockInitial} onOpenChange={setBlockOpen} open={blockOpen} />
     </div>
   )
 }

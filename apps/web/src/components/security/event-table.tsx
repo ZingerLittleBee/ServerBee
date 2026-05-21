@@ -11,6 +11,7 @@ interface Props {
   hasNextPage?: boolean
   isFetchingNextPage?: boolean
   isLoading?: boolean
+  onBlockSourceIp?: (event: SecurityEventDto) => void
   onFetchNextPage?: () => void
   onRowClick?: (event: SecurityEventDto) => void
   onSourceIpClick?: (ip: string) => void
@@ -32,6 +33,7 @@ export function SecurityEventTable({
   hasNextPage,
   isFetchingNextPage,
   isLoading,
+  onBlockSourceIp,
   onFetchNextPage,
   onRowClick,
   onSourceIpClick
@@ -50,20 +52,21 @@ export function SecurityEventTable({
               <TableHead>{t('table.source_ip', { defaultValue: 'Source IP' })}</TableHead>
               <TableHead>{t('table.username', { defaultValue: 'User' })}</TableHead>
               <TableHead className="w-[140px]">{t('table.detector', { defaultValue: 'Detector' })}</TableHead>
+              {onBlockSourceIp && <TableHead className="w-[60px]" />}
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading &&
               Array.from({ length: 5 }, (_, i) => (
                 <TableRow key={`sec-skel-${i.toString()}`}>
-                  <TableCell colSpan={6}>
+                  <TableCell colSpan={onBlockSourceIp ? 7 : 6}>
                     <Skeleton className="h-6 w-full" />
                   </TableCell>
                 </TableRow>
               ))}
             {!isLoading && events.length === 0 && (
               <TableRow>
-                <TableCell className="text-center text-muted-foreground" colSpan={6}>
+                <TableCell className="text-center text-muted-foreground" colSpan={onBlockSourceIp ? 7 : 6}>
                   {t('table.empty', { defaultValue: 'No security events in this range.' })}
                 </TableCell>
               </TableRow>
@@ -101,6 +104,35 @@ export function SecurityEventTable({
                   </TableCell>
                   <TableCell className="font-mono text-xs">{event.username ?? '—'}</TableCell>
                   <TableCell className="text-muted-foreground text-xs">{event.detector_source}</TableCell>
+                  {onBlockSourceIp && (
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <Button
+                              aria-label={t('table.row_actions', { defaultValue: 'Row actions' })}
+                              onClick={(e) => e.stopPropagation()}
+                              size="icon-sm"
+                              variant="ghost"
+                            />
+                          }
+                        >
+                          <MoreHorizontal aria-hidden="true" className="size-3.5" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onBlockSourceIp(event)
+                            }}
+                          >
+                            <ShieldAlert aria-hidden="true" className="size-3.5" />
+                            {t('table.action_block_source_ip', { defaultValue: 'Block source IP' })}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
           </TableBody>
