@@ -22,7 +22,9 @@ use crate::service::recovery_merge::RecoveryMergeService;
 use crate::service::server::ServerService;
 use crate::service::upgrade_tracker::UpgradeLookup;
 use crate::state::AppState;
-use serverbee_common::constants::{MAX_WS_MESSAGE_SIZE, effective_capabilities};
+use serverbee_common::constants::{
+    CAP_SECURITY_EVENTS, MAX_WS_MESSAGE_SIZE, effective_capabilities, has_capability,
+};
 use serverbee_common::protocol::{AgentMessage, BrowserMessage, ServerMessage};
 use serverbee_common::types::NetworkProbeTarget as NetworkProbeTargetDto;
 
@@ -1213,9 +1215,39 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 },
             );
         }
-        AgentMessage::SecurityEvent(_payload) => {
-            // Handler implemented in Phase 2 (server-side persistence + broadcast).
-            tracing::debug!("Received SecurityEvent from {server_id} (handler pending)");
+        AgentMessage::SecurityEvent(payload) => {
+            use crate::entity::server;
+            use sea_orm::EntityTrait;
+
+            // Resolve effective capabilities for this server. The hot path
+            // (`get_effective_capabilities`) returns `Some` once the agent has
+            // sent `SystemInfo` over this connection; before that we fall back
+            // to a primary-key lookup on the server table.
+            let caps = match state.agent_manager.get_effective_capabilities(server_id) {
+                Some(c) => c,
+                None => match server::Entity::find_by_id(server_id).one(&state.db).await {
+                    Ok(Some(s)) => u32::try_from(s.capabilities).unwrap_or(0),
+                    _ => 0,
+                },
+            };
+            if !has_capability(caps, CAP_SECURITY_EVENTS) {
+                let detail = format!(r#"{{"server_id":"{server_id}"}}"#);
+                if let Err(e) = AuditService::log(
+                    &state.db,
+                    "system",
+                    "security_event_denied",
+                    Some(&detail),
+                    "",
+                )
+                .await
+                {
+                    tracing::warn!(server_id, error = %e, "audit log for security_event_denied failed");
+                }
+                return;
+            }
+            if let Err(e) = state.security_service.record_event(server_id, payload).await {
+                tracing::error!(server_id, error = %e, "security_event record failed");
+            }
         }
     }
 }
@@ -1748,6 +1780,110 @@ mod tests {
             timeout(Duration::from_millis(50), browser_rx.recv())
                 .await
                 .is_err()
+        );
+    }
+
+    // ── SecurityEvent capability gating ──
+
+    async fn insert_server_with_caps(
+        db: &sea_orm::DatabaseConnection,
+        id: &str,
+        name: &str,
+        capabilities: u32,
+    ) {
+        let now = Utc::now();
+        let token_hash = AuthService::hash_password("test").unwrap();
+        server::ActiveModel {
+            id: Set(id.to_string()),
+            token_hash: Set(token_hash),
+            token_prefix: Set("serverbee_test".to_string()),
+            name: Set(name.to_string()),
+            weight: Set(0),
+            hidden: Set(false),
+            capabilities: Set(capabilities as i32),
+            protocol_version: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+    }
+
+    fn security_event_payload(ip: &str) -> serverbee_common::security::SecurityEventPayload {
+        use serverbee_common::security::{
+            DetectorSource, SecurityEventPayload, SecurityEventType, SecurityEvidence, Severity,
+        };
+        SecurityEventPayload {
+            event_type: SecurityEventType::SshBruteForce,
+            severity: Severity::High,
+            source_ip: ip.to_string(),
+            source_port: None,
+            username: None,
+            started_at: 1_700_000_000,
+            ended_at: 1_700_000_060,
+            first_seen: false,
+            detector_source: DetectorSource::Journal,
+            evidence: SecurityEvidence::SshBruteForce {
+                failed_count: 12,
+                distinct_users: 1,
+                sample_users: vec!["root".into()],
+                invalid_user_count: 0,
+                window_seconds: 60,
+                threshold: 10,
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn security_event_persists_when_capability_granted() {
+        use crate::entity::security_event;
+        use serverbee_common::constants::CAP_SECURITY_EVENTS;
+
+        let (db, _tmp) = setup_test_db().await;
+        insert_server_with_caps(&db, "srv-1", "Srv", CAP_SECURITY_EVENTS).await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+
+        handle_agent_message(
+            &state,
+            "srv-1",
+            AgentMessage::SecurityEvent(security_event_payload("203.0.113.5")),
+        )
+        .await;
+
+        let rows = security_event::Entity::find().all(&db).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].source_ip, "203.0.113.5");
+    }
+
+    #[tokio::test]
+    async fn security_event_denied_audits_when_capability_missing() {
+        use crate::entity::{audit_log, security_event};
+
+        let (db, _tmp) = setup_test_db().await;
+        // capabilities = 0 → CAP_SECURITY_EVENTS bit cleared.
+        insert_server_with_caps(&db, "srv-1", "Srv", 0).await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+
+        handle_agent_message(
+            &state,
+            "srv-1",
+            AgentMessage::SecurityEvent(security_event_payload("203.0.113.6")),
+        )
+        .await;
+
+        let rows = security_event::Entity::find().all(&db).await.unwrap();
+        assert!(rows.is_empty(), "should not persist without capability");
+
+        let logs = audit_log::Entity::find().all(&db).await.unwrap();
+        assert!(
+            logs.iter().any(|l| l.action == "security_event_denied"),
+            "expected security_event_denied audit row, got {logs:?}"
         );
     }
 }
