@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -26,9 +27,9 @@ interface BlockSourceIpAction {
   type: 'block_source_ip'
 }
 
-const AUTO_BLOCK_KINDS: PresetKind[] = ['ssh_brute_force_detected', 'port_scan_detected']
-
 type PresetKind = 'ssh_brute_force_detected' | 'ssh_new_ip_login' | 'port_scan_detected'
+
+const AUTO_BLOCK_KINDS: PresetKind[] = ['ssh_brute_force_detected', 'port_scan_detected']
 
 interface PresetDef {
   defaultName: string

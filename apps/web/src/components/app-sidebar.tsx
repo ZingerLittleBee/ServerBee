@@ -18,6 +18,7 @@ import {
   Settings,
   Shield,
   ShieldAlert,
+  ShieldBan,
   Smartphone,
   Terminal,
   Users,

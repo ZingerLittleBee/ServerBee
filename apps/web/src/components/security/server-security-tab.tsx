@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { AddBlockInitialValues } from '@/components/firewall/add-block-drawer'
+import { AddBlockDrawer, type AddBlockInitialValues } from '@/components/firewall/add-block-drawer'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/use-auth'
 import { useSecurityEvents } from '@/hooks/use-security-events'
