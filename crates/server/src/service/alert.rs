@@ -12,7 +12,21 @@ use crate::service::maintenance::MaintenanceService;
 use crate::service::notification::{NotificationService, NotifyContext};
 
 /// Rule types that are event-driven (not evaluated on a polling interval).
-const EVENT_DRIVEN_RULE_TYPES: &[&str] = &["ip_changed"];
+const EVENT_DRIVEN_RULE_TYPES: &[&str] = &[
+    "ip_changed",
+    "ssh_brute_force_detected",
+    "ssh_new_ip_login",
+    "port_scan_detected",
+];
+
+/// Security-typed alert rules. They must not be mixed with non-security items
+/// (AND semantics across different event types is meaningless) and at most one
+/// security item is allowed per rule.
+pub const SECURITY_RULE_TYPES: &[&str] = &[
+    "ssh_brute_force_detected",
+    "ssh_new_ip_login",
+    "port_scan_detected",
+];
 
 // ── Alert Rule Types ──
 
@@ -29,6 +43,57 @@ pub struct AlertRuleItem {
     pub cycle_interval: Option<String>,
     #[serde(default)]
     pub cycle_limit: Option<i64>,
+    /// Parameters for security-typed rules (`ssh_brute_force_detected`,
+    /// `ssh_new_ip_login`, `port_scan_detected`). Ignored for metric rules.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security: Option<SecurityRuleParams>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct SecurityRuleParams {
+    /// Minimum failed attempts to fire (`ssh_brute_force_detected`).
+    #[serde(default)]
+    pub min_failed_count: Option<u32>,
+    /// Minimum distinct ports scanned to fire (`port_scan_detected`).
+    #[serde(default)]
+    pub min_distinct_ports: Option<u32>,
+    /// Usernames excluded from `ssh_new_ip_login`.
+    #[serde(default)]
+    pub exclude_users: Vec<String>,
+    /// CIDRs excluded from `ssh_new_ip_login`.
+    #[serde(default)]
+    pub exclude_cidrs: Vec<String>,
+    /// Notification dedupe window per (rule, server, source_ip).
+    #[serde(default = "default_dedupe_secs")]
+    pub dedupe_window_seconds: u32,
+}
+
+fn default_dedupe_secs() -> u32 {
+    600
+}
+
+/// Validate the shape of `AlertRuleItem`s for create/update paths.
+///
+/// Security rule types are restricted to one item per rule and may not be
+/// mixed with other rule types because `check_server` uses AND semantics
+/// across items (`crates/server/src/service/alert.rs`).
+pub fn validate_alert_rule_items(items: &[AlertRuleItem]) -> Result<(), AppError> {
+    let security_count = items
+        .iter()
+        .filter(|i| SECURITY_RULE_TYPES.contains(&i.rule_type.as_str()))
+        .count();
+    let non_security_count = items.len() - security_count;
+    if security_count > 0 && non_security_count > 0 {
+        return Err(AppError::BadRequest(
+            "cannot mix security rule types with other items".to_string(),
+        ));
+    }
+    if security_count > 1 {
+        return Err(AppError::BadRequest(
+            "only one security item per alert_rule is supported".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
@@ -300,6 +365,7 @@ impl AlertService {
         input: CreateAlertRule,
     ) -> Result<alert_rule::Model, AppError> {
         validate_cover_type(&input.cover_type)?;
+        validate_alert_rule_items(&input.rules)?;
         let rules_json = serde_json::to_string(&input.rules)
             .map_err(|e| AppError::Validation(format!("Invalid rules: {e}")))?;
         let server_ids_json = input
@@ -336,6 +402,7 @@ impl AlertService {
             model.name = Set(name);
         }
         if let Some(rules) = input.rules {
+            validate_alert_rule_items(&rules)?;
             let rules_json = serde_json::to_string(&rules)
                 .map_err(|e| AppError::Validation(format!("Invalid rules: {e}")))?;
             model.rules_json = Set(rules_json);
@@ -1254,6 +1321,7 @@ mod tests {
             duration: Some(300),
             cycle_interval: None,
             cycle_limit: None,
+            security: None,
         };
 
         let json = serde_json::to_string(&item).expect("serialize");
@@ -1317,8 +1385,66 @@ mod tests {
     #[test]
     fn test_event_driven_rule_types() {
         assert!(EVENT_DRIVEN_RULE_TYPES.contains(&"ip_changed"));
+        assert!(EVENT_DRIVEN_RULE_TYPES.contains(&"ssh_brute_force_detected"));
+        assert!(EVENT_DRIVEN_RULE_TYPES.contains(&"ssh_new_ip_login"));
+        assert!(EVENT_DRIVEN_RULE_TYPES.contains(&"port_scan_detected"));
         assert!(!EVENT_DRIVEN_RULE_TYPES.contains(&"cpu"));
         assert!(!EVENT_DRIVEN_RULE_TYPES.contains(&"offline"));
+    }
+
+    // ── validate_alert_rule_items ──
+
+    fn item(rule_type: &str) -> AlertRuleItem {
+        AlertRuleItem {
+            rule_type: rule_type.to_string(),
+            min: None,
+            max: None,
+            duration: None,
+            cycle_interval: None,
+            cycle_limit: None,
+            security: None,
+        }
+    }
+
+    #[test]
+    fn test_validate_rejects_mixing_security_and_metric() {
+        let items = vec![item("ssh_brute_force_detected"), item("cpu")];
+        let err = validate_alert_rule_items(&items).expect_err("should reject mix");
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn test_validate_rejects_multiple_security_items() {
+        let items = vec![
+            item("ssh_brute_force_detected"),
+            item("ssh_new_ip_login"),
+        ];
+        let err = validate_alert_rule_items(&items).expect_err("should reject multi-security");
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn test_validate_accepts_single_security_item() {
+        let items = vec![item("port_scan_detected")];
+        validate_alert_rule_items(&items).expect("single security item is valid");
+    }
+
+    #[test]
+    fn test_validate_accepts_all_metric_items() {
+        let items = vec![item("cpu"), item("memory"), item("offline")];
+        validate_alert_rule_items(&items).expect("metric-only is valid");
+    }
+
+    #[test]
+    fn test_validate_accepts_empty() {
+        validate_alert_rule_items(&[]).expect("empty list is valid");
+    }
+
+    #[test]
+    fn test_security_rule_params_default_dedupe() {
+        let json = r#"{"min_failed_count": 10}"#;
+        let p: SecurityRuleParams = serde_json::from_str(json).expect("parse");
+        assert_eq!(p.dedupe_window_seconds, 600);
     }
 
     #[test]
