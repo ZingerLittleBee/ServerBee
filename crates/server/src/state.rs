@@ -43,7 +43,7 @@ pub struct RateLimitEntry {
 
 pub struct AppState {
     pub db: DatabaseConnection,
-    pub agent_manager: AgentManager,
+    pub agent_manager: Arc<AgentManager>,
     pub browser_tx: broadcast::Sender<BrowserMessage>,
     pub config: AppConfig,
     pub upgrade_tracker: UpgradeJobTracker,
@@ -142,7 +142,7 @@ impl AppState {
 
     pub async fn new(db: DatabaseConnection, config: AppConfig) -> Result<Arc<Self>, AppError> {
         let (browser_tx, _) = broadcast::channel(256);
-        let agent_manager = AgentManager::new(browser_tx.clone());
+        let agent_manager = Arc::new(AgentManager::new(browser_tx.clone()));
         let upgrade_tracker = UpgradeJobTracker::new(browser_tx.clone());
         let upgrade_release_service = UpgradeReleaseService::new(&config.upgrade);
         let geoip = if !config.geoip.mmdb_path.is_empty() {
@@ -175,16 +175,18 @@ impl AppState {
             tracing::warn!("Failed to preload capabilities: {e}");
         }
         let config_arc = Arc::new(config.clone());
+        let firewall = Arc::new(FirewallService::new(
+            db.clone(),
+            config_arc.clone(),
+            browser_tx.clone(),
+        ));
         let security_service = Arc::new(SecurityService::new(
             db.clone(),
             browser_tx.clone(),
             alert_state_manager.clone(),
-            config_arc.clone(),
-        ));
-        let firewall = Arc::new(FirewallService::new(
-            db.clone(),
             config_arc,
-            browser_tx.clone(),
+            firewall.clone(),
+            agent_manager.clone(),
         ));
         Ok(Arc::new(Self {
             db,

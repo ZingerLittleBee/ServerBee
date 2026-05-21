@@ -386,6 +386,146 @@ impl FirewallService {
         );
     }
 
+    /// Insert a `block_list` row from a matched security rule's
+    /// `block_source_ip` action, push the new entry to covered agents, and
+    /// audit/broadcast the change. Returns `Ok(Some(id))` on a fresh insert,
+    /// `Ok(None)` when the target was already covered or hit a guardrail.
+    pub async fn auto_block(
+        &self,
+        triggering_server_id: &str,
+        rule: &crate::entity::alert_rule::Model,
+        payload: &serverbee_common::security::SecurityEventPayload,
+        event_id: &str,
+        action: &crate::service::alert::AlertRuleAction,
+        agent_manager: &crate::service::agent_manager::AgentManager,
+    ) -> Result<Option<String>, AppError> {
+        use crate::service::alert::AlertRuleAction;
+        use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+        use uuid::Uuid;
+
+        let (target, family) = Self::canonicalize_target(&payload.source_ip)?;
+
+        let (cover_type, server_ids_json, comment_template) = match action {
+            AlertRuleAction::BlockSourceIp {
+                cover_type,
+                server_ids_json,
+                comment,
+            } => (cover_type.clone(), server_ids_json.clone(), comment.clone()),
+        };
+
+        // Coverage-aware dedup. If an existing row already covers the
+        // triggering server, the auto-block is genuinely redundant — silently
+        // skip. If it exists but does NOT cover, audit a conflict and skip.
+        if let Some(existing) = block_list::Entity::find()
+            .filter(block_list::Column::Target.eq(&target))
+            .one(&self.db)
+            .await?
+        {
+            let covers = crate::service::alert::rule_covers_server(
+                &existing.cover_type,
+                &existing.server_ids_json,
+                triggering_server_id,
+            );
+            if covers {
+                return Ok(None);
+            }
+            crate::service::audit::AuditService::log(
+                &self.db,
+                "system",
+                "firewall_auto_block_skipped_conflict",
+                Some(
+                    &serde_json::json!({
+                        "target": target,
+                        "existing_id": existing.id,
+                        "current_server_id": triggering_server_id,
+                        "rule_id": rule.id,
+                        "event_id": event_id,
+                    })
+                    .to_string(),
+                ),
+                "",
+            )
+            .await
+            .ok();
+            return Ok(None);
+        }
+
+        let dynamic_allow = self.collect_dynamic_allow().await;
+        let mut allow: Vec<String> = self.config.firewall.allow_list.clone();
+        allow.extend(dynamic_allow);
+        if let Some(reason) = Self::is_protected(&target, &allow) {
+            crate::service::audit::AuditService::log(
+                &self.db,
+                "system",
+                "firewall_block_rejected_server",
+                Some(
+                    &serde_json::json!({
+                        "target": target,
+                        "reason": reason,
+                        "rule_id": rule.id,
+                        "event_id": event_id,
+                    })
+                    .to_string(),
+                ),
+                "",
+            )
+            .await
+            .ok();
+            return Ok(None);
+        }
+
+        let id = Uuid::new_v4().to_string();
+        let event_type_str = format!("{:?}", payload.event_type).to_lowercase();
+        let severity_str = format!("{:?}", payload.severity).to_lowercase();
+        let comment = comment_template
+            .as_deref()
+            .map(|t| {
+                t.replace("{rule_name}", &rule.name)
+                    .replace("{event_type}", &event_type_str)
+                    .replace("{severity}", &severity_str)
+            })
+            .or_else(|| Some(format!("Auto-block from {}", rule.name)));
+
+        let row = block_list::ActiveModel {
+            id: Set(id.clone()),
+            target: Set(target.clone()),
+            family: Set(family as i32),
+            cover_type: Set(cover_type),
+            server_ids_json: Set(server_ids_json),
+            comment: Set(comment),
+            origin: Set(crate::service::alert::ORIGIN_AUTO.to_string()),
+            origin_event_id: Set(Some(event_id.to_string())),
+            origin_rule_id: Set(Some(rule.id.clone())),
+            created_by: Set(None),
+            created_at: Set(chrono::Utc::now()),
+        }
+        .insert(&self.db)
+        .await?;
+
+        crate::service::audit::AuditService::log(
+            &self.db,
+            "system",
+            "firewall_block_created",
+            Some(
+                &serde_json::json!({
+                    "id": row.id,
+                    "target": row.target,
+                    "origin": crate::service::alert::ORIGIN_AUTO,
+                    "rule_id": rule.id,
+                    "event_id": event_id,
+                })
+                .to_string(),
+            ),
+            "",
+        )
+        .await
+        .ok();
+
+        self.broadcast_changed_created(&row);
+        self.push_add_to_covered_agents(&row, agent_manager).await;
+        Ok(Some(row.id))
+    }
+
     /// Audit a `BlocklistResetAck` from the agent. No `apply_state` mutation
     /// is needed because `push_reset_to` already cleared it locally.
     pub async fn record_reset_ack(

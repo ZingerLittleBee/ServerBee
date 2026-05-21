@@ -15,10 +15,12 @@ use uuid::Uuid;
 use crate::config::AppConfig;
 use crate::entity::{alert_rule, security_event, server};
 use crate::error::AppError;
+use crate::service::agent_manager::AgentManager;
 use crate::service::alert::{
-    AlertRuleItem, AlertStateManager, SECURITY_RULE_TYPES, SecurityRuleParams,
+    AlertRuleAction, AlertRuleItem, AlertStateManager, SECURITY_RULE_TYPES, SecurityRuleParams,
     rule_covers_server,
 };
+use crate::service::firewall::FirewallService;
 use crate::service::maintenance::MaintenanceService;
 use crate::service::notification::{NotificationService, NotifyContext};
 
@@ -27,6 +29,8 @@ pub struct SecurityService {
     pub browser_tx: broadcast::Sender<BrowserMessage>,
     pub alert_state_manager: Arc<AlertStateManager>,
     pub config: Arc<AppConfig>,
+    pub firewall: Arc<FirewallService>,
+    pub agent_manager: Arc<AgentManager>,
 }
 
 impl SecurityService {
@@ -35,12 +39,16 @@ impl SecurityService {
         browser_tx: broadcast::Sender<BrowserMessage>,
         alert_state_manager: Arc<AlertStateManager>,
         config: Arc<AppConfig>,
+        firewall: Arc<FirewallService>,
+        agent_manager: Arc<AgentManager>,
     ) -> Self {
         Self {
             db,
             browser_tx,
             alert_state_manager,
             config,
+            firewall,
+            agent_manager,
         }
     }
 
@@ -90,7 +98,7 @@ impl SecurityService {
                 event: payload.clone(),
             }));
 
-        if let Err(e) = self.evaluate_rules(server_id, &payload).await {
+        if let Err(e) = self.evaluate_rules(server_id, &payload, &event_id).await {
             tracing::error!(server_id, error = %e, "security alert evaluation failed");
         }
 
@@ -101,6 +109,7 @@ impl SecurityService {
         &self,
         server_id: &str,
         payload: &SecurityEventPayload,
+        event_id: &str,
     ) -> Result<(), AppError> {
         if MaintenanceService::is_in_maintenance(&self.db, server_id)
             .await
@@ -161,6 +170,35 @@ impl SecurityService {
             self.alert_state_manager
                 .mark_triggered(&self.db, &rule.id, server_id, event_key)
                 .await?;
+
+            // Auto-actions run on every rule match, even when the
+            // notification is dedupe-suppressed or no notification group
+            // is configured.
+            let actions: Vec<AlertRuleAction> = rule
+                .actions_json
+                .as_deref()
+                .and_then(|s| serde_json::from_str(s).ok())
+                .unwrap_or_default();
+            for action in &actions {
+                match action {
+                    AlertRuleAction::BlockSourceIp { .. } => {
+                        if let Err(e) = self
+                            .firewall
+                            .auto_block(
+                                server_id,
+                                rule,
+                                payload,
+                                event_id,
+                                action,
+                                &self.agent_manager,
+                            )
+                            .await
+                        {
+                            tracing::error!(rule_id = %rule.id, error = %e, "auto_block failed");
+                        }
+                    }
+                }
+            }
 
             if !should_notify {
                 continue;
