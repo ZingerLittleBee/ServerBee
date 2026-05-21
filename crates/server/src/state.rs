@@ -17,6 +17,7 @@ use crate::service::high_risk_audit::{
     DockerLogsAuditContext, ExecAuditContext, TerminalAuditContext,
 };
 use crate::service::recovery_lock::RecoveryLockService;
+use crate::service::security::SecurityService;
 use crate::service::task_scheduler::TaskScheduler;
 use crate::service::upgrade_release::UpgradeReleaseService;
 use crate::service::upgrade_tracker::UpgradeJobTracker;
@@ -63,7 +64,10 @@ pub struct AppState {
     /// Cron-based scheduled task scheduler.
     pub task_scheduler: Arc<TaskScheduler>,
     /// Shared alert state manager for dedup across poll-based and event-driven evaluation.
-    pub alert_state_manager: AlertStateManager,
+    pub alert_state_manager: Arc<AlertStateManager>,
+    /// Service that persists agent-emitted security events and dispatches
+    /// inline alert notifications.
+    pub security_service: Arc<SecurityService>,
     /// In-memory freeze gate for agent-originated writes during recovery.
     pub recovery_lock: RecoveryLockService,
     /// Pending mobile pairing codes for QR login, keyed by code.
@@ -156,16 +160,23 @@ impl AppState {
         ));
         let task_scheduler = Arc::new(TaskScheduler::new(&config.scheduler.timezone).await?);
         let alert_state_manager = match AlertStateManager::load_from_db(&db).await {
-            Ok(sm) => sm,
+            Ok(sm) => Arc::new(sm),
             Err(e) => {
                 tracing::warn!("Failed to load alert states from DB, starting empty: {e}");
-                AlertStateManager::new()
+                Arc::new(AlertStateManager::new())
             }
         };
         // Preload capabilities and features from DB
         if let Err(e) = agent_manager.preload_capabilities(&db).await {
             tracing::warn!("Failed to preload capabilities: {e}");
         }
+        let config_arc = Arc::new(config.clone());
+        let security_service = Arc::new(SecurityService::new(
+            db.clone(),
+            browser_tx.clone(),
+            alert_state_manager.clone(),
+            config_arc,
+        ));
         Ok(Arc::new(Self {
             db,
             agent_manager,
@@ -183,6 +194,7 @@ impl AppState {
             docker_viewers: DockerViewerTracker::new(),
             task_scheduler,
             alert_state_manager,
+            security_service,
             recovery_lock: RecoveryLockService::new(),
             pending_pairs: DashMap::new(),
             terminal_audit_contexts: DashMap::new(),
