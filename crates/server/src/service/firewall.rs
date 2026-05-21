@@ -475,14 +475,14 @@ impl FirewallService {
         }
 
         let id = Uuid::new_v4().to_string();
-        let event_type_str = format!("{:?}", payload.event_type).to_lowercase();
-        let severity_str = format!("{:?}", payload.severity).to_lowercase();
+        let event_type_str = crate::service::security::event_type_to_str(payload.event_type);
+        let severity_str = crate::service::security::severity_to_str(payload.severity);
         let comment = comment_template
             .as_deref()
             .map(|t| {
                 t.replace("{rule_name}", &rule.name)
-                    .replace("{event_type}", &event_type_str)
-                    .replace("{severity}", &severity_str)
+                    .replace("{event_type}", event_type_str)
+                    .replace("{severity}", severity_str)
             })
             .or_else(|| Some(format!("Auto-block from {}", rule.name)));
 
@@ -792,5 +792,36 @@ mod tests {
         // Conflict audit written.
         let conflicts = fetch_audits(&db, "firewall_auto_block_skipped_conflict").await;
         assert_eq!(conflicts.len(), 1, "expected one conflict audit entry");
+    }
+
+    #[tokio::test]
+    async fn auto_block_substitutes_comment_template() {
+        let (db, _tmp) = setup_test_db().await;
+        let (svc, mgr) = make_service(db.clone());
+
+        let mut rule = make_rule("rule-3");
+        rule.name = "SSH Brute Force Watch".to_string();
+        let payload = make_payload("203.0.113.9");
+        let action = AlertRuleAction::BlockSourceIp {
+            cover_type: "all".into(),
+            server_ids_json: None,
+            comment: Some("{rule_name} → {event_type} ({severity})".into()),
+        };
+
+        let id = svc
+            .auto_block("srv-A", &rule, &payload, "evt-3", &action, &mgr)
+            .await
+            .unwrap()
+            .expect("expected a new block row");
+
+        let row = block_list::Entity::find_by_id(&id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            row.comment.as_deref(),
+            Some("SSH Brute Force Watch → ssh_brute_force (high)")
+        );
     }
 }

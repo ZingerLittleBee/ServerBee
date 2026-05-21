@@ -307,7 +307,7 @@ fn unix_to_utc(secs: i64) -> DateTime<Utc> {
     Utc.timestamp_opt(secs, 0).single().unwrap_or_else(Utc::now)
 }
 
-fn event_type_to_str(t: SecurityEventType) -> &'static str {
+pub(crate) fn event_type_to_str(t: SecurityEventType) -> &'static str {
     match t {
         SecurityEventType::SshLogin => "ssh_login",
         SecurityEventType::SshBruteForce => "ssh_brute_force",
@@ -323,7 +323,7 @@ fn event_type_to_rule_type(t: SecurityEventType) -> &'static str {
     }
 }
 
-fn severity_to_str(s: serverbee_common::security::Severity) -> &'static str {
+pub(crate) fn severity_to_str(s: serverbee_common::security::Severity) -> &'static str {
     use serverbee_common::security::Severity;
     match s {
         Severity::Info => "info",
