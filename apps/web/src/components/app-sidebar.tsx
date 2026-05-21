@@ -52,7 +52,8 @@ const monitorItems = [
   { to: '/', labelKey: 'nav_dashboard', icon: LayoutDashboard },
   { to: '/servers', labelKey: 'nav_servers', icon: List },
   { to: '/network', labelKey: 'nav_network', icon: Wifi },
-  { to: '/traffic', labelKey: 'nav_traffic', icon: BarChart3 }
+  { to: '/traffic', labelKey: 'nav_traffic', icon: BarChart3 },
+  { to: '/security', labelKey: 'nav_security_events', icon: ShieldAlert }
 ] as const
 
 const settingsItems = [

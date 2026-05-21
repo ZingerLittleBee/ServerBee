@@ -9,6 +9,7 @@ import enFile from '@/locales/en/file.json'
 import enLogin from '@/locales/en/login.json'
 import enNetwork from '@/locales/en/network.json'
 import enOnboarding from '@/locales/en/onboarding.json'
+import enSecurity from '@/locales/en/security.json'
 import enServers from '@/locales/en/servers.json'
 import enServiceMonitors from '@/locales/en/service-monitors.json'
 import enSettings from '@/locales/en/settings.json'
@@ -22,6 +23,7 @@ import zhFile from '@/locales/zh/file.json'
 import zhLogin from '@/locales/zh/login.json'
 import zhNetwork from '@/locales/zh/network.json'
 import zhOnboarding from '@/locales/zh/onboarding.json'
+import zhSecurity from '@/locales/zh/security.json'
 import zhServers from '@/locales/zh/servers.json'
 import zhServiceMonitors from '@/locales/zh/service-monitors.json'
 import zhSettings from '@/locales/zh/settings.json'
@@ -45,7 +47,8 @@ i18next
         login: enLogin,
         status: enStatus,
         network: enNetwork,
-        onboarding: enOnboarding
+        onboarding: enOnboarding,
+        security: enSecurity
       },
       zh: {
         common: zhCommon,
@@ -59,7 +62,8 @@ i18next
         login: zhLogin,
         status: zhStatus,
         network: zhNetwork,
-        onboarding: zhOnboarding
+        onboarding: zhOnboarding,
+        security: zhSecurity
       }
     },
     fallbackLng: 'en',
