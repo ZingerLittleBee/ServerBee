@@ -288,6 +288,13 @@ pub enum AgentMessage {
         #[serde(default)]
         backup_path: Option<String>,
     },
+    BlocklistAck {
+        results: Vec<crate::firewall::BlocklistAckItem>,
+    },
+    BlocklistResetAck {
+        ok: bool,
+        reason: Option<String>,
+    },
     Pong,
 }
 
@@ -446,6 +453,22 @@ pub enum ServerMessage {
     CapabilitiesSync {
         capabilities: u32,
     },
+    /// Full-state sync. Agent reconciles its nft set diff against this list
+    /// and emits one BlocklistAck item per entry it touched.
+    BlocklistSync {
+        entries: Vec<crate::firewall::BlockEntry>,
+    },
+    /// Incremental add. Agent applies, then emits a single-item BlocklistAck.
+    BlocklistAdd {
+        entry: crate::firewall::BlockEntry,
+    },
+    /// Incremental remove. Agent applies, then emits a single-item BlocklistAck.
+    BlocklistRemove {
+        id: String,
+    },
+    /// Unconditional wipe of the agent's firewall state. Honored regardless
+    /// of capability bit; intended for capability-revoke cleanup.
+    BlocklistReset,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -531,6 +554,17 @@ pub enum BrowserMessage {
         new_ipv6: Option<String>,
         old_remote_addr: Option<String>,
         new_remote_addr: Option<String>,
+    },
+    BlocklistChanged {
+        kind: crate::firewall::BlocklistChangeKind,
+        block_id: String,
+        target: String,
+    },
+    FirewallApplyStateChanged {
+        block_id: String,
+        server_id: String,
+        state: crate::firewall::BlocklistEntryState,
+        reason: Option<String>,
     },
 }
 
@@ -1613,6 +1647,68 @@ mod tests {
             }
             _ => panic!("Expected AgentInfoUpdated"),
         }
+    }
+
+    #[test]
+    fn server_message_blocklist_reset_encodes() {
+        let json = serde_json::to_string(&ServerMessage::BlocklistReset).unwrap();
+        // Internal-tagged enum with snake_case: {"type":"blocklist_reset"}
+        assert_eq!(json, r#"{"type":"blocklist_reset"}"#);
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        assert!(matches!(parsed, ServerMessage::BlocklistReset));
+    }
+
+    #[test]
+    fn server_message_blocklist_sync_round_trip() {
+        use crate::firewall::BlockEntry;
+        let msg = ServerMessage::BlocklistSync {
+            entries: vec![BlockEntry {
+                id: "b1".into(),
+                target: "1.2.3.4/32".into(),
+                family: 4,
+            }],
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"blocklist_sync\""));
+        assert!(json.contains("\"target\":\"1.2.3.4/32\""));
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ServerMessage::BlocklistSync { entries } => {
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0].id, "b1");
+            }
+            _ => panic!("Expected BlocklistSync"),
+        }
+    }
+
+    #[test]
+    fn agent_message_blocklist_ack_encodes() {
+        use crate::firewall::{BlocklistAckItem, BlocklistEntryState};
+        let msg = AgentMessage::BlocklistAck {
+            results: vec![BlocklistAckItem {
+                id: "b1".into(),
+                state: BlocklistEntryState::Present,
+                reason: None,
+            }],
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"blocklist_ack\""));
+        assert!(json.contains("\"state\":\"present\""));
+        let _: AgentMessage = serde_json::from_str(&json).unwrap();
+    }
+
+    #[test]
+    fn browser_message_blocklist_changed_encodes() {
+        use crate::firewall::BlocklistChangeKind;
+        let msg = BrowserMessage::BlocklistChanged {
+            kind: BlocklistChangeKind::Created,
+            block_id: "b1".into(),
+            target: "1.2.3.4/32".into(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"blocklist_changed\""));
+        assert!(json.contains("\"kind\":\"created\""));
+        let _: BrowserMessage = serde_json::from_str(&json).unwrap();
     }
 
     #[test]
