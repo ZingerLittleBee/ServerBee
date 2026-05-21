@@ -20,19 +20,15 @@ pub struct FirewallManager {
     nft_ready: Mutex<bool>,
     external_ip: Mutex<Option<IpAddr>>,
     executor: Arc<dyn NftExecutor>,
-    /// Local capability — `false` means the `nft` probe failed at startup.
-    #[allow(dead_code)]
-    local_capable: bool,
 }
 
 impl FirewallManager {
-    pub fn new(executor: Arc<dyn NftExecutor>, local_capable: bool) -> Self {
+    pub fn new(executor: Arc<dyn NftExecutor>) -> Self {
         Self {
             desired: Mutex::new(HashMap::new()),
             nft_ready: Mutex::new(false),
             external_ip: Mutex::new(None),
             executor,
-            local_capable,
         }
     }
 
@@ -282,7 +278,7 @@ mod tests {
 
     #[tokio::test]
     async fn add_success_inserts_into_desired() {
-        let mgr = FirewallManager::new(Arc::new(OkExec), true);
+        let mgr = FirewallManager::new(Arc::new(OkExec));
         let ack = mgr.handle_add(entry("b1", "1.2.3.4/32", 4)).await;
         match ack {
             AgentMessage::BlocklistAck { results } => {
@@ -296,7 +292,7 @@ mod tests {
 
     #[tokio::test]
     async fn failed_add_keeps_desired_clear_for_retry() {
-        let mgr = FirewallManager::new(Arc::new(FailAdd), true);
+        let mgr = FirewallManager::new(Arc::new(FailAdd));
         let ack = mgr.handle_add(entry("b1", "1.2.3.4/32", 4)).await;
         match ack {
             AgentMessage::BlocklistAck { results } => {
@@ -309,7 +305,7 @@ mod tests {
 
     #[tokio::test]
     async fn sync_acks_every_incoming_entry() {
-        let mgr = FirewallManager::new(Arc::new(OkExec), true);
+        let mgr = FirewallManager::new(Arc::new(OkExec));
         let entries = vec![entry("a", "1.1.1.1/32", 4), entry("b", "2.2.2.2/32", 4)];
         let ack = mgr.handle_sync(entries).await;
         match ack {
@@ -327,7 +323,7 @@ mod tests {
 
     #[tokio::test]
     async fn reset_clears_desired_and_nft_ready() {
-        let mgr = FirewallManager::new(Arc::new(OkExec), true);
+        let mgr = FirewallManager::new(Arc::new(OkExec));
         mgr.handle_add(entry("b1", "1.2.3.4/32", 4)).await;
         assert!(mgr.desired.lock().await.contains_key("b1"));
         let ack = mgr.handle_reset().await;
@@ -341,7 +337,7 @@ mod tests {
 
     #[tokio::test]
     async fn guardrail_blocks_loopback() {
-        let mgr = FirewallManager::new(Arc::new(OkExec), true);
+        let mgr = FirewallManager::new(Arc::new(OkExec));
         let ack = mgr.handle_add(entry("b1", "127.0.0.1/32", 4)).await;
         match ack {
             AgentMessage::BlocklistAck { results } => {
@@ -354,7 +350,7 @@ mod tests {
 
     #[tokio::test]
     async fn remove_unknown_id_acks_absent() {
-        let mgr = FirewallManager::new(Arc::new(OkExec), true);
+        let mgr = FirewallManager::new(Arc::new(OkExec));
         let ack = mgr.handle_remove("unknown".into()).await;
         match ack {
             AgentMessage::BlocklistAck { results } => {
@@ -366,7 +362,7 @@ mod tests {
 
     #[tokio::test]
     async fn sync_removes_orphans() {
-        let mgr = FirewallManager::new(Arc::new(OkExec), true);
+        let mgr = FirewallManager::new(Arc::new(OkExec));
         mgr.handle_add(entry("orphan", "9.9.9.9/32", 4)).await;
         mgr.handle_sync(vec![entry("new", "1.1.1.1/32", 4)]).await;
         let g = mgr.desired.lock().await;

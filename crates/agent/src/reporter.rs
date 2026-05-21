@@ -48,14 +48,7 @@ pub struct Reporter {
 
 impl Reporter {
     pub fn new(config: AgentConfig, fingerprint: String, agent_local_capabilities: u32) -> Self {
-        let firewall_local = has_capability(
-            agent_local_capabilities,
-            serverbee_common::constants::CAP_FIREWALL_BLOCK,
-        );
-        let firewall_manager = Arc::new(FirewallManager::new(
-            Arc::new(CliNftExecutor),
-            firewall_local,
-        ));
+        let firewall_manager = Arc::new(FirewallManager::new(Arc::new(CliNftExecutor)));
         Self {
             config,
             fingerprint,
