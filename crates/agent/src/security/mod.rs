@@ -7,6 +7,7 @@
 
 #![allow(dead_code)]
 
+pub mod conntrack_watcher;
 pub mod first_seen_store;
 pub mod journal_watcher;
 pub mod scan_detector;

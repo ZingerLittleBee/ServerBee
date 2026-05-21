@@ -45,3 +45,12 @@ tempfile = "3"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
+
+# Conntrack/scan detection on Linux is implemented via the `conntrack -E`
+# CLI in subprocess mode. We considered direct netlink with
+# `netlink-packet-netfilter`, but as of v0.2 it only implements the nflog
+# subprotocol; conntrack parsing would require hand-rolling
+# nfnetlink_cttuple decoding. The subprocess keeps the surface area small
+# and easy to mock in tests; the watcher fails fast if the binary is
+# missing so the manager can disable scan detection without affecting
+# brute-force detection.
