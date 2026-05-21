@@ -83,6 +83,7 @@ These variables are for local repo tooling and development workflows. They are n
 | `SERVERBEE_RETENTION__TASK_RESULTS_DAYS` | `retention.task_results_days` | u32 | `7` | Task results retention in days |
 | `SERVERBEE_RETENTION__DOCKER_EVENTS_DAYS` | `retention.docker_events_days` | u32 | `7` | Docker event records retention in days |
 | `SERVERBEE_RETENTION__SERVICE_MONITOR_DAYS` | `retention.service_monitor_days` | u32 | `30` | Service monitor records retention in days |
+| `SERVERBEE_RETENTION__SECURITY_EVENT_DAYS` | `retention.security_event_days` | u32 | `30` | Security event records (SSH login / brute force / port scan) retention in days |
 
 ### Mobile (Optional)
 
