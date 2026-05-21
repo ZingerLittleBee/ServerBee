@@ -39,10 +39,8 @@ export function ServerSecurityTab({ serverId }: Props) {
         <p className="text-muted-foreground text-sm">
           {t('tab.recent_label', { defaultValue: 'Most recent 50 security events on this server' })}
         </p>
-        <Button asChild size="sm" variant="outline">
-          <Link params={{ serverId }} to="/security/$serverId">
-            {t('tab.view_all', { defaultValue: 'View all' })}
-          </Link>
+        <Button render={<Link params={{ serverId }} to="/security/$serverId" />} size="sm" variant="outline">
+          {t('tab.view_all', { defaultValue: 'View all' })}
         </Button>
       </div>
       <SecurityEventTable

@@ -264,7 +264,7 @@ function PresetDialog({ preset }: { preset: PresetDef }) {
             <Label htmlFor={`preset-group-${preset.kind}`}>
               {t('preset.field_group', { defaultValue: 'Notification group' })}
             </Label>
-            <Select onValueChange={setGroupId} value={groupId}>
+            <Select onValueChange={(v) => setGroupId(v ?? '')} value={groupId}>
               <SelectTrigger id={`preset-group-${preset.kind}`}>
                 <SelectValue placeholder={t('preset.field_group_none', { defaultValue: 'None' })} />
               </SelectTrigger>

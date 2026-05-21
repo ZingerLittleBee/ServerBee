@@ -60,8 +60,8 @@ function SecurityServerPage() {
     <div className="space-y-4 p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <Button asChild className="mb-2 -ml-2" size="sm" variant="ghost">
-            <Link to="/security">{t('per_server.back', { defaultValue: '← Back to Security' })}</Link>
+          <Button className="mb-2 -ml-2" render={<Link to="/security" />} size="sm" variant="ghost">
+            {t('per_server.back', { defaultValue: '← Back to Security' })}
           </Button>
           <h1 className="font-semibold text-2xl">
             {server?.name ?? serverId}

@@ -42,6 +42,7 @@ export interface SecurityStatsFilters {
   server_id?: string | null
   since?: string | null
   until?: string | null
+  [key: string]: unknown
 }
 
 export function useSecurityStats(filters: SecurityStatsFilters) {
