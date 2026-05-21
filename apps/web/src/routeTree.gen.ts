@@ -31,6 +31,7 @@ import { Route as AuthedSettingsPingTasksRouteImport } from './routes/_authed/se
 import { Route as AuthedSettingsNotificationsRouteImport } from './routes/_authed/settings/notifications'
 import { Route as AuthedSettingsNetworkProbesRouteImport } from './routes/_authed/settings/network-probes'
 import { Route as AuthedSettingsMobileDevicesRouteImport } from './routes/_authed/settings/mobile-devices'
+import { Route as AuthedSettingsFirewallRouteImport } from './routes/_authed/settings/firewall'
 import { Route as AuthedSettingsCapabilitiesRouteImport } from './routes/_authed/settings/capabilities'
 import { Route as AuthedSettingsAuditLogsRouteImport } from './routes/_authed/settings/audit-logs'
 import { Route as AuthedSettingsAppearanceRouteImport } from './routes/_authed/settings/appearance'
@@ -159,6 +160,11 @@ const AuthedSettingsMobileDevicesRoute =
     path: '/settings/mobile-devices',
     getParentRoute: () => AuthedRoute,
   } as any)
+const AuthedSettingsFirewallRoute = AuthedSettingsFirewallRouteImport.update({
+  id: '/settings/firewall',
+  path: '/settings/firewall',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedSettingsCapabilitiesRoute =
   AuthedSettingsCapabilitiesRouteImport.update({
     id: '/settings/capabilities',
@@ -247,6 +253,7 @@ export interface FileRoutesByFullPath {
   '/settings/appearance': typeof AuthedSettingsAppearanceRouteWithChildren
   '/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
   '/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
+  '/settings/firewall': typeof AuthedSettingsFirewallRoute
   '/settings/mobile-devices': typeof AuthedSettingsMobileDevicesRoute
   '/settings/network-probes': typeof AuthedSettingsNetworkProbesRoute
   '/settings/notifications': typeof AuthedSettingsNotificationsRoute
@@ -282,6 +289,7 @@ export interface FileRoutesByTo {
   '/settings/appearance': typeof AuthedSettingsAppearanceRouteWithChildren
   '/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
   '/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
+  '/settings/firewall': typeof AuthedSettingsFirewallRoute
   '/settings/mobile-devices': typeof AuthedSettingsMobileDevicesRoute
   '/settings/network-probes': typeof AuthedSettingsNetworkProbesRoute
   '/settings/notifications': typeof AuthedSettingsNotificationsRoute
@@ -320,6 +328,7 @@ export interface FileRoutesById {
   '/_authed/settings/appearance': typeof AuthedSettingsAppearanceRouteWithChildren
   '/_authed/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
   '/_authed/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
+  '/_authed/settings/firewall': typeof AuthedSettingsFirewallRoute
   '/_authed/settings/mobile-devices': typeof AuthedSettingsMobileDevicesRoute
   '/_authed/settings/network-probes': typeof AuthedSettingsNetworkProbesRoute
   '/_authed/settings/notifications': typeof AuthedSettingsNotificationsRoute
@@ -358,6 +367,7 @@ export interface FileRouteTypes {
     | '/settings/appearance'
     | '/settings/audit-logs'
     | '/settings/capabilities'
+    | '/settings/firewall'
     | '/settings/mobile-devices'
     | '/settings/network-probes'
     | '/settings/notifications'
@@ -393,6 +403,7 @@ export interface FileRouteTypes {
     | '/settings/appearance'
     | '/settings/audit-logs'
     | '/settings/capabilities'
+    | '/settings/firewall'
     | '/settings/mobile-devices'
     | '/settings/network-probes'
     | '/settings/notifications'
@@ -430,6 +441,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/appearance'
     | '/_authed/settings/audit-logs'
     | '/_authed/settings/capabilities'
+    | '/_authed/settings/firewall'
     | '/_authed/settings/mobile-devices'
     | '/_authed/settings/network-probes'
     | '/_authed/settings/notifications'
@@ -613,6 +625,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsMobileDevicesRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/settings/firewall': {
+      id: '/_authed/settings/firewall'
+      path: '/settings/firewall'
+      fullPath: '/settings/firewall'
+      preLoaderRoute: typeof AuthedSettingsFirewallRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/settings/capabilities': {
       id: '/_authed/settings/capabilities'
       path: '/settings/capabilities'
@@ -737,6 +756,7 @@ interface AuthedRouteChildren {
   AuthedSettingsAppearanceRoute: typeof AuthedSettingsAppearanceRouteWithChildren
   AuthedSettingsAuditLogsRoute: typeof AuthedSettingsAuditLogsRoute
   AuthedSettingsCapabilitiesRoute: typeof AuthedSettingsCapabilitiesRoute
+  AuthedSettingsFirewallRoute: typeof AuthedSettingsFirewallRoute
   AuthedSettingsMobileDevicesRoute: typeof AuthedSettingsMobileDevicesRoute
   AuthedSettingsNetworkProbesRoute: typeof AuthedSettingsNetworkProbesRoute
   AuthedSettingsNotificationsRoute: typeof AuthedSettingsNotificationsRoute
@@ -767,6 +787,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedSettingsAppearanceRoute: AuthedSettingsAppearanceRouteWithChildren,
   AuthedSettingsAuditLogsRoute: AuthedSettingsAuditLogsRoute,
   AuthedSettingsCapabilitiesRoute: AuthedSettingsCapabilitiesRoute,
+  AuthedSettingsFirewallRoute: AuthedSettingsFirewallRoute,
   AuthedSettingsMobileDevicesRoute: AuthedSettingsMobileDevicesRoute,
   AuthedSettingsNetworkProbesRoute: AuthedSettingsNetworkProbesRoute,
   AuthedSettingsNotificationsRoute: AuthedSettingsNotificationsRoute,
