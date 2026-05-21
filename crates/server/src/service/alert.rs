@@ -30,7 +30,7 @@ pub const SECURITY_RULE_TYPES: &[&str] = &[
 
 // ── Alert Rule Types ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct AlertRuleItem {
     pub rule_type: String,
     #[serde(default)]
@@ -47,6 +47,29 @@ pub struct AlertRuleItem {
     /// `ssh_new_ip_login`, `port_scan_detected`). Ignored for metric rules.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub security: Option<SecurityRuleParams>,
+}
+
+/// Side-effect action attached to an alert rule. Currently only
+/// `block_source_ip` is supported, which is restricted to security rules whose
+/// payload carries a `source_ip` (`ssh_brute_force_detected` /
+/// `port_scan_detected`).
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AlertRuleAction {
+    /// Auto-block the `source_ip` from the triggering security event.
+    /// Only valid on `ssh_brute_force_detected` / `port_scan_detected` rules.
+    BlockSourceIp {
+        #[serde(default = "default_action_cover_type")]
+        cover_type: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        server_ids_json: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        comment: Option<String>,
+    },
+}
+
+fn default_action_cover_type() -> String {
+    "all".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
@@ -108,6 +131,48 @@ pub fn validate_alert_rule_items(items: &[AlertRuleItem]) -> Result<(), AppError
     Ok(())
 }
 
+/// Validate `AlertRuleAction`s. At most one action per rule. `block_source_ip`
+/// is only allowed when every item in the rule is one of
+/// `ssh_brute_force_detected` / `port_scan_detected` (i.e. payloads that carry
+/// a `source_ip`).
+pub fn validate_actions(
+    rules: &[AlertRuleItem],
+    actions: &[AlertRuleAction],
+) -> Result<(), AppError> {
+    if actions.is_empty() {
+        return Ok(());
+    }
+    if actions.len() > 1 {
+        return Err(AppError::Validation(
+            "at most one action per alert_rule".to_string(),
+        ));
+    }
+    for a in actions {
+        match a {
+            AlertRuleAction::BlockSourceIp { cover_type, .. } => {
+                if !VALID_COVER_TYPES.contains(&cover_type.as_str()) {
+                    return Err(AppError::Validation(format!(
+                        "invalid cover_type '{cover_type}' on action"
+                    )));
+                }
+                let allowed = ["ssh_brute_force_detected", "port_scan_detected"];
+                if rules.is_empty()
+                    || !rules
+                        .iter()
+                        .all(|r| allowed.contains(&r.rule_type.as_str()))
+                {
+                    return Err(AppError::Validation(
+                        "block_source_ip is only allowed on \
+                         ssh_brute_force_detected / port_scan_detected rules"
+                            .to_string(),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateAlertRule {
     pub name: String,
@@ -120,6 +185,8 @@ pub struct CreateAlertRule {
     pub server_ids: Option<Vec<String>>,
     #[serde(default = "default_true")]
     pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<AlertRuleAction>,
 }
 
 fn default_trigger_mode() -> String {
@@ -143,6 +210,8 @@ pub struct UpdateAlertRule {
     pub cover_type: Option<String>,
     pub server_ids: Option<Option<Vec<String>>>,
     pub enabled: Option<bool>,
+    #[serde(default)]
+    pub actions: Option<Vec<AlertRuleAction>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
@@ -378,11 +447,20 @@ impl AlertService {
     ) -> Result<alert_rule::Model, AppError> {
         validate_cover_type(&input.cover_type)?;
         validate_alert_rule_items(&input.rules)?;
+        validate_actions(&input.rules, &input.actions)?;
         let rules_json = serde_json::to_string(&input.rules)
             .map_err(|e| AppError::Validation(format!("Invalid rules: {e}")))?;
         let server_ids_json = input
             .server_ids
             .map(|ids| serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string()));
+        let actions_json = if input.actions.is_empty() {
+            None
+        } else {
+            Some(
+                serde_json::to_string(&input.actions)
+                    .map_err(|e| AppError::Validation(format!("Invalid actions: {e}")))?,
+            )
+        };
         let now = Utc::now();
 
         let model = alert_rule::ActiveModel {
@@ -396,7 +474,7 @@ impl AlertService {
             recover_trigger_tasks: Set(None),
             cover_type: Set(input.cover_type),
             server_ids_json: Set(server_ids_json),
-            actions_json: Set(None),
+            actions_json: Set(actions_json),
             created_at: Set(now),
             updated_at: Set(now),
         };
@@ -409,17 +487,22 @@ impl AlertService {
         input: UpdateAlertRule,
     ) -> Result<alert_rule::Model, AppError> {
         let existing = Self::get(db, id).await?;
+        let existing_rules: Vec<AlertRuleItem> =
+            serde_json::from_str(&existing.rules_json).unwrap_or_default();
         let mut model: alert_rule::ActiveModel = existing.into();
 
         if let Some(name) = input.name {
             model.name = Set(name);
         }
-        if let Some(rules) = input.rules {
+        let effective_rules: Vec<AlertRuleItem> = if let Some(rules) = input.rules {
             validate_alert_rule_items(&rules)?;
             let rules_json = serde_json::to_string(&rules)
                 .map_err(|e| AppError::Validation(format!("Invalid rules: {e}")))?;
             model.rules_json = Set(rules_json);
-        }
+            rules
+        } else {
+            existing_rules
+        };
         if let Some(trigger_mode) = input.trigger_mode {
             model.trigger_mode = Set(trigger_mode);
         }
@@ -437,6 +520,18 @@ impl AlertService {
         }
         if let Some(enabled) = input.enabled {
             model.enabled = Set(enabled);
+        }
+        if let Some(actions) = input.actions {
+            validate_actions(&effective_rules, &actions)?;
+            let actions_json = if actions.is_empty() {
+                None
+            } else {
+                Some(
+                    serde_json::to_string(&actions)
+                        .map_err(|e| AppError::Validation(format!("Invalid actions: {e}")))?,
+                )
+            };
+            model.actions_json = Set(actions_json);
         }
         model.updated_at = Set(Utc::now());
 
@@ -1511,6 +1606,7 @@ mod tests {
             recover_trigger_tasks: Set(None),
             cover_type: Set("all".to_string()),
             server_ids_json: Set(None),
+            actions_json: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         }
@@ -1706,6 +1802,7 @@ mod tests {
             recover_trigger_tasks: Set(None),
             cover_type: Set("all".to_string()),
             server_ids_json: Set(None),
+            actions_json: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         }
@@ -1781,5 +1878,72 @@ mod tests {
         assert!(!rows[0].resolved, "re-armed row should be firing again");
         assert!(rows[0].resolved_at.is_none(), "resolved_at cleared on re-arm");
         assert_eq!(rows[0].count, 1, "count reset on re-arm");
+    }
+
+    // ── AlertRuleAction validator ──
+
+    #[test]
+    fn validate_actions_forbids_with_metric_rule() {
+        let rules = vec![AlertRuleItem {
+            rule_type: "cpu".into(),
+            min: Some(80.0),
+            ..Default::default()
+        }];
+        let actions = vec![AlertRuleAction::BlockSourceIp {
+            cover_type: "all".into(),
+            server_ids_json: None,
+            comment: None,
+        }];
+        let err = validate_actions(&rules, &actions).unwrap_err();
+        assert!(format!("{err}").contains("ssh_brute_force_detected"));
+    }
+
+    #[test]
+    fn validate_actions_forbids_ssh_new_ip_login() {
+        let rules = vec![AlertRuleItem {
+            rule_type: "ssh_new_ip_login".into(),
+            ..Default::default()
+        }];
+        let actions = vec![AlertRuleAction::BlockSourceIp {
+            cover_type: "all".into(),
+            server_ids_json: None,
+            comment: None,
+        }];
+        assert!(validate_actions(&rules, &actions).is_err());
+    }
+
+    #[test]
+    fn validate_actions_allows_brute_force() {
+        let rules = vec![AlertRuleItem {
+            rule_type: "ssh_brute_force_detected".into(),
+            ..Default::default()
+        }];
+        let actions = vec![AlertRuleAction::BlockSourceIp {
+            cover_type: "all".into(),
+            server_ids_json: None,
+            comment: None,
+        }];
+        assert!(validate_actions(&rules, &actions).is_ok());
+    }
+
+    #[test]
+    fn validate_actions_rejects_more_than_one() {
+        let rules = vec![AlertRuleItem {
+            rule_type: "ssh_brute_force_detected".into(),
+            ..Default::default()
+        }];
+        let actions = vec![
+            AlertRuleAction::BlockSourceIp {
+                cover_type: "all".into(),
+                server_ids_json: None,
+                comment: None,
+            },
+            AlertRuleAction::BlockSourceIp {
+                cover_type: "all".into(),
+                server_ids_json: None,
+                comment: None,
+            },
+        ];
+        assert!(validate_actions(&rules, &actions).is_err());
     }
 }

@@ -1640,6 +1640,7 @@ mod tests {
             recover_trigger_tasks: Set(None),
             cover_type: Set("include".to_string()),
             server_ids_json: Set(Some(r#"["target-1","source-1","source-1"]"#.to_string())),
+            actions_json: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         }

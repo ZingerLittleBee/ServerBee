@@ -405,6 +405,7 @@ mod tests {
             recover_trigger_tasks: Set(None),
             cover_type: Set("all".to_string()),
             server_ids_json: Set(None),
+            actions_json: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         }
