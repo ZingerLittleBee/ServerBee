@@ -20,7 +20,6 @@ use crate::error::AppError;
 pub type ApplyStateMap = Arc<RwLock<HashMap<(String, String), ApplyState>>>;
 
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub struct ApplyState {
     pub state: BlocklistEntryState,
     pub reason: Option<String>,
@@ -337,6 +336,81 @@ impl FirewallService {
         }
         let mut g = self.apply_state.write().await;
         g.retain(|(_block_id, srv), _| srv != server_id);
+    }
+
+    /// Update `apply_state`, write an audit row, and fan out a
+    /// `FirewallApplyStateChanged` to subscribed browsers when an agent acks
+    /// the apply of a single block entry.
+    pub async fn record_ack(
+        &self,
+        server_id: &str,
+        item: serverbee_common::firewall::BlocklistAckItem,
+        db: &DatabaseConnection,
+    ) {
+        use serverbee_common::firewall::BlocklistEntryState;
+        {
+            let mut g = self.apply_state.write().await;
+            g.insert(
+                (item.id.clone(), server_id.to_string()),
+                ApplyState {
+                    state: item.state.clone(),
+                    reason: item.reason.clone(),
+                    at: chrono::Utc::now(),
+                },
+            );
+        }
+        let action = match item.state {
+            BlocklistEntryState::Present => "firewall_block_applied_agent",
+            BlocklistEntryState::Absent => "firewall_block_removed_agent",
+            BlocklistEntryState::Failed => "firewall_block_rejected_agent",
+        };
+        let detail = serde_json::json!({
+            "block_id": item.id,
+            "server_id": server_id,
+            "state": item.state,
+            "reason": item.reason,
+        })
+        .to_string();
+        if let Err(e) =
+            crate::service::audit::AuditService::log(db, "system", action, Some(&detail), "").await
+        {
+            tracing::warn!(server_id, error = %e, "audit log for firewall ack failed");
+        }
+        let _ = self.browser_tx.send(
+            serverbee_common::protocol::BrowserMessage::FirewallApplyStateChanged {
+                block_id: item.id,
+                server_id: server_id.to_string(),
+                state: item.state,
+                reason: item.reason,
+            },
+        );
+    }
+
+    /// Audit a `BlocklistResetAck` from the agent. No `apply_state` mutation
+    /// is needed because `push_reset_to` already cleared it locally.
+    pub async fn record_reset_ack(
+        &self,
+        server_id: &str,
+        ok: bool,
+        reason: Option<String>,
+        db: &DatabaseConnection,
+    ) {
+        let action = if ok {
+            "firewall_reset_acked"
+        } else {
+            "firewall_reset_failed_agent"
+        };
+        let detail = serde_json::json!({
+            "server_id": server_id,
+            "ok": ok,
+            "reason": reason,
+        })
+        .to_string();
+        if let Err(e) =
+            crate::service::audit::AuditService::log(db, "system", action, Some(&detail), "").await
+        {
+            tracing::warn!(server_id, error = %e, "audit log for firewall reset ack failed");
+        }
     }
 }
 

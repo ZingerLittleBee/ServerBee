@@ -1301,9 +1301,16 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 tracing::error!(server_id, error = %e, "security_event record failed");
             }
         }
-        // Firewall blocklist acks — handled in Phase 2 wiring.
-        AgentMessage::BlocklistAck { .. } | AgentMessage::BlocklistResetAck { .. } => {
-            tracing::debug!(server_id, "Firewall ack received before Phase 2 wiring; ignoring");
+        AgentMessage::BlocklistAck { results } => {
+            for item in results {
+                state.firewall.record_ack(server_id, item, &state.db).await;
+            }
+        }
+        AgentMessage::BlocklistResetAck { ok, reason } => {
+            state
+                .firewall
+                .record_reset_ack(server_id, ok, reason, &state.db)
+                .await;
         }
     }
 }
