@@ -177,6 +177,7 @@
   "cap_ping_http": "HTTP 探测",
   "cap_file": "文件管理",
   "cap_docker": "Docker 管理",
+  "cap_firewall_block": "防火墙封禁",
   "detail_capabilities": "能力",
 
   "edit_title": "编辑服务器",

@@ -1,0 +1,67 @@
+{
+  "page": {
+    "title": "防火墙",
+    "subtitle": "在一个或多个 Agent 上封禁恶意 IP。"
+  },
+  "tabs": {
+    "blocklist": "封禁列表",
+    "activity": "活动日志"
+  },
+  "actions": {
+    "add_block": "封禁 IP"
+  },
+  "kpi": {
+    "total": "封禁总数",
+    "auto": "自动封禁",
+    "manual": "手动封禁",
+    "ipv6": "IPv6 封禁"
+  },
+  "filter": {
+    "target_search": "搜索 IP 或 CIDR",
+    "origin": "来源",
+    "origin_all": "全部来源",
+    "origin_manual": "手动",
+    "origin_auto": "自动"
+  },
+  "table": {
+    "target": "目标",
+    "family": "族",
+    "scope": "范围",
+    "origin": "来源",
+    "comment": "备注",
+    "created": "创建时间",
+    "actions": "操作",
+    "empty": "暂无防火墙封禁记录。",
+    "load_more": "加载更多",
+    "loading_more": "加载中…"
+  },
+  "add": {
+    "title": "封禁 IP 或 CIDR",
+    "description": "向选定 Agent 下发 iptables/nft drop 规则。",
+    "field_target": "目标 (IP 或 CIDR)",
+    "field_cover_type": "范围",
+    "scope_all": "全部服务器",
+    "scope_include": "指定服务器",
+    "scope_exclude": "排除指定服务器",
+    "field_servers": "服务器",
+    "no_servers": "暂无可用服务器",
+    "field_comment": "备注 (可选)",
+    "comment_placeholder": "封禁原因",
+    "submit": "封禁",
+    "creating": "提交中…",
+    "target_required": "请输入目标"
+  },
+  "delete": {
+    "title": "删除封禁条目?",
+    "description": "移除对 {{target}} 的封禁?对应 Agent 将自动撤销规则。",
+    "deleting": "删除中…"
+  },
+  "toast": {
+    "created": "封禁已创建",
+    "deleted": "封禁已移除"
+  },
+  "activity": {
+    "empty": "暂无防火墙活动记录。"
+  },
+  "capability_label": "防火墙封禁"
+}

@@ -1,0 +1,67 @@
+{
+  "page": {
+    "title": "Firewall",
+    "subtitle": "Block abusive IPs across one or more agents."
+  },
+  "tabs": {
+    "blocklist": "Blocklist",
+    "activity": "Activity"
+  },
+  "actions": {
+    "add_block": "Block IP"
+  },
+  "kpi": {
+    "total": "Total blocks",
+    "auto": "Auto-blocked",
+    "manual": "Manual blocks",
+    "ipv6": "IPv6 blocks"
+  },
+  "filter": {
+    "target_search": "Search IP or CIDR",
+    "origin": "Origin",
+    "origin_all": "All origins",
+    "origin_manual": "Manual",
+    "origin_auto": "Auto"
+  },
+  "table": {
+    "target": "Target",
+    "family": "Family",
+    "scope": "Scope",
+    "origin": "Origin",
+    "comment": "Comment",
+    "created": "Created",
+    "actions": "Actions",
+    "empty": "No firewall blocks yet.",
+    "load_more": "Load more",
+    "loading_more": "Loading…"
+  },
+  "add": {
+    "title": "Block IP or CIDR",
+    "description": "Push an iptables/nft drop rule to selected agents.",
+    "field_target": "Target (IP or CIDR)",
+    "field_cover_type": "Scope",
+    "scope_all": "All servers",
+    "scope_include": "Selected servers",
+    "scope_exclude": "All except selected",
+    "field_servers": "Servers",
+    "no_servers": "No servers available",
+    "field_comment": "Comment (optional)",
+    "comment_placeholder": "Reason for blocking",
+    "submit": "Block",
+    "creating": "Creating…",
+    "target_required": "Target is required"
+  },
+  "delete": {
+    "title": "Delete blocklist entry?",
+    "description": "Remove block for {{target}}? Covered agents will drop the rule.",
+    "deleting": "Deleting…"
+  },
+  "toast": {
+    "created": "Block created",
+    "deleted": "Block removed"
+  },
+  "activity": {
+    "empty": "No firewall activity yet."
+  },
+  "capability_label": "Firewall block"
+}
