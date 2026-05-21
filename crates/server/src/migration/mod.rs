@@ -25,6 +25,7 @@ mod m20260517_000022_create_agent_enrollment;
 mod m20260517_000023_add_must_change_password;
 mod m20260521_000024_create_security_event;
 mod m20260521_000025_extend_alert_state_event_key;
+mod m20260521_000026_backfill_capability_default;
 
 pub struct Migrator;
 
@@ -56,6 +57,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260517_000023_add_must_change_password::Migration),
             Box::new(m20260521_000024_create_security_event::Migration),
             Box::new(m20260521_000025_extend_alert_state_event_key::Migration),
+            Box::new(m20260521_000026_backfill_capability_default::Migration),
         ]
     }
 }
