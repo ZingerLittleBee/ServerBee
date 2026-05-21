@@ -90,7 +90,7 @@ pub struct TriggeredInfo {
 }
 
 pub struct AlertStateManager {
-    triggered: DashMap<(String, String), TriggeredInfo>,
+    triggered: DashMap<(String, String, String), TriggeredInfo>,
 }
 
 impl Default for AlertStateManager {
@@ -116,7 +116,7 @@ impl AlertStateManager {
         let triggered = DashMap::new();
         for s in states {
             triggered.insert(
-                (s.rule_id, s.server_id),
+                (s.rule_id, s.server_id, s.event_key),
                 TriggeredInfo {
                     first_triggered_at: s.first_triggered_at,
                     last_notified_at: s.last_notified_at,
@@ -128,14 +128,26 @@ impl AlertStateManager {
         Ok(Self { triggered })
     }
 
-    pub fn is_triggered(&self, rule_id: &str, server_id: &str) -> bool {
-        self.triggered
-            .contains_key(&(rule_id.to_string(), server_id.to_string()))
+    pub fn is_triggered(&self, rule_id: &str, server_id: &str, event_key: &str) -> bool {
+        self.triggered.contains_key(&(
+            rule_id.to_string(),
+            server_id.to_string(),
+            event_key.to_string(),
+        ))
     }
 
-    pub fn get_info(&self, rule_id: &str, server_id: &str) -> Option<TriggeredInfo> {
+    pub fn get_info(
+        &self,
+        rule_id: &str,
+        server_id: &str,
+        event_key: &str,
+    ) -> Option<TriggeredInfo> {
         self.triggered
-            .get(&(rule_id.to_string(), server_id.to_string()))
+            .get(&(
+                rule_id.to_string(),
+                server_id.to_string(),
+                event_key.to_string(),
+            ))
             .map(|r| r.clone())
     }
 
@@ -144,9 +156,14 @@ impl AlertStateManager {
         db: &DatabaseConnection,
         rule_id: &str,
         server_id: &str,
+        event_key: &str,
     ) -> Result<(), AppError> {
         let now = Utc::now();
-        let key = (rule_id.to_string(), server_id.to_string());
+        let key = (
+            rule_id.to_string(),
+            server_id.to_string(),
+            event_key.to_string(),
+        );
 
         if let Some(mut info) = self.triggered.get_mut(&key) {
             info.count += 1;
@@ -162,6 +179,7 @@ impl AlertStateManager {
                 .col_expr(alert_state::Column::UpdatedAt, Expr::value(now))
                 .filter(alert_state::Column::RuleId.eq(rule_id))
                 .filter(alert_state::Column::ServerId.eq(server_id))
+                .filter(alert_state::Column::EventKey.eq(event_key))
                 .filter(alert_state::Column::Resolved.eq(false))
                 .exec(db)
                 .await?;
@@ -177,12 +195,14 @@ impl AlertStateManager {
 
             // Re-arm the existing row if one is left over from a prior
             // resolve cycle, otherwise insert a fresh one. A
-            // UNIQUE(rule_id, server_id) constraint means at most one row
-            // can exist, so a blind INSERT here would fail and abort
-            // evaluation forever after the first trigger→resolve.
+            // UNIQUE(rule_id, server_id, event_key) constraint means at most
+            // one row can exist per dimension, so a blind INSERT here would
+            // fail and abort evaluation forever after the first
+            // trigger→resolve.
             let existing = alert_state::Entity::find()
                 .filter(alert_state::Column::RuleId.eq(rule_id))
                 .filter(alert_state::Column::ServerId.eq(server_id))
+                .filter(alert_state::Column::EventKey.eq(event_key))
                 .one(db)
                 .await?;
             if let Some(row) = existing {
@@ -199,6 +219,7 @@ impl AlertStateManager {
                     id: NotSet,
                     rule_id: Set(rule_id.to_string()),
                     server_id: Set(server_id.to_string()),
+                    event_key: Set(event_key.to_string()),
                     first_triggered_at: Set(now),
                     last_notified_at: Set(now),
                     count: Set(1),
@@ -218,9 +239,14 @@ impl AlertStateManager {
         db: &DatabaseConnection,
         rule_id: &str,
         server_id: &str,
+        event_key: &str,
     ) -> Result<(), AppError> {
         let now = Utc::now();
-        let key = (rule_id.to_string(), server_id.to_string());
+        let key = (
+            rule_id.to_string(),
+            server_id.to_string(),
+            event_key.to_string(),
+        );
 
         self.triggered.remove(&key);
 
@@ -230,6 +256,7 @@ impl AlertStateManager {
             .col_expr(alert_state::Column::UpdatedAt, Expr::value(now))
             .filter(alert_state::Column::RuleId.eq(rule_id))
             .filter(alert_state::Column::ServerId.eq(server_id))
+            .filter(alert_state::Column::EventKey.eq(event_key))
             .filter(alert_state::Column::Resolved.eq(false))
             .exec(db)
             .await?;
@@ -517,9 +544,11 @@ impl AlertService {
                     continue;
                 }
                 Self::handle_triggered(db, config, state_manager, rule, &srv.id, &srv.name).await?;
-            } else if state_manager.is_triggered(&rule.id, &srv.id) {
+            } else if state_manager.is_triggered(&rule.id, &srv.id, "") {
                 // Recovered
-                state_manager.mark_resolved(db, &rule.id, &srv.id).await?;
+                state_manager
+                    .mark_resolved(db, &rule.id, &srv.id, "")
+                    .await?;
                 tracing::info!("Alert '{}' resolved for server '{}'", rule.name, srv.name);
                 Self::handle_resolved(db, config, rule, &srv.id, &srv.name).await;
             }
@@ -580,10 +609,10 @@ impl AlertService {
         server_name: &str,
     ) -> Result<(), AppError> {
         let should_notify = match rule.trigger_mode.as_str() {
-            "once" => !state_manager.is_triggered(&rule.id, server_id),
+            "once" => !state_manager.is_triggered(&rule.id, server_id, ""),
             _ => {
                 // "always" — but debounce 5 minutes
-                match state_manager.get_info(&rule.id, server_id) {
+                match state_manager.get_info(&rule.id, server_id, "") {
                     Some(info) => {
                         let elapsed = Utc::now() - info.last_notified_at;
                         elapsed >= Duration::minutes(5)
@@ -594,7 +623,7 @@ impl AlertService {
         };
 
         state_manager
-            .mark_triggered(db, &rule.id, server_id)
+            .mark_triggered(db, &rule.id, server_id, "")
             .await?;
 
         if should_notify && let Some(ref group_id) = rule.notification_group_id {
@@ -1295,8 +1324,8 @@ mod tests {
     #[test]
     fn test_alert_state_manager_new() {
         let mgr = AlertStateManager::new();
-        assert!(!mgr.is_triggered("any-rule", "any-server"));
-        assert!(mgr.get_info("any-rule", "any-server").is_none());
+        assert!(!mgr.is_triggered("any-rule", "any-server", ""));
+        assert!(mgr.get_info("any-rule", "any-server", "").is_none());
     }
 
     // ── list_events ──
@@ -1362,6 +1391,7 @@ mod tests {
             id: NotSet,
             rule_id: Set(rule_id.to_string()),
             server_id: Set(server_id.to_string()),
+            event_key: Set(String::new()),
             first_triggered_at: Set(first_triggered_at),
             last_notified_at: Set(now),
             count: Set(count),
@@ -1544,7 +1574,7 @@ mod tests {
         // triggered→recovered transition.
         let state_manager = AlertStateManager::new();
         state_manager
-            .mark_triggered(&db, "rule-1", "srv-1")
+            .mark_triggered(&db, "rule-1", "srv-1", "")
             .await
             .expect("seed triggered state");
 
@@ -1566,7 +1596,7 @@ mod tests {
             "recovery webhook payload should carry the resolved event, got: {payload}"
         );
         assert!(
-            !state_manager.is_triggered("rule-1", "srv-1"),
+            !state_manager.is_triggered("rule-1", "srv-1", ""),
             "state should be cleared after recovery"
         );
     }
@@ -1579,23 +1609,23 @@ mod tests {
         let mgr = AlertStateManager::new();
 
         // First fire.
-        mgr.mark_triggered(&db, "rule-1", "srv-1")
+        mgr.mark_triggered(&db, "rule-1", "srv-1", "")
             .await
             .expect("first trigger");
-        assert!(mgr.is_triggered("rule-1", "srv-1"));
+        assert!(mgr.is_triggered("rule-1", "srv-1", ""));
 
         // Recover.
-        mgr.mark_resolved(&db, "rule-1", "srv-1")
+        mgr.mark_resolved(&db, "rule-1", "srv-1", "")
             .await
             .expect("resolve");
-        assert!(!mgr.is_triggered("rule-1", "srv-1"));
+        assert!(!mgr.is_triggered("rule-1", "srv-1", ""));
 
         // Re-arm: triggering again must NOT fail on the
-        // UNIQUE(rule_id, server_id) constraint left by the resolved row.
-        mgr.mark_triggered(&db, "rule-1", "srv-1")
+        // UNIQUE(rule_id, server_id, event_key) constraint left by the resolved row.
+        mgr.mark_triggered(&db, "rule-1", "srv-1", "")
             .await
             .expect("re-trigger after resolve must succeed");
-        assert!(mgr.is_triggered("rule-1", "srv-1"));
+        assert!(mgr.is_triggered("rule-1", "srv-1", ""));
 
         // Exactly one row, flipped back to firing.
         let rows = alert_state::Entity::find()

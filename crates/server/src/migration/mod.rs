@@ -24,6 +24,7 @@ mod m20260430_000021_custom_theme_ref_integrity;
 mod m20260517_000022_create_agent_enrollment;
 mod m20260517_000023_add_must_change_password;
 mod m20260521_000024_create_security_event;
+mod m20260521_000025_extend_alert_state_event_key;
 
 pub struct Migrator;
 
@@ -54,6 +55,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260517_000022_create_agent_enrollment::Migration),
             Box::new(m20260517_000023_add_must_change_password::Migration),
             Box::new(m20260521_000024_create_security_event::Migration),
+            Box::new(m20260521_000025_extend_alert_state_event_key::Migration),
         ]
     }
 }
