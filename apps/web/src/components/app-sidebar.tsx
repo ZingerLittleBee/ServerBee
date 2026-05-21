@@ -17,6 +17,7 @@ import {
   Radar,
   Settings,
   Shield,
+  ShieldAlert,
   Smartphone,
   Terminal,
   Users,
