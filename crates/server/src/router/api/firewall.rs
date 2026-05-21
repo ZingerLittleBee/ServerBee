@@ -272,7 +272,10 @@ async fn create_block(
     .ok();
 
     state.firewall.broadcast_changed_created(&model);
-    state.firewall.push_add_to_covered_agents(&model).await;
+    state
+        .firewall
+        .push_add_to_covered_agents(&model, &state.agent_manager)
+        .await;
 
     ok(BlockListItem::from(model))
 }
@@ -312,7 +315,10 @@ async fn delete_block(
     .ok();
 
     state.firewall.broadcast_changed_deleted(&row);
-    state.firewall.push_remove_to_covered_agents(&row).await;
+    state
+        .firewall
+        .push_remove_to_covered_agents(&row, &state.agent_manager)
+        .await;
 
     ok(true)
 }

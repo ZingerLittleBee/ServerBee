@@ -196,18 +196,147 @@ impl FirewallService {
         );
     }
 
-    /// Push a `BlocklistAdd` to every covered, online agent. No-op until
-    /// Task 2.x wires `agent_manager` into this service.
-    pub async fn push_add_to_covered_agents(&self, _row: &block_list::Model) {
-        // Task 2.x: resolve covered server_ids (cover_type + server_ids_json on
-        // the row) → look up agent senders on AgentManager → emit
-        // ServerMessage::BlocklistAdd { entry: BlockEntry }.
+    /// List all `block_list` rows that cover `server_id`, oldest first so the
+    /// agent applies them in stable order.
+    pub async fn list_for_server(
+        &self,
+        server_id: &str,
+    ) -> Result<Vec<serverbee_common::firewall::BlockEntry>, AppError> {
+        use sea_orm::{EntityTrait, QueryOrder};
+
+        let rows = block_list::Entity::find()
+            .order_by_asc(block_list::Column::CreatedAt)
+            .all(&self.db)
+            .await?;
+        let mut out = Vec::with_capacity(rows.len());
+        for row in rows {
+            if crate::service::alert::rule_covers_server(
+                &row.cover_type,
+                &row.server_ids_json,
+                server_id,
+            ) {
+                out.push(serverbee_common::firewall::BlockEntry {
+                    id: row.id,
+                    target: row.target,
+                    family: row.family as u8,
+                });
+            }
+        }
+        Ok(out)
     }
 
-    /// Push a `BlocklistRemove` to every covered, online agent. No-op until
-    /// Task 2.x wires `agent_manager` into this service.
-    pub async fn push_remove_to_covered_agents(&self, _row: &block_list::Model) {
-        // Task 2.x.
+    /// Push a `BlocklistAdd` to every covered, online, capability-allowed
+    /// agent whose negotiated protocol is high enough to understand firewall
+    /// messages.
+    pub async fn push_add_to_covered_agents(
+        &self,
+        row: &block_list::Model,
+        agent_manager: &crate::service::agent_manager::AgentManager,
+    ) {
+        use serverbee_common::constants::{CAP_FIREWALL_BLOCK, has_capability};
+        use serverbee_common::firewall::{BlockEntry, FIREWALL_MIN_PROTOCOL};
+        use serverbee_common::protocol::ServerMessage;
+
+        let entry = BlockEntry {
+            id: row.id.clone(),
+            target: row.target.clone(),
+            family: row.family as u8,
+        };
+
+        for (server_id, protocol_version) in agent_manager.online_agents() {
+            if !crate::service::alert::rule_covers_server(
+                &row.cover_type,
+                &row.server_ids_json,
+                &server_id,
+            ) {
+                continue;
+            }
+            let caps = agent_manager
+                .get_effective_capabilities(&server_id)
+                .unwrap_or(0);
+            if !has_capability(caps, CAP_FIREWALL_BLOCK) {
+                continue;
+            }
+            if protocol_version < FIREWALL_MIN_PROTOCOL {
+                continue;
+            }
+            if let Some(tx) = agent_manager.get_sender(&server_id) {
+                let _ = tx
+                    .send(ServerMessage::BlocklistAdd {
+                        entry: entry.clone(),
+                    })
+                    .await;
+            }
+        }
+    }
+
+    /// Push a `BlocklistRemove` to every covered, online, capability-allowed
+    /// agent on a high-enough protocol version.
+    pub async fn push_remove_to_covered_agents(
+        &self,
+        row: &block_list::Model,
+        agent_manager: &crate::service::agent_manager::AgentManager,
+    ) {
+        use serverbee_common::constants::{CAP_FIREWALL_BLOCK, has_capability};
+        use serverbee_common::firewall::FIREWALL_MIN_PROTOCOL;
+        use serverbee_common::protocol::ServerMessage;
+
+        for (server_id, protocol_version) in agent_manager.online_agents() {
+            if !crate::service::alert::rule_covers_server(
+                &row.cover_type,
+                &row.server_ids_json,
+                &server_id,
+            ) {
+                continue;
+            }
+            let caps = agent_manager
+                .get_effective_capabilities(&server_id)
+                .unwrap_or(0);
+            if !has_capability(caps, CAP_FIREWALL_BLOCK) {
+                continue;
+            }
+            if protocol_version < FIREWALL_MIN_PROTOCOL {
+                continue;
+            }
+            if let Some(tx) = agent_manager.get_sender(&server_id) {
+                let _ = tx
+                    .send(ServerMessage::BlocklistRemove { id: row.id.clone() })
+                    .await;
+            }
+        }
+    }
+
+    /// Send the complete set of covering block entries to a single agent.
+    /// Caller is responsible for verifying capability + protocol version.
+    pub async fn push_sync_to(
+        &self,
+        server_id: &str,
+        agent_manager: &crate::service::agent_manager::AgentManager,
+    ) -> Result<(), AppError> {
+        let entries = self.list_for_server(server_id).await?;
+        if let Some(tx) = agent_manager.get_sender(server_id) {
+            let _ = tx
+                .send(serverbee_common::protocol::ServerMessage::BlocklistSync { entries })
+                .await;
+        }
+        Ok(())
+    }
+
+    /// Tell an agent to drop every entry it currently holds and clear our
+    /// `apply_state` map for that agent. Caller is responsible for verifying
+    /// capability + protocol version.
+    pub async fn push_reset_to(
+        &self,
+        server_id: &str,
+        agent_manager: &crate::service::agent_manager::AgentManager,
+    ) {
+        if let Some(tx) = agent_manager.get_sender(server_id) {
+            let _ = tx
+                .send(serverbee_common::protocol::ServerMessage::BlocklistReset)
+                .await;
+        }
+        let mut g = self.apply_state.write().await;
+        g.retain(|(_block_id, srv), _| srv != server_id);
     }
 }
 

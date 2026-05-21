@@ -293,6 +293,16 @@ impl AgentManager {
         self.connections.iter().map(|e| e.key().clone()).collect()
     }
 
+    /// Snapshot of currently connected agents with their negotiated
+    /// `protocol_version`. Used by the firewall pusher to gate sends on
+    /// `FIREWALL_MIN_PROTOCOL`.
+    pub fn online_agents(&self) -> Vec<(String, u32)> {
+        self.connections
+            .iter()
+            .map(|e| (e.key().clone(), e.value().protocol_version))
+            .collect()
+    }
+
     /// Get the remote address of a connected agent.
     pub fn get_remote_addr(&self, server_id: &str) -> Option<SocketAddr> {
         self.connections.get(server_id).map(|c| c.remote_addr)
