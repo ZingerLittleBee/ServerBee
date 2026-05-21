@@ -2237,7 +2237,7 @@ async fn test_file_capability_enforcement() {
     let client = http_client();
     login_admin(&client, &base_url).await;
 
-    // Register an agent — default capabilities = CAP_DEFAULT (56), no CAP_FILE
+    // Register an agent — default capabilities = CAP_DEFAULT (316), no CAP_FILE
     let enrollment_code = mint_enrollment_code(&client, &base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
