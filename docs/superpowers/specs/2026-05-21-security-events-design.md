@@ -76,8 +76,8 @@ Key properties:
 | Port scan source | nfnetlink_conntrack primary, kernel firewall log supplementary | Zero-config detection of SYN floods to distinct ports; firewall log adds visibility into blocked traffic |
 | Aggregation tier | Agent-local in v1, two-tier architecture | Keep raw event volume off the wire; protocol leaves room for server-side rollups |
 | Login success reporting | All successful logins + `first_seen` boolean | Full audit trail; server decides whether to alert |
-| Capability flag | New `CAP_SECURITY_EVENTS` (bit 8 = 256), included in `CAP_DEFAULT` | Opt-out for privacy-sensitive deployments; default-on for VPS users |
-| Alert integration | Event-driven rules with preset kinds | Mirrors existing `ip_changed` rule pattern |
+| Capability flag | New `CAP_SECURITY_EVENTS` (bit 8 = 256), included in `CAP_DEFAULT` | Opt-out for privacy-sensitive deployments; default-on for VPS users. **SSH detection works with the default `CAP_NET_RAW` privilege the systemd unit already grants; port-scan detection requires the agent operator to opt in via `agent.toml` AND grant `CAP_NET_ADMIN` to the unit, so default-on does not imply a privilege expansion.** |
+| Alert integration | Reuse existing `alert_rules.rules_json` (`Vec<AlertRuleItem>`); add new `rule_type` values plus an optional typed `security` field on `AlertRuleItem` | Avoids inventing a parallel rule schema; mirrors how new rule types have historically been added |
 | Implementation flavor | Hybrid — `journalctl` subprocess + Rust netlink for conntrack | `journalctl` is universally available; `conntrack-tools` often is not |
 
 ## 4. Data Model
@@ -87,19 +87,19 @@ New table `security_event`:
 ```rust
 // crates/server/src/entity/security_event.rs
 pub struct Model {
-    pub id: i64,                        // PK, auto-increment
-    pub server_id: i64,                 // FK → server.id
+    pub id: String,                     // ULID, matches the project's existing PK convention
+    pub server_id: String,              // FK → server.id (String per project convention)
     pub event_type: String,             // "ssh_login" | "ssh_brute_force" | "port_scan"
     pub severity: String,               // "info" | "low" | "medium" | "high" | "critical"
     pub source_ip: String,              // IPv4/IPv6, fully expanded for v6
     pub source_port: Option<i32>,       // ssh_login only
     pub username: Option<String>,
-    pub started_at: DateTime,           // event window start
-    pub ended_at: DateTime,             // ssh_login: == started_at; aggregated: window close
+    pub started_at: DateTimeUtc,        // event window start
+    pub ended_at: DateTimeUtc,          // ssh_login: == started_at; aggregated: window close
     pub first_seen: bool,               // ssh_login only: (server, user, src_ip) new locally
     pub detector_source: String,        // "journal" | "auth_log" | "conntrack" | "firewall_log"
-    pub evidence: Json,
-    pub created_at: DateTime,           // server insert time
+    pub evidence: String,               // JSON-encoded; sqlite has no native JSON column type
+    pub created_at: DateTimeUtc,        // server insert time
 }
 ```
 
@@ -137,9 +137,11 @@ Evidence JSON schemas:
 }
 ```
 
-Retention: reuse existing cleanup task. New config `cleanup.security_event_days` (default 30).
+Retention: reuse existing cleanup task. New config field `retention.security_events_days` on `RetentionConfig` (default 30), following the existing naming pattern (`records_days`, `audit_logs_days`, `service_monitor_days`, …). Env override: `SERVERBEE_RETENTION__SECURITY_EVENTS_DAYS`.
 
-Migration: `m20260521_001_create_security_event.rs`. `up()` only; `down()` returns `Ok(())` per project convention.
+Recovery: `security_events` is added to `recovery_merge::merge_server_history_on_connection` so that when a server identity is rebound, security history follows. Because of this, agent writes do **not** bypass `RecoveryLockService` — they queue in the agent's existing reconnect buffer and drain after the freeze releases.
+
+Migrations: `m20260521_001_create_security_event.rs` for the table; `m20260521_002_extend_alert_state_event_key.rs` adds `alert_state.event_key VARCHAR NULL` (see §7.3); `m20260521_003_backfill_capability_default.rs` sets `server.effective_capabilities = effective_capabilities | 256` for every existing row so default-on takes effect on upgrades. Each `up()` only; `down()` returns `Ok(())` per project convention.
 
 ## 5. Protocol (crates/common)
 
@@ -206,7 +208,8 @@ pub struct SecurityConfig {
 pub struct BruteForceConfig {
     pub window_seconds: u32,       // default 60
     pub failed_threshold: u32,     // default 10
-    pub min_distinct_users: u32,   // default 3
+    // distinct_users is derived from observations and only affects severity assignment,
+    // not whether the event fires. See §6.4 for the severity table.
 }
 
 pub struct PortScanConfig {
@@ -226,8 +229,8 @@ pub enum BrowserMessage {
 }
 
 pub struct SecurityEventBroadcast {
-    pub server_id: i64,
-    pub event_id: i64,
+    pub server_id: String,
+    pub event_id: String,
     pub event: SecurityEventPayload,
 }
 ```
@@ -237,12 +240,16 @@ Broadcast after successful DB insert.
 ### 5.4 Capability bits
 
 ```rust
-// crates/common/src/capability.rs
+// crates/common/src/constants.rs (existing file)
 pub const CAP_SECURITY_EVENTS: u32 = 1 << 8;       // 256
-pub const CAP_VALID_MASK: u32 = 0x1FF;             // bits 0-8 (9 bits total)
+pub const CAP_VALID_MASK: u32 = 0b1_1111_1111;     // bits 0-8 (9 bits total)
 pub const CAP_DEFAULT: u32 =
-    CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP | CAP_SECURITY_EVENTS;  // 56 + 256 = 312
+    CAP_UPGRADE | CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP | CAP_SECURITY_EVENTS;  // 60 + 256 = 316
 ```
+
+The existing `CAP_DEFAULT` is 60 (includes `CAP_UPGRADE`), so the new default is 316. The `CapabilityDescriptor` registry (`crates/common/src/constants.rs:129-178`) gains a new entry, and `parse_cap_token` / `Display` impls are updated.
+
+Backfill: `m20260521_003_backfill_capability_default.rs` runs `UPDATE servers SET effective_capabilities = effective_capabilities | 256 WHERE effective_capabilities & 256 = 0`. Without this, agents that upgrade in place stay disabled because their server row was created with the older mask.
 
 Defence in depth:
 - Server rejects `SecurityEvent` when the per-server effective capabilities mask does not contain `CAP_SECURITY_EVENTS` (logged to `audit_log`).
@@ -278,11 +285,12 @@ Start conditions: local capability includes `CAP_SECURITY_EVENTS` AND target_os 
 
 ### 6.2 JournalWatcher
 
-Boot sequence:
+Two independent `journalctl` streams (kernel and sshd traverse different filters; ORing them in a single invocation is fragile across distros):
 
-1. Probe `journalctl --version`. On success, spawn `journalctl -f --output=json -n 0 _COMM=sshd _COMM=kernel`. Read stdout line by line and parse with `serde_json` into `JournalEntry`.
-2. On failure, fall back to tailing `/var/log/auth.log` (Debian/Ubuntu) or `/var/log/secure` (RHEL). Use the `notify` crate to watch inode changes for logrotate compatibility.
-3. Route entries: `_TRANSPORT=stdout` with `_COMM=sshd` → `ssh_parser`; `_TRANSPORT=kernel` matching `[UFW BLOCK]` / `iptables LOG` → `FirewallDrop`.
+1. **sshd stream** — `journalctl -f --output=json -n 0 SYSLOG_IDENTIFIER=sshd + _SYSTEMD_UNIT=ssh.service + _SYSTEMD_UNIT=sshd.service + _COMM=sshd` (the `+` is journalctl's OR operator). Covers Debian/Ubuntu (`ssh.service`), RHEL/Fedora/Alpine (`sshd.service`), and systems where only `SYSLOG_IDENTIFIER` is set reliably. Falls back to tailing `/var/log/auth.log` (Debian/Ubuntu) or `/var/log/secure` (RHEL) via the `notify` crate when `journalctl --version` is absent.
+2. **kernel stream** — `journalctl -k -f --output=json -n 0`. Only started when port-scan detection is enabled (§6.3), because its sole purpose is the firewall-log enrichment of scan events. Lines matching `[UFW BLOCK]` / `iptables: ` / `nftables` prefixes go to `FirewallDrop`.
+
+Each stream parses with `serde_json` into `JournalEntry`. sshd entries flow to `ssh_parser`, kernel firewall hits flow to `scan_detector` as auxiliary signal (sets `evidence.blocked_count`).
 
 Regex set (ssh_parser):
 
@@ -309,21 +317,33 @@ loop {
 }
 ```
 
-Requires `CAP_NET_ADMIN`. The systemd unit sets `AmbientCapabilities=CAP_NET_ADMIN`. If bind fails, scan detection disables but SSH detection continues — graceful degradation, never an all-or-nothing failure.
+**Privilege model — explicit security decision**: subscribing to `NETLINK_NETFILTER` requires `CAP_NET_ADMIN`. The existing `deploy/serverbee-agent.service` only grants `CAP_NET_RAW`, so port-scan detection introduces a real privilege expansion. To avoid silently broadening privileges on upgrade:
+
+- `agent.toml` field `security.port_scan.enabled` defaults to **`false`**.
+- The shipped systemd unit is **unchanged** (still `CAP_NET_RAW` only). `SecurityManager` only starts `ConntrackWatcher` when `security.port_scan.enabled = true`.
+- When the user opts in, the agent log emits a one-time `WARN` line linking to documentation: enabling port-scan detection requires the operator to edit the unit to add `CAP_NET_ADMIN` to `AmbientCapabilities` (or run the agent as root), then `systemctl daemon-reload && systemctl restart serverbee-agent`. Without that, netlink bind fails and the watcher stays down — partial degradation only, SSH detection still works.
+- Documentation (Fumadocs `security-events` page) walks through the unit edit step.
+
+If bind fails for any other reason (e.g., kernel module not loaded), scan detection disables but SSH detection continues — graceful degradation, never an all-or-nothing failure.
 
 ### 6.4 Detectors
 
 **SshDetector**:
 - State: `HashMap<src_ip, VecDeque<AuthAttempt>>`
 - On each attempt, pop entries older than `window_seconds`
-- Emit `ssh_brute_force` when queue size ≥ `failed_threshold` AND `distinct(usernames) ≥ min_distinct_users` (prevents tripping on a legitimate user mistyping a password); clear the IP's queue post-emit to avoid duplicates within the window
-- Success → check `first_seen_store` for `(user, src_ip)` → emit `ssh_login` immediately
-- Background sweep every 5 min: drop IPs idle > 10 min
+- Emit `ssh_brute_force` when `failed_count ≥ failed_threshold`. `distinct_users` is **not** a gate — single-user hammering (`ssh root@host` × 50) is the canonical brute-force pattern and must trigger. Instead, `distinct_users` raises severity:
+  - `distinct_users == 1` → `severity = medium`
+  - `distinct_users ∈ [2, 4]` → `severity = high`
+  - `distinct_users ≥ 5` → `severity = critical` (clearly a credential-stuffing scanner)
+- After emit, clear the IP's queue to avoid duplicate fires inside the same window.
+- Success → check `first_seen_store` for `(user, src_ip)` → emit `ssh_login` immediately.
+- Background sweep every 5 min: drop IPs idle > 10 min.
 
 **PortScanDetector**:
-- State: `HashMap<src_ip, (HashSet<dst_port>, VecDeque<ts>)>`
-- Rebuild the per-IP port set every 5s to drop expired entries (simpler than per-port reference counting)
-- Emit `port_scan` when `distinct_ports ≥ threshold`; clear IP state post-emit
+- State per src_ip: `VecDeque<(ts, dst_port)>` (full event log within window) + `HashMap<dst_port, u32>` (active counts).
+- On new event: push to deque; `*port_counts.entry(port).or_insert(0) += 1`.
+- On window slide (cheapest: check head before each insert, plus a 5s background sweep): pop head entries where `ts < now - window_seconds`; for each popped `port`, decrement the count map and remove the key when count hits 0. `distinct_ports == port_counts.len()`.
+- Emit `port_scan` when `distinct_ports ≥ threshold`; clear that IP's state post-emit.
 
 ### 6.5 FirstSeenStore
 
@@ -339,20 +359,21 @@ Requires `CAP_NET_ADMIN`. The systemd unit sets `AmbientCapabilities=CAP_NET_ADM
 
 ```toml
 [security]
-enabled = true
+enabled = true                            # gates the SecurityManager as a whole
 data_dir = "/var/lib/serverbee/security"
 
 [security.ssh]
 window_seconds = 60
 failed_threshold = 10
-min_distinct_users = 3
+# distinct_users is not a gate; it raises severity. See §6.4.
 
 [security.port_scan]
+enabled = false                           # opt-in; requires CAP_NET_ADMIN, see §6.3
 window_seconds = 30
 distinct_port_threshold = 20
 ```
 
-Precedence: server-pushed `SecurityConfigSync` > local toml > built-in defaults.
+Precedence: server-pushed `SecurityConfigSync` > local toml > built-in defaults. `SecurityConfigSync` does **not** override `security.port_scan.enabled` — that flag is a local privilege opt-in and must not be flippable from the control plane.
 
 ## 7. Server Implementation
 
@@ -372,10 +393,10 @@ crates/server/src/
 // router/ws/agent.rs
 AgentMessage::SecurityEvent(payload) => {
     if !has_capability(server.effective_capabilities, CAP_SECURITY_EVENTS) {
-        audit_log.write("security_event_denied", server.id, ...).await?;
+        audit_log.write("security_event_denied", &server.id, ...).await?;
         return;
     }
-    state.security_service.record_event(server.id, payload).await.ok();
+    state.security_service.record_event(&server.id, payload).await.ok();
 }
 ```
 
@@ -385,48 +406,64 @@ AgentMessage::SecurityEvent(payload) => {
 pub struct SecurityService {
     db: DatabaseConnection,
     browser_tx: broadcast::Sender<BrowserMessage>,
-    alert_trigger: AlertTriggerHandle,
+    alert_state_manager: Arc<AlertStateManager>,
+    notification_dispatcher: Arc<NotificationDispatcher>,
 }
 
 impl SecurityService {
-    pub async fn record_event(&self, server_id: i64, p: SecurityEventPayload) -> Result<()> {
-        // 1. Validate (IP format, evidence shape)
-        // 2. Insert row
+    pub async fn record_event(&self, server_id: &str, p: SecurityEventPayload) -> Result<String> {
+        // 1. Validate (IP format, evidence shape, allowed event_type)
+        // 2. Insert security_event row (ULID id)
         // 3. Broadcast BrowserMessage::SecurityEvent
-        // 4. Fire alert_trigger.notify_security_event(server_id, event_id)
+        // 4. Evaluate matching alert rules inline (push-based, low-latency).
     }
 }
 ```
 
 ### 7.3 Alert rule integration
 
-`alert_rule.kind` gains three values:
+The existing alert schema stores `Vec<AlertRuleItem>` JSON-encoded in `alert_rules.rules_json` (`crates/server/src/service/alert.rs:15`). We extend that struct rather than inventing a parallel table:
 
-- `ssh_brute_force_detected`
-- `ssh_new_ip_login` — fires when `first_seen=true`
-- `port_scan_detected`
+```rust
+// crates/server/src/service/alert.rs
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct AlertRuleItem {
+    pub rule_type: String,
+    #[serde(default)] pub min: Option<f64>,
+    #[serde(default)] pub max: Option<f64>,
+    #[serde(default)] pub duration: Option<u32>,
+    #[serde(default)] pub cycle_interval: Option<String>,
+    #[serde(default)] pub cycle_limit: Option<i64>,
+    #[serde(default)] pub security: Option<SecurityRuleParams>,  // NEW
+}
 
-`alert_rule.params` JSON:
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct SecurityRuleParams {
+    #[serde(default)] pub min_failed_count: Option<u32>,        // ssh_brute_force_detected
+    #[serde(default)] pub min_distinct_ports: Option<u32>,      // port_scan_detected
+    #[serde(default)] pub exclude_users: Vec<String>,           // ssh_new_ip_login
+    #[serde(default)] pub exclude_cidrs: Vec<String>,           // ssh_new_ip_login
+    #[serde(default = "default_dedupe_secs")] pub dedupe_window_seconds: u32,
+}
 
-```jsonc
-// ssh_brute_force_detected
-{ "min_failed_count": 20, "dedupe_window_seconds": 600 }
-
-// ssh_new_ip_login
-{ "exclude_users": ["nagios", "backup"], "exclude_cidrs": ["10.0.0.0/8"] }
-
-// port_scan_detected
-{ "min_distinct_ports": 50, "dedupe_window_seconds": 600 }
+fn default_dedupe_secs() -> u32 { 600 }
 ```
 
-Trigger flow:
+New `rule_type` values: `ssh_brute_force_detected`, `ssh_new_ip_login` (fires only when `first_seen=true`), `port_scan_detected`. All existing rule_type strings remain untouched; the existing metric-based 60s `alert_evaluator` ignores the new types because it dispatches on `rule_type`.
 
-1. `record_event` calls `alert_trigger.notify_security_event(server_id, event_id)`
-2. AlertTrigger spawns a lightweight task: load `enabled=true` rules whose `kind` matches and whose `server_filter` covers this server
-3. Apply per-rule filter (params + dedupe), on hit reuse the existing `alert_state` transition + `notification_dispatcher`
-4. Dedupe key: `(rule_id, server_id, source_ip)`. Skip if `now - alert_state.last_triggered_at < dedupe_window_seconds`
+**Dedupe model**: existing `AlertStateManager.triggered: DashMap<(String, String), TriggeredInfo>` keys by `(rule_id, server_id)`. For security rules, collapsing on `(rule_id, server_id)` would merge "IP A scanning" and "IP B scanning" into one alert state, defeating per-attacker visibility. Solution:
 
-Relationship to the existing 60s `alert_evaluator`: complementary. Metric-based rules keep running on the 60s loop; security events use push-based triggering for low latency.
+- Migration `m20260521_002_extend_alert_state_event_key.rs` adds `alert_state.event_key VARCHAR NULL`.
+- `AlertStateManager.triggered` becomes `DashMap<(String, String, Option<String>), TriggeredInfo>` (third element = `event_key`; `None` for legacy metric-based rules, preserving their semantics).
+- All existing `is_triggered` / `get_info` / `mark_triggered` / `mark_resolved` helpers gain an `event_key: Option<&str>` parameter; metric rules pass `None`, security rules pass `Some(source_ip)`.
+
+**Push-based trigger flow**:
+
+1. `record_event` (after broadcast) loads `alert_rules` where `enabled=true` and `cover_type/server_ids_json` covers this `server_id`.
+2. For each rule's `rules_json`, iterate `AlertRuleItem`s, match by `rule_type`, apply `SecurityRuleParams` filter (min_failed_count, min_distinct_ports, exclude_users/cidrs).
+3. On hit, call `alert_state_manager.mark_triggered(db, &rule_id, &server_id, Some(&source_ip))`. If `now - last_notified_at < dedupe_window_seconds`, skip notification. Otherwise dispatch through the existing `NotificationDispatcher`.
+
+Relationship to the existing 60s `alert_evaluator`: complementary. Metric-based rules keep running on the 60s loop with `event_key = None`; security rules use push-based triggering for low latency.
 
 ### 7.4 REST API
 
@@ -448,13 +485,29 @@ DELETE /api/security/events/:id   (admin only)
 No new background task. The existing `cleanup` task gains a step:
 
 ```rust
-let cutoff = Utc::now() - Duration::days(config.cleanup.security_event_days);
+let cutoff = Utc::now() - Duration::days(config.retention.security_events_days as i64);
 security_event::Entity::delete_many()
     .filter(security_event::Column::CreatedAt.lt(cutoff))
     .exec(&db).await?;
 ```
 
-Config: `cleanup.security_event_days` (default 30). Env override: `SERVERBEE_CLEANUP__SECURITY_EVENT_DAYS`.
+Config: new field `retention.security_events_days: u32` on `RetentionConfig` (`crates/server/src/config.rs:113`), default `30`, following the existing naming convention. Env override: `SERVERBEE_RETENTION__SECURITY_EVENTS_DAYS`.
+
+### 7.6 Recovery merge
+
+`recovery_merge::merge_server_history_on_connection` (`crates/server/src/service/recovery_merge.rs:509`) gains a call:
+
+```rust
+Self::merge_raw_table_on_connection(
+    db,
+    "security_events",
+    "created_at",
+    target_server_id,
+    source_server_id,
+).await?;
+```
+
+This ensures that when a server identity is rebound (e.g., agent reinstall), its security event history follows. Because the merge covers this table, agent writes do not need to bypass `RecoveryLockService`: events written under the source identity during the freeze window will be reconciled to the target identity when recovery completes.
 
 ## 8. Frontend (apps/web)
 
@@ -536,7 +589,7 @@ Principle: partial degradation > full stop. SSH and Scan pipelines are independe
 | `browser_tx.send()` errors (no subscribers) | Ignored (broadcast convention) |
 | `alert_trigger` panics | `tokio::spawn` + `catch_unwind` isolates |
 | DB write failure | Retry 3× (100ms, 500ms, 2s), then drop + metric `security_event_drop_total` |
-| RecoveryLock freeze period | Security event writes **bypass** the freeze (security data freshness > write consistency). Explicit code comment documents the carve-out |
+| RecoveryLock freeze period | No bypass. The agent's existing reconnect buffer holds events; `recovery_merge` reconciles rows written under a source identity (see §7.6) |
 
 ### 9.3 Rate limit (anti-DoS)
 
@@ -614,9 +667,9 @@ Phase ordering (single PR may be too big; split into 3 PRs):
 3. **Server & UI PR** — `service::security`, REST API, alert rule kinds, frontend pages.
 
 Documentation updates that ship alongside:
-- `ENV.md` — `SERVERBEE_SECURITY__*` and `SERVERBEE_CLEANUP__SECURITY_EVENT_DAYS`
+- `ENV.md` — `SERVERBEE_SECURITY__MAX_EVENTS_PER_MINUTE` and `SERVERBEE_RETENTION__SECURITY_EVENTS_DAYS`
 - `apps/docs/content/docs/{en,cn}/configuration.mdx` — same env block
-- `apps/docs/content/docs/{en,cn}/` — new "Security Events" page covering detection mechanics, false-positive tuning, and the `CAP_NET_ADMIN` requirement for conntrack
+- `apps/docs/content/docs/{en,cn}/` — new "Security Events" page covering detection mechanics, the explicit privilege model (default-on capability vs opt-in `CAP_NET_ADMIN` for conntrack), the systemd-unit edit for scan detection, and false-positive tuning
 - `tests/security-events.md` — E2E checklist
 
 ## 12. Open Items for Phase 2
