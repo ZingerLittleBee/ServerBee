@@ -28,7 +28,8 @@ A lightweight, self-hosted VPS monitoring system built with Rust and React.
 - **Docker Monitoring** -- Real-time Docker container monitoring with stats (CPU/memory/network/block I/O), container log streaming (stdout/stderr color-coded), events timeline, networks and volumes overview
 - **Security Events** -- Per-agent detection of SSH logins, SSH brute-force attempts, and port scans, with severity grading, an aggregated event timeline, and alert integration
 - **Firewall Blocklist** -- Block inbound traffic from IPs and CIDRs across one or more agents via nftables, with one-click blocking, preset rules, and an activity log
-- **Capability Toggles** -- Per-server feature controls (terminal, exec, upgrade, ping, file manager, Docker, security events, firewall) with defense-in-depth enforcement
+- **IP Quality** -- Per-agent egress IP assessment: streaming/AI/social service unlock detection (Netflix, Disney+, YouTube Premium, Amazon Prime, HBO Max, ChatGPT, Gemini, Spotify, TikTok), GeoIP metadata, and optional third-party fraud risk scoring (Scamalytics, IPQualityScore, proxycheck.io, AbuseIPDB). Custom services, status-page exposure with IP masking for guests, and a dual opt-in capability gate
+- **Capability Toggles** -- Per-server feature controls (terminal, exec, upgrade, ping, file manager, Docker, security events, firewall, ip quality) with defense-in-depth enforcement
 - **Uptime Timeline** -- 90-day uptime visualization with per-day color-coded bars on server detail, public status pages, and customizable dashboard widgets
 - **Public Status Page** -- Unauthenticated status page with server groups, live metrics, and 90-day uptime timelines with configurable thresholds
 - **Monthly Traffic Statistics** -- Billing cycle-aware traffic tracking with daily/hourly breakdowns, usage progress bars, and end-of-cycle prediction

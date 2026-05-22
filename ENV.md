@@ -84,6 +84,7 @@ These variables are for local repo tooling and development workflows. They are n
 | `SERVERBEE_RETENTION__DOCKER_EVENTS_DAYS` | `retention.docker_events_days` | u32 | `7` | Docker event records retention in days |
 | `SERVERBEE_RETENTION__SERVICE_MONITOR_DAYS` | `retention.service_monitor_days` | u32 | `30` | Service monitor records retention in days |
 | `SERVERBEE_RETENTION__SECURITY_EVENT_DAYS` | `retention.security_event_days` | u32 | `30` | Security event records (SSH login / brute force / port scan) retention in days |
+| `SERVERBEE_RETENTION__IP_QUALITY_EVENT_DAYS` | `retention.ip_quality_event_days` | u32 | `90` | IP quality status-change event records retention in days |
 
 ### Mobile (Optional)
 
@@ -99,6 +100,22 @@ Tier-2 guardrail for the firewall blocklist feature. CIDRs / IPs listed here are
 | Environment Variable | TOML Key | Type | Default | Description |
 |---------------------|----------|------|---------|-------------|
 | `SERVERBEE_FIREWALL__ALLOW_LIST` | `firewall.allow_list` | string[] | `[]` | CIDRs / IPs the server refuses to insert into `block_list`. Tier-2 guardrail. Tier 1 (loopback + RFC 1918 + link-local + multicast + unspecified) is hard-coded and always applied |
+
+### IP Quality (Optional)
+
+Configure the optional third-party IP risk scoring provider. If no provider is configured, the server uses only the local GeoIP database for IP metadata; `risk_score` and `risk_level` will be `null`/`unknown`.
+
+| Environment Variable | TOML Key | Type | Default | Description |
+|---------------------|----------|------|---------|-------------|
+| `SERVERBEE_IP_QUALITY__RISK_PROVIDER` | `ip_quality.risk_provider` | string | `"none"` | Active risk provider. One of: `none`, `scamalytics`, `ipqs`, `proxycheck`, `abuseipdb`, `ip-api`. **`ip-api` is HTTP-only and free-tier is non-commercial use only** |
+| `SERVERBEE_IP_QUALITY__SCAMALYTICS__API_KEY` | `ip_quality.scamalytics.api_key` | string | - | Scamalytics API key. Required when `risk_provider = "scamalytics"` |
+| `SERVERBEE_IP_QUALITY__SCAMALYTICS__ENDPOINT` | `ip_quality.scamalytics.endpoint` | string | `""` | Scamalytics account-bound API subdomain (e.g. `api1`, `api11`). Leave empty to use the default |
+| `SERVERBEE_IP_QUALITY__IPQS__API_KEY` | `ip_quality.ipqs.api_key` | string | - | IPQualityScore API key. Required when `risk_provider = "ipqs"` |
+| `SERVERBEE_IP_QUALITY__IPQS__ENDPOINT` | `ip_quality.ipqs.endpoint` | string | `""` | IPQualityScore endpoint override. Leave empty to use the default |
+| `SERVERBEE_IP_QUALITY__PROXYCHECK__API_KEY` | `ip_quality.proxycheck.api_key` | string | - | proxycheck.io API key. Required when `risk_provider = "proxycheck"` |
+| `SERVERBEE_IP_QUALITY__PROXYCHECK__ENDPOINT` | `ip_quality.proxycheck.endpoint` | string | `""` | proxycheck.io endpoint override. Leave empty to use the default |
+| `SERVERBEE_IP_QUALITY__ABUSEIPDB__API_KEY` | `ip_quality.abuseipdb.api_key` | string | - | AbuseIPDB API key. Required when `risk_provider = "abuseipdb"` |
+| `SERVERBEE_IP_QUALITY__ABUSEIPDB__ENDPOINT` | `ip_quality.abuseipdb.endpoint` | string | `""` | AbuseIPDB endpoint override. Leave empty to use the default |
 
 ### Internal
 

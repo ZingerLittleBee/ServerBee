@@ -18,6 +18,7 @@
     "ping",
     "security-events",
     "firewall",
+    "ip-quality",
     "capabilities",
     "status-page",
     "custom-themes",
