@@ -17,6 +17,7 @@ const ALLOWED_PORTS: &[u16] = &[80, 443];
 /// Validate that a URL is safe to fetch:
 ///   - scheme must be `http` or `https`
 ///   - port must be 80, 443, or absent (scheme default)
+///   - no embedded credentials (`user:pass@host`)
 ///
 /// Returns the parsed `Url` on success.
 pub fn validate_url(raw: &str) -> Result<Url> {
@@ -33,6 +34,13 @@ pub fn validate_url(raw: &str) -> Result<Url> {
         );
     }
 
+    // Reject embedded credentials: they are not a guard bypass (the host is
+    // still resolved and checked) but they would leak into the request and
+    // logs.
+    if !url.username().is_empty() || url.password().is_some() {
+        bail!("SSRF guard: URL must not contain embedded credentials");
+    }
+
     Ok(url)
 }
 
@@ -44,8 +52,11 @@ pub fn validate_url(raw: &str) -> Result<Url> {
 ///         link-local (169.254.0.0/16), broadcast (255.255.255.255),
 ///         documentation (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24),
 ///         shared address space (100.64.0.0/10)
-///   IPv6: loopback (::1), link-local (fe80::/10), ULA (fc00::/7),
-///         unspecified (::)
+///   IPv6: IPv4-mapped/-compatible (`::ffff:a.b.c.d` / `::a.b.c.d` — unwrapped
+///         and re-checked through the IPv4 rules), loopback (::1),
+///         unspecified (::), link-local (fe80::/10), ULA (fc00::/7),
+///         documentation (2001:db8::/32), NAT64 well-known prefix
+///         (64:ff9b::/96, RFC 6052)
 pub fn is_global_addr(addr: IpAddr) -> bool {
     match addr {
         IpAddr::V4(v4) => {
@@ -83,6 +94,13 @@ pub fn is_global_addr(addr: IpAddr) -> bool {
             true
         }
         IpAddr::V6(v6) => {
+            // Unwrap IPv4-mapped (`::ffff:a.b.c.d`) and IPv4-compatible
+            // (`::a.b.c.d`) addresses and re-check through the IPv4 rules.
+            // Without this, `[::ffff:127.0.0.1]` would slip past the v6
+            // checks (its `.is_loopback()` is false) and defeat the guard.
+            if let Some(v4) = v6.to_ipv4() {
+                return is_global_addr(IpAddr::V4(v4));
+            }
             if v6.is_loopback() {
                 return false;
             }
@@ -96,6 +114,22 @@ pub fn is_global_addr(addr: IpAddr) -> bool {
             }
             // ULA: fc00::/7 — first 7 bits are 1111110
             if (segs[0] & 0xfe00) == 0xfc00 {
+                return false;
+            }
+            // Documentation: 2001:db8::/32 — first two segments are 2001:0db8
+            if segs[0] == 0x2001 && segs[1] == 0x0db8 {
+                return false;
+            }
+            // NAT64 well-known prefix: 64:ff9b::/96 (RFC 6052). The low 32
+            // bits embed an IPv4 address (e.g. 64:ff9b::7f00:1 = 127.0.0.1),
+            // so the whole /96 is rejected.
+            if segs[0] == 0x0064
+                && segs[1] == 0xff9b
+                && segs[2] == 0
+                && segs[3] == 0
+                && segs[4] == 0
+                && segs[5] == 0
+            {
                 return false;
             }
             true
@@ -181,6 +215,18 @@ mod tests {
         assert!(validate_url("http://example.com:3000/").is_err());
     }
 
+    #[test]
+    fn validate_url_rejects_embedded_username() {
+        let err = validate_url("http://user@example.com/").unwrap_err();
+        assert!(err.to_string().contains("credentials"), "expected credentials error, got: {err}");
+    }
+
+    #[test]
+    fn validate_url_rejects_embedded_user_and_password() {
+        let err = validate_url("http://user:pass@example.com/").unwrap_err();
+        assert!(err.to_string().contains("credentials"), "expected credentials error, got: {err}");
+    }
+
     // ── is_global_addr ────────────────────────────────────────────────────────
 
     #[test]
@@ -234,6 +280,41 @@ mod tests {
     #[test]
     fn is_global_addr_accepts_ipv6_public() {
         assert!(is_global_addr("2606:4700:4700::1111".parse().unwrap()));
+    }
+
+    #[test]
+    fn is_global_addr_rejects_ipv4_mapped_loopback() {
+        // ::ffff:127.0.0.1 — IPv4-mapped, must be unwrapped and rejected.
+        assert!(!is_global_addr("::ffff:127.0.0.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn is_global_addr_rejects_ipv4_mapped_private() {
+        assert!(!is_global_addr("::ffff:10.0.0.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn is_global_addr_rejects_ipv4_mapped_metadata_ip() {
+        // ::ffff:169.254.169.254 — cloud metadata via IPv4-mapped form.
+        assert!(!is_global_addr("::ffff:169.254.169.254".parse().unwrap()));
+    }
+
+    #[test]
+    fn is_global_addr_rejects_ipv4_compatible_loopback() {
+        // ::127.0.0.1 — IPv4-compatible form, must also be unwrapped.
+        assert!(!is_global_addr("::127.0.0.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn is_global_addr_rejects_ipv6_documentation() {
+        // 2001:db8::/32 — IPv6 documentation range.
+        assert!(!is_global_addr("2001:db8::1".parse().unwrap()));
+    }
+
+    #[test]
+    fn is_global_addr_rejects_ipv6_nat64_well_known_prefix() {
+        // 64:ff9b::/96 embeds an IPv4 address; 64:ff9b::7f00:1 = 127.0.0.1.
+        assert!(!is_global_addr("64:ff9b::7f00:1".parse().unwrap()));
     }
 
     // ── resolve_and_check ─────────────────────────────────────────────────────

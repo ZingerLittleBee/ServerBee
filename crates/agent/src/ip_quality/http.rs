@@ -74,6 +74,15 @@ pub async fn fetch(client: &reqwest::Client, request: &UnlockRequest) -> Result<
             .port_or_known_default()
             .ok_or_else(|| anyhow::anyhow!("SSRF guard: cannot determine port for URL"))?;
 
+        // Known TOCTOU window: `resolve_and_check` performs its own DNS
+        // resolution here, but `reqwest`'s `send()` below resolves the host
+        // again independently — a rebinding DNS server could hand back a
+        // private IP on the second lookup. This residual window is accepted
+        // for now because custom-service URLs come from the admin-only
+        // catalog (an admin could point directly at a private IP anyway).
+        // The proper fix — pinning the connection to the validated addresses
+        // via reqwest's `resolve_to_addrs` — is planned for a later
+        // hardening pass.
         ssrf::resolve_and_check(host, port)?;
 
         // Build the request for this hop.
