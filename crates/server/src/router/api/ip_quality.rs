@@ -41,6 +41,35 @@ pub fn write_router() -> Router<Arc<AppState>> {
 }
 
 // ---------------------------------------------------------------------------
+// IpQualitySync re-broadcast helper
+// ---------------------------------------------------------------------------
+
+/// Re-send `IpQualitySync` to every currently-online agent.
+///
+/// Spec §4 requires `IpQualitySync` to be pushed on connect, on catalog
+/// change, and on settings change. The WS handler covers the connect case;
+/// this helper covers catalog/settings mutations so a change reaches already
+/// connected agents without waiting for them to reconnect. Mirrors how
+/// `network_probe.rs` re-broadcasts `NetworkProbeSync` after a mutation.
+async fn broadcast_ip_quality_sync(state: &Arc<AppState>) -> Result<(), AppError> {
+    let services = IpQualityService::enabled_service_defs(&state.db).await?;
+    let setting = IpQualityService::get_setting(&state.db).await?;
+
+    for server_id in state.agent_manager.connected_server_ids() {
+        if let Some(tx) = state.agent_manager.get_sender(&server_id) {
+            let _ = tx
+                .send(ServerMessage::IpQualitySync {
+                    services: services.clone(),
+                    interval_hours: setting.check_interval_hours as u32,
+                })
+                .await;
+        }
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Query params
 // ---------------------------------------------------------------------------
 
@@ -164,6 +193,7 @@ async fn create_service(
     Json(input): Json<CreateCustomServiceInput>,
 ) -> Result<Json<ApiResponse<crate::entity::unlock_service::Model>>, AppError> {
     let service = IpQualityService::create_custom_service(&state.db, input).await?;
+    broadcast_ip_quality_sync(&state).await?;
     ok(service)
 }
 
@@ -185,6 +215,7 @@ async fn update_service(
     Json(input): Json<UpdateServiceInput>,
 ) -> Result<Json<ApiResponse<crate::entity::unlock_service::Model>>, AppError> {
     let service = IpQualityService::update_service(&state.db, &id, input).await?;
+    broadcast_ip_quality_sync(&state).await?;
     ok(service)
 }
 
@@ -205,6 +236,7 @@ async fn delete_service(
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     IpQualityService::delete_service(&state.db, &id).await?;
+    broadcast_ip_quality_sync(&state).await?;
     ok("ok")
 }
 
@@ -225,6 +257,7 @@ async fn update_settings(
 ) -> Result<Json<ApiResponse<IpQualitySettingDto>>, AppError> {
     let setting =
         IpQualityService::update_setting(&state.db, input.check_interval_hours).await?;
+    broadcast_ip_quality_sync(&state).await?;
     ok(setting)
 }
 
@@ -253,4 +286,62 @@ async fn check_server(
         .map_err(|_| AppError::Internal("Failed to send IpQualityRunNow to agent".to_string()))?;
 
     ok("ok")
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AppConfig;
+    use crate::test_utils::setup_test_db;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use tokio::sync::mpsc;
+
+    fn test_addr() -> SocketAddr {
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080)
+    }
+
+    #[tokio::test]
+    async fn broadcast_ip_quality_sync_reaches_online_agents() {
+        let (db, _tmp) = setup_test_db().await;
+        let state = AppState::new(db, AppConfig::default()).await.unwrap();
+
+        // Register a connected agent with a receiving channel.
+        let (tx, mut rx) = mpsc::channel::<ServerMessage>(8);
+        state
+            .agent_manager
+            .add_connection("srv-online".into(), "Online".into(), tx, test_addr());
+
+        broadcast_ip_quality_sync(&state).await.unwrap();
+
+        // The online agent should receive an IpQualitySync with the 9 seeded
+        // built-in services and the default 12h interval.
+        let msg = tokio::time::timeout(std::time::Duration::from_millis(200), rx.recv())
+            .await
+            .expect("agent should receive a message")
+            .expect("channel should not be closed");
+
+        match msg {
+            ServerMessage::IpQualitySync {
+                services,
+                interval_hours,
+            } => {
+                assert_eq!(services.len(), 9, "all 9 enabled built-ins should be synced");
+                assert_eq!(interval_hours, 12, "default interval is 12h");
+            }
+            other => panic!("expected IpQualitySync, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn broadcast_ip_quality_sync_with_no_agents_is_noop() {
+        let (db, _tmp) = setup_test_db().await;
+        let state = AppState::new(db, AppConfig::default()).await.unwrap();
+
+        // No connected agents — must succeed without error.
+        broadcast_ip_quality_sync(&state).await.unwrap();
+    }
 }
