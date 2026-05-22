@@ -19,6 +19,8 @@
   "nav_alerts": "告警",
   "nav_network": "网络质量",
   "nav_traffic": "流量统计",
+  "nav_ip_quality": "IP 质量",
+  "nav_ip_quality_settings": "IP 质量",
   "nav_security_events": "安全事件",
   "nav_network_probes": "网络探测",
   "nav_ping_tasks": "Ping 任务",

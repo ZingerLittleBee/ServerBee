@@ -1,0 +1,179 @@
+---
+title: IP 质量检测
+description: 检测 Agent 出口 IP 的流媒体和 AI 服务解锁情况，并对代理、VPN 及欺诈风险进行评分。
+icon: Globe
+---
+
+IP 质量检测功能让每台 Agent 评估其 VPS 出口 IP 的质量，并将结果上报到 Server。它做两件事：
+
+1. **服务解锁检测** — Agent 从自身出口 IP 发送 HTTP 请求，判断流媒体、AI、社交等热门服务的解锁状态。
+2. **IP 元数据与风险评分** — Server 通过本地 GeoIP 数据库获取国家、ASN 和 IP 类型，并在配置了第三方提供商时计算欺诈风险分。
+
+检测结果展示在专属的 **IP 质量** 侧边栏路由（全局概览）、各服务器详情 Tab，以及——在每个状态页单独开启后——公共状态页。
+
+## 前置条件
+
+- 每台服务器必须启用 **`CAP_IP_QUALITY`**（位值 `1024`）。**默认关闭**，不在新 Agent 的默认能力集中。
+- Agent 启动时还需加上 `--allow-cap ip_quality`。双方都需要主动开启，详见下方[双重 opt-in](#双重-opt-in)。
+- 建议配置 GeoIP MMDB 数据库以获得完整的 IP 元数据。未配置时只有基本地理位置信息。详见[配置](/cn/docs/configuration)页中的 `geoip.mmdb_path`。
+
+## 双重 opt-in
+
+`CAP_IP_QUALITY` 遵循与 `CAP_FILE`、`CAP_TERMINAL`、`CAP_EXEC`、`CAP_DOCKER` 和 `CAP_FIREWALL_BLOCK` 相同的双向开关机制：
+
+- **Server 端：** 在 UI 中为每台服务器启用该能力（仪表盘 → 服务器详情 → Capabilities，或 Settings → Capabilities 批量操作）。
+- **Agent 端：** 启动 Agent 进程时加上 `--allow-cap ip_quality`。
+
+只开启任意一侧时，有效能力为零 —— Agent 不运行任何检测，UI 显示标准的**客户端关闭**占位状态。两侧都开启才能激活此功能。
+
+```bash
+# 直接传参
+./serverbee-agent --allow-cap ip_quality
+
+# 或通过 serverbee 管理 CLI
+sudo serverbee config set allow_caps ip_quality
+sudo serverbee restart agent
+```
+
+## 内置服务
+
+启动时预置 9 个服务，每个都有一个硬编码的检测器，从 Agent 出口 IP 发送 HTTP 请求并解析响应来判断解锁状态。
+
+| 服务 | 分类 | 说明 |
+|------|------|------|
+| Netflix | 流媒体 | 区分完全解锁、仅限自制内容、已封禁 |
+| Disney+ | 流媒体 | |
+| YouTube Premium | 流媒体 | |
+| Amazon Prime Video | 流媒体 | |
+| HBO Max | 流媒体 | |
+| Spotify | 社交 | |
+| ChatGPT | AI | |
+| Gemini | AI | |
+| TikTok | 社交 | |
+
+每个服务均可在 **Settings → IP Quality → Service Catalog** 中单独启用或停用。内置服务不能删除，检测逻辑不可修改。
+
+## 自定义服务
+
+除内置服务外，管理员还可以在 **Settings → IP Quality → Service Catalog → 添加服务** 中定义自定义服务。
+
+每个自定义服务包含：
+
+- **URL** — 探测目标地址。必须使用 `https://` 或 `http://`，且端口只允许 80 或 443。私有 / 回环地址在创建时被拒绝，并由 Agent 在每次请求及重定向跳转时重新校验（SSRF 防护）。
+- **Method** — HTTP 方法（`GET`、`HEAD` 等）及可选请求头。
+- **匹配规则** — 按顺序评估的规则列表，首条匹配的规则生效。每条规则基于以下之一进行匹配：
+  - HTTP 状态码（精确匹配或范围）
+  - 响应体正则表达式
+  - 重定向目标 URL 模式
+
+可能的结果为 `unlocked`（解锁）、`restricted`（受限）、`blocked`（封锁）、`failed`（失败）或 `unsupported`（不支持）。
+
+## 检测频率
+
+Agent 在以下情况运行检测：
+
+- **定时** — 默认每 12 小时一次，可在 **Settings → IP Quality → Settings → 检测间隔** 中调整。
+- **出口 IP 变化时** — 检测到 IP 变更后 Agent 自动重新运行。
+- **手动触发** — 在任意服务器的 IP 质量 Tab 点击**立即检测**。
+
+检测计划由 Agent 自主维护，Server 只推送服务目录和转发手动触发信号。
+
+## IP 元数据与风险评分
+
+收到 Agent 上报的解锁结果后，Server 会：
+
+1. **通过本地 GeoIP MMDB 获取基础元数据** — 国家、地区、城市、ASN、AS 机构名、IP 类型（住宅 / 数据中心 / 托管 / 移动 / ISP / 未知）。无需外部请求，始终可用。
+2. **可选地查询第三方风险提供商**（如已配置），获取 0–100 的欺诈风险分、风险等级（`low` / `medium` / `high`）及代理/VPN/托管标记。结果按 IP 缓存 24 小时，相同 IP 的多次检测不会重复调用 API。
+
+未配置风险提供商时，`risk_score` 和 `risk_level` 分别为 `null` / `unknown`，UI 仅显示 GeoIP 元数据。
+
+### 配置风险提供商
+
+在 `server.toml` 中设置 `ip_quality.risk_provider`（或环境变量 `SERVERBEE_IP_QUALITY__RISK_PROVIDER`），可选值：
+
+| 提供商 | 值 | 说明 |
+|--------|-----|------|
+| 不使用（默认）| `none` | 仅 GeoIP 元数据，无风险评分 |
+| Scamalytics | `scamalytics` | 需要 API Key。接口子域名与账号绑定（`api1`、`api11` 等）|
+| IPQualityScore | `ipqs` | 需要 API Key |
+| proxycheck.io | `proxycheck` | 需要 API Key |
+| AbuseIPDB | `abuseipdb` | 需要 API Key |
+| ip-api.com | `ip-api` | **免费版仅限非商业用途，接口为 HTTP（非 HTTPS）。生产环境使用前请仔细阅读其服务条款。** 无需 API Key |
+
+<Callout type="warn">
+`ip-api`（ip-api.com）免费版仅限非商业用途，其 API 接口为 HTTP 而非 HTTPS。生产环境使用前，请先阅读其[服务条款](https://ip-api.com/docs/legal)。商业用途请购买商业授权或改用其他提供商。
+</Callout>
+
+以 Scamalytics 为例配置：
+
+```toml
+[ip_quality]
+risk_provider = "scamalytics"
+
+[ip_quality.scamalytics]
+api_key = "your_api_key"
+endpoint = "api1"   # Scamalytics 账号绑定的 API 子域名，留空使用默认值
+```
+
+完整配置参考：[配置 → IP 质量检测](/cn/docs/configuration)。
+
+## 查看结果
+
+| 入口 | 内容 |
+|------|------|
+| **IP 质量** 侧边栏路由（`/ip-quality`） | 全服务器 × 服务解锁矩阵；每台服务器的 IP 质量卡片（ASN、IP 类型、风险分与等级徽章、代理/VPN 标记） |
+| 服务器详情 → **IP 质量** Tab | 单台服务器的 IP 质量卡片、解锁矩阵、状态变更历史及**立即检测**按钮 |
+| 公共状态页 | 解锁矩阵区块，仅当该状态页开启了 `show_ip_quality` 时显示 |
+
+解锁状态更新通过 WebSocket 实时推送，无需刷新页面。
+
+## 解锁状态说明
+
+| 状态 | 含义 |
+|------|------|
+| `unlocked` | 该出口 IP 可完全访问此服务 |
+| `restricted` | 受限访问（如 Netflix 仅能看自制内容） |
+| `blocked` | 该出口 IP 无法访问此服务 |
+| `failed` | 检测过程中网络错误或超时 |
+| `unsupported` | 此 IP 类型不适用该服务检测 |
+
+## 公共状态页展示
+
+所有公共状态页**默认不展示** IP 质量信息。若要在某个状态页上启用：
+
+1. 进入 **Settings → Status Pages**，编辑对应页面。
+2. 打开 **Show IP Quality** 开关。
+
+未登录的访客看到的出口 IP 会被遮盖为 `*.*.*.*`，已登录用户可看到完整 IP。
+
+## 数据保留
+
+状态变更历史事件（`unlock_event` 日志）默认保留 **90 天**。可通过 `retention.ip_quality_event_days`（环境变量 `SERVERBEE_RETENTION__IP_QUALITY_EVENT_DAYS`）调整。每日清理任务自动删除过期记录。
+
+每台服务器最新的解锁结果和 IP 质量快照会持续保留（每次运行后覆盖更新，不会累积）。
+
+## 数据链路
+
+```text
+Agent
+  │  (CAP_IP_QUALITY 有效 + --allow-cap ip_quality)
+  ├─ 按 interval_hours / IP 变化 / 手动触发 运行解锁检测
+  │   AgentMessage::UnlockResults  (WebSocket)
+  ▼
+Server
+  ├─ 更新 unlock_result + 状态变化时追加 unlock_event
+  ├─ 广播 BrowserMessage::IpQualityUpdate（解锁结果，ip_quality: null）
+  ├─ 后台任务：IP 风险评分（GeoIP + 可选第三方提供商，缓存优先）
+  ├─ 更新 ip_quality_snapshot
+  └─ 广播 BrowserMessage::IpQualityUpdate（ip_quality: 完整数据）
+                    │
+                    ▼
+          /ip-quality  +  IP Quality Tab  +  公共状态页
+```
+
+<Cards>
+  <Card title="Capabilities" href="/cn/docs/capabilities" />
+  <Card title="配置参考" href="/cn/docs/configuration" />
+  <Card title="安全事件检测" href="/cn/docs/security-events" />
+  <Card title="公共状态页" href="/cn/docs/status-page" />
+</Cards>

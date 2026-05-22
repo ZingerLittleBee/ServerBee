@@ -1,0 +1,179 @@
+---
+title: IP Quality
+description: Check each agent's egress IP against streaming and AI services, and score it for proxy, VPN, and fraud risk.
+icon: Globe
+---
+
+IP Quality lets each agent assess the quality of its VPS egress IP and report the results back to the server. It does two things:
+
+1. **Service unlock detection** — the agent issues HTTP requests from its egress IP to determine the unlock status of popular streaming, AI, and social services.
+2. **IP metadata and risk scoring** — the server derives country, ASN, and IP type from its local GeoIP database and, when a third-party provider is configured, computes a fraud risk score.
+
+Results appear on a dedicated **IP Quality** sidebar route (global overview), a per-server detail tab, and — when enabled per status page — on the public status page.
+
+## Requirements
+
+- **`CAP_IP_QUALITY`** (bit `1024`) must be enabled on each server. **Disabled by default** and not included in the new-agent default.
+- The agent must also be started with `--allow-cap ip_quality`. Both sides must opt in — see [Dual Opt-In](#dual-opt-in) below.
+- A GeoIP MMDB database is recommended for complete IP metadata. Without it, only basic location data is available. See the [Configuration](/en/docs/configuration) page for `geoip.mmdb_path`.
+
+## Dual Opt-In
+
+`CAP_IP_QUALITY` follows the same two-sided gate used by `CAP_FILE`, `CAP_TERMINAL`, `CAP_EXEC`, `CAP_DOCKER`, and `CAP_FIREWALL_BLOCK`:
+
+- **Server side:** enable the capability for each server in the UI (Dashboard → server detail → Capabilities, or Settings → Capabilities for bulk changes).
+- **Agent side:** start the agent process with `--allow-cap ip_quality`.
+
+If only one side is enabled the effective capability is zero — the agent runs no checks and the UI shows the standard **client-locked** placeholder. You must enable both to activate the feature.
+
+```bash
+# Passing the flag directly
+./serverbee-agent --allow-cap ip_quality
+
+# Or using the serverbee management CLI
+sudo serverbee config set allow_caps ip_quality
+sudo serverbee restart agent
+```
+
+## Built-In Services
+
+Nine services are seeded at startup. Each has a hardcoded detector that issues an HTTP request from the agent's egress IP and interprets the response to determine unlock status.
+
+| Service | Category | Notes |
+|---------|----------|-------|
+| Netflix | Streaming | Detects full unlock vs. originals-only vs. blocked |
+| Disney+ | Streaming | |
+| YouTube Premium | Streaming | |
+| Amazon Prime Video | Streaming | |
+| HBO Max | Streaming | |
+| Spotify | Social | |
+| ChatGPT | AI | |
+| Gemini | AI | |
+| TikTok | Social | |
+
+Each service can be individually enabled or disabled in **Settings → IP Quality → Service Catalog**. Built-in services cannot be deleted; their detection logic is immutable.
+
+## Custom Services
+
+In addition to the built-in set, administrators can define custom services in **Settings → IP Quality → Service Catalog → Add service**.
+
+Each custom service consists of:
+
+- **URL** — the endpoint to probe. Must use `https://` or `http://` on port 80 or 443. Private / loopback addresses are rejected at creation time and re-validated by the agent on each request and redirect hop (SSRF guard).
+- **Method** — HTTP method (`GET`, `HEAD`, etc.) and optional request headers.
+- **Match rules** — an ordered list of rules evaluated against the response. The first matching rule wins. Each rule matches on one of:
+  - HTTP status code (exact or range)
+  - Response body regex
+  - Redirect target URL pattern
+
+The possible results are `unlocked`, `restricted`, `blocked`, `failed`, or `unsupported`.
+
+## Check Cadence
+
+The agent runs checks:
+
+- **On schedule** — every 12 hours by default, configurable in **Settings → IP Quality → Settings → Check interval**.
+- **When the egress IP changes** — the agent automatically reruns on detected IP changes.
+- **On demand** — click **Check now** on any server's IP Quality tab.
+
+Check schedules are agent-side. The server only pushes the service catalog and forwards manual triggers.
+
+## IP Metadata and Risk Scoring
+
+After receiving unlock results from an agent, the server:
+
+1. **Derives baseline metadata** from the local GeoIP MMDB — country, region, city, ASN, AS organization, and IP type (residential / datacenter / hosting / mobile / ISP / unknown). This always works, with no external call required.
+2. **Optionally queries a third-party risk provider** (if configured) to obtain a 0–100 fraud risk score, risk level (`low` / `medium` / `high`), and proxy/VPN/hosting flags. Results are cached by IP for 24 hours, so repeated checks of the same IP do not generate repeated API calls.
+
+If no risk provider is configured, `risk_score` and `risk_level` are `null` / `unknown`, and the UI shows only the GeoIP-derived metadata.
+
+### Configuring a Risk Provider
+
+Set `ip_quality.risk_provider` in `server.toml` (or `SERVERBEE_IP_QUALITY__RISK_PROVIDER`) to one of:
+
+| Provider | Value | Notes |
+|----------|-------|-------|
+| None (default) | `none` | GeoIP metadata only, no risk score |
+| Scamalytics | `scamalytics` | API key required. Endpoint is account-bound (`api1`, `api11`, etc.) |
+| IPQualityScore | `ipqs` | API key required |
+| proxycheck.io | `proxycheck` | API key required |
+| AbuseIPDB | `abuseipdb` | API key required |
+| ip-api.com | `ip-api` | **Free tier, non-commercial use only. HTTP-only endpoint — do not use behind HTTPS in production without understanding the terms.** No API key required. |
+
+<Callout type="warn">
+`ip-api` (ip-api.com) free tier allows non-commercial use only. Its API endpoint is HTTP (not HTTPS). Review its [terms of service](https://ip-api.com/docs/legal) before using it in production. For commercial use, obtain a commercial license or use one of the other providers.
+</Callout>
+
+Configure a provider (example using Scamalytics):
+
+```toml
+[ip_quality]
+risk_provider = "scamalytics"
+
+[ip_quality.scamalytics]
+api_key = "your_api_key"
+endpoint = "api1"   # Scamalytics account-bound subdomain; leave empty for default
+```
+
+Full configuration reference: [Configuration → IP Quality](/en/docs/configuration).
+
+## Viewing Results
+
+| Where | What it shows |
+|-------|---------------|
+| **IP Quality** sidebar route (`/ip-quality`) | All-servers × services unlock matrix; IP quality card per server (ASN, IP type, risk score and level badge, proxy/VPN markers) |
+| Server detail → **IP Quality** tab | Single server's IP quality card, its unlock matrix, status-change history, and a **Check now** button |
+| Public status page | Unlock matrix section, shown only when `show_ip_quality` is enabled for that page |
+
+Unlock status updates appear in real time over WebSocket — no page refresh required.
+
+## Unlock Status Values
+
+| Status | Meaning |
+|--------|---------|
+| `unlocked` | Service is fully accessible from this egress IP |
+| `restricted` | Partial access (e.g. Netflix originals-only) |
+| `blocked` | Service is not accessible from this egress IP |
+| `failed` | Network error or timeout during the check |
+| `unsupported` | Service check not applicable for this IP type |
+
+## Public Status Page Exposure
+
+IP Quality is **off by default** on all public status pages. To enable it for a specific page:
+
+1. Go to **Settings → Status Pages**, edit the page.
+2. Toggle on **Show IP Quality**.
+
+For unauthenticated visitors, the egress IP is masked as `*.*.*.*`. Authenticated viewers see the full IP.
+
+## Retention
+
+Status-change history events (the `unlock_event` log) are retained for **90 days** by default. Tune with `retention.ip_quality_event_days` (env: `SERVERBEE_RETENTION__IP_QUALITY_EVENT_DAYS`). The daily cleanup task purges expired rows automatically.
+
+The latest unlock result and IP quality snapshot per server are kept indefinitely (they are replaced on each run, not accumulated).
+
+## Data Flow
+
+```text
+Agent
+  │  (CAP_IP_QUALITY effective + --allow-cap ip_quality)
+  ├─ runs unlock checks every interval_hours / on IP change / on RunNow
+  │   AgentMessage::UnlockResults  (WebSocket)
+  ▼
+Server
+  ├─ upserts unlock_result + appends unlock_event on status change
+  ├─ broadcasts BrowserMessage::IpQualityUpdate (unlock results, ip_quality: null)
+  ├─ background task: ip_risk scoring (GeoIP + optional third-party provider, cache-first)
+  ├─ upserts ip_quality_snapshot
+  └─ broadcasts BrowserMessage::IpQualityUpdate (ip_quality: full data)
+                    │
+                    ▼
+             /ip-quality  +  IP Quality tab  +  public status page
+```
+
+<Cards>
+  <Card title="Capabilities" href="/en/docs/capabilities" />
+  <Card title="Configuration" href="/en/docs/configuration" />
+  <Card title="Security Events" href="/en/docs/security-events" />
+  <Card title="Public Status Page" href="/en/docs/status-page" />
+</Cards>

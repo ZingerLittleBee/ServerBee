@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::Json;
 use axum::{
     extract::{Request, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -17,6 +17,17 @@ pub struct CurrentUser {
     pub username: String,
     pub role: String,
     pub must_change_password: bool,
+}
+
+impl From<crate::entity::user::Model> for CurrentUser {
+    fn from(user: crate::entity::user::Model) -> Self {
+        Self {
+            user_id: user.id,
+            username: user.username,
+            role: user.role,
+            must_change_password: user.must_change_password,
+        }
+    }
 }
 
 /// 403 response with a distinct machine-readable code so the frontend can
@@ -44,68 +55,60 @@ fn is_onboarding_whitelisted(method: &axum::http::Method, path: &str) -> bool {
     )
 }
 
+/// Resolve the authenticated user (if any) from a request's headers.
+///
+/// Tries, in order: session cookie, `X-API-Key` header, `Bearer` token.
+/// Returns `None` when no credential is present or none validates.
+///
+/// This is the single, shared credential-parsing routine. Both
+/// `auth_middleware` (which enforces auth) and public routes that need
+/// optional auth (e.g. the public status page's IP masking) call it, so the
+/// security-sensitive parsing logic never drifts between copies.
+pub async fn resolve_optional_user(
+    headers: &HeaderMap,
+    state: &AppState,
+) -> Option<CurrentUser> {
+    // Try session cookie
+    if let Some(token) = extract_session_cookie(headers)
+        && let Some((user, _session)) =
+            AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl)
+                .await
+                .ok()
+                .flatten()
+    {
+        return Some(CurrentUser::from(user));
+    }
+
+    // Try API key header
+    if let Some(key) = extract_api_key(headers)
+        && let Some(user) = AuthService::validate_api_key(&state.db, &key)
+            .await
+            .ok()
+            .flatten()
+    {
+        return Some(CurrentUser::from(user));
+    }
+
+    // Try Bearer token
+    if let Some(token) = extract_bearer_token(headers)
+        && let Some((user, _session)) =
+            AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl)
+                .await
+                .ok()
+                .flatten()
+    {
+        return Some(CurrentUser::from(user));
+    }
+
+    None
+}
+
 pub async fn auth_middleware(
     State(state): State<Arc<AppState>>,
     mut req: Request,
     next: Next,
 ) -> Response {
-    // Try session cookie
-    let current_user = if let Some(token) = extract_session_cookie(&req) {
-        AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl)
-            .await
-            .ok()
-            .flatten()
-            .map(|(user, _session)| CurrentUser {
-                user_id: user.id.clone(),
-                username: user.username.clone(),
-                role: user.role.clone(),
-                must_change_password: user.must_change_password,
-            })
-    } else {
-        None
-    };
-
-    // Try API key header if session not found
-    let current_user = match current_user {
-        Some(u) => Some(u),
-        None => {
-            if let Some(key) = extract_api_key(&req) {
-                AuthService::validate_api_key(&state.db, &key)
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|user| CurrentUser {
-                        user_id: user.id.clone(),
-                        username: user.username.clone(),
-                        role: user.role.clone(),
-                        must_change_password: user.must_change_password,
-                    })
-            } else {
-                None
-            }
-        }
-    };
-
-    // Try Bearer token if still not authenticated
-    let current_user = match current_user {
-        Some(u) => Some(u),
-        None => {
-            if let Some(token) = extract_bearer_token(&req) {
-                AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl)
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|(user, _session)| CurrentUser {
-                        user_id: user.id.clone(),
-                        username: user.username.clone(),
-                        role: user.role.clone(),
-                        must_change_password: user.must_change_password,
-                    })
-            } else {
-                None
-            }
-        }
-    };
+    let current_user = resolve_optional_user(req.headers(), &state).await;
 
     match current_user {
         Some(user) => {
@@ -137,8 +140,8 @@ pub async fn require_admin(req: Request, next: Next) -> Response {
     next.run(req).await
 }
 
-fn extract_session_cookie(req: &Request) -> Option<String> {
-    req.headers()
+fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
+    headers
         .get("cookie")?
         .to_str()
         .ok()?
@@ -149,16 +152,16 @@ fn extract_session_cookie(req: &Request) -> Option<String> {
         })
 }
 
-fn extract_api_key(req: &Request) -> Option<String> {
-    req.headers()
+fn extract_api_key(headers: &HeaderMap) -> Option<String> {
+    headers
         .get("x-api-key")?
         .to_str()
         .ok()
         .map(|s| s.to_string())
 }
 
-fn extract_bearer_token(req: &Request) -> Option<String> {
-    req.headers()
+fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
+    headers
         .get("authorization")?
         .to_str()
         .ok()?
@@ -169,87 +172,78 @@ fn extract_bearer_token(req: &Request) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::http::Request as HttpRequest;
+    use axum::http::HeaderValue;
+
+    fn headers_with(name: &'static str, value: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(name, HeaderValue::from_str(value).unwrap());
+        h
+    }
 
     #[test]
     fn test_extract_session_cookie_valid() {
-        let req = HttpRequest::builder()
-            .header("cookie", "session_token=abc123; other=val")
-            .body(axum::body::Body::empty())
-            .unwrap();
-        assert_eq!(extract_session_cookie(&req), Some("abc123".to_string()));
+        let headers = headers_with("cookie", "session_token=abc123; other=val");
+        assert_eq!(
+            extract_session_cookie(&headers),
+            Some("abc123".to_string())
+        );
     }
 
     #[test]
     fn test_extract_session_cookie_only() {
-        let req = HttpRequest::builder()
-            .header("cookie", "session_token=tok42")
-            .body(axum::body::Body::empty())
-            .unwrap();
-        assert_eq!(extract_session_cookie(&req), Some("tok42".to_string()));
+        let headers = headers_with("cookie", "session_token=tok42");
+        assert_eq!(
+            extract_session_cookie(&headers),
+            Some("tok42".to_string())
+        );
     }
 
     #[test]
     fn test_extract_session_cookie_missing() {
-        let req = HttpRequest::builder()
-            .header("cookie", "other=val; foo=bar")
-            .body(axum::body::Body::empty())
-            .unwrap();
-        assert_eq!(extract_session_cookie(&req), None);
+        let headers = headers_with("cookie", "other=val; foo=bar");
+        assert_eq!(extract_session_cookie(&headers), None);
     }
 
     #[test]
     fn test_extract_session_cookie_no_header() {
-        let req = HttpRequest::builder()
-            .body(axum::body::Body::empty())
-            .unwrap();
-        assert_eq!(extract_session_cookie(&req), None);
+        let headers = HeaderMap::new();
+        assert_eq!(extract_session_cookie(&headers), None);
     }
 
     #[test]
     fn test_extract_api_key_valid() {
-        let req = HttpRequest::builder()
-            .header("x-api-key", "serverbee_abc123def456")
-            .body(axum::body::Body::empty())
-            .unwrap();
+        let headers = headers_with("x-api-key", "serverbee_abc123def456");
         assert_eq!(
-            extract_api_key(&req),
+            extract_api_key(&headers),
             Some("serverbee_abc123def456".to_string())
         );
     }
 
     #[test]
     fn test_extract_api_key_missing() {
-        let req = HttpRequest::builder()
-            .body(axum::body::Body::empty())
-            .unwrap();
-        assert_eq!(extract_api_key(&req), None);
+        let headers = HeaderMap::new();
+        assert_eq!(extract_api_key(&headers), None);
     }
 
     #[test]
     fn test_extract_bearer_token_valid() {
-        let req = HttpRequest::builder()
-            .header("authorization", "Bearer my_token_123")
-            .body(axum::body::Body::empty())
-            .unwrap();
-        assert_eq!(extract_bearer_token(&req), Some("my_token_123".to_string()));
+        let headers = headers_with("authorization", "Bearer my_token_123");
+        assert_eq!(
+            extract_bearer_token(&headers),
+            Some("my_token_123".to_string())
+        );
     }
 
     #[test]
     fn test_extract_bearer_token_missing() {
-        let req = HttpRequest::builder()
-            .body(axum::body::Body::empty())
-            .unwrap();
-        assert_eq!(extract_bearer_token(&req), None);
+        let headers = HeaderMap::new();
+        assert_eq!(extract_bearer_token(&headers), None);
     }
 
     #[test]
     fn test_extract_bearer_token_wrong_scheme() {
-        let req = HttpRequest::builder()
-            .header("authorization", "Basic dXNlcjpwYXNz")
-            .body(axum::body::Body::empty())
-            .unwrap();
-        assert_eq!(extract_bearer_token(&req), None);
+        let headers = headers_with("authorization", "Basic dXNlcjpwYXNz");
+        assert_eq!(extract_bearer_token(&headers), None);
     }
 
     #[test]

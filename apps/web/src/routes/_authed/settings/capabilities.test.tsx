@@ -162,7 +162,8 @@ describe('CapabilitiesPage', () => {
       'AutoUpgradeLowRisk',
       'ICMPPingLowRisk',
       'TCPProbeLowRisk',
-      'HTTPProbeLowRisk'
+      'HTTPProbeLowRisk',
+      'cap_ip_qualityLowRisk'
     ])
   })
 })

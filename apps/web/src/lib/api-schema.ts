@@ -5,6 +5,9 @@
  * Regenerate: pnpm run generate:api-types
  */
 import type { components } from './api-types'
+import type { ServerIpQualityData } from './ip-quality-types'
+
+export type { IpQualitySnapshotData, ServerIpQualityData } from './ip-quality-types'
 
 type S = components['schemas']
 
@@ -174,6 +177,19 @@ export interface PublicStatusPageData {
       status: string
     }>
   }>
+  /** Present only when the page has show_ip_quality enabled. */
+  ip_quality?: ServerIpQualityData[] | null
+  /** Service display metadata for services referenced by ip_quality.
+   *  Present when ip_quality is present. Use this for matrix column headers
+   *  instead of falling back to raw service IDs. */
+  ip_quality_services?: Array<{
+    id: string
+    key: string
+    name: string
+    category: string
+    popularity: number
+    is_builtin: boolean
+  }> | null
   page: {
     custom_css: string | null
     description: string | null
@@ -222,6 +238,7 @@ export interface StatusPageItem {
   enabled: boolean
   id: string
   server_ids: string[]
+  show_ip_quality?: boolean
   slug: string
   theme_ref?: string | null
   title: string

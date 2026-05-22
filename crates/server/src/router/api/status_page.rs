@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
+use axum::http::HeaderMap;
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use chrono::{Duration, Utc};
@@ -9,8 +10,10 @@ use serde::Serialize;
 
 use crate::entity::{incident, incident_update, maintenance, server, server_group, status_page};
 use crate::error::{ApiResponse, AppError, ok};
+use crate::middleware::auth::resolve_optional_user;
 use crate::service::custom_theme::{CustomThemeService, ThemeResolved};
 use crate::service::incident::IncidentService;
+use crate::service::ip_quality::{IpQualityService, ServerIpQualityData};
 use crate::service::maintenance::MaintenanceService;
 use crate::service::status_page::{CreateStatusPage, StatusPageService, UpdateStatusPage};
 use crate::service::theme_ref::ThemeRef;
@@ -59,6 +62,21 @@ pub struct IncidentWithUpdates {
     pub updates: Vec<incident_update::Model>,
 }
 
+/// Public-safe subset of an `unlock_service` row.
+///
+/// Does NOT expose `request`/`rules`/headers — those may contain internal
+/// URLs or secrets from custom services. Only metadata needed to label matrix
+/// column headers is included.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct PublicUnlockServiceInfo {
+    pub id: String,
+    pub key: String,
+    pub name: String,
+    pub category: String,
+    pub popularity: i32,
+    pub is_builtin: bool,
+}
+
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct PublicStatusPageData {
     pub page: StatusPageInfo,
@@ -67,6 +85,15 @@ pub struct PublicStatusPageData {
     pub active_incidents: Vec<IncidentWithUpdates>,
     pub planned_maintenances: Vec<maintenance::Model>,
     pub recent_incidents: Vec<IncidentWithUpdates>,
+    /// Present only when the page has `show_ip_quality = true`.
+    /// IPs are masked to `*.*.*.*` for unauthenticated viewers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ip_quality: Option<Vec<ServerIpQualityData>>,
+    /// Service display metadata for services referenced by `ip_quality`.
+    /// Present only when `ip_quality` is present. Allows the frontend to render
+    /// proper service names in the unlock matrix column headers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ip_quality_services: Option<Vec<PublicUnlockServiceInfo>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -109,6 +136,7 @@ pub fn write_router() -> Router<Arc<AppState>> {
 pub async fn get_public_status_page(
     State(state): State<Arc<AppState>>,
     Path(slug): Path<String>,
+    headers: HeaderMap,
 ) -> Result<Json<ApiResponse<PublicStatusPageData>>, AppError> {
     let page = StatusPageService::get_by_slug(&state.db, &slug).await?;
 
@@ -126,7 +154,8 @@ pub async fn get_public_status_page(
     )
     .await?;
 
-    // Parse server IDs from the page
+    // Parse server IDs from the page exactly once; reused below for both the
+    // server query and the optional IP-quality block.
     let server_ids: Vec<String> = serde_json::from_str(&page.server_ids_json).unwrap_or_default();
 
     // Fetch servers
@@ -134,7 +163,7 @@ pub async fn get_public_status_page(
         vec![]
     } else {
         server::Entity::find()
-            .filter(server::Column::Id.is_in(server_ids))
+            .filter(server::Column::Id.is_in(server_ids.iter()))
             .order_by_desc(server::Column::Weight)
             .order_by_desc(server::Column::CreatedAt)
             .all(&state.db)
@@ -242,6 +271,63 @@ pub async fn get_public_status_page(
         })
         .collect();
 
+    // Determine if the request is authenticated (optional auth for IP masking).
+    let authenticated = resolve_optional_user(&headers, &state).await.is_some();
+
+    // Build the optional IP quality block (only when the page opts in).
+    let (ip_quality, ip_quality_services) = if page.show_ip_quality {
+        // Scope strictly to servers that still exist — a deleted server left
+        // dangling in `server_ids_json` must not leak a stale ID publicly.
+        let existing_ids: Vec<String> = servers.iter().map(|s| s.id.clone()).collect();
+        let scoped_ids: Vec<String> = server_ids
+            .iter()
+            .filter(|id| existing_ids.iter().any(|e| e == *id))
+            .cloned()
+            .collect();
+
+        let mut entries = IpQualityService::get_summaries(&state.db, &scoped_ids).await?;
+        if !authenticated {
+            // Mask the egress IP for unauthenticated viewers.
+            for entry in &mut entries {
+                if let Some(ref mut snap) = entry.ip_quality {
+                    snap.ip = "*.*.*.*".to_string();
+                }
+            }
+        }
+
+        // Collect the set of service IDs referenced by the results so we can
+        // include just the display metadata for those services. This avoids
+        // leaking the full catalog (especially custom-service request configs).
+        let referenced_service_ids: std::collections::HashSet<String> = entries
+            .iter()
+            .flat_map(|e| e.unlock_results.iter().map(|r| r.service_id.clone()))
+            .collect();
+
+        let services_info = if referenced_service_ids.is_empty() {
+            Some(Vec::new())
+        } else {
+            // Load only the services that appear in the results.
+            let all_services = IpQualityService::list_services(&state.db).await?;
+            let public_services: Vec<PublicUnlockServiceInfo> = all_services
+                .into_iter()
+                .filter(|s| referenced_service_ids.contains(&s.id))
+                .map(|s| PublicUnlockServiceInfo {
+                    id: s.id,
+                    key: s.key,
+                    name: s.name,
+                    category: s.category,
+                    popularity: s.popularity,
+                    is_builtin: s.is_builtin,
+                })
+                .collect();
+            Some(public_services)
+        };
+
+        (Some(entries), services_info)
+    } else {
+        (None, None)
+    };
+
     let page_info = StatusPageInfo {
         id: page.id,
         title: page.title,
@@ -261,6 +347,8 @@ pub async fn get_public_status_page(
         active_incidents,
         planned_maintenances,
         recent_incidents,
+        ip_quality,
+        ip_quality_services,
     })
 }
 
@@ -438,6 +526,7 @@ mod tests {
             enabled: None,
             uptime_yellow_threshold: None,
             uptime_red_threshold: None,
+            show_ip_quality: None,
         }
     }
 
@@ -454,6 +543,7 @@ mod tests {
             uptime_yellow_threshold: None,
             uptime_red_threshold: None,
             theme_ref: None,
+            show_ip_quality: None,
         }
     }
 
@@ -688,6 +778,183 @@ mod tests {
                 "kind": "preset",
                 "id": "nord",
             })
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 15: IP quality on public status page + guest masking
+    // -----------------------------------------------------------------------
+
+    async fn create_server(db: &DatabaseConnection, id: &str) {
+        use crate::service::auth::AuthService;
+        use serverbee_common::constants::CAP_DEFAULT;
+        let token_hash = AuthService::hash_password("tok").expect("hash");
+        let now = chrono::Utc::now();
+        crate::entity::server::ActiveModel {
+            id: Set(id.to_string()),
+            token_hash: Set(token_hash),
+            token_prefix: Set("serverbee_test".to_string()),
+            name: Set(id.to_string()),
+            weight: Set(0),
+            hidden: Set(false),
+            capabilities: Set(CAP_DEFAULT as i32),
+            protocol_version: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert test server");
+    }
+
+    async fn insert_snapshot(db: &DatabaseConnection, server_id: &str, ip: &str) {
+        use crate::entity::ip_quality_snapshot;
+        use uuid::Uuid;
+        let now = chrono::Utc::now();
+        ip_quality_snapshot::ActiveModel {
+            id: Set(Uuid::new_v4().to_string()),
+            server_id: Set(server_id.to_string()),
+            ip: Set(ip.to_string()),
+            asn: Set(None),
+            as_org: Set(None),
+            country: Set(Some("US".to_string())),
+            region: Set(None),
+            city: Set(None),
+            ip_type: Set("residential".to_string()),
+            is_proxy: Set(false),
+            is_vpn: Set(false),
+            is_hosting: Set(false),
+            risk_score: Set(None),
+            risk_level: Set("unknown".to_string()),
+            checked_at: Set(now),
+        }
+        .insert(db)
+        .await
+        .expect("insert snapshot");
+    }
+
+    fn create_page_with_ip_quality(slug: &str, show_ip_quality: bool, server_ids: Vec<String>) -> CreateStatusPage {
+        CreateStatusPage {
+            title: "Status".to_string(),
+            slug: slug.to_string(),
+            description: None,
+            server_ids_json: server_ids,
+            group_by_server_group: None,
+            show_values: None,
+            custom_css: None,
+            enabled: None,
+            uptime_yellow_threshold: None,
+            uptime_red_threshold: None,
+            show_ip_quality: Some(show_ip_quality),
+        }
+    }
+
+    #[tokio::test]
+    async fn status_page_with_show_ip_quality_false_omits_ip_quality_block() {
+        let (db, _tmp) = setup_test_db().await;
+        create_server(&db, "srv-ip1").await;
+        insert_snapshot(&db, "srv-ip1", "1.2.3.4").await;
+
+        StatusPageService::create(
+            &db,
+            create_page_with_ip_quality("ipq-off", false, vec!["srv-ip1".to_string()]),
+        )
+        .await
+        .expect("status page should be created");
+        let app = build_app(db, AppConfig::default()).await;
+
+        let (status, body) = get_json(app, "/api/status/ipq-off").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            body["data"].get("ip_quality").is_none()
+                || body["data"]["ip_quality"].is_null(),
+            "ip_quality block must be absent when show_ip_quality is false; got: {}",
+            body["data"]["ip_quality"]
+        );
+    }
+
+    #[tokio::test]
+    async fn status_page_with_show_ip_quality_true_includes_ip_quality_for_page_servers() {
+        let (db, _tmp) = setup_test_db().await;
+        create_server(&db, "srv-ip2").await;
+        create_server(&db, "srv-ip3").await;
+        insert_snapshot(&db, "srv-ip2", "2.3.4.5").await;
+        insert_snapshot(&db, "srv-ip3", "3.4.5.6").await;
+
+        StatusPageService::create(
+            &db,
+            create_page_with_ip_quality("ipq-on", true, vec!["srv-ip2".to_string()]),
+        )
+        .await
+        .expect("status page should be created");
+        let app = build_app(db, AppConfig::default()).await;
+
+        let (status, body) = get_json(app, "/api/status/ipq-on").await;
+        assert_eq!(status, StatusCode::OK);
+        let ip_quality = &body["data"]["ip_quality"];
+        assert!(
+            ip_quality.is_array(),
+            "ip_quality block should be present when show_ip_quality is true"
+        );
+        let arr = ip_quality.as_array().unwrap();
+        // Only srv-ip2 is in the page — srv-ip3 must not appear
+        assert_eq!(arr.len(), 1, "should only have one entry for srv-ip2");
+        let entry = &arr[0];
+        assert_eq!(entry["server_id"], "srv-ip2");
+        // Unauthenticated — IP must be masked
+        let snap = &entry["ip_quality"];
+        if !snap.is_null() {
+            let ip_val = snap["ip"].as_str().unwrap_or("");
+            assert_eq!(ip_val, "*.*.*.*", "unauthenticated IP must be masked");
+        }
+    }
+
+    #[tokio::test]
+    async fn status_page_authenticated_session_shows_real_ip() {
+        let (db, _tmp) = setup_test_db().await;
+        let cookie = session_cookie(&db, "ipq_admin").await;
+        create_server(&db, "srv-ip4").await;
+        insert_snapshot(&db, "srv-ip4", "4.5.6.7").await;
+
+        StatusPageService::create(
+            &db,
+            create_page_with_ip_quality("ipq-auth", true, vec!["srv-ip4".to_string()]),
+        )
+        .await
+        .expect("status page should be created");
+        let app = build_app(db, AppConfig::default()).await;
+
+        let (status, body) = request_json(
+            app,
+            axum::http::Method::GET,
+            "/api/status/ipq-auth",
+            Some(&cookie),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let ip_quality = &body["data"]["ip_quality"];
+        assert!(ip_quality.is_array(), "ip_quality block should be present");
+        let arr = ip_quality.as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        let snap = &arr[0]["ip_quality"];
+        if !snap.is_null() {
+            let ip_val = snap["ip"].as_str().unwrap_or("");
+            assert_eq!(ip_val, "4.5.6.7", "authenticated session should show real IP");
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_status_endpoint_never_includes_ip_quality() {
+        let (db, _tmp) = setup_test_db().await;
+        let app = build_app(db, AppConfig::default()).await;
+
+        let (status, body) = get_json(app, "/api/status").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            body["data"].get("ip_quality").is_none() || body["data"]["ip_quality"].is_null(),
+            "legacy /api/status must never include ip_quality"
         );
     }
 

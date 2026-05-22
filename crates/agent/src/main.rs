@@ -5,6 +5,7 @@ mod docker;
 mod file_manager;
 mod fingerprint;
 mod firewall;
+mod ip_quality;
 mod network_prober;
 mod pinger;
 mod probe_utils;

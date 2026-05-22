@@ -377,6 +377,7 @@ mod tests {
             uptime_yellow_threshold: Set(99.0),
             uptime_red_threshold: Set(95.0),
             theme_ref: Set(Some(theme_ref.to_string())),
+            show_ip_quality: Set(false),
             created_at: Set(now),
             updated_at: Set(now),
         }

@@ -125,6 +125,85 @@ pub struct RecoveryJobDto {
     pub last_heartbeat_at: Option<DateTime<Utc>>,
 }
 
+// --- IP Quality DTOs ---
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub enum UnlockStatus {
+    Unlocked,
+    Restricted,
+    Blocked,
+    Failed,
+    Unsupported,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct UnlockRequest {
+    pub url: String,
+    pub method: String,
+    #[serde(default)]
+    pub headers: Vec<(String, String)>,
+    pub timeout_ms: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub enum UnlockMatch {
+    StatusEquals { code: u16 },
+    StatusInRange { min: u16, max: u16 },
+    BodyRegex { pattern: String },
+    RedirectMatches { pattern: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct UnlockRule {
+    #[serde(rename = "match")]
+    pub match_: UnlockMatch,
+    pub result: UnlockStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct UnlockServiceDef {
+    pub id: String,
+    pub key: String,
+    pub detector: Option<String>,
+    pub request: Option<UnlockRequest>,
+    pub rules: Option<Vec<UnlockRule>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct UnlockResultData {
+    pub service_id: String,
+    pub status: UnlockStatus,
+    pub region: Option<String>,
+    pub latency_ms: Option<u32>,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct IpQualitySnapshotData {
+    pub ip: String,
+    pub asn: Option<String>,
+    pub as_org: Option<String>,
+    pub country: Option<String>,
+    pub region: Option<String>,
+    pub city: Option<String>,
+    pub ip_type: String,
+    pub is_proxy: bool,
+    pub is_vpn: bool,
+    pub is_hosting: bool,
+    pub risk_score: Option<i32>,
+    pub risk_level: String,
+    pub checked_at: DateTime<Utc>,
+}
+
 /// Agent -> Server messages
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -170,6 +249,11 @@ pub enum AgentMessage {
     },
     NetworkProbeResults {
         results: Vec<NetworkProbeResultData>,
+    },
+    UnlockResults {
+        egress_ip: String,
+        results: Vec<UnlockResultData>,
+        checked_at: DateTime<Utc>,
     },
     // File management responses
     FileListResult {
@@ -342,6 +426,11 @@ pub enum ServerMessage {
         interval: u32,
         packet_count: u32,
     },
+    IpQualitySync {
+        services: Vec<UnlockServiceDef>,
+        interval_hours: u32,
+    },
+    IpQualityRunNow,
     // File management commands
     FileList {
         msg_id: String,
@@ -565,6 +654,11 @@ pub enum BrowserMessage {
         server_id: String,
         state: crate::firewall::BlocklistEntryState,
         reason: Option<String>,
+    },
+    IpQualityUpdate {
+        server_id: String,
+        unlock_results: Vec<UnlockResultData>,
+        ip_quality: Option<IpQualitySnapshotData>,
     },
 }
 
@@ -1728,6 +1822,181 @@ mod tests {
                 assert_eq!(job_id, None);
             }
             _ => panic!("expected Upgrade"),
+        }
+    }
+
+    #[test]
+    fn ip_quality_sync_round_trip() {
+        let msg = ServerMessage::IpQualitySync {
+            services: vec![UnlockServiceDef {
+                id: "svc-1".to_string(),
+                key: "custom-site".to_string(),
+                detector: None,
+                request: Some(UnlockRequest {
+                    url: "https://example.com/check".to_string(),
+                    method: "GET".to_string(),
+                    headers: vec![("User-Agent".to_string(), "serverbee".to_string())],
+                    timeout_ms: 5000,
+                }),
+                rules: Some(vec![UnlockRule {
+                    match_: UnlockMatch::StatusEquals { code: 200 },
+                    result: UnlockStatus::Unlocked,
+                }]),
+            }],
+            interval_hours: 12,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"ip_quality_sync\""));
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ServerMessage::IpQualitySync {
+                services,
+                interval_hours,
+            } => {
+                assert_eq!(interval_hours, 12);
+                assert_eq!(services.len(), 1);
+                assert_eq!(services[0].id, "svc-1");
+                assert_eq!(services[0].key, "custom-site");
+                assert!(services[0].detector.is_none());
+                let request = services[0].request.as_ref().unwrap();
+                assert_eq!(request.url, "https://example.com/check");
+                assert_eq!(request.method, "GET");
+                assert_eq!(request.headers.len(), 1);
+                assert_eq!(request.timeout_ms, 5000);
+                let rules = services[0].rules.as_ref().unwrap();
+                assert_eq!(rules.len(), 1);
+                assert!(matches!(
+                    rules[0].match_,
+                    UnlockMatch::StatusEquals { code: 200 }
+                ));
+                assert_eq!(rules[0].result, UnlockStatus::Unlocked);
+            }
+            _ => panic!("Expected IpQualitySync"),
+        }
+    }
+
+    #[test]
+    fn ip_quality_run_now_encodes() {
+        let json = serde_json::to_string(&ServerMessage::IpQualityRunNow).unwrap();
+        assert_eq!(json, r#"{"type":"ip_quality_run_now"}"#);
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        assert!(matches!(parsed, ServerMessage::IpQualityRunNow));
+    }
+
+    #[test]
+    fn unlock_results_round_trip() {
+        let checked_at = chrono::DateTime::parse_from_rfc3339("2026-05-22T10:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let msg = AgentMessage::UnlockResults {
+            egress_ip: "203.0.113.7".to_string(),
+            results: vec![UnlockResultData {
+                service_id: "svc-1".to_string(),
+                status: UnlockStatus::Restricted,
+                region: Some("US".to_string()),
+                latency_ms: Some(123),
+                detail: Some("originals only".to_string()),
+            }],
+            checked_at,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"unlock_results\""));
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::UnlockResults {
+                egress_ip,
+                results,
+                checked_at: parsed_checked_at,
+            } => {
+                assert_eq!(egress_ip, "203.0.113.7");
+                assert_eq!(parsed_checked_at, checked_at);
+                assert_eq!(results.len(), 1);
+                assert_eq!(results[0].service_id, "svc-1");
+                assert_eq!(results[0].status, UnlockStatus::Restricted);
+                assert_eq!(results[0].region, Some("US".to_string()));
+                assert_eq!(results[0].latency_ms, Some(123));
+                assert_eq!(results[0].detail, Some("originals only".to_string()));
+            }
+            _ => panic!("Expected UnlockResults"),
+        }
+    }
+
+    #[test]
+    fn browser_ip_quality_update_round_trip() {
+        // Form 1: partial update, ip_quality = None.
+        let partial = BrowserMessage::IpQualityUpdate {
+            server_id: "srv-1".to_string(),
+            unlock_results: vec![UnlockResultData {
+                service_id: "svc-1".to_string(),
+                status: UnlockStatus::Unlocked,
+                region: None,
+                latency_ms: Some(88),
+                detail: None,
+            }],
+            ip_quality: None,
+        };
+        let json = serde_json::to_string(&partial).unwrap();
+        assert!(json.contains("\"type\":\"ip_quality_update\""));
+        let parsed: BrowserMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            BrowserMessage::IpQualityUpdate {
+                server_id,
+                unlock_results,
+                ip_quality,
+            } => {
+                assert_eq!(server_id, "srv-1");
+                assert_eq!(unlock_results.len(), 1);
+                assert_eq!(unlock_results[0].status, UnlockStatus::Unlocked);
+                assert!(ip_quality.is_none());
+            }
+            _ => panic!("Expected IpQualityUpdate"),
+        }
+
+        // Form 2: full update, ip_quality = Some(..).
+        let checked_at = chrono::DateTime::parse_from_rfc3339("2026-05-22T10:05:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let full = BrowserMessage::IpQualityUpdate {
+            server_id: "srv-1".to_string(),
+            unlock_results: vec![],
+            ip_quality: Some(IpQualitySnapshotData {
+                ip: "203.0.113.7".to_string(),
+                asn: Some("AS64500".to_string()),
+                as_org: Some("Example Hosting".to_string()),
+                country: Some("US".to_string()),
+                region: Some("CA".to_string()),
+                city: Some("San Jose".to_string()),
+                ip_type: "datacenter".to_string(),
+                is_proxy: false,
+                is_vpn: false,
+                is_hosting: true,
+                risk_score: Some(42),
+                risk_level: "medium".to_string(),
+                checked_at,
+            }),
+        };
+        let json = serde_json::to_string(&full).unwrap();
+        let parsed: BrowserMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            BrowserMessage::IpQualityUpdate {
+                server_id,
+                unlock_results,
+                ip_quality,
+            } => {
+                assert_eq!(server_id, "srv-1");
+                assert!(unlock_results.is_empty());
+                let snapshot = ip_quality.expect("ip_quality should be Some");
+                assert_eq!(snapshot.ip, "203.0.113.7");
+                assert_eq!(snapshot.asn, Some("AS64500".to_string()));
+                assert_eq!(snapshot.as_org, Some("Example Hosting".to_string()));
+                assert_eq!(snapshot.ip_type, "datacenter");
+                assert!(!snapshot.is_proxy);
+                assert!(snapshot.is_hosting);
+                assert_eq!(snapshot.risk_score, Some(42));
+                assert_eq!(snapshot.risk_level, "medium");
+                assert_eq!(snapshot.checked_at, checked_at);
+            }
+            _ => panic!("Expected IpQualityUpdate"),
         }
     }
 }

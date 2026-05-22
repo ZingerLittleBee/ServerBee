@@ -21,11 +21,15 @@ A lightweight, self-hosted VPS monitoring system built with Rust and React.
 - **Disk I/O Monitoring** -- Per-disk read/write throughput charts with merged and per-disk views. Linux via `/proc/diskstats`, macOS/Windows via sysinfo
 - **GeoIP** -- Automatic region/country detection from agent IP with in-app database download/update
 - **Custom Dashboard** -- Drag-and-drop dashboard with 13 widget types, multiple dashboards, editor mode
+- **Custom Themes** -- Preset themes plus admin-built custom themes with OKLCH light/dark variables, applied across the dashboard and public status pages
 - **OAuth & 2FA** -- GitHub/Google/OIDC login, TOTP two-factor authentication
 - **Multi-user** -- Admin/Member roles, audit logging, rate limiting
 - **File Management** -- Remote file browser with Monaco Editor, upload/download with progress, path sandbox security (`root_paths` + `deny_patterns`)
 - **Docker Monitoring** -- Real-time Docker container monitoring with stats (CPU/memory/network/block I/O), container log streaming (stdout/stderr color-coded), events timeline, networks and volumes overview
-- **Capability Toggles** -- Per-server feature controls (terminal, exec, upgrade, ping, file manager) with defense-in-depth enforcement
+- **Security Events** -- Per-agent detection of SSH logins, SSH brute-force attempts, and port scans, with severity grading, an aggregated event timeline, and alert integration
+- **Firewall Blocklist** -- Block inbound traffic from IPs and CIDRs across one or more agents via nftables, with one-click blocking, preset rules, and an activity log
+- **IP Quality** -- Per-agent egress IP assessment: streaming/AI/social service unlock detection (Netflix, Disney+, YouTube Premium, Amazon Prime, HBO Max, ChatGPT, Gemini, Spotify, TikTok), GeoIP metadata, and optional third-party fraud risk scoring (Scamalytics, IPQualityScore, proxycheck.io, AbuseIPDB). Custom services, status-page exposure with IP masking for guests, and a dual opt-in capability gate
+- **Capability Toggles** -- Per-server feature controls (terminal, exec, upgrade, ping, file manager, Docker, security events, firewall, ip quality) with defense-in-depth enforcement
 - **Uptime Timeline** -- 90-day uptime visualization with per-day color-coded bars on server detail, public status pages, and customizable dashboard widgets
 - **Public Status Page** -- Unauthenticated status page with server groups, live metrics, and 90-day uptime timelines with configurable thresholds
 - **Monthly Traffic Statistics** -- Billing cycle-aware traffic tracking with daily/hourly breakdowns, usage progress bars, and end-of-cycle prediction
@@ -118,8 +122,8 @@ make server-dev                                                # Terminal 1: ser
 SERVERBEE_ENROLLMENT_CODE="<one-time code>" make agent-dev     # Terminal 2: agent
 
 # Testing & code quality:
-make cargo-test        # Run all Rust tests (395)
-make test              # Run frontend tests (248)
+make cargo-test        # Run all Rust tests
+make test              # Run frontend tests
 make cargo-clippy      # Lint Rust code
 make                   # Interactive menu (requires fzf)
 ```

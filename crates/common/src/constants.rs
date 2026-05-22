@@ -44,10 +44,11 @@ pub const CAP_FILE: u32 = 1 << 6; // 64
 pub const CAP_DOCKER: u32 = 1 << 7; // 128
 pub const CAP_SECURITY_EVENTS: u32 = 1 << 8; // 256
 pub const CAP_FIREWALL_BLOCK: u32 = 1 << 9; // 512
+pub const CAP_IP_QUALITY: u32 = 1 << 10; // 1024
 
 pub const CAP_DEFAULT: u32 =
     CAP_UPGRADE | CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP | CAP_SECURITY_EVENTS; // 316 — firewall NOT in default
-pub const CAP_VALID_MASK: u32 = 0b11_1111_1111; // 1023 — bits 0..=9
+pub const CAP_VALID_MASK: u32 = 0b111_1111_1111; // 2047 — bits 0..=10
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CapabilityKey {
@@ -61,6 +62,7 @@ pub enum CapabilityKey {
     Docker,
     SecurityEvents,
     FirewallBlock,
+    IpQuality,
 }
 
 impl CapabilityKey {
@@ -76,6 +78,7 @@ impl CapabilityKey {
             Self::Docker => "docker",
             Self::SecurityEvents => "security_events",
             Self::FirewallBlock => "firewall_block",
+            Self::IpQuality => "ip_quality",
         }
     }
 
@@ -91,6 +94,7 @@ impl CapabilityKey {
             Self::Docker => CAP_DOCKER,
             Self::SecurityEvents => CAP_SECURITY_EVENTS,
             Self::FirewallBlock => CAP_FIREWALL_BLOCK,
+            Self::IpQuality => CAP_IP_QUALITY,
         }
     }
 }
@@ -110,6 +114,7 @@ impl std::str::FromStr for CapabilityKey {
             "docker" => Ok(Self::Docker),
             "security_events" => Ok(Self::SecurityEvents),
             "firewall_block" => Ok(Self::FirewallBlock),
+            "ip_quality" => Ok(Self::IpQuality),
             _ => Err(format!("unknown capability: {value}")),
         }
     }
@@ -206,6 +211,13 @@ pub const ALL_CAPABILITIES: &[CapabilityMeta] = &[
         default_enabled: false,
         risk_level: "high",
     },
+    CapabilityMeta {
+        bit: CAP_IP_QUALITY,
+        key: "ip_quality",
+        display_name: "IP Quality",
+        default_enabled: false,
+        risk_level: "medium",
+    },
 ];
 
 /// Check if a specific capability bit is set.
@@ -271,7 +283,7 @@ mod tests {
 
     #[test]
     fn test_valid_mask() {
-        assert_eq!(CAP_VALID_MASK, 1023);
+        assert_eq!(CAP_VALID_MASK, 2047);
         for meta in ALL_CAPABILITIES {
             assert!(meta.bit & CAP_VALID_MASK == meta.bit);
         }
@@ -370,5 +382,26 @@ mod tests {
             effective_capabilities(CAP_EXEC | CAP_FILE, CAP_FILE),
             CAP_FILE
         );
+    }
+
+    #[test]
+    fn cap_ip_quality_bit() {
+        assert_eq!(CAP_IP_QUALITY, 1024);
+        assert_eq!(CAP_VALID_MASK & CAP_IP_QUALITY, CAP_IP_QUALITY);
+        assert_eq!(CAP_DEFAULT & CAP_IP_QUALITY, 0); // opt-in, not default
+    }
+
+    #[test]
+    fn capability_key_ip_quality_round_trip() {
+        let key: CapabilityKey = "ip_quality".parse().unwrap();
+        assert_eq!(key.to_bit(), CAP_IP_QUALITY);
+        assert_eq!(key.as_str(), "ip_quality");
+    }
+
+    #[test]
+    fn all_capabilities_includes_ip_quality() {
+        let entry = ALL_CAPABILITIES.iter().find(|m| m.bit == CAP_IP_QUALITY);
+        assert!(entry.is_some());
+        assert!(!entry.unwrap().default_enabled);
     }
 }

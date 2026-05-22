@@ -10,6 +10,7 @@ pub mod file;
 pub mod firewall;
 pub mod geoip;
 pub mod incident;
+pub mod ip_quality;
 pub mod maintenance_api;
 pub mod security;
 pub mod mobile;
@@ -59,6 +60,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 .merge(server_tag::read_router())
                 .merge(ping::read_router())
                 .merge(network_probe::read_router())
+                .merge(ip_quality::read_router())
                 .merge(file::read_router())
                 .merge(docker::read_router())
                 .merge(traffic::read_router())
@@ -82,6 +84,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                         .merge(server_tag::write_router())
                         .merge(ping::write_router())
                         .merge(network_probe::write_router())
+                        .merge(ip_quality::write_router())
                         .merge(file::write_router(
                             state
                                 .config

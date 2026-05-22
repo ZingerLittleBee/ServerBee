@@ -19,6 +19,8 @@
   "nav_alerts": "Alerts",
   "nav_network": "Network",
   "nav_traffic": "Traffic",
+  "nav_ip_quality": "IP Quality",
+  "nav_ip_quality_settings": "IP Quality",
   "nav_security_events": "Security",
   "nav_network_probes": "Network Probes",
   "nav_ping_tasks": "Ping Tasks",

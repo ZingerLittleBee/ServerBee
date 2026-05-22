@@ -130,6 +130,20 @@ pub async fn run(state: Arc<AppState>) {
         state.file_transfers.cleanup_expired(Duration::from_secs(
             serverbee_common::constants::FILE_TRANSFER_TIMEOUT_SECS,
         ));
+
+        // Clean up IP quality event history
+        match cleanup_ip_quality_events(&state.db, retention.ip_quality_event_days).await {
+            Ok(n) if n > 0 => tracing::info!("Cleaned up {n} expired IP quality events"),
+            Err(e) => tracing::error!("Failed to clean up IP quality events: {e}"),
+            _ => {}
+        }
+
+        // Clean up stale IP risk cache entries (fixed 30-day window)
+        match cleanup_ip_risk_cache(&state.db, 30).await {
+            Ok(n) if n > 0 => tracing::info!("Cleaned up {n} stale IP risk cache entries"),
+            Err(e) => tracing::error!("Failed to clean up IP risk cache: {e}"),
+            _ => {}
+        }
     }
 }
 
@@ -178,5 +192,163 @@ async fn cleanup_audit_logs(db: &DatabaseConnection, retention_days: u32) {
         }
         Err(e) => tracing::error!("Failed to clean up audit logs: {e}"),
         _ => {}
+    }
+}
+
+pub async fn cleanup_ip_quality_events(db: &DatabaseConnection, retention_days: u32) -> Result<u64, sea_orm::DbErr> {
+    let cutoff = Utc::now() - ChronoDuration::days(retention_days as i64);
+    let result = crate::entity::unlock_event::Entity::delete_many()
+        .filter(crate::entity::unlock_event::Column::ChangedAt.lt(cutoff))
+        .exec(db)
+        .await?;
+    Ok(result.rows_affected)
+}
+
+pub async fn cleanup_ip_risk_cache(db: &DatabaseConnection, retention_days: u32) -> Result<u64, sea_orm::DbErr> {
+    let cutoff = Utc::now() - ChronoDuration::days(retention_days as i64);
+    let result = crate::entity::ip_risk_cache::Entity::delete_many()
+        .filter(crate::entity::ip_risk_cache::Column::CheckedAt.lt(cutoff))
+        .exec(db)
+        .await?;
+    Ok(result.rows_affected)
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+    use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+    use uuid::Uuid;
+
+    use crate::entity::{ip_risk_cache, unlock_event};
+    use crate::test_utils::setup_test_db;
+
+    use super::*;
+
+    async fn ensure_server(db: &sea_orm::DatabaseConnection) {
+        use crate::entity::server;
+        use crate::service::auth::AuthService;
+        use serverbee_common::constants::CAP_DEFAULT;
+
+        // Avoid duplicate insertion
+        if server::Entity::find_by_id("srv-cleanup")
+            .one(db)
+            .await
+            .expect("server lookup")
+            .is_some()
+        {
+            return;
+        }
+        let hash = AuthService::hash_password("tok").expect("hash");
+        let now = Utc::now();
+        server::ActiveModel {
+            id: Set("srv-cleanup".to_string()),
+            token_hash: Set(hash),
+            token_prefix: Set("serverbee_test".to_string()),
+            name: Set("cleanup-test-server".to_string()),
+            weight: Set(0),
+            hidden: Set(false),
+            capabilities: Set(CAP_DEFAULT as i32),
+            protocol_version: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert test server");
+    }
+
+    /// Insert an `unlock_event` with the given `changed_at` offset (negative = in the past).
+    async fn insert_event(
+        db: &sea_orm::DatabaseConnection,
+        days_ago: i64,
+    ) -> String {
+        use crate::entity::unlock_service;
+
+        ensure_server(db).await;
+
+        // Pick the first available service id (seeded by migration)
+        let svc = unlock_service::Entity::find()
+            .one(db)
+            .await
+            .expect("find service")
+            .expect("at least one service should be seeded");
+
+        let id = Uuid::new_v4().to_string();
+        let changed_at = Utc::now() - ChronoDuration::days(days_ago);
+        unlock_event::ActiveModel {
+            id: Set(id.clone()),
+            server_id: Set("srv-cleanup".to_string()),
+            service_id: Set(svc.id),
+            old_status: Set("unlocked".to_string()),
+            new_status: Set("blocked".to_string()),
+            changed_at: Set(changed_at),
+        }
+        .insert(db)
+        .await
+        .expect("insert unlock_event");
+        id
+    }
+
+    /// Insert an `ip_risk_cache` row with the given `checked_at` offset.
+    async fn insert_cache(
+        db: &sea_orm::DatabaseConnection,
+        ip: &str,
+        days_ago: i64,
+    ) {
+        let checked_at = Utc::now() - ChronoDuration::days(days_ago);
+        ip_risk_cache::ActiveModel {
+            ip: Set(ip.to_string()),
+            asn: Set(None),
+            as_org: Set(None),
+            country: Set(None),
+            region: Set(None),
+            city: Set(None),
+            ip_type: Set("unknown".to_string()),
+            is_proxy: Set(false),
+            is_vpn: Set(false),
+            is_hosting: Set(false),
+            risk_score: Set(None),
+            risk_level: Set("unknown".to_string()),
+            providers: Set("{}".to_string()),
+            checked_at: Set(checked_at),
+        }
+        .insert(db)
+        .await
+        .expect("insert ip_risk_cache");
+    }
+
+    #[tokio::test]
+    async fn cleanup_ip_quality_events_removes_old_rows_and_keeps_recent() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // Insert old event (100 days ago) and a recent one (1 day ago)
+        insert_event(&db, 100).await;
+        let recent_id = insert_event(&db, 1).await;
+
+        // Cleanup with 90-day retention
+        let removed = cleanup_ip_quality_events(&db, 90).await.unwrap();
+        assert_eq!(removed, 1, "should delete the old event");
+
+        let remaining = unlock_event::Entity::find().all(&db).await.unwrap();
+        assert_eq!(remaining.len(), 1, "only the recent event should remain");
+        assert_eq!(remaining[0].id, recent_id);
+    }
+
+    #[tokio::test]
+    async fn cleanup_ip_risk_cache_removes_old_rows_and_keeps_recent() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // Insert old cache entry (40 days ago) and a recent one (10 days ago)
+        insert_cache(&db, "10.0.0.1", 40).await;
+        insert_cache(&db, "10.0.0.2", 10).await;
+
+        // Cleanup with 30-day retention
+        let removed = cleanup_ip_risk_cache(&db, 30).await.unwrap();
+        assert_eq!(removed, 1, "should delete the old cache entry");
+
+        let remaining = ip_risk_cache::Entity::find().all(&db).await.unwrap();
+        assert_eq!(remaining.len(), 1, "only the recent cache entry should remain");
+        assert_eq!(remaining[0].ip, "10.0.0.2");
     }
 }

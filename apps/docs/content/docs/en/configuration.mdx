@@ -99,6 +99,7 @@ There is no admin username/password environment variable. On first start (when n
 | `SERVERBEE_RETENTION__DOCKER_EVENTS_DAYS` | `7` | Docker event records retention in days |
 | `SERVERBEE_RETENTION__SERVICE_MONITOR_DAYS` | `30` | Service monitor records retention in days |
 | `SERVERBEE_RETENTION__SECURITY_EVENT_DAYS` | `30` | Security event records retention in days |
+| `SERVERBEE_RETENTION__IP_QUALITY_EVENT_DAYS` | `90` | IP quality status-change event records retention in days |
 
 #### Mobile (Optional)
 
@@ -114,6 +115,26 @@ Tier-2 guardrail for the [Firewall Blocklist](/en/docs/firewall) feature. CIDRs 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
 | `SERVERBEE_FIREWALL__ALLOW_LIST` | `[]` | CIDRs / IPs the server refuses to insert into `block_list`. Tier-2 guardrail layered on top of the hard-coded Tier-1 protected ranges |
+
+#### IP Quality (Optional)
+
+Configure the optional third-party IP risk scoring provider. If no provider is configured, the server uses only the local GeoIP database for IP metadata. See [IP Quality](/en/docs/ip-quality) for feature details.
+
+<Callout type="warn">
+`ip-api` (ip-api.com) uses an HTTP-only endpoint and its free tier is restricted to non-commercial use only. Review its [terms of service](https://ip-api.com/docs/legal) before using it in production.
+</Callout>
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `SERVERBEE_IP_QUALITY__RISK_PROVIDER` | `none` | Active risk provider: `none`, `scamalytics`, `ipqs`, `proxycheck`, `abuseipdb`, or `ip-api` |
+| `SERVERBEE_IP_QUALITY__SCAMALYTICS__API_KEY` | -- | Scamalytics API key. Required when `risk_provider = "scamalytics"` |
+| `SERVERBEE_IP_QUALITY__SCAMALYTICS__ENDPOINT` | `""` | Scamalytics account-bound API subdomain (e.g. `api1`). Leave empty for default |
+| `SERVERBEE_IP_QUALITY__IPQS__API_KEY` | -- | IPQualityScore API key. Required when `risk_provider = "ipqs"` |
+| `SERVERBEE_IP_QUALITY__IPQS__ENDPOINT` | `""` | IPQualityScore endpoint override. Leave empty for default |
+| `SERVERBEE_IP_QUALITY__PROXYCHECK__API_KEY` | -- | proxycheck.io API key. Required when `risk_provider = "proxycheck"` |
+| `SERVERBEE_IP_QUALITY__PROXYCHECK__ENDPOINT` | `""` | proxycheck.io endpoint override. Leave empty for default |
+| `SERVERBEE_IP_QUALITY__ABUSEIPDB__API_KEY` | -- | AbuseIPDB API key. Required when `risk_provider = "abuseipdb"` |
+| `SERVERBEE_IP_QUALITY__ABUSEIPDB__ENDPOINT` | `""` | AbuseIPDB endpoint override. Leave empty for default |
 
 #### Internal
 
@@ -230,6 +251,7 @@ Tunes the agent-side security event detectors (SSH login / brute force, port sca
 | `docker_events_days` | u32 | `7` | Days to keep Docker event records |
 | `service_monitor_days` | u32 | `30` | Days to keep service monitor check records |
 | `security_event_days` | u32 | `30` | Days to keep security event records (SSH login/brute force, port scan) |
+| `ip_quality_event_days` | u32 | `90` | Days to keep IP quality status-change event records |
 
 <Callout type="info">
 Raw metric records are collected every 60 seconds and retained for 7 days by default. The hourly aggregator computes averages so you can keep long-term trends for 90 days without excessive storage. Adjust these values based on your disk space and monitoring needs.
@@ -330,6 +352,46 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `allow_list` | string[] | `[]` | CIDRs / IPs the server refuses to insert into `block_list`. Tier-2 guardrail on top of the hard-coded Tier-1 protected ranges (loopback + RFC 1918 + link-local + multicast + unspecified). See [Firewall Blocklist](/en/docs/firewall) |
+
+### `[ip_quality]` -- IP Quality Risk Scoring
+
+Optional third-party IP risk scoring. Baseline IP metadata (country, ASN, IP type) is always derived from the local GeoIP MMDB and does not require a provider. See [IP Quality](/en/docs/ip-quality) for feature details.
+
+<Callout type="warn">
+`ip-api` (ip-api.com) uses an HTTP-only endpoint and its free tier is restricted to non-commercial use only. Review its [terms of service](https://ip-api.com/docs/legal) before using it in production.
+</Callout>
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `risk_provider` | string | `"none"` | Active risk provider: `none`, `scamalytics`, `ipqs`, `proxycheck`, `abuseipdb`, or `ip-api` |
+
+### `[ip_quality.scamalytics]` -- Scamalytics
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `api_key` | string | -- | Scamalytics API key |
+| `endpoint` | string | `""` | Account-bound API subdomain (e.g. `api1`, `api11`). Leave empty to use the Scamalytics default |
+
+### `[ip_quality.ipqs]` -- IPQualityScore
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `api_key` | string | -- | IPQualityScore API key |
+| `endpoint` | string | `""` | Endpoint override. Leave empty to use the default |
+
+### `[ip_quality.proxycheck]` -- proxycheck.io
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `api_key` | string | -- | proxycheck.io API key |
+| `endpoint` | string | `""` | Endpoint override. Leave empty to use the default |
+
+### `[ip_quality.abuseipdb]` -- AbuseIPDB
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `api_key` | string | -- | AbuseIPDB API key |
+| `endpoint` | string | `""` | Endpoint override. Leave empty to use the default |
 
 ---
 

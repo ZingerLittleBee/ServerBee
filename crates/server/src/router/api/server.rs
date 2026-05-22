@@ -22,6 +22,7 @@ use crate::router::api::network_probe::{
 };
 use crate::service::agent_manager::AgentManager;
 use crate::service::audit::AuditService;
+use crate::service::ip_quality::IpQualityService;
 use crate::service::network_probe::NetworkProbeService;
 use crate::service::ping::PingService;
 use crate::service::record::{QueryHistoryResult, RecordService};
@@ -181,6 +182,41 @@ fn capability_change_message(
     }
 }
 
+/// Send `IpQualitySync` to a single online agent.
+///
+/// Called when a server newly gains `CAP_IP_QUALITY` so the agent receives the
+/// service catalog and check interval without waiting for a reconnect (spec §4
+/// requires `IpQualitySync` on connect, on catalog change, and on capability
+/// change). A failed DB read here is logged and ignored — the agent will still
+/// receive the sync on its next reconnect.
+async fn send_ip_quality_sync_to_agent(state: &Arc<AppState>, server_id: &str) {
+    let Some(tx) = state.agent_manager.get_sender(server_id) else {
+        return;
+    };
+
+    let services = match IpQualityService::enabled_service_defs(&state.db).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("IpQualitySync skipped for {server_id}: {e}");
+            return;
+        }
+    };
+    let setting = match IpQualityService::get_setting(&state.db).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("IpQualitySync skipped for {server_id}: {e}");
+            return;
+        }
+    };
+
+    let _ = tx
+        .send(ServerMessage::IpQualitySync {
+            services,
+            interval_hours: setting.check_interval_hours as u32,
+        })
+        .await;
+}
+
 /// GET endpoints accessible to all authenticated users (admin + member).
 pub fn read_router() -> Router<Arc<AppState>> {
     Router::new()
@@ -283,7 +319,8 @@ async fn update_server(
     Json(input): Json<UpdateServerInput>,
 ) -> Result<Json<ApiResponse<ServerResponse>>, AppError> {
     use serverbee_common::constants::{
-        CAP_DOCKER, CAP_FIREWALL_BLOCK, CAP_PING_HTTP, CAP_PING_ICMP, CAP_PING_TCP, has_capability,
+        CAP_DOCKER, CAP_FIREWALL_BLOCK, CAP_IP_QUALITY, CAP_PING_HTTP, CAP_PING_ICMP, CAP_PING_TCP,
+        has_capability,
     };
     use serverbee_common::firewall::FIREWALL_MIN_PROTOCOL;
     let user_id = &current_user.user_id;
@@ -393,6 +430,12 @@ async fn update_server(
                     .push_reset_to(&id, &state.agent_manager)
                     .await;
             }
+        }
+
+        // IP quality capability newly gained — re-send IpQualitySync so the
+        // agent receives the service catalog without waiting for a reconnect.
+        if !has_capability(old, CAP_IP_QUALITY) && has_capability(new_caps, CAP_IP_QUALITY) {
+            send_ip_quality_sync_to_agent(&state, &id).await;
         }
 
         // Audit log
@@ -770,6 +813,14 @@ async fn batch_update_capabilities(
                     .push_reset_to(server_id, &state.agent_manager)
                     .await;
             }
+        }
+
+        // IP quality capability newly gained — re-send IpQualitySync so the
+        // agent receives the service catalog without waiting for a reconnect.
+        if !has_capability(old_caps, CAP_IP_QUALITY)
+            && has_capability(new_caps, CAP_IP_QUALITY)
+        {
+            send_ip_quality_sync_to_agent(&state, server_id).await;
         }
 
         // Audit log

@@ -16,6 +16,7 @@ import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as StatusIndexRouteImport } from './routes/status.index'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as StatusSlugRouteImport } from './routes/status.$slug'
+import { Route as AuthedIpQualityRouteImport } from './routes/_authed/ip-quality'
 import { Route as AuthedTrafficIndexRouteImport } from './routes/_authed/traffic/index'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
 import { Route as AuthedServersIndexRouteImport } from './routes/_authed/servers/index'
@@ -31,6 +32,7 @@ import { Route as AuthedSettingsPingTasksRouteImport } from './routes/_authed/se
 import { Route as AuthedSettingsNotificationsRouteImport } from './routes/_authed/settings/notifications'
 import { Route as AuthedSettingsNetworkProbesRouteImport } from './routes/_authed/settings/network-probes'
 import { Route as AuthedSettingsMobileDevicesRouteImport } from './routes/_authed/settings/mobile-devices'
+import { Route as AuthedSettingsIpQualityRouteImport } from './routes/_authed/settings/ip-quality'
 import { Route as AuthedSettingsFirewallRouteImport } from './routes/_authed/settings/firewall'
 import { Route as AuthedSettingsCapabilitiesRouteImport } from './routes/_authed/settings/capabilities'
 import { Route as AuthedSettingsAuditLogsRouteImport } from './routes/_authed/settings/audit-logs'
@@ -79,6 +81,11 @@ const StatusSlugRoute = StatusSlugRouteImport.update({
   id: '/$slug',
   path: '/$slug',
   getParentRoute: () => StatusRoute,
+} as any)
+const AuthedIpQualityRoute = AuthedIpQualityRouteImport.update({
+  id: '/ip-quality',
+  path: '/ip-quality',
+  getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedTrafficIndexRoute = AuthedTrafficIndexRouteImport.update({
   id: '/traffic/',
@@ -160,6 +167,11 @@ const AuthedSettingsMobileDevicesRoute =
     path: '/settings/mobile-devices',
     getParentRoute: () => AuthedRoute,
   } as any)
+const AuthedSettingsIpQualityRoute = AuthedSettingsIpQualityRouteImport.update({
+  id: '/settings/ip-quality',
+  path: '/settings/ip-quality',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedSettingsFirewallRoute = AuthedSettingsFirewallRouteImport.update({
   id: '/settings/firewall',
   path: '/settings/firewall',
@@ -241,6 +253,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/status': typeof StatusRouteWithChildren
+  '/ip-quality': typeof AuthedIpQualityRoute
   '/status/$slug': typeof StatusSlugRoute
   '/status/': typeof StatusIndexRoute
   '/files/$serverId': typeof AuthedFilesServerIdRoute
@@ -254,6 +267,7 @@ export interface FileRoutesByFullPath {
   '/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
   '/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
   '/settings/firewall': typeof AuthedSettingsFirewallRoute
+  '/settings/ip-quality': typeof AuthedSettingsIpQualityRoute
   '/settings/mobile-devices': typeof AuthedSettingsMobileDevicesRoute
   '/settings/network-probes': typeof AuthedSettingsNetworkProbesRoute
   '/settings/notifications': typeof AuthedSettingsNotificationsRoute
@@ -276,6 +290,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
+  '/ip-quality': typeof AuthedIpQualityRoute
   '/status/$slug': typeof StatusSlugRoute
   '/': typeof AuthedIndexRoute
   '/status': typeof StatusIndexRoute
@@ -290,6 +305,7 @@ export interface FileRoutesByTo {
   '/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
   '/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
   '/settings/firewall': typeof AuthedSettingsFirewallRoute
+  '/settings/ip-quality': typeof AuthedSettingsIpQualityRoute
   '/settings/mobile-devices': typeof AuthedSettingsMobileDevicesRoute
   '/settings/network-probes': typeof AuthedSettingsNetworkProbesRoute
   '/settings/notifications': typeof AuthedSettingsNotificationsRoute
@@ -315,6 +331,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/status': typeof StatusRouteWithChildren
+  '/_authed/ip-quality': typeof AuthedIpQualityRoute
   '/status/$slug': typeof StatusSlugRoute
   '/_authed/': typeof AuthedIndexRoute
   '/status/': typeof StatusIndexRoute
@@ -329,6 +346,7 @@ export interface FileRoutesById {
   '/_authed/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
   '/_authed/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
   '/_authed/settings/firewall': typeof AuthedSettingsFirewallRoute
+  '/_authed/settings/ip-quality': typeof AuthedSettingsIpQualityRoute
   '/_authed/settings/mobile-devices': typeof AuthedSettingsMobileDevicesRoute
   '/_authed/settings/network-probes': typeof AuthedSettingsNetworkProbesRoute
   '/_authed/settings/notifications': typeof AuthedSettingsNotificationsRoute
@@ -355,6 +373,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/onboarding'
     | '/status'
+    | '/ip-quality'
     | '/status/$slug'
     | '/status/'
     | '/files/$serverId'
@@ -368,6 +387,7 @@ export interface FileRouteTypes {
     | '/settings/audit-logs'
     | '/settings/capabilities'
     | '/settings/firewall'
+    | '/settings/ip-quality'
     | '/settings/mobile-devices'
     | '/settings/network-probes'
     | '/settings/notifications'
@@ -390,6 +410,7 @@ export interface FileRouteTypes {
   to:
     | '/login'
     | '/onboarding'
+    | '/ip-quality'
     | '/status/$slug'
     | '/'
     | '/status'
@@ -404,6 +425,7 @@ export interface FileRouteTypes {
     | '/settings/audit-logs'
     | '/settings/capabilities'
     | '/settings/firewall'
+    | '/settings/ip-quality'
     | '/settings/mobile-devices'
     | '/settings/network-probes'
     | '/settings/notifications'
@@ -428,6 +450,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/onboarding'
     | '/status'
+    | '/_authed/ip-quality'
     | '/status/$slug'
     | '/_authed/'
     | '/status/'
@@ -442,6 +465,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/audit-logs'
     | '/_authed/settings/capabilities'
     | '/_authed/settings/firewall'
+    | '/_authed/settings/ip-quality'
     | '/_authed/settings/mobile-devices'
     | '/_authed/settings/network-probes'
     | '/_authed/settings/notifications'
@@ -519,6 +543,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/status/$slug'
       preLoaderRoute: typeof StatusSlugRouteImport
       parentRoute: typeof StatusRoute
+    }
+    '/_authed/ip-quality': {
+      id: '/_authed/ip-quality'
+      path: '/ip-quality'
+      fullPath: '/ip-quality'
+      preLoaderRoute: typeof AuthedIpQualityRouteImport
+      parentRoute: typeof AuthedRoute
     }
     '/_authed/traffic/': {
       id: '/_authed/traffic/'
@@ -623,6 +654,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/mobile-devices'
       fullPath: '/settings/mobile-devices'
       preLoaderRoute: typeof AuthedSettingsMobileDevicesRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/ip-quality': {
+      id: '/_authed/settings/ip-quality'
+      path: '/settings/ip-quality'
+      fullPath: '/settings/ip-quality'
+      preLoaderRoute: typeof AuthedSettingsIpQualityRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/settings/firewall': {
@@ -745,6 +783,7 @@ const AuthedSettingsAppearanceRouteWithChildren =
   )
 
 interface AuthedRouteChildren {
+  AuthedIpQualityRoute: typeof AuthedIpQualityRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedFilesServerIdRoute: typeof AuthedFilesServerIdRoute
   AuthedNetworkServerIdRoute: typeof AuthedNetworkServerIdRoute
@@ -757,6 +796,7 @@ interface AuthedRouteChildren {
   AuthedSettingsAuditLogsRoute: typeof AuthedSettingsAuditLogsRoute
   AuthedSettingsCapabilitiesRoute: typeof AuthedSettingsCapabilitiesRoute
   AuthedSettingsFirewallRoute: typeof AuthedSettingsFirewallRoute
+  AuthedSettingsIpQualityRoute: typeof AuthedSettingsIpQualityRoute
   AuthedSettingsMobileDevicesRoute: typeof AuthedSettingsMobileDevicesRoute
   AuthedSettingsNetworkProbesRoute: typeof AuthedSettingsNetworkProbesRoute
   AuthedSettingsNotificationsRoute: typeof AuthedSettingsNotificationsRoute
@@ -776,6 +816,7 @@ interface AuthedRouteChildren {
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
+  AuthedIpQualityRoute: AuthedIpQualityRoute,
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedFilesServerIdRoute: AuthedFilesServerIdRoute,
   AuthedNetworkServerIdRoute: AuthedNetworkServerIdRoute,
@@ -788,6 +829,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedSettingsAuditLogsRoute: AuthedSettingsAuditLogsRoute,
   AuthedSettingsCapabilitiesRoute: AuthedSettingsCapabilitiesRoute,
   AuthedSettingsFirewallRoute: AuthedSettingsFirewallRoute,
+  AuthedSettingsIpQualityRoute: AuthedSettingsIpQualityRoute,
   AuthedSettingsMobileDevicesRoute: AuthedSettingsMobileDevicesRoute,
   AuthedSettingsNetworkProbesRoute: AuthedSettingsNetworkProbesRoute,
   AuthedSettingsNotificationsRoute: AuthedSettingsNotificationsRoute,

@@ -3,10 +3,13 @@ import { createFileRoute } from '@tanstack/react-router'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Clock, Server, Wrench, XCircle } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { IpQualityCard } from '@/components/ip-quality/ip-quality-card'
+import { UnlockMatrix } from '@/components/ip-quality/unlock-matrix'
 import { Badge } from '@/components/ui/badge'
 import { UptimeTimeline } from '@/components/uptime/uptime-timeline'
 import { api } from '@/lib/api-client'
-import type { PublicStatusPageData, ThemeResolved } from '@/lib/api-schema'
+import type { PublicStatusPageData, ServerIpQualityData, ThemeResolved } from '@/lib/api-schema'
+import type { UnlockService } from '@/lib/ip-quality-types'
 import { cn } from '@/lib/utils'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
 import { isColorTheme, loadThemeCSS } from '@/themes'
@@ -242,6 +245,96 @@ function MaintenanceNotice({ maintenance }: { maintenance: PublicStatusPageData[
 }
 
 // ---------------------------------------------------------------------------
+// IP quality section
+// ---------------------------------------------------------------------------
+
+/** Build a minimal service catalog from the union of service IDs present in the
+ *  public IP-quality payload. The public response does not expose the full
+ *  catalog, so the matrix columns are derived from the reported results. */
+function deriveServicesFromResults(ipQuality: ServerIpQualityData[]): UnlockService[] {
+  const seen = new Set<string>()
+  const services: UnlockService[] = []
+  for (const entry of ipQuality) {
+    for (const result of entry.unlock_results) {
+      if (seen.has(result.service_id)) {
+        continue
+      }
+      seen.add(result.service_id)
+      services.push({
+        id: result.service_id,
+        key: result.service_id,
+        name: result.service_id,
+        category: 'other',
+        popularity: 0,
+        is_builtin: true,
+        enabled: true,
+        detector: null,
+        request: null,
+        rules: null,
+        created_at: '',
+        updated_at: ''
+      })
+    }
+  }
+  return services
+}
+
+function IpQualitySection({
+  ipQuality,
+  ipQualityServices,
+  serverNames,
+  t
+}: {
+  ipQuality: ServerIpQualityData[]
+  ipQualityServices?: PublicStatusPageData['ip_quality_services']
+  serverNames: Map<string, string>
+  t: (key: string, options?: { defaultValue?: string }) => string
+}) {
+  // Use the server-supplied service catalog when available (real names, categories,
+  // popularity). Fall back to deriving from result IDs only when the field is absent
+  // (graceful degradation for older server versions).
+  const services: UnlockService[] =
+    ipQualityServices && ipQualityServices.length > 0
+      ? ipQualityServices.map((s) => ({
+          id: s.id,
+          key: s.key,
+          name: s.name,
+          category: s.category,
+          popularity: s.popularity,
+          is_builtin: s.is_builtin,
+          enabled: true,
+          detector: null,
+          request: null,
+          rules: null,
+          created_at: '',
+          updated_at: ''
+        }))
+      : deriveServicesFromResults(ipQuality)
+  const matrixServers = ipQuality.map((entry) => ({
+    id: entry.server_id,
+    name: serverNames.get(entry.server_id) ?? entry.server_id
+  }))
+
+  return (
+    <section>
+      <h2 className="mb-3 font-semibold text-lg">{t('ip_quality', { defaultValue: 'IP Quality' })}</h2>
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {ipQuality.map((entry) => (
+            <IpQualityCard
+              ipQuality={entry.ip_quality}
+              key={entry.server_id}
+              serverName={serverNames.get(entry.server_id) ?? entry.server_id}
+            />
+          ))}
+        </div>
+        {services.length > 0 && <UnlockMatrix overview={ipQuality} servers={matrixServers} services={services} />}
+      </div>
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -323,6 +416,9 @@ function StatusPageContent({ data }: { data: PublicStatusPageData }) {
     }
   }
 
+  // Map server IDs to display names for the IP-quality section.
+  const serverNames = new Map(data.servers.map((s) => [s.server_id, s.server_name]))
+
   return (
     <>
       {/* Global status banner */}
@@ -379,6 +475,16 @@ function StatusPageContent({ data }: { data: PublicStatusPageData }) {
           </div>
         )}
       </section>
+
+      {/* IP quality (only when the page opts in — server gates the field) */}
+      {data.ip_quality && data.ip_quality.length > 0 && (
+        <IpQualitySection
+          ipQuality={data.ip_quality}
+          ipQualityServices={data.ip_quality_services}
+          serverNames={serverNames}
+          t={t}
+        />
+      )}
 
       {/* Recent incidents (collapsible) */}
       {data.recent_incidents.length > 0 && (

@@ -48,7 +48,7 @@ export function CapabilitiesDialog({ server }: { server: ServerWithCaps }) {
         description: t('cap_group_low_risk_desc', {
           defaultValue: 'Monitoring and maintenance features that are generally safe to keep enabled by default.'
         }),
-        items: CAPABILITIES.filter(({ risk }) => risk === 'low'),
+        items: CAPABILITIES.filter(({ risk }) => risk !== 'high'),
         key: 'low',
         title: t('cap_group_low_risk', { defaultValue: 'Monitoring & Maintenance' })
       }

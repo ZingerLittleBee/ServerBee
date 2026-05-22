@@ -38,6 +38,8 @@ pub struct AppConfig {
     pub feature: FeatureConfig,
     #[serde(default)]
     pub firewall: FirewallConfig,
+    #[serde(default)]
+    pub ip_quality: IpQualityConfig,
 }
 
 impl Default for AppConfig {
@@ -58,6 +60,7 @@ impl Default for AppConfig {
             resend: ResendConfig::default(),
             feature: FeatureConfig::default(),
             firewall: FirewallConfig::default(),
+            ip_quality: IpQualityConfig::default(),
         }
     }
 }
@@ -140,6 +143,8 @@ pub struct RetentionConfig {
     pub service_monitor_days: u32,
     #[serde(default = "default_30")]
     pub security_event_days: u32,
+    #[serde(default = "default_90")]
+    pub ip_quality_event_days: u32,
 }
 
 impl Default for RetentionConfig {
@@ -158,6 +163,7 @@ impl Default for RetentionConfig {
             docker_events_days: 7,
             service_monitor_days: 30,
             security_event_days: 30,
+            ip_quality_event_days: 90,
         }
     }
 }
@@ -346,6 +352,36 @@ pub struct FirewallConfig {
     pub allow_list: Vec<String>,
 }
 
+/// API key for a single IP risk provider.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct RiskProviderKey {
+    pub api_key: String,
+    /// Optional provider-specific endpoint override. Currently used by
+    /// Scamalytics, whose API subdomain (`api1`/`api11`/...) is account-bound.
+    /// Empty means "use the provider default".
+    #[serde(default)]
+    pub endpoint: String,
+}
+
+/// Configuration for the `[ip_quality]` section.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct IpQualityConfig {
+    #[serde(default = "default_risk_provider")]
+    pub risk_provider: String,
+    #[serde(default)]
+    pub scamalytics: Option<RiskProviderKey>,
+    #[serde(default)]
+    pub ipqs: Option<RiskProviderKey>,
+    #[serde(default)]
+    pub proxycheck: Option<RiskProviderKey>,
+    #[serde(default)]
+    pub abuseipdb: Option<RiskProviderKey>,
+}
+
+fn default_risk_provider() -> String {
+    "none".to_string()
+}
+
 /// Accept either a TOML sequence (`["a", "b"]`) or a comma-separated string
 /// (`"a,b"`). Comma-separated form is what Figment hands us when the value
 /// comes from an environment variable like `SERVERBEE_FIREWALL__ALLOW_LIST`.
@@ -495,6 +531,10 @@ impl AppConfig {
 }
 
 #[cfg(test)]
+// `figment::Jail::expect_with` closures must return `Result<(), figment::Error>`;
+// figment's `Error` is a large enum, so `result_large_err` fires on every jail
+// test. The closure signature is fixed by figment's API and cannot be changed.
+#[allow(clippy::result_large_err)]
 mod tests {
     use super::*;
 
@@ -568,6 +608,25 @@ mod tests {
             );
             Ok(())
         });
+    }
+
+    #[test]
+    fn ip_quality_config_from_env() {
+        figment::Jail::expect_with(|jail| {
+            jail.set_env("SERVERBEE_IP_QUALITY__RISK_PROVIDER", "scamalytics");
+            jail.set_env("SERVERBEE_IP_QUALITY__SCAMALYTICS__API_KEY", "k_test");
+            let cfg: AppConfig = figment::Figment::new()
+                .merge(figment::providers::Env::prefixed("SERVERBEE_").split("__"))
+                .extract()?;
+            assert_eq!(cfg.ip_quality.risk_provider, "scamalytics");
+            assert_eq!(cfg.ip_quality.scamalytics.unwrap().api_key, "k_test");
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn ip_quality_event_retention_default() {
+        assert_eq!(RetentionConfig::default().ip_quality_event_days, 90);
     }
 
     #[test]
