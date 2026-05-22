@@ -1,3 +1,8 @@
+// These items are used by http.rs and by later units (detectors, scheduler).
+// The dead_code lint fires now because ip_quality is not yet wired into
+// main.rs's runtime path.
+#![allow(dead_code)]
+
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 
 use anyhow::{bail, Result};
@@ -21,10 +26,11 @@ pub fn validate_url(raw: &str) -> Result<Url> {
         bail!("SSRF guard: scheme '{}' is not allowed (only http/https)", url.scheme());
     }
 
-    if let Some(port) = url.port() {
-        if !ALLOWED_PORTS.contains(&port) {
-            bail!("SSRF guard: port {} is not allowed (only 80/443 or scheme default)", port);
-        }
+    if url.port().is_some_and(|port| !ALLOWED_PORTS.contains(&port)) {
+        bail!(
+            "SSRF guard: port {} is not allowed (only 80/443 or scheme default)",
+            url.port().unwrap()
+        );
     }
 
     Ok(url)
