@@ -182,6 +182,21 @@ jobs:
             exit 1
           fi
 
+      - name: Compute image tags
+        id: tags
+        run: |
+          IMAGE="ghcr.io/${{ steps.owner.outputs.lowercase }}/${{ matrix.image }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          {
+            echo "list<<EOF"
+            echo "$IMAGE:$VERSION"
+            # Only move the :latest tag for stable releases (no SemVer pre-release suffix)
+            if [[ "$VERSION" != *-* ]]; then
+              echo "$IMAGE:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -189,9 +204,7 @@ jobs:
           file: Dockerfile.${{ matrix.component }}
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: |
-            ghcr.io/${{ steps.owner.outputs.lowercase }}/${{ matrix.image }}:latest
-            ghcr.io/${{ steps.owner.outputs.lowercase }}/${{ matrix.image }}:${{ steps.version.outputs.version }}
+          tags: ${{ steps.tags.outputs.list }}
 
   release:
     name: Create Release
@@ -236,3 +249,4 @@ jobs:
           tag_name: v${{ steps.version.outputs.version }}
           body_path: changelog_body.md
           files: artifacts/*
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
