@@ -339,12 +339,12 @@ async fn default_theme(db: &DatabaseConnection) -> Result<ThemeResolved, AppErro
 async fn is_request_authenticated(state: &AppState, headers: &HeaderMap) -> bool {
     // Session cookie
     if let Some(token) = extract_session_cookie_from_headers(headers) {
-        if AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl)
+        let valid = AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl)
             .await
             .ok()
             .flatten()
-            .is_some()
-        {
+            .is_some();
+        if valid {
             return true;
         }
     }
@@ -354,12 +354,12 @@ async fn is_request_authenticated(state: &AppState, headers: &HeaderMap) -> bool
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string())
     {
-        if AuthService::validate_api_key(&state.db, &key)
+        let valid = AuthService::validate_api_key(&state.db, &key)
             .await
             .ok()
             .flatten()
-            .is_some()
-        {
+            .is_some();
+        if valid {
             return true;
         }
     }
@@ -370,12 +370,13 @@ async fn is_request_authenticated(state: &AppState, headers: &HeaderMap) -> bool
         .and_then(|s| s.strip_prefix("Bearer "))
         .map(|s| s.to_string())
     {
-        if AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl)
-            .await
-            .ok()
-            .flatten()
-            .is_some()
-        {
+        let valid =
+            AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl)
+                .await
+                .ok()
+                .flatten()
+                .is_some();
+        if valid {
             return true;
         }
     }
