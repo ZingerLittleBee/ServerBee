@@ -18,16 +18,16 @@ cargo run -p serverbee-server                   # Server on port 9527
 cargo run -p serverbee-agent                    # Agent (needs server_url configured)
 
 # Test
-cargo test --workspace                          # Rust: 226 unit + 26 integration tests
-bun run test                                    # Frontend: 121 vitest tests
-cargo test -p serverbee-server --test integration  # Integration tests only
+cargo test --workspace                          # Rust: unit + integration tests
+bun run test                                    # Frontend: vitest
+cargo test -p serverbee-server --test integration  # One integration suite (crates/server/tests/*.rs)
 cargo test -p serverbee-server test_name        # Single Rust test
 
 # Lint & Format
 cargo clippy --workspace -- -D warnings         # Rust (CI enforced, 0 warnings)
 bun x ultracite check                           # Frontend (Biome)
 bun x ultracite fix                             # Frontend auto-fix
-bun run typecheck                               # TypeScript (web + fumadocs)
+bun run typecheck                               # TypeScript (web + docs)
 ```
 
 ## Architecture
@@ -37,7 +37,7 @@ crates/
   common/     — Protocol messages (ServerMessage/AgentMessage/BrowserMessage),
                 capability bitmask constants, shared types
   server/     — Axum 0.8 HTTP/WS server
-    entity/   — sea-orm entities (21 tables)
+    entity/   — sea-orm entities (one module per DB table)
     service/  — Business logic (auth, alert, notification, record, ping, etc.)
     router/   — REST API (api/) + WebSocket handlers (ws/agent, ws/browser, ws/terminal)
     task/     — Background jobs (record_writer, aggregator, cleanup, alert_evaluator, etc.)
@@ -49,7 +49,8 @@ crates/
     terminal   — PTY session management (portable-pty)
 apps/
   web/        — React 19 SPA (TanStack Router + Query, shadcn/ui, Recharts, xterm.js)
-  fumadocs/   — Documentation site (TanStack Start + Fumadocs MDX, CN+EN bilingual)
+  docs/       — Documentation site (TanStack Start + Fumadocs MDX, CN+EN bilingual)
+  ios/        — iOS mobile client (separate Xcode project)
 ```
 
 ### Data Flow
@@ -59,9 +60,9 @@ Agent → WebSocket (JSON) → Server → SQLite (sea-orm)
                                   → broadcast::Sender → Browser WebSocket → React SPA
 ```
 
-- **Agent→Server**: `AgentMessage` variants (SystemInfo, Report, PingResult, TaskResult, CapabilityDenied)
-- **Server→Agent**: `ServerMessage` variants (Welcome, Ack, Execute, TerminalOpen, CapabilitiesSync, Upgrade)
-- **Server→Browser**: `BrowserMessage` variants (ServerUpdate, ServerOnline/Offline, CapabilitiesChanged)
+- **Agent→Server**: `AgentMessage` variants (SystemInfo, Report, PingResult, TaskResult, SecurityEvent, CapabilityDenied, file/terminal/network results)
+- **Server→Agent**: `ServerMessage` variants (Welcome, Ack, Exec, TerminalOpen, PingTasksSync, NetworkProbeSync, file ops)
+- **Server→Browser**: `BrowserMessage` variants (FullSync, Update, ServerOnline/Offline, CapabilitiesChanged, SecurityEvent)
 - Terminal data uses Binary WebSocket frames (session_id prefix + payload)
 
 ### AppState
@@ -90,7 +91,7 @@ RBAC: Admin (full access) vs Member (read-only). `require_admin` middleware on w
 - **API responses**: All endpoints return `Json<ApiResponse<T>>` wrapping data in `{ data: T }`
 - **OpenAPI**: Every endpoint annotated with `#[utoipa::path]`, every DTO with `#[derive(ToSchema)]`. Swagger UI at `/swagger-ui/`
 - **Config**: Figment loads TOML then env vars. Prefix `SERVERBEE_`, nested separator `__` (double underscore). Example: `SERVERBEE_ADMIN__PASSWORD` → `admin.password`. **When adding/changing env vars, update `ENV.md` and `apps/docs/content/docs/{en,cn}/configuration.mdx` simultaneously.**
-- **Capabilities**: u32 bitmask per server — `CAP_TERMINAL=1, CAP_EXEC=2, CAP_UPGRADE=4, CAP_PING_ICMP=8, CAP_PING_TCP=16, CAP_PING_HTTP=32, CAP_FILE=64, CAP_DOCKER=128`. Default `CAP_DEFAULT=56` (ping only). Defense-in-depth: validated on both server and agent side.
+- **Capabilities**: u32 bitmask per server, defined in `crates/common/src/constants.rs` — `CAP_TERMINAL=1, CAP_EXEC=2, CAP_UPGRADE=4, CAP_PING_ICMP=8, CAP_PING_TCP=16, CAP_PING_HTTP=32, CAP_FILE=64, CAP_DOCKER=128, CAP_SECURITY_EVENTS=256, CAP_FIREWALL_BLOCK=512`. Default `CAP_DEFAULT=316` (upgrade + ICMP/TCP/HTTP ping + security events). Effective caps = `server_caps & agent_local_caps`; defense-in-depth validated on both sides.
 - **Migrations**: sea-orm migrations in `crates/server/src/migration/`. Run automatically on startup. **Only implement `up()` — leave `down()` as a no-op (`Ok(())`).** Migrations are not reversible to avoid accidental data loss.
 
 ### Frontend
