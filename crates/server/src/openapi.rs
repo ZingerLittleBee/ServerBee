@@ -231,6 +231,17 @@ impl Modify for SecurityAddon {
         crate::router::api::firewall::create_block,
         crate::router::api::firewall::delete_block,
         crate::router::api::firewall::stats,
+        // ip-quality
+        crate::router::api::ip_quality::list_services,
+        crate::router::api::ip_quality::create_service,
+        crate::router::api::ip_quality::update_service,
+        crate::router::api::ip_quality::delete_service,
+        crate::router::api::ip_quality::get_settings,
+        crate::router::api::ip_quality::update_settings,
+        crate::router::api::ip_quality::get_overview,
+        crate::router::api::ip_quality::get_server_summary,
+        crate::router::api::ip_quality::list_events,
+        crate::router::api::ip_quality::check_server,
     ),
     components(
         schemas(
@@ -429,6 +440,13 @@ impl Modify for SecurityAddon {
             crate::router::api::firewall::BlockListItem,
             crate::router::api::firewall::ListResp,
             crate::router::api::firewall::StatsResp,
+            // ip-quality
+            crate::service::ip_quality::CreateCustomServiceInput,
+            crate::service::ip_quality::UpdateServiceInput,
+            crate::service::ip_quality::IpQualitySettingDto,
+            crate::service::ip_quality::ServerIpQualityData,
+            crate::service::ip_quality::UnlockResultDto,
+            crate::service::ip_quality::UnlockEventDto,
         ),
     ),
     tags(
@@ -462,6 +480,7 @@ impl Modify for SecurityAddon {
         (name = "files", description = "File management"),
         (name = "security", description = "Security events (SSH brute force, port scans, new IP logins)"),
         (name = "firewall", description = "Firewall blocklist (manual & auto-blocked IPs/CIDRs)"),
+        (name = "ip-quality", description = "IP quality: service unlock detection + IP metadata & risk scoring"),
     ),
     security(
         ("session_cookie" = []),
