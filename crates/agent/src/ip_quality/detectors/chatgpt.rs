@@ -37,7 +37,9 @@ pub const FALLBACK_URL: &str = "https://chat.openai.com/";
 /// Timeout for each ChatGPT probe (ms).
 pub const TIMEOUT_MS: u32 = 15_000;
 
-/// Two-letter ISO country codes for which OpenAI blocks ChatGPT access.
+/// Two-letter ISO country codes treated as ChatGPT-blocked by this detector.
+/// Every code listed here is classified as `Blocked` — there is no "partial"
+/// state; a country either appears here (hard `Blocked`) or it does not.
 /// Source: OpenAI usage policies and OFAC/EAR sanction lists (factual data).
 const BLOCKED_COUNTRIES: &[&str] = &[
     "CN", // China (mainland) — ChatGPT not available; Baidu controls access
@@ -46,10 +48,10 @@ const BLOCKED_COUNTRIES: &[&str] = &[
     "KP", // North Korea — OFAC sanctions
     "SY", // Syria — OFAC sanctions
     "RU", // Russia — access restricted/blocked in most regions post-2022
-    "BY", // Belarus — partial restrictions
-    "VE", // Venezuela — partial OFAC restrictions
-    "AF", // Afghanistan — partial restrictions
-    "MM", // Myanmar — partial restrictions
+    "BY", // Belarus — restricted alongside Russia
+    "VE", // Venezuela — restricted under OFAC sanctions
+    "AF", // Afghanistan — restricted
+    "MM", // Myanmar — restricted
 ];
 
 /// Classify a ChatGPT trace-endpoint response.
