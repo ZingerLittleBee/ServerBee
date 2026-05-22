@@ -270,6 +270,25 @@ impl Reporter {
         let (unlock_result_tx, mut unlock_result_rx) = mpsc::channel::<RunResult>(8);
         let unlock_checker = UnlockChecker::new(Arc::clone(&capabilities), unlock_result_tx);
 
+        // Seed the checker with the interface-derived public IP so the very first
+        // run has a non-empty egress_ip even on stable VPS deployments where the
+        // external IP never "changes" (i.e. IpChanged is never emitted because
+        // spawn_external_ip_refresh confirms the same IP as the baseline).
+        // Mirror the ipv4.or(ipv6) preference used in the IpChanged interception
+        // arm of the select! loop below.
+        {
+            use serverbee_common::constants::CAP_IP_QUALITY;
+            if has_capability(capabilities.load(Ordering::SeqCst), CAP_IP_QUALITY) {
+                let seed_ip = initial_ipv4.clone().or_else(|| initial_ipv6.clone());
+                // Only seed when we have a non-empty interface-derived IP.
+                // If neither is available the checker stays at None and will be
+                // populated by IpChanged from spawn_external_ip_refresh.
+                if seed_ip.is_some() {
+                    unlock_checker.notify_ip_changed(seed_ip);
+                }
+            }
+        }
+
         // File manager
         let (file_tx, mut file_rx) = mpsc::channel::<FileEvent>(16);
         let file_manager = FileManager::new(self.config.file.clone(), Arc::clone(&capabilities));
