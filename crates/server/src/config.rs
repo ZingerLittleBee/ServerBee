@@ -38,6 +38,8 @@ pub struct AppConfig {
     pub feature: FeatureConfig,
     #[serde(default)]
     pub firewall: FirewallConfig,
+    #[serde(default)]
+    pub ip_quality: IpQualityConfig,
 }
 
 impl Default for AppConfig {
@@ -58,6 +60,7 @@ impl Default for AppConfig {
             resend: ResendConfig::default(),
             feature: FeatureConfig::default(),
             firewall: FirewallConfig::default(),
+            ip_quality: IpQualityConfig::default(),
         }
     }
 }
@@ -140,6 +143,8 @@ pub struct RetentionConfig {
     pub service_monitor_days: u32,
     #[serde(default = "default_30")]
     pub security_event_days: u32,
+    #[serde(default = "default_90")]
+    pub ip_quality_event_days: u32,
 }
 
 impl Default for RetentionConfig {
@@ -158,6 +163,7 @@ impl Default for RetentionConfig {
             docker_events_days: 7,
             service_monitor_days: 30,
             security_event_days: 30,
+            ip_quality_event_days: 90,
         }
     }
 }
@@ -344,6 +350,31 @@ pub struct FirewallConfig {
     /// `docs/superpowers/specs/2026-05-21-firewall-blocklist-design.md` § 4.2.
     #[serde(default, deserialize_with = "deserialize_csv_or_seq")]
     pub allow_list: Vec<String>,
+}
+
+/// API key config used by IP risk providers.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ApiKeyConfig {
+    pub api_key: String,
+}
+
+/// Configuration for the `[ip_quality]` section.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct IpQualityConfig {
+    #[serde(default = "default_risk_provider")]
+    pub risk_provider: String,
+    #[serde(default)]
+    pub scamalytics: Option<ApiKeyConfig>,
+    #[serde(default)]
+    pub ipqs: Option<ApiKeyConfig>,
+    #[serde(default)]
+    pub proxycheck: Option<ApiKeyConfig>,
+    #[serde(default)]
+    pub abuseipdb: Option<ApiKeyConfig>,
+}
+
+fn default_risk_provider() -> String {
+    "none".to_string()
 }
 
 /// Accept either a TOML sequence (`["a", "b"]`) or a comma-separated string
@@ -568,6 +599,25 @@ mod tests {
             );
             Ok(())
         });
+    }
+
+    #[test]
+    fn ip_quality_config_from_env() {
+        figment::Jail::expect_with(|jail| {
+            jail.set_env("SERVERBEE_IP_QUALITY__RISK_PROVIDER", "scamalytics");
+            jail.set_env("SERVERBEE_IP_QUALITY__SCAMALYTICS__API_KEY", "k_test");
+            let cfg: AppConfig = figment::Figment::new()
+                .merge(figment::providers::Env::prefixed("SERVERBEE_").split("__"))
+                .extract()?;
+            assert_eq!(cfg.ip_quality.risk_provider, "scamalytics");
+            assert_eq!(cfg.ip_quality.scamalytics.unwrap().api_key, "k_test");
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn ip_quality_event_retention_default() {
+        assert_eq!(RetentionConfig::default().ip_quality_event_days, 90);
     }
 
     #[test]
