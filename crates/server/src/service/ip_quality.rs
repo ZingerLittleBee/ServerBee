@@ -3,7 +3,9 @@ use sea_orm::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entity::{ip_quality_setting, ip_quality_snapshot, unlock_event, unlock_result, unlock_service};
+use crate::entity::{
+    ip_quality_setting, ip_quality_snapshot, server, unlock_event, unlock_result, unlock_service,
+};
 use crate::error::AppError;
 use serverbee_common::protocol::{IpQualitySnapshotData, UnlockResultData, UnlockServiceDef};
 
@@ -95,15 +97,11 @@ impl From<unlock_event::Model> for UnlockEventDto {
     }
 }
 
+/// IP quality data for a single server: its unlock results and the latest
+/// IP-quality snapshot (if any). Used by both the per-server summary endpoint
+/// and the all-servers overview endpoint.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
-pub struct ServerIpQualitySummary {
-    pub server_id: String,
-    pub unlock_results: Vec<UnlockResultDto>,
-    pub ip_quality: Option<IpQualitySnapshotData>,
-}
-
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
-pub struct IpQualityOverviewRow {
+pub struct ServerIpQualityData {
     pub server_id: String,
     pub unlock_results: Vec<UnlockResultDto>,
     pub ip_quality: Option<IpQualitySnapshotData>,
@@ -323,8 +321,19 @@ impl IpQualityService {
                             .unwrap_or("GET")
                             .to_string()
                     });
-                let headers = input.headers.unwrap_or_default();
-                let timeout_ms = input.timeout_ms.unwrap_or(5000);
+                // Fall back to the existing request's headers / timeout when the
+                // patch doesn't touch them, so a partial update never silently
+                // resets fields it didn't intend to change.
+                let headers: Vec<(String, String)> = input.headers.unwrap_or_else(|| {
+                    serde_json::from_value(existing_request["headers"].clone())
+                        .unwrap_or_default()
+                });
+                let timeout_ms = input.timeout_ms.unwrap_or_else(|| {
+                    existing_request["timeout_ms"]
+                        .as_u64()
+                        .map(|v| v as u32)
+                        .unwrap_or(5000)
+                });
 
                 let request_json = serde_json::json!({
                     "url": url,
@@ -387,9 +396,9 @@ impl IpQualityService {
         db: &DatabaseConnection,
         check_interval_hours: i32,
     ) -> Result<IpQualitySettingDto, AppError> {
-        if check_interval_hours < 1 {
+        if !(1..=168).contains(&check_interval_hours) {
             return Err(AppError::Validation(
-                "check_interval_hours must be >= 1".to_string(),
+                "check_interval_hours must be between 1 and 168 (one week)".to_string(),
             ));
         }
 
@@ -429,6 +438,11 @@ impl IpQualityService {
     ) -> Result<(), AppError> {
         let now = Utc::now();
 
+        // All reads and writes for this batch run inside a single transaction
+        // so a mid-batch failure cannot leave unlock_result / unlock_event rows
+        // partially written.
+        let txn = db.begin().await?;
+
         for r in results {
             let new_status = status_to_str(&r.status);
 
@@ -436,7 +450,7 @@ impl IpQualityService {
             let prior = unlock_result::Entity::find()
                 .filter(unlock_result::Column::ServerId.eq(server_id))
                 .filter(unlock_result::Column::ServiceId.eq(&r.service_id))
-                .one(db)
+                .one(&txn)
                 .await?;
 
             // Only append an event when status DIFFERS from a known prior value.
@@ -461,7 +475,7 @@ impl IpQualityService {
                     new_status: Set(new_status.clone()),
                     changed_at: Set(now),
                 };
-                event.insert(db).await?;
+                event.insert(&txn).await?;
             }
 
             // Upsert the unlock_result row
@@ -508,9 +522,10 @@ impl IpQualityService {
                     Value::String(Some(Box::new(now.to_rfc3339()))),
                 ],
             );
-            db.execute(stmt).await?;
+            txn.execute(stmt).await?;
         }
 
+        txn.commit().await?;
         Ok(())
     }
 
@@ -554,7 +569,7 @@ impl IpQualityService {
     pub async fn get_server_summary(
         db: &DatabaseConnection,
         server_id: &str,
-    ) -> Result<ServerIpQualitySummary, AppError> {
+    ) -> Result<ServerIpQualityData, AppError> {
         let results = unlock_result::Entity::find()
             .filter(unlock_result::Column::ServerId.eq(server_id))
             .all(db)
@@ -569,17 +584,23 @@ impl IpQualityService {
             .await?
             .map(snapshot_model_to_dto);
 
-        Ok(ServerIpQualitySummary {
+        Ok(ServerIpQualityData {
             server_id: server_id.to_string(),
             unlock_results: results,
             ip_quality: snapshot,
         })
     }
 
-    /// Get unlock results for all servers grouped by server_id.
+    /// Get the IP quality overview for ALL servers. Every server is included,
+    /// even those with no unlock results or snapshot yet (empty results +
+    /// `None` snapshot in that case).
     pub async fn get_overview(
         db: &DatabaseConnection,
-    ) -> Result<Vec<IpQualityOverviewRow>, AppError> {
+    ) -> Result<Vec<ServerIpQualityData>, AppError> {
+        // Load every server so newly-registered servers with no IP-quality
+        // data yet still appear in the overview.
+        let servers = server::Entity::find().all(db).await?;
+
         // Fetch all unlock results and snapshots
         let all_results = unlock_result::Entity::find().all(db).await?;
         let all_snapshots = ip_quality_snapshot::Entity::find().all(db).await?;
@@ -601,22 +622,12 @@ impl IpQualityService {
                 .push(UnlockResultDto::from(r));
         }
 
-        // Collect all server_ids seen across both tables
-        let mut server_ids: std::collections::HashSet<String> =
-            std::collections::HashSet::new();
-        for id in results_by_server.keys() {
-            server_ids.insert(id.clone());
-        }
-        for id in snapshot_by_server.keys() {
-            server_ids.insert(id.clone());
-        }
-
-        let mut overview: Vec<IpQualityOverviewRow> = server_ids
+        let mut overview: Vec<ServerIpQualityData> = servers
             .into_iter()
-            .map(|sid| IpQualityOverviewRow {
-                unlock_results: results_by_server.remove(&sid).unwrap_or_default(),
-                ip_quality: snapshot_by_server.remove(&sid),
-                server_id: sid,
+            .map(|s| ServerIpQualityData {
+                unlock_results: results_by_server.remove(&s.id).unwrap_or_default(),
+                ip_quality: snapshot_by_server.remove(&s.id),
+                server_id: s.id,
             })
             .collect();
 
@@ -832,6 +843,65 @@ mod tests {
         assert!(!updated.enabled, "enabled should be false after update");
         assert_eq!(updated.name, original_name, "name should not change for built-in");
         assert_eq!(updated.detector, original_detector, "detector should not change");
+    }
+
+    #[tokio::test]
+    async fn test_update_custom_service_partial_patch_preserves_headers_and_timeout() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // Create a custom service with custom headers and a non-default timeout.
+        let created = IpQualityService::create_custom_service(
+            &db,
+            CreateCustomServiceInput {
+                name: "Custom Probe".to_string(),
+                category: "other".to_string(),
+                popularity: 10,
+                url: "https://example.com/probe".to_string(),
+                method: "GET".to_string(),
+                headers: vec![("X-Test".to_string(), "abc".to_string())],
+                timeout_ms: 8000,
+                rules: vec![
+                    serde_json::json!({"kind": "status_equals", "code": 200, "result": "unlocked"}),
+                ],
+            },
+        )
+        .await
+        .unwrap();
+
+        // Patch ONLY the method — headers and timeout must be preserved.
+        let updated = IpQualityService::update_service(
+            &db,
+            &created.id,
+            UpdateServiceInput {
+                enabled: None,
+                name: None,
+                category: None,
+                popularity: None,
+                url: None,
+                method: Some("HEAD".to_string()),
+                headers: None,
+                timeout_ms: None,
+                rules: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let request: serde_json::Value =
+            serde_json::from_str(updated.request.as_deref().unwrap()).unwrap();
+        assert_eq!(request["method"], "HEAD", "method should be updated");
+        assert_eq!(
+            request["timeout_ms"], 8000,
+            "timeout_ms must be preserved when not patched"
+        );
+        let headers: Vec<(String, String)> =
+            serde_json::from_value(request["headers"].clone()).unwrap();
+        assert_eq!(
+            headers,
+            vec![("X-Test".to_string(), "abc".to_string())],
+            "headers must be preserved when not patched"
+        );
+        assert_eq!(request["url"], "https://example.com/probe", "url preserved");
     }
 
     #[tokio::test]
@@ -1111,6 +1181,27 @@ mod tests {
         let ids: Vec<&str> = overview.iter().map(|r| r.server_id.as_str()).collect();
         assert!(ids.contains(&"srv-x"));
         assert!(ids.contains(&"srv-y"));
+    }
+
+    #[tokio::test]
+    async fn test_get_overview_includes_servers_without_data() {
+        let (db, _tmp) = setup_test_db().await;
+        // Two servers exist; only one has unlock data.
+        insert_test_server(&db, "srv-has-data").await;
+        insert_test_server(&db, "srv-no-data").await;
+
+        let services = IpQualityService::list_services(&db).await.unwrap();
+        seed_server_result(&db, "srv-has-data", &services[0].id, UnlockStatus::Unlocked).await;
+
+        let overview = IpQualityService::get_overview(&db).await.unwrap();
+        assert_eq!(overview.len(), 2, "every server must appear in the overview");
+
+        let no_data = overview
+            .iter()
+            .find(|r| r.server_id == "srv-no-data")
+            .expect("server with no data should still be in the overview");
+        assert!(no_data.unlock_results.is_empty());
+        assert!(no_data.ip_quality.is_none());
     }
 
     #[tokio::test]
