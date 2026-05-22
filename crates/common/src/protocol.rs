@@ -125,6 +125,84 @@ pub struct RecoveryJobDto {
     pub last_heartbeat_at: Option<DateTime<Utc>>,
 }
 
+// --- IP Quality DTOs ---
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub enum UnlockStatus {
+    Unlocked,
+    Restricted,
+    Blocked,
+    Failed,
+    Unsupported,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct UnlockRequest {
+    pub url: String,
+    pub method: String,
+    #[serde(default)]
+    pub headers: Vec<(String, String)>,
+    pub timeout_ms: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub enum UnlockMatch {
+    StatusEquals { code: u16 },
+    StatusInRange { min: u16, max: u16 },
+    BodyRegex { pattern: String },
+    RedirectMatches { pattern: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct UnlockRule {
+    #[serde(rename = "match")]
+    pub match_: UnlockMatch,
+    pub result: UnlockStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct UnlockServiceDef {
+    pub id: String,
+    pub key: String,
+    pub detector: Option<String>,
+    pub request: Option<UnlockRequest>,
+    pub rules: Option<Vec<UnlockRule>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct UnlockResultData {
+    pub service_id: String,
+    pub status: UnlockStatus,
+    pub region: Option<String>,
+    pub latency_ms: Option<u32>,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct IpQualitySnapshotData {
+    pub ip: String,
+    pub asn: Option<String>,
+    pub as_org: Option<String>,
+    pub country: Option<String>,
+    pub region: Option<String>,
+    pub city: Option<String>,
+    pub ip_type: String,
+    pub is_proxy: bool,
+    pub is_vpn: bool,
+    pub is_hosting: bool,
+    pub risk_score: Option<i32>,
+    pub risk_level: String,
+}
+
 /// Agent -> Server messages
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -170,6 +248,11 @@ pub enum AgentMessage {
     },
     NetworkProbeResults {
         results: Vec<NetworkProbeResultData>,
+    },
+    UnlockResults {
+        egress_ip: String,
+        results: Vec<UnlockResultData>,
+        checked_at: DateTime<Utc>,
     },
     // File management responses
     FileListResult {
@@ -342,6 +425,11 @@ pub enum ServerMessage {
         interval: u32,
         packet_count: u32,
     },
+    IpQualitySync {
+        services: Vec<UnlockServiceDef>,
+        interval_hours: u32,
+    },
+    IpQualityRunNow,
     // File management commands
     FileList {
         msg_id: String,
@@ -565,6 +653,11 @@ pub enum BrowserMessage {
         server_id: String,
         state: crate::firewall::BlocklistEntryState,
         reason: Option<String>,
+    },
+    IpQualityUpdate {
+        server_id: String,
+        unlock_results: Vec<UnlockResultData>,
+        ip_quality: Option<IpQualitySnapshotData>,
     },
 }
 
