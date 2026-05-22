@@ -1,8 +1,18 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeft, BarChart3, Container, FileText, Pencil, ShieldAlert, Terminal as TerminalIcon } from 'lucide-react'
+import {
+  ArrowLeft,
+  BarChart3,
+  Container,
+  FileText,
+  Pencil,
+  ShieldAlert,
+  ShieldCheck,
+  Terminal as TerminalIcon
+} from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { IpQualityTab } from '@/components/ip-quality/ip-quality-tab'
 import { ServerSecurityTab } from '@/components/security/server-security-tab'
 import { AgentVersionSection } from '@/components/server/agent-version-section'
 import { CapabilitiesDialog } from '@/components/server/capabilities-dialog'
@@ -372,7 +382,7 @@ function UptimeCard({ serverId }: { serverId: string }) {
     <div className="mb-6 rounded-lg border bg-card p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="font-semibold text-sm">{t('uptime_title')}</h3>
-        <span className="font-medium text-sm">{uptimePct !== null ? `${uptimePct.toFixed(2)}%` : '\u2014'}</span>
+        <span className="font-medium text-sm">{uptimePct !== null ? `${uptimePct.toFixed(2)}%` : '—'}</span>
       </div>
       <UptimeTimeline days={uptimeDays} rangeDays={90} showLabels showLegend />
     </div>
@@ -660,6 +670,10 @@ export function ServerDetailPage() {
             <ShieldAlert aria-hidden="true" className="mr-1 size-3.5" />
             {t('security_tab', { defaultValue: 'Security' })}
           </TabsTrigger>
+          <TabsTrigger value="ip-quality">
+            <ShieldCheck aria-hidden="true" className="mr-1 size-3.5" />
+            {t('ip_quality_tab', { defaultValue: 'IP Quality' })}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="metrics">
@@ -687,6 +701,10 @@ export function ServerDetailPage() {
 
         <TabsContent value="security">
           <ServerSecurityTab serverId={id} />
+        </TabsContent>
+
+        <TabsContent value="ip-quality">
+          <IpQualityTab serverId={id} serverName={server.name} />
         </TabsContent>
       </Tabs>
 
