@@ -4,7 +4,7 @@ pub mod rule_engine;
 pub mod ssrf;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
 use chrono::Utc;
@@ -47,6 +47,11 @@ pub struct UnlockChecker {
     ip_changed_tx: watch::Sender<Option<String>>,
     /// Effective capabilities bitmap (shared, updated by `CapabilitiesSync`).
     capabilities: Arc<AtomicU32>,
+    /// Whether the post-connect initial run has been scheduled. The first
+    /// `IpQualitySync` carrying services triggers one immediate run so probes
+    /// don't wait a full `interval_hours` — essential on stable-IP hosts where
+    /// `IpChanged` never fires once the egress IP is confirmed.
+    initial_run_triggered: AtomicBool,
     /// Handle to the spawned scheduler task — aborted on `stop()` / `Drop`.
     scheduler_handle: JoinHandle<()>,
 }
@@ -82,6 +87,7 @@ impl UnlockChecker {
             run_now_tx,
             ip_changed_tx,
             capabilities,
+            initial_run_triggered: AtomicBool::new(false),
             scheduler_handle,
         }
     }
@@ -113,8 +119,18 @@ impl UnlockChecker {
             services.len(),
             interval_hours
         );
+        let has_services = !services.is_empty();
         *self.services.lock().await = services;
         *self.interval_hours.lock().await = interval_hours;
+
+        // Schedule one immediate run on the first sync that carries services.
+        // Otherwise the scheduler idles for a full `interval_hours` (12h
+        // default) before the first probe on a stable-IP host, where no
+        // `IpChanged` is ever emitted to trigger a run.
+        if has_services && !self.initial_run_triggered.swap(true, Ordering::SeqCst) {
+            tracing::info!("UnlockChecker: scheduling initial run after first IpQualitySync");
+            let _ = self.run_now_tx.try_send(());
+        }
     }
 
     /// Trigger an immediate check outside the regular schedule.
@@ -642,5 +658,62 @@ mod tests {
 
         assert_eq!(result.results.len(), 1);
         assert_eq!(result.results[0].status, UnlockStatus::Unsupported);
+    }
+
+    // ── first sync triggers an immediate run ─────────────────────────────────
+
+    #[tokio::test]
+    async fn first_sync_triggers_initial_run() {
+        // The first IpQualitySync carrying services must schedule one immediate
+        // run — without waiting for the interval, a run_now, or an IP change.
+        let (tx, mut rx) = mpsc::channel(16);
+        let caps = make_caps(CAP_IP_QUALITY);
+        let checker = UnlockChecker::new(caps, tx);
+
+        checker.sync(vec![stub_builtin("svc1", "unknown_xyz")], 12).await;
+
+        let result = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+            .await
+            .expect("first sync must trigger an initial run")
+            .expect("channel closed before result");
+        assert_eq!(result.results.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn empty_first_sync_does_not_trigger_initial_run() {
+        // A sync with no services must not trigger a run and must not consume
+        // the one-shot — a later sync carrying services still runs.
+        let (tx, mut rx) = mpsc::channel(16);
+        let caps = make_caps(CAP_IP_QUALITY);
+        let checker = UnlockChecker::new(caps, tx);
+
+        checker.sync(vec![], 12).await;
+        let no_run = tokio::time::timeout(Duration::from_millis(300), rx.recv()).await;
+        assert!(no_run.is_err(), "empty sync must not trigger a run");
+
+        checker.sync(vec![stub_builtin("svc1", "unknown_xyz")], 12).await;
+        let result = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+            .await
+            .expect("sync with services must trigger the initial run")
+            .expect("channel closed before result");
+        assert_eq!(result.results.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn second_sync_does_not_retrigger_initial_run() {
+        // Only the first sync carrying services triggers the initial run.
+        let (tx, mut rx) = mpsc::channel(16);
+        let caps = make_caps(CAP_IP_QUALITY);
+        let checker = UnlockChecker::new(caps, tx);
+
+        checker.sync(vec![stub_builtin("svc1", "unknown_xyz")], 12).await;
+        tokio::time::timeout(Duration::from_secs(10), rx.recv())
+            .await
+            .expect("initial run expected")
+            .expect("channel open");
+
+        checker.sync(vec![stub_builtin("svc2", "unknown_abc")], 12).await;
+        let extra = tokio::time::timeout(Duration::from_millis(300), rx.recv()).await;
+        assert!(extra.is_err(), "second sync must not retrigger a run");
     }
 }
