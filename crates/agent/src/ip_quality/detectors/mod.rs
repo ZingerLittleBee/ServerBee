@@ -25,9 +25,6 @@ use serverbee_common::protocol::{UnlockRequest, UnlockStatus};
 use crate::ip_quality::http;
 use crate::ip_quality::rule_engine::HttpOutcome;
 
-/// Default timeout used for all built-in probes (ms).
-const DEFAULT_TIMEOUT_MS: u32 = 15_000;
-
 /// Run the built-in detector identified by `key` using `client`.
 ///
 /// Returns `(UnlockStatus, Option<region_string>, latency_ms)`.

@@ -22,6 +22,7 @@ use crate::docker::DockerManager;
 use crate::file_manager::{FileEvent, FileManager};
 use crate::firewall::FirewallManager;
 use crate::firewall::nft::CliNftExecutor;
+use crate::ip_quality::{RunResult, UnlockChecker};
 use crate::network_prober::NetworkProber;
 use crate::pinger::PingManager;
 use crate::register;
@@ -265,6 +266,10 @@ impl Reporter {
         let (network_probe_tx, mut network_probe_rx) = mpsc::channel::<NetworkProbeResultData>(256);
         let mut network_prober = NetworkProber::new(network_probe_tx, Arc::clone(&capabilities));
 
+        // IP quality unlock checker
+        let (unlock_result_tx, mut unlock_result_rx) = mpsc::channel::<RunResult>(8);
+        let unlock_checker = UnlockChecker::new(Arc::clone(&capabilities), unlock_result_tx);
+
         // File manager
         let (file_tx, mut file_rx) = mpsc::channel::<FileEvent>(16);
         let file_manager = FileManager::new(self.config.file.clone(), Arc::clone(&capabilities));
@@ -323,9 +328,28 @@ impl Reporter {
                     tracing::debug!("Sent PingResult");
                 }
                 Some(cmd_msg) = cmd_result_rx.recv() => {
+                    // Intercept IpChanged to notify the UnlockChecker before forwarding.
+                    if let AgentMessage::IpChanged { ref ipv4, ref ipv6, .. } = cmd_msg {
+                        use serverbee_common::constants::CAP_IP_QUALITY;
+                        if has_capability(capabilities.load(Ordering::SeqCst), CAP_IP_QUALITY) {
+                            // Prefer IPv4 egress; fall back to IPv6.
+                            let new_ip = ipv4.clone().or_else(|| ipv6.clone());
+                            unlock_checker.notify_ip_changed(new_ip);
+                        }
+                    }
                     let json = serde_json::to_string(&cmd_msg)?;
                     write.send(Message::Text(json.into())).await?;
                     tracing::debug!("Sent background command result");
+                }
+                Some(run_result) = unlock_result_rx.recv() => {
+                    let msg = AgentMessage::UnlockResults {
+                        egress_ip: run_result.egress_ip,
+                        results: run_result.results,
+                        checked_at: run_result.checked_at,
+                    };
+                    let json = serde_json::to_string(&msg)?;
+                    write.send(Message::Text(json.into())).await?;
+                    tracing::debug!("Sent UnlockResults");
                 }
                 Some(external_msg) = async {
                     match external_rx.as_mut() {
@@ -456,7 +480,7 @@ impl Reporter {
                 server_msg = read.next() => {
                     match server_msg {
                         Some(Ok(Message::Text(text))) => {
-                            match self.handle_server_message(&text, &mut write, &mut ping_manager, &mut terminal_manager, &mut network_prober, &cmd_result_tx, &capabilities, &server_capabilities, &file_manager, &file_tx, &mut docker_manager, &mut docker_available, &mut docker_stats_interval).await? {
+                            match self.handle_server_message(&text, &mut write, &mut ping_manager, &mut terminal_manager, &mut network_prober, &cmd_result_tx, &capabilities, &server_capabilities, &file_manager, &file_tx, &mut docker_manager, &mut docker_available, &mut docker_stats_interval, &unlock_checker).await? {
                                 ServerMessageOutcome::Continue => {}
                                 ServerMessageOutcome::Reconnect => {
                                     ping_manager.stop_all();
@@ -529,6 +553,7 @@ impl Reporter {
         docker_manager: &mut Option<DockerManager>,
         docker_available: &mut bool,
         docker_stats_interval: &mut Option<tokio::time::Interval>,
+        unlock_checker: &UnlockChecker,
     ) -> anyhow::Result<ServerMessageOutcome>
     where
         S: SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
@@ -1177,8 +1202,31 @@ impl Reporter {
                     tracing::debug!("Sent firewall blocklist ack");
                 }
             }
-            ServerMessage::IpQualitySync { .. } | ServerMessage::IpQualityRunNow => {
-                // TODO(charlottetown): handle IP quality sync and run-now
+            ServerMessage::IpQualitySync { services, interval_hours } => {
+                let caps = capabilities.load(Ordering::SeqCst);
+                if has_capability(caps, CAP_IP_QUALITY) {
+                    tracing::info!(
+                        "Received IpQualitySync: {} services, interval={}h",
+                        services.len(),
+                        interval_hours
+                    );
+                    unlock_checker.sync(services, interval_hours).await;
+                } else {
+                    tracing::debug!(
+                        "IpQualitySync received but CAP_IP_QUALITY not effective — ignoring"
+                    );
+                }
+            }
+            ServerMessage::IpQualityRunNow => {
+                let caps = capabilities.load(Ordering::SeqCst);
+                if has_capability(caps, CAP_IP_QUALITY) {
+                    tracing::info!("Received IpQualityRunNow");
+                    unlock_checker.run_now();
+                } else {
+                    tracing::debug!(
+                        "IpQualityRunNow received but CAP_IP_QUALITY not effective — ignoring"
+                    );
+                }
             }
         }
 

@@ -126,12 +126,10 @@ impl UnlockChecker {
 
 /// Run a single complete unlock check for all configured services.
 ///
-/// Returns the results and the egress IP supplied to us (the egress IP is
-/// tracked by the reporter and passed in so `UnlockChecker` does not need its
-/// own network call).
+/// Returns the per-service results and the timestamp at which the run completed.
+/// The egress IP is tracked externally (by the reporter) and is not required here.
 pub async fn run_once(
     services: &[UnlockServiceDef],
-    egress_ip: String,
 ) -> (Vec<UnlockResultData>, chrono::DateTime<Utc>) {
     let client = match http::build_client() {
         Ok(c) => c,
@@ -335,7 +333,7 @@ async fn run_scheduler(
             if egress_ip.is_empty() { "<unknown>" } else { &egress_ip }
         );
 
-        let (results, checked_at) = run_once(&current_services, egress_ip.clone()).await;
+        let (results, checked_at) = run_once(&current_services).await;
 
         // Capture the current IP after the run completes.
         last_ip = ip_changed_rx.borrow().clone();
@@ -352,7 +350,7 @@ async fn run_scheduler(
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::atomic::AtomicU32;
 
     use serverbee_common::constants::CAP_IP_QUALITY;
     use serverbee_common::protocol::{UnlockServiceDef, UnlockStatus};
@@ -416,7 +414,7 @@ mod tests {
     async fn run_once_unknown_detector_returns_unsupported_not_dropped() {
         // An unknown detector key must still produce a result row with Unsupported.
         let services = vec![stub_builtin("svc1", "unknown_detector_xyz")];
-        let (results, _) = run_once(&services, "1.2.3.4".to_string()).await;
+        let (results, _) = run_once(&services).await;
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].service_id, "svc1");
@@ -433,7 +431,7 @@ mod tests {
             request: None,
             rules: None,
         };
-        let (results, _) = run_once(&[svc], "1.2.3.4".to_string()).await;
+        let (results, _) = run_once(&[svc]).await;
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].status, UnlockStatus::Unsupported);
@@ -447,30 +445,27 @@ mod tests {
             stub_builtin("b", "unknown_b"),
             stub_builtin("c", "unknown_c"),
         ];
-        let (results, _) = run_once(&services, "1.2.3.4".to_string()).await;
+        let (results, _) = run_once(&services).await;
         assert_eq!(results.len(), 3);
     }
 
     // ── concurrency cap — MAX_UNLOCK_CONCURRENT ───────────────────────────────
 
-    #[tokio::test]
-    async fn run_once_concurrency_cap_is_max_unlock_concurrent() {
-        // MAX_UNLOCK_CONCURRENT must be ≥ 1 and the semaphore must be respected.
-        // We verify the constant value directly.
-        assert!(MAX_UNLOCK_CONCURRENT >= 1, "MAX_UNLOCK_CONCURRENT must be at least 1");
-        assert!(
-            MAX_UNLOCK_CONCURRENT <= 10,
-            "MAX_UNLOCK_CONCURRENT should be a small number (got {MAX_UNLOCK_CONCURRENT})"
-        );
+    // Verify the constant is in a sane range at compile time.
+    const _: () = assert!(MAX_UNLOCK_CONCURRENT >= 1);
+    const _: () = assert!(MAX_UNLOCK_CONCURRENT <= 10);
 
+    #[tokio::test]
+    async fn run_once_semaphore_allows_more_services_than_concurrent_limit() {
         // Create more services than MAX_UNLOCK_CONCURRENT to exercise the semaphore path.
+        // All services must complete and produce exactly one result each.
         let n = MAX_UNLOCK_CONCURRENT * 2;
         let services: Vec<_> = (0..n)
             .map(|i| stub_builtin(&format!("svc{i}"), "unknown_xyz"))
             .collect();
 
-        let (results, _) = run_once(&services, "1.2.3.4".to_string()).await;
-        // All services must produce a result (no one gets dropped).
+        let (results, _) = run_once(&services).await;
+        // All services must produce a result (none dropped due to semaphore).
         assert_eq!(results.len(), n);
         for r in &results {
             assert_eq!(r.status, UnlockStatus::Unsupported);
@@ -480,32 +475,37 @@ mod tests {
     // ── run_now triggers the scheduler ───────────────────────────────────────
 
     #[tokio::test]
-    async fn run_now_sends_signal_when_capability_present() {
-        // Use a manually-created mpsc pair to observe the signal.
-        let (result_tx, _result_rx) = mpsc::channel(16);
+    async fn run_now_triggers_scheduler_run_when_capability_present() {
+        // run_now with capability present should cause the scheduler to deliver a result.
+        // (This duplicates scheduler_delivers_result_on_run_now but verifies the
+        // capability-present branch specifically.)
+        let (tx, mut rx) = mpsc::channel(16);
         let caps = make_caps(CAP_IP_QUALITY);
-        let checker = UnlockChecker::new(caps, result_tx);
+        let checker = UnlockChecker::new(caps, tx);
 
-        // Verify run_now sends to the channel by peeking at a fresh subscription.
-        // We use a side channel: create a watcher on the ip_changed side as a
-        // proxy — here we just verify run_now doesn't panic or error.
+        checker.sync(vec![stub_builtin("x", "unknown_xyz")], 12).await;
+        checker.notify_ip_changed(Some("1.2.3.4".to_string()));
         checker.run_now();
-        // If we reach here without panic, the signal was sent successfully.
-        assert!(true);
+
+        let result = tokio::time::timeout(Duration::from_secs(10), rx.recv()).await;
+        assert!(result.is_ok(), "run_now must trigger a scheduler run when capability present");
+        assert!(result.unwrap().is_some());
     }
 
     #[tokio::test]
     async fn run_now_no_op_when_capability_absent() {
-        let (tx, _rx) = mpsc::channel(16);
+        let (tx, mut rx) = mpsc::channel(16);
         let caps = make_caps(0); // no CAP_IP_QUALITY
         let checker = UnlockChecker::new(caps, tx);
 
-        // Subscribe to run_now_tx to verify no signal is sent.
-        // Since run_now is a no-op, the channel should remain empty.
-        // We verify this by ensuring run_now doesn't attempt to send.
-        checker.run_now(); // should be no-op
-        // If we get here without a panic, the no-op path worked.
-        assert!(true);
+        checker.run_now(); // should be no-op — capability absent
+
+        // The scheduler should not deliver any result within a short window.
+        let result = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await;
+        assert!(
+            result.is_err(),
+            "run_now must not trigger a run when capability absent"
+        );
     }
 
     // ── notify_ip_changed updates the watch ──────────────────────────────────
