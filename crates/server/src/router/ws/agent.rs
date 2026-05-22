@@ -1342,6 +1342,9 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 .record_reset_ack(server_id, ok, reason, &state.db)
                 .await;
         }
+        AgentMessage::UnlockResults { .. } => {
+            // TODO(charlottetown): handle IP quality unlock results
+        }
     }
 }
 

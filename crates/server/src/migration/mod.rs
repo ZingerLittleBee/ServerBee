@@ -28,6 +28,7 @@ mod m20260521_000025_extend_alert_state_event_key;
 mod m20260521_000026_backfill_capability_default;
 mod m20260521_000027_create_block_list;
 mod m20260521_000028_extend_alert_rule_actions;
+mod m20260522_000029_ip_quality;
 
 pub struct Migrator;
 
@@ -62,6 +63,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260521_000026_backfill_capability_default::Migration),
             Box::new(m20260521_000027_create_block_list::Migration),
             Box::new(m20260521_000028_extend_alert_rule_actions::Migration),
+            Box::new(m20260522_000029_ip_quality::Migration),
         ]
     }
 }
