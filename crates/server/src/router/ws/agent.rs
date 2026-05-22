@@ -1373,10 +1373,15 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         } => {
             // Phase 1 (synchronous-ish): save unlock results + broadcast immediately
             // with ip_quality = None so the UI shows fresh unlock data right away.
-            if let Err(e) =
-                IpQualityService::save_unlock_results(&state.db, server_id, results.clone()).await
-            {
-                tracing::error!("Failed to save unlock results for {server_id}: {e}");
+            if state.recovery_lock.writes_allowed_for(server_id) {
+                if let Err(e) =
+                    IpQualityService::save_unlock_results(&state.db, server_id, results.clone())
+                        .await
+                {
+                    tracing::error!("Failed to save unlock results for {server_id}: {e}");
+                }
+            } else {
+                tracing::info!("Skipping recovery-frozen unlock results write for {server_id}");
             }
 
             state
@@ -1397,6 +1402,9 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             let server_id_owned = server_id.to_string();
             // Keep a copy for the timeout warning (the inner async moves server_id_owned)
             let server_id_for_warn = server_id_owned.clone();
+            // Evaluate the recovery-lock guard before the spawn — `server_id` is a
+            // borrow and cannot move into the closure.
+            let writes_allowed = state.recovery_lock.writes_allowed_for(server_id);
 
             tokio::spawn(async move {
                 let result = tokio::time::timeout(
@@ -1407,15 +1415,25 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                             .score_ip(&db_bg, &geoip_bg, &egress_ip)
                             .await;
 
-                        if let Err(e) = IpQualityService::save_ip_quality_snapshot(
-                            &db_bg,
-                            &server_id_owned,
-                            &snapshot,
-                        )
-                        .await
-                        {
-                            tracing::warn!(
-                                "Failed to save ip_quality_snapshot for {}: {e}",
+                        if writes_allowed {
+                            if let Err(e) = IpQualityService::save_ip_quality_snapshot(
+                                &db_bg,
+                                &server_id_owned,
+                                &snapshot,
+                            )
+                            .await
+                            {
+                                // Phase 2 is a non-critical enrichment step: the UI already
+                                // received the unlock matrix from the Phase 1 broadcast, so a
+                                // failed snapshot persist is logged at warn (not error).
+                                tracing::warn!(
+                                    "Failed to save ip_quality_snapshot for {}: {e}",
+                                    server_id_owned
+                                );
+                            }
+                        } else {
+                            tracing::info!(
+                                "Skipping recovery-frozen ip_quality snapshot write for {}",
                                 server_id_owned
                             );
                         }

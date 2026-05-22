@@ -193,7 +193,9 @@ async fn create_service(
     Json(input): Json<CreateCustomServiceInput>,
 ) -> Result<Json<ApiResponse<crate::entity::unlock_service::Model>>, AppError> {
     let service = IpQualityService::create_custom_service(&state.db, input).await?;
-    broadcast_ip_quality_sync(&state).await?;
+    if let Err(e) = broadcast_ip_quality_sync(&state).await {
+        tracing::warn!("IpQualitySync broadcast failed: {e}");
+    }
     ok(service)
 }
 
@@ -215,7 +217,9 @@ async fn update_service(
     Json(input): Json<UpdateServiceInput>,
 ) -> Result<Json<ApiResponse<crate::entity::unlock_service::Model>>, AppError> {
     let service = IpQualityService::update_service(&state.db, &id, input).await?;
-    broadcast_ip_quality_sync(&state).await?;
+    if let Err(e) = broadcast_ip_quality_sync(&state).await {
+        tracing::warn!("IpQualitySync broadcast failed: {e}");
+    }
     ok(service)
 }
 
@@ -236,7 +240,9 @@ async fn delete_service(
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     IpQualityService::delete_service(&state.db, &id).await?;
-    broadcast_ip_quality_sync(&state).await?;
+    if let Err(e) = broadcast_ip_quality_sync(&state).await {
+        tracing::warn!("IpQualitySync broadcast failed: {e}");
+    }
     ok("ok")
 }
 
@@ -257,7 +263,9 @@ async fn update_settings(
 ) -> Result<Json<ApiResponse<IpQualitySettingDto>>, AppError> {
     let setting =
         IpQualityService::update_setting(&state.db, input.check_interval_hours).await?;
-    broadcast_ip_quality_sync(&state).await?;
+    if let Err(e) = broadcast_ip_quality_sync(&state).await {
+        tracing::warn!("IpQualitySync broadcast failed: {e}");
+    }
     ok(setting)
 }
 
