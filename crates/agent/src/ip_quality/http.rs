@@ -129,12 +129,104 @@ pub async fn fetch(client: &reqwest::Client, request: &UnlockRequest) -> Result<
     }
 }
 
-/// Read at most `max_bytes` from the response body.
-async fn read_capped(response: reqwest::Response, max_bytes: usize) -> Result<Vec<u8>> {
-    let bytes = response.bytes().await?;
-    if bytes.len() > max_bytes {
-        Ok(bytes[..max_bytes].to_vec())
-    } else {
-        Ok(bytes.to_vec())
+/// Read at most `max_bytes` from the response body, streaming chunk-by-chunk.
+///
+/// Reading stops as soon as `max_bytes` is reached, so a malicious endpoint
+/// returning a huge body can never exhaust agent memory: peak usage is bounded
+/// at `max_bytes` plus a single chunk. `reqwest::Response::chunk()` is
+/// available without the `stream` feature.
+async fn read_capped(mut response: reqwest::Response, max_bytes: usize) -> Result<Vec<u8>> {
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        let remaining = max_bytes.saturating_sub(buf.len());
+        if remaining == 0 {
+            break;
+        }
+        let take = remaining.min(chunk.len());
+        buf.extend_from_slice(&chunk[..take]);
+        if take < chunk.len() {
+            // Cap reached mid-chunk; stop without reading the rest.
+            break;
+        }
+    }
+    Ok(buf)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    /// Spawn a one-shot HTTP/1.1 server on 127.0.0.1 that replies to a single
+    /// request with a body of `body_len` bytes (all `b'x'`). Returns the bound
+    /// address.
+    async fn spawn_body_server(body_len: usize) -> std::net::SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((mut stream, _)) = listener.accept().await {
+                // Drain the request headers (read until we see the blank line).
+                let mut req = Vec::new();
+                let mut byte = [0u8; 1];
+                while stream.read_exact(&mut byte).await.is_ok() {
+                    req.push(byte[0]);
+                    if req.ends_with(b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let header = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {body_len}\r\nConnection: close\r\n\r\n"
+                );
+                let _ = stream.write_all(header.as_bytes()).await;
+                let body = vec![b'x'; body_len];
+                let _ = stream.write_all(&body).await;
+                let _ = stream.flush().await;
+            }
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn read_capped_truncates_oversized_body() {
+        // 1 MiB body — well over the 256 KiB cap.
+        let body_len = 1024 * 1024;
+        let addr = spawn_body_server(body_len).await;
+
+        let client = reqwest::Client::builder()
+            .redirect(Policy::none())
+            .build()
+            .unwrap();
+        let response = client
+            .get(format!("http://{addr}/"))
+            .send()
+            .await
+            .unwrap();
+
+        let buf = read_capped(response, MAX_BODY_BYTES).await.unwrap();
+        assert_eq!(
+            buf.len(),
+            MAX_BODY_BYTES,
+            "oversized body must be truncated to the cap"
+        );
+    }
+
+    #[tokio::test]
+    async fn read_capped_keeps_small_body_intact() {
+        let body_len = 1024;
+        let addr = spawn_body_server(body_len).await;
+
+        let client = reqwest::Client::builder()
+            .redirect(Policy::none())
+            .build()
+            .unwrap();
+        let response = client
+            .get(format!("http://{addr}/"))
+            .send()
+            .await
+            .unwrap();
+
+        let buf = read_capped(response, MAX_BODY_BYTES).await.unwrap();
+        assert_eq!(buf.len(), body_len, "small body must be read in full");
     }
 }

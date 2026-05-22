@@ -39,10 +39,11 @@ pub fn validate_url(raw: &str) -> Result<Url> {
 /// Returns `true` if `addr` is globally routable (safe to connect to).
 ///
 /// Rejects:
-///   IPv4: loopback (127.0.0.0/8), private (10/8, 172.16/12, 192.168/16),
+///   IPv4: this-network (0.0.0.0/8), loopback (127.0.0.0/8),
+///         private (10/8, 172.16/12, 192.168/16),
 ///         link-local (169.254.0.0/16), broadcast (255.255.255.255),
 ///         documentation (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24),
-///         shared address space (100.64.0.0/10), unspecified (0.0.0.0)
+///         shared address space (100.64.0.0/10)
 ///   IPv6: loopback (::1), link-local (fe80::/10), ULA (fc00::/7),
 ///         unspecified (::)
 pub fn is_global_addr(addr: IpAddr) -> bool {
@@ -60,10 +61,11 @@ pub fn is_global_addr(addr: IpAddr) -> bool {
             if v4.is_broadcast() {
                 return false;
             }
-            if v4.is_unspecified() {
+            let octets = v4.octets();
+            // "This network" (RFC 791): 0.0.0.0/8 — covers 0.0.0.0 as well.
+            if octets[0] == 0 {
                 return false;
             }
-            let octets = v4.octets();
             // Documentation ranges: 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24
             if octets[0] == 192 && octets[1] == 0 && octets[2] == 2 {
                 return false;
@@ -199,6 +201,14 @@ mod tests {
     #[test]
     fn is_global_addr_rejects_ipv4_link_local() {
         assert!(!is_global_addr("169.254.169.254".parse().unwrap()));
+    }
+
+    #[test]
+    fn is_global_addr_rejects_ipv4_this_network() {
+        // 0.0.0.0/8 — the whole "this network" range, not just 0.0.0.0.
+        assert!(!is_global_addr("0.0.0.0".parse().unwrap()));
+        assert!(!is_global_addr("0.1.2.3".parse().unwrap()));
+        assert!(!is_global_addr("0.255.255.255".parse().unwrap()));
     }
 
     #[test]
