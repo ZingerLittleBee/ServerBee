@@ -356,6 +356,11 @@ pub struct FirewallConfig {
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct RiskProviderKey {
     pub api_key: String,
+    /// Optional provider-specific endpoint override. Currently used by
+    /// Scamalytics, whose API subdomain (`api1`/`api11`/...) is account-bound.
+    /// Empty means "use the provider default".
+    #[serde(default)]
+    pub endpoint: String,
 }
 
 /// Configuration for the `[ip_quality]` section.
