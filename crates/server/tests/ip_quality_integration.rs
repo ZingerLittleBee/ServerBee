@@ -337,6 +337,79 @@ async fn test_ip_quality_update_custom_service() {
     );
 }
 
+/// PUT /api/ip-quality/services/:id as non-admin (member) → 403.
+#[tokio::test]
+async fn test_ip_quality_update_service_non_admin_forbidden() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin_client = http_client();
+    login_admin(&admin_client, &base_url).await;
+
+    // Get a built-in service id (any service id works for the guard check —
+    // the request is rejected by the middleware before reaching the handler).
+    let list_resp = admin_client
+        .get(format!("{}/api/ip-quality/services", base_url))
+        .send()
+        .await
+        .unwrap();
+    let list_body: serde_json::Value = list_resp.json().await.unwrap();
+    let service_id = list_body["data"][0]["id"].as_str().unwrap().to_string();
+
+    let member_client = http_client();
+    login_member(&member_client, &base_url).await;
+
+    let resp = member_client
+        .put(format!(
+            "{}/api/ip-quality/services/{}",
+            base_url, service_id
+        ))
+        .json(&json!({ "enabled": false }))
+        .send()
+        .await
+        .expect("PUT /api/ip-quality/services/{id} failed");
+
+    assert_eq!(
+        resp.status(),
+        403,
+        "non-admin should be forbidden from updating services"
+    );
+}
+
+/// DELETE /api/ip-quality/services/:id as non-admin (member) → 403.
+#[tokio::test]
+async fn test_ip_quality_delete_service_non_admin_forbidden() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin_client = http_client();
+    login_admin(&admin_client, &base_url).await;
+
+    // Get a built-in service id (any service id works for the guard check —
+    // the request is rejected by the middleware before reaching the handler).
+    let list_resp = admin_client
+        .get(format!("{}/api/ip-quality/services", base_url))
+        .send()
+        .await
+        .unwrap();
+    let list_body: serde_json::Value = list_resp.json().await.unwrap();
+    let service_id = list_body["data"][0]["id"].as_str().unwrap().to_string();
+
+    let member_client = http_client();
+    login_member(&member_client, &base_url).await;
+
+    let resp = member_client
+        .delete(format!(
+            "{}/api/ip-quality/services/{}",
+            base_url, service_id
+        ))
+        .send()
+        .await
+        .expect("DELETE /api/ip-quality/services/{id} failed");
+
+    assert_eq!(
+        resp.status(),
+        403,
+        "non-admin should be forbidden from deleting services"
+    );
+}
+
 /// DELETE /api/ip-quality/services/:id on a custom service → 200.
 #[tokio::test]
 async fn test_ip_quality_delete_custom_service_success() {
@@ -470,6 +543,9 @@ async fn test_ip_quality_get_overview() {
 
     assert_eq!(resp.status(), 200, "overview should succeed");
     let body: serde_json::Value = resp.json().await.unwrap();
+    // No agent is registered in this test, so the overview has no server rows.
+    // An empty array is the expected, valid response — the assertion only
+    // verifies the endpoint returns a well-formed array shape.
     assert!(
         body["data"].is_array(),
         "data should be an array"

@@ -64,7 +64,7 @@ fn default_limit() -> u64 {
     path = "/api/ip-quality/services",
     tag = "ip-quality",
     responses(
-        (status = 200, description = "List all unlock services (built-in + custom)"),
+        (status = 200, description = "List all unlock services (built-in + custom)", body = Vec<crate::entity::unlock_service::Model>),
     ),
     security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
@@ -96,7 +96,7 @@ async fn get_settings(
     path = "/api/ip-quality/overview",
     tag = "ip-quality",
     responses(
-        (status = 200, description = "IP quality overview for all servers"),
+        (status = 200, description = "IP quality overview for all servers", body = Vec<ServerIpQualityData>),
     ),
     security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
@@ -132,7 +132,7 @@ async fn get_server_summary(
     tag = "ip-quality",
     params(EventsQuery),
     responses(
-        (status = 200, description = "IP quality status-change events for a server"),
+        (status = 200, description = "IP quality status-change events for a server", body = Vec<UnlockEventDto>),
     ),
     security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
