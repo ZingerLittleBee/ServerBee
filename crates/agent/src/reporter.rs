@@ -486,6 +486,7 @@ impl Reporter {
                                     ping_manager.stop_all();
                                     terminal_manager.close_all();
                                     network_prober.stop_all();
+                                    unlock_checker.stop();
                                     file_manager.cancel_all_transfers();
                                     if let Some(dm) = docker_manager.as_mut() {
                                         dm.cleanup();
@@ -499,6 +500,7 @@ impl Reporter {
                             ping_manager.stop_all();
                             terminal_manager.close_all();
                             network_prober.stop_all();
+                            unlock_checker.stop();
                             file_manager.cancel_all_transfers();
                             if let Some(dm) = docker_manager.as_mut() {
                                 dm.cleanup();
@@ -514,6 +516,7 @@ impl Reporter {
                             ping_manager.stop_all();
                             terminal_manager.close_all();
                             network_prober.stop_all();
+                            unlock_checker.stop();
                             file_manager.cancel_all_transfers();
                             if let Some(dm) = docker_manager.as_mut() {
                                 dm.cleanup();
@@ -525,6 +528,7 @@ impl Reporter {
                             ping_manager.stop_all();
                             terminal_manager.close_all();
                             network_prober.stop_all();
+                            unlock_checker.stop();
                             file_manager.cancel_all_transfers();
                             if let Some(dm) = docker_manager.as_mut() {
                                 dm.cleanup();
