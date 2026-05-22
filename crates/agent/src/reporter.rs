@@ -1177,6 +1177,9 @@ impl Reporter {
                     tracing::debug!("Sent firewall blocklist ack");
                 }
             }
+            ServerMessage::IpQualitySync { .. } | ServerMessage::IpQualityRunNow => {
+                // TODO(charlottetown): handle IP quality sync and run-now
+            }
         }
 
         Ok(ServerMessageOutcome::Continue)
