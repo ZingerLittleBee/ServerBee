@@ -17,6 +17,8 @@ use crate::service::alert::AlertService;
 use crate::service::audit::AuditService;
 use crate::service::auth::AuthService;
 use crate::service::geoip;
+use crate::service::ip_quality::IpQualityService;
+use crate::service::ip_risk::IpRiskService;
 use crate::service::network_probe::NetworkProbeService;
 use crate::service::ping::PingService;
 use crate::service::record::RecordService;
@@ -205,6 +207,28 @@ async fn handle_agent_ws(
         },
         Err(e) => {
             tracing::error!("Failed to get network probe targets for {server_id}: {e}");
+        }
+    }
+
+    // Send IP quality sync to the newly connected agent (mirrors NetworkProbeSync)
+    match IpQualityService::enabled_service_defs(&state.db).await {
+        Ok(services) => match IpQualityService::get_setting(&state.db).await {
+            Ok(setting) => {
+                if let Some(tx) = state.agent_manager.get_sender(&server_id) {
+                    let _ = tx
+                        .send(ServerMessage::IpQualitySync {
+                            services,
+                            interval_hours: setting.check_interval_hours as u32,
+                        })
+                        .await;
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to get IP quality setting for {server_id}: {e}");
+            }
+        },
+        Err(e) => {
+            tracing::error!("Failed to get IP quality service defs for {server_id}: {e}");
         }
     }
 
@@ -1342,8 +1366,79 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 .record_reset_ack(server_id, ok, reason, &state.db)
                 .await;
         }
-        AgentMessage::UnlockResults { .. } => {
-            // TODO(charlottetown): handle IP quality unlock results
+        AgentMessage::UnlockResults {
+            egress_ip,
+            results,
+            checked_at,
+        } => {
+            // Phase 1 (synchronous-ish): save unlock results + broadcast immediately
+            // with ip_quality = None so the UI shows fresh unlock data right away.
+            if let Err(e) =
+                IpQualityService::save_unlock_results(&state.db, server_id, results.clone()).await
+            {
+                tracing::error!("Failed to save unlock results for {server_id}: {e}");
+            }
+
+            state
+                .agent_manager
+                .broadcast_browser(BrowserMessage::IpQualityUpdate {
+                    server_id: server_id.to_string(),
+                    unlock_results: results.clone(),
+                    ip_quality: None,
+                });
+
+            // Phase 2 (non-blocking): spawn a background task to run IP risk scoring
+            // and emit a second broadcast with the full ip_quality snapshot.
+            // Wrapped in a 30s timeout so a slow/down provider never blocks the agent loop.
+            let db_bg = state.db.clone();
+            let geoip_bg = Arc::clone(&state.geoip);
+            let config_bg = state.config.ip_quality.clone();
+            let browser_tx_bg = state.browser_tx.clone();
+            let server_id_owned = server_id.to_string();
+            // Keep a copy for the timeout warning (the inner async moves server_id_owned)
+            let server_id_for_warn = server_id_owned.clone();
+
+            tokio::spawn(async move {
+                let result = tokio::time::timeout(
+                    Duration::from_secs(30),
+                    async move {
+                        let risk_service = IpRiskService::new(config_bg);
+                        let snapshot = risk_service
+                            .score_ip(&db_bg, &geoip_bg, &egress_ip)
+                            .await;
+
+                        if let Err(e) = IpQualityService::save_ip_quality_snapshot(
+                            &db_bg,
+                            &server_id_owned,
+                            &snapshot,
+                        )
+                        .await
+                        {
+                            tracing::warn!(
+                                "Failed to save ip_quality_snapshot for {}: {e}",
+                                server_id_owned
+                            );
+                        }
+
+                        let _ = browser_tx_bg.send(BrowserMessage::IpQualityUpdate {
+                            server_id: server_id_owned,
+                            unlock_results: results,
+                            ip_quality: Some(snapshot),
+                        });
+
+                        // checked_at is part of the protocol message but the server uses
+                        // its own Utc::now() for timestamps (the agent's clock may differ).
+                        let _ = checked_at;
+                    },
+                )
+                .await;
+
+                if result.is_err() {
+                    tracing::warn!(
+                        "IP risk scoring timed out for agent {server_id_for_warn}"
+                    );
+                }
+            });
         }
     }
 }
@@ -1548,7 +1643,7 @@ async fn update_server_geo(
 mod tests {
     use super::*;
     use crate::config::AppConfig;
-    use crate::entity::{recovery_job, server};
+    use crate::entity::{ip_quality_snapshot, recovery_job, server, unlock_result};
     use crate::service::auth::AuthService;
     use crate::test_utils::setup_test_db;
     use chrono::Utc;
@@ -1930,6 +2025,136 @@ mod tests {
                 threshold: 10,
             },
         }
+    }
+
+    // ── IP Quality: UnlockResults handling ──
+
+    #[tokio::test]
+    async fn unlock_results_persists_rows_and_broadcasts_ip_quality_update() {
+        use crate::entity::{server, unlock_result};
+        use crate::service::ip_quality::IpQualityService;
+        use serverbee_common::constants::CAP_IP_QUALITY;
+        use serverbee_common::protocol::{BrowserMessage, UnlockResultData, UnlockStatus};
+
+        let (db, _tmp) = setup_test_db().await;
+
+        // Insert a server with CAP_IP_QUALITY set
+        let now = Utc::now();
+        let token_hash = AuthService::hash_password("test").unwrap();
+        server::ActiveModel {
+            id: Set("srv-iq".to_string()),
+            token_hash: Set(token_hash),
+            token_prefix: Set("serverbee_test".to_string()),
+            name: Set("IQ Server".to_string()),
+            weight: Set(0),
+            hidden: Set(false),
+            capabilities: Set(CAP_IP_QUALITY as i32),
+            protocol_version: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+        let mut browser_rx = state.browser_tx.subscribe();
+
+        // Get the first enabled service to use as the service_id in results
+        let services = IpQualityService::enabled_service_defs(&db).await.unwrap();
+        let svc_id = services[0].id.clone();
+
+        let results = vec![UnlockResultData {
+            service_id: svc_id.clone(),
+            status: UnlockStatus::Unlocked,
+            region: Some("US".to_string()),
+            latency_ms: Some(150),
+            detail: None,
+        }];
+
+        handle_agent_message(
+            &state,
+            "srv-iq",
+            AgentMessage::UnlockResults {
+                egress_ip: "203.0.113.10".to_string(),
+                results,
+                checked_at: Utc::now(),
+            },
+        )
+        .await;
+
+        // (a) Verify unlock_result rows persisted (fetch all, filter in Rust)
+        let db_results: Vec<_> = unlock_result::Entity::find()
+            .all(&db)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|r| r.server_id == "srv-iq")
+            .collect();
+        assert_eq!(db_results.len(), 1, "one unlock_result row should be persisted");
+        assert_eq!(db_results[0].service_id, svc_id);
+        assert_eq!(db_results[0].status, "unlocked");
+
+        // (b) Verify the immediate IpQualityUpdate broadcast (ip_quality = None)
+        let msg = timeout(Duration::from_millis(200), browser_rx.recv())
+            .await
+            .expect("should receive immediate broadcast")
+            .unwrap();
+
+        match msg {
+            BrowserMessage::IpQualityUpdate {
+                server_id,
+                unlock_results,
+                ip_quality,
+            } => {
+                assert_eq!(server_id, "srv-iq");
+                assert_eq!(unlock_results.len(), 1);
+                assert_eq!(unlock_results[0].service_id, svc_id);
+                assert!(
+                    ip_quality.is_none(),
+                    "first broadcast must have ip_quality = None"
+                );
+            }
+            other => panic!("expected IpQualityUpdate, got {other:?}"),
+        }
+
+        // (c) Wait for the background task's second broadcast (ip_quality = Some)
+        // The scoring runs in a spawned task; give it up to 2 seconds.
+        let second_msg = timeout(Duration::from_secs(2), browser_rx.recv())
+            .await
+            .expect("should receive background ip_quality broadcast")
+            .unwrap();
+
+        match second_msg {
+            BrowserMessage::IpQualityUpdate {
+                server_id,
+                ip_quality,
+                ..
+            } => {
+                assert_eq!(server_id, "srv-iq");
+                assert!(
+                    ip_quality.is_some(),
+                    "second broadcast must carry ip_quality snapshot"
+                );
+                let snap = ip_quality.unwrap();
+                assert_eq!(snap.ip, "203.0.113.10");
+            }
+            other => panic!("expected second IpQualityUpdate with ip_quality, got {other:?}"),
+        }
+
+        // (d) Verify the ip_quality_snapshot was persisted (filter in Rust)
+        let snapshot_rows: Vec<_> = crate::entity::ip_quality_snapshot::Entity::find()
+            .all(&db)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|r| r.server_id == "srv-iq")
+            .collect();
+        assert!(!snapshot_rows.is_empty(), "ip_quality_snapshot row should be persisted");
+        assert_eq!(snapshot_rows[0].ip, "203.0.113.10");
     }
 
     #[tokio::test]

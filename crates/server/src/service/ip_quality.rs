@@ -636,6 +636,73 @@ impl IpQualityService {
         Ok(overview)
     }
 
+    /// Upsert the `ip_quality_snapshot` row for a server.
+    ///
+    /// The table is keyed by `server_id` (UNIQUE). If a row already exists for
+    /// this server it is replaced; otherwise a new row is inserted.
+    pub async fn save_ip_quality_snapshot(
+        db: &DatabaseConnection,
+        server_id: &str,
+        snapshot: &IpQualitySnapshotData,
+    ) -> Result<(), AppError> {
+        let sql = "INSERT INTO ip_quality_snapshot \
+            (id, server_id, ip, asn, as_org, country, region, city, ip_type, \
+             is_proxy, is_vpn, is_hosting, risk_score, risk_level, checked_at) \
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+            ON CONFLICT(server_id) DO UPDATE SET \
+            ip = excluded.ip, \
+            asn = excluded.asn, \
+            as_org = excluded.as_org, \
+            country = excluded.country, \
+            region = excluded.region, \
+            city = excluded.city, \
+            ip_type = excluded.ip_type, \
+            is_proxy = excluded.is_proxy, \
+            is_vpn = excluded.is_vpn, \
+            is_hosting = excluded.is_hosting, \
+            risk_score = excluded.risk_score, \
+            risk_level = excluded.risk_level, \
+            checked_at = excluded.checked_at";
+
+        let opt_str = |s: &Option<String>| -> Value {
+            match s {
+                Some(v) => Value::String(Some(Box::new(v.clone()))),
+                None => Value::String(None),
+            }
+        };
+        let opt_int = |v: Option<i32>| -> Value {
+            match v {
+                Some(n) => Value::Int(Some(n)),
+                None => Value::Int(None),
+            }
+        };
+
+        db.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            sql,
+            vec![
+                Value::String(Some(Box::new(Uuid::new_v4().to_string()))),
+                Value::String(Some(Box::new(server_id.to_string()))),
+                Value::String(Some(Box::new(snapshot.ip.clone()))),
+                opt_str(&snapshot.asn),
+                opt_str(&snapshot.as_org),
+                opt_str(&snapshot.country),
+                opt_str(&snapshot.region),
+                opt_str(&snapshot.city),
+                Value::String(Some(Box::new(snapshot.ip_type.clone()))),
+                Value::Int(Some(snapshot.is_proxy as i32)),
+                Value::Int(Some(snapshot.is_vpn as i32)),
+                Value::Int(Some(snapshot.is_hosting as i32)),
+                opt_int(snapshot.risk_score),
+                Value::String(Some(Box::new(snapshot.risk_level.clone()))),
+                Value::String(Some(Box::new(snapshot.checked_at.to_rfc3339()))),
+            ],
+        ))
+        .await?;
+
+        Ok(())
+    }
+
     /// List recent unlock events for a server, newest first.
     pub async fn list_events(
         db: &DatabaseConnection,
@@ -1226,6 +1293,115 @@ mod tests {
         // Newest first
         assert_eq!(events[0].new_status, "unlocked", "newest event is blocked→unlocked");
         assert_eq!(events[1].new_status, "blocked", "older event is unlocked→blocked");
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 14 (Unit F): save_ip_quality_snapshot upsert tests
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_save_ip_quality_snapshot_inserts_new_row() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-snap").await;
+
+        let now = Utc::now();
+        let snapshot = IpQualitySnapshotData {
+            ip: "203.0.113.1".to_string(),
+            asn: Some("AS12345".to_string()),
+            as_org: Some("Test ISP".to_string()),
+            country: Some("US".to_string()),
+            region: None,
+            city: None,
+            ip_type: "residential".to_string(),
+            is_proxy: false,
+            is_vpn: false,
+            is_hosting: false,
+            risk_score: None,
+            risk_level: "unknown".to_string(),
+            checked_at: now,
+        };
+
+        IpQualityService::save_ip_quality_snapshot(&db, "srv-snap", &snapshot)
+            .await
+            .unwrap();
+
+        let row = ip_quality_snapshot::Entity::find()
+            .filter(ip_quality_snapshot::Column::ServerId.eq("srv-snap"))
+            .one(&db)
+            .await
+            .unwrap()
+            .expect("snapshot row should exist");
+
+        assert_eq!(row.ip, "203.0.113.1");
+        assert_eq!(row.asn.as_deref(), Some("AS12345"));
+        assert_eq!(row.country.as_deref(), Some("US"));
+        assert_eq!(row.ip_type, "residential");
+        assert_eq!(row.risk_level, "unknown");
+        assert!(row.risk_score.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_save_ip_quality_snapshot_upserts_on_conflict() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-upsert").await;
+
+        let now = Utc::now();
+        let snapshot_v1 = IpQualitySnapshotData {
+            ip: "1.2.3.4".to_string(),
+            asn: None,
+            as_org: None,
+            country: Some("US".to_string()),
+            region: None,
+            city: None,
+            ip_type: "unknown".to_string(),
+            is_proxy: false,
+            is_vpn: false,
+            is_hosting: false,
+            risk_score: None,
+            risk_level: "unknown".to_string(),
+            checked_at: now,
+        };
+
+        IpQualityService::save_ip_quality_snapshot(&db, "srv-upsert", &snapshot_v1)
+            .await
+            .unwrap();
+
+        // Upsert again with changed data (new IP, risk info)
+        let snapshot_v2 = IpQualitySnapshotData {
+            ip: "5.6.7.8".to_string(),
+            asn: Some("AS99".to_string()),
+            as_org: Some("New ISP".to_string()),
+            country: Some("DE".to_string()),
+            region: Some("Bavaria".to_string()),
+            city: Some("Munich".to_string()),
+            ip_type: "datacenter".to_string(),
+            is_proxy: true,
+            is_vpn: false,
+            is_hosting: true,
+            risk_score: Some(75),
+            risk_level: "high".to_string(),
+            checked_at: now,
+        };
+
+        IpQualityService::save_ip_quality_snapshot(&db, "srv-upsert", &snapshot_v2)
+            .await
+            .unwrap();
+
+        // There should still be only ONE row for this server (upsert, not insert)
+        let rows = ip_quality_snapshot::Entity::find()
+            .filter(ip_quality_snapshot::Column::ServerId.eq("srv-upsert"))
+            .all(&db)
+            .await
+            .unwrap();
+
+        assert_eq!(rows.len(), 1, "upsert must not create a second row");
+        let row = &rows[0];
+        assert_eq!(row.ip, "5.6.7.8", "ip should be updated to v2 value");
+        assert_eq!(row.risk_score, Some(75));
+        assert_eq!(row.risk_level, "high");
+        assert!(row.is_proxy);
+        assert!(row.is_hosting);
+        assert_eq!(row.country.as_deref(), Some("DE"));
     }
 
     #[tokio::test]
