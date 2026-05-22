@@ -15,6 +15,7 @@ import {
   Radar,
   Settings,
   Shield,
+  ShieldCheck,
   Terminal,
   Users,
   Wifi
@@ -29,6 +30,7 @@ const navItems = [
   { to: '/servers', labelKey: 'nav_servers' as const, icon: List },
   { to: '/network', labelKey: 'nav_network' as const, icon: Wifi },
   { to: '/traffic', labelKey: 'nav_traffic' as const, icon: BarChart3 },
+  { to: '/ip-quality', labelKey: 'nav_ip_quality' as const, icon: ShieldCheck },
   { to: '/settings/users', labelKey: 'nav_users' as const, icon: Users, adminOnly: true },
   { to: '/settings/notifications', labelKey: 'nav_notifications' as const, icon: Bell, adminOnly: true },
   { to: '/settings/alerts', labelKey: 'nav_alerts' as const, icon: AlertTriangle, adminOnly: true },
@@ -36,6 +38,7 @@ const navItems = [
   { to: '/settings/service-monitors', labelKey: 'nav_service_monitors' as const, icon: HeartPulse },
   { to: '/settings/status-pages', labelKey: 'nav_status_pages' as const, icon: Monitor, adminOnly: true },
   { to: '/settings/network-probes', labelKey: 'nav_network_probes' as const, icon: Globe, adminOnly: true },
+  { to: '/settings/ip-quality', labelKey: 'nav_ip_quality_settings' as const, icon: ShieldCheck, adminOnly: true },
   { to: '/settings/tasks', labelKey: 'nav_commands' as const, icon: Terminal, adminOnly: true },
   { to: '/settings/capabilities', labelKey: 'nav_capabilities' as const, icon: Shield, adminOnly: true },
   { to: '/settings/api-keys', labelKey: 'nav_api_keys' as const, icon: Key },
