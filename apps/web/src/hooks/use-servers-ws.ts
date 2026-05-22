@@ -4,6 +4,7 @@ import i18next from 'i18next'
 import { useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import type { RecoveryJobResponse, SecurityEventDto, SecurityEventList } from '@/lib/api-schema'
+import type { IpQualitySnapshotData, ServerIpQualityData, UnlockResultDto, UnlockStatus } from '@/lib/ip-quality-types'
 import type { NetworkProbeResultData } from '@/lib/network-types'
 import { WsClient } from '@/lib/ws-client'
 import type {

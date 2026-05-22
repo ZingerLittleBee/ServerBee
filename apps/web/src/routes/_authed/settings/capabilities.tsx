@@ -31,7 +31,7 @@ interface ServerInfo {
 
 const ORDERED_CAPABILITIES = [
   ...CAPABILITIES.filter(({ risk }) => risk === 'high'),
-  ...CAPABILITIES.filter(({ risk }) => risk === 'low')
+  ...CAPABILITIES.filter(({ risk }) => risk !== 'high')
 ]
 
 export function CapabilitiesPage() {

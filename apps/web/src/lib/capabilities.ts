@@ -7,6 +7,7 @@ export const CAP_PING_HTTP = 32
 export const CAP_FILE = 64
 export const CAP_DOCKER = 128
 export const CAP_FIREWALL_BLOCK = 512
+export const CAP_IP_QUALITY = 1024
 export const CAP_DEFAULT = 60
 
 export const CAPABILITIES = [
@@ -23,6 +24,12 @@ export const CAPABILITIES = [
     key: 'firewall_block',
     labelKey: 'cap_firewall_block' as const,
     risk: 'high' as const
+  },
+  {
+    bit: CAP_IP_QUALITY,
+    key: 'ip_quality',
+    labelKey: 'cap_ip_quality' as const,
+    risk: 'medium' as const
   }
 ] as const
 

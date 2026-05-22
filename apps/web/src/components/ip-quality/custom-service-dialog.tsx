@@ -404,7 +404,7 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="ipq-category">Category</Label>
-                <Select onValueChange={setCategory} value={category}>
+                <Select onValueChange={(v) => setCategory(v ?? 'streaming')} value={category}>
                   <SelectTrigger className="w-full" id="ipq-category">
                     <SelectValue />
                   </SelectTrigger>
@@ -445,7 +445,7 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="ipq-method">Method</Label>
-                <Select onValueChange={setMethod} value={method}>
+                <Select onValueChange={(v) => setMethod(v ?? 'GET')} value={method}>
                   <SelectTrigger className="w-full" id="ipq-method">
                     <SelectValue />
                   </SelectTrigger>
