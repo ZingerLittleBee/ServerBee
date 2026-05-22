@@ -1,13 +1,12 @@
 // Built-in service unlock detectors.
 //
-// This module is consumed by the UnlockChecker scheduler (Unit J).
+// This module is consumed by the UnlockChecker scheduler.
 // Each detector sub-module exposes:
 //   - A probe URL constant (or multiple URL constants for multi-step detectors)
 //   - A pure `classify(outcome) -> (UnlockStatus, Option<String>)` function
 //
 // `dispatch` is the public entry point: given a detector key and a shared
 // reqwest client, it runs the probe(s) and returns the result with timing.
-#![allow(dead_code)]
 
 pub mod amazon_prime;
 pub mod chatgpt;

@@ -1,8 +1,3 @@
-// These items are used by http.rs and by later units (detectors, scheduler).
-// The dead_code lint fires now because ip_quality is not yet wired into
-// main.rs's runtime path.
-#![allow(dead_code)]
-
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 
 use anyhow::{bail, Result};

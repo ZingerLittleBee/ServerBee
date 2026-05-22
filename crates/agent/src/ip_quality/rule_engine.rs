@@ -1,6 +1,3 @@
-// Used by UnlockChecker (later unit).
-#![allow(dead_code)]
-
 use regex::Regex;
 use serverbee_common::protocol::{UnlockMatch, UnlockRule, UnlockStatus};
 

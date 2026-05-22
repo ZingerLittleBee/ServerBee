@@ -1,6 +1,3 @@
-// Used by detectors and the UnlockChecker scheduler (later units).
-#![allow(dead_code)]
-
 use std::time::Duration;
 
 use anyhow::{bail, Result};
