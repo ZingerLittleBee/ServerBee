@@ -1,4 +1,10 @@
 pub mod agent_enrollment;
+pub mod ip_quality_setting;
+pub mod ip_quality_snapshot;
+pub mod ip_risk_cache;
+pub mod unlock_event;
+pub mod unlock_result;
+pub mod unlock_service;
 pub mod alert_rule;
 pub mod alert_state;
 pub mod api_key;
