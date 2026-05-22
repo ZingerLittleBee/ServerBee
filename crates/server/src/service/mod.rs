@@ -18,6 +18,7 @@ pub mod geoip;
 pub mod high_risk_audit;
 pub mod incident;
 pub mod ip_quality;
+pub mod ip_risk;
 pub mod maintenance;
 pub mod mobile_auth;
 pub mod network_probe;
