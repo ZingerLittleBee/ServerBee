@@ -330,7 +330,7 @@ mod tests {
         mgr.close(&sid);
 
         assert!(
-            mgr.sessions.get(&sid).is_none(),
+            !mgr.sessions.contains_key(&sid),
             "session should be removed from the manager after close()"
         );
 

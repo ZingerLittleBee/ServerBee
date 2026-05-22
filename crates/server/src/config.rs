@@ -531,6 +531,10 @@ impl AppConfig {
 }
 
 #[cfg(test)]
+// `figment::Jail::expect_with` closures must return `Result<(), figment::Error>`;
+// figment's `Error` is a large enum, so `result_large_err` fires on every jail
+// test. The closure signature is fixed by figment's API and cannot be changed.
+#[allow(clippy::result_large_err)]
 mod tests {
     use super::*;
 

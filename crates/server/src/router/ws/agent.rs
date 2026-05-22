@@ -1661,7 +1661,7 @@ async fn update_server_geo(
 mod tests {
     use super::*;
     use crate::config::AppConfig;
-    use crate::entity::{ip_quality_snapshot, recovery_job, server, unlock_result};
+    use crate::entity::{recovery_job, server};
     use crate::service::auth::AuthService;
     use crate::test_utils::setup_test_db;
     use chrono::Utc;
@@ -2049,7 +2049,7 @@ mod tests {
 
     #[tokio::test]
     async fn unlock_results_persists_rows_and_broadcasts_ip_quality_update() {
-        use crate::entity::{server, unlock_result};
+        use crate::entity::unlock_result;
         use crate::service::ip_quality::IpQualityService;
         use serverbee_common::constants::CAP_IP_QUALITY;
         use serverbee_common::protocol::{BrowserMessage, UnlockResultData, UnlockStatus};

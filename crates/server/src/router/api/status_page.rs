@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use crate::entity::{incident, incident_update, maintenance, server, server_group, status_page};
 use crate::error::{ApiResponse, AppError, ok};
-use crate::service::auth::AuthService;
+use crate::middleware::auth::resolve_optional_user;
 use crate::service::custom_theme::{CustomThemeService, ThemeResolved};
 use crate::service::incident::IncidentService;
 use crate::service::ip_quality::{IpQualityService, ServerIpQualityData};
@@ -134,7 +134,8 @@ pub async fn get_public_status_page(
     )
     .await?;
 
-    // Parse server IDs from the page
+    // Parse server IDs from the page exactly once; reused below for both the
+    // server query and the optional IP-quality block.
     let server_ids: Vec<String> = serde_json::from_str(&page.server_ids_json).unwrap_or_default();
 
     // Fetch servers
@@ -142,7 +143,7 @@ pub async fn get_public_status_page(
         vec![]
     } else {
         server::Entity::find()
-            .filter(server::Column::Id.is_in(server_ids))
+            .filter(server::Column::Id.is_in(server_ids.iter()))
             .order_by_desc(server::Column::Weight)
             .order_by_desc(server::Column::CreatedAt)
             .all(&state.db)
@@ -251,22 +252,27 @@ pub async fn get_public_status_page(
         .collect();
 
     // Determine if the request is authenticated (optional auth for IP masking).
-    let authenticated = is_request_authenticated(&state, &headers).await;
+    let authenticated = resolve_optional_user(&headers, &state).await.is_some();
 
     // Build the optional IP quality block (only when the page opts in).
     let ip_quality = if page.show_ip_quality {
-        let server_ids: Vec<String> =
-            serde_json::from_str(&page.server_ids_json).unwrap_or_default();
-        let mut entries: Vec<ServerIpQualityData> = Vec::new();
-        for sid in &server_ids {
-            let mut data = IpQualityService::get_server_summary(&state.db, sid).await?;
-            if !authenticated {
-                // Mask the egress IP for unauthenticated viewers.
-                if let Some(ref mut snap) = data.ip_quality {
+        // Scope strictly to servers that still exist — a deleted server left
+        // dangling in `server_ids_json` must not leak a stale ID publicly.
+        let existing_ids: Vec<String> = servers.iter().map(|s| s.id.clone()).collect();
+        let scoped_ids: Vec<String> = server_ids
+            .iter()
+            .filter(|id| existing_ids.iter().any(|e| e == *id))
+            .cloned()
+            .collect();
+
+        let mut entries = IpQualityService::get_summaries(&state.db, &scoped_ids).await?;
+        if !authenticated {
+            // Mask the egress IP for unauthenticated viewers.
+            for entry in &mut entries {
+                if let Some(ref mut snap) = entry.ip_quality {
                     snap.ip = "*.*.*.*".to_string();
                 }
             }
-            entries.push(data);
         }
         Some(entries)
     } else {
@@ -330,69 +336,6 @@ async fn default_theme(db: &DatabaseConnection) -> Result<ThemeResolved, AppErro
             .await?
             .theme,
     )
-}
-
-/// Check whether the incoming request carries a valid session, API key, or
-/// Bearer token. Used on public routes that need to distinguish authenticated
-/// from unauthenticated viewers (e.g. for IP masking on the public status page).
-/// Returns `true` if any credential validates successfully.
-async fn is_request_authenticated(state: &AppState, headers: &HeaderMap) -> bool {
-    // Session cookie
-    if let Some(token) = extract_session_cookie_from_headers(headers) {
-        let valid = AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl)
-            .await
-            .ok()
-            .flatten()
-            .is_some();
-        if valid {
-            return true;
-        }
-    }
-    // API key header
-    if let Some(key) = headers
-        .get("x-api-key")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string())
-    {
-        let valid = AuthService::validate_api_key(&state.db, &key)
-            .await
-            .ok()
-            .flatten()
-            .is_some();
-        if valid {
-            return true;
-        }
-    }
-    // Bearer token
-    if let Some(token) = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .map(|s| s.to_string())
-    {
-        let valid =
-            AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl)
-                .await
-                .ok()
-                .flatten()
-                .is_some();
-        if valid {
-            return true;
-        }
-    }
-    false
-}
-
-fn extract_session_cookie_from_headers(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get("cookie")?
-        .to_str()
-        .ok()?
-        .split(';')
-        .find_map(|cookie| {
-            let cookie = cookie.trim();
-            cookie.strip_prefix("session_token=").map(|v| v.to_string())
-        })
 }
 
 #[utoipa::path(

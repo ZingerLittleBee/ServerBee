@@ -591,6 +591,61 @@ impl IpQualityService {
         })
     }
 
+    /// Get IP quality summaries for a specific set of servers in two bulk
+    /// queries (unlock results + snapshots filtered by `server_id IN (...)`),
+    /// grouped in memory. Every requested server gets an entry, even if it has
+    /// no unlock results or snapshot. The returned order follows `server_ids`.
+    ///
+    /// Use this instead of calling `get_server_summary` in a loop — it avoids
+    /// an N+1 query pattern on hot paths such as the public status page.
+    pub async fn get_summaries(
+        db: &DatabaseConnection,
+        server_ids: &[String],
+    ) -> Result<Vec<ServerIpQualityData>, AppError> {
+        if server_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Two bulk queries scoped to the requested servers.
+        let all_results = unlock_result::Entity::find()
+            .filter(unlock_result::Column::ServerId.is_in(server_ids.iter()))
+            .all(db)
+            .await?;
+        let all_snapshots = ip_quality_snapshot::Entity::find()
+            .filter(ip_quality_snapshot::Column::ServerId.is_in(server_ids.iter()))
+            .all(db)
+            .await?;
+
+        // Build snapshot lookup by server_id
+        let mut snapshot_by_server: std::collections::HashMap<String, IpQualitySnapshotData> =
+            std::collections::HashMap::new();
+        for snap in all_snapshots {
+            snapshot_by_server.insert(snap.server_id.clone(), snapshot_model_to_dto(snap));
+        }
+
+        // Group results by server_id
+        let mut results_by_server: std::collections::HashMap<String, Vec<UnlockResultDto>> =
+            std::collections::HashMap::new();
+        for r in all_results {
+            results_by_server
+                .entry(r.server_id.clone())
+                .or_default()
+                .push(UnlockResultDto::from(r));
+        }
+
+        // Preserve the caller's requested ordering.
+        let summaries = server_ids
+            .iter()
+            .map(|sid| ServerIpQualityData {
+                unlock_results: results_by_server.remove(sid).unwrap_or_default(),
+                ip_quality: snapshot_by_server.remove(sid),
+                server_id: sid.clone(),
+            })
+            .collect();
+
+        Ok(summaries)
+    }
+
     /// Get the IP quality overview for ALL servers. Every server is included,
     /// even those with no unlock results or snapshot yet (empty results +
     /// `None` snapshot in that case).
@@ -1269,6 +1324,51 @@ mod tests {
             .expect("server with no data should still be in the overview");
         assert!(no_data.unlock_results.is_empty());
         assert!(no_data.ip_quality.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_summaries_returns_only_requested_servers_in_order() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-1").await;
+        insert_test_server(&db, "srv-2").await;
+        insert_test_server(&db, "srv-3").await;
+
+        let services = IpQualityService::list_services(&db).await.unwrap();
+        let svc = &services[0];
+
+        seed_server_result(&db, "srv-1", &svc.id, UnlockStatus::Unlocked).await;
+        seed_server_result(&db, "srv-3", &svc.id, UnlockStatus::Blocked).await;
+
+        // Request only srv-1 and srv-3, in that order — srv-2 must not appear.
+        let ids = vec!["srv-1".to_string(), "srv-3".to_string()];
+        let summaries = IpQualityService::get_summaries(&db, &ids).await.unwrap();
+
+        assert_eq!(summaries.len(), 2);
+        assert_eq!(summaries[0].server_id, "srv-1");
+        assert_eq!(summaries[1].server_id, "srv-3");
+        assert_eq!(summaries[0].unlock_results.len(), 1);
+        assert_eq!(summaries[1].unlock_results.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_summaries_empty_input_returns_empty() {
+        let (db, _tmp) = setup_test_db().await;
+        let summaries = IpQualityService::get_summaries(&db, &[]).await.unwrap();
+        assert!(summaries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_summaries_includes_servers_without_data() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-empty").await;
+
+        let ids = vec!["srv-empty".to_string()];
+        let summaries = IpQualityService::get_summaries(&db, &ids).await.unwrap();
+
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].server_id, "srv-empty");
+        assert!(summaries[0].unlock_results.is_empty());
+        assert!(summaries[0].ip_quality.is_none());
     }
 
     #[tokio::test]
