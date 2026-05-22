@@ -22,6 +22,7 @@ import {
   useUpdateService,
   useUpdateSetting
 } from '@/hooks/use-ip-quality-api'
+import { categoryLabel } from '@/lib/ip-quality-constants'
 import type { UnlockService } from '@/lib/ip-quality-types'
 
 export const Route = createFileRoute('/_authed/settings/ip-quality')({
@@ -30,18 +31,6 @@ export const Route = createFileRoute('/_authed/settings/ip-quality')({
   }),
   component: IpQualitySettingsPage
 })
-
-const CATEGORY_LABELS: Record<string, string> = {
-  streaming: 'Streaming',
-  ai: 'AI',
-  social: 'Social',
-  gaming: 'Gaming',
-  other: 'Other'
-}
-
-function categoryLabel(cat: string): string {
-  return CATEGORY_LABELS[cat] ?? cat
-}
 
 export function IpQualitySettingsPage() {
   const { tab: activeTab } = Route.useSearch()

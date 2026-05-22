@@ -1,4 +1,5 @@
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { categoryLabel, categoryRank } from '@/lib/ip-quality-constants'
 import type { ServerIpQualityData, UnlockService, UnlockStatus } from '@/lib/ip-quality-types'
 import { cn } from '@/lib/utils'
 import { UnlockStatusBadge } from './unlock-status-badge'
@@ -16,27 +17,6 @@ interface Props {
   servers: MatrixServer[]
   /** Catalog of services to render as columns. */
   services: UnlockService[]
-}
-
-// Display order for the category column groups. Anything not listed sorts
-// after these, alphabetically.
-const CATEGORY_ORDER = ['streaming', 'ai', 'social', 'gaming', 'other']
-
-const CATEGORY_LABELS: Record<string, string> = {
-  streaming: 'Streaming',
-  ai: 'AI',
-  social: 'Social',
-  gaming: 'Gaming',
-  other: 'Other'
-}
-
-function categoryLabel(category: string): string {
-  return CATEGORY_LABELS[category] ?? category
-}
-
-function categoryRank(category: string): number {
-  const idx = CATEGORY_ORDER.indexOf(category)
-  return idx === -1 ? CATEGORY_ORDER.length : idx
 }
 
 interface CategoryGroup {

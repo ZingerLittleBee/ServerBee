@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useCreateService, useUpdateService } from '@/hooks/use-ip-quality-api'
+import { CATEGORY_ORDER } from '@/lib/ip-quality-constants'
 import type { UnlockMatch, UnlockRule, UnlockService, UnlockStatus } from '@/lib/ip-quality-types'
 
 interface Props {
@@ -18,7 +19,6 @@ interface Props {
 
 type MatchKind = UnlockMatch['kind']
 
-const CATEGORY_OPTIONS = ['streaming', 'ai', 'social', 'gaming', 'other']
 const METHOD_OPTIONS = ['GET', 'HEAD', 'POST']
 const STATUS_OPTIONS: UnlockStatus[] = ['unlocked', 'restricted', 'blocked', 'failed', 'unsupported']
 const MATCH_KIND_OPTIONS: { value: MatchKind; label: string }[] = [
@@ -409,7 +409,7 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CATEGORY_OPTIONS.map((c) => (
+                    {CATEGORY_ORDER.map((c) => (
                       <SelectItem key={c} value={c}>
                         {c}
                       </SelectItem>
