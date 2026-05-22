@@ -116,7 +116,9 @@ pub fn classify_fallback(outcome: &HttpOutcome) -> (UnlockStatus, Option<String>
         return (UnlockStatus::Unlocked, None);
     }
 
-    (UnlockStatus::Blocked, None)
+    // A successful HTTP response that matched no positive or negative signal
+    // is inconclusive — not evidence of a geo-block.
+    (UnlockStatus::Failed, None)
 }
 
 /// Parse the `loc=XX` field from a Cloudflare edge trace body.
@@ -233,9 +235,11 @@ mod tests {
     }
 
     #[test]
-    fn fallback_blocked_when_200_no_service_markers() {
+    fn fallback_failed_when_200_no_service_markers() {
+        // Ambiguous 200 with no ChatGPT markers => Failed (inconclusive),
+        // not Blocked — an unrecognized 200 is not a geo-block signal.
         let o = fallback_outcome(200, "<html>Loading</html>");
         let (status, _) = classify_fallback(&o);
-        assert_eq!(status, UnlockStatus::Blocked);
+        assert_eq!(status, UnlockStatus::Failed);
     }
 }

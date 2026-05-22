@@ -44,7 +44,8 @@ pub const TIMEOUT_MS: u32 = 15_000;
 /// - Body contains "notInSupportedLocation" or "not available in your region" => `Blocked`
 /// - Body contains "Subscribe" or "Start Streaming" (case-insensitive) => `Unlocked`
 /// - HTTP 403/451 => `Blocked`
-/// - Otherwise => `Blocked` (fail closed for a streaming service)
+/// - Otherwise (a 200 with no recognized positive or negative signal) => `Failed`
+///   — an unrecognized successful response is not evidence of a geo-block.
 pub fn classify(outcome: &HttpOutcome) -> (UnlockStatus, Option<String>) {
     // Check redirect chain for unavailability signals.
     let all_urls: Vec<&str> = std::iter::once(outcome.final_url.as_str())
@@ -85,7 +86,9 @@ pub fn classify(outcome: &HttpOutcome) -> (UnlockStatus, Option<String>) {
         return (UnlockStatus::Unlocked, None);
     }
 
-    (UnlockStatus::Blocked, None)
+    // A successful HTTP response that matched no positive or negative signal
+    // is inconclusive — not evidence of a geo-block.
+    (UnlockStatus::Failed, None)
 }
 
 #[cfg(test)]
@@ -177,10 +180,11 @@ mod tests {
     }
 
     #[test]
-    fn blocked_when_200_but_no_service_markers() {
-        // Ambiguous 200 with unrecognized body => fail closed to Blocked.
+    fn failed_when_200_but_no_service_markers() {
+        // Ambiguous 200 with unrecognized body => Failed (inconclusive),
+        // not Blocked — an unrecognized 200 is not a geo-block signal.
         let o = outcome(200, "<html>Loading...</html>", "https://www.disneyplus.com/", vec![]);
         let (status, _) = classify(&o);
-        assert_eq!(status, UnlockStatus::Blocked);
+        assert_eq!(status, UnlockStatus::Failed);
     }
 }

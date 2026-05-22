@@ -63,8 +63,9 @@ pub fn classify(outcome: &HttpOutcome) -> (UnlockStatus, Option<String>) {
         return (UnlockStatus::Unlocked, None);
     }
 
-    // Fail closed.
-    (UnlockStatus::Blocked, None)
+    // A successful HTTP response that matched no positive or negative signal
+    // is inconclusive — not evidence of a geo-block.
+    (UnlockStatus::Failed, None)
 }
 
 #[cfg(test)]
@@ -137,9 +138,11 @@ mod tests {
     }
 
     #[test]
-    fn blocked_when_200_no_plan_signals() {
+    fn failed_when_200_no_plan_signals() {
+        // Ambiguous 200 with no plan signals => Failed (inconclusive),
+        // not Blocked — an unrecognized 200 is not a geo-block signal.
         let o = outcome(200, "<html>Loading...</html>", "https://www.youtube.com/premium", vec![]);
         let (status, _) = classify(&o);
-        assert_eq!(status, UnlockStatus::Blocked);
+        assert_eq!(status, UnlockStatus::Failed);
     }
 }
