@@ -14,7 +14,7 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
 
         db.execute_unprepared(
-            "CREATE TABLE unlock_service (
+            "CREATE TABLE IF NOT EXISTS unlock_service (
                 id TEXT PRIMARY KEY NOT NULL,
                 key TEXT NOT NULL UNIQUE,
                 name TEXT NOT NULL,
@@ -32,7 +32,7 @@ impl MigrationTrait for Migration {
         .await?;
 
         db.execute_unprepared(
-            "CREATE TABLE unlock_result (
+            "CREATE TABLE IF NOT EXISTS unlock_result (
                 id TEXT PRIMARY KEY NOT NULL,
                 server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
                 service_id TEXT NOT NULL REFERENCES unlock_service(id) ON DELETE CASCADE,
@@ -47,7 +47,7 @@ impl MigrationTrait for Migration {
         .await?;
 
         db.execute_unprepared(
-            "CREATE TABLE unlock_event (
+            "CREATE TABLE IF NOT EXISTS unlock_event (
                 id TEXT PRIMARY KEY NOT NULL,
                 server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
                 service_id TEXT NOT NULL REFERENCES unlock_service(id) ON DELETE CASCADE,
@@ -59,12 +59,12 @@ impl MigrationTrait for Migration {
         .await?;
 
         db.execute_unprepared(
-            "CREATE INDEX idx_unlock_event_server_changed ON unlock_event (server_id, changed_at)",
+            "CREATE INDEX IF NOT EXISTS idx_unlock_event_server_changed ON unlock_event (server_id, changed_at)",
         )
         .await?;
 
         db.execute_unprepared(
-            "CREATE TABLE ip_quality_snapshot (
+            "CREATE TABLE IF NOT EXISTS ip_quality_snapshot (
                 id TEXT PRIMARY KEY NOT NULL,
                 server_id TEXT NOT NULL UNIQUE REFERENCES servers(id) ON DELETE CASCADE,
                 ip TEXT NOT NULL,
@@ -85,7 +85,7 @@ impl MigrationTrait for Migration {
         .await?;
 
         db.execute_unprepared(
-            "CREATE TABLE ip_risk_cache (
+            "CREATE TABLE IF NOT EXISTS ip_risk_cache (
                 ip TEXT PRIMARY KEY NOT NULL,
                 asn TEXT,
                 as_org TEXT,
@@ -105,40 +105,68 @@ impl MigrationTrait for Migration {
         .await?;
 
         db.execute_unprepared(
-            "CREATE TABLE ip_quality_setting (
+            "CREATE TABLE IF NOT EXISTS ip_quality_setting (
                 id TEXT PRIMARY KEY NOT NULL,
                 check_interval_hours INTEGER NOT NULL DEFAULT 12
             )",
         )
         .await?;
 
-        // Insert default settings row
+        // Insert default settings row.
         db.execute_unprepared(
             "INSERT INTO ip_quality_setting (id, check_interval_hours) VALUES ('default', 12)",
         )
         .await?;
 
-        // Insert built-in service catalog seed
-        let now = "2026-05-22T00:00:00Z";
-        let services = [
-            ("01960000-0000-7000-8000-000000000001", "netflix",         "Netflix",             "streaming", 100, "netflix"),
-            ("01960000-0000-7000-8000-000000000002", "disney_plus",     "Disney+",             "streaming",  95, "disney_plus"),
-            ("01960000-0000-7000-8000-000000000003", "youtube_premium", "YouTube Premium",     "streaming",  90, "youtube_premium"),
-            ("01960000-0000-7000-8000-000000000004", "amazon_prime",    "Amazon Prime Video",  "streaming",  80, "amazon_prime"),
-            ("01960000-0000-7000-8000-000000000005", "hbo_max",         "HBO Max",             "streaming",  70, "hbo_max"),
-            ("01960000-0000-7000-8000-000000000006", "chatgpt",         "ChatGPT",             "ai",        100, "chatgpt"),
-            ("01960000-0000-7000-8000-000000000007", "gemini",          "Google Gemini",       "ai",         85, "gemini"),
-            ("01960000-0000-7000-8000-000000000008", "spotify",         "Spotify",             "social",     80, "spotify"),
-            ("01960000-0000-7000-8000-000000000009", "tiktok",          "TikTok",              "social",     85, "tiktok"),
-        ];
-
-        for (id, key, name, category, popularity, detector) in &services {
-            db.execute_unprepared(&format!(
-                "INSERT INTO unlock_service (id, key, name, category, popularity, is_builtin, enabled, detector, request, rules, created_at, updated_at) \
-                 VALUES ('{id}', '{key}', '{name}', '{category}', {popularity}, 1, 1, '{detector}', NULL, NULL, '{now}', '{now}')"
-            ))
-            .await?;
-        }
+        // Insert built-in service catalog seed. Each statement is a compile-time
+        // string literal so the migration stays deterministic and immutable.
+        // Columns: id, key, name, category, popularity, is_builtin, enabled,
+        // detector, request, rules, created_at, updated_at.
+        db.execute_unprepared(
+            "INSERT INTO unlock_service (id, key, name, category, popularity, is_builtin, enabled, detector, request, rules, created_at, updated_at) \
+             VALUES ('01960000-0000-7000-8000-000000000001', 'netflix', 'Netflix', 'streaming', 100, 1, 1, 'netflix', NULL, NULL, '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z')",
+        )
+        .await?;
+        db.execute_unprepared(
+            "INSERT INTO unlock_service (id, key, name, category, popularity, is_builtin, enabled, detector, request, rules, created_at, updated_at) \
+             VALUES ('01960000-0000-7000-8000-000000000002', 'disney_plus', 'Disney+', 'streaming', 95, 1, 1, 'disney_plus', NULL, NULL, '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z')",
+        )
+        .await?;
+        db.execute_unprepared(
+            "INSERT INTO unlock_service (id, key, name, category, popularity, is_builtin, enabled, detector, request, rules, created_at, updated_at) \
+             VALUES ('01960000-0000-7000-8000-000000000003', 'youtube_premium', 'YouTube Premium', 'streaming', 90, 1, 1, 'youtube_premium', NULL, NULL, '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z')",
+        )
+        .await?;
+        db.execute_unprepared(
+            "INSERT INTO unlock_service (id, key, name, category, popularity, is_builtin, enabled, detector, request, rules, created_at, updated_at) \
+             VALUES ('01960000-0000-7000-8000-000000000004', 'amazon_prime', 'Amazon Prime Video', 'streaming', 80, 1, 1, 'amazon_prime', NULL, NULL, '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z')",
+        )
+        .await?;
+        db.execute_unprepared(
+            "INSERT INTO unlock_service (id, key, name, category, popularity, is_builtin, enabled, detector, request, rules, created_at, updated_at) \
+             VALUES ('01960000-0000-7000-8000-000000000005', 'hbo_max', 'HBO Max', 'streaming', 70, 1, 1, 'hbo_max', NULL, NULL, '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z')",
+        )
+        .await?;
+        db.execute_unprepared(
+            "INSERT INTO unlock_service (id, key, name, category, popularity, is_builtin, enabled, detector, request, rules, created_at, updated_at) \
+             VALUES ('01960000-0000-7000-8000-000000000006', 'chatgpt', 'ChatGPT', 'ai', 100, 1, 1, 'chatgpt', NULL, NULL, '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z')",
+        )
+        .await?;
+        db.execute_unprepared(
+            "INSERT INTO unlock_service (id, key, name, category, popularity, is_builtin, enabled, detector, request, rules, created_at, updated_at) \
+             VALUES ('01960000-0000-7000-8000-000000000007', 'gemini', 'Google Gemini', 'ai', 85, 1, 1, 'gemini', NULL, NULL, '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z')",
+        )
+        .await?;
+        db.execute_unprepared(
+            "INSERT INTO unlock_service (id, key, name, category, popularity, is_builtin, enabled, detector, request, rules, created_at, updated_at) \
+             VALUES ('01960000-0000-7000-8000-000000000008', 'spotify', 'Spotify', 'social', 80, 1, 1, 'spotify', NULL, NULL, '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z')",
+        )
+        .await?;
+        db.execute_unprepared(
+            "INSERT INTO unlock_service (id, key, name, category, popularity, is_builtin, enabled, detector, request, rules, created_at, updated_at) \
+             VALUES ('01960000-0000-7000-8000-000000000009', 'tiktok', 'TikTok', 'social', 85, 1, 1, 'tiktok', NULL, NULL, '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z')",
+        )
+        .await?;
 
         Ok(())
     }

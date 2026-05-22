@@ -352,9 +352,9 @@ pub struct FirewallConfig {
     pub allow_list: Vec<String>,
 }
 
-/// API key config used by IP risk providers.
+/// API key for a single IP risk provider.
 #[derive(Debug, Clone, Deserialize, Default)]
-pub struct ApiKeyConfig {
+pub struct RiskProviderKey {
     pub api_key: String,
 }
 
@@ -364,13 +364,13 @@ pub struct IpQualityConfig {
     #[serde(default = "default_risk_provider")]
     pub risk_provider: String,
     #[serde(default)]
-    pub scamalytics: Option<ApiKeyConfig>,
+    pub scamalytics: Option<RiskProviderKey>,
     #[serde(default)]
-    pub ipqs: Option<ApiKeyConfig>,
+    pub ipqs: Option<RiskProviderKey>,
     #[serde(default)]
-    pub proxycheck: Option<ApiKeyConfig>,
+    pub proxycheck: Option<RiskProviderKey>,
     #[serde(default)]
-    pub abuseipdb: Option<ApiKeyConfig>,
+    pub abuseipdb: Option<RiskProviderKey>,
 }
 
 fn default_risk_provider() -> String {
