@@ -1395,6 +1395,13 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             // Phase 2 (non-blocking): spawn a background task to run IP risk scoring
             // and emit a second broadcast with the full ip_quality snapshot.
             // Wrapped in a 30s timeout so a slow/down provider never blocks the agent loop.
+            // Skip entirely when egress_ip is empty — an empty IP produces no
+            // meaningful snapshot and would contaminate ip_risk_cache with a "" key.
+            if egress_ip.trim().is_empty() {
+                tracing::debug!(
+                    "UnlockResults from {server_id}: egress_ip is empty, skipping IP risk scoring"
+                );
+            } else {
             let db_bg = state.db.clone();
             let geoip_bg = Arc::clone(&state.geoip);
             let config_bg = state.config.ip_quality.clone();
@@ -1411,9 +1418,13 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     Duration::from_secs(30),
                     async move {
                         let risk_service = IpRiskService::new(config_bg);
-                        let snapshot = risk_service
+                        // score_ip returns None for a blank IP (defensive double-guard).
+                        let Some(snapshot) = risk_service
                             .score_ip(&db_bg, &geoip_bg, &egress_ip)
-                            .await;
+                            .await
+                        else {
+                            return;
+                        };
 
                         if writes_allowed {
                             if let Err(e) = IpQualityService::save_ip_quality_snapshot(
@@ -1457,6 +1468,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     );
                 }
             });
+            } // end else egress_ip non-empty
         }
     }
 }

@@ -431,6 +431,10 @@ impl IpQualityService {
     /// 1. Read the prior `unlock_result` row for (server_id, service_id).
     /// 2. If no prior row OR status differs, insert an `unlock_event` row.
     /// 3. Upsert the `unlock_result` row with `checked_at = now`.
+    ///
+    /// Results referencing a `service_id` that no longer exists are silently
+    /// skipped. This prevents a single stale result (from a deleted custom
+    /// service) from aborting the entire batch due to an FK violation.
     pub async fn save_unlock_results(
         db: &DatabaseConnection,
         server_id: &str,
@@ -438,12 +442,34 @@ impl IpQualityService {
     ) -> Result<(), AppError> {
         let now = Utc::now();
 
+        // Build the set of existing service IDs once before the transaction so
+        // stale results (referencing a service deleted since the last sync) can
+        // be filtered out without risking an FK violation that would abort the
+        // whole batch.
+        let existing_service_ids: std::collections::HashSet<String> = {
+            let rows = unlock_service::Entity::find()
+                .select_only()
+                .column(unlock_service::Column::Id)
+                .into_tuple::<String>()
+                .all(db)
+                .await?;
+            rows.into_iter().collect()
+        };
+
         // All reads and writes for this batch run inside a single transaction
         // so a mid-batch failure cannot leave unlock_result / unlock_event rows
         // partially written.
         let txn = db.begin().await?;
 
         for r in results {
+            if !existing_service_ids.contains(&r.service_id) {
+                tracing::warn!(
+                    "save_unlock_results: skipping result for deleted service_id={} (server={})",
+                    r.service_id,
+                    server_id
+                );
+                continue;
+            }
             let new_status = status_to_str(&r.status);
 
             // Read prior result for this (server, service)
@@ -1502,6 +1528,52 @@ mod tests {
         assert!(row.is_proxy);
         assert!(row.is_hosting);
         assert_eq!(row.country.as_deref(), Some("DE"));
+    }
+
+    // -----------------------------------------------------------------------
+    // FIX 2: stale service_id in batch must be skipped, valid rows must persist
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_save_unlock_results_skips_deleted_service_keeps_valid_rows() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-fix2").await;
+
+        let services = IpQualityService::list_services(&db).await.unwrap();
+        let valid_svc = &services[0];
+
+        // Mix: one result for a non-existent service_id, one for a real service.
+        let results = vec![
+            UnlockResultData {
+                service_id: "non-existent-service-id-that-does-not-exist".to_string(),
+                status: UnlockStatus::Unlocked,
+                region: None,
+                latency_ms: None,
+                detail: None,
+            },
+            UnlockResultData {
+                service_id: valid_svc.id.clone(),
+                status: UnlockStatus::Blocked,
+                region: Some("US".to_string()),
+                latency_ms: Some(80),
+                detail: None,
+            },
+        ];
+
+        // Should succeed (no error despite stale service_id)
+        IpQualityService::save_unlock_results(&db, "srv-fix2", results)
+            .await
+            .unwrap();
+
+        // Only the valid result should be persisted
+        let rows = unlock_result::Entity::find()
+            .filter(unlock_result::Column::ServerId.eq("srv-fix2"))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1, "only valid result should be persisted");
+        assert_eq!(rows[0].service_id, valid_svc.id);
+        assert_eq!(rows[0].status, "blocked");
     }
 
     #[tokio::test]

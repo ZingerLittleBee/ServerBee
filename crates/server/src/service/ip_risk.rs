@@ -170,6 +170,8 @@ impl IpRiskService {
     /// 3. Upsert `ip_risk_cache`.
     /// 4. Return the `IpQualitySnapshotData`.
     ///
+    /// Returns `None` when `ip` is empty — no cache access is performed.
+    ///
     /// Provider failures are non-fatal: the snapshot is returned with
     /// GeoIP-baseline data and `risk_score = None`.
     pub async fn score_ip(
@@ -177,7 +179,7 @@ impl IpRiskService {
         db: &DatabaseConnection,
         geoip: &Arc<RwLock<Option<GeoIpService>>>,
         ip: &str,
-    ) -> IpQualitySnapshotData {
+    ) -> Option<IpQualitySnapshotData> {
         let provider = provider_for_config(&self.config);
         self.score_ip_with(db, geoip, ip, provider).await
     }
@@ -186,16 +188,27 @@ impl IpRiskService {
     ///
     /// `score_ip` delegates here after resolving the provider from config;
     /// tests inject a mock provider directly. Cache logic is identical for both.
+    ///
+    /// Returns `None` immediately — without touching the cache — when `ip` is
+    /// empty or blank. Callers must check for this and skip persisting a
+    /// snapshot; an empty-string cache key would create a shared stale row that
+    /// contaminates every server whose egress IP is not yet known.
     pub async fn score_ip_with(
         &self,
         db: &DatabaseConnection,
         geoip: &Arc<RwLock<Option<GeoIpService>>>,
         ip: &str,
         provider: Option<Box<dyn IpRiskProvider>>,
-    ) -> IpQualitySnapshotData {
+    ) -> Option<IpQualitySnapshotData> {
+        // Short-circuit on empty IP — never touch the cache with a blank key.
+        if ip.trim().is_empty() {
+            tracing::debug!("score_ip_with: skipping empty egress IP");
+            return None;
+        }
+
         // 1. Check cache
         if let Some(snapshot) = self.read_cache(db, ip).await {
-            return snapshot;
+            return Some(snapshot);
         }
 
         // 2. GeoIP baseline (always local, never fails hard)
@@ -258,7 +271,7 @@ impl IpRiskService {
         // 5. Upsert cache
         self.write_cache(db, &snapshot, &providers_json).await;
 
-        snapshot
+        Some(snapshot)
     }
 
     // -----------------------------------------------------------------------
@@ -771,6 +784,7 @@ impl IpRiskProvider for IpApiProvider {
 mod tests {
     use super::*;
     use crate::config::IpQualityConfig;
+    use crate::entity::ip_risk_cache;
     use crate::test_utils::setup_test_db;
 
     // -----------------------------------------------------------------------
@@ -862,7 +876,8 @@ mod tests {
         let service = IpRiskService::new(cfg);
         let geoip: Arc<RwLock<Option<GeoIpService>>> = Arc::new(RwLock::new(None));
 
-        let result = service.score_ip(&db, &geoip, "1.2.3.4").await;
+        let result = service.score_ip(&db, &geoip, "1.2.3.4").await
+            .expect("non-empty IP should return Some");
 
         assert_eq!(result.ip, "1.2.3.4");
         assert!(result.risk_score.is_none());
@@ -970,7 +985,8 @@ mod tests {
 
         let result = service
             .score_ip_with(&db, &geoip, "9.10.11.12", Some(Box::new(mock)))
-            .await;
+            .await
+            .expect("non-empty IP should return Some");
 
         assert_eq!(
             call_count.load(std::sync::atomic::Ordering::SeqCst),
@@ -1008,7 +1024,8 @@ mod tests {
 
         let result = service
             .score_ip_with(&db, &geoip, "13.14.15.16", Some(Box::new(mock)))
-            .await;
+            .await
+            .expect("non-empty IP should return Some");
 
         assert_eq!(
             call_count.load(std::sync::atomic::Ordering::SeqCst),
@@ -1016,6 +1033,50 @@ mod tests {
             "provider should be called when cache is expired"
         );
         assert_eq!(result.risk_score, Some(77));
+    }
+
+    // -----------------------------------------------------------------------
+    // FIX 1: empty IP must not touch ip_risk_cache
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn score_ip_empty_string_returns_none_and_no_cache_row() {
+        let (db, _tmp) = setup_test_db().await;
+        let service = IpRiskService::new(IpQualityConfig::default());
+        let geoip: Arc<RwLock<Option<GeoIpService>>> = Arc::new(RwLock::new(None));
+
+        let result = service.score_ip(&db, &geoip, "").await;
+        assert!(result.is_none(), "empty IP must return None");
+
+        // No ip_risk_cache row should have been created.
+        let rows: Vec<ip_risk_cache::Model> = ip_risk_cache::Entity::find()
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(
+            rows.is_empty(),
+            "empty IP must not create an ip_risk_cache row; found: {:?}",
+            rows.iter().map(|r| r.ip.clone()).collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn score_ip_whitespace_only_returns_none_and_no_cache_row() {
+        let (db, _tmp) = setup_test_db().await;
+        let service = IpRiskService::new(IpQualityConfig::default());
+        let geoip: Arc<RwLock<Option<GeoIpService>>> = Arc::new(RwLock::new(None));
+
+        let result = service.score_ip(&db, &geoip, "   ").await;
+        assert!(result.is_none(), "whitespace-only IP must return None");
+
+        let rows: Vec<ip_risk_cache::Model> = ip_risk_cache::Entity::find()
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(
+            rows.is_empty(),
+            "whitespace IP must not create an ip_risk_cache row"
+        );
     }
 
     // -----------------------------------------------------------------------

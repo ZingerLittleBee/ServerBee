@@ -11,6 +11,7 @@ use crate::service::ip_quality::{
     UnlockEventDto, UpdateServiceInput,
 };
 use crate::state::AppState;
+use serverbee_common::constants::{CAP_IP_QUALITY, has_capability};
 use serverbee_common::protocol::ServerMessage;
 
 // ---------------------------------------------------------------------------
@@ -277,6 +278,7 @@ async fn update_settings(
     responses(
         (status = 200, description = "IP quality check triggered"),
         (status = 404, description = "Server agent is not online"),
+        (status = 409, description = "CAP_IP_QUALITY is not effective for this server"),
     ),
     security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
@@ -288,6 +290,15 @@ async fn check_server(
         .agent_manager
         .get_sender(&id)
         .ok_or_else(|| AppError::NotFound(format!("Server {id} is not online")))?;
+
+    // Guard: do not send IpQualityRunNow if the capability is not effective.
+    // The agent would silently ignore the message, giving the UI false success.
+    let effective_caps = state.agent_manager.get_effective_capabilities(&id).unwrap_or(0);
+    if !has_capability(effective_caps, CAP_IP_QUALITY) {
+        return Err(AppError::Conflict(
+            "CAP_IP_QUALITY is not effective for this server".to_string(),
+        ));
+    }
 
     tx.send(ServerMessage::IpQualityRunNow)
         .await
@@ -351,5 +362,49 @@ mod tests {
 
         // No connected agents — must succeed without error.
         broadcast_ip_quality_sync(&state).await.unwrap();
+    }
+
+    // -----------------------------------------------------------------------
+    // FIX 3: check_server returns 409 when CAP_IP_QUALITY is not effective
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn check_server_returns_conflict_when_cap_not_effective() {
+        use serverbee_common::constants::CAP_DEFAULT;
+
+        let (db, _tmp) = setup_test_db().await;
+        let state = AppState::new(db, AppConfig::default()).await.unwrap();
+
+        // Register a connected agent without CAP_IP_QUALITY in its local caps.
+        // CAP_DEFAULT does not include CAP_IP_QUALITY, so effective caps will
+        // also lack it once agent_local_capabilities is reported.
+        let (tx, _rx) = mpsc::channel::<ServerMessage>(8);
+        state
+            .agent_manager
+            .add_connection("srv-no-cap".into(), "NoCap".into(), tx, test_addr());
+        // Set server-configured capabilities (no CAP_IP_QUALITY) and agent local caps
+        state
+            .agent_manager
+            .update_capabilities("srv-no-cap", CAP_DEFAULT);
+        state
+            .agent_manager
+            .update_agent_local_capabilities("srv-no-cap", CAP_DEFAULT);
+
+        // Invoke check_server directly.
+        let result = check_server(
+            axum::extract::State(state),
+            axum::extract::Path("srv-no-cap".to_string()),
+        )
+        .await;
+
+        match result {
+            Err(AppError::Conflict(msg)) => {
+                assert!(
+                    msg.contains("CAP_IP_QUALITY"),
+                    "conflict message should mention the capability; got: {msg}"
+                );
+            }
+            other => panic!("expected Conflict, got {other:?}"),
+        }
     }
 }
