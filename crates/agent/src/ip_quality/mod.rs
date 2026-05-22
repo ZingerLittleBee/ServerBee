@@ -129,7 +129,7 @@ impl UnlockChecker {
         // `IpChanged` is ever emitted to trigger a run.
         if has_services && !self.initial_run_triggered.swap(true, Ordering::SeqCst) {
             tracing::info!("UnlockChecker: scheduling initial run after first IpQualitySync");
-            let _ = self.run_now_tx.try_send(());
+            self.run_now();
         }
     }
 
