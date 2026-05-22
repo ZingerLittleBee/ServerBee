@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.1] - 2026-05-23
+
+### Added
+
+- **IP quality & streaming unlock checks** -- Agents probe a configurable catalog of streaming and AI services (Netflix, ChatGPT, Spotify, and more) and score their public IP for risk. Results appear on a dedicated overview page, a server-detail tab, and optionally on public status pages. Gated behind the new `CAP_IP_QUALITY` capability and protected by an SSRF guard that blocks internal ranges, IPv4-mapped IPv6 bypasses, and embedded credentials
+- **Firewall blocklist management** -- Servers can block abusive IPs through an nftables-backed firewall manager, with a one-click block action, an auto-block toggle that reacts to security events, and a three-tier guardrail that protects the operator's own IPs from accidental lockout. Gated behind the new `CAP_FIREWALL_BLOCK` capability
+- **Security event detection** -- Agents detect SSH logins, SSH brute-force attempts, and port scans via journal, conntrack, and kernel-firewall watchers, reporting them as security events with severity escalation. A new Security overview page and per-server Security tab visualize events, and alert rules can match on them. Gated behind the new `CAP_SECURITY_EVENTS` capability
+- **Hardened Agent self-upgrade** -- A new `[upgrade]` config section pins release download and checksum URLs, supports a `--release-repo` CLI override, and verifies the release-signing certificate via SPKI SHA-256 pinning
+- **iOS mobile client** -- The iOS app gains push-notification deep linking, an actor-based WebSocket layer with heartbeat and exponential-backoff reconnect, full VoiceOver and Dynamic Type accessibility, an editable device name, insecure-URL banners, and SwiftLint/swift-format tooling
+
+### Changed
+
+- **Dashboard rendering** -- The service-status widget was redesigned with a summary and richer rows, the gauge widget locks to a square aspect on resize, and dashboard WebSocket re-renders were reduced
+- **Release CI** -- The cross-platform release build matrix no longer runs on pull requests; pre-release tags are flagged as pre-releases and no longer move the Docker `:latest` tag
+
+### Fixed
+
+- **NAT and Docker country detection** -- `country_code` is now populated for agents behind Docker bridges and NAT
+- **Uptime timeline** -- Fixed tooltip clipping and a stray horizontal scrollbar
+- **IP quality robustness** -- Response body streaming is capped, `0.0.0.0/8` is blocked, ambiguous unlock probes report as Failed rather than Blocked, and stale foreign keys and missing capabilities are guarded
+
 ## [0.9.4] - 2026-05-20
 
 ### Added
