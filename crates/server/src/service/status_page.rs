@@ -29,6 +29,7 @@ pub struct CreateStatusPage {
     pub enabled: Option<bool>,
     pub uptime_yellow_threshold: Option<f64>,
     pub uptime_red_threshold: Option<f64>,
+    pub show_ip_quality: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, utoipa::ToSchema)]
@@ -45,6 +46,7 @@ pub struct UpdateStatusPage {
     pub uptime_red_threshold: Option<f64>,
     #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub theme_ref: Option<Option<String>>,
+    pub show_ip_quality: Option<bool>,
 }
 
 impl StatusPageService {
@@ -106,7 +108,7 @@ impl StatusPageService {
             uptime_yellow_threshold: Set(input.uptime_yellow_threshold.unwrap_or(100.0)),
             uptime_red_threshold: Set(input.uptime_red_threshold.unwrap_or(95.0)),
             theme_ref: Set(None),
-            show_ip_quality: Set(false),
+            show_ip_quality: Set(input.show_ip_quality.unwrap_or(false)),
             created_at: Set(now),
             updated_at: Set(now),
         };
@@ -176,6 +178,9 @@ impl StatusPageService {
             };
             model.theme_ref = Set(canonical);
         }
+        if let Some(show_ip_quality) = input.show_ip_quality {
+            model.show_ip_quality = Set(show_ip_quality);
+        }
         model.updated_at = Set(Utc::now());
 
         Ok(model.update(db).await?)
@@ -219,6 +224,7 @@ mod tests {
             enabled: None,
             uptime_yellow_threshold: None,
             uptime_red_threshold: None,
+            show_ip_quality: None,
         }
     }
 
@@ -235,6 +241,7 @@ mod tests {
             uptime_yellow_threshold: None,
             uptime_red_threshold: None,
             theme_ref: None,
+            show_ip_quality: None,
         }
     }
 
