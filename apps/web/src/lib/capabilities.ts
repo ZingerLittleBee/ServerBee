@@ -29,6 +29,8 @@ export const CAPABILITIES = [
     bit: CAP_IP_QUALITY,
     key: 'ip_quality',
     labelKey: 'cap_ip_quality' as const,
+    // 'medium' mirrors the Rust risk_level, but the UI renders this in the low/non-destructive
+    // risk group — capability-toggle risk grouping is binary (high vs. not-high).
     risk: 'medium' as const
   }
 ] as const

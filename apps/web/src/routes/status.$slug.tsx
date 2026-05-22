@@ -281,14 +281,35 @@ function deriveServicesFromResults(ipQuality: ServerIpQualityData[]): UnlockServ
 
 function IpQualitySection({
   ipQuality,
+  ipQualityServices,
   serverNames,
   t
 }: {
   ipQuality: ServerIpQualityData[]
+  ipQualityServices?: PublicStatusPageData['ip_quality_services']
   serverNames: Map<string, string>
   t: (key: string, options?: { defaultValue?: string }) => string
 }) {
-  const services = deriveServicesFromResults(ipQuality)
+  // Use the server-supplied service catalog when available (real names, categories,
+  // popularity). Fall back to deriving from result IDs only when the field is absent
+  // (graceful degradation for older server versions).
+  const services: UnlockService[] =
+    ipQualityServices && ipQualityServices.length > 0
+      ? ipQualityServices.map((s) => ({
+          id: s.id,
+          key: s.key,
+          name: s.name,
+          category: s.category,
+          popularity: s.popularity,
+          is_builtin: s.is_builtin,
+          enabled: true,
+          detector: null,
+          request: null,
+          rules: null,
+          created_at: '',
+          updated_at: ''
+        }))
+      : deriveServicesFromResults(ipQuality)
   const matrixServers = ipQuality.map((entry) => ({
     id: entry.server_id,
     name: serverNames.get(entry.server_id) ?? entry.server_id
@@ -457,7 +478,12 @@ function StatusPageContent({ data }: { data: PublicStatusPageData }) {
 
       {/* IP quality (only when the page opts in — server gates the field) */}
       {data.ip_quality && data.ip_quality.length > 0 && (
-        <IpQualitySection ipQuality={data.ip_quality} serverNames={serverNames} t={t} />
+        <IpQualitySection
+          ipQuality={data.ip_quality}
+          ipQualityServices={data.ip_quality_services}
+          serverNames={serverNames}
+          t={t}
+        />
       )}
 
       {/* Recent incidents (collapsible) */}

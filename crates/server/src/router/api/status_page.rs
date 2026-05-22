@@ -62,6 +62,21 @@ pub struct IncidentWithUpdates {
     pub updates: Vec<incident_update::Model>,
 }
 
+/// Public-safe subset of an `unlock_service` row.
+///
+/// Does NOT expose `request`/`rules`/headers — those may contain internal
+/// URLs or secrets from custom services. Only metadata needed to label matrix
+/// column headers is included.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct PublicUnlockServiceInfo {
+    pub id: String,
+    pub key: String,
+    pub name: String,
+    pub category: String,
+    pub popularity: i32,
+    pub is_builtin: bool,
+}
+
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct PublicStatusPageData {
     pub page: StatusPageInfo,
@@ -74,6 +89,11 @@ pub struct PublicStatusPageData {
     /// IPs are masked to `*.*.*.*` for unauthenticated viewers.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ip_quality: Option<Vec<ServerIpQualityData>>,
+    /// Service display metadata for services referenced by `ip_quality`.
+    /// Present only when `ip_quality` is present. Allows the frontend to render
+    /// proper service names in the unlock matrix column headers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ip_quality_services: Option<Vec<PublicUnlockServiceInfo>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -255,7 +275,7 @@ pub async fn get_public_status_page(
     let authenticated = resolve_optional_user(&headers, &state).await.is_some();
 
     // Build the optional IP quality block (only when the page opts in).
-    let ip_quality = if page.show_ip_quality {
+    let (ip_quality, ip_quality_services) = if page.show_ip_quality {
         // Scope strictly to servers that still exist — a deleted server left
         // dangling in `server_ids_json` must not leak a stale ID publicly.
         let existing_ids: Vec<String> = servers.iter().map(|s| s.id.clone()).collect();
@@ -274,9 +294,38 @@ pub async fn get_public_status_page(
                 }
             }
         }
-        Some(entries)
+
+        // Collect the set of service IDs referenced by the results so we can
+        // include just the display metadata for those services. This avoids
+        // leaking the full catalog (especially custom-service request configs).
+        let referenced_service_ids: std::collections::HashSet<String> = entries
+            .iter()
+            .flat_map(|e| e.unlock_results.iter().map(|r| r.service_id.clone()))
+            .collect();
+
+        let services_info = if referenced_service_ids.is_empty() {
+            Some(Vec::new())
+        } else {
+            // Load only the services that appear in the results.
+            let all_services = IpQualityService::list_services(&state.db).await?;
+            let public_services: Vec<PublicUnlockServiceInfo> = all_services
+                .into_iter()
+                .filter(|s| referenced_service_ids.contains(&s.id))
+                .map(|s| PublicUnlockServiceInfo {
+                    id: s.id,
+                    key: s.key,
+                    name: s.name,
+                    category: s.category,
+                    popularity: s.popularity,
+                    is_builtin: s.is_builtin,
+                })
+                .collect();
+            Some(public_services)
+        };
+
+        (Some(entries), services_info)
     } else {
-        None
+        (None, None)
     };
 
     let page_info = StatusPageInfo {
@@ -299,6 +348,7 @@ pub async fn get_public_status_page(
         planned_maintenances,
         recent_incidents,
         ip_quality,
+        ip_quality_services,
     })
 }
 
