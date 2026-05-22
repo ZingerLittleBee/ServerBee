@@ -105,6 +105,10 @@ vi.mock('@/components/security/server-security-tab', () => ({
   ServerSecurityTab: () => <div data-testid="server-security-tab">security</div>
 }))
 
+vi.mock('@/components/ip-quality/ip-quality-tab', () => ({
+  IpQualityTab: () => <div data-testid="ip-quality-tab">ip-quality</div>
+}))
+
 const mockUseServer = vi.fn()
 const mockUseServerRecords = vi.fn()
 const mockUseUptimeDaily = vi.fn()

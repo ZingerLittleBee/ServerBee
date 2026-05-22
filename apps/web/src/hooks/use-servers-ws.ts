@@ -108,6 +108,22 @@ type WsMessage =
       state: 'present' | 'absent' | 'failed'
       reason?: string | null
     }
+  | {
+      type: 'ip_quality_update'
+      server_id: string
+      unlock_results: WsUnlockResult[]
+      ip_quality: IpQualitySnapshotData | null
+    }
+
+/** Unlock result as carried by the `ip_quality_update` WS message — the
+ *  protocol's `UnlockResultData`, which is leaner than the REST `UnlockResultDto`. */
+interface WsUnlockResult {
+  detail: string | null
+  latency_ms: number | null
+  region: string | null
+  service_id: string
+  status: UnlockStatus
+}
 
 export type { ServerMetrics }
 
@@ -456,6 +472,77 @@ function handleSecurityEventMessage(raw: { type: string } & Record<string, unkno
   }
 }
 
+/** Merge the leaner WS unlock results into a server's cached `UnlockResultDto`
+ *  list, replacing entries with the same `service_id` and keeping the rest. */
+function mergeUnlockResults(prev: UnlockResultDto[], serverId: string, incoming: WsUnlockResult[]): UnlockResultDto[] {
+  const checkedAt = new Date().toISOString()
+  const byServiceId = new Map(prev.map((r) => [r.service_id, r]))
+  for (const result of incoming) {
+    const existing = byServiceId.get(result.service_id)
+    byServiceId.set(result.service_id, {
+      id: existing?.id ?? `${serverId}:${result.service_id}`,
+      server_id: serverId,
+      service_id: result.service_id,
+      status: result.status,
+      region: result.region,
+      latency_ms: result.latency_ms,
+      detail: result.detail,
+      checked_at: checkedAt
+    })
+  }
+  return [...byServiceId.values()]
+}
+
+function patchServerIpQuality(
+  prev: ServerIpQualityData | undefined,
+  serverId: string,
+  incoming: WsUnlockResult[],
+  ipQuality: IpQualitySnapshotData | null
+): ServerIpQualityData {
+  const base: ServerIpQualityData = prev ?? { server_id: serverId, unlock_results: [], ip_quality: null }
+  return {
+    server_id: serverId,
+    unlock_results: mergeUnlockResults(base.unlock_results, serverId, incoming),
+    // A partial update (ip_quality: null) keeps the previously scored snapshot;
+    // a full update replaces it.
+    ip_quality: ipQuality ?? base.ip_quality
+  }
+}
+
+function handleIpQualityMessage(raw: { type: string } & Record<string, unknown>, queryClient: QueryClient): void {
+  if (raw.type !== 'ip_quality_update') {
+    return
+  }
+  if (typeof raw.server_id !== 'string' || !Array.isArray(raw.unlock_results)) {
+    return
+  }
+  if (raw.unlock_results.some((r: unknown) => r == null || typeof r !== 'object')) {
+    return
+  }
+  const msg = raw as WsMessage & { type: 'ip_quality_update' }
+  const { server_id, unlock_results, ip_quality } = msg
+
+  // Patch the per-server detail cache.
+  queryClient.setQueryData<ServerIpQualityData>(['ip-quality', 'servers', server_id], (prev) =>
+    patchServerIpQuality(prev, server_id, unlock_results, ip_quality)
+  )
+
+  // Patch the all-servers overview cache.
+  queryClient.setQueryData<ServerIpQualityData[]>(['ip-quality', 'overview'], (prev) => {
+    if (!prev) {
+      return prev
+    }
+    const idx = prev.findIndex((entry) => entry.server_id === server_id)
+    const patched = patchServerIpQuality(idx >= 0 ? prev[idx] : undefined, server_id, unlock_results, ip_quality)
+    if (idx >= 0) {
+      const next = [...prev]
+      next[idx] = patched
+      return next
+    }
+    return [...prev, patched]
+  })
+}
+
 export function handleWsMessage(raw: unknown, queryClient: QueryClient): void {
   if (!isWsMessageLike(raw)) {
     console.warn('WS: unexpected message shape', raw)
@@ -495,6 +582,9 @@ export function handleWsMessage(raw: unknown, queryClient: QueryClient): void {
       break
     case 'security_event':
       handleSecurityEventMessage(raw, queryClient)
+      break
+    case 'ip_quality_update':
+      handleIpQualityMessage(raw, queryClient)
       break
     case 'blocklist_changed':
     case 'firewall_apply_state_changed':

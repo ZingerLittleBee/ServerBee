@@ -57,6 +57,7 @@ interface StatusPagePayloadInput {
   enabled: boolean
   redThreshold: number
   selectedServers: string[]
+  showIpQuality: boolean
   slug: string
   themeRef: string | null
   title: string
@@ -72,7 +73,8 @@ export function buildStatusPagePayload(input: StatusPagePayloadInput): Record<st
     server_ids: input.selectedServers,
     theme_ref: input.themeRef,
     uptime_yellow_threshold: input.yellowThreshold,
-    uptime_red_threshold: input.redThreshold
+    uptime_red_threshold: input.redThreshold,
+    show_ip_quality: input.showIpQuality
   }
 }
 
@@ -101,6 +103,7 @@ function StatusPageFormDialog({
   const [yellowThreshold, setYellowThreshold] = useState(100)
   const [redThreshold, setRedThreshold] = useState(95)
   const [themeRef, setThemeRef] = useState<string | null>(null)
+  const [showIpQuality, setShowIpQuality] = useState(false)
 
   const handleOpenChange = (isOpen: boolean) => {
     if (isOpen && editing) {
@@ -112,6 +115,7 @@ function StatusPageFormDialog({
       setYellowThreshold(editing.uptime_yellow_threshold ?? 100)
       setRedThreshold(editing.uptime_red_threshold ?? 95)
       setThemeRef(editing.theme_ref ?? null)
+      setShowIpQuality(editing.show_ip_quality ?? false)
     } else if (isOpen) {
       setTitle('')
       setSlug('')
@@ -121,6 +125,7 @@ function StatusPageFormDialog({
       setYellowThreshold(100)
       setRedThreshold(95)
       setThemeRef(null)
+      setShowIpQuality(false)
     }
     if (!isOpen) {
       onClose()
@@ -140,7 +145,8 @@ function StatusPageFormDialog({
       selectedServers,
       themeRef,
       yellowThreshold,
-      redThreshold
+      redThreshold,
+      showIpQuality
     })
     onSubmit(payload, editing?.id)
   }
@@ -196,6 +202,13 @@ function StatusPageFormDialog({
             <label className="flex items-center gap-2 text-sm">
               <Switch checked={enabled} onCheckedChange={setEnabled} />
               {t('status_pages.field_enabled')}
+            </label>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* biome-ignore lint/a11y/noLabelWithoutControl: Switch renders as a labelable button element */}
+            <label className="flex items-center gap-2 text-sm">
+              <Switch checked={showIpQuality} onCheckedChange={setShowIpQuality} />
+              {t('status_pages.field_show_ip_quality', { defaultValue: 'Show IP quality' })}
             </label>
           </div>
           <div className="space-y-1">
