@@ -98,6 +98,10 @@ export function useUpdateSetting() {
 }
 
 export function useCheckNow() {
+  // Intentionally does not invalidate any query: the trigger only asks the
+  // agent to run a check. Fresh results arrive asynchronously via the
+  // IpQualityUpdate WebSocket broadcast (and the 60s overview/server refetch),
+  // so there is nothing to invalidate at mutation time.
   return useMutation({
     mutationFn: (serverId: string) => api.post(`/api/ip-quality/servers/${serverId}/check`)
   })

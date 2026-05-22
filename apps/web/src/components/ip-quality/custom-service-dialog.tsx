@@ -66,6 +66,16 @@ function defaultRule(): UnlockRule {
   return { match: { kind: 'status_equals', code: 200 }, result: 'unlocked' }
 }
 
+const DEFAULT_TIMEOUT_MS = 5000
+
+// Coerce a number-input value to a valid number. `Number(...)` yields `NaN`
+// for a partially-typed `-` / `e`, and `NaN` serializes to `null`, which would
+// silently corrupt the value — fall back to 0 instead.
+export function toNumber(value: string): number {
+  const parsed = Number.parseInt(value, 10)
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
 interface RuleRowProps {
   canMoveDown: boolean
   canMoveUp: boolean
@@ -131,7 +141,7 @@ function RuleRow({ rule, index, canMoveUp, canMoveDown, onChange, onMove, onRemo
           <Input
             aria-label="Status code"
             className="w-24"
-            onChange={(e) => setMatch({ kind: 'status_equals', code: Number(e.target.value) })}
+            onChange={(e) => setMatch({ kind: 'status_equals', code: toNumber(e.target.value) })}
             type="number"
             value={match.code}
           />
@@ -141,14 +151,14 @@ function RuleRow({ rule, index, canMoveUp, canMoveDown, onChange, onMove, onRemo
             <Input
               aria-label="Status range minimum"
               className="w-20"
-              onChange={(e) => setMatch({ ...match, min: Number(e.target.value) })}
+              onChange={(e) => setMatch({ ...match, min: toNumber(e.target.value) })}
               type="number"
               value={match.min}
             />
             <Input
               aria-label="Status range maximum"
               className="w-20"
-              onChange={(e) => setMatch({ ...match, max: Number(e.target.value) })}
+              onChange={(e) => setMatch({ ...match, max: toNumber(e.target.value) })}
               type="number"
               value={match.max}
             />
@@ -192,43 +202,60 @@ function RuleRow({ rule, index, canMoveUp, canMoveDown, onChange, onMove, onRemo
   )
 }
 
-function parseExistingRules(service: UnlockService): RuleEntry[] {
-  const fallback = (): RuleEntry[] => [{ uid: nextUid(), rule: defaultRule() }]
-  if (!service.rules) {
-    return fallback()
+/** A custom service's request config, parsed from the stored JSON string. */
+export interface ParsedRequest {
+  headers: [string, string][]
+  method: string
+  timeout_ms: number
+  url: string
+}
+
+/**
+ * Parse a service's `request` JSON string in a single pass.
+ *
+ * Intentional asymmetry vs `parseExistingRules`: headers legitimately default
+ * to `[]` (a custom service may send no extra headers), whereas rules always
+ * default to ≥1 (a service with zero match rules can never classify a result).
+ */
+export function parseRequest(service: UnlockService | null | undefined): ParsedRequest {
+  const fallback: ParsedRequest = { url: '', method: 'GET', timeout_ms: DEFAULT_TIMEOUT_MS, headers: [] }
+  if (!service?.request) {
+    return fallback
+  }
+  try {
+    const req = JSON.parse(service.request) as {
+      url?: string
+      method?: string
+      timeout_ms?: number
+      headers?: [string, string][]
+    }
+    return {
+      url: req.url ?? '',
+      method: req.method ?? 'GET',
+      timeout_ms: typeof req.timeout_ms === 'number' ? req.timeout_ms : DEFAULT_TIMEOUT_MS,
+      headers: Array.isArray(req.headers) ? req.headers : []
+    }
+  } catch {
+    return fallback
+  }
+}
+
+/**
+ * Parse a service's `rules` JSON string.
+ *
+ * Unlike `parseRequest`'s headers (which default to `[]`), rules always fall
+ * back to a single default rule — a custom service must have at least one match
+ * rule to ever produce a non-failed result.
+ */
+export function parseExistingRules(service: UnlockService | null | undefined): UnlockRule[] {
+  if (!service?.rules) {
+    return [defaultRule()]
   }
   try {
     const parsed = JSON.parse(service.rules) as UnlockRule[]
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed.map((rule) => ({ uid: nextUid(), rule }))
-    }
-    return fallback()
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [defaultRule()]
   } catch {
-    return fallback()
-  }
-}
-
-function parseExistingHeaders(service: UnlockService): HeaderRow[] {
-  if (!service.request) {
-    return []
-  }
-  try {
-    const req = JSON.parse(service.request) as { headers?: [string, string][] }
-    return (req.headers ?? []).map(([name, value]) => ({ uid: nextUid(), name, value }))
-  } catch {
-    return []
-  }
-}
-
-function parseRequestField(service: UnlockService | null | undefined, field: 'url' | 'method'): string {
-  if (!service?.request) {
-    return field === 'method' ? 'GET' : ''
-  }
-  try {
-    const req = JSON.parse(service.request) as { url?: string; method?: string }
-    return req[field] ?? (field === 'method' ? 'GET' : '')
-  } catch {
-    return field === 'method' ? 'GET' : ''
+    return [defaultRule()]
   }
 }
 
@@ -243,7 +270,7 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
   const [popularity, setPopularity] = useState(50)
   const [url, setUrl] = useState('')
   const [method, setMethod] = useState('GET')
-  const [timeoutMs, setTimeoutMs] = useState(5000)
+  const [timeoutMs, setTimeoutMs] = useState(DEFAULT_TIMEOUT_MS)
   const [headers, setHeaders] = useState<HeaderRow[]>([])
   const [rules, setRules] = useState<RuleEntry[]>([{ uid: nextUid(), rule: defaultRule() }])
 
@@ -253,26 +280,22 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
       return
     }
     if (service) {
+      const request = parseRequest(service)
       setName(service.name)
       setCategory(service.category)
       setPopularity(service.popularity)
-      setUrl(parseRequestField(service, 'url'))
-      setMethod(parseRequestField(service, 'method'))
-      setHeaders(parseExistingHeaders(service))
-      setRules(parseExistingRules(service))
-      try {
-        const req = JSON.parse(service.request ?? '{}') as { timeout_ms?: number }
-        setTimeoutMs(req.timeout_ms ?? 5000)
-      } catch {
-        setTimeoutMs(5000)
-      }
+      setUrl(request.url)
+      setMethod(request.method)
+      setTimeoutMs(request.timeout_ms)
+      setHeaders(request.headers.map(([headerName, value]) => ({ uid: nextUid(), name: headerName, value })))
+      setRules(parseExistingRules(service).map((rule) => ({ uid: nextUid(), rule })))
     } else {
       setName('')
       setCategory('streaming')
       setPopularity(50)
       setUrl('')
       setMethod('GET')
-      setTimeoutMs(5000)
+      setTimeoutMs(DEFAULT_TIMEOUT_MS)
       setHeaders([])
       setRules([{ uid: nextUid(), rule: defaultRule() }])
     }
@@ -400,7 +423,7 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
                   id="ipq-popularity"
                   max={100}
                   min={0}
-                  onChange={(e) => setPopularity(Number(e.target.value))}
+                  onChange={(e) => setPopularity(toNumber(e.target.value))}
                   type="number"
                   value={popularity}
                 />
@@ -440,7 +463,7 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
                 <Input
                   id="ipq-timeout"
                   min={100}
-                  onChange={(e) => setTimeoutMs(Number(e.target.value))}
+                  onChange={(e) => setTimeoutMs(toNumber(e.target.value))}
                   type="number"
                   value={timeoutMs}
                 />
