@@ -128,6 +128,18 @@ There is no admin username/password variable. On first start the server auto-cre
 
 </details>
 
+## Deploying a Pre-release Version
+
+By default this template pulls `ghcr.io/zingerlittlebee/serverbee-server:latest`, which only follows stable releases. Pre-release tags (e.g. `1.0.0-alpha.1`) are published to GHCR but do not move `:latest`.
+
+To pin a specific version (stable or pre-release), add a **Build Variable** in the Railway service (Settings → Variables → New Variable → toggle *Build*):
+
+```env
+SERVERBEE_IMAGE_TAG=1.0.0-alpha.1
+```
+
+Then trigger a redeploy. Remove the variable (or set it back to `latest`) to return to the stable channel. The Dockerfile exposes this through `ARG SERVERBEE_IMAGE_TAG=latest`, so it only affects the build stage and never leaks into the running container's environment.
+
 ## Connecting Agents
 
 After deployment, configure your agents to connect:

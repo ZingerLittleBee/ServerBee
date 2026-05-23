@@ -1,4 +1,5 @@
-FROM ghcr.io/zingerlittlebee/serverbee-server:latest
+ARG SERVERBEE_IMAGE_TAG=latest
+FROM ghcr.io/zingerlittlebee/serverbee-server:${SERVERBEE_IMAGE_TAG}
 
 # ── Server ──────────────────────────────────────────────────────
 # Data directory — mount a Railway volume at /data to persist across deploys
