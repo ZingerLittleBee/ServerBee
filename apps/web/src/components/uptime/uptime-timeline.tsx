@@ -1,6 +1,6 @@
-import { useMemo } from 'react'
+import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { UptimeDailyEntry } from '@/lib/api-schema'
 import { cn } from '@/lib/utils'
 import { computeUptimeColor, formatUptimeTooltip, type UptimeColor } from '@/lib/widget-helpers'
@@ -22,6 +22,9 @@ const COLOR_MAP: Record<UptimeColor, string> = {
   gray: 'bg-muted'
 }
 
+const POPUP_CLASS =
+  'data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2 data-[state=delayed-open]:fade-in-0 data-[state=delayed-open]:zoom-in-95 data-open:fade-in-0 data-open:zoom-in-95 data-closed:fade-out-0 data-closed:zoom-out-95 z-50 inline-flex w-fit max-w-xs origin-(--transform-origin) flex-col rounded-md border bg-popover px-3 py-1.5 text-popover-foreground text-xs shadow-md data-[state=delayed-open]:animate-in data-closed:animate-out data-open:animate-in'
+
 export function UptimeTimeline({
   days,
   rangeDays,
@@ -32,6 +35,11 @@ export function UptimeTimeline({
   height = 28
 }: UptimeTimelineProps) {
   const { t } = useTranslation('status')
+
+  // One handle per timeline instance — lets the 90 detached triggers share a
+  // single tooltip popup instead of each spawning its own Root/Portal/Popup.
+  const [handle] = useState(() => TooltipPrimitive.createHandle<UptimeDailyEntry>())
+
   const segments = useMemo(() => {
     const slice = days.slice(-rangeDays)
     const padCount = rangeDays - slice.length
@@ -52,30 +60,45 @@ export function UptimeTimeline({
           <span>{t('uptime_today')}</span>
         </div>
       )}
-      <div className="relative flex w-full" style={{ height, gap: '1.5px' }}>
+
+      <TooltipPrimitive.Root handle={handle}>
+        {({ payload: entry }) => {
+          const tooltip = entry ? formatUptimeTooltip(entry) : null
+          return (
+            <TooltipPrimitive.Portal>
+              <TooltipPrimitive.Positioner align="center" className="isolate z-50" side="top" sideOffset={4}>
+                <TooltipPrimitive.Popup className={POPUP_CLASS}>
+                  <p className="font-medium">{tooltip?.date || t('uptime_no_data')}</p>
+                  {tooltip && (
+                    <>
+                      <p className="text-muted-foreground">
+                        {tooltip.percentage} &middot; {tooltip.duration}
+                      </p>
+                      <p className="text-muted-foreground">{tooltip.incidents}</p>
+                    </>
+                  )}
+                </TooltipPrimitive.Popup>
+              </TooltipPrimitive.Positioner>
+            </TooltipPrimitive.Portal>
+          )
+        }}
+      </TooltipPrimitive.Root>
+
+      <div className="flex w-full" style={{ height, gap: '1.5px' }}>
         {segments.map((entry, i) => {
           const color = computeUptimeColor(entry.online_minutes, entry.total_minutes, yellowThreshold, redThreshold)
-          const tooltip = formatUptimeTooltip(entry)
           return (
-            <Tooltip key={entry.date || `pad-${i.toString()}`}>
-              <TooltipTrigger
-                className={cn('flex-1 rounded-[2px] focus:outline-none', COLOR_MAP[color])}
-                data-segment={color}
-                type="button"
-              />
-              <TooltipContent>
-                <div className="text-xs">
-                  <p className="font-medium">{tooltip.date || t('uptime_no_data')}</p>
-                  <p className="text-muted-foreground">
-                    {tooltip.percentage} &middot; {tooltip.duration}
-                  </p>
-                  <p className="text-muted-foreground">{tooltip.incidents}</p>
-                </div>
-              </TooltipContent>
-            </Tooltip>
+            <TooltipPrimitive.Trigger
+              data-segment={color}
+              handle={handle}
+              key={entry.date || `pad-${i.toString()}`}
+              payload={entry}
+              render={<div className={cn('flex-1 rounded-[2px] focus:outline-none', COLOR_MAP[color])} />}
+            />
           )
         })}
       </div>
+
       {showLegend && (
         <div className="mt-2 flex gap-4 text-muted-foreground text-xs">
           <span className="flex items-center gap-1">
