@@ -293,11 +293,42 @@ async fn check_server(
 
     // Guard: do not send IpQualityRunNow if the capability is not effective.
     // The agent would silently ignore the message, giving the UI false success.
-    let effective_caps = state.agent_manager.get_effective_capabilities(&id).unwrap_or(0);
-    if !has_capability(effective_caps, CAP_IP_QUALITY) {
-        return Err(AppError::Conflict(
-            "CAP_IP_QUALITY is not effective for this server".to_string(),
-        ));
+    // Surface *which side* is blocking it so the user knows where to flip the
+    // switch (server-side Capabilities dialog vs. agent --allow-cap).
+    let server_caps = state
+        .agent_manager
+        .get_server_capabilities(&id)
+        .unwrap_or(0);
+    let agent_local_caps = state.agent_manager.get_agent_local_capabilities(&id);
+    let server_has = has_capability(server_caps, CAP_IP_QUALITY);
+    let agent_has = agent_local_caps
+        .map(|caps| has_capability(caps, CAP_IP_QUALITY))
+        .unwrap_or(false);
+
+    match (server_has, agent_has) {
+        (true, true) => {}
+        (false, false) => {
+            return Err(AppError::Conflict(
+                "IP Quality is disabled on both sides. Enable it in the server's \
+                 Capabilities dialog AND restart the agent with --allow-cap ip_quality."
+                    .to_string(),
+            ));
+        }
+        (false, true) => {
+            return Err(AppError::Conflict(
+                "IP Quality is disabled in this server's Capabilities. Open the \
+                 Capabilities dialog and toggle it on."
+                    .to_string(),
+            ));
+        }
+        (true, false) => {
+            return Err(AppError::Conflict(
+                "The agent on this server was started without ip_quality permission. \
+                 Restart the agent with --allow-cap ip_quality, or reinstall and \
+                 select IP Quality in the capability picker."
+                    .to_string(),
+            ));
+        }
     }
 
     tx.send(ServerMessage::IpQualityRunNow)
@@ -401,10 +432,74 @@ mod tests {
         match result {
             Err(AppError::Conflict(msg)) => {
                 assert!(
-                    msg.contains("CAP_IP_QUALITY"),
-                    "conflict message should mention the capability; got: {msg}"
+                    msg.contains("disabled on both sides"),
+                    "conflict message should pinpoint that both sides are off; got: {msg}"
                 );
             }
+            other => panic!("expected Conflict, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn check_server_blames_server_side_when_only_server_caps_missing() {
+        use serverbee_common::constants::{CAP_DEFAULT, CAP_IP_QUALITY};
+
+        let (db, _tmp) = setup_test_db().await;
+        let state = AppState::new(db, AppConfig::default()).await.unwrap();
+
+        let (tx, _rx) = mpsc::channel::<ServerMessage>(8);
+        state
+            .agent_manager
+            .add_connection("srv".into(), "Srv".into(), tx, test_addr());
+        state
+            .agent_manager
+            .update_capabilities("srv", CAP_DEFAULT & !CAP_IP_QUALITY);
+        state
+            .agent_manager
+            .update_agent_local_capabilities("srv", CAP_DEFAULT);
+
+        let result = check_server(
+            axum::extract::State(state),
+            axum::extract::Path("srv".to_string()),
+        )
+        .await;
+
+        match result {
+            Err(AppError::Conflict(msg)) => assert!(
+                msg.contains("server's Capabilities"),
+                "should point at the server-side capabilities dialog; got: {msg}"
+            ),
+            other => panic!("expected Conflict, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn check_server_blames_agent_when_only_agent_local_missing() {
+        use serverbee_common::constants::{CAP_DEFAULT, CAP_IP_QUALITY};
+
+        let (db, _tmp) = setup_test_db().await;
+        let state = AppState::new(db, AppConfig::default()).await.unwrap();
+
+        let (tx, _rx) = mpsc::channel::<ServerMessage>(8);
+        state
+            .agent_manager
+            .add_connection("srv".into(), "Srv".into(), tx, test_addr());
+        state.agent_manager.update_capabilities("srv", CAP_DEFAULT);
+        state
+            .agent_manager
+            .update_agent_local_capabilities("srv", CAP_DEFAULT & !CAP_IP_QUALITY);
+
+        let result = check_server(
+            axum::extract::State(state),
+            axum::extract::Path("srv".to_string()),
+        )
+        .await;
+
+        match result {
+            Err(AppError::Conflict(msg)) => assert!(
+                msg.contains("--allow-cap ip_quality"),
+                "should tell the user to flip --allow-cap; got: {msg}"
+            ),
             other => panic!("expected Conflict, got {other:?}"),
         }
     }
