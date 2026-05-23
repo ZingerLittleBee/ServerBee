@@ -388,6 +388,9 @@
   "capabilities.footer_selected": "已选 {{count}} 项",
   "capabilities.toast_updated": "能力已更新",
   "capabilities.toast_batch_updated": "批量能力已更新",
+  "capabilities.offline": "离线",
+  "capabilities.offline_disabled": "服务器离线，无法修改",
+  "capabilities.client_disabled": "客户端已关闭该能力",
 
   "mobile.time_never": "从未",
   "mobile.time_just_now": "刚刚",

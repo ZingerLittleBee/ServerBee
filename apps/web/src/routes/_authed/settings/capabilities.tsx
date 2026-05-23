@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { type ColumnDef, getCoreRowModel, type RowSelectionState, useReactTable } from '@tanstack/react-table'
 import { RotateCcw, Search, ShieldAlert } from 'lucide-react'
@@ -10,6 +10,7 @@ import { createSelectColumn, DataTable } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import { CAP_DEFAULT, CAPABILITIES, getEffectiveCapabilityEnabled, isClientCapabilityLocked } from '@/lib/capabilities'
 
@@ -20,14 +21,7 @@ export const Route = createFileRoute('/_authed/settings/capabilities')({
   component: CapabilitiesPage
 })
 
-interface ServerInfo {
-  agent_local_capabilities?: number | null
-  capabilities?: number | null
-  effective_capabilities?: number | null
-  id: string
-  name: string
-  protocol_version?: number | null
-}
+type ServerInfo = ServerMetrics
 
 const ORDERED_CAPABILITIES = [
   ...CAPABILITIES.filter(({ risk }) => risk === 'high'),
@@ -36,21 +30,22 @@ const ORDERED_CAPABILITIES = [
 
 export function CapabilitiesPage() {
   const { t } = useTranslation(['settings', 'servers'])
-  const queryClient = useQueryClient()
   const { q: search } = Route.useSearch()
   const navigate = Route.useNavigate()
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
 
   const { data: servers = [], isLoading } = useQuery<ServerInfo[]>({
-    queryKey: ['servers-list'],
-    queryFn: () => api.get<ServerInfo[]>('/api/servers')
+    queryKey: ['servers'],
+    queryFn: () => [],
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false
   })
 
   const { mutate: mutateSingleCap, isPending: isSinglePending } = useMutation({
     mutationFn: ({ id, capabilities }: { capabilities: number; id: string }) =>
       api.put(`/api/servers/${id}`, { capabilities }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['servers-list'] })
       toast.success(t('capabilities.toast_updated'))
     },
     onError: (err) => {
@@ -63,7 +58,6 @@ export function CapabilitiesPage() {
       api.put('/api/servers/batch-capabilities', { ids, capabilities }),
     onSuccess: () => {
       setRowSelection({})
-      queryClient.invalidateQueries({ queryKey: ['servers-list'] })
       toast.success(t('capabilities.toast_batch_updated'))
     },
     onError: (err) => {
@@ -96,9 +90,19 @@ export function CapabilitiesPage() {
         header: () => t('capabilities.server'),
         cell: ({ row }) => {
           const hasOldAgent = row.original.protocol_version != null && row.original.protocol_version < 2
+          const isOffline = !row.original.online
           return (
             <div className="flex items-center gap-2">
-              <span className="font-medium">{row.original.name}</span>
+              <span
+                aria-hidden="true"
+                className={`size-2 rounded-full ${isOffline ? 'bg-muted-foreground/40' : 'bg-emerald-500'}`}
+              />
+              <span className={`font-medium ${isOffline ? 'text-muted-foreground' : ''}`}>{row.original.name}</span>
+              {isOffline && (
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground uppercase">
+                  {t('capabilities.offline')}
+                </span>
+              )}
               {hasOldAgent && (
                 <span title={t('cap_upgrade_warning', { ns: 'servers' })}>
                   <ShieldAlert aria-hidden="true" className="size-3.5 text-amber-500" />
@@ -128,14 +132,21 @@ export function CapabilitiesPage() {
                 bit
               )
               const isLocked = isClientCapabilityLocked(row.original.agent_local_capabilities, bit)
+              const isOffline = !row.original.online
+              let disabledReason: string | undefined
+              if (isOffline) {
+                disabledReason = t('capabilities.offline_disabled')
+              } else if (isLocked) {
+                disabledReason = t('capabilities.client_disabled')
+              }
               return (
                 <div className="text-center">
                   <Switch
                     aria-label={`${t(labelKey, { ns: 'servers' })} - ${row.original.name}`}
                     checked={isEnabled}
-                    disabled={isPending || isLocked}
+                    disabled={isPending || isLocked || isOffline}
                     onCheckedChange={() => toggleCap(row.original, bit)}
-                    title={isLocked ? '客户端关闭' : undefined}
+                    title={disabledReason}
                   />
                 </div>
               )

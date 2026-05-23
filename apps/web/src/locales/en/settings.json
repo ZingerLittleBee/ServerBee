@@ -407,6 +407,9 @@
   "capabilities.footer_selected": "{{count}} selected",
   "capabilities.toast_updated": "Capability updated",
   "capabilities.toast_batch_updated": "Batch capabilities updated",
+  "capabilities.offline": "Offline",
+  "capabilities.offline_disabled": "Server is offline — cannot modify",
+  "capabilities.client_disabled": "Disabled on the client",
 
   "mobile.time_never": "Never",
   "mobile.time_just_now": "Just now",
