@@ -89,6 +89,7 @@ export function LineChartWidget({ config, servers }: LineChartWidgetProps) {
               dataKey="value"
               fill="var(--color-value)"
               fillOpacity={0.1}
+              isAnimationActive={false}
               stroke="var(--color-value)"
               strokeWidth={2}
               type="monotone"

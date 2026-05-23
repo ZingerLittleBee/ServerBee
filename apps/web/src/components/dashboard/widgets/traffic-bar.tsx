@@ -126,8 +126,20 @@ export function TrafficBarWidget({ config, servers }: TrafficBarWidgetProps) {
               cursor={false}
             />
             <ChartLegend content={<ChartLegendContent />} />
-            <Bar dataKey="bytes_in" fill="var(--color-bytes_in)" radius={[0, 0, 4, 4]} stackId="traffic" />
-            <Bar dataKey="bytes_out" fill="var(--color-bytes_out)" radius={[4, 4, 0, 0]} stackId="traffic" />
+            <Bar
+              dataKey="bytes_in"
+              fill="var(--color-bytes_in)"
+              isAnimationActive={false}
+              radius={[0, 0, 4, 4]}
+              stackId="traffic"
+            />
+            <Bar
+              dataKey="bytes_out"
+              fill="var(--color-bytes_out)"
+              isAnimationActive={false}
+              radius={[4, 4, 0, 0]}
+              stackId="traffic"
+            />
           </BarChart>
         </ChartContainer>
       </div>

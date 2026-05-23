@@ -22,6 +22,7 @@ import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { cn } from '@/lib/utils'
 import type { DashboardWidget } from '@/lib/widget-types'
 import { layoutToPatch, widgetsToLayout } from './dashboard-layout'
+import { VisibilityGate } from './visibility-gate'
 import { WidgetRenderer } from './widget-renderer'
 
 interface DashboardGridProps {
@@ -343,25 +344,30 @@ export function DashboardGrid({
   if (isMobile) {
     return (
       <div className="space-y-4">
-        {sortedWidgets.map((widget) => (
-          <div className="relative" key={widget.id}>
-            {isEditing && (
-              <EditOverlay
-                forceVisible
-                isStatic={isWidgetStatic(widget.config_json)}
-                onDelete={() => onWidgetDelete(widget.id)}
-                onEdit={() => onWidgetEdit(widget.id)}
-                onToggleStatic={onWidgetToggleStatic ? () => onWidgetToggleStatic(widget.id) : undefined}
-              />
-            )}
-            <div
-              className={isEditing ? 'pointer-events-none' : undefined}
-              style={{ minHeight: widget.grid_h * MOBILE_ROW_PX }}
-            >
-              <WidgetRenderer servers={widgetServers} widget={widget} />
+        {sortedWidgets.map((widget) => {
+          const isAuto = AUTO_HEIGHT_TYPES.has(widget.widget_type)
+          return (
+            <div className="relative" key={widget.id}>
+              {isEditing && (
+                <EditOverlay
+                  forceVisible
+                  isStatic={isWidgetStatic(widget.config_json)}
+                  onDelete={() => onWidgetDelete(widget.id)}
+                  onEdit={() => onWidgetEdit(widget.id)}
+                  onToggleStatic={onWidgetToggleStatic ? () => onWidgetToggleStatic(widget.id) : undefined}
+                />
+              )}
+              <div
+                className={isEditing ? 'pointer-events-none' : undefined}
+                style={{ minHeight: widget.grid_h * MOBILE_ROW_PX }}
+              >
+                <VisibilityGate disabled={isEditing || isAuto}>
+                  <WidgetRenderer servers={widgetServers} widget={widget} />
+                </VisibilityGate>
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     )
   }
@@ -406,7 +412,9 @@ export function DashboardGrid({
                   </div>
                 ) : (
                   <div className={isEditing ? 'pointer-events-none h-full' : 'h-full'}>
-                    <WidgetRenderer servers={widgetServers} widget={widget} />
+                    <VisibilityGate disabled={isEditing}>
+                      <WidgetRenderer servers={widgetServers} widget={widget} />
+                    </VisibilityGate>
                   </div>
                 )}
               </div>
