@@ -4730,11 +4730,13 @@ mod firewall_tests {
         let _initial = drain_through_ack(&mut reader, "off-1", 2).await;
 
         // Turn the firewall capability OFF and expect a BlocklistReset push.
+        // CAP_DEFAULT now includes CAP_FIREWALL_BLOCK, so we must mask it out
+        // explicitly to flip the firewall capability off.
         set_caps(
             &admin,
             &base_url,
             &server_id,
-            serverbee_common::constants::CAP_DEFAULT,
+            serverbee_common::constants::CAP_DEFAULT & !CAP_FIREWALL_BLOCK,
         )
         .await;
 

@@ -46,8 +46,13 @@ pub const CAP_SECURITY_EVENTS: u32 = 1 << 8; // 256
 pub const CAP_FIREWALL_BLOCK: u32 = 1 << 9; // 512
 pub const CAP_IP_QUALITY: u32 = 1 << 10; // 1024
 
-pub const CAP_DEFAULT: u32 =
-    CAP_UPGRADE | CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP | CAP_SECURITY_EVENTS; // 316 — firewall NOT in default
+pub const CAP_DEFAULT: u32 = CAP_UPGRADE
+    | CAP_PING_ICMP
+    | CAP_PING_TCP
+    | CAP_PING_HTTP
+    | CAP_SECURITY_EVENTS
+    | CAP_FIREWALL_BLOCK
+    | CAP_IP_QUALITY; // 1852 — observability + firewall blocklist + IP quality
 pub const CAP_VALID_MASK: u32 = 0b111_1111_1111; // 2047 — bits 0..=10
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -208,14 +213,14 @@ pub const ALL_CAPABILITIES: &[CapabilityMeta] = &[
         bit: CAP_FIREWALL_BLOCK,
         key: "firewall_block",
         display_name: "Firewall Blocklist",
-        default_enabled: false,
+        default_enabled: true,
         risk_level: "high",
     },
     CapabilityMeta {
         bit: CAP_IP_QUALITY,
         key: "ip_quality",
         display_name: "IP Quality",
-        default_enabled: false,
+        default_enabled: true,
         risk_level: "medium",
     },
 ];
@@ -295,13 +300,13 @@ mod tests {
     fn cap_firewall_block_bit() {
         assert_eq!(CAP_FIREWALL_BLOCK, 512);
         assert_eq!(CAP_VALID_MASK & CAP_FIREWALL_BLOCK, CAP_FIREWALL_BLOCK);
-        assert_eq!(CAP_DEFAULT & CAP_FIREWALL_BLOCK, 0); // not in default
+        assert_eq!(CAP_DEFAULT & CAP_FIREWALL_BLOCK, CAP_FIREWALL_BLOCK); // included in default
     }
 
     #[test]
     fn cap_default_includes_security_events() {
         assert!(has_capability(CAP_DEFAULT, CAP_SECURITY_EVENTS));
-        assert_eq!(CAP_DEFAULT, 316);
+        assert_eq!(CAP_DEFAULT, 1852);
     }
 
     #[test]
@@ -388,7 +393,7 @@ mod tests {
     fn cap_ip_quality_bit() {
         assert_eq!(CAP_IP_QUALITY, 1024);
         assert_eq!(CAP_VALID_MASK & CAP_IP_QUALITY, CAP_IP_QUALITY);
-        assert_eq!(CAP_DEFAULT & CAP_IP_QUALITY, 0); // opt-in, not default
+        assert_eq!(CAP_DEFAULT & CAP_IP_QUALITY, CAP_IP_QUALITY); // included in default
     }
 
     #[test]
@@ -402,6 +407,6 @@ mod tests {
     fn all_capabilities_includes_ip_quality() {
         let entry = ALL_CAPABILITIES.iter().find(|m| m.bit == CAP_IP_QUALITY);
         assert!(entry.is_some());
-        assert!(!entry.unwrap().default_enabled);
+        assert!(entry.unwrap().default_enabled);
     }
 }

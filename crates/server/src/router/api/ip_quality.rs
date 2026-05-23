@@ -370,14 +370,15 @@ mod tests {
 
     #[tokio::test]
     async fn check_server_returns_conflict_when_cap_not_effective() {
-        use serverbee_common::constants::CAP_DEFAULT;
+        use serverbee_common::constants::{CAP_DEFAULT, CAP_IP_QUALITY};
 
         let (db, _tmp) = setup_test_db().await;
         let state = AppState::new(db, AppConfig::default()).await.unwrap();
 
         // Register a connected agent without CAP_IP_QUALITY in its local caps.
-        // CAP_DEFAULT does not include CAP_IP_QUALITY, so effective caps will
-        // also lack it once agent_local_capabilities is reported.
+        // Mask out CAP_IP_QUALITY so effective caps lack it once
+        // agent_local_capabilities is reported.
+        let caps_without_ip_quality = CAP_DEFAULT & !CAP_IP_QUALITY;
         let (tx, _rx) = mpsc::channel::<ServerMessage>(8);
         state
             .agent_manager
@@ -385,10 +386,10 @@ mod tests {
         // Set server-configured capabilities (no CAP_IP_QUALITY) and agent local caps
         state
             .agent_manager
-            .update_capabilities("srv-no-cap", CAP_DEFAULT);
+            .update_capabilities("srv-no-cap", caps_without_ip_quality);
         state
             .agent_manager
-            .update_agent_local_capabilities("srv-no-cap", CAP_DEFAULT);
+            .update_agent_local_capabilities("srv-no-cap", caps_without_ip_quality);
 
         // Invoke check_server directly.
         let result = check_server(
