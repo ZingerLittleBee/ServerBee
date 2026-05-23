@@ -262,6 +262,7 @@
   "uptime_title": "运行时间（90 天）",
   "metrics_tab": "指标",
   "traffic_tab": "流量",
+  "security_tab": "安全",
 
   "toast_deleted": "已删除 {{count}} 台服务器",
   "toast_batch_delete_failed": "操作失败",

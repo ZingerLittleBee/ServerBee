@@ -262,6 +262,7 @@
   "uptime_title": "Uptime (90 days)",
   "metrics_tab": "Metrics",
   "traffic_tab": "Traffic",
+  "security_tab": "Security",
 
   "toast_deleted": "Deleted {{count}} server(s)",
   "toast_batch_delete_failed": "Operation failed",

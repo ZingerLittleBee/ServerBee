@@ -668,11 +668,11 @@ export function ServerDetailPage() {
           )}
           <TabsTrigger value="security">
             <ShieldAlert aria-hidden="true" className="mr-1 size-3.5" />
-            {t('security_tab', { defaultValue: 'Security' })}
+            {t('security_tab')}
           </TabsTrigger>
           <TabsTrigger value="ip-quality">
             <ShieldCheck aria-hidden="true" className="mr-1 size-3.5" />
-            {t('ip_quality_tab', { defaultValue: 'IP Quality' })}
+            {t('ip-quality:tab_title')}
           </TabsTrigger>
         </TabsList>
 
