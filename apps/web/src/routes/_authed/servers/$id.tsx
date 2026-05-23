@@ -704,7 +704,12 @@ export function ServerDetailPage() {
         </TabsContent>
 
         <TabsContent value="ip-quality">
-          <IpQualityTab serverId={id} serverName={server.name} />
+          <IpQualityTab
+            agentLocalCapabilities={server.agent_local_capabilities}
+            capabilities={server.capabilities}
+            serverId={id}
+            serverName={server.name}
+          />
         </TabsContent>
       </Tabs>
 

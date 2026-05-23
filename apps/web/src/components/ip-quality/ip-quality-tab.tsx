@@ -1,4 +1,4 @@
-import { RefreshCw, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { IpQualityCard } from '@/components/ip-quality/ip-quality-card'
@@ -7,13 +7,38 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useCheckNow, useIpQualityEvents, useIpQualityServer, useIpQualityServices } from '@/hooks/use-ip-quality-api'
+import { CAP_IP_QUALITY, hasCap } from '@/lib/capabilities'
 
 interface Props {
+  /** Bitmap allowed by the running agent process (null when agent has not reported yet). */
+  agentLocalCapabilities?: number | null
+  /** Server-side configured capability bitmap. */
+  capabilities?: number | null
   serverId: string
   serverName: string
 }
 
-export function IpQualityTab({ serverId, serverName }: Props) {
+type CapState = 'ok' | 'server_off' | 'agent_off' | 'both_off'
+
+function deriveCapState(capabilities?: number | null, agentLocalCapabilities?: number | null): CapState {
+  const serverHas = capabilities != null && hasCap(capabilities, CAP_IP_QUALITY)
+  // A null agent bitmap means the agent has not reported its local policy
+  // yet (either offline or pre-protocol-v2). Either way `Check now` would
+  // fail server-side validation, so treat it as the agent side being off.
+  const agentHas = agentLocalCapabilities != null && hasCap(agentLocalCapabilities, CAP_IP_QUALITY)
+  if (serverHas && agentHas) {
+    return 'ok'
+  }
+  if (!(serverHas || agentHas)) {
+    return 'both_off'
+  }
+  if (!serverHas) {
+    return 'server_off'
+  }
+  return 'agent_off'
+}
+
+export function IpQualityTab({ serverId, serverName, capabilities, agentLocalCapabilities }: Props) {
   const { t } = useTranslation('ip-quality')
 
   const { data: serverData, isLoading: serverLoading } = useIpQualityServer(serverId)
@@ -22,6 +47,8 @@ export function IpQualityTab({ serverId, serverName }: Props) {
   const checkNow = useCheckNow()
 
   const isLoading = serverLoading || servicesLoading || eventsLoading
+  const capState = deriveCapState(capabilities, agentLocalCapabilities)
+  const canCheck = capState === 'ok'
 
   const enabledServices = services.filter((s) => s.enabled)
 
@@ -46,11 +73,13 @@ export function IpQualityTab({ serverId, serverName }: Props) {
         {/* Header row */}
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-base">{t('tab_title')}</h2>
-          <Button disabled={checkNow.isPending} onClick={handleCheckNow} size="sm" variant="outline">
+          <Button disabled={!canCheck || checkNow.isPending} onClick={handleCheckNow} size="sm" variant="outline">
             <RefreshCw aria-hidden="true" className="mr-1.5 size-3.5" />
             {t('check_now')}
           </Button>
         </div>
+
+        {capState !== 'ok' && <CapDisabledCallout state={capState} t={t} />}
 
         {isLoading && (
           <div className="space-y-3">
@@ -72,7 +101,7 @@ export function IpQualityTab({ serverId, serverName }: Props) {
               </div>
             )}
 
-            {enabledServices.length === 0 && !serverData?.ip_quality && (
+            {enabledServices.length === 0 && !serverData?.ip_quality && capState === 'ok' && (
               <div className="flex min-h-[160px] items-center justify-center rounded-xl border border-dashed">
                 <div className="space-y-2 text-center">
                   <ShieldCheck aria-hidden="true" className="mx-auto size-8 text-muted-foreground" />
@@ -121,5 +150,19 @@ export function IpQualityTab({ serverId, serverName }: Props) {
         )}
       </div>
     </ScrollArea>
+  )
+}
+
+function CapDisabledCallout({ state, t }: { state: Exclude<CapState, 'ok'>; t: (key: string) => string }) {
+  const titleKey = `cap_off_${state}_title`
+  const hintKey = `cap_off_${state}_hint`
+  return (
+    <div className="flex gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-amber-700 dark:text-amber-300">
+      <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+      <div className="space-y-1">
+        <p className="font-medium text-sm">{t(titleKey)}</p>
+        <p className="text-xs">{t(hintKey)}</p>
+      </div>
+    </div>
   )
 }
