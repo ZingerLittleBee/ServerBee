@@ -36,6 +36,22 @@ After deploying:
 Railway automatically assigns a port and provides HTTPS. No need to configure `SERVERBEE_SERVER__LISTEN` or TLS certificates.
 </Callout>
 
+### Deploying a Pre-release Version
+
+The template pulls `ghcr.io/zingerlittlebee/serverbee-server:latest` by default, which only follows stable releases. Pre-release tags (e.g. `1.0.0-alpha.1`) are published to GHCR but do **not** move `:latest`.
+
+To pin a specific version (stable or pre-release), add the following variable under **Variables** on the Railway service:
+
+```env
+SERVERBEE_IMAGE_TAG=1.0.0-alpha.1
+```
+
+Save and trigger a redeploy. Remove the variable (or set it back to `latest`) to return to the stable channel.
+
+<Callout type="info">
+The Dockerfile exposes this switch via `ARG SERVERBEE_IMAGE_TAG=latest`. Railway injects service variables as both build args and runtime environment variables; since this variable is not part of the `SERVERBEE_*` configuration schema, it has no runtime side effects.
+</Callout>
+
 ## Bootstrap Installer
 
 For Linux hosts, the quickest binary/systemd path is the bootstrap installer:
