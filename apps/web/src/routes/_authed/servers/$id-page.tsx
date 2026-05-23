@@ -140,6 +140,7 @@ function ServerActionButtons({
   id,
   isAdmin,
   isOnline,
+  liveHydrated,
   recoveryHydrated,
   onEditOpen,
   onRecoveryOpen,
@@ -152,6 +153,7 @@ function ServerActionButtons({
   id: string
   isAdmin: boolean
   isOnline: boolean
+  liveHydrated: boolean
   recoveryHydrated: boolean
   onEditOpen: () => void
   onRecoveryOpen: () => void
@@ -159,6 +161,9 @@ function ServerActionButtons({
   terminalEnabled: boolean
 }) {
   const { t } = useTranslation('servers')
+  // Gate online/offline-specific buttons on liveHydrated so the button list does
+  // not flicker (offline-only Recovery button shown then hidden, online-only
+  // Terminal/Files/Docker hidden then shown) when WS data arrives.
   return (
     <div className="flex flex-wrap gap-2">
       <Button onClick={onEditOpen} size="sm" variant="outline">
@@ -166,14 +171,14 @@ function ServerActionButtons({
         {t('detail_edit')}
       </Button>
       <CapabilitiesDialog server={serverWithCaps} />
-      {isAdmin && !isOnline && (
+      {isAdmin && liveHydrated && !isOnline && (
         <Button disabled={!recoveryHydrated} onClick={onRecoveryOpen} size="sm" variant="outline">
           {currentRecoveryJob
             ? t('recovery_merge_resume', { defaultValue: 'View Recovery' })
             : t('recovery_merge_open', { defaultValue: 'Recover Agent' })}
         </Button>
       )}
-      {isOnline && terminalEnabled && (
+      {liveHydrated && isOnline && terminalEnabled && (
         <Link params={{ serverId: id }} to="/terminal/$serverId">
           <Button size="sm" variant="outline">
             <TerminalIcon aria-hidden="true" className="mr-1 size-4" />
@@ -181,7 +186,7 @@ function ServerActionButtons({
           </Button>
         </Link>
       )}
-      {isOnline && fileEnabled && (
+      {liveHydrated && isOnline && fileEnabled && (
         <Link params={{ serverId: id }} search={{ path: '/' }} to="/files/$serverId">
           <Button size="sm" variant="outline">
             <FileText aria-hidden="true" className="mr-1 size-4" />
@@ -189,7 +194,7 @@ function ServerActionButtons({
           </Button>
         </Link>
       )}
-      {isOnline && dockerEnabled && (
+      {liveHydrated && isOnline && dockerEnabled && (
         <Link params={{ serverId: id }} to="/servers/$serverId/docker">
           <Button size="sm" variant="outline">
             <Container aria-hidden="true" className="mr-1 size-4" />
@@ -367,7 +372,19 @@ function MetricsTabContent({
 
 function UptimeCard({ serverId }: { serverId: string }) {
   const { t } = useTranslation('servers')
-  const { data: uptimeDays } = useUptimeDaily(serverId)
+  const { data: uptimeDays, isPending } = useUptimeDaily(serverId)
+  // Reserve space while loading so tabs below don't shift down when data arrives.
+  if (isPending) {
+    return (
+      <div className="mb-6 rounded-lg border bg-card p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <Skeleton className="h-5 w-24" />
+          <Skeleton className="h-4 w-14" />
+        </div>
+        <Skeleton className="h-12 w-full" />
+      </div>
+    )
+  }
   if (!uptimeDays || uptimeDays.length === 0) {
     return null
   }
@@ -426,6 +443,7 @@ export function ServerDetailPage() {
     refetchOnMount: false,
     refetchOnWindowFocus: false
   })
+  const liveHydrated = liveServers !== undefined
   const liveData = liveServers?.find((s) => s.id === id)
   const upgradeJob = useUpgradeJobsStore((state) => state.jobs.get(id))
   const recoveryHydrated = useRecoveryJobsStore((state) => state.hydrated)
@@ -622,6 +640,7 @@ export function ServerDetailPage() {
               id={id}
               isAdmin={isAdmin}
               isOnline={isOnline}
+              liveHydrated={liveHydrated}
               onEditOpen={() => setEditOpen(true)}
               onRecoveryOpen={() => setRecoveryOpen(true)}
               recoveryHydrated={recoveryHydrated}
@@ -634,20 +653,23 @@ export function ServerDetailPage() {
 
       {hasBilling && <CostInsightBar server={server} serverId={id} />}
 
-      {isOnline && (liveNetIn > 0 || liveNetOut > 0) && (
-        <div className="mb-6 flex flex-wrap gap-6 rounded-lg border bg-card p-3 text-sm">
-          <span className="text-muted-foreground">
-            {t('detail_network_in')} <span className="font-medium text-foreground">{formatBytes(liveNetIn)}</span>
-          </span>
-          <span className="text-muted-foreground">
-            {t('detail_network_out')} <span className="font-medium text-foreground">{formatBytes(liveNetOut)}</span>
-          </span>
-          <span className="text-muted-foreground">
-            {t('detail_network_total')}{' '}
-            <span className="font-medium text-foreground">{formatBytes(liveNetIn + liveNetOut)}</span>
-          </span>
-        </div>
-      )}
+      {/* Network bar: reserve space once server data is loaded so WS-driven values
+          do not push the tabs down later. Shows "—" until WS reports live data;
+          stays visible after that even if traffic is 0. */}
+      <div className="mb-6 flex flex-wrap gap-6 rounded-lg border bg-card p-3 text-sm">
+        <span className="text-muted-foreground">
+          {t('detail_network_in')}{' '}
+          <span className="font-medium text-foreground">{liveData ? formatBytes(liveNetIn) : '—'}</span>
+        </span>
+        <span className="text-muted-foreground">
+          {t('detail_network_out')}{' '}
+          <span className="font-medium text-foreground">{liveData ? formatBytes(liveNetOut) : '—'}</span>
+        </span>
+        <span className="text-muted-foreground">
+          {t('detail_network_total')}{' '}
+          <span className="font-medium text-foreground">{liveData ? formatBytes(liveNetIn + liveNetOut) : '—'}</span>
+        </span>
+      </div>
 
       <UptimeCard serverId={id} />
 
