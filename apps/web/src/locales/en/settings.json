@@ -193,6 +193,9 @@
   "audit.col_detail": "Detail",
   "audit.no_entries": "No audit log entries",
   "audit.pagination": "{{total}} entries, page {{page}} of {{pages}}",
+  "audit.filter_action": "Action",
+  "audit.filter_user": "User",
+  "audit.filter_all": "All",
 
   "ping.title": "Ping Tasks",
   "ping.probe_tasks": "Probe Tasks",

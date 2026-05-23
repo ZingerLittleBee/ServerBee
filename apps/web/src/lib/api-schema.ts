@@ -99,6 +99,8 @@ export type GpuRecord = S['GpuRecord']
 // Audit
 export type AuditLogEntry = S['AuditLogEntry']
 export type AuditListResponse = S['AuditListResponse']
+export type AuditOptionsResponse = S['AuditOptionsResponse']
+export type AuditUserOption = S['AuditUserOption']
 
 // API keys
 export type ApiKeyResponse = S['ApiKeyResponse']

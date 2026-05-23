@@ -139,6 +139,7 @@ impl Modify for SecurityAddon {
         crate::router::api::task::get_task_results,
         // audit
         crate::router::api::audit::list_audit_logs,
+        crate::router::api::audit::list_audit_options,
         // users
         crate::router::api::user::list_users,
         crate::router::api::user::get_user,
@@ -344,6 +345,8 @@ impl Modify for SecurityAddon {
             // audit
             crate::router::api::audit::AuditLogEntry,
             crate::router::api::audit::AuditListResponse,
+            crate::router::api::audit::AuditUserOption,
+            crate::router::api::audit::AuditOptionsResponse,
             // users
             crate::service::user::UserResponse,
             crate::service::user::CreateUserInput,

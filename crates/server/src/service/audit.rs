@@ -1,10 +1,22 @@
 use chrono::Utc;
 use sea_orm::*;
 
-use crate::entity::audit_log;
+use crate::entity::{audit_log, user};
 use crate::error::AppError;
 
 pub struct AuditService;
+
+#[derive(Debug, Default)]
+pub struct AuditListFilters {
+    pub action: Option<String>,
+    pub user_id: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct AuditUserOption {
+    pub id: String,
+    pub label: String,
+}
 
 impl AuditService {
     /// Log an audit event.
@@ -33,10 +45,19 @@ impl AuditService {
         db: &DatabaseConnection,
         limit: u64,
         offset: u64,
+        filters: AuditListFilters,
     ) -> Result<(Vec<audit_log::Model>, u64), AppError> {
-        let total = audit_log::Entity::find().count(db).await?;
+        let mut query = audit_log::Entity::find();
+        if let Some(action) = filters.action.as_ref().filter(|s| !s.is_empty()) {
+            query = query.filter(audit_log::Column::Action.eq(action.clone()));
+        }
+        if let Some(user_id) = filters.user_id.as_ref().filter(|s| !s.is_empty()) {
+            query = query.filter(audit_log::Column::UserId.eq(user_id.clone()));
+        }
 
-        let entries = audit_log::Entity::find()
+        let total = query.clone().count(db).await?;
+
+        let entries = query
             .order_by_desc(audit_log::Column::CreatedAt)
             .limit(limit)
             .offset(offset)
@@ -44,6 +65,56 @@ impl AuditService {
             .await?;
 
         Ok((entries, total))
+    }
+
+    /// Distinct action values present in the audit log table, sorted ascending.
+    pub async fn distinct_actions(db: &DatabaseConnection) -> Result<Vec<String>, AppError> {
+        let rows: Vec<String> = audit_log::Entity::find()
+            .select_only()
+            .column(audit_log::Column::Action)
+            .distinct()
+            .order_by_asc(audit_log::Column::Action)
+            .into_tuple()
+            .all(db)
+            .await?;
+        Ok(rows)
+    }
+
+    /// Distinct user_ids present in the audit log, paired with their username when known.
+    /// Entries without a matching user row (e.g. "system") use the raw id as the label.
+    pub async fn distinct_users(
+        db: &DatabaseConnection,
+    ) -> Result<Vec<AuditUserOption>, AppError> {
+        let ids: Vec<String> = audit_log::Entity::find()
+            .select_only()
+            .column(audit_log::Column::UserId)
+            .distinct()
+            .order_by_asc(audit_log::Column::UserId)
+            .into_tuple()
+            .all(db)
+            .await?;
+
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let users: Vec<(String, String)> = user::Entity::find()
+            .select_only()
+            .column(user::Column::Id)
+            .column(user::Column::Username)
+            .filter(user::Column::Id.is_in(ids.clone()))
+            .into_tuple()
+            .all(db)
+            .await?;
+
+        let lookup: std::collections::HashMap<String, String> = users.into_iter().collect();
+        Ok(ids
+            .into_iter()
+            .map(|id| {
+                let label = lookup.get(&id).cloned().unwrap_or_else(|| id.clone());
+                AuditUserOption { id, label }
+            })
+            .collect())
     }
 }
 
@@ -62,7 +133,7 @@ mod tests {
             .expect("log should succeed");
 
         // List and verify the entry appears
-        let (entries, total) = AuditService::list(&db, 10, 0)
+        let (entries, total) = AuditService::list(&db, 10, 0, AuditListFilters::default())
             .await
             .expect("list should succeed");
 
@@ -88,13 +159,68 @@ mod tests {
             .await
             .expect("log without detail should succeed");
 
-        let (entries, total) = AuditService::list(&db, 10, 0)
+        let (entries, total) = AuditService::list(&db, 10, 0, AuditListFilters::default())
             .await
             .expect("list should succeed");
 
         assert_eq!(total, 1, "Should have one entry");
         assert_eq!(entries[0].detail, None, "detail should be None");
         assert_eq!(entries[0].action, "logout", "action should match");
+    }
+
+    #[tokio::test]
+    async fn test_list_filters_by_action_and_user() {
+        let (db, _tmp) = setup_test_db().await;
+
+        AuditService::log(&db, "alice", "login", None, "1.1.1.1")
+            .await
+            .unwrap();
+        AuditService::log(&db, "alice", "logout", None, "1.1.1.1")
+            .await
+            .unwrap();
+        AuditService::log(&db, "bob", "login", None, "2.2.2.2")
+            .await
+            .unwrap();
+
+        let (entries, total) = AuditService::list(
+            &db,
+            10,
+            0,
+            AuditListFilters {
+                action: Some("login".into()),
+                user_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(total, 2);
+        assert_eq!(entries.len(), 2);
+        assert!(entries.iter().all(|e| e.action == "login"));
+
+        let (entries, total) = AuditService::list(
+            &db,
+            10,
+            0,
+            AuditListFilters {
+                action: Some("login".into()),
+                user_id: Some("alice".into()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(total, 1);
+        assert_eq!(entries[0].user_id, "alice");
+        assert_eq!(entries[0].action, "login");
+
+        let actions = AuditService::distinct_actions(&db).await.unwrap();
+        assert_eq!(actions, vec!["login".to_string(), "logout".to_string()]);
+
+        let users = AuditService::distinct_users(&db).await.unwrap();
+        // Both users present in audit log but neither exists in the users table, so the label
+        // falls back to the raw id.
+        let ids: Vec<&str> = users.iter().map(|u| u.id.as_str()).collect();
+        assert_eq!(ids, vec!["alice", "bob"]);
+        assert!(users.iter().all(|u| u.label == u.id));
     }
 
     #[tokio::test]
@@ -109,7 +235,7 @@ mod tests {
             .await
             .expect("second log should succeed");
 
-        let (entries, total) = AuditService::list(&db, 10, 0)
+        let (entries, total) = AuditService::list(&db, 10, 0, AuditListFilters::default())
             .await
             .expect("list should succeed");
 

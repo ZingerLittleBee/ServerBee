@@ -193,6 +193,9 @@
   "audit.col_detail": "详情",
   "audit.no_entries": "暂无审计日志",
   "audit.pagination": "共 {{total}} 条，第 {{page}}/{{pages}} 页",
+  "audit.filter_action": "操作类型",
+  "audit.filter_user": "用户",
+  "audit.filter_all": "全部",
 
   "ping.title": "Ping 任务",
   "ping.probe_tasks": "探测任务",
