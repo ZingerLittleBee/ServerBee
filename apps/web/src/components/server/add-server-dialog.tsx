@@ -89,7 +89,7 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
 
   const origin = window.location.origin
   const installCommand = issued
-    ? `curl -fsSL ${origin}/install.sh | sudo bash -s -- --server-url '${origin}' --enrollment-code '${issued.code}'`
+    ? `curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent --server-url '${origin}' --enrollment-code '${issued.code}'`
     : ''
 
   const copy = async (value: string) => {
