@@ -174,7 +174,7 @@ vi.mock('@/stores/recovery-jobs-store', () => ({
     })
 }))
 
-const { ServerDetailPage } = await import('./$id')
+const { ServerDetailPage } = await import('./$id-page')
 
 describe('ServerDetailPage', () => {
   beforeEach(() => {
