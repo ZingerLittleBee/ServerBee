@@ -837,17 +837,32 @@ impl NetworkProbeService {
         from: DateTime<Utc>,
         to: DateTime<Utc>,
     ) -> Result<Vec<NetworkProbeAnomaly>, AppError> {
+        use sea_orm::sea_query::{Condition, Expr};
+
         // Load target names for display
         let targets = Self::get_server_targets(db, server_id).await?;
         let target_map: HashMap<String, String> =
             targets.into_iter().map(|t| (t.id, t.name)).collect();
 
-        // Query raw records in the time range (capped at 500 to bound memory usage)
+        // Filter on the anomaly predicate in SQL so the 500-record cap can't
+        // silently drop matching rows just because they're not the earliest in
+        // the window. Order by newest first so a wider window still surfaces
+        // the recent spikes that operators actually care about.
+        let anomaly_predicate = Condition::any()
+            .add(Expr::col(network_probe_record::Column::PacketLoss).gte(1.0))
+            .add(Expr::col(network_probe_record::Column::PacketLoss).gt(0.1))
+            .add(
+                Condition::all()
+                    .add(network_probe_record::Column::AvgLatency.is_not_null())
+                    .add(Expr::col(network_probe_record::Column::AvgLatency).gt(150.0)),
+            );
+
         let records = network_probe_record::Entity::find()
             .filter(network_probe_record::Column::ServerId.eq(server_id))
             .filter(network_probe_record::Column::Timestamp.gte(from))
             .filter(network_probe_record::Column::Timestamp.lte(to))
-            .order_by_asc(network_probe_record::Column::Timestamp)
+            .filter(anomaly_predicate)
+            .order_by_desc(network_probe_record::Column::Timestamp)
             .limit(500)
             .all(db)
             .await?;
@@ -1443,6 +1458,67 @@ mod tests {
         assert!(high_loss > 0.1 && high_loss <= 0.5);
         assert!(very_high_loss > 0.5);
         assert!(normal_loss <= 0.1);
+    }
+
+    #[tokio::test]
+    async fn test_get_anomalies_returns_recent_spike_within_wider_window() {
+        // Regression: get_anomalies used to fetch the OLDEST 500 raw records in
+        // the window (ASC, no anomaly filter), so a wide window of healthy
+        // probes plus one recent spike would surface 0 anomalies even though
+        // count_anomalies reported the spike.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-anom", "AnomServer").await;
+
+        let now = Utc::now();
+        // Insert one recent high-latency anomaly.
+        network_probe_record::ActiveModel {
+            server_id: Set("srv-anom".to_string()),
+            target_id: Set("tgt-1".to_string()),
+            avg_latency: Set(Some(220.0)),
+            min_latency: Set(Some(200.0)),
+            max_latency: Set(Some(240.0)),
+            packet_loss: Set(0.0),
+            packet_sent: Set(10),
+            packet_received: Set(10),
+            timestamp: Set(now - Duration::minutes(5)),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("insert anomaly record");
+
+        // Pad with 600 older healthy records so the LIMIT 500 would have
+        // dropped the recent anomaly under the old ASC order.
+        for i in 0..600 {
+            network_probe_record::ActiveModel {
+                server_id: Set("srv-anom".to_string()),
+                target_id: Set("tgt-1".to_string()),
+                avg_latency: Set(Some(50.0)),
+                min_latency: Set(Some(45.0)),
+                max_latency: Set(Some(55.0)),
+                packet_loss: Set(0.0),
+                packet_sent: Set(10),
+                packet_received: Set(10),
+                timestamp: Set(now - Duration::hours(20) - Duration::seconds(i)),
+                ..Default::default()
+            }
+            .insert(&db)
+            .await
+            .expect("insert healthy record");
+        }
+
+        let anomalies = NetworkProbeService::get_anomalies(
+            &db,
+            "srv-anom",
+            now - Duration::hours(24),
+            now + Duration::minutes(1),
+        )
+        .await
+        .expect("get_anomalies");
+
+        assert_eq!(anomalies.len(), 1, "should surface the single high-latency record");
+        assert_eq!(anomalies[0].anomaly_type, "high_latency");
+        assert!((anomalies[0].value - 220.0).abs() < f64::EPSILON);
     }
 
     #[tokio::test]
