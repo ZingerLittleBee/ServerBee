@@ -4,13 +4,12 @@ import { useTranslation } from 'react-i18next'
 import { CompactMetric } from '@/components/server/compact-metric'
 import { RingChart } from '@/components/ui/ring-chart'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useCostOverview } from '@/hooks/use-cost'
-import { useNetworkOverview, useNetworkSetting } from '@/hooks/use-network-api'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { useTrafficOverview } from '@/hooks/use-traffic-overview'
+import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
+import type { ServerCostOverview } from '@/lib/api-schema'
 import { isLatencyFailure } from '@/lib/network-latency-constants'
-import { latencyColorClass } from '@/lib/network-types'
+import { latencyColorClass, type NetworkServerSummary } from '@/lib/network-types'
 import { computeTrafficQuota } from '@/lib/traffic'
 import { countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
@@ -23,8 +22,14 @@ import { TagChips } from './tag-chips'
 import { UpgradeJobBadge } from './upgrade-job-badge'
 
 interface ServerCardProps {
+  costEntry?: ServerCostOverview
+  networkBucketSeconds?: number
+  networkSummary?: NetworkServerSummary
   server: ServerMetrics
+  trafficEntry?: TrafficOverviewItem
 }
+
+const DEFAULT_NETWORK_BUCKET_SECONDS = 60
 
 function osIcon(os: string | null): string {
   if (!os) {
@@ -143,13 +148,15 @@ function NetworkMetricValue({
   )
 }
 
-const ServerCardInner = ({ server }: ServerCardProps) => {
+const ServerCardInner = ({
+  server,
+  trafficEntry,
+  costEntry,
+  networkSummary,
+  networkBucketSeconds = DEFAULT_NETWORK_BUCKET_SECONDS
+}: ServerCardProps) => {
   const { t } = useTranslation(['servers'])
-  const { data: networkOverview = [] } = useNetworkOverview()
   const { data: realtimeData } = useNetworkRealtime(server.id)
-  const { data: networkSetting } = useNetworkSetting()
-  const { data: trafficOverview } = useTrafficOverview()
-  const { data: costOverview } = useCostOverview()
   const upgradeJob = useUpgradeJobsStore((state) => state.jobs.get(server.id))
 
   const memoryPct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
@@ -158,16 +165,13 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
   const flag = countryCodeToFlag(server.country_code)
   const osEmoji = osIcon(server.os)
 
-  const networkSummary = networkOverview.find((entry) => entry.server_id === server.id)
-  const bucketSeconds = Math.max(networkSetting?.interval ?? 60, 60)
   const { currentAvgLatency, currentAvgLossRatio, currentTargets, latencyPoints, lossPoints } = useMemo(
-    () => buildServerCardNetworkState(networkSummary, realtimeData, bucketSeconds),
-    [networkSummary, realtimeData, bucketSeconds]
+    () => buildServerCardNetworkState(networkSummary, realtimeData, networkBucketSeconds),
+    [networkSummary, realtimeData, networkBucketSeconds]
   )
 
   const hasNetworkData = latencyPoints.length > 0
 
-  const trafficEntry = trafficOverview?.find((entry) => entry.server_id === server.id)
   const {
     used: trafficUsed,
     limit: trafficLimit,
@@ -178,7 +182,6 @@ const ServerCardInner = ({ server }: ServerCardProps) => {
     netOutTransfer: server.net_out_transfer
   })
   const trafficDaysRemaining = trafficEntry?.days_remaining ?? null
-  const costEntry = costOverview?.servers.find((entry) => entry.server_id === server.id)
 
   return (
     <div className="relative flex w-full min-w-[320px] max-w-[480px] flex-col gap-2 rounded-lg border bg-card p-3 shadow-sm">
@@ -396,6 +399,14 @@ function tagsEqual(a: readonly string[] | undefined, b: readonly string[] | unde
 }
 
 export const ServerCard = memo(ServerCardInner, (prev, next) => {
+  if (
+    prev.trafficEntry !== next.trafficEntry ||
+    prev.costEntry !== next.costEntry ||
+    prev.networkSummary !== next.networkSummary ||
+    prev.networkBucketSeconds !== next.networkBucketSeconds
+  ) {
+    return false
+  }
   const a = prev.server
   const b = next.server
   return (

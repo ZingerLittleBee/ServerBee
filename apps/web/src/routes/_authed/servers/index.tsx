@@ -34,6 +34,7 @@ import { useServer } from '@/hooks/use-api'
 import { useAuth } from '@/hooks/use-auth'
 import { useCostOverview } from '@/hooks/use-cost'
 import { useDataTable } from '@/hooks/use-data-table'
+import { useNetworkOverview, useNetworkSetting } from '@/hooks/use-network-api'
 import { useScrollViewportHeight } from '@/hooks/use-scroll-viewport-height'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { useTrafficOverview } from '@/hooks/use-traffic-overview'
@@ -105,6 +106,8 @@ function ServersListPage() {
 
   const { data: trafficOverview = [] } = useTrafficOverview()
   const { data: costOverview } = useCostOverview()
+  const { data: networkOverview = [] } = useNetworkOverview()
+  const { data: networkSetting } = useNetworkSetting()
 
   const setSearch = (value: string) => navigate({ search: (prev) => ({ ...prev, q: value }) })
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -114,6 +117,15 @@ function ServersListPage() {
     const entries = costOverview?.servers ?? []
     return new Map(entries.map((entry) => [entry.server_id, entry]))
   }, [costOverview])
+  const trafficByServerId = useMemo(
+    () => new Map(trafficOverview.map((entry) => [entry.server_id, entry])),
+    [trafficOverview]
+  )
+  const networkSummaryByServerId = useMemo(
+    () => new Map(networkOverview.map((entry) => [entry.server_id, entry])),
+    [networkOverview]
+  )
+  const networkBucketSeconds = Math.max(networkSetting?.interval ?? 60, 60)
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
@@ -494,7 +506,13 @@ function ServersListPage() {
         <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
           {filtered.map((server) => (
             <div className="[contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={server.id}>
-              <ServerCard server={server} />
+              <ServerCard
+                costEntry={costByServerId.get(server.id)}
+                networkBucketSeconds={networkBucketSeconds}
+                networkSummary={networkSummaryByServerId.get(server.id)}
+                server={server}
+                trafficEntry={trafficByServerId.get(server.id)}
+              />
             </div>
           ))}
         </div>
