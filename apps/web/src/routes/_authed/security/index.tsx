@@ -98,12 +98,19 @@ function SecurityIndexPage() {
       <SecurityKpiCards serverId={filters.server_id} since={since} />
 
       <div className="flex flex-wrap gap-2 rounded-md border bg-card p-3">
-        <Select onValueChange={(v) => setServerId(v ?? '')} value={serverId}>
+        <Select
+          items={[
+            { value: '__all__', label: t('filter.server_all', { defaultValue: 'All servers' }) },
+            ...(servers ?? []).map((s) => ({ value: s.id, label: s.name }))
+          ]}
+          onValueChange={(v) => setServerId(v === '__all__' ? '' : (v ?? ''))}
+          value={serverId || '__all__'}
+        >
           <SelectTrigger className="h-9 w-[180px]">
             <SelectValue placeholder={t('filter.server', { defaultValue: 'All servers' })} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">{t('filter.server_all', { defaultValue: 'All servers' })}</SelectItem>
+            <SelectItem value="__all__">{t('filter.server_all', { defaultValue: 'All servers' })}</SelectItem>
             {servers?.map((s) => (
               <SelectItem key={s.id} value={s.id}>
                 {s.name}
@@ -112,12 +119,21 @@ function SecurityIndexPage() {
           </SelectContent>
         </Select>
 
-        <Select onValueChange={(v) => setEventType(v ?? '')} value={eventType}>
+        <Select
+          items={[
+            { value: '__all__', label: t('filter.event_type_all', { defaultValue: 'All types' }) },
+            { value: 'ssh_brute_force', label: t('event_type.ssh_brute_force', { defaultValue: 'SSH Brute Force' }) },
+            { value: 'port_scan', label: t('event_type.port_scan', { defaultValue: 'Port Scan' }) },
+            { value: 'ssh_login', label: t('event_type.ssh_login', { defaultValue: 'SSH Login' }) }
+          ]}
+          onValueChange={(v) => setEventType(v === '__all__' ? '' : (v ?? ''))}
+          value={eventType || '__all__'}
+        >
           <SelectTrigger className="h-9 w-[180px]">
             <SelectValue placeholder={t('filter.event_type', { defaultValue: 'All types' })} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">{t('filter.event_type_all', { defaultValue: 'All types' })}</SelectItem>
+            <SelectItem value="__all__">{t('filter.event_type_all', { defaultValue: 'All types' })}</SelectItem>
             <SelectItem value="ssh_brute_force">
               {t('event_type.ssh_brute_force', { defaultValue: 'SSH Brute Force' })}
             </SelectItem>
@@ -126,12 +142,22 @@ function SecurityIndexPage() {
           </SelectContent>
         </Select>
 
-        <Select onValueChange={(v) => setSeverity(v ?? '')} value={severity}>
+        <Select
+          items={[
+            { value: '__all__', label: t('filter.severity_all', { defaultValue: 'All severities' }) },
+            { value: 'critical', label: t('severity.critical', { defaultValue: 'Critical' }) },
+            { value: 'high', label: t('severity.high', { defaultValue: 'High' }) },
+            { value: 'medium', label: t('severity.medium', { defaultValue: 'Medium' }) },
+            { value: 'low', label: t('severity.low', { defaultValue: 'Low' }) }
+          ]}
+          onValueChange={(v) => setSeverity(v === '__all__' ? '' : (v ?? ''))}
+          value={severity || '__all__'}
+        >
           <SelectTrigger className="h-9 w-[160px]">
             <SelectValue placeholder={t('filter.severity', { defaultValue: 'All severities' })} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">{t('filter.severity_all', { defaultValue: 'All severities' })}</SelectItem>
+            <SelectItem value="__all__">{t('filter.severity_all', { defaultValue: 'All severities' })}</SelectItem>
             <SelectItem value="critical">{t('severity.critical', { defaultValue: 'Critical' })}</SelectItem>
             <SelectItem value="high">{t('severity.high', { defaultValue: 'High' })}</SelectItem>
             <SelectItem value="medium">{t('severity.medium', { defaultValue: 'Medium' })}</SelectItem>
@@ -141,7 +167,7 @@ function SecurityIndexPage() {
 
         <Input
           aria-label={t('filter.source_ip', { defaultValue: 'Source IP' })}
-          className="h-9 w-[180px]"
+          className="w-[180px]"
           onChange={(e) => setSourceIp(e.target.value)}
           placeholder={t('filter.source_ip', { defaultValue: 'Source IP' })}
           value={sourceIp}
