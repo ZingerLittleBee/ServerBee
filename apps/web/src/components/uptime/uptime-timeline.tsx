@@ -1,8 +1,7 @@
 import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip'
-import { useMemo, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { UptimeDailyEntry } from '@/lib/api-schema'
-import { cn } from '@/lib/utils'
 import { computeUptimeColor, formatUptimeTooltip, type UptimeColor } from '@/lib/widget-helpers'
 
 export interface UptimeTimelineProps {
@@ -15,15 +14,95 @@ export interface UptimeTimelineProps {
   yellowThreshold?: number
 }
 
-const COLOR_MAP: Record<UptimeColor, string> = {
-  green: 'bg-emerald-500',
-  yellow: 'bg-amber-500',
-  red: 'bg-red-500',
-  gray: 'bg-muted'
+const SEGMENT_BACKGROUND_VALUE_MAP: Record<UptimeColor, string> = {
+  green: 'var(--uptime-operational)',
+  yellow: 'var(--uptime-degraded)',
+  red: 'var(--uptime-down)',
+  gray: 'var(--color-muted)'
 }
+
+const SEGMENT_GAP = 1.5
+const FALLBACK_SEGMENT_WIDTH = 4
+const CSS_COORDINATE_PRECISION = 1000
+const MIN_PIXEL_SNAP_OFFSET = 0.001
+const PIXEL_SNAP_MEASUREMENT_FRAMES = 8
 
 const POPUP_CLASS =
   'data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2 data-[state=delayed-open]:fade-in-0 data-[state=delayed-open]:zoom-in-95 data-open:fade-in-0 data-open:zoom-in-95 data-closed:fade-out-0 data-closed:zoom-out-95 z-50 inline-flex w-fit max-w-xs origin-(--transform-origin) flex-col rounded-md border bg-popover px-3 py-1.5 text-popover-foreground text-xs shadow-md data-[state=delayed-open]:animate-in data-closed:animate-out data-open:animate-in'
+
+interface TimelineGeometryInput {
+  count: number
+  gap: number
+  width: number
+}
+
+interface TimelineSegmentGeometry {
+  width: number
+  x: number
+}
+
+function roundCssCoordinate(value: number): number {
+  return Math.round(value * CSS_COORDINATE_PRECISION) / CSS_COORDINATE_PRECISION
+}
+
+export function buildTimelineGeometry({ count, gap, width }: TimelineGeometryInput): TimelineSegmentGeometry[] {
+  if (count <= 0 || width <= 0) {
+    return []
+  }
+
+  const totalWidth = Math.max(0, Math.floor(width))
+  const maxGap = count > 1 ? Math.max(0, (totalWidth - count) / (count - 1)) : 0
+  const resolvedGap = count > 1 ? Math.min(Math.max(0, gap), maxGap) : 0
+  const drawable = Math.max(0, totalWidth - resolvedGap * (count - 1))
+  const segmentWidth = drawable / count
+
+  let cursor = 0
+  return Array.from({ length: count }, (_, index) => {
+    const nextCursor = index === count - 1 ? totalWidth : cursor + segmentWidth
+    const segment = {
+      width: roundCssCoordinate(nextCursor - cursor),
+      x: roundCssCoordinate(cursor)
+    }
+    cursor = nextCursor + resolvedGap
+    return segment
+  })
+}
+
+interface TimelineBackgroundInput {
+  colors: UptimeColor[]
+  geometry: TimelineSegmentGeometry[]
+}
+
+export function buildTimelineBackground({ colors, geometry }: TimelineBackgroundInput): string {
+  const stops: string[] = []
+
+  for (let index = 0; index < geometry.length; index += 1) {
+    const segment = geometry[index]
+    const color = colors[index]
+    if (!(segment && color) || segment.width <= 0) {
+      continue
+    }
+
+    if (stops.length > 0) {
+      const previous = geometry[index - 1]
+      if (previous) {
+        const gapStart = previous.x + previous.width
+        if (segment.x > gapStart) {
+          stops.push(`transparent ${gapStart}px ${segment.x}px`)
+        }
+      }
+    }
+
+    stops.push(`${SEGMENT_BACKGROUND_VALUE_MAP[color]} ${segment.x}px ${segment.x + segment.width}px`)
+  }
+
+  return `linear-gradient(to right, ${stops.join(', ')})`
+}
+
+export function calculatePixelSnapOffset(cssTop: number): number {
+  const offset = Math.round(cssTop) - cssTop
+  return Math.abs(offset) < MIN_PIXEL_SNAP_OFFSET ? 0 : offset
+}
 
 export function UptimeTimeline({
   days,
@@ -35,10 +114,84 @@ export function UptimeTimeline({
   height = 28
 }: UptimeTimelineProps) {
   const { t } = useTranslation('status')
+  const timelineRef = useRef<HTMLDivElement>(null)
+  const [pixelSnapOffset, setPixelSnapOffset] = useState(0)
+  const [timelineWidth, setTimelineWidth] = useState(0)
 
   // One handle per timeline instance — lets the 90 detached triggers share a
   // single tooltip popup instead of each spawning its own Root/Portal/Popup.
   const [handle] = useState(() => TooltipPrimitive.createHandle<UptimeDailyEntry>())
+
+  useLayoutEffect(() => {
+    const element = timelineRef.current
+    if (!element) {
+      return undefined
+    }
+
+    let animationFrame = 0
+    let isDisposed = false
+
+    const updatePixelSnapOffset = () => {
+      if (isDisposed) {
+        return
+      }
+
+      const rect = element.getBoundingClientRect()
+      setPixelSnapOffset(calculatePixelSnapOffset(rect.top))
+      setTimelineWidth(Math.max(0, Math.floor(rect.width)))
+    }
+
+    const cancelScheduledMeasurement = () => {
+      if (animationFrame !== 0) {
+        window.cancelAnimationFrame(animationFrame)
+        animationFrame = 0
+      }
+    }
+
+    const schedulePixelSnapMeasurements = (remainingFrames = PIXEL_SNAP_MEASUREMENT_FRAMES) => {
+      cancelScheduledMeasurement()
+
+      const measure = (framesLeft: number) => {
+        updatePixelSnapOffset()
+
+        if (framesLeft <= 0 || isDisposed) {
+          animationFrame = 0
+          return
+        }
+
+        animationFrame = window.requestAnimationFrame(() => measure(framesLeft - 1))
+      }
+
+      measure(remainingFrames)
+    }
+
+    schedulePixelSnapMeasurements()
+
+    if ('fonts' in document) {
+      document.fonts.ready.then(() => schedulePixelSnapMeasurements())
+    }
+
+    const handleResize = () => schedulePixelSnapMeasurements()
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(() => schedulePixelSnapMeasurements())
+      observer.observe(element)
+      window.addEventListener('resize', handleResize)
+      return () => {
+        isDisposed = true
+        cancelScheduledMeasurement()
+        observer.disconnect()
+        window.removeEventListener('resize', handleResize)
+      }
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => {
+      isDisposed = true
+      cancelScheduledMeasurement()
+      window.removeEventListener('resize', handleResize)
+    }
+  }, [])
 
   const segments = useMemo(() => {
     const slice = days.slice(-rangeDays)
@@ -51,6 +204,25 @@ export function UptimeTimeline({
     }))
     return [...padded, ...slice]
   }, [days, rangeDays])
+
+  const drawableWidth =
+    timelineWidth || segments.length * FALLBACK_SEGMENT_WIDTH + Math.max(0, segments.length - 1) * SEGMENT_GAP
+  const geometry = useMemo(
+    () => buildTimelineGeometry({ count: segments.length, gap: SEGMENT_GAP, width: drawableWidth }),
+    [segments.length, drawableWidth]
+  )
+  const segmentColors = useMemo(
+    () =>
+      segments.map((entry) =>
+        computeUptimeColor(entry.online_minutes, entry.total_minutes, yellowThreshold, redThreshold)
+      ),
+    [segments, yellowThreshold, redThreshold]
+  )
+  const trackBackground = useMemo(
+    () => buildTimelineBackground({ colors: segmentColors, geometry }),
+    [geometry, segmentColors]
+  )
+  const timelineTitle = `${t('uptime_days_ago', { count: rangeDays })} - ${t('uptime_today')}`
 
   return (
     <div className="w-full">
@@ -84,33 +256,71 @@ export function UptimeTimeline({
         }}
       </TooltipPrimitive.Root>
 
-      <div className="flex w-full" style={{ height, gap: '1.5px' }}>
-        {segments.map((entry, i) => {
-          const color = computeUptimeColor(entry.online_minutes, entry.total_minutes, yellowThreshold, redThreshold)
-          return (
-            <TooltipPrimitive.Trigger
-              data-segment={color}
-              handle={handle}
-              key={entry.date || `pad-${i.toString()}`}
-              payload={entry}
-              render={<div className={cn('flex-1 rounded-[2px] focus:outline-none', COLOR_MAP[color])} />}
-            />
-          )
-        })}
+      <div
+        aria-label={timelineTitle}
+        className="w-full"
+        data-uptime-timeline=""
+        ref={timelineRef}
+        role="img"
+        style={{ height }}
+      >
+        <div
+          className="relative h-full w-full"
+          style={{
+            top: pixelSnapOffset === 0 ? undefined : pixelSnapOffset
+          }}
+        >
+          <div
+            aria-hidden
+            className="absolute inset-0 overflow-hidden rounded-[4px]"
+            data-uptime-track-paint=""
+            style={{ backgroundImage: trackBackground }}
+          />
+          {segments.map((entry, i) => {
+            const color = segmentColors[i]
+            const segment = geometry[i]
+            if (!(color && segment) || segment.width <= 0) {
+              return null
+            }
+            return (
+              <TooltipPrimitive.Trigger
+                data-segment={color}
+                handle={handle}
+                key={`segment-${entry.date || `pad-${i.toString()}`}`}
+                payload={entry}
+                render={
+                  <div
+                    className="absolute top-0 h-full rounded-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    style={{ left: segment.x, width: segment.width }}
+                  />
+                }
+              />
+            )
+          })}
+        </div>
       </div>
 
       {showLegend && (
         <div className="mt-2 flex gap-4 text-muted-foreground text-xs">
           <span className="flex items-center gap-1">
-            <span className="inline-block size-2.5 rounded-[2px] bg-emerald-500" />
+            <span
+              className="inline-block size-2.5 rounded-[2px]"
+              style={{ backgroundColor: SEGMENT_BACKGROUND_VALUE_MAP.green }}
+            />
             {t('uptime_operational')}
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block size-2.5 rounded-[2px] bg-amber-500" />
+            <span
+              className="inline-block size-2.5 rounded-[2px]"
+              style={{ backgroundColor: SEGMENT_BACKGROUND_VALUE_MAP.yellow }}
+            />
             {t('uptime_degraded')}
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block size-2.5 rounded-[2px] bg-red-500" />
+            <span
+              className="inline-block size-2.5 rounded-[2px]"
+              style={{ backgroundColor: SEGMENT_BACKGROUND_VALUE_MAP.red }}
+            />
             {t('uptime_down')}
           </span>
           <span className="flex items-center gap-1">
