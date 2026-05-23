@@ -2,15 +2,11 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { UptimeDailyEntry } from '@/lib/api-schema'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
-import {
-  buildTimelineBackground,
-  buildTimelineGeometry,
-  calculatePixelSnapOffset,
-  UptimeTimeline
-} from './uptime-timeline'
+import { buildTimelineBackground, buildTimelineGeometry, UptimeTimeline } from './uptime-timeline'
 
 const LEFT_PIXEL_STYLE_RE = /left: \d+(?:\.\d+)?px/
 const WIDTH_PIXEL_STYLE_RE = /width: \d+(?:\.\d+)?px/
+const PIXEL_SNAP_TRANSFORM_RE = /transform:\s*translateZ\(0\)/
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -78,6 +74,10 @@ describe('UptimeTimeline', () => {
     expect(paintLayer).toBeInTheDocument()
     expect(paintLayer?.getAttribute('class')).toContain('absolute')
     expect(paintLayer?.getAttribute('class')).toContain('inset-0')
+    // Composite to a GPU layer so the gradient is pixel-snapped after scroll,
+    // otherwise dark-mode AA blends each color differently and segments look
+    // like they have different heights.
+    expect(paintLayer?.getAttribute('style')).toMatch(PIXEL_SNAP_TRANSFORM_RE)
     expect(segments).toHaveLength(3)
     for (const segment of segments) {
       expect(segment.getAttribute('class')).toContain('absolute')
@@ -171,20 +171,6 @@ describe('computeAggregateUptime', () => {
   it('returns 100 for full uptime', () => {
     const days = makeEntries(5)
     expect(computeAggregateUptime(days)).toBe(100)
-  })
-})
-
-describe('calculatePixelSnapOffset', () => {
-  it('moves half-pixel coordinates onto the CSS pixel grid', () => {
-    expect(calculatePixelSnapOffset(659.5)).toBe(0.5)
-  })
-
-  it('does not move coordinates that are already aligned', () => {
-    expect(calculatePixelSnapOffset(659)).toBe(0)
-  })
-
-  it('snaps to the nearest whole CSS pixel', () => {
-    expect(calculatePixelSnapOffset(659.25)).toBe(-0.25)
   })
 })
 

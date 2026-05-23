@@ -24,8 +24,14 @@ const SEGMENT_BACKGROUND_VALUE_MAP: Record<UptimeColor, string> = {
 const SEGMENT_GAP = 1.5
 const FALLBACK_SEGMENT_WIDTH = 4
 const CSS_COORDINATE_PRECISION = 1000
-const MIN_PIXEL_SNAP_OFFSET = 0.001
-const PIXEL_SNAP_MEASUREMENT_FRAMES = 8
+
+// Promotes the painted track to its own compositor layer so the browser snaps
+// the gradient to whole device pixels. Without this, when the track lands on
+// a fractional CSS y position (eg. after a scroll), the AA at the top/bottom
+// rows blends each color with the page background. In dark mode the resulting
+// blend luminance differs per color (emerald vs amber vs red), which reads as
+// "different colors have different heights".
+const PIXEL_SNAP_TRANSFORM = 'translateZ(0)'
 
 const POPUP_CLASS =
   'data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2 data-[state=delayed-open]:fade-in-0 data-[state=delayed-open]:zoom-in-95 data-open:fade-in-0 data-open:zoom-in-95 data-closed:fade-out-0 data-closed:zoom-out-95 z-50 inline-flex w-fit max-w-xs origin-(--transform-origin) flex-col rounded-md border bg-popover px-3 py-1.5 text-popover-foreground text-xs shadow-md data-[state=delayed-open]:animate-in data-closed:animate-out data-open:animate-in'
@@ -99,11 +105,6 @@ export function buildTimelineBackground({ colors, geometry }: TimelineBackground
   return `linear-gradient(to right, ${stops.join(', ')})`
 }
 
-export function calculatePixelSnapOffset(cssTop: number): number {
-  const offset = Math.round(cssTop) - cssTop
-  return Math.abs(offset) < MIN_PIXEL_SNAP_OFFSET ? 0 : offset
-}
-
 export function UptimeTimeline({
   days,
   rangeDays,
@@ -115,7 +116,6 @@ export function UptimeTimeline({
 }: UptimeTimelineProps) {
   const { t } = useTranslation('status')
   const timelineRef = useRef<HTMLDivElement>(null)
-  const [pixelSnapOffset, setPixelSnapOffset] = useState(0)
   const [timelineWidth, setTimelineWidth] = useState(0)
 
   // One handle per timeline instance — lets the 90 detached triggers share a
@@ -128,69 +128,20 @@ export function UptimeTimeline({
       return undefined
     }
 
-    let animationFrame = 0
-    let isDisposed = false
-
-    const updatePixelSnapOffset = () => {
-      if (isDisposed) {
-        return
-      }
-
-      const rect = element.getBoundingClientRect()
-      setPixelSnapOffset(calculatePixelSnapOffset(rect.top))
-      setTimelineWidth(Math.max(0, Math.floor(rect.width)))
+    const measure = () => {
+      setTimelineWidth(Math.max(0, Math.floor(element.getBoundingClientRect().width)))
     }
 
-    const cancelScheduledMeasurement = () => {
-      if (animationFrame !== 0) {
-        window.cancelAnimationFrame(animationFrame)
-        animationFrame = 0
-      }
+    measure()
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure)
+      return () => window.removeEventListener('resize', measure)
     }
 
-    const schedulePixelSnapMeasurements = (remainingFrames = PIXEL_SNAP_MEASUREMENT_FRAMES) => {
-      cancelScheduledMeasurement()
-
-      const measure = (framesLeft: number) => {
-        updatePixelSnapOffset()
-
-        if (framesLeft <= 0 || isDisposed) {
-          animationFrame = 0
-          return
-        }
-
-        animationFrame = window.requestAnimationFrame(() => measure(framesLeft - 1))
-      }
-
-      measure(remainingFrames)
-    }
-
-    schedulePixelSnapMeasurements()
-
-    if ('fonts' in document) {
-      document.fonts.ready.then(() => schedulePixelSnapMeasurements())
-    }
-
-    const handleResize = () => schedulePixelSnapMeasurements()
-
-    if (typeof ResizeObserver !== 'undefined') {
-      const observer = new ResizeObserver(() => schedulePixelSnapMeasurements())
-      observer.observe(element)
-      window.addEventListener('resize', handleResize)
-      return () => {
-        isDisposed = true
-        cancelScheduledMeasurement()
-        observer.disconnect()
-        window.removeEventListener('resize', handleResize)
-      }
-    }
-
-    window.addEventListener('resize', handleResize)
-    return () => {
-      isDisposed = true
-      cancelScheduledMeasurement()
-      window.removeEventListener('resize', handleResize)
-    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
   }, [])
 
   const segments = useMemo(() => {
@@ -264,17 +215,12 @@ export function UptimeTimeline({
         role="img"
         style={{ height }}
       >
-        <div
-          className="relative h-full w-full"
-          style={{
-            top: pixelSnapOffset === 0 ? undefined : pixelSnapOffset
-          }}
-        >
+        <div className="relative h-full w-full">
           <div
             aria-hidden
             className="absolute inset-0 overflow-hidden rounded-[4px]"
             data-uptime-track-paint=""
-            style={{ backgroundImage: trackBackground }}
+            style={{ backgroundImage: trackBackground, transform: PIXEL_SNAP_TRANSFORM }}
           />
           {segments.map((entry, i) => {
             const color = segmentColors[i]
