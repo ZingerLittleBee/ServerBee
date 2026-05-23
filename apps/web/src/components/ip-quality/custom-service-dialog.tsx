@@ -1,5 +1,7 @@
+import type { TFunction } from 'i18next'
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -7,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useCreateService, useUpdateService } from '@/hooks/use-ip-quality-api'
-import { CATEGORY_ORDER } from '@/lib/ip-quality-constants'
+import { CATEGORY_ORDER, categoryLabel } from '@/lib/ip-quality-constants'
 import type { UnlockMatch, UnlockRule, UnlockService, UnlockStatus } from '@/lib/ip-quality-types'
 
 interface Props {
@@ -21,12 +23,7 @@ type MatchKind = UnlockMatch['kind']
 
 const METHOD_OPTIONS = ['GET', 'HEAD', 'POST']
 const STATUS_OPTIONS: UnlockStatus[] = ['unlocked', 'restricted', 'blocked', 'failed', 'unsupported']
-const MATCH_KIND_OPTIONS: { value: MatchKind; label: string }[] = [
-  { value: 'status_equals', label: 'Status equals' },
-  { value: 'status_in_range', label: 'Status in range' },
-  { value: 'body_regex', label: 'Body regex' },
-  { value: 'redirect_matches', label: 'Redirect matches' }
-]
+const MATCH_KIND_OPTIONS: MatchKind[] = ['status_equals', 'status_in_range', 'body_regex', 'redirect_matches']
 
 // Monotonic id generator so header/rule rows keep a stable React key across
 // reordering and removal.
@@ -84,9 +81,10 @@ interface RuleRowProps {
   onMove: (direction: -1 | 1) => void
   onRemove: () => void
   rule: UnlockRule
+  t: TFunction
 }
 
-function RuleRow({ rule, index, canMoveUp, canMoveDown, onChange, onMove, onRemove }: RuleRowProps) {
+function RuleRow({ rule, index, canMoveUp, canMoveDown, onChange, onMove, onRemove, t }: RuleRowProps) {
   const { match } = rule
 
   const setKind = (kind: MatchKind) => onChange({ ...rule, match: defaultMatch(kind) })
@@ -96,10 +94,10 @@ function RuleRow({ rule, index, canMoveUp, canMoveDown, onChange, onMove, onRemo
   return (
     <div className="flex flex-col gap-2 rounded-lg border p-3" data-testid="rule-row">
       <div className="flex items-center justify-between">
-        <span className="font-medium text-muted-foreground text-xs">Rule {index + 1}</span>
+        <span className="font-medium text-muted-foreground text-xs">{t('dialog_rule_label', { n: index + 1 })}</span>
         <div className="flex gap-1">
           <Button
-            aria-label="Move rule up"
+            aria-label={t('dialog_move_rule_up')}
             disabled={!canMoveUp}
             onClick={() => onMove(-1)}
             size="icon-sm"
@@ -109,7 +107,7 @@ function RuleRow({ rule, index, canMoveUp, canMoveDown, onChange, onMove, onRemo
             <ArrowUpIcon />
           </Button>
           <Button
-            aria-label="Move rule down"
+            aria-label={t('dialog_move_rule_down')}
             disabled={!canMoveDown}
             onClick={() => onMove(1)}
             size="icon-sm"
@@ -118,7 +116,7 @@ function RuleRow({ rule, index, canMoveUp, canMoveDown, onChange, onMove, onRemo
           >
             <ArrowDownIcon />
           </Button>
-          <Button aria-label="Remove rule" onClick={onRemove} size="icon-sm" type="button" variant="ghost">
+          <Button aria-label={t('dialog_remove_rule')} onClick={onRemove} size="icon-sm" type="button" variant="ghost">
             <Trash2Icon />
           </Button>
         </div>
@@ -129,9 +127,9 @@ function RuleRow({ rule, index, canMoveUp, canMoveDown, onChange, onMove, onRemo
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {MATCH_KIND_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
+            {MATCH_KIND_OPTIONS.map((kind) => (
+              <SelectItem key={kind} value={kind}>
+                {t(`dialog_match_${kind}`)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -139,7 +137,7 @@ function RuleRow({ rule, index, canMoveUp, canMoveDown, onChange, onMove, onRemo
 
         {match.kind === 'status_equals' && (
           <Input
-            aria-label="Status code"
+            aria-label={t('dialog_status_code_aria')}
             className="w-24"
             onChange={(e) => setMatch({ kind: 'status_equals', code: toNumber(e.target.value) })}
             type="number"
@@ -149,14 +147,14 @@ function RuleRow({ rule, index, canMoveUp, canMoveDown, onChange, onMove, onRemo
         {match.kind === 'status_in_range' && (
           <>
             <Input
-              aria-label="Status range minimum"
+              aria-label={t('dialog_status_min_aria')}
               className="w-20"
               onChange={(e) => setMatch({ ...match, min: toNumber(e.target.value) })}
               type="number"
               value={match.min}
             />
             <Input
-              aria-label="Status range maximum"
+              aria-label={t('dialog_status_max_aria')}
               className="w-20"
               onChange={(e) => setMatch({ ...match, max: toNumber(e.target.value) })}
               type="number"
@@ -166,25 +164,25 @@ function RuleRow({ rule, index, canMoveUp, canMoveDown, onChange, onMove, onRemo
         )}
         {match.kind === 'body_regex' && (
           <Input
-            aria-label="Body regex pattern"
+            aria-label={t('dialog_body_regex_aria')}
             className="flex-1"
             onChange={(e) => setMatch({ kind: 'body_regex', pattern: e.target.value })}
-            placeholder="regex"
+            placeholder={t('dialog_regex_placeholder')}
             value={match.pattern}
           />
         )}
         {match.kind === 'redirect_matches' && (
           <Input
-            aria-label="Redirect pattern"
+            aria-label={t('dialog_redirect_aria')}
             className="flex-1"
             onChange={(e) => setMatch({ kind: 'redirect_matches', pattern: e.target.value })}
-            placeholder="redirect pattern"
+            placeholder={t('dialog_redirect_placeholder')}
             value={match.pattern}
           />
         )}
       </div>
       <div className="flex items-center gap-2">
-        <span className="text-muted-foreground text-xs">Result</span>
+        <span className="text-muted-foreground text-xs">{t('dialog_result')}</span>
         <Select onValueChange={(v) => setResult(v as UnlockStatus)} value={rule.result}>
           <SelectTrigger className="w-40">
             <SelectValue />
@@ -192,7 +190,7 @@ function RuleRow({ rule, index, canMoveUp, canMoveDown, onChange, onMove, onRemo
           <SelectContent>
             {STATUS_OPTIONS.map((s) => (
               <SelectItem key={s} value={s}>
-                {s}
+                {t(`status_${s}`)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -260,6 +258,7 @@ export function parseExistingRules(service: UnlockService | null | undefined): U
 }
 
 export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
+  const { t } = useTranslation('ip-quality')
   const isEdit = Boolean(service)
   const createMutation = useCreateService()
   const updateMutation = useUpdateService()
@@ -342,11 +341,11 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
     const rulePayload: UnlockRule[] = rules.map((entry) => entry.rule)
 
     const onSuccess = () => {
-      toast.success(isEdit ? 'Service updated' : 'Service created')
+      toast.success(isEdit ? t('dialog_updated') : t('dialog_created'))
       onOpenChange(false)
     }
     const onError = (err: unknown) => {
-      toast.error(err instanceof Error ? err.message : 'Request failed')
+      toast.error(err instanceof Error ? err.message : t('dialog_request_failed'))
     }
 
     if (isEdit && service) {
@@ -385,17 +384,17 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Edit custom service' : 'New custom service'}</DialogTitle>
+          <DialogTitle>{isEdit ? t('dialog_edit_title') : t('dialog_create_title')}</DialogTitle>
         </DialogHeader>
         <form className="flex min-h-0 flex-col" onSubmit={handleSubmit}>
           <DialogBody className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="ipq-name">Name</Label>
+              <Label htmlFor="ipq-name">{t('dialog_name')}</Label>
               <Input
                 autoComplete="off"
                 id="ipq-name"
                 onChange={(e) => setName(e.target.value)}
-                placeholder="My Service"
+                placeholder={t('dialog_name_placeholder')}
                 required
                 value={name}
               />
@@ -403,7 +402,7 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="ipq-category">Category</Label>
+                <Label htmlFor="ipq-category">{t('dialog_category')}</Label>
                 <Select onValueChange={(v) => setCategory(v ?? 'streaming')} value={category}>
                   <SelectTrigger className="w-full" id="ipq-category">
                     <SelectValue />
@@ -411,14 +410,14 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
                   <SelectContent>
                     {CATEGORY_ORDER.map((c) => (
                       <SelectItem key={c} value={c}>
-                        {c}
+                        {categoryLabel(c)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="ipq-popularity">Popularity</Label>
+                <Label htmlFor="ipq-popularity">{t('dialog_popularity')}</Label>
                 <Input
                   id="ipq-popularity"
                   max={100}
@@ -431,12 +430,12 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="ipq-url">URL</Label>
+              <Label htmlFor="ipq-url">{t('dialog_url')}</Label>
               <Input
                 autoComplete="off"
                 id="ipq-url"
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://example.com/check"
+                placeholder={t('dialog_url_placeholder')}
                 required
                 value={url}
               />
@@ -444,7 +443,7 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="ipq-method">Method</Label>
+                <Label htmlFor="ipq-method">{t('dialog_method')}</Label>
                 <Select onValueChange={(v) => setMethod(v ?? 'GET')} value={method}>
                   <SelectTrigger className="w-full" id="ipq-method">
                     <SelectValue />
@@ -459,7 +458,7 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
                 </Select>
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="ipq-timeout">Timeout (ms)</Label>
+                <Label htmlFor="ipq-timeout">{t('dialog_timeout')}</Label>
                 <Input
                   id="ipq-timeout"
                   min={100}
@@ -472,7 +471,7 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
 
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
-                <Label>Headers</Label>
+                <Label>{t('dialog_headers')}</Label>
                 <Button
                   onClick={() => setHeaders((prev) => [...prev, { uid: nextUid(), name: '', value: '' }])}
                   size="sm"
@@ -480,25 +479,25 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
                   variant="outline"
                 >
                   <PlusIcon />
-                  Add header
+                  {t('dialog_add_header')}
                 </Button>
               </div>
               {headers.map((header) => (
                 <div className="flex items-center gap-2" data-testid="header-row" key={header.uid}>
                   <Input
-                    aria-label="Header name"
+                    aria-label={t('dialog_header_name_aria')}
                     onChange={(e) => updateHeader(header.uid, { name: e.target.value })}
-                    placeholder="Header"
+                    placeholder={t('dialog_header_name_placeholder')}
                     value={header.name}
                   />
                   <Input
-                    aria-label="Header value"
+                    aria-label={t('dialog_header_value_aria')}
                     onChange={(e) => updateHeader(header.uid, { value: e.target.value })}
-                    placeholder="Value"
+                    placeholder={t('dialog_header_value_placeholder')}
                     value={header.value}
                   />
                   <Button
-                    aria-label="Remove header"
+                    aria-label={t('dialog_remove_header')}
                     onClick={() => removeHeader(header.uid)}
                     size="icon-sm"
                     type="button"
@@ -512,7 +511,7 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
 
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
-                <Label>Match rules (evaluated in order)</Label>
+                <Label>{t('dialog_rules')}</Label>
                 <Button
                   onClick={() => setRules((prev) => [...prev, { uid: nextUid(), rule: defaultRule() }])}
                   size="sm"
@@ -520,7 +519,7 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
                   variant="outline"
                 >
                   <PlusIcon />
-                  Add rule
+                  {t('dialog_add_rule')}
                 </Button>
               </div>
               {rules.map((entry, index) => (
@@ -533,16 +532,17 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
                   onMove={(dir) => moveRule(entry.uid, dir)}
                   onRemove={() => removeRule(entry.uid)}
                   rule={entry.rule}
+                  t={t}
                 />
               ))}
             </div>
           </DialogBody>
           <DialogFooter>
             <Button onClick={() => onOpenChange(false)} type="button" variant="outline">
-              Cancel
+              {t('dialog_cancel')}
             </Button>
             <Button disabled={isPending || name.trim().length === 0 || url.trim().length === 0} type="submit">
-              {isEdit ? 'Save' : 'Create'}
+              {isEdit ? t('dialog_save') : t('dialog_create')}
             </Button>
           </DialogFooter>
         </form>

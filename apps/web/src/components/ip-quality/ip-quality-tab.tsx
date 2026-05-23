@@ -14,7 +14,7 @@ interface Props {
 }
 
 export function IpQualityTab({ serverId, serverName }: Props) {
-  const { t } = useTranslation('servers')
+  const { t } = useTranslation('ip-quality')
 
   const { data: serverData, isLoading: serverLoading } = useIpQualityServer(serverId)
   const { data: services = [], isLoading: servicesLoading } = useIpQualityServices()
@@ -32,16 +32,10 @@ export function IpQualityTab({ serverId, serverName }: Props) {
   function handleCheckNow() {
     checkNow.mutate(serverId, {
       onSuccess: () => {
-        toast.success(
-          t('ip_quality_check_triggered', { defaultValue: 'Check triggered — results will arrive shortly.' })
-        )
+        toast.success(t('check_triggered'))
       },
       onError: (err) => {
-        toast.error(
-          err instanceof Error
-            ? err.message
-            : t('ip_quality_check_failed', { defaultValue: 'Failed to trigger check.' })
-        )
+        toast.error(err instanceof Error ? err.message : t('check_failed'))
       }
     })
   }
@@ -51,10 +45,10 @@ export function IpQualityTab({ serverId, serverName }: Props) {
       <div className="space-y-6 pt-4 pb-4">
         {/* Header row */}
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-base">{t('ip_quality_tab_title', { defaultValue: 'IP Quality' })}</h2>
+          <h2 className="font-semibold text-base">{t('tab_title')}</h2>
           <Button disabled={checkNow.isPending} onClick={handleCheckNow} size="sm" variant="outline">
             <RefreshCw aria-hidden="true" className="mr-1.5 size-3.5" />
-            {t('ip_quality_check_now', { defaultValue: 'Check now' })}
+            {t('check_now')}
           </Button>
         </div>
 
@@ -73,9 +67,7 @@ export function IpQualityTab({ serverId, serverName }: Props) {
             {/* Unlock matrix */}
             {enabledServices.length > 0 && (
               <div className="space-y-2">
-                <h3 className="font-medium text-muted-foreground text-sm">
-                  {t('ip_quality_unlock_matrix', { defaultValue: 'Unlock Matrix' })}
-                </h3>
+                <h3 className="font-medium text-muted-foreground text-sm">{t('unlock_matrix')}</h3>
                 <UnlockMatrix overview={overview} servers={servers} services={enabledServices} />
               </div>
             )}
@@ -84,15 +76,8 @@ export function IpQualityTab({ serverId, serverName }: Props) {
               <div className="flex min-h-[160px] items-center justify-center rounded-xl border border-dashed">
                 <div className="space-y-2 text-center">
                   <ShieldCheck aria-hidden="true" className="mx-auto size-8 text-muted-foreground" />
-                  <p className="font-medium text-sm">
-                    {t('ip_quality_no_data', { defaultValue: 'No IP quality data yet' })}
-                  </p>
-                  <p className="max-w-xs text-muted-foreground text-xs">
-                    {t('ip_quality_no_data_hint', {
-                      defaultValue:
-                        'Enable the ip_quality capability on this server and start the agent with --allow-cap ip_quality.'
-                    })}
-                  </p>
+                  <p className="font-medium text-sm">{t('no_data')}</p>
+                  <p className="max-w-xs text-muted-foreground text-xs">{t('no_data_hint')}</p>
                 </div>
               </div>
             )}
@@ -100,22 +85,14 @@ export function IpQualityTab({ serverId, serverName }: Props) {
             {/* Status-change event history */}
             {events.length > 0 && (
               <div className="space-y-2">
-                <h3 className="font-medium text-muted-foreground text-sm">
-                  {t('ip_quality_event_history', { defaultValue: 'Status Change History' })}
-                </h3>
+                <h3 className="font-medium text-muted-foreground text-sm">{t('event_history')}</h3>
                 <div className="rounded-xl bg-card ring-1 ring-foreground/10">
                   <table className="w-full border-collapse text-sm">
                     <thead>
                       <tr className="border-b">
-                        <th className="px-3 py-2 text-left font-medium">
-                          {t('ip_quality_event_service', { defaultValue: 'Service' })}
-                        </th>
-                        <th className="px-3 py-2 text-left font-medium">
-                          {t('ip_quality_event_change', { defaultValue: 'Change' })}
-                        </th>
-                        <th className="px-3 py-2 text-left font-medium">
-                          {t('ip_quality_event_time', { defaultValue: 'Time' })}
-                        </th>
+                        <th className="px-3 py-2 text-left font-medium">{t('event_service')}</th>
+                        <th className="px-3 py-2 text-left font-medium">{t('event_change')}</th>
+                        <th className="px-3 py-2 text-left font-medium">{t('event_time')}</th>
                       </tr>
                     </thead>
                     <tbody>
