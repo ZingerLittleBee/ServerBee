@@ -301,13 +301,16 @@ export function NetworkDetailPage() {
 
   const isRealtime = timeRange === 'realtime'
   const hours = isRealtime ? 1 : timeRange
+  // Anomalies are historical events; in realtime mode use 24h so the count matches
+  // the badge shown on the network overview card, which is also 24h-based.
+  const anomalyHours = isRealtime ? 24 : timeRange
 
   const { data: server, isLoading: serverLoading } = useServer(serverId)
   const { data: summary, isLoading: summaryLoading } = useNetworkServerSummary(serverId)
   const { data: historicalRecords } = useNetworkRecords(serverId, hours, { enabled: !isRealtime })
   // Fetch last 10 min of data as seed for realtime chart (immediate data on first load)
   const { data: seedRecords } = useNetworkRecords(serverId, 1, { enabled: isRealtime })
-  const { data: anomalies = [] } = useNetworkAnomalies(serverId, hours)
+  const { data: anomalies = [] } = useNetworkAnomalies(serverId, anomalyHours)
   const { data: realtimeData } = useNetworkRealtime(serverId)
   const { data: allTargets = [] } = useNetworkTargets()
   const setServerTargets = useSetServerTargets(serverId)
@@ -685,7 +688,7 @@ export function NetworkDetailPage() {
       </div>
 
       {/* Anomaly table */}
-      <AnomalyTable anomalies={anomalies} />
+      <AnomalyTable anomalies={anomalies} windowHours={anomalyHours} />
 
       {/* Traceroute section */}
       <div className="mt-6">

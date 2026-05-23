@@ -62,6 +62,8 @@
   "server_info": "服务器信息",
   "anomaly_summary": "异常摘要",
   "no_anomalies": "未检测到异常",
+  "no_anomalies_in_window": "近 {{hours}} 小时未检测到异常",
+  "anomaly_window": "近 {{hours}} 小时",
   "no_targets": "未配置探测目标",
   "confirm_delete_target": "确定要删除此目标吗？",
   "save": "保存",
