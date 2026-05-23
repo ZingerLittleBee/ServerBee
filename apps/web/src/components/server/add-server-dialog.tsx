@@ -226,56 +226,6 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
               </div>
 
               <div>
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <p className="font-medium text-muted-foreground text-xs">{t('add_server.caps_label')}</p>
-                  <div className="flex gap-2 text-xs">
-                    <button
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={resetCapsToDefault}
-                      type="button"
-                    >
-                      {t('add_server.caps_reset')}
-                    </button>
-                    <span className="text-muted-foreground/50">·</span>
-                    <button
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={selectAllCaps}
-                      type="button"
-                    >
-                      {t('add_server.caps_select_all')}
-                    </button>
-                    <span className="text-muted-foreground/50">·</span>
-                    <button
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={selectNoCaps}
-                      type="button"
-                    >
-                      {t('add_server.caps_select_none')}
-                    </button>
-                  </div>
-                </div>
-                <p className="mb-2 text-muted-foreground text-xs">{t('add_server.caps_hint')}</p>
-                <div className="space-y-3 rounded-md border bg-muted/30 p-3">
-                  <CapGroup
-                    caps={standardCaps}
-                    onToggle={toggleCap}
-                    selected={selectedCaps}
-                    t={t}
-                    title={t('add_server.caps_low_risk')}
-                    tone="standard"
-                  />
-                  <CapGroup
-                    caps={highRiskCaps}
-                    onToggle={toggleCap}
-                    selected={selectedCaps}
-                    t={t}
-                    title={t('add_server.caps_high_risk')}
-                    tone="high"
-                  />
-                </div>
-              </div>
-
-              <div>
                 <p className="mb-1 font-medium text-muted-foreground text-xs">{t('add_server.install_command')}</p>
                 <div className="flex min-w-0 items-start gap-2">
                   <code className="min-w-0 flex-1 break-all rounded-md border bg-muted/50 px-3 py-2 font-mono text-xs">
@@ -335,6 +285,57 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
                       {t(`add_server.${opt.key}`)}
                     </Button>
                   ))}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  {/* biome-ignore lint/a11y/noLabelWithoutControl: label describes the checkbox group below */}
+                  <label className="font-medium text-sm">{t('add_server.caps_label')}</label>
+                  <div className="flex gap-2 text-xs">
+                    <button
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={resetCapsToDefault}
+                      type="button"
+                    >
+                      {t('add_server.caps_reset')}
+                    </button>
+                    <span className="text-muted-foreground/50">·</span>
+                    <button
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={selectAllCaps}
+                      type="button"
+                    >
+                      {t('add_server.caps_select_all')}
+                    </button>
+                    <span className="text-muted-foreground/50">·</span>
+                    <button
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={selectNoCaps}
+                      type="button"
+                    >
+                      {t('add_server.caps_select_none')}
+                    </button>
+                  </div>
+                </div>
+                <p className="text-muted-foreground text-xs">{t('add_server.caps_hint')}</p>
+                <div className="mt-2 space-y-3 rounded-md border bg-muted/30 p-3">
+                  <CapGroup
+                    caps={standardCaps}
+                    onToggle={toggleCap}
+                    selected={selectedCaps}
+                    t={t}
+                    title={t('add_server.caps_low_risk')}
+                    tone="standard"
+                  />
+                  <CapGroup
+                    caps={highRiskCaps}
+                    onToggle={toggleCap}
+                    selected={selectedCaps}
+                    t={t}
+                    title={t('add_server.caps_high_risk')}
+                    tone="high"
+                  />
                 </div>
               </div>
             </div>
