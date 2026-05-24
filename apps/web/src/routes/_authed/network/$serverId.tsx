@@ -1173,30 +1173,32 @@ export function NetworkDetailPage() {
           {allTargets.length === 0 ? (
             <p className="py-4 text-center text-muted-foreground text-sm">{t('no_targets')}</p>
           ) : (
-            <div className="max-h-80 space-y-1.5 overflow-y-auto rounded-md border p-3">
-              {allTargets.map((target) => (
-                // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
-                <label
-                  className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40"
-                  key={target.id}
-                >
-                  <Checkbox
-                    checked={selectedTargetIds.has(target.id)}
-                    onCheckedChange={() => toggleSelectedTarget(target.id)}
-                  />
-                  <span className="flex-1 font-medium">{getLocalizedTargetDisplayName(target)}</span>
-                  {target.provider && (
-                    <span className="text-muted-foreground text-xs">{getLocalizedTargetDisplayProvider(target)}</span>
-                  )}
-                  {target.location && (
-                    <span className="text-muted-foreground text-xs">{getLocalizedTargetDisplayLocation(target)}</span>
-                  )}
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
-                    {getProbeTypeLabel(target.probe_type)}
-                  </span>
-                </label>
-              ))}
-            </div>
+            <ScrollArea className="max-h-80 rounded-md border">
+              <div className="space-y-1.5 p-3">
+                {allTargets.map((target) => (
+                  // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
+                  <label
+                    className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40"
+                    key={target.id}
+                  >
+                    <Checkbox
+                      checked={selectedTargetIds.has(target.id)}
+                      onCheckedChange={() => toggleSelectedTarget(target.id)}
+                    />
+                    <span className="flex-1 font-medium">{getLocalizedTargetDisplayName(target)}</span>
+                    {target.provider && (
+                      <span className="text-muted-foreground text-xs">{getLocalizedTargetDisplayProvider(target)}</span>
+                    )}
+                    {target.location && (
+                      <span className="text-muted-foreground text-xs">{getLocalizedTargetDisplayLocation(target)}</span>
+                    )}
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
+                      {getProbeTypeLabel(target.probe_type)}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </ScrollArea>
           )}
 
           <div className="flex gap-2">
