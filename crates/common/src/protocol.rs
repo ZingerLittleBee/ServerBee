@@ -1398,6 +1398,9 @@ mod tests {
                     rtt2: Some(1.456),
                     rtt3: Some(1.678),
                     asn: None,
+                    ips: vec![], total_sent: None, total_recv: None,
+                    loss_pct: None, best_ms: None, worst_ms: None, avg_ms: None,
+                    stddev_ms: None, jitter_ms: None,
                 },
                 TracerouteHop {
                     hop: 2,
@@ -1407,6 +1410,9 @@ mod tests {
                     rtt2: None,
                     rtt3: None,
                     asn: None,
+                    ips: vec![], total_sent: None, total_recv: None,
+                    loss_pct: None, best_ms: None, worst_ms: None, avg_ms: None,
+                    stddev_ms: None, jitter_ms: None,
                 },
             ],
             completed: true,
@@ -2034,6 +2040,59 @@ mod tests {
             }
             _ => panic!("Expected IpQualityUpdate"),
         }
+    }
+
+    #[test]
+    fn test_traceroute_hop_legacy_fields_skipped_when_none() {
+        // A new-schema hop (filled by trippy) should NOT carry stale rtt1/2/3
+        // keys in its JSON. Round-trip a hop with new fields populated but
+        // legacy fields None and assert the serialized form has no rtt* / ip
+        // keys (they are skip_serializing_if Option::is_none).
+        let hop = TracerouteHop {
+            hop: 1,
+            ip: None,
+            hostname: Some("router.local".into()),
+            rtt1: None, rtt2: None, rtt3: None,
+            asn: None,
+            ips: vec!["10.0.0.1".into()],
+            total_sent: Some(5),
+            total_recv: Some(5),
+            loss_pct: Some(0.0),
+            best_ms: Some(1.1),
+            worst_ms: Some(1.5),
+            avg_ms: Some(1.3),
+            stddev_ms: Some(0.15),
+            jitter_ms: Some(0.05),
+        };
+        let json = serde_json::to_string(&hop).unwrap();
+        assert!(!json.contains("\"rtt1\""), "got: {json}");
+        assert!(!json.contains("\"ip\":"), "got: {json}");
+        assert!(json.contains("\"ips\":[\"10.0.0.1\"]"));
+        assert!(json.contains("\"loss_pct\":0.0"));
+    }
+
+    #[test]
+    fn test_traceroute_hop_new_schema_fields_skipped_when_default() {
+        // A legacy-schema hop emitted by an old agent should NOT carry empty
+        // ips: [] or null new-schema fields in JSON. Round-trip a legacy hop
+        // and assert ips / total_sent etc. are absent.
+        let hop = TracerouteHop {
+            hop: 2,
+            ip: Some("8.8.8.8".into()),
+            hostname: Some("dns.google".into()),
+            rtt1: Some(12.0), rtt2: Some(11.8), rtt3: Some(12.3),
+            asn: Some("AS15169".into()),
+            ips: vec![],
+            total_sent: None, total_recv: None,
+            loss_pct: None,
+            best_ms: None, worst_ms: None, avg_ms: None,
+            stddev_ms: None, jitter_ms: None,
+        };
+        let json = serde_json::to_string(&hop).unwrap();
+        assert!(!json.contains("\"ips\":"),       "got: {json}");
+        assert!(!json.contains("\"total_sent\""), "got: {json}");
+        assert!(!json.contains("\"loss_pct\""),   "got: {json}");
+        assert!(json.contains("\"rtt1\":12.0"));
     }
 
     #[test]

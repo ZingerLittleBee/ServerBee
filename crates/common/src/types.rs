@@ -107,12 +107,42 @@ pub struct TaskResult {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct TracerouteHop {
     pub hop: u8,
+
+    // --- Legacy fields filled by the old shell-based agent only ---
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ip: Option<String>,
     pub hostname: Option<String>,
-    pub rtt1: Option<f64>, // ms
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rtt1: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rtt2: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rtt3: Option<f64>,
     pub asn: Option<String>,
+
+    // --- New fields populated by the trippy-core agent ---
+    /// All IPs that responded for this TTL (ECMP). Empty when no response yet.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ips: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_sent: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_recv: Option<u32>,
+    /// Packet loss as percentage 0.0–100.0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loss_pct: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub best_ms: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worst_ms: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avg_ms: Option<f64>,
+    /// RTT standard deviation across all received probes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stddev_ms: Option<f64>,
+    /// Round-trip jitter (difference vs. previous probe).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jitter_ms: Option<f64>,
 }
 
 /// Agent-facing wire type for network probe targets (minimal fields for probing)

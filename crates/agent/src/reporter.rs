@@ -1506,6 +1506,9 @@ fn parse_traceroute_line(line: &str) -> Option<TracerouteHop> {
             rtt2: None,
             rtt3: None,
             asn: None,
+            ips: vec![], total_sent: None, total_recv: None,
+            loss_pct: None, best_ms: None, worst_ms: None, avg_ms: None,
+            stddev_ms: None, jitter_ms: None,
         });
     }
 
@@ -1545,6 +1548,9 @@ fn parse_traceroute_line(line: &str) -> Option<TracerouteHop> {
         rtt2: rtts.get(1).copied().flatten(),
         rtt3: rtts.get(2).copied().flatten(),
         asn: None,
+        ips: vec![], total_sent: None, total_recv: None,
+        loss_pct: None, best_ms: None, worst_ms: None, avg_ms: None,
+        stddev_ms: None, jitter_ms: None,
     })
 }
 
@@ -1586,6 +1592,9 @@ fn parse_mtr_line(line: &str) -> Option<TracerouteHop> {
         rtt2,
         rtt3,
         asn: None,
+        ips: vec![], total_sent: None, total_recv: None,
+        loss_pct: None, best_ms: None, worst_ms: None, avg_ms: None,
+        stddev_ms: None, jitter_ms: None,
     })
 }
 
