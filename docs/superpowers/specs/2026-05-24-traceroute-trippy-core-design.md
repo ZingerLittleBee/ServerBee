@@ -166,6 +166,11 @@ TracerouteUpdate {
     server_id: String,
     request_id: String,
     target: String,
+    /// Pulled from the server-side TracerouteRequestMeta cache so any browser
+    /// (not just the originator) renders the correct protocol label and start
+    /// timestamp without an extra GET round-trip.
+    protocol: RecordedProtocol,
+    started_at: i64,
     round: u32,
     total_rounds: u32,
     /// Server-side enriched (hostname filled in; ASN is deferred — see Server section).
@@ -204,11 +209,22 @@ const DEFAULT_MAX_ROUNDS: u32 = 5;
 const ROUND_INTERVAL: Duration = Duration::from_millis(1000);
 const PROBE_TIMEOUT: Duration = Duration::from_millis(1500);
 
-pub fn parse_protocol(s: Option<&str>) -> trippy_core::Protocol {
-    match s.unwrap_or("icmp").to_ascii_lowercase().as_str() {
-        "udp" => Protocol::Udp,
-        "tcp" => Protocol::Tcp,
-        _    => Protocol::Icmp,
+/// Strict input enum carried over the wire on ServerMessage::Traceroute.
+/// Matches the request DTO accepted by the server's POST handler exactly —
+/// the server has already validated that the value is one of these three.
+/// Note: the "legacy" sentinel used for persisted records lives only in
+/// the DB and the read DTO; it is not a probe-mode value.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TraceProtocol {
+    Icmp,
+    Udp,
+    Tcp,
+}
+
+impl From<TraceProtocol> for trippy_core::Protocol {
+    fn from(p: TraceProtocol) -> Self {
+        match p { TraceProtocol::Icmp => Self::Icmp, TraceProtocol::Udp => Self::Udp, TraceProtocol::Tcp => Self::Tcp }
     }
 }
 
@@ -220,10 +236,37 @@ pub fn spawn_traceroute(
     request_id: String,
     target: String,
     max_hops: u8,
-    protocol: Option<String>,
+    protocol: TraceProtocol,                  // strict; server pre-validates
     tx: tokio::sync::mpsc::Sender<AgentMessage>,
 ) { ... }
 ```
+
+The wire field on `ServerMessage::Traceroute.protocol` therefore changes from `Option<String>` to `Option<TraceProtocol>` (still `Option` so old agents see a missing field and default to ICMP, while old servers can send to new agents). Update the protocol-changes section to match:
+
+```rust
+Traceroute {
+    request_id: String,
+    target: String,
+    max_hops: u8,
+    /// Strict enum; defaults to ICMP when missing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    protocol: Option<TraceProtocol>,
+},
+```
+
+On the **server side**, the POST request DTO mirrors the same strict enum:
+
+```rust
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct TriggerTracerouteRequest {
+    pub target: String,
+    /// One of icmp | udp | tcp. Missing defaults to icmp.
+    #[serde(default)]
+    pub protocol: Option<TraceProtocol>,
+}
+```
+
+Any value other than `"icmp" | "udp" | "tcp"` (or missing) yields a `serde` deserialization error, which the existing axum extractor maps to **HTTP 422** automatically. The handler therefore never sees `"banana"` or `"legacy"` from a client.
 
 Inside `spawn_traceroute`:
 
@@ -232,6 +275,22 @@ Inside `spawn_traceroute`:
 3. **Build + run with two-stage privilege fallback.** Both `Builder::build()` and `Tracer::run_with()` can fail with privilege errors — `build()` does config validation and may trigger a probe socket open early on some platforms, but actual `sendto`/`recvfrom` privilege errors typically surface inside `run_with`. The retry must wrap both:
 
    ```rust
+   // trippy-core 0.13's Builder::build() validates that Protocol::Udp and
+   // Protocol::Tcp REQUIRE a PortDirection other than None — defaulting to
+   // None causes BadConfig at build time. Pick sensible per-protocol
+   // defaults; these are not exposed in the dialog (which only offers the
+   // protocol dropdown) and can be revisited if we add an "Advanced" panel.
+   const UDP_DEFAULT_DEST_PORT: u16 = 33_434;   // classic Unix traceroute
+   const TCP_DEFAULT_DEST_PORT: u16 = 80;       // common tcptraceroute default
+
+   fn port_direction_for(proto: Protocol) -> PortDirection {
+       match proto {
+           Protocol::Icmp => PortDirection::None,
+           Protocol::Udp  => PortDirection::FixedDest(Port(UDP_DEFAULT_DEST_PORT)),
+           Protocol::Tcp  => PortDirection::FixedDest(Port(TCP_DEFAULT_DEST_PORT)),
+       }
+   }
+
    fn try_trace(addr, max_hops, proto, priv_mode) -> Result<(), trippy_core::Error> {
        let tracer = Builder::new(addr)
            .max_ttl(max_hops)
@@ -240,6 +299,7 @@ Inside `spawn_traceroute`:
            .max_round_duration(ROUND_INTERVAL * 2)
            .read_timeout(PROBE_TIMEOUT)
            .protocol(proto)
+           .port_direction(port_direction_for(proto))   // ← required for UDP/TCP
            .privilege_mode(priv_mode)
            .build()?;
        tracer.run_with(|round| { /* see step 4 */ })
@@ -312,11 +372,15 @@ Delete `execute_traceroute`, `parse_traceroute_output`, `parse_traceroute_line`.
 
 `crates/agent/src/traceroute.rs#tests`:
 
-- `test_parse_protocol_defaults_to_icmp`
 - `test_parse_protocol_case_insensitive`
-- `test_parse_protocol_invalid_falls_back_to_icmp`
 - `test_is_valid_traceroute_target` (migrated suite)
 - `test_resolve_literal_ipv4` / `test_resolve_literal_ipv6` / `test_resolve_invalid_hostname_returns_err`
+- `test_port_direction_for_icmp_is_none`
+- `test_port_direction_for_udp_is_fixed_dest_33434`
+- `test_port_direction_for_tcp_is_fixed_dest_80`
+- `test_builder_builds_for_all_three_protocols` — calls `Builder::new(1.1.1.1).protocol(_).port_direction(port_direction_for(_)).build()` for each of ICMP/UDP/TCP and asserts `is_ok()`. This is the regression guard for the trippy `BadConfig` failure on UDP/TCP when `PortDirection::None` is left as default.
+
+Note: `parse_protocol` is no longer needed at the agent — strict validation moved to the server (see *Server* section). The agent receives an already-validated value or rejects unknown ones loudly rather than silently falling back.
 
 The end-to-end tracer integration is not covered by automated tests because raw socket access is unavailable in CI. A manual checklist lives in `tests/traceroute.md` (to be created).
 
@@ -338,7 +402,11 @@ impl TracerouteEnricher {
 }
 ```
 
-- **PTR lookup** uses `tokio::task::spawn_blocking + dns_lookup::lookup_addr` (or `getnameinfo` direct). LRU is approximated with a `DashMap` plus a 1 h TTL and a max cap of 4096 entries; eviction runs piggybacked on inserts (drop oldest when over cap). No extra crate.
+- **PTR lookup** uses `tokio::task::spawn_blocking` wrapping `dns_lookup::lookup_addr` (a new dependency added to `crates/server/Cargo.toml`). Rationale: `dns_lookup` is a tiny, no-async-runtime wrapper over `getaddrinfo`/`getnameinfo` (MIT/Apache-2.0, no transitive bloat); writing our own `getnameinfo` FFI is gratuitous. Acceptable given the project's existing willingness to depend on small specialized crates (e.g., `dashmap`, `x509-parser`).
+
+  Alternative considered and rejected: pulling in `trust-dns-resolver` (heavier, brings its own runtime config); using `tokio::net::lookup_host` (forward-only, not reverse).
+
+  LRU is approximated with a `DashMap` plus a 1 h TTL and a max cap of 4096 entries; eviction runs piggybacked on inserts (drop oldest when over cap). No extra LRU crate.
 - **ASN is deferred.** The existing `GeoIpService` is country/region only (loaded from `dbip-country-lite.mmdb`); it does not contain ASN data. The IP Quality service has ASN, but only for the agent's own outbound IP — it cannot answer ASN for arbitrary hop IPs along a traceroute path. Properly populating ASN requires either:
   - Adding a separate `dbip-asn-lite.mmdb` (or equivalent) plus a config key, loader, and downloader, or
   - Calling an external whois / Team Cymru DNS service per hop, with caching and rate limits.
@@ -356,7 +424,8 @@ CREATE TABLE traceroute_record (
     id               TEXT PRIMARY KEY,            -- = request_id (UUID)
     server_id        TEXT NOT NULL,
     target           TEXT NOT NULL,
-    protocol         TEXT NOT NULL,               -- 'icmp' | 'udp' | 'tcp' | 'legacy'
+    protocol         TEXT NOT NULL
+                     CHECK (protocol IN ('icmp', 'udp', 'tcp', 'legacy')),
     started_at       INTEGER NOT NULL,            -- unix ms
     completed_at     INTEGER,                     -- NULL when interrupted
     total_rounds     INTEGER NOT NULL,
@@ -369,6 +438,8 @@ CREATE TABLE traceroute_record (
 CREATE INDEX idx_traceroute_record_server_started
     ON traceroute_record(server_id, started_at DESC);
 ```
+
+The sea-orm entity uses an enum-string mapping (e.g., a `RecordedProtocol { Icmp, Udp, Tcp, Legacy }` with `IntoActiveValue`/`TryGetable` implementations) so application code reads/writes a real enum, and the `CHECK` constraint catches both serde drift and direct SQL bugs.
 
 Persistence decisions:
 
@@ -482,26 +553,39 @@ DTOs:
 pub struct TracerouteRecordSummary {
     pub request_id: String,
     pub target: String,
-    pub protocol: String,
+    pub protocol: RecordedProtocol,        // "icmp" | "udp" | "tcp" | "legacy"
     pub started_at: i64,
     pub completed_at: Option<i64>,
     pub hop_count: u32,
     pub has_error: bool,
 }
 
+/// Unified response shape returned by `GET .../traceroute/{request_id}`.
+/// Serves BOTH the in-memory live snapshot (in-flight trace) and the DB
+/// detail (completed trace evicted from cache). The two sources map onto
+/// the same struct so the frontend uses one type and one hook.
 #[derive(Serialize, ToSchema)]
-pub struct TracerouteRecordDetail {
+pub struct TracerouteSnapshotResponse {
     pub request_id: String,
     pub target: String,
-    pub protocol: String,
+    pub protocol: RecordedProtocol,
     pub started_at: i64,
     pub completed_at: Option<i64>,
+    pub round: u32,                        // for live: current round; for DB: completed_rounds
+    pub total_rounds: u32,
+    pub completed: bool,                   // for DB: derived from completed_at.is_some()
     pub hops: Vec<TracerouteHop>,
     pub error: Option<String>,
 }
 ```
 
-The list endpoint returns summaries only; clients fetch full hops via the existing `GET .../traceroute/{request_id}` endpoint when a record is selected.
+The list endpoint returns summaries only; clients fetch the full snapshot via the existing `GET .../traceroute/{request_id}` endpoint when a record is selected. The endpoint's resolution order:
+
+1. Look up in-memory cache by `request_id`. If present, return its snapshot.
+2. Otherwise look up `traceroute_record` in DB scoped to `server_id` + `request_id`. If present, build a snapshot with `round = completed_rounds`, `completed = completed_at.is_some()`.
+3. Otherwise return 404.
+
+`TracerouteResultResponse` (the existing wire type at `crates/server/src/router/api/traceroute.rs`) is **replaced** by `TracerouteSnapshotResponse`. OpenAPI consumers will see a wider object; the old fields (`target`, `hops`, `completed`, `error`) remain, the new fields are additive.
 
 ### Server tests
 
