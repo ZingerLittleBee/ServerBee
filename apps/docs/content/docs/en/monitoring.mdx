@@ -389,23 +389,42 @@ Click a server card to see `/network/:serverId` with:
 
 ### Traceroute
 
-The network detail page can run traceroute from the selected agent to a target host or IP. This is useful for diagnosing routing changes and packet loss outside regular probe intervals.
+The network detail page can run traceroute from the selected agent to a target host or IP to diagnose routing changes and packet loss.
 
 - Requires the agent's effective `CAP_PING_ICMP` capability.
 - The target may contain only letters, numbers, dots, hyphens, and colons.
-- The server sends `max_hops = 30` to the agent.
-- The agent times out the command after 60 seconds.
-- On Linux/macOS, the agent tries `traceroute` first and falls back to `mtr` if `traceroute` is missing.
-- On Windows, the agent uses the platform traceroute command.
+- The dialog exposes an ICMP / UDP / TCP protocol dropdown.
+- 5 rounds by default; each round is streamed over WebSocket and the table fills in real time with:
+  Hop / IP / Hostname / ASN / Loss% / Best / Avg / Worst / Jitter / StdDev.
+- For ECMP multi-path routes, a single TTL may have multiple IPs — the first row shows the primary IP, hover the `+N` chip to see the rest.
+- Completed traceroutes are persisted to local SQLite. Click any history row to load that snapshot;
+  admins can delete one row or clear the whole history.
+- Triggering a trace requires admin. Read-only members can browse history but cannot start a new trace or delete records.
 
-API flow:
+#### Privileges
+
+The ServerBee agent now embeds [trippy-core](https://crates.io/crates/trippy-core) to send raw ICMP/UDP/TCP probes directly,
+**no longer depending on the system `traceroute` / `mtr` binaries**. Raw sockets still require OS-level privileges:
+
+| Platform | Requirement |
+|----------|-------------|
+| Linux | `CAP_NET_RAW` or run as root. One-shot setup: `sudo setcap cap_net_raw+ep $(which serverbee-agent)` |
+| macOS | Run as root (sudo). In some scenarios, unprivileged ICMP datagram sockets work as a fallback. |
+| Windows | Start the agent as Administrator. |
+
+If privileges are missing, the traceroute call returns an error immediately with the matching platform hint — no agent restart needed.
+
+#### API flow
 
 ```http
-POST /api/servers/{id}/traceroute
-GET  /api/servers/{id}/traceroute/{request_id}
+POST   /api/servers/{id}/traceroute          { target, protocol? }   → { request_id }
+GET    /api/servers/{id}/traceroute/{rid}    → latest snapshot (protocol/started_at/round/total_rounds + full fields)
+GET    /api/servers/{id}/traceroute          → history summaries for that server, newest first
+DELETE /api/servers/{id}/traceroute/{rid}    → delete one (admin)
+DELETE /api/servers/{id}/traceroute          → clear all (admin)
 ```
 
-The first request returns a `request_id`; poll the second endpoint until `completed` is true.
+The server broadcasts `BrowserMessage::TracerouteUpdate` carrying the incremental result of each round. After a WebSocket reconnect, clients can re-fetch the latest cumulative snapshot via the per-record GET endpoint.
 
 ### Data Retention
 
