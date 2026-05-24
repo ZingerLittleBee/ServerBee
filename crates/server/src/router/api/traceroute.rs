@@ -62,6 +62,7 @@ pub fn write_router() -> Router<Arc<AppState>> {
     ),
     security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
+#[allow(deprecated)]
 pub async fn trigger_traceroute(
     State(state): State<Arc<AppState>>,
     Path(server_id): Path<String>,
@@ -90,9 +91,10 @@ pub async fn trigger_traceroute(
     let request_id = Uuid::new_v4().to_string();
 
     // Insert placeholder in traceroute_results cache
+    #[allow(deprecated)]
     state
         .agent_manager
-        .insert_traceroute_placeholder(&request_id, &server_id, &input.target);
+        .insert_traceroute_placeholder_legacy(&request_id, &server_id, &input.target);
 
     // Send Traceroute command to agent
     let msg = ServerMessage::Traceroute {
@@ -123,6 +125,7 @@ pub async fn trigger_traceroute(
     ),
     security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
+#[allow(deprecated)]
 pub async fn get_traceroute_result(
     State(state): State<Arc<AppState>>,
     Path((server_id, request_id)): Path<(String, String)>,

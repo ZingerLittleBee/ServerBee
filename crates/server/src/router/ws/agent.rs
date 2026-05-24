@@ -386,6 +386,7 @@ async fn handle_current_connection_frame(
     true
 }
 
+#[allow(deprecated)]
 async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: AgentMessage) {
     match msg {
         AgentMessage::SystemInfo {

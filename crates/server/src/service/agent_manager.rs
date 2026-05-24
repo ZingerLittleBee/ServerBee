@@ -8,7 +8,7 @@ use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 
 use serverbee_common::constants::{CAP_DOCKER, effective_capabilities, has_capability};
 use serverbee_common::docker_types::*;
-use serverbee_common::protocol::{AgentMessage, BrowserMessage, ServerMessage};
+use serverbee_common::protocol::{AgentMessage, BrowserMessage, RecordedProtocol, ServerMessage};
 use serverbee_common::types::{ServerStatus, SystemReport, TracerouteHop};
 
 use crate::state::AppState;
@@ -36,17 +36,36 @@ pub enum TerminalSessionEvent {
     Error(String),
 }
 
-pub struct TracerouteResultData {
+#[derive(Clone, Debug)]
+pub struct TracerouteRequestMeta {
+    pub server_id: String,
     pub target: String,
-    pub hops: Vec<TracerouteHop>,
+    pub protocol: RecordedProtocol,
+    pub started_at: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct TracerouteSnapshot {
+    pub server_id: String,
+    pub target: String,
+    pub protocol: RecordedProtocol,
+    pub started_at: i64,
+    pub round: u32,
+    pub total_rounds: u32,
     pub completed: bool,
+    pub hops: Vec<TracerouteHop>,
     pub error: Option<String>,
 }
 
-pub struct TracerouteResultEntry {
-    pub server_id: String,
-    pub result: TracerouteResultData,
-    pub created_at: Instant,
+struct TracerouteCacheEntry {
+    meta: TracerouteRequestMeta,
+    round: u32,
+    total_rounds: u32,
+    hops: Vec<TracerouteHop>,
+    completed: bool,
+    error: Option<String>,
+    created_at: Instant,
+    completed_at: Option<Instant>,
 }
 
 pub struct AgentManager {
@@ -74,7 +93,7 @@ pub struct AgentManager {
     /// Maps server_id -> (session_id -> log entry sender)
     docker_log_sessions: DashMap<String, DashMap<String, mpsc::Sender<Vec<DockerLogEntry>>>>,
     /// Maps request_id -> traceroute result entry (cached for polling)
-    traceroute_results: DashMap<String, TracerouteResultEntry>,
+    traceroute_results: DashMap<String, TracerouteCacheEntry>,
     server_lifecycle_locks: DashMap<String, Arc<Mutex<()>>>,
     next_connection_id: AtomicU64,
 }
@@ -609,56 +628,158 @@ impl AgentManager {
             .retain(|_, (_, created_at, ttl)| now.duration_since(*created_at) < *ttl);
     }
 
-    // --- Traceroute result cache ---
+    // --- Traceroute cache ---
 
-    /// Insert a placeholder traceroute result entry (completed=false) before sending to agent.
-    pub fn insert_traceroute_placeholder(&self, request_id: &str, server_id: &str, target: &str) {
+    pub fn insert_traceroute_placeholder(
+        &self,
+        request_id: &str,
+        meta: TracerouteRequestMeta,
+    ) {
         self.traceroute_results.insert(
             request_id.to_string(),
-            TracerouteResultEntry {
-                server_id: server_id.to_string(),
-                result: TracerouteResultData {
-                    target: target.to_string(),
-                    hops: vec![],
-                    completed: false,
-                    error: None,
-                },
+            TracerouteCacheEntry {
+                meta,
+                round: 0,
+                total_rounds: 0,
+                hops: vec![],
+                completed: false,
+                error: None,
                 created_at: Instant::now(),
+                completed_at: None,
             },
         );
     }
 
-    /// Update a traceroute result entry with the actual data from the agent.
-    pub fn update_traceroute_result(&self, request_id: &str, result: TracerouteResultData) {
+    /// Apply one round of trippy data to the cache. Drops the message if no
+    /// placeholder exists (e.g., cache evicted or stale agent reply).
+    /// Returns the snapshot AFTER applying, or None if dropped.
+    pub fn update_traceroute_round(
+        &self,
+        request_id: &str,
+        round: u32,
+        total_rounds: u32,
+        hops: Vec<TracerouteHop>,
+        completed: bool,
+        error: Option<String>,
+    ) -> Option<TracerouteSnapshot> {
+        let mut entry = self.traceroute_results.get_mut(request_id)?;
+        entry.round = round;
+        entry.total_rounds = total_rounds;
+        entry.hops = hops;
+        entry.completed = completed;
+        entry.error = error;
+        if completed && entry.completed_at.is_none() {
+            entry.completed_at = Some(Instant::now());
+        }
+        Some(TracerouteSnapshot {
+            server_id: entry.meta.server_id.clone(),
+            target: entry.meta.target.clone(),
+            protocol: entry.meta.protocol,
+            started_at: entry.meta.started_at,
+            round: entry.round,
+            total_rounds: entry.total_rounds,
+            completed: entry.completed,
+            hops: entry.hops.clone(),
+            error: entry.error.clone(),
+        })
+    }
+
+    pub fn get_traceroute_snapshot(&self, request_id: &str) -> Option<TracerouteSnapshot> {
+        self.traceroute_results.get(request_id).map(|e| TracerouteSnapshot {
+            server_id: e.meta.server_id.clone(),
+            target: e.meta.target.clone(),
+            protocol: e.meta.protocol,
+            started_at: e.meta.started_at,
+            round: e.round,
+            total_rounds: e.total_rounds,
+            completed: e.completed,
+            hops: e.hops.clone(),
+            error: e.error.clone(),
+        })
+    }
+
+    pub fn get_traceroute_meta(&self, request_id: &str) -> Option<TracerouteRequestMeta> {
+        self.traceroute_results.get(request_id).map(|e| e.meta.clone())
+    }
+
+    pub fn set_traceroute_meta_protocol(&self, request_id: &str, protocol: RecordedProtocol) {
         if let Some(mut entry) = self.traceroute_results.get_mut(request_id) {
-            entry.result = result;
+            entry.meta.protocol = protocol;
         }
     }
 
-    /// Get a traceroute result by request_id. Returns (server_id, result) clone.
+    /// Evict cache entries 120s after `completed_at` (or 120s after creation
+    /// for stuck/never-completed traces).
+    pub fn cleanup_traceroute_results(&self) {
+        let now = Instant::now();
+        self.traceroute_results.retain(|_, entry| {
+            let anchor = entry.completed_at.unwrap_or(entry.created_at);
+            now.duration_since(anchor).as_secs() < 120
+        });
+    }
+
+    // --- TEMPORARY SHIMS (removed by Tasks 11-13) ---
+
+    #[deprecated(note = "use TracerouteRequestMeta + insert_traceroute_placeholder(meta)")]
+    #[allow(dead_code)]
+    pub fn insert_traceroute_placeholder_legacy(
+        &self,
+        request_id: &str,
+        server_id: &str,
+        target: &str,
+    ) {
+        self.insert_traceroute_placeholder(
+            request_id,
+            TracerouteRequestMeta {
+                server_id: server_id.to_string(),
+                target: target.to_string(),
+                protocol: RecordedProtocol::Icmp,
+                started_at: chrono::Utc::now().timestamp_millis(),
+            },
+        );
+    }
+
+    /// Returns the snapshot in the legacy 4-field tuple shape so the current
+    /// router code still compiles before Tasks 11-13 land.
+    #[deprecated(note = "use get_traceroute_snapshot")]
+    #[allow(dead_code, deprecated)]
     pub fn get_traceroute_result(
         &self,
         request_id: &str,
     ) -> Option<(String, TracerouteResultData)> {
-        self.traceroute_results.get(request_id).map(|entry| {
-            (
-                entry.server_id.clone(),
-                TracerouteResultData {
-                    target: entry.result.target.clone(),
-                    hops: entry.result.hops.clone(),
-                    completed: entry.result.completed,
-                    error: entry.result.error.clone(),
-                },
-            )
-        })
+        let s = self.get_traceroute_snapshot(request_id)?;
+        Some((
+            s.server_id.clone(),
+            TracerouteResultData {
+                target: s.target,
+                hops: s.hops,
+                completed: s.completed,
+                error: s.error,
+            },
+        ))
     }
 
-    /// Remove traceroute result entries older than 120 seconds.
-    pub fn cleanup_traceroute_results(&self) {
-        let now = Instant::now();
-        self.traceroute_results
-            .retain(|_, entry| now.duration_since(entry.created_at).as_secs() < 120);
+    #[deprecated(note = "use update_traceroute_round")]
+    #[allow(dead_code, deprecated)]
+    pub fn update_traceroute_result(&self, request_id: &str, result: TracerouteResultData) {
+        let _ = self.update_traceroute_round(
+            request_id,
+            1,
+            1,
+            result.hops,
+            result.completed,
+            result.error,
+        );
     }
+}
+
+#[deprecated]
+#[allow(dead_code)]
+pub struct TracerouteResultData {
+    pub target: String,
+    pub hops: Vec<TracerouteHop>,
+    pub completed: bool,
+    pub error: Option<String>,
 }
 
 /// Clean up Docker viewer tracking, features, and broadcast availability change.
@@ -698,7 +819,7 @@ pub async fn cleanup_disconnected_docker_state(state: &AppState, server_id: &str
 mod tests {
     use super::*;
     use serverbee_common::constants::{CAP_DOCKER, CAP_EXEC, CAP_FILE};
-    use serverbee_common::protocol::AgentMessage;
+    use serverbee_common::protocol::{AgentMessage, RecordedProtocol};
     use std::net::{IpAddr, Ipv4Addr};
 
     fn test_addr() -> SocketAddr {
@@ -708,6 +829,69 @@ mod tests {
     fn make_manager() -> (AgentManager, broadcast::Receiver<BrowserMessage>) {
         let (tx, rx) = broadcast::channel(16);
         (AgentManager::new(tx), rx)
+    }
+
+    fn make_manager_simple() -> AgentManager {
+        let (tx, _rx) = broadcast::channel(16);
+        AgentManager::new(tx)
+    }
+
+    #[test]
+    fn test_insert_placeholder_then_get_returns_meta() {
+        let m = make_manager_simple();
+        m.insert_traceroute_placeholder(
+            "rid",
+            TracerouteRequestMeta {
+                server_id: "s".into(),
+                target: "1.1.1.1".into(),
+                protocol: RecordedProtocol::Udp,
+                started_at: 1_716_500_000_000,
+            },
+        );
+        let snap = m.get_traceroute_snapshot("rid").expect("snapshot present");
+        assert_eq!(snap.server_id, "s");
+        assert_eq!(snap.target, "1.1.1.1");
+        assert_eq!(snap.protocol, RecordedProtocol::Udp);
+        assert_eq!(snap.started_at, 1_716_500_000_000);
+        assert!(snap.hops.is_empty());
+        assert!(!snap.completed);
+    }
+
+    #[test]
+    fn test_update_round_overwrites_hops_and_marks_completed() {
+        let m = make_manager_simple();
+        m.insert_traceroute_placeholder(
+            "rid",
+            TracerouteRequestMeta {
+                server_id: "s".into(),
+                target: "1.1.1.1".into(),
+                protocol: RecordedProtocol::Icmp,
+                started_at: 0,
+            },
+        );
+        let hop = TracerouteHop {
+            hop: 1, ip: None, hostname: None,
+            rtt1: None, rtt2: None, rtt3: None, asn: None,
+            ips: vec!["10.0.0.1".into()],
+            total_sent: Some(2), total_recv: Some(2), loss_pct: Some(0.0),
+            best_ms: Some(1.0), worst_ms: Some(1.0), avg_ms: Some(1.0),
+            stddev_ms: Some(0.0), jitter_ms: Some(0.0),
+        };
+        m.update_traceroute_round("rid", 1, 5, vec![hop.clone()], false, None);
+        m.update_traceroute_round("rid", 5, 5, vec![hop.clone()], true, None);
+        let snap = m.get_traceroute_snapshot("rid").unwrap();
+        assert_eq!(snap.round, 5);
+        assert_eq!(snap.total_rounds, 5);
+        assert!(snap.completed);
+        assert_eq!(snap.hops.len(), 1);
+    }
+
+    #[test]
+    fn test_update_with_missing_meta_is_dropped_silently() {
+        let m = make_manager_simple();
+        // No placeholder inserted → update should be a no-op (and not panic).
+        m.update_traceroute_round("ghost", 1, 1, vec![], true, None);
+        assert!(m.get_traceroute_snapshot("ghost").is_none());
     }
 
     #[test]
