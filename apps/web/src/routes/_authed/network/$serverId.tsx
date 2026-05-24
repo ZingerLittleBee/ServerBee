@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeft, Download, Loader2, Play, Settings2 } from 'lucide-react'
+import { ArrowLeft, Download, Loader2, Play, Route as RouteIcon, Settings2 } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -154,7 +154,7 @@ function ProviderColumn({
   )
 }
 
-function TracerouteSection({ serverId, t }: { serverId: string; t: (key: string) => string }) {
+function TracerouteContent({ serverId, t }: { serverId: string; t: (key: string) => string }) {
   const [target, setTarget] = useState('')
   const [requestId, setRequestId] = useState<string | null>(null)
 
@@ -190,36 +190,33 @@ function TracerouteSection({ serverId, t }: { serverId: string; t: (key: string)
   )
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t('traceroute')}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex gap-2">
-          <Input
-            disabled={isRunning || startTraceroute.isPending}
-            onChange={(e) => setTarget(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={t('traceroute_target')}
-            value={target}
-          />
-          <Button disabled={!target.trim() || isRunning || startTraceroute.isPending} onClick={handleRun} size="sm">
-            {isRunning || startTraceroute.isPending ? (
-              <Loader2 aria-hidden="true" className="mr-1 size-4 animate-spin" />
-            ) : (
-              <Play aria-hidden="true" className="mr-1 size-4" />
-            )}
-            {isRunning ? t('traceroute_running') : t('run_traceroute')}
-          </Button>
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <Input
+          disabled={isRunning || startTraceroute.isPending}
+          onChange={(e) => setTarget(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={t('traceroute_target')}
+          value={target}
+        />
+        <Button disabled={!target.trim() || isRunning || startTraceroute.isPending} onClick={handleRun} size="sm">
+          {isRunning || startTraceroute.isPending ? (
+            <Loader2 aria-hidden="true" className="mr-1 size-4 animate-spin" />
+          ) : (
+            <Play aria-hidden="true" className="mr-1 size-4" />
+          )}
+          {isRunning ? t('traceroute_running') : t('run_traceroute')}
+        </Button>
+      </div>
+
+      {result?.error && (
+        <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-destructive text-sm">
+          {result.error}
         </div>
+      )}
 
-        {result?.error && (
-          <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-destructive text-sm">
-            {result.error}
-          </div>
-        )}
-
-        {result && result.hops.length > 0 && (
+      {result && result.hops.length > 0 && (
+        <div className="max-h-[60vh] overflow-auto rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -258,16 +255,16 @@ function TracerouteSection({ serverId, t }: { serverId: string; t: (key: string)
               ))}
             </TableBody>
           </Table>
-        )}
+        </div>
+      )}
 
-        {isRunning && (
-          <div className="flex items-center justify-center gap-2 py-4 text-muted-foreground text-sm">
-            <Loader2 aria-hidden="true" className="size-4 animate-spin" />
-            {t('traceroute_running')}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      {isRunning && (
+        <div className="flex items-center justify-center gap-2 py-4 text-muted-foreground text-sm">
+          <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+          {t('traceroute_running')}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -295,6 +292,7 @@ export function NetworkDetailPage() {
 
   // Manage Targets dialog state
   const [showManageDialog, setShowManageDialog] = useState(false)
+  const [showTracerouteDialog, setShowTracerouteDialog] = useState(false)
   const [selectedTargetIds, setSelectedTargetIds] = useState<Set<string>>(new Set())
   const selectedRef = useRef(selectedTargetIds)
   selectedRef.current = selectedTargetIds
@@ -561,6 +559,10 @@ export function NetworkDetailPage() {
             <StatusBadge online={summary.online} />
           </div>
           <div className="flex items-center gap-2">
+            <Button onClick={() => setShowTracerouteDialog(true)} size="sm" variant="outline">
+              <RouteIcon aria-hidden="true" className="mr-1 size-4" />
+              {t('traceroute')}
+            </Button>
             {isAdmin && (
               <Button onClick={openManageDialog} size="sm" variant="outline">
                 <Settings2 aria-hidden="true" className="mr-1 size-4" />
@@ -690,10 +692,15 @@ export function NetworkDetailPage() {
       {/* Anomaly table */}
       <AnomalyTable anomalies={anomalies} windowHours={anomalyHours} />
 
-      {/* Traceroute section */}
-      <div className="mt-6">
-        <TracerouteSection serverId={serverId} t={t} />
-      </div>
+      {/* Traceroute Dialog */}
+      <Dialog onOpenChange={setShowTracerouteDialog} open={showTracerouteDialog}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{t('traceroute')}</DialogTitle>
+          </DialogHeader>
+          <TracerouteContent serverId={serverId} t={t} />
+        </DialogContent>
+      </Dialog>
 
       {/* Manage Targets Dialog */}
       <Dialog
