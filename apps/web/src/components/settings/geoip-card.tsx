@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Database, Download, RefreshCw } from 'lucide-react'
+import { Download, Globe2, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { SettingsRow } from '@/components/settings/settings-row'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
@@ -23,50 +24,27 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function StatusDetails({ status, t }: { status: GeoIpStatus; t: (key: string) => string }) {
-  return (
-    <div>
-      <p className="font-medium">{status.installed ? t('geoip.installed') : t('geoip.not_installed')}</p>
-      {status.installed && status.source === 'custom' && (
-        <p className="text-muted-foreground text-sm">{t('geoip.custom_file')}</p>
-      )}
-      {status.installed && status.file_size && (
-        <p className="text-muted-foreground text-sm">
-          {formatBytes(status.file_size)}
-          {status.updated_at && ` · ${t('geoip.updated')} ${new Date(status.updated_at).toLocaleDateString()}`}
-        </p>
-      )}
-      {!status.installed && <p className="text-muted-foreground text-sm">{t('geoip.download_prompt')}</p>}
-    </div>
-  )
+function metaText(status: GeoIpStatus | undefined, t: (key: string) => string): string {
+  if (!status) {
+    return ''
+  }
+  if (!status.installed) {
+    return t('geoip.not_installed')
+  }
+  const parts = [t('geoip.installed')]
+  if (status.file_size) {
+    parts.push(formatBytes(status.file_size))
+  }
+  if (status.updated_at) {
+    parts.push(`${t('geoip.updated')} ${new Date(status.updated_at).toLocaleDateString()}`)
+  }
+  if (status.source === 'custom') {
+    parts.push(t('geoip.custom_file'))
+  }
+  return parts.join(' · ')
 }
 
-function DownloadButton({
-  installed,
-  isPending,
-  onDownload,
-  t
-}: {
-  installed: boolean
-  isPending: boolean
-  onDownload: () => void
-  t: (key: string) => string
-}) {
-  return (
-    <Button disabled={isPending} onClick={onDownload} variant="outline">
-      {installed ? (
-        <RefreshCw className={`mr-1.5 size-4 ${isPending ? 'animate-spin' : ''}`} />
-      ) : (
-        <Download className="mr-1.5 size-4" />
-      )}
-      {isPending ? t('geoip.downloading') : null}
-      {!isPending && installed ? t('geoip.update') : null}
-      {isPending || installed ? null : t('geoip.download')}
-    </Button>
-  )
-}
-
-export function GeoIpCard() {
+export function GeoIpRow() {
   const { t } = useTranslation('settings')
   const queryClient = useQueryClient()
 
@@ -90,51 +68,35 @@ export function GeoIpCard() {
     }
   })
 
+  const installed = status?.installed ?? false
+  const isCustom = status?.source === 'custom'
+  const isPending = downloadMutation.isPending
+
+  let buttonLabel = t('geoip.download')
+  if (isPending) {
+    buttonLabel = t('geoip.downloading')
+  } else if (installed) {
+    buttonLabel = t('geoip.update')
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="rounded-lg border bg-card p-6">
-        <h2 className="mb-1 font-semibold text-lg">{t('geoip.title')}</h2>
-        <p className="mb-4 text-muted-foreground text-sm">{t('geoip.description')}</p>
-
-        {isLoading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-5 w-32" />
-            <Skeleton className="h-4 w-48" />
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <Database className="size-5 text-muted-foreground" />
-              {status && <StatusDetails status={status} t={t} />}
-            </div>
-
-            {status?.source !== 'custom' && (
-              <DownloadButton
-                installed={status?.installed ?? false}
-                isPending={downloadMutation.isPending}
-                onDownload={() => downloadMutation.mutate()}
-                t={t}
-              />
+    <SettingsRow
+      action={
+        isCustom ? null : (
+          <Button disabled={isPending} onClick={() => downloadMutation.mutate()} size="sm" variant="outline">
+            {installed ? (
+              <RefreshCw className={`mr-1.5 size-4 ${isPending ? 'animate-spin' : ''}`} />
+            ) : (
+              <Download className="mr-1.5 size-4" />
             )}
-          </div>
-        )}
-      </div>
-
-      <p className="text-muted-foreground text-xs">
-        {t('geoip.data_provider')}{' '}
-        <a className="underline" href="https://db-ip.com" rel="noopener noreferrer" target="_blank">
-          DB-IP
-        </a>
-        , {t('geoip.license')}{' '}
-        <a
-          className="underline"
-          href="https://creativecommons.org/licenses/by/4.0/"
-          rel="noopener noreferrer"
-          target="_blank"
-        >
-          CC BY 4.0
-        </a>
-      </p>
-    </div>
+            {buttonLabel}
+          </Button>
+        )
+      }
+      description={t('geoip.description')}
+      icon={<Globe2 className="size-4" />}
+      meta={isLoading ? <Skeleton className="h-4 w-24" /> : metaText(status, t)}
+      title={t('geoip.title')}
+    />
   )
 }

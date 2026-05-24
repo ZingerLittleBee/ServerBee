@@ -434,6 +434,9 @@
   "about.title": "关于",
   "about.description": "ServerBee 构建信息",
   "about.version": "版本",
+  "section_data_sources": "数据源",
+  "section_about": "关于",
+  "data_sources_attribution": "数据由 DB-IP 提供，授权协议 CC BY 4.0。",
 
   "appearance.legacy_theme_migration.detected": "检测到此浏览器之前使用过「{{theme}}」主题。要把它应用为全局后台主题吗？",
   "appearance.legacy_theme_migration.ignore": "忽略",

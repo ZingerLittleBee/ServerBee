@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Info } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { SettingsRow } from '@/components/settings/settings-row'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 
@@ -8,7 +9,7 @@ interface AboutInfo {
   version: string
 }
 
-export function AboutCard() {
+export function VersionRow() {
   const { t } = useTranslation('settings')
 
   const { data, isLoading } = useQuery<AboutInfo>({
@@ -18,21 +19,10 @@ export function AboutCard() {
   })
 
   return (
-    <div className="rounded-lg border bg-card p-6">
-      <h2 className="mb-1 font-semibold text-lg">{t('about.title')}</h2>
-      <p className="mb-4 text-muted-foreground text-sm">{t('about.description')}</p>
-
-      <div className="flex items-center gap-3">
-        <Info className="size-5 text-muted-foreground" />
-        {isLoading ? (
-          <Skeleton className="h-5 w-32" />
-        ) : (
-          <div>
-            <p className="font-medium">{t('about.version')}</p>
-            <p className="font-mono text-muted-foreground text-sm">v{data?.version ?? '-'}</p>
-          </div>
-        )}
-      </div>
-    </div>
+    <SettingsRow
+      icon={<Info className="size-4" />}
+      meta={isLoading ? <Skeleton className="h-4 w-20" /> : <span className="font-mono">v{data?.version ?? '-'}</span>}
+      title={t('about.version')}
+    />
   )
 }

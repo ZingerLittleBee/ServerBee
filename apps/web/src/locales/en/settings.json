@@ -453,6 +453,9 @@
   "about.title": "About",
   "about.description": "ServerBee build info",
   "about.version": "Version",
+  "section_data_sources": "Data sources",
+  "section_about": "About",
+  "data_sources_attribution": "Data provided by DB-IP, licensed under CC BY 4.0.",
 
   "appearance.legacy_theme_migration.detected": "Detected your previous browser theme \"{{theme}}\". Apply it as the global dashboard theme?",
   "appearance.legacy_theme_migration.ignore": "Ignore",
