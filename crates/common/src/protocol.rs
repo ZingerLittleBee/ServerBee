@@ -8,6 +8,42 @@ use crate::types::{
     PingTaskConfig, SystemInfo, SystemReport, TaskResult, TracerouteHop,
 };
 
+/// Strict input protocol enum used on `ServerMessage::Traceroute.protocol`
+/// and on the server's POST request DTO. Only the three values the user can
+/// pick are accepted; legacy is NOT part of this enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum TraceProtocol {
+    Icmp,
+    Udp,
+    Tcp,
+}
+
+/// Persisted/read protocol enum. Extends `TraceProtocol` with `Legacy` for
+/// records normalized from pre-trippy agents whose actual probe mode is
+/// unknown (Unix `traceroute` defaults to UDP, `mtr` is ICMP, Windows
+/// `tracert` is ICMP — the legacy agent does not report which ran).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum RecordedProtocol {
+    Icmp,
+    Udp,
+    Tcp,
+    Legacy,
+}
+
+impl From<TraceProtocol> for RecordedProtocol {
+    fn from(p: TraceProtocol) -> Self {
+        match p {
+            TraceProtocol::Icmp => Self::Icmp,
+            TraceProtocol::Udp => Self::Udp,
+            TraceProtocol::Tcp => Self::Tcp,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
@@ -1998,5 +2034,37 @@ mod tests {
             }
             _ => panic!("Expected IpQualityUpdate"),
         }
+    }
+
+    #[test]
+    fn test_trace_protocol_serializes_lowercase() {
+        assert_eq!(serde_json::to_string(&TraceProtocol::Icmp).unwrap(), "\"icmp\"");
+        assert_eq!(serde_json::to_string(&TraceProtocol::Udp).unwrap(), "\"udp\"");
+        assert_eq!(serde_json::to_string(&TraceProtocol::Tcp).unwrap(), "\"tcp\"");
+    }
+
+    #[test]
+    fn test_trace_protocol_rejects_unknown_value() {
+        let err = serde_json::from_str::<TraceProtocol>("\"banana\"").unwrap_err();
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn test_trace_protocol_rejects_legacy_value() {
+        // Legacy is a DB/read sentinel, not a probe-mode value the agent accepts.
+        assert!(serde_json::from_str::<TraceProtocol>("\"legacy\"").is_err());
+    }
+
+    #[test]
+    fn test_recorded_protocol_serializes_lowercase_including_legacy() {
+        assert_eq!(serde_json::to_string(&RecordedProtocol::Icmp).unwrap(), "\"icmp\"");
+        assert_eq!(serde_json::to_string(&RecordedProtocol::Legacy).unwrap(), "\"legacy\"");
+    }
+
+    #[test]
+    fn test_recorded_protocol_from_trace_protocol() {
+        assert_eq!(RecordedProtocol::from(TraceProtocol::Icmp), RecordedProtocol::Icmp);
+        assert_eq!(RecordedProtocol::from(TraceProtocol::Udp), RecordedProtocol::Udp);
+        assert_eq!(RecordedProtocol::from(TraceProtocol::Tcp), RecordedProtocol::Tcp);
     }
 }
