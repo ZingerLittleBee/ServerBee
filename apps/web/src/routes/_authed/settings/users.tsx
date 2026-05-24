@@ -139,7 +139,11 @@ function UsersPage() {
                 type="password"
                 value={newPassword}
               />
-              <Select onValueChange={(val) => val !== null && setNewRole(val)} value={newRole}>
+              <Select
+                items={{ member: t('users.role_member'), admin: t('users.role_admin') }}
+                onValueChange={(val) => val !== null && setNewRole(val)}
+                value={newRole}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -191,7 +195,11 @@ function UsersPage() {
                       <p className="text-muted-foreground text-xs">
                         {editingId === user.id ? (
                           <span className="inline-flex items-center gap-2">
-                            <Select onValueChange={(val) => val !== null && setEditRole(val)} value={editRole}>
+                            <Select
+                              items={{ member: t('users.role_member'), admin: t('users.role_admin') }}
+                              onValueChange={(val) => val !== null && setEditRole(val)}
+                              value={editRole}
+                            >
                               <SelectTrigger aria-label={t('users.role_label')} className="h-6 text-xs" size="sm">
                                 <SelectValue />
                               </SelectTrigger>

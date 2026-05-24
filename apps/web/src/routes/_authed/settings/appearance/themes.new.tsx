@@ -48,6 +48,7 @@ export function NewThemePage() {
         value={name}
       />
       <Select
+        items={Object.fromEntries(themes.map((theme) => [theme.id, theme.name]))}
         onValueChange={(value) => {
           if (value !== null) {
             setForkFrom(value as ColorTheme)

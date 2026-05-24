@@ -122,7 +122,11 @@ function RuleRow({ rule, index, canMoveUp, canMoveDown, onChange, onMove, onRemo
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <Select onValueChange={(v) => setKind(v as MatchKind)} value={match.kind}>
+        <Select
+          items={Object.fromEntries(MATCH_KIND_OPTIONS.map((kind) => [kind, t(`dialog_match_${kind}`)]))}
+          onValueChange={(v) => setKind(v as MatchKind)}
+          value={match.kind}
+        >
           <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>
@@ -183,7 +187,11 @@ function RuleRow({ rule, index, canMoveUp, canMoveDown, onChange, onMove, onRemo
       </div>
       <div className="flex items-center gap-2">
         <span className="text-muted-foreground text-xs">{t('dialog_result')}</span>
-        <Select onValueChange={(v) => setResult(v as UnlockStatus)} value={rule.result}>
+        <Select
+          items={Object.fromEntries(STATUS_OPTIONS.map((s) => [s, t(`status_${s}`)]))}
+          onValueChange={(v) => setResult(v as UnlockStatus)}
+          value={rule.result}
+        >
           <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>
@@ -403,7 +411,11 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="ipq-category">{t('dialog_category')}</Label>
-                <Select onValueChange={(v) => setCategory(v ?? 'streaming')} value={category}>
+                <Select
+                  items={Object.fromEntries(CATEGORY_ORDER.map((c) => [c, categoryLabel(c)]))}
+                  onValueChange={(v) => setCategory(v ?? 'streaming')}
+                  value={category}
+                >
                   <SelectTrigger className="w-full" id="ipq-category">
                     <SelectValue />
                   </SelectTrigger>
