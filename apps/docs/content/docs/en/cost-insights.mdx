@@ -1,0 +1,150 @@
+---
+title: Cost Insights & Value Score
+description: How ServerBee turns billing fields plus agent metrics into burn rate, per-resource unit cost, and the 0-100 value score.
+icon: CircleDollarSign
+---
+
+ServerBee combines admin-entered billing fields (`price`, `billing_cycle`, `currency`, `expired_at`, ...) with the resource capacity, utilization, and uptime that each agent reports, then derives a set of cost-related signals. This page documents the algorithm itself. To learn how to enter billing data in the UI, see the [Billing Information section in the admin guide](/en/docs/admin#billing-information).
+
+## Derived outputs
+
+Every server with a valid billing configuration produces the fields below (exposed via both `GET /api/cost/overview` and `GET /api/servers/{id}/cost-insights`):
+
+| Field | Meaning |
+|-------|---------|
+| `cost_per_second / per_hour / per_day` | Cost amortized to a single unit of time within the current billing cycle |
+| `cost_per_month_equivalent` | Cost normalized to "per 30 days" so cycles of different lengths can be compared |
+| `cycle_cost_elapsed / cycle_cost_remaining` | Money already burned vs. left in the current cycle |
+| `cycle_burn_percent` | Elapsed portion of the cycle expressed as a percentage |
+| `days_remaining` | Days until `expired_at` |
+| `resource_value.cost_per_cpu_core` | Monthly-equivalent unit cost per CPU core |
+| `resource_value.cost_per_gb_memory` | Monthly-equivalent unit cost per GB of memory |
+| `resource_value.cost_per_gb_disk` | Monthly-equivalent unit cost per GB of disk |
+| `resource_value.cost_per_tb_traffic_limit` | Monthly-equivalent cost per TB of `traffic_limit`, when configured |
+| `value_score` | Composite score + grade + reasons + confidence |
+| `invalid_reason` | Populated instead of `value_score` when billing fields fail validation |
+
+## Input validation
+
+The score is skipped when any of the following are true. The reason is still surfaced via `invalid_reason` so the UI can flag the entry instead of silently scoring it as 0:
+
+| `invalid_reason` | Trigger |
+|------------------|---------|
+| `missing_price` | `price` is NULL |
+| `missing_billing_cycle` | `billing_cycle` is NULL or empty |
+| `invalid_billing_cycle` | `billing_cycle` is not in the recognized set (`monthly`, `quarterly`, `yearly`, ...) |
+| `invalid_price` | `price < 0` or NaN |
+
+`price == 0` is treated as a valid "free server" entry. It still gets a `value_score` but carries `free_or_zero_price` in `reasons` and is excluded from same-currency fleet comparisons.
+
+## Value score (0 – 100)
+
+Total score = `resource_score (0–40) + utilization_score (0–35) + reliability_score (0–25)`, clamped to `[0, 100]` and rounded to one decimal place. Grade thresholds live in `grade_for_score` in [`crates/server/src/service/cost.rs`](https://github.com/ZingerLittleBee/ServerBee/blob/main/crates/server/src/service/cost.rs):
+
+| Grade | Score | Meaning |
+|-------|-------|---------|
+| `excellent` | ≥ 90 | Resources, utilization, and uptime are all strong |
+| `good`      | ≥ 75 | Direction is right with minor inefficiency |
+| `okay`      | ≥ 60 | Acceptable, with room to improve |
+| `poor`      | ≥ 40 | Actual usage clearly trails what is being paid for |
+| `waste`     | < 40 | Heavy idle burn or very high unit cost |
+
+### resource_score (max 40)
+
+For each of CPU core / GB memory / GB disk / TB traffic-limit unit cost, the server is **ranked against other servers in the same currency only**:
+
+```text
+percentile_score = 1 - rank / (n - 1)   # rank starts at 0 for the cheapest, n is the same-currency sample size
+```
+
+- The cheaper this server is versus the same-currency cohort, the closer the score is to 1
+- If there are fewer than 2 comparable same-currency samples, or the current value is not a finite positive number, the metric falls back to `0.5`
+- The four metrics are **averaged then multiplied by 40** to produce `resource_score`
+- If at least one of the four metrics can be compared against ≥ 2 same-currency samples, `confidence` is upgraded to `medium`; otherwise it stays `low` and `insufficient_data` is added to reasons
+
+Qualitative tags (these do **not** change the score, they only annotate reasons):
+
+| Percentile ≥ 0.75 (cheapest quartile) | Percentile ≤ 0.25 (most expensive quartile) |
+|---------------------------------------|--------------------------------------------|
+| memory → `good_memory_value`          | CPU → `expensive_cpu`                      |
+| disk → `good_disk_value`              | (no "good" tag for CPU)                   |
+
+### utilization_score (max 35)
+
+Based on the average CPU / memory utilization over the last 24 hours (`RECORD_LOOKBACK_HOURS`) plus where the current monthly cost sits in the fleet:
+
+| Condition | Score | Reason emitted |
+|-----------|-------|----------------|
+| Sustained low utilization AND monthly cost is high within the fleet | **7** | `idle_burn` |
+| CPU average > 85% or memory average > 90% | **24.5** (35 × 0.7) | — |
+| Moderate and stable (no extreme swings) | **31.5** | — |
+| confidence == low (not enough 24h samples) | **17.5** | `insufficient_data` |
+| Anything else | **22** | — |
+
+The "low utilization + high monthly cost" branch also requires enough samples and that `cost_per_month_equivalent` sits in the fleet's upper range, so a single-server fleet (`fleet_monthly_costs` only contains itself) never gets flagged as `idle_burn` by mistake.
+
+### reliability_score (max 25)
+
+Based on uptime over the last 30 days (`UPTIME_RECENT_DAYS`):
+
+| Case | Score | Reason emitted |
+|------|-------|----------------|
+| Uptime data is available | `uptime * 25` | uptime ≥ 0.99 → `healthy_uptime`; < 0.90 → `low_uptime` |
+| No uptime data but currently online | 18.75 | `insufficient_data`, confidence=low |
+| No data at all (always offline) | 0 | `sleeping_money` + `insufficient_data` |
+
+When `expired_at` is in the past, `expired_billing` is appended as an operational reminder. It does not subtract from the score.
+
+## Reasons list
+
+Each reason is an enum tag. The frontend keeps at most 3, prioritized as follows:
+
+```text
+sleeping_money → idle_burn → expensive_cpu → low_uptime → insufficient_data
+→ expired_billing → free_or_zero_price → healthy_uptime
+→ good_memory_value → good_disk_value
+```
+
+Grouped by nature:
+
+| Category | Reasons | Notes |
+|----------|---------|-------|
+| **Objective utilization / uptime** | `idle_burn`, `sleeping_money`, `healthy_uptime`, `low_uptime` | Threshold rules, no fleet comparison required |
+| **Objective billing state** | `expired_billing`, `free_or_zero_price`, `no_price_cycle`, `insufficient_data` | Derived directly from billing fields or sample counts |
+| **Subjective quantile comparison** | `good_memory_value`, `good_disk_value`, `expensive_cpu` | Compared against same-currency unit-cost percentiles; can flip easily on tiny fleets |
+
+## Confidence field
+
+Each subscore produces its own confidence (`high` / `medium` / `low`), then `merge_confidence` collapses them to the weakest tier:
+
+- Any subscore is `low` → overall `low`
+- No `low` but at least one `medium` → overall `medium`
+- All three are `high` → overall `high`
+
+`resource_score` on its own only reaches `medium`: it requires ≥ 2 same-currency comparable samples and never climbs higher than that. `utilization_score` and `reliability_score` need full 24h / 30d samples respectively to hit `high`.
+
+## Same-currency comparison and single-server fleets
+
+If a currency only has one server, all of its same-currency unit-cost samples have a size of 1. Every `resource_percentile_score` returns 0.5, so `resource_score` is pinned at `0.5 * 40 = 20`. `reasons` will include `insufficient_data` and none of `good_*_value` / `expensive_cpu` will fire.
+
+ServerBee never compares servers across currencies — USD machines and CNY machines are ranked separately so FX swings don't leak into the value score.
+
+## Data sources and refresh cadence
+
+- Scores are computed on demand by the server; there is no persisted cache
+- Utilization averages come from the `record` table (same table the monitoring charts use), 24h lookback
+- Uptime ratio is aggregated from `record` online state over a 30-day lookback
+- Resource capacity (CPU cores / total memory / total disk) comes from each agent's last `SystemInfo`; the last known value is reused while the agent is disconnected
+
+## Known limitations
+
+- Unit-cost comparison is a **percentile rank**, not an absolute threshold. In an expensive fleet the priciest hosts still get `expensive_cpu`; in a cheap fleet the cheapest still get `good_*_value` even when the absolute price is not actually low.
+- `idle_burn` only inspects CPU + memory utilization, not real traffic. A proxy host whose CPU/RAM are idle can be misflagged as idle.
+- When `traffic_limit` is missing, `cost_per_tb_traffic_limit` is missing too and `resource_score` averages only the remaining three metrics.
+- Monthly-equivalent conversion uses a fixed 30 days. Quarterly / yearly cycles are converted into this single basis before comparison.
+
+<Cards>
+  <Card title="Billing fields" href="/en/docs/admin#billing-information" />
+  <Card title="API reference" href="/en/docs/api-reference#authenticated-read-endpoints" />
+  <Card title="Alerts" href="/en/docs/alerts" />
+</Cards>

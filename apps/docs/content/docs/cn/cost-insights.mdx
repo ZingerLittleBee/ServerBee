@@ -1,0 +1,150 @@
+---
+title: 成本洞察与价值评分
+description: ServerBee 如何把账单 + Agent 指标转成 burn rate、资源单价和 0-100 的价值评分。
+icon: CircleDollarSign
+---
+
+ServerBee 会把管理员录入的 `price` / `billing_cycle` / `currency` / `expired_at` 等账单信息，结合 Agent 上报的资源容量、利用率和在线时长，自动算出一组成本相关的衍生指标。这里只描述算法本身；如何在 UI 中录入账单字段见[管理员手册的"计费信息"小节](/cn/docs/admin#计费信息)。
+
+## 衍生输出
+
+每台已正确配置成本的服务器都会得到下面这些字段（同时通过 `GET /api/cost/overview` 和 `GET /api/servers/{id}/cost-insights` 暴露）：
+
+| 字段 | 含义 |
+|------|------|
+| `cost_per_second / per_hour / per_day` | 按计费周期摊到单位时间的成本 |
+| `cost_per_month_equivalent` | 折算成"每 30 天"的等价月费，用于跨周期对比 |
+| `cycle_cost_elapsed / cycle_cost_remaining` | 当前计费周期内已烧 / 剩余金额 |
+| `cycle_burn_percent` | 已烧占当前周期总额的百分比 |
+| `days_remaining` | 距离 `expired_at` 还剩多少天 |
+| `resource_value.cost_per_cpu_core` | 每核 CPU 月度等价单价 |
+| `resource_value.cost_per_gb_memory` | 每 GB 内存月度等价单价 |
+| `resource_value.cost_per_gb_disk` | 每 GB 磁盘月度等价单价 |
+| `resource_value.cost_per_tb_traffic_limit` | 每 TB 流量限额的月度等价单价（仅在配置了 `traffic_limit` 时） |
+| `value_score` | 综合评分 + grade + reasons + confidence |
+| `invalid_reason` | 计费配置非法时填写，跳过评分 |
+
+## 输入校验
+
+评分前会先校验账单输入，任一条件不满足时该服务器拿不到 `value_score`，但 `invalid_reason` 会回填到 cost insight 响应中以便前端展示警告：
+
+| `invalid_reason` | 触发条件 |
+|------------------|---------|
+| `missing_price` | `price` 为 NULL |
+| `missing_billing_cycle` | `billing_cycle` 为 NULL 或空 |
+| `invalid_billing_cycle` | `billing_cycle` 不在 `monthly` / `quarterly` / `yearly` 等已识别值集合内 |
+| `invalid_price` | `price < 0` 或为 NaN |
+
+`price == 0` 是合法值（免费机器），会照常计算但 reasons 里会带 `free_or_zero_price`，且不参与同币种机群对比。
+
+## 价值评分（0 – 100）
+
+总分 = `resource_score (0–40) + utilization_score (0–35) + reliability_score (0–25)`，最后 clamp 到 `[0, 100]` 并保留一位小数。grade 阈值在 [`crates/server/src/service/cost.rs`](https://github.com/ZingerLittleBee/ServerBee/blob/main/crates/server/src/service/cost.rs) 的 `grade_for_score`：
+
+| Grade | 分数 | 含义 |
+|-------|------|------|
+| `excellent` | ≥ 90 | 资源/利用/在线全面拉满 |
+| `good`      | ≥ 75 | 大方向正确，少量低效 |
+| `okay`      | ≥ 60 | 中规中矩 |
+| `poor`      | ≥ 40 | 实际使用相对支出明显偏低 |
+| `waste`     | < 40 | 大量空转或单价过高 |
+
+### resource_score（满分 40）
+
+对 CPU 核 / GB 内存 / GB 磁盘 / TB 流量限额这四个单价，**只与同币种其他服务器对比**：
+
+```text
+percentile_score = 1 - rank / (n - 1)   # rank 从最便宜=0 开始，n 是同币种样本数
+```
+
+- 单价比同币种机器越便宜，分数越接近 1
+- 同币种样本不足 2 个，或当前值不是有限正数，该指标 fallback 到 `0.5`
+- 四个指标分别计算后**取平均再 × 40** 得到 resource_score
+- 只要四个指标里至少有一个能跟"≥2 个同币种样本"对比，`confidence` 升级为 `medium`；否则降为 `low` 并附 `insufficient_data`
+
+附带的定性标签（不影响分数本身，只是 reasons 提示）：
+
+| 分位 ≥ 0.75（前 1/4 便宜） | 分位 ≤ 0.25（后 1/4 贵） |
+|--------------------------|------------------------|
+| 内存 → `good_memory_value` | CPU → `expensive_cpu` |
+| 磁盘 → `good_disk_value`   | （CPU 没有 good 标签）  |
+
+### utilization_score（满分 35）
+
+依据过去 24 小时 (`RECORD_LOOKBACK_HOURS`) 的 CPU / 内存利用率均值 + 当前月费在机群中的相对水位：
+
+| 条件 | 分数 | 触发的 reason |
+|------|-----|---------------|
+| 利用率持续偏低 且 月费在机群中偏高 | **7** | `idle_burn` |
+| CPU 平均 > 85% 或 内存平均 > 90% | **24.5**（35 × 0.7） | — |
+| 中等且稳定（无极端波动） | **31.5** | — |
+| confidence == low（24h 样本不足） | **17.5** | `insufficient_data` |
+| 其他 | **22** | — |
+
+判断"低利用 + 高月费"时还会要求样本量足够、且 `cost_per_month_equivalent` 处于机群高位，所以单台机器（`fleet_monthly_costs` 只含自己）不会被误判成 `idle_burn`。
+
+### reliability_score（满分 25）
+
+依据过去 30 天的 uptime（`UPTIME_RECENT_DAYS`）：
+
+| 情况 | 分数 | reason |
+|------|-----|--------|
+| 有 uptime 数据 | `uptime * 25` | uptime ≥ 0.99 → `healthy_uptime`；< 0.90 → `low_uptime` |
+| 无 uptime 但当前在线 | 18.75 | `insufficient_data`，confidence=low |
+| 完全没有数据（永远离线） | 0 | `sleeping_money` + `insufficient_data` |
+
+如果 `expired_at` 已过期，额外追加 `expired_billing`（仅运营提醒，不扣分）。
+
+## reasons 列表
+
+每条 reason 是个枚举标签，前端会按下面的优先级取最多 3 条展示：
+
+```text
+sleeping_money → idle_burn → expensive_cpu → low_uptime → insufficient_data
+→ expired_billing → free_or_zero_price → healthy_uptime
+→ good_memory_value → good_disk_value
+```
+
+按性质归类：
+
+| 类别 | reasons | 说明 |
+|------|---------|------|
+| **客观利用/在线** | `idle_burn`、`sleeping_money`、`healthy_uptime`、`low_uptime` | 由阈值规则直接判断，不依赖机群对比 |
+| **客观计费状态** | `expired_billing`、`free_or_zero_price`、`no_price_cycle`、`insufficient_data` | 由账单字段或样本量直接得出 |
+| **主观分位对比** | `good_memory_value`、`good_disk_value`、`expensive_cpu` | 与同币种其他服务器的单价分位比较，样本量小时容易抖动 |
+
+## confidence 字段
+
+三个子项各自给出一个 confidence（`high` / `medium` / `low`），最终通过 `merge_confidence` 取最弱的一档：
+
+- 任一子项是 `low` → 整体 `low`
+- 不出现 `low` 但有 `medium` → 整体 `medium`
+- 三项都是 `high` → 整体 `high`
+
+`resource_score` 单独看：有 ≥2 个同币种对比样本时才升到 `medium`，永远到不了 `high`。`utilization_score` 的 high 要求 24h 内有足够样本；`reliability_score` 的 high 要求 30 天 uptime 数据。
+
+## 同币种对比与单机情况
+
+如果机群里某种币种只有一台机器，`CurrencyComparables` 里同类指标的样本数 = 1，所有 `resource_percentile_score` 返回 0.5，resource_score 固定在 `0.5 * 40 = 20` 分；reasons 会带 `insufficient_data`，且不会触发 `good_*_value` / `expensive_cpu` 标签。
+
+跨币种之间不做对比 —— USD 机器和 CNY 机器各自独立排序，避免把汇率波动算到价值评分里。
+
+## 数据来源与刷新
+
+- 评分由 Server 在请求时即时计算，没有持久化缓存
+- 利用率均值来自 `record` 表（同一个表给监控图表用），lookback 24 小时
+- uptime ratio 来自 `record` 的 online 状态聚合，lookback 30 天
+- 资源容量（CPU 核数 / 内存总量 / 磁盘总量）来自 Agent 最近一次 `SystemInfo`，断线时仍用最后已知值
+
+## 已知局限
+
+- 单价对比是**分位排名**而非绝对阈值。机群整体偏贵时，最贵的几台也会被打成 `expensive_cpu`；机群整体偏便宜时，最便宜的几台依然会被夸成 `good_*_value`，但绝对单价可能还是不低
+- `idle_burn` 只看 CPU + 内存利用率，不看实际业务吞吐。一台跑流量代理但 CPU/内存空闲的机器会被误判为 idle
+- `traffic_limit` 没填时 `cost_per_tb_traffic_limit` 缺失，resource_score 只剩 3 个指标平均
+- 月费换算固定按 30 天，季付/年付会折算成等价月费再对比
+
+<Cards>
+  <Card title="计费信息录入" href="/cn/docs/admin#计费信息" />
+  <Card title="API 参考" href="/cn/docs/api-reference#已认证读取端点" />
+  <Card title="告警与通知" href="/cn/docs/alerts" />
+</Cards>
