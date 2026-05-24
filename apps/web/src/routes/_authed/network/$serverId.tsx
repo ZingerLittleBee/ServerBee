@@ -477,35 +477,37 @@ function TracerouteRecentChips({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-muted-foreground text-xs">{t('traceroute_recent')}:</span>
-      {recentChips.map((record) => {
-        const isSelected = selectedRecordId === record.request_id
-        return (
-          <Button
-            className="h-7 gap-1.5 px-2 font-mono text-xs"
-            key={record.request_id}
-            onClick={() => onSelect(record)}
-            size="sm"
-            variant={isSelected ? 'secondary' : 'outline'}
-          >
-            <span className="truncate">{record.target}</span>
-            <span className="text-[10px] text-muted-foreground uppercase">
-              {record.protocol === 'legacy' ? '·' : record.protocol}
-            </span>
-            {record.has_error ? (
-              <X aria-hidden="true" className="size-3 text-destructive" />
-            ) : (
-              <Check aria-hidden="true" className="size-3 text-emerald-500" />
-            )}
-          </Button>
-        )
-      })}
+    <div className="flex items-start gap-2">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+        <span className="text-muted-foreground text-xs">{t('traceroute_recent')}:</span>
+        {recentChips.map((record) => {
+          const isSelected = selectedRecordId === record.request_id
+          return (
+            <Button
+              className="h-7 gap-1.5 px-2 font-mono text-xs"
+              key={record.request_id}
+              onClick={() => onSelect(record)}
+              size="sm"
+              variant={isSelected ? 'secondary' : 'outline'}
+            >
+              <span className="truncate">{record.target}</span>
+              <span className="text-[10px] text-muted-foreground uppercase">
+                {record.protocol === 'legacy' ? '·' : record.protocol}
+              </span>
+              {record.has_error ? (
+                <X aria-hidden="true" className="size-3 text-destructive" />
+              ) : (
+                <Check aria-hidden="true" className="size-3 text-emerald-500" />
+              )}
+            </Button>
+          )
+        })}
+      </div>
       <Popover>
-        <PopoverTrigger render={<Button className="h-7 px-2 text-xs" size="sm" variant="ghost" />}>
+        <PopoverTrigger render={<Button className="h-7 shrink-0 px-2 text-xs" size="sm" variant="ghost" />}>
           {t('traceroute_view_all_history', { count: total })}
         </PopoverTrigger>
-        <PopoverContent align="end" className="flex h-96 w-80 flex-col gap-2 p-3">
+        <PopoverContent align="end" className="flex h-96 w-80 flex-col gap-2 overflow-hidden p-3">
           <TracerouteHistoryList
             clearMutation={clearMutation}
             deleteMutation={deleteMutation}
