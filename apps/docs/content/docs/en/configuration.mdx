@@ -75,6 +75,7 @@ There is no admin username/password environment variable. On first start (when n
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
 | `SERVERBEE_GEOIP__MMDB_PATH` | `""` | Path to a MaxMind-compatible MMDB file. Non-empty path enables this custom GeoIP database; otherwise admins can download the DB-IP Lite database from Settings → GeoIP Database |
+| `SERVERBEE_ASN__MMDB_PATH` | `""` | Path to a DB-IP Lite ASN / MaxMind GeoLite2-ASN MMDB file. Non-empty path enables traceroute ASN enrichment; otherwise admins can download DB-IP Lite ASN from Settings → ASN Database |
 
 #### Resend (Email Notifications)
 
@@ -291,6 +292,12 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 |-----|------|---------|-------------|
 | `mmdb_path` | string | `""` | Path to a MaxMind-compatible MMDB file. Non-empty path enables this custom GeoIP database; if empty, the UI can download DB-IP Lite into the server data directory |
 
+### `[asn]` -- ASN Lookup (Traceroute)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `mmdb_path` | string | `""` | Path to a DB-IP Lite ASN / MaxMind GeoLite2-ASN MMDB file. Non-empty path enables this custom ASN database; if empty, the UI can download DB-IP Lite ASN into the server data directory. Used to label each traceroute hop with its autonomous system |
+
 ### `[resend]` -- Email Notifications
 
 | Key | Type | Default | Description |
@@ -497,6 +504,9 @@ records_hourly_days = 180
 
 [geoip]
 mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"
+
+[asn]
+mmdb_path = "/var/lib/serverbee/GeoLite2-ASN.mmdb"
 
 [log]
 level = "info"

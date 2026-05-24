@@ -61,6 +61,12 @@ These variables are for local repo tooling and development workflows. They are n
 |---------------------|----------|------|---------|-------------|
 | `SERVERBEE_GEOIP__MMDB_PATH` | `geoip.mmdb_path` | string | `""` | Path to MaxMind GeoLite2-City.mmdb file. Non-empty path enables GeoIP |
 
+### ASN (Optional)
+
+| Environment Variable | TOML Key | Type | Default | Description |
+|---------------------|----------|------|---------|-------------|
+| `SERVERBEE_ASN__MMDB_PATH` | `asn.mmdb_path` | string | `""` | Path to a DB-IP Lite ASN / MaxMind GeoLite2-ASN MMDB file. Non-empty path enables traceroute ASN enrichment; otherwise admins can download DB-IP Lite ASN from Settings → ASN Database |
+
 ### Resend (Email Notifications)
 
 | Environment Variable | TOML Key | Type | Default | Description |
