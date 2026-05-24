@@ -1320,11 +1320,10 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             let synthetic = AgentMessage::TracerouteRoundUpdate {
                 request_id, target, round: 1, total_rounds: 1, hops, completed, error,
             };
-            handle_traceroute_round_update(&state, server_id, synthetic).await;
-            return;
+            handle_traceroute_round_update(state, server_id, synthetic).await;
         }
         msg @ AgentMessage::TracerouteRoundUpdate { .. } => {
-            handle_traceroute_round_update(&state, server_id, msg).await;
+            handle_traceroute_round_update(state, server_id, msg).await;
         }
         AgentMessage::SecurityEvent(payload) => {
             // The hot-path cache is populated once the agent sends `SystemInfo`
