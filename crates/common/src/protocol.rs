@@ -673,6 +673,22 @@ pub enum BrowserMessage {
         server_id: String,
         results: Vec<NetworkProbeResultData>,
     },
+    TracerouteUpdate {
+        server_id: String,
+        request_id: String,
+        target: String,
+        /// From the server-side TracerouteRequestMeta cache so any browser
+        /// (not only the originator) and reconnecting clients render the
+        /// correct label without an extra GET round-trip.
+        protocol: RecordedProtocol,
+        started_at: i64,
+        round: u32,
+        total_rounds: u32,
+        /// Server-side enriched (hostname filled in; ASN deferred).
+        hops: Vec<TracerouteHop>,
+        completed: bool,
+        error: Option<String>,
+    },
     // Docker broadcasts
     DockerUpdate {
         server_id: String,
@@ -2057,6 +2073,42 @@ mod tests {
                 assert_eq!(snapshot.checked_at, checked_at);
             }
             _ => panic!("Expected IpQualityUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_browser_message_traceroute_update_round_trip() {
+        use crate::types::TracerouteHop;
+        let msg = BrowserMessage::TracerouteUpdate {
+            server_id: "srv-1".into(),
+            request_id: "rid-5".into(),
+            target: "1.1.1.1".into(),
+            protocol: RecordedProtocol::Tcp,
+            started_at: 1_716_500_000_000,
+            round: 1,
+            total_rounds: 5,
+            hops: vec![TracerouteHop {
+                hop: 1, ip: None, hostname: Some("hop1.example".into()),
+                rtt1: None, rtt2: None, rtt3: None, asn: None,
+                ips: vec!["10.0.0.1".into()],
+                total_sent: Some(1), total_recv: Some(1),
+                loss_pct: Some(0.0),
+                best_ms: Some(1.0), worst_ms: Some(1.0), avg_ms: Some(1.0),
+                stddev_ms: Some(0.0), jitter_ms: Some(0.0),
+            }],
+            completed: false,
+            error: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"traceroute_update\""));
+        assert!(json.contains("\"protocol\":\"tcp\""));
+        let parsed: BrowserMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            BrowserMessage::TracerouteUpdate { protocol, started_at, .. } => {
+                assert_eq!(protocol, RecordedProtocol::Tcp);
+                assert_eq!(started_at, 1_716_500_000_000);
+            }
+            _ => panic!("Expected TracerouteUpdate"),
         }
     }
 
