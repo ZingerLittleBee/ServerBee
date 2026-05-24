@@ -1173,7 +1173,7 @@ export function NetworkDetailPage() {
           {allTargets.length === 0 ? (
             <p className="py-4 text-center text-muted-foreground text-sm">{t('no_targets')}</p>
           ) : (
-            <ScrollArea className="max-h-80 rounded-md border">
+            <ScrollArea className="max-h-[70vh] rounded-md border">
               <div className="space-y-1.5 p-3">
                 {allTargets.map((target) => (
                   // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
