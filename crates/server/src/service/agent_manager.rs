@@ -718,68 +718,6 @@ impl AgentManager {
         });
     }
 
-    // --- TEMPORARY SHIMS (removed by Tasks 11-13) ---
-
-    #[deprecated(note = "use TracerouteRequestMeta + insert_traceroute_placeholder(meta)")]
-    #[allow(dead_code)]
-    pub fn insert_traceroute_placeholder_legacy(
-        &self,
-        request_id: &str,
-        server_id: &str,
-        target: &str,
-    ) {
-        self.insert_traceroute_placeholder(
-            request_id,
-            TracerouteRequestMeta {
-                server_id: server_id.to_string(),
-                target: target.to_string(),
-                protocol: RecordedProtocol::Icmp,
-                started_at: chrono::Utc::now().timestamp_millis(),
-            },
-        );
-    }
-
-    /// Returns the snapshot in the legacy 4-field tuple shape so the current
-    /// router code still compiles before Tasks 11-13 land.
-    #[deprecated(note = "use get_traceroute_snapshot")]
-    #[allow(dead_code, deprecated)]
-    pub fn get_traceroute_result(
-        &self,
-        request_id: &str,
-    ) -> Option<(String, TracerouteResultData)> {
-        let s = self.get_traceroute_snapshot(request_id)?;
-        Some((
-            s.server_id.clone(),
-            TracerouteResultData {
-                target: s.target,
-                hops: s.hops,
-                completed: s.completed,
-                error: s.error,
-            },
-        ))
-    }
-
-    #[deprecated(note = "use update_traceroute_round")]
-    #[allow(dead_code, deprecated)]
-    pub fn update_traceroute_result(&self, request_id: &str, result: TracerouteResultData) {
-        let _ = self.update_traceroute_round(
-            request_id,
-            1,
-            1,
-            result.hops,
-            result.completed,
-            result.error,
-        );
-    }
-}
-
-#[deprecated]
-#[allow(dead_code)]
-pub struct TracerouteResultData {
-    pub target: String,
-    pub hops: Vec<TracerouteHop>,
-    pub completed: bool,
-    pub error: Option<String>,
 }
 
 /// Clean up Docker viewer tracking, features, and broadcast availability change.

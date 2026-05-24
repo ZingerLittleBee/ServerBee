@@ -189,7 +189,10 @@ impl Modify for SecurityAddon {
         crate::router::api::uptime::get_uptime_daily,
         // traceroute
         crate::router::api::traceroute::trigger_traceroute,
-        crate::router::api::traceroute::get_traceroute_result,
+        crate::router::api::traceroute::get_traceroute_snapshot,
+        crate::router::api::traceroute::list_traceroute_records,
+        crate::router::api::traceroute::delete_traceroute_record,
+        crate::router::api::traceroute::clear_traceroute_history,
         // traffic
         crate::router::api::traffic::get_traffic,
         crate::router::api::traffic::get_traffic_overview,
@@ -432,8 +435,12 @@ impl Modify for SecurityAddon {
             // traceroute
             crate::router::api::traceroute::TriggerTracerouteRequest,
             crate::router::api::traceroute::TriggerTracerouteResponse,
-            crate::router::api::traceroute::TracerouteResultResponse,
+            crate::router::api::traceroute::ClearedResponse,
+            crate::service::traceroute::TracerouteRecordSummary,
+            crate::service::traceroute::TracerouteSnapshotResponse,
             serverbee_common::types::TracerouteHop,
+            serverbee_common::protocol::TraceProtocol,
+            serverbee_common::protocol::RecordedProtocol,
             // security
             crate::router::api::security::SecurityEventDto,
             crate::router::api::security::SecurityEventList,

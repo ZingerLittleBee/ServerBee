@@ -1,151 +1,194 @@
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
-use axum::routing::{get, post};
+use axum::extract::{Path, Query, State};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::error::{ApiResponse, AppError, ok};
+use crate::service::traceroute::{
+    self, TracerouteRecordSummary, TracerouteSnapshotResponse,
+};
 use crate::state::AppState;
-use serverbee_common::protocol::ServerMessage;
-use serverbee_common::types::TracerouteHop;
+use serverbee_common::protocol::{RecordedProtocol, ServerMessage, TraceProtocol};
 
-// --- Request / Response types ---
+const MAX_HOPS: u8 = 30;
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct TriggerTracerouteRequest {
-    /// Target host or IP (e.g. "1.2.3.4" or "example.com")
+    /// Target host or IP (e.g. "1.2.3.4" or "example.com").
     pub target: String,
+    /// One of `icmp` | `udp` | `tcp`. Missing → defaults to `icmp`.
+    #[serde(default)]
+    pub protocol: Option<TraceProtocol>,
 }
 
-#[derive(Debug, Serialize, utoipa::ToSchema)]
+#[derive(Debug, serde::Serialize, utoipa::ToSchema)]
 pub struct TriggerTracerouteResponse {
-    /// Unique request ID used to poll for results
     pub request_id: String,
 }
 
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub struct TracerouteResultResponse {
-    pub target: String,
-    pub hops: Vec<TracerouteHop>,
-    pub completed: bool,
-    pub error: Option<String>,
+#[derive(Debug, Deserialize)]
+pub struct ListQuery {
+    #[serde(default = "default_limit")]
+    pub limit: u64,
+    #[serde(default)]
+    pub offset: u64,
 }
 
-// --- Routers ---
+fn default_limit() -> u64 { 50 }
+
+// ---------- Routers ----------
 
 pub fn read_router() -> Router<Arc<AppState>> {
-    Router::new().route(
-        "/servers/{id}/traceroute/{request_id}",
-        get(get_traceroute_result),
-    )
+    Router::new()
+        .route(
+            "/servers/{id}/traceroute/{request_id}",
+            get(get_traceroute_snapshot),
+        )
+        .route("/servers/{id}/traceroute", get(list_traceroute_records))
 }
 
 pub fn write_router() -> Router<Arc<AppState>> {
-    Router::new().route("/servers/{id}/traceroute", post(trigger_traceroute))
+    Router::new()
+        .route("/servers/{id}/traceroute", post(trigger_traceroute))
+        .route(
+            "/servers/{id}/traceroute/{request_id}",
+            delete(delete_traceroute_record),
+        )
+        .route("/servers/{id}/traceroute", delete(clear_traceroute_history))
 }
 
-// --- Handlers ---
+// ---------- Handlers ----------
 
-/// Trigger a traceroute to a target from the specified server's agent.
 #[utoipa::path(
-    post,
-    path = "/api/servers/{id}/traceroute",
-    tag = "traceroute",
+    post, path = "/api/servers/{id}/traceroute", tag = "traceroute",
     params(("id" = String, Path, description = "Server ID")),
     request_body = TriggerTracerouteRequest,
     responses(
-        (status = 200, description = "Traceroute triggered", body = TriggerTracerouteResponse),
-        (status = 404, description = "Server not found or offline"),
-        (status = 422, description = "Invalid target"),
+        (status = 200, body = TriggerTracerouteResponse),
+        (status = 404), (status = 422),
     ),
     security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
-#[allow(deprecated)]
 pub async fn trigger_traceroute(
     State(state): State<Arc<AppState>>,
     Path(server_id): Path<String>,
     Json(input): Json<TriggerTracerouteRequest>,
 ) -> Result<Json<ApiResponse<TriggerTracerouteResponse>>, AppError> {
-    // Validate target: only allow alphanumeric, dots, hyphens, and colons
     if input.target.is_empty()
-        || !input
-            .target
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == ':')
+        || !input.target.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == ':')
     {
         return Err(AppError::Validation(
-            "Invalid target: only alphanumeric characters, dots, hyphens, and colons are allowed"
-                .to_string(),
+            "Invalid target: only alphanumeric characters, dots, hyphens, and colons are allowed".to_string(),
         ));
     }
-
-    // Check server is online
-    let tx = state
-        .agent_manager
-        .get_sender(&server_id)
+    let tx = state.agent_manager.get_sender(&server_id)
         .ok_or_else(|| AppError::NotFound(format!("Server {server_id} is not online")))?;
-
-    // Generate request_id
     let request_id = Uuid::new_v4().to_string();
+    let protocol = input.protocol.unwrap_or(TraceProtocol::Icmp);
 
-    // Insert placeholder in traceroute_results cache
-    #[allow(deprecated)]
-    state
-        .agent_manager
-        .insert_traceroute_placeholder_legacy(&request_id, &server_id, &input.target);
+    state.agent_manager.insert_traceroute_placeholder(
+        &request_id,
+        crate::service::agent_manager::TracerouteRequestMeta {
+            server_id: server_id.clone(),
+            target: input.target.clone(),
+            protocol: RecordedProtocol::from(protocol),
+            started_at: chrono::Utc::now().timestamp_millis(),
+        },
+    );
 
-    // Send Traceroute command to agent
     let msg = ServerMessage::Traceroute {
         request_id: request_id.clone(),
         target: input.target,
-        max_hops: 30,
-        protocol: None,
+        max_hops: MAX_HOPS,
+        protocol: Some(protocol),
     };
-    tx.send(msg).await.map_err(|_| {
-        AppError::Internal("Failed to send traceroute command to agent".to_string())
-    })?;
+    tx.send(msg).await
+        .map_err(|_| AppError::Internal("Failed to send traceroute command to agent".to_string()))?;
 
     ok(TriggerTracerouteResponse { request_id })
 }
 
-/// Poll for the result of a previously triggered traceroute.
 #[utoipa::path(
-    get,
-    path = "/api/servers/{id}/traceroute/{request_id}",
-    tag = "traceroute",
-    params(
-        ("id" = String, Path, description = "Server ID"),
-        ("request_id" = String, Path, description = "Traceroute request ID"),
-    ),
-    responses(
-        (status = 200, description = "Traceroute result", body = TracerouteResultResponse),
-        (status = 404, description = "Result not found or server mismatch"),
-    ),
+    get, path = "/api/servers/{id}/traceroute/{request_id}", tag = "traceroute",
+    params(("id" = String, Path), ("request_id" = String, Path)),
+    responses((status = 200, body = TracerouteSnapshotResponse), (status = 404)),
     security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
-#[allow(deprecated)]
-pub async fn get_traceroute_result(
+pub async fn get_traceroute_snapshot(
     State(state): State<Arc<AppState>>,
     Path((server_id, request_id)): Path<(String, String)>,
-) -> Result<Json<ApiResponse<TracerouteResultResponse>>, AppError> {
-    let (stored_server_id, result) = state
-        .agent_manager
-        .get_traceroute_result(&request_id)
-        .ok_or_else(|| AppError::NotFound(format!("Traceroute result {request_id} not found")))?;
-
-    // Validate server_id matches
-    if stored_server_id != server_id {
-        return Err(AppError::NotFound(format!(
-            "Traceroute result {request_id} not found"
-        )));
+) -> Result<Json<ApiResponse<TracerouteSnapshotResponse>>, AppError> {
+    // 1. In-memory cache (live or recently-completed)
+    if let Some(snap) = state.agent_manager.get_traceroute_snapshot(&request_id)
+        && snap.server_id == server_id
+    {
+        return ok(TracerouteSnapshotResponse {
+            request_id,
+            target: snap.target,
+            protocol: snap.protocol,
+            started_at: snap.started_at,
+            completed_at: if snap.completed { Some(chrono::Utc::now().timestamp_millis()) } else { None },
+            round: snap.round,
+            total_rounds: snap.total_rounds,
+            completed: snap.completed,
+            hops: snap.hops,
+            error: snap.error,
+        });
     }
+    // 2. DB fallback
+    if let Some(snap) = traceroute::get_record_snapshot(&state.db, &server_id, &request_id).await? {
+        return ok(snap);
+    }
+    Err(AppError::NotFound(format!("Traceroute {request_id} not found")))
+}
 
-    ok(TracerouteResultResponse {
-        target: result.target,
-        hops: result.hops,
-        completed: result.completed,
-        error: result.error,
-    })
+#[utoipa::path(
+    get, path = "/api/servers/{id}/traceroute", tag = "traceroute",
+    params(("id" = String, Path)),
+    responses((status = 200, body = Vec<TracerouteRecordSummary>)),
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
+)]
+pub async fn list_traceroute_records(
+    State(state): State<Arc<AppState>>,
+    Path(server_id): Path<String>,
+    Query(q): Query<ListQuery>,
+) -> Result<Json<ApiResponse<Vec<TracerouteRecordSummary>>>, AppError> {
+    let rows = traceroute::list_records_for_server(&state.db, &server_id, q.limit, q.offset).await?;
+    ok(rows)
+}
+
+#[utoipa::path(
+    delete, path = "/api/servers/{id}/traceroute/{request_id}", tag = "traceroute",
+    params(("id" = String, Path), ("request_id" = String, Path)),
+    responses((status = 204), (status = 404)),
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
+)]
+pub async fn delete_traceroute_record(
+    State(state): State<Arc<AppState>>,
+    Path((server_id, request_id)): Path<(String, String)>,
+) -> Result<Json<ApiResponse<()>>, AppError> {
+    traceroute::delete_record(&state.db, &server_id, &request_id).await?;
+    ok(())
+}
+
+#[utoipa::path(
+    delete, path = "/api/servers/{id}/traceroute", tag = "traceroute",
+    params(("id" = String, Path)),
+    responses((status = 200, body = ClearedResponse)),
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
+)]
+pub async fn clear_traceroute_history(
+    State(state): State<Arc<AppState>>,
+    Path(server_id): Path<String>,
+) -> Result<Json<ApiResponse<ClearedResponse>>, AppError> {
+    let deleted = traceroute::delete_records_for_server(&state.db, &server_id).await?;
+    ok(ClearedResponse { deleted })
+}
+
+#[derive(Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct ClearedResponse {
+    pub deleted: u64,
 }
