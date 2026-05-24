@@ -391,6 +391,18 @@ pub enum AgentMessage {
         completed: bool,
         error: Option<String>,
     },
+    /// Streamed by new (trippy-core) agents. One message per probe round.
+    /// `hops` is the FULL accumulated state after this round, not a delta.
+    /// `completed=true` marks the final update for `request_id`.
+    TracerouteRoundUpdate {
+        request_id: String,
+        target: String,
+        round: u32,
+        total_rounds: u32,
+        hops: Vec<TracerouteHop>,
+        completed: bool,
+        error: Option<String>,
+    },
     UpgradeProgress {
         msg_id: String,
         #[serde(default)]
@@ -2045,6 +2057,62 @@ mod tests {
                 assert_eq!(snapshot.checked_at, checked_at);
             }
             _ => panic!("Expected IpQualityUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_traceroute_round_update_round_trip_intermediate() {
+        use crate::types::TracerouteHop;
+        let msg = AgentMessage::TracerouteRoundUpdate {
+            request_id: "rid-3".into(),
+            target: "1.1.1.1".into(),
+            round: 2,
+            total_rounds: 5,
+            hops: vec![TracerouteHop {
+                hop: 1, ip: None, hostname: None,
+                rtt1: None, rtt2: None, rtt3: None, asn: None,
+                ips: vec!["10.0.0.1".into()],
+                total_sent: Some(2), total_recv: Some(2),
+                loss_pct: Some(0.0),
+                best_ms: Some(1.0), worst_ms: Some(1.2), avg_ms: Some(1.1),
+                stddev_ms: Some(0.1), jitter_ms: Some(0.05),
+            }],
+            completed: false,
+            error: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"traceroute_round_update\""));
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::TracerouteRoundUpdate { round, total_rounds, completed, hops, .. } => {
+                assert_eq!(round, 2);
+                assert_eq!(total_rounds, 5);
+                assert!(!completed);
+                assert_eq!(hops.len(), 1);
+            }
+            _ => panic!("Expected TracerouteRoundUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_traceroute_round_update_terminal_error() {
+        let msg = AgentMessage::TracerouteRoundUpdate {
+            request_id: "rid-4".into(),
+            target: "1.1.1.1".into(),
+            round: 0,
+            total_rounds: 0,
+            hops: vec![],
+            completed: true,
+            error: Some("Traceroute requires elevated privileges".into()),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::TracerouteRoundUpdate { completed, error, .. } => {
+                assert!(completed);
+                assert!(error.as_deref().unwrap().contains("privileges"));
+            }
+            _ => panic!("Expected TracerouteRoundUpdate"),
         }
     }
 
