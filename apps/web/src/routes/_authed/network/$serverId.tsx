@@ -14,6 +14,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -410,7 +411,7 @@ function TracerouteHistoryList({
         )}
       </div>
       {count === 0 && <p className="text-muted-foreground text-sm">{t('history_empty')}</p>}
-      <div className="min-h-0 flex-1 overflow-auto">
+      <ScrollArea className="min-h-0 flex-1">
         <ul className="space-y-1">
           {history?.map((r) => (
             <HistoryRow
@@ -424,7 +425,7 @@ function TracerouteHistoryList({
             />
           ))}
         </ul>
-      </div>
+      </ScrollArea>
     </div>
   )
 }
@@ -647,7 +648,7 @@ function TracerouteContent({
       )}
 
       {result && result.hops.length > 0 && (
-        <div className="min-h-0 flex-1 overflow-auto rounded-md border">
+        <ScrollArea className="min-h-0 flex-1 rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -669,7 +670,7 @@ function TracerouteContent({
               ))}
             </TableBody>
           </Table>
-        </div>
+        </ScrollArea>
       )}
 
       {isLoadingRecord && (
@@ -1127,7 +1128,7 @@ export function NetworkDetailPage() {
 
       {/* Traceroute Dialog */}
       <Dialog onOpenChange={setShowTracerouteDialog} open={showTracerouteDialog}>
-        <DialogContent className="h-[85vh] sm:max-w-5xl">
+        <DialogContent className="h-[92vh] sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle>{t('traceroute')}</DialogTitle>
           </DialogHeader>
