@@ -1319,6 +1319,28 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 },
             );
         }
+        AgentMessage::TracerouteRoundUpdate {
+            request_id,
+            target,
+            round,
+            total_rounds,
+            hops,
+            completed,
+            error,
+        } => {
+            tracing::debug!(
+                "Received TracerouteRoundUpdate from {server_id} (request_id={request_id}, round={round}/{total_rounds}, completed={completed})"
+            );
+            state.agent_manager.update_traceroute_result(
+                &request_id,
+                crate::service::agent_manager::TracerouteResultData {
+                    target,
+                    hops,
+                    completed,
+                    error,
+                },
+            );
+        }
         AgentMessage::SecurityEvent(payload) => {
             // The hot-path cache is populated once the agent sends `SystemInfo`
             // on the current connection; before that, fall back to the DB row.

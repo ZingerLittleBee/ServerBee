@@ -37,6 +37,7 @@ pub mod status_page;
 pub mod task_scheduler;
 pub mod theme_ref;
 pub mod theme_validator;
+pub mod traceroute_enrich;
 pub mod traffic;
 pub mod upgrade_release;
 pub mod upgrade_tracker;

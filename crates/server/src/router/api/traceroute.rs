@@ -99,6 +99,7 @@ pub async fn trigger_traceroute(
         request_id: request_id.clone(),
         target: input.target,
         max_hops: 30,
+        protocol: None,
     };
     tx.send(msg).await.map_err(|_| {
         AppError::Internal("Failed to send traceroute command to agent".to_string())
