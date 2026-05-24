@@ -386,7 +386,6 @@ async fn handle_current_connection_frame(
     true
 }
 
-#[allow(deprecated)]
 async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: AgentMessage) {
     match msg {
         AgentMessage::SystemInfo {
@@ -1308,39 +1307,24 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             error,
         } => {
             tracing::info!(
-                "Received TracerouteResult from {server_id} (request_id={request_id}, completed={completed})"
+                "Received legacy TracerouteResult from {server_id} (request_id={request_id})"
             );
-            state.agent_manager.update_traceroute_result(
+            // Legacy agent does not report which probe protocol actually ran (UDP
+            // for Unix `traceroute`, ICMP for `mtr` / Windows `tracert`). Persist
+            // with the "legacy" sentinel.
+            state.agent_manager.set_traceroute_meta_protocol(
                 &request_id,
-                crate::service::agent_manager::TracerouteResultData {
-                    target,
-                    hops,
-                    completed,
-                    error,
-                },
+                serverbee_common::protocol::RecordedProtocol::Legacy,
             );
+            // Re-dispatch into the new pipeline as a single-round update.
+            let synthetic = AgentMessage::TracerouteRoundUpdate {
+                request_id, target, round: 1, total_rounds: 1, hops, completed, error,
+            };
+            handle_traceroute_round_update(&state, server_id, synthetic).await;
+            return;
         }
-        AgentMessage::TracerouteRoundUpdate {
-            request_id,
-            target,
-            round,
-            total_rounds,
-            hops,
-            completed,
-            error,
-        } => {
-            tracing::debug!(
-                "Received TracerouteRoundUpdate from {server_id} (request_id={request_id}, round={round}/{total_rounds}, completed={completed})"
-            );
-            state.agent_manager.update_traceroute_result(
-                &request_id,
-                crate::service::agent_manager::TracerouteResultData {
-                    target,
-                    hops,
-                    completed,
-                    error,
-                },
-            );
+        msg @ AgentMessage::TracerouteRoundUpdate { .. } => {
+            handle_traceroute_round_update(&state, server_id, msg).await;
         }
         AgentMessage::SecurityEvent(payload) => {
             // The hot-path cache is populated once the agent sends `SystemInfo`
@@ -1690,6 +1674,73 @@ async fn update_server_geo(
     active.updated_at = Set(chrono::Utc::now());
     active.update(db).await?;
     Ok(())
+}
+
+async fn handle_traceroute_round_update(state: &Arc<AppState>, _server_id: &str, msg: AgentMessage) {
+    let AgentMessage::TracerouteRoundUpdate {
+        request_id,
+        target: _,
+        round,
+        total_rounds,
+        mut hops,
+        completed,
+        error,
+    } = msg
+    else {
+        unreachable!("handle_traceroute_round_update called with non-TracerouteRoundUpdate msg");
+    };
+
+    // Server-side enrich (hostname only this iteration)
+    state.traceroute_enricher.enrich(&mut hops).await;
+
+    // Update in-memory cache
+    let Some(snapshot) = state.agent_manager.update_traceroute_round(
+        &request_id,
+        round,
+        total_rounds,
+        hops.clone(),
+        completed,
+        error.clone(),
+    ) else {
+        tracing::warn!(
+            "Dropping TracerouteRoundUpdate {request_id}: no cached placeholder"
+        );
+        return;
+    };
+
+    // On completion, persist a DB row
+    if completed {
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let new_record = crate::service::traceroute::NewTracerouteRecord {
+            id: request_id.clone(),
+            server_id: snapshot.server_id.clone(),
+            target: snapshot.target.clone(),
+            protocol: snapshot.protocol,
+            started_at: snapshot.started_at,
+            completed_at: Some(now_ms),
+            total_rounds: snapshot.total_rounds,
+            completed_rounds: snapshot.round,
+            hops: snapshot.hops.clone(),
+            error: snapshot.error.clone(),
+        };
+        if let Err(e) = crate::service::traceroute::insert_completed_record(&state.db, new_record).await {
+            tracing::warn!("Failed to persist traceroute record {request_id}: {e:?}");
+        }
+    }
+
+    // Broadcast to subscribed browsers
+    let _ = state.browser_tx.send(serverbee_common::protocol::BrowserMessage::TracerouteUpdate {
+        server_id: snapshot.server_id.clone(),
+        request_id: request_id.clone(),
+        target: snapshot.target.clone(),
+        protocol: snapshot.protocol,
+        started_at: snapshot.started_at,
+        round: snapshot.round,
+        total_rounds: snapshot.total_rounds,
+        hops: snapshot.hops,
+        completed: snapshot.completed,
+        error: snapshot.error,
+    });
 }
 
 #[cfg(test)]
