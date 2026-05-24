@@ -8,6 +8,42 @@ use crate::types::{
     PingTaskConfig, SystemInfo, SystemReport, TaskResult, TracerouteHop,
 };
 
+/// Strict input protocol enum used on `ServerMessage::Traceroute.protocol`
+/// and on the server's POST request DTO. Only the three values the user can
+/// pick are accepted; legacy is NOT part of this enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum TraceProtocol {
+    Icmp,
+    Udp,
+    Tcp,
+}
+
+/// Persisted/read protocol enum. Extends `TraceProtocol` with `Legacy` for
+/// records normalized from pre-trippy agents whose actual probe mode is
+/// unknown (Unix `traceroute` defaults to UDP, `mtr` is ICMP, Windows
+/// `tracert` is ICMP — the legacy agent does not report which ran).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum RecordedProtocol {
+    Icmp,
+    Udp,
+    Tcp,
+    Legacy,
+}
+
+impl From<TraceProtocol> for RecordedProtocol {
+    fn from(p: TraceProtocol) -> Self {
+        match p {
+            TraceProtocol::Icmp => Self::Icmp,
+            TraceProtocol::Udp => Self::Udp,
+            TraceProtocol::Tcp => Self::Tcp,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
@@ -355,6 +391,18 @@ pub enum AgentMessage {
         completed: bool,
         error: Option<String>,
     },
+    /// Streamed by new (trippy-core) agents. One message per probe round.
+    /// `hops` is the FULL accumulated state after this round, not a delta.
+    /// `completed=true` marks the final update for `request_id`.
+    TracerouteRoundUpdate {
+        request_id: String,
+        target: String,
+        round: u32,
+        total_rounds: u32,
+        hops: Vec<TracerouteHop>,
+        completed: bool,
+        error: Option<String>,
+    },
     UpgradeProgress {
         msg_id: String,
         #[serde(default)]
@@ -521,6 +569,10 @@ pub enum ServerMessage {
         request_id: String,
         target: String,
         max_hops: u8,
+        /// Strict enum; defaults to ICMP behavior when missing for old-agent
+        /// compatibility.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        protocol: Option<TraceProtocol>,
     },
     Ping,
     /// Agent 自升级。`download_url`/`sha256` 自 pinned-source 版本起**废弃**:
@@ -620,6 +672,22 @@ pub enum BrowserMessage {
     NetworkProbeUpdate {
         server_id: String,
         results: Vec<NetworkProbeResultData>,
+    },
+    TracerouteUpdate {
+        server_id: String,
+        request_id: String,
+        target: String,
+        /// From the server-side TracerouteRequestMeta cache so any browser
+        /// (not only the originator) and reconnecting clients render the
+        /// correct label without an extra GET round-trip.
+        protocol: RecordedProtocol,
+        started_at: i64,
+        round: u32,
+        total_rounds: u32,
+        /// Server-side enriched (hostname filled in; ASN deferred).
+        hops: Vec<TracerouteHop>,
+        completed: bool,
+        error: Option<String>,
     },
     // Docker broadcasts
     DockerUpdate {
@@ -1328,6 +1396,7 @@ mod tests {
             request_id: "req-1".to_string(),
             target: "8.8.8.8".to_string(),
             max_hops: 30,
+            protocol: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("\"type\":\"traceroute\""));
@@ -1338,6 +1407,7 @@ mod tests {
                 request_id,
                 target,
                 max_hops,
+                ..
             } => {
                 assert_eq!(request_id, "req-1");
                 assert_eq!(target, "8.8.8.8");
@@ -1362,6 +1432,9 @@ mod tests {
                     rtt2: Some(1.456),
                     rtt3: Some(1.678),
                     asn: None,
+                    ips: vec![], total_sent: None, total_recv: None,
+                    loss_pct: None, best_ms: None, worst_ms: None, avg_ms: None,
+                    stddev_ms: None, jitter_ms: None,
                 },
                 TracerouteHop {
                     hop: 2,
@@ -1371,6 +1444,9 @@ mod tests {
                     rtt2: None,
                     rtt3: None,
                     asn: None,
+                    ips: vec![], total_sent: None, total_recv: None,
+                    loss_pct: None, best_ms: None, worst_ms: None, avg_ms: None,
+                    stddev_ms: None, jitter_ms: None,
                 },
             ],
             completed: true,
@@ -1998,5 +2074,212 @@ mod tests {
             }
             _ => panic!("Expected IpQualityUpdate"),
         }
+    }
+
+    #[test]
+    fn test_browser_message_traceroute_update_round_trip() {
+        use crate::types::TracerouteHop;
+        let msg = BrowserMessage::TracerouteUpdate {
+            server_id: "srv-1".into(),
+            request_id: "rid-5".into(),
+            target: "1.1.1.1".into(),
+            protocol: RecordedProtocol::Tcp,
+            started_at: 1_716_500_000_000,
+            round: 1,
+            total_rounds: 5,
+            hops: vec![TracerouteHop {
+                hop: 1, ip: None, hostname: Some("hop1.example".into()),
+                rtt1: None, rtt2: None, rtt3: None, asn: None,
+                ips: vec!["10.0.0.1".into()],
+                total_sent: Some(1), total_recv: Some(1),
+                loss_pct: Some(0.0),
+                best_ms: Some(1.0), worst_ms: Some(1.0), avg_ms: Some(1.0),
+                stddev_ms: Some(0.0), jitter_ms: Some(0.0),
+            }],
+            completed: false,
+            error: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"traceroute_update\""));
+        assert!(json.contains("\"protocol\":\"tcp\""));
+        let parsed: BrowserMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            BrowserMessage::TracerouteUpdate { protocol, started_at, .. } => {
+                assert_eq!(protocol, RecordedProtocol::Tcp);
+                assert_eq!(started_at, 1_716_500_000_000);
+            }
+            _ => panic!("Expected TracerouteUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_traceroute_round_update_round_trip_intermediate() {
+        use crate::types::TracerouteHop;
+        let msg = AgentMessage::TracerouteRoundUpdate {
+            request_id: "rid-3".into(),
+            target: "1.1.1.1".into(),
+            round: 2,
+            total_rounds: 5,
+            hops: vec![TracerouteHop {
+                hop: 1, ip: None, hostname: None,
+                rtt1: None, rtt2: None, rtt3: None, asn: None,
+                ips: vec!["10.0.0.1".into()],
+                total_sent: Some(2), total_recv: Some(2),
+                loss_pct: Some(0.0),
+                best_ms: Some(1.0), worst_ms: Some(1.2), avg_ms: Some(1.1),
+                stddev_ms: Some(0.1), jitter_ms: Some(0.05),
+            }],
+            completed: false,
+            error: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"traceroute_round_update\""));
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::TracerouteRoundUpdate { round, total_rounds, completed, hops, .. } => {
+                assert_eq!(round, 2);
+                assert_eq!(total_rounds, 5);
+                assert!(!completed);
+                assert_eq!(hops.len(), 1);
+            }
+            _ => panic!("Expected TracerouteRoundUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_traceroute_round_update_terminal_error() {
+        let msg = AgentMessage::TracerouteRoundUpdate {
+            request_id: "rid-4".into(),
+            target: "1.1.1.1".into(),
+            round: 0,
+            total_rounds: 0,
+            hops: vec![],
+            completed: true,
+            error: Some("Traceroute requires elevated privileges".into()),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            AgentMessage::TracerouteRoundUpdate { completed, error, .. } => {
+                assert!(completed);
+                assert!(error.as_deref().unwrap().contains("privileges"));
+            }
+            _ => panic!("Expected TracerouteRoundUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_traceroute_server_message_with_protocol_round_trip() {
+        let msg = ServerMessage::Traceroute {
+            request_id: "rid-1".into(),
+            target: "1.1.1.1".into(),
+            max_hops: 30,
+            protocol: Some(TraceProtocol::Udp),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"protocol\":\"udp\""));
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ServerMessage::Traceroute { protocol, .. } => assert_eq!(protocol, Some(TraceProtocol::Udp)),
+            _ => panic!("Expected Traceroute"),
+        }
+    }
+
+    #[test]
+    fn test_traceroute_server_message_protocol_omitted_when_none() {
+        // Old agents will see absent key and default to ICMP via existing behavior.
+        let msg = ServerMessage::Traceroute {
+            request_id: "rid-2".into(),
+            target: "8.8.8.8".into(),
+            max_hops: 30,
+            protocol: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(!json.contains("\"protocol\""), "got: {json}");
+    }
+
+    #[test]
+    fn test_traceroute_hop_legacy_fields_skipped_when_none() {
+        // A new-schema hop (filled by trippy) should NOT carry stale rtt1/2/3
+        // keys in its JSON. Round-trip a hop with new fields populated but
+        // legacy fields None and assert the serialized form has no rtt* / ip
+        // keys (they are skip_serializing_if Option::is_none).
+        let hop = TracerouteHop {
+            hop: 1,
+            ip: None,
+            hostname: Some("router.local".into()),
+            rtt1: None, rtt2: None, rtt3: None,
+            asn: None,
+            ips: vec!["10.0.0.1".into()],
+            total_sent: Some(5),
+            total_recv: Some(5),
+            loss_pct: Some(0.0),
+            best_ms: Some(1.1),
+            worst_ms: Some(1.5),
+            avg_ms: Some(1.3),
+            stddev_ms: Some(0.15),
+            jitter_ms: Some(0.05),
+        };
+        let json = serde_json::to_string(&hop).unwrap();
+        assert!(!json.contains("\"rtt1\""), "got: {json}");
+        assert!(!json.contains("\"ip\":"), "got: {json}");
+        assert!(json.contains("\"ips\":[\"10.0.0.1\"]"));
+        assert!(json.contains("\"loss_pct\":0.0"));
+    }
+
+    #[test]
+    fn test_traceroute_hop_new_schema_fields_skipped_when_default() {
+        // A legacy-schema hop emitted by an old agent should NOT carry empty
+        // ips: [] or null new-schema fields in JSON. Round-trip a legacy hop
+        // and assert ips / total_sent etc. are absent.
+        let hop = TracerouteHop {
+            hop: 2,
+            ip: Some("8.8.8.8".into()),
+            hostname: Some("dns.google".into()),
+            rtt1: Some(12.0), rtt2: Some(11.8), rtt3: Some(12.3),
+            asn: Some("AS15169".into()),
+            ips: vec![],
+            total_sent: None, total_recv: None,
+            loss_pct: None,
+            best_ms: None, worst_ms: None, avg_ms: None,
+            stddev_ms: None, jitter_ms: None,
+        };
+        let json = serde_json::to_string(&hop).unwrap();
+        assert!(!json.contains("\"ips\":"),       "got: {json}");
+        assert!(!json.contains("\"total_sent\""), "got: {json}");
+        assert!(!json.contains("\"loss_pct\""),   "got: {json}");
+        assert!(json.contains("\"rtt1\":12.0"));
+    }
+
+    #[test]
+    fn test_trace_protocol_serializes_lowercase() {
+        assert_eq!(serde_json::to_string(&TraceProtocol::Icmp).unwrap(), "\"icmp\"");
+        assert_eq!(serde_json::to_string(&TraceProtocol::Udp).unwrap(), "\"udp\"");
+        assert_eq!(serde_json::to_string(&TraceProtocol::Tcp).unwrap(), "\"tcp\"");
+    }
+
+    #[test]
+    fn test_trace_protocol_rejects_unknown_value() {
+        let err = serde_json::from_str::<TraceProtocol>("\"banana\"").unwrap_err();
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn test_trace_protocol_rejects_legacy_value() {
+        // Legacy is a DB/read sentinel, not a probe-mode value the agent accepts.
+        assert!(serde_json::from_str::<TraceProtocol>("\"legacy\"").is_err());
+    }
+
+    #[test]
+    fn test_recorded_protocol_serializes_lowercase_including_legacy() {
+        assert_eq!(serde_json::to_string(&RecordedProtocol::Icmp).unwrap(), "\"icmp\"");
+        assert_eq!(serde_json::to_string(&RecordedProtocol::Legacy).unwrap(), "\"legacy\"");
+    }
+
+    #[test]
+    fn test_recorded_protocol_from_trace_protocol() {
+        assert_eq!(RecordedProtocol::from(TraceProtocol::Icmp), RecordedProtocol::Icmp);
+        assert_eq!(RecordedProtocol::from(TraceProtocol::Udp), RecordedProtocol::Udp);
+        assert_eq!(RecordedProtocol::from(TraceProtocol::Tcp), RecordedProtocol::Tcp);
     }
 }

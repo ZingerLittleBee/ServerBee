@@ -38,6 +38,9 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --uptime-operational: var(--color-emerald-500);
+  --uptime-degraded: var(--color-amber-500);
+  --uptime-down: var(--color-red-500);
 }
 
 .dark {

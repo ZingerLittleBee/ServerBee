@@ -225,21 +225,7 @@ Once `price` and `billing_cycle` are filled in, ServerBee derives cost-aware sig
 
 #### Value Score
 
-Each configured server gets a numeric `score` (0-100) and a `grade`:
-
-| Grade | Score range | Meaning |
-|-------|-------------|---------|
-| `excellent` | ≥ 90 | Strong value for the resources you are paying for |
-| `good` | ≥ 75 | Solid value with minor inefficiencies |
-| `okay` | ≥ 60 | Reasonable but with room to optimize |
-| `poor` | ≥ 40 | Likely overpaying for what you actually use |
-| `waste` | < 40 | Significant idle burn or expensive per-resource pricing |
-
-The score combines three components: per-resource unit cost percentile against peers in the same currency, utilization (idle CPU/memory and missing network/disk-IO activity contribute to `idle_burn` / `sleeping_money`), and reliability over the last 30 days (uptime ratio drives `healthy_uptime` / `low_uptime`). A `confidence` field (`high` / `medium` / `low`) reflects how much data was available, and the panel surfaces qualitative `reasons` such as `expensive_cpu`, `good_memory_value`, `expired_billing`, `free_or_zero_price`, or `insufficient_data`.
-
-#### Validation
-
-The cost insights API rejects bad billing inputs before scoring. Invalid configurations are returned with an `invalid_reason` of `missing_price`, `missing_billing_cycle`, `invalid_billing_cycle`, or `invalid_price`. The UI labels these rows as "invalid card cost config" rather than silently scoring zero.
+Each configured server gets a numeric `score` (0-100) and a `grade` (`excellent` / `good` / `okay` / `poor` / `waste`), computed from three weighted components: per-resource unit-cost percentile vs. same-currency peers, utilization, and reliability. The full algorithm, subscore weights, reasons catalog, confidence rules, and input validation live in [Cost Insights & Value Score](/en/docs/cost-insights).
 
 #### API
 

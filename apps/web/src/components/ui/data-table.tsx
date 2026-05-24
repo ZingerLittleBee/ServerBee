@@ -19,7 +19,7 @@ interface DataTableProps<TData> {
 function DataTable<TData>({ table, noResults, className }: DataTableProps<TData>) {
   return (
     <div className={cn('min-w-0 max-w-full overflow-hidden rounded-lg border', className)}>
-      <Table className="table-fixed">
+      <Table>
         <TableHeader className="sticky top-0 z-10 bg-background">
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow className="bg-muted/50 hover:bg-muted/50" key={headerGroup.id}>

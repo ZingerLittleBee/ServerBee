@@ -61,6 +61,75 @@ CONFIG_KEY=""
 CONFIG_VALUE=""
 MISSING_DEPS=()
 
+# ─── Agent capability toggles ────────────────────────────────────────────────
+# Keys MUST match the CapabilityKey strings in crates/common/src/constants.rs.
+# Order in AGENT_CAPS_ALL is the display order in the interactive picker.
+AGENT_CAPS_ALL=(
+    upgrade
+    ping_icmp
+    ping_tcp
+    ping_http
+    security_events
+    firewall_block
+    ip_quality
+    terminal
+    exec
+    file
+    docker
+)
+# Mirror of CAP_DEFAULT (1852): caps that are on by default.
+declare -A AGENT_CAPS_DEFAULT_ON=(
+    [upgrade]=1
+    [ping_icmp]=1
+    [ping_tcp]=1
+    [ping_http]=1
+    [security_events]=1
+    [firewall_block]=1
+    [ip_quality]=1
+)
+declare -A AGENT_CAPS_RISK=(
+    [terminal]=high
+    [exec]=high
+    [upgrade]=low
+    [ping_icmp]=low
+    [ping_tcp]=low
+    [ping_http]=low
+    [file]=high
+    [docker]=high
+    [security_events]=low
+    [firewall_block]=high
+    [ip_quality]=medium
+)
+declare -A AGENT_CAPS_DESC_EN=(
+    [terminal]="Web terminal (PTY)"
+    [exec]="Remote command execution"
+    [upgrade]="Agent auto-upgrade"
+    [ping_icmp]="ICMP ping probes"
+    [ping_tcp]="TCP probes"
+    [ping_http]="HTTP probes"
+    [file]="File browse / edit / upload"
+    [docker]="Docker container monitoring & control"
+    [security_events]="SSH login / brute-force / port-scan events"
+    [firewall_block]="nftables blocklist (needs root + nft)"
+    [ip_quality]="Third-party IP quality scoring"
+)
+declare -A AGENT_CAPS_DESC_ZH=(
+    [terminal]="Web 终端（PTY）"
+    [exec]="远程执行命令"
+    [upgrade]="Agent 自动升级"
+    [ping_icmp]="ICMP ping 探测"
+    [ping_tcp]="TCP 端口探测"
+    [ping_http]="HTTP 探测"
+    [file]="文件浏览/编辑/上传"
+    [docker]="Docker 容器监控与操作"
+    [security_events]="SSH 登录 / 爆破 / 端口扫描事件采集"
+    [firewall_block]="nftables 黑名单（需 root + nft）"
+    [ip_quality]="第三方 IP 质量评分"
+)
+# Final selection as a comma-separated list of cap keys. Empty + not user-specified = use defaults.
+AGENT_CAPS_SELECTED=""
+AGENT_CAPS_USER_SPECIFIED=false
+
 # ─── Colors ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -269,6 +338,16 @@ declare -A I18N_EN=(
     [st_image]="  Image:"
     [st_port]="  Port:"
     [st_unknown]="unknown"
+    [caps_title]="Agent capability toggles"
+    [caps_intro]="Pick which capabilities this agent will request from the server. Defaults are already checked."
+    [caps_legend]="Risk: [low] safe to leave on · [medium] outbound network · [high] gives remote control over this host"
+    [caps_hint]="Toggle by number(s) (e.g. '8 10'), 'a'=all, 'n'=none, 'd' or Enter=done"
+    [caps_prompt]="> "
+    [caps_invalid]="  ignored: %s"
+    [caps_unknown_cli]="Unknown capability in --caps: %s\n  Valid keys: %s"
+    [caps_plan_label]="  - Capabilities:"
+    [caps_plan_default]="default"
+    [caps_plan_none]="(none)"
 )
 declare -A I18N_ZH=(
     [manager_title]="ServerBee 管理器"
@@ -386,6 +465,16 @@ declare -A I18N_ZH=(
     [st_image]="  镜像:"
     [st_port]="  端口:"
     [st_unknown]="未知"
+    [caps_title]="Agent 能力开关"
+    [caps_intro]="选择该 Agent 将向 Server 请求的能力。默认开启项已勾选。"
+    [caps_legend]="风险：[low] 可放心保留 · [medium] 需访问外网 · [high] 可远程控制本机"
+    [caps_hint]="输入序号切换（如 '8 10'），'a'=全开，'n'=全关，'d' 或 Enter=完成"
+    [caps_prompt]="> "
+    [caps_invalid]="  已忽略：%s"
+    [caps_unknown_cli]="--caps 中存在未知能力：%s\n  可选键：%s"
+    [caps_plan_label]="  - 能力:"
+    [caps_plan_default]="默认"
+    [caps_plan_none]="（无）"
 )
 
 tr_text() {
@@ -614,6 +703,7 @@ parse_args() {
             --email)         EMAIL="$2"; shift 2 ;;
             --lang)          LANG_CODE="$2"; normalize_lang; shift 2 ;;
             --skip-dns-check) SKIP_DNS_CHECK=true; shift ;;
+            --caps)          set_caps_from_cli "$2"; shift 2 ;;
             --purge)         PURGE=true; shift ;;
             --yes|-y)        YES=true; shift ;;
             -*)              error "Unknown option: $1" ;;
@@ -1121,6 +1211,214 @@ refresh_cli_from_release() {
     fi
 }
 
+# ─── Agent capability helpers ────────────────────────────────────────────────
+
+cap_desc() {
+    local cap="$1"
+    if [ "${LANG_CODE:-en}" = "zh" ]; then
+        echo "${AGENT_CAPS_DESC_ZH[$cap]-${AGENT_CAPS_DESC_EN[$cap]-}}"
+    else
+        echo "${AGENT_CAPS_DESC_EN[$cap]-}"
+    fi
+}
+
+cap_is_valid() {
+    local cap="$1" k
+    for k in "${AGENT_CAPS_ALL[@]}"; do
+        [ "$k" = "$cap" ] && return 0
+    done
+    return 1
+}
+
+# Normalize a comma-separated cap list. Accepts special tokens `default`,
+# `all`, `none`. Errors on unknown keys.
+set_caps_from_cli() {
+    local raw="$1"
+    raw="$(echo "$raw" | tr -d '[:space:]')"
+    AGENT_CAPS_USER_SPECIFIED=true
+
+    case "$raw" in
+        default|DEFAULT)
+            local cap final=""
+            for cap in "${AGENT_CAPS_ALL[@]}"; do
+                [ -n "${AGENT_CAPS_DEFAULT_ON[$cap]-}" ] || continue
+                final+="${final:+,}${cap}"
+            done
+            AGENT_CAPS_SELECTED="$final"
+            return ;;
+        all|ALL)
+            AGENT_CAPS_SELECTED="$(IFS=,; echo "${AGENT_CAPS_ALL[*]}")"
+            return ;;
+        none|NONE|"")
+            AGENT_CAPS_SELECTED=""
+            return ;;
+    esac
+
+    local IFS=, cap final=""
+    for cap in $raw; do
+        if ! cap_is_valid "$cap"; then
+            error "$(trp caps_unknown_cli "$cap" "${AGENT_CAPS_ALL[*]}")"
+        fi
+        # Dedup.
+        case ",${final}," in
+            *",${cap},"*) ;;
+            *) final+="${final:+,}${cap}" ;;
+        esac
+    done
+    AGENT_CAPS_SELECTED="$final"
+}
+
+# Set AGENT_CAPS_SELECTED to the default subset if the user did not specify caps.
+ensure_caps_initialized() {
+    if [ "$AGENT_CAPS_USER_SPECIFIED" = false ] && [ -z "$AGENT_CAPS_SELECTED" ]; then
+        local cap final=""
+        for cap in "${AGENT_CAPS_ALL[@]}"; do
+            [ -n "${AGENT_CAPS_DEFAULT_ON[$cap]-}" ] || continue
+            final+="${final:+,}${cap}"
+        done
+        AGENT_CAPS_SELECTED="$final"
+    fi
+}
+
+# Whether the selection equals CAP_DEFAULT exactly (so installer doesn't need
+# to emit any CLI flags to the agent binary).
+caps_match_default() {
+    local cap selected_set default_set
+    selected_set=",${AGENT_CAPS_SELECTED},"
+    default_set=""
+    for cap in "${AGENT_CAPS_ALL[@]}"; do
+        [ -n "${AGENT_CAPS_DEFAULT_ON[$cap]-}" ] || continue
+        default_set+=",${cap}"
+    done
+    default_set+=","
+    # Compare as multisets (selection has the same members as defaults).
+    for cap in "${AGENT_CAPS_ALL[@]}"; do
+        local in_sel=0 in_def=0
+        [[ "$selected_set" == *,"$cap",* ]] && in_sel=1
+        [[ "$default_set" == *,"$cap",* ]] && in_def=1
+        [ "$in_sel" -ne "$in_def" ] && return 1
+    done
+    return 0
+}
+
+# Emit a space-joined --allow-cap/--deny-cap argument string for the agent
+# binary based on AGENT_CAPS_SELECTED vs. AGENT_CAPS_DEFAULT_ON. Empty when
+# selection equals defaults.
+compute_cap_cli_args() {
+    local cap in_sel in_def out=""
+    local selected_set=",${AGENT_CAPS_SELECTED},"
+    for cap in "${AGENT_CAPS_ALL[@]}"; do
+        in_sel=0; in_def=0
+        [[ "$selected_set" == *,"$cap",* ]] && in_sel=1
+        [ -n "${AGENT_CAPS_DEFAULT_ON[$cap]-}" ] && in_def=1
+        if [ "$in_sel" = 1 ] && [ "$in_def" = 0 ]; then
+            out+="${out:+ }--allow-cap $cap"
+        elif [ "$in_sel" = 0 ] && [ "$in_def" = 1 ]; then
+            out+="${out:+ }--deny-cap $cap"
+        fi
+    done
+    printf '%s' "$out"
+}
+
+# Emit YAML list items for docker-compose `command:`. Empty when defaults.
+compute_cap_compose_command() {
+    local args
+    args=$(compute_cap_cli_args)
+    [ -z "$args" ] && return 0
+    # Render each token on its own line indented for YAML list.
+    local IFS=' ' token
+    printf '    command:\n'
+    for token in $args; do
+        printf '      - %s\n' "$token"
+    done
+}
+
+# Render the current selection for the install plan preview.
+render_caps_for_plan() {
+    if [ -z "$AGENT_CAPS_SELECTED" ]; then
+        echo "$(tr_text caps_plan_none)"
+        return
+    fi
+    if caps_match_default; then
+        echo "${AGENT_CAPS_SELECTED} ($(tr_text caps_plan_default))"
+    else
+        echo "${AGENT_CAPS_SELECTED}"
+    fi
+}
+
+# Interactive multi-select. Mutates AGENT_CAPS_SELECTED.
+prompt_agent_capabilities() {
+    [ "$YES" = true ] && return 0
+    [ "$AGENT_CAPS_USER_SPECIFIED" = true ] && return 0
+    [ -t 0 ] || return 0
+
+    ensure_caps_initialized
+
+    # Build a checked-state map from the current selection so the picker
+    # round-trips a partially preset selection cleanly.
+    declare -A checked
+    local cap c
+    for cap in "${AGENT_CAPS_ALL[@]}"; do checked[$cap]=0; done
+    # Use read -ra with a temporary IFS so we don't leak IFS=, into the
+    # function's later default-IFS word-splitting (e.g. `for tok in $input`).
+    local _preset=()
+    IFS=, read -ra _preset <<< "$AGENT_CAPS_SELECTED"
+    for c in "${_preset[@]}"; do
+        cap_is_valid "$c" && checked[$c]=1
+    done
+
+    while true; do
+        echo ""
+        echo -e "${BOLD}$(tr_text caps_title)${NC}"
+        echo "$(tr_text caps_intro)"
+        echo "$(tr_text caps_legend)"
+        echo ""
+        local i=1 mark
+        for cap in "${AGENT_CAPS_ALL[@]}"; do
+            if [ "${checked[$cap]}" = 1 ]; then mark="x"; else mark=" "; fi
+            printf "  [%s] %2d. %-17s (%-6s) — %s\n" \
+                "$mark" "$i" "$cap" "${AGENT_CAPS_RISK[$cap]}" "$(cap_desc "$cap")"
+            i=$((i + 1))
+        done
+        echo ""
+        echo "$(tr_text caps_hint)"
+        local input
+        read -rp "$(tr_text caps_prompt)" input
+        input="$(echo "$input" | xargs)"
+
+        case "$input" in
+            ""|d|D|done|DONE) break ;;
+            a|A|all|ALL)
+                for cap in "${AGENT_CAPS_ALL[@]}"; do checked[$cap]=1; done
+                continue ;;
+            n|N|none|NONE)
+                for cap in "${AGENT_CAPS_ALL[@]}"; do checked[$cap]=0; done
+                continue ;;
+        esac
+
+        local tok bad=""
+        for tok in $input; do
+            if [[ "$tok" =~ ^[0-9]+$ ]] && [ "$tok" -ge 1 ] && [ "$tok" -le ${#AGENT_CAPS_ALL[@]} ]; then
+                cap="${AGENT_CAPS_ALL[$((tok - 1))]}"
+                if [ "${checked[$cap]}" = 1 ]; then checked[$cap]=0; else checked[$cap]=1; fi
+            elif cap_is_valid "$tok"; then
+                if [ "${checked[$tok]}" = 1 ]; then checked[$tok]=0; else checked[$tok]=1; fi
+            else
+                bad+="${bad:+ }$tok"
+            fi
+        done
+        [ -n "$bad" ] && warn "$(trp caps_invalid "$bad")"
+    done
+
+    local final=""
+    for cap in "${AGENT_CAPS_ALL[@]}"; do
+        [ "${checked[$cap]}" = 1 ] || continue
+        final+="${final:+,}${cap}"
+    done
+    AGENT_CAPS_SELECTED="$final"
+    AGENT_CAPS_USER_SPECIFIED=true
+}
+
 # ─── Install helpers ─────────────────────────────────────────────────────────
 
 install_binary_server() {
@@ -1234,6 +1532,14 @@ TOML
 
     # systemd service
     if has_systemd; then
+        ensure_caps_initialized
+        local cap_args exec_start
+        cap_args=$(compute_cap_cli_args)
+        if [ -n "$cap_args" ]; then
+            exec_start="${INSTALL_DIR}/serverbee-agent ${cap_args}"
+        else
+            exec_start="${INSTALL_DIR}/serverbee-agent"
+        fi
         cat > /etc/systemd/system/serverbee-agent.service << UNIT
 [Unit]
 Description=ServerBee Agent
@@ -1241,7 +1547,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=${INSTALL_DIR}/serverbee-agent
+ExecStart=${exec_start}
 WorkingDirectory=${CONFIG_DIR}
 Restart=always
 RestartSec=5
@@ -1348,6 +1654,8 @@ TOML
 
     mkdir -p "$DOCKER_DIR"
 
+    ensure_caps_initialized
+
     cat > "${DOCKER_DIR}/docker-compose.agent.yml" << YAML
 services:
   serverbee-agent:
@@ -1363,6 +1671,15 @@ services:
       - ${conf_dir}:/etc/serverbee
     restart: unless-stopped
 YAML
+
+    # Append capability overrides as a `command:` block when the selection
+    # differs from CAP_DEFAULT. Done outside the heredoc so the terminator
+    # isn't tangled with variable expansion.
+    local cap_command_block
+    cap_command_block=$(compute_cap_compose_command)
+    if [ -n "$cap_command_block" ]; then
+        printf '%s\n' "$cap_command_block" >> "${DOCKER_DIR}/docker-compose.agent.yml"
+    fi
 
     info "Generated ${DOCKER_DIR}/docker-compose.agent.yml"
     docker compose -f "${DOCKER_DIR}/docker-compose.agent.yml" up -d
@@ -1822,6 +2139,7 @@ print_install_plan() {
         agent-binary)
             print_common_binary_plan "agent"
             echo "$(tr_text plan_cfg_file) ${CONFIG_DIR}/agent.toml"
+            echo "$(tr_text caps_plan_label) $(render_caps_for_plan)"
             if has_systemd; then echo "$(tr_text plan_systemd) serverbee-agent"; fi
             ;;
         server-docker)
@@ -1834,6 +2152,7 @@ print_install_plan() {
             print_common_docker_plan "agent"
             echo "$(tr_text plan_cfg_file) $(docker_conf_dir)/agent.toml"
             echo "$(tr_text plan_compose_file) ${DOCKER_DIR}/docker-compose.agent.yml"
+            echo "$(tr_text caps_plan_label) $(render_caps_for_plan)"
             ;;
     esac
     print_domain_plan
@@ -1967,8 +2286,10 @@ cmd_install() {
             if [ "$YES" = true ]; then error "--enrollment-code is required for agent installation (generate a one-time code in the server UI Settings)"; fi
             read -rp "$(tr_text enrollment_prompt)" ENROLLMENT_CODE
         done
+        prompt_agent_capabilities
     fi
 
+    ensure_caps_initialized
     confirm_install_plan
     check_deps
 

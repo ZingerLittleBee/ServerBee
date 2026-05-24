@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import type { CostOverviewResponse, ServerCostOverview } from '@/lib/api-schema'
+import type { ServerCostOverview } from '@/lib/api-schema'
 import type { NetworkServerSummary } from '@/lib/network-types'
 import { CostFootnote } from './cost-footnote'
 import { ServerCard } from './server-card'
@@ -23,28 +23,17 @@ vi.mock('@tanstack/react-router', () => ({
   )
 }))
 
-const mockNetworkOverview = vi.fn()
 const mockNetworkRealtime = vi.fn()
-const mockTrafficOverview = vi.fn()
-const mockCostOverview = vi.fn()
-vi.mock('@/hooks/use-cost', () => ({
-  useCostOverview: (...args: unknown[]) => mockCostOverview(...args)
-}))
-vi.mock('@/hooks/use-network-api', () => ({
-  useNetworkOverview: (...args: unknown[]) => mockNetworkOverview(...args),
-  useNetworkSetting: () => ({ data: { interval: 60 } })
-}))
 vi.mock('@/hooks/use-network-realtime', () => ({
   useNetworkRealtime: (...args: unknown[]) => mockNetworkRealtime(...args)
 }))
-vi.mock('@/hooks/use-traffic-overview', () => ({
-  useTrafficOverview: (...args: unknown[]) => mockTrafficOverview(...args)
-}))
 
-function renderCard(server: Parameters<typeof ServerCard>[0]['server']) {
+type CardProps = Parameters<typeof ServerCard>[0]
+
+function renderCard(server: CardProps['server'], extra: Omit<CardProps, 'server'> = {}) {
   return render(
     <TooltipProvider>
-      <ServerCard server={server} />
+      <ServerCard server={server} {...extra} />
     </TooltipProvider>
   )
 }
@@ -101,10 +90,7 @@ function makeSummary(overrides: Partial<NetworkServerSummary> = {}): NetworkServ
 
 describe('ServerCard', () => {
   beforeEach(() => {
-    mockNetworkOverview.mockReturnValue({ data: [] })
     mockNetworkRealtime.mockReturnValue({ data: {} })
-    mockTrafficOverview.mockReturnValue({ data: [] })
-    mockCostOverview.mockReturnValue({ data: { currencies: [], servers: [] } satisfies CostOverviewResponse })
   })
 
   it('renders server name', () => {
@@ -128,23 +114,16 @@ describe('ServerCard', () => {
   })
 
   it('renders compact cost footnote when cost overview is available', () => {
-    mockCostOverview.mockReturnValue({
-      data: {
-        currencies: [],
-        servers: [
-          {
-            configured: true,
-            cost_per_hour: 0.01,
-            cost_per_month_equivalent: 7.3,
-            currency: 'USD',
-            name: 'test-server',
-            server_id: 'srv-1'
-          }
-        ]
-      } satisfies CostOverviewResponse
+    renderCard(makeServer(), {
+      costEntry: {
+        configured: true,
+        cost_per_hour: 0.01,
+        cost_per_month_equivalent: 7.3,
+        currency: 'USD',
+        name: 'test-server',
+        server_id: 'srv-1'
+      } satisfies ServerCostOverview
     })
-
-    renderCard(makeServer())
 
     expect(screen.getByText(REGEX_COST_PER_HOUR)).toBeDefined()
     expect(screen.getByText(REGEX_COST_PER_MONTH)).toBeDefined()
@@ -197,26 +176,22 @@ describe('ServerCard', () => {
   })
 
   it('renders latency and loss square grids when network data is present', () => {
-    mockNetworkOverview.mockReturnValue({
-      data: [
-        makeSummary({
-          targets: [
-            {
-              availability: 0.99,
-              avg_latency: 40,
-              max_latency: 45,
-              min_latency: 35,
-              packet_loss: 0.01,
-              provider: 'ct',
-              target_id: 'target-1',
-              target_name: 'Shanghai Telecom'
-            }
-          ]
-        })
-      ]
+    renderCard(makeServer(), {
+      networkSummary: makeSummary({
+        targets: [
+          {
+            availability: 0.99,
+            avg_latency: 40,
+            max_latency: 45,
+            min_latency: 35,
+            packet_loss: 0.01,
+            provider: 'ct',
+            target_id: 'target-1',
+            target_name: 'Shanghai Telecom'
+          }
+        ]
+      })
     })
-
-    renderCard(makeServer())
 
     expect(screen.getByText('card_latency')).toBeDefined()
     expect(screen.getByText('card_packet_loss')).toBeDefined()

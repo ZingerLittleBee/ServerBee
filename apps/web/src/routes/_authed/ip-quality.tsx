@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { ShieldCheck } from 'lucide-react'
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { IpQualityCard } from '@/components/ip-quality/ip-quality-card'
 import { UnlockMatrix } from '@/components/ip-quality/unlock-matrix'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -19,6 +20,7 @@ interface ServerLite {
 }
 
 function IpQualityOverviewPage() {
+  const { t } = useTranslation('ip-quality')
   const { data: overview = [], isLoading: overviewLoading } = useIpQualityOverview()
   const { data: services = [], isLoading: servicesLoading } = useIpQualityServices()
 
@@ -51,8 +53,8 @@ function IpQualityOverviewPage() {
     <ScrollArea className="h-full w-full">
       <div className="space-y-6 pr-1 pb-4">
         <div>
-          <h1 className="font-bold text-2xl">IP Quality</h1>
-          <p className="text-muted-foreground text-sm">Egress IP metadata and service unlock status for each server.</p>
+          <h1 className="font-bold text-2xl">{t('page_title')}</h1>
+          <p className="text-muted-foreground text-sm">{t('page_description')}</p>
         </div>
 
         {isLoading && (
@@ -67,7 +69,7 @@ function IpQualityOverviewPage() {
           <div className="flex min-h-[240px] items-center justify-center rounded-xl border border-dashed">
             <div className="space-y-2 text-center">
               <ShieldCheck aria-hidden="true" className="mx-auto size-8 text-muted-foreground" />
-              <p className="text-muted-foreground text-sm">No servers found.</p>
+              <p className="text-muted-foreground text-sm">{t('no_servers')}</p>
             </div>
           </div>
         )}
@@ -76,10 +78,9 @@ function IpQualityOverviewPage() {
           <div className="flex min-h-[240px] items-center justify-center rounded-xl border border-dashed">
             <div className="space-y-2 text-center">
               <ShieldCheck aria-hidden="true" className="mx-auto size-8 text-muted-foreground" />
-              <p className="font-medium text-sm">No IP quality data yet</p>
+              <p className="font-medium text-sm">{t('no_data')}</p>
               <p className="max-w-xs text-muted-foreground text-xs">
-                Enable the <span className="font-mono">ip_quality</span> capability on a server and start the agent with{' '}
-                <span className="font-mono">--allow-cap ip_quality</span> to begin collecting data.
+                {t('no_data_overview_hint', { cap: 'ip_quality', flag: '--allow-cap ip_quality' })}
               </p>
             </div>
           </div>
@@ -98,7 +99,7 @@ function IpQualityOverviewPage() {
             {/* All-servers unlock matrix */}
             {enabledServices.length > 0 && (
               <div className="space-y-2">
-                <h2 className="font-semibold text-base">Unlock Matrix</h2>
+                <h2 className="font-semibold text-base">{t('unlock_matrix')}</h2>
                 <UnlockMatrix overview={overview} servers={serversWithData} services={enabledServices} />
               </div>
             )}

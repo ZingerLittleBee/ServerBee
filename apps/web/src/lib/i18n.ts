@@ -7,6 +7,7 @@ import enDashboard from '@/locales/en/dashboard.json'
 import enDocker from '@/locales/en/docker.json'
 import enFile from '@/locales/en/file.json'
 import enFirewall from '@/locales/en/firewall.json'
+import enIpQuality from '@/locales/en/ip-quality.json'
 import enLogin from '@/locales/en/login.json'
 import enNetwork from '@/locales/en/network.json'
 import enOnboarding from '@/locales/en/onboarding.json'
@@ -22,6 +23,7 @@ import zhDashboard from '@/locales/zh/dashboard.json'
 import zhDocker from '@/locales/zh/docker.json'
 import zhFile from '@/locales/zh/file.json'
 import zhFirewall from '@/locales/zh/firewall.json'
+import zhIpQuality from '@/locales/zh/ip-quality.json'
 import zhLogin from '@/locales/zh/login.json'
 import zhNetwork from '@/locales/zh/network.json'
 import zhOnboarding from '@/locales/zh/onboarding.json'
@@ -43,6 +45,7 @@ i18next
         docker: enDocker,
         file: enFile,
         firewall: enFirewall,
+        'ip-quality': enIpQuality,
         servers: enServers,
         'service-monitors': enServiceMonitors,
         terminal: enTerminal,
@@ -59,6 +62,7 @@ i18next
         docker: zhDocker,
         file: zhFile,
         firewall: zhFirewall,
+        'ip-quality': zhIpQuality,
         servers: zhServers,
         'service-monitors': zhServiceMonitors,
         terminal: zhTerminal,

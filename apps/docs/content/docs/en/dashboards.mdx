@@ -71,6 +71,26 @@ The Server Map widget requires GeoIP data. You can either:
 
 The widget shows an installation prompt when GeoIP data is missing.
 
+## Performance & Widget Capacity
+
+The dashboard uses viewport-gated lazy mounting (IntersectionObserver): widgets off-screen do not mount their charts at first paint, so the cold-load cost barely grows with widget count. **While scrolling**, however, charts (built on recharts) measure SVG text synchronously (`getBBox` / text size). When many widgets enter the viewport at once, those forced reflows accumulate and the scroll noticeably stutters.
+
+Measured (desktop Chrome, no CPU/network throttling, widgets mixed across line-chart / gauge / multi-line / disk-io):
+
+| Widget count | Cold-load LCP | Scrolling |
+|--------------|---------------|-----------|
+| ≤ 30         | ~360 ms       | Smooth    |
+| 30 – 60      | ~360 ms       | Usable, mild jank during fast scroll |
+| > 60         | ~360 ms       | Visible stutter while scrolling, main thread saturated by recharts text measurement |
+
+**Recommended sizing**:
+
+- **Comfortable**: ≤ **30 widgets** per dashboard.
+- **Acceptable**: 30 – 60 widgets. If you must exceed 30, favour static/non-chart widgets (`markdown`, `alert-list`, `service-status`, `stat-number`) and keep the chart-heavy ones (`line-chart`, `multi-line`, `disk-io`, `traffic-bar`, `gauge`) under 30.
+- **Not recommended**: > 60 widgets per dashboard — split by team, region, or use case across multiple dashboards instead.
+
+If you genuinely need dozens of charts in one dashboard, **group them in the same vertical region** rather than spreading them across a long page. Fewer charts enter the viewport in any given scroll, lowering peak main-thread pressure.
+
 ## API
 
 | Method | Path | Description |

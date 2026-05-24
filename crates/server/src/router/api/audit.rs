@@ -6,7 +6,7 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{ApiResponse, AppError, ok};
-use crate::service::audit::AuditService;
+use crate::service::audit::{AuditListFilters, AuditService};
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -15,6 +15,10 @@ pub struct AuditListParams {
     pub limit: u64,
     #[serde(default)]
     pub offset: u64,
+    #[serde(default)]
+    pub action: Option<String>,
+    #[serde(default)]
+    pub user_id: Option<String>,
 }
 
 fn default_limit() -> u64 {
@@ -37,9 +41,23 @@ pub struct AuditListResponse {
     pub total: u64,
 }
 
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct AuditUserOption {
+    pub id: String,
+    pub label: String,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct AuditOptionsResponse {
+    pub actions: Vec<String>,
+    pub users: Vec<AuditUserOption>,
+}
+
 /// Admin-only audit log routes.
 pub fn router() -> Router<Arc<AppState>> {
-    Router::new().route("/audit-logs", get(list_audit_logs))
+    Router::new()
+        .route("/audit-logs", get(list_audit_logs))
+        .route("/audit-logs/options", get(list_audit_options))
 }
 
 #[utoipa::path(
@@ -58,7 +76,11 @@ pub async fn list_audit_logs(
     Query(params): Query<AuditListParams>,
 ) -> Result<Json<ApiResponse<AuditListResponse>>, AppError> {
     let limit = params.limit.min(200);
-    let (entries, total) = AuditService::list(&state.db, limit, params.offset).await?;
+    let filters = AuditListFilters {
+        action: params.action,
+        user_id: params.user_id,
+    };
+    let (entries, total) = AuditService::list(&state.db, limit, params.offset, filters).await?;
 
     let entries: Vec<AuditLogEntry> = entries
         .into_iter()
@@ -73,4 +95,29 @@ pub async fn list_audit_logs(
         .collect();
 
     ok(AuditListResponse { entries, total })
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/audit-logs/options",
+    tag = "audit",
+    responses(
+        (status = 200, description = "Filter options for the audit log", body = AuditOptionsResponse),
+        (status = 403, description = "Forbidden — admin only"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
+)]
+pub async fn list_audit_options(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ApiResponse<AuditOptionsResponse>>, AppError> {
+    let actions = AuditService::distinct_actions(&state.db).await?;
+    let users = AuditService::distinct_users(&state.db)
+        .await?
+        .into_iter()
+        .map(|u| AuditUserOption {
+            id: u.id,
+            label: u.label,
+        })
+        .collect();
+    ok(AuditOptionsResponse { actions, users })
 }

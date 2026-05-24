@@ -16,13 +16,18 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { CreateEnrollmentResponse, EnrollmentSummary } from '@/lib/api-schema'
+import { CAP_DEFAULT, CAPABILITIES, hasCap } from '@/lib/capabilities'
 import { cn } from '@/lib/utils'
+
+const DEFAULT_CAP_KEYS = CAPABILITIES.filter((c) => hasCap(CAP_DEFAULT, c.bit)).map((c) => c.key)
+const ALL_CAP_KEYS = CAPABILITIES.map((c) => c.key)
 
 const TTL_OPTIONS = [
   { secs: 600, key: 'validity_10m' },
@@ -52,6 +57,41 @@ function statusVariant(status: EnrollmentStatus): 'default' | 'secondary' | 'des
   return 'destructive'
 }
 
+interface CapGroupProps {
+  caps: readonly (typeof CAPABILITIES)[number][]
+  onToggle: (key: string) => void
+  selected: Set<string>
+  t: (key: string) => string
+  title: string
+  tone: 'high' | 'standard'
+}
+
+function CapGroup({ caps, onToggle, selected, t, title, tone }: CapGroupProps) {
+  return (
+    <div>
+      <p
+        className={cn(
+          'mb-1.5 font-medium text-[11px] uppercase tracking-wide',
+          tone === 'high' ? 'text-amber-600 dark:text-amber-500' : 'text-muted-foreground'
+        )}
+      >
+        {title}
+      </p>
+      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+        {caps.map((cap) => {
+          const id = `add-server-cap-${cap.key}`
+          return (
+            <label className="flex cursor-pointer items-center gap-2 text-sm" htmlFor={id} key={cap.key}>
+              <Checkbox checked={selected.has(cap.key)} id={id} onCheckedChange={() => onToggle(cap.key)} />
+              <span className="truncate">{t(cap.labelKey)}</span>
+            </label>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export function AddServerDialog({ open, onClose }: { onClose: () => void; open: boolean }) {
   const { t } = useTranslation(['servers', 'common'])
   const queryClient = useQueryClient()
@@ -59,6 +99,7 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
   const [label, setLabel] = useState('')
   const [ttl, setTtl] = useState<number>(600)
   const [issued, setIssued] = useState<CreateEnrollmentResponse | null>(null)
+  const [selectedCaps, setSelectedCaps] = useState<Set<string>>(() => new Set(DEFAULT_CAP_KEYS))
 
   const { data: enrollments, isLoading } = useQuery<EnrollmentSummary[]>({
     queryKey: ['agent', 'enrollments'],
@@ -88,9 +129,42 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
   })
 
   const origin = window.location.origin
+  // Emit --caps only when the selection differs from the default set; an
+  // omitted flag means "use install.sh's built-in defaults", which keeps the
+  // copy/paste command short for the common case.
+  const capsArg = (() => {
+    const orderedSelection = ALL_CAP_KEYS.filter((k) => selectedCaps.has(k))
+    const isDefault =
+      orderedSelection.length === DEFAULT_CAP_KEYS.length && DEFAULT_CAP_KEYS.every((k) => selectedCaps.has(k))
+    if (isDefault) {
+      return ''
+    }
+    if (orderedSelection.length === 0) {
+      return " --caps ''"
+    }
+    return ` --caps ${orderedSelection.join(',')}`
+  })()
   const installCommand = issued
-    ? `curl -fsSL ${origin}/install.sh | sudo bash -s -- --server-url '${origin}' --enrollment-code '${issued.code}'`
+    ? `curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent --server-url '${origin}' --enrollment-code '${issued.code}'${capsArg}`
     : ''
+
+  const toggleCap = (key: string) => {
+    setSelectedCaps((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
+  const resetCapsToDefault = () => setSelectedCaps(new Set(DEFAULT_CAP_KEYS))
+  const selectAllCaps = () => setSelectedCaps(new Set(ALL_CAP_KEYS))
+  const selectNoCaps = () => setSelectedCaps(new Set())
+
+  const highRiskCaps = CAPABILITIES.filter((c) => c.risk === 'high')
+  const standardCaps = CAPABILITIES.filter((c) => c.risk !== 'high')
 
   const copy = async (value: string) => {
     try {
@@ -105,6 +179,7 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
     setIssued(null)
     setLabel('')
     setTtl(600)
+    setSelectedCaps(new Set(DEFAULT_CAP_KEYS))
   }
 
   const handleClose = () => {
@@ -210,6 +285,57 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
                       {t(`add_server.${opt.key}`)}
                     </Button>
                   ))}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  {/* biome-ignore lint/a11y/noLabelWithoutControl: label describes the checkbox group below */}
+                  <label className="font-medium text-sm">{t('add_server.caps_label')}</label>
+                  <div className="flex gap-2 text-xs">
+                    <button
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={resetCapsToDefault}
+                      type="button"
+                    >
+                      {t('add_server.caps_reset')}
+                    </button>
+                    <span className="text-muted-foreground/50">·</span>
+                    <button
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={selectAllCaps}
+                      type="button"
+                    >
+                      {t('add_server.caps_select_all')}
+                    </button>
+                    <span className="text-muted-foreground/50">·</span>
+                    <button
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={selectNoCaps}
+                      type="button"
+                    >
+                      {t('add_server.caps_select_none')}
+                    </button>
+                  </div>
+                </div>
+                <p className="text-muted-foreground text-xs">{t('add_server.caps_hint')}</p>
+                <div className="mt-2 space-y-3 rounded-md border bg-muted/30 p-3">
+                  <CapGroup
+                    caps={standardCaps}
+                    onToggle={toggleCap}
+                    selected={selectedCaps}
+                    t={t}
+                    title={t('add_server.caps_low_risk')}
+                    tone="standard"
+                  />
+                  <CapGroup
+                    caps={highRiskCaps}
+                    onToggle={toggleCap}
+                    selected={selectedCaps}
+                    t={t}
+                    title={t('add_server.caps_high_risk')}
+                    tone="high"
+                  />
                 </div>
               </div>
             </div>

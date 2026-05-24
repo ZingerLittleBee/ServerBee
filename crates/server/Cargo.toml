@@ -26,6 +26,7 @@ argon2 = "0.5"
 rand = "0.8"
 base64 = "0.22"
 dashmap = "6"
+dns-lookup = "2"
 figment = { version = "0.10", features = ["toml", "env"] }
 hickory-resolver = "0.25"
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }

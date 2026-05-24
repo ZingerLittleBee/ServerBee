@@ -544,12 +544,40 @@ function handleIpQualityMessage(raw: { type: string } & Record<string, unknown>,
   })
 }
 
+type BrowserMessageHandler = (msg: Record<string, unknown>) => void
+const subscribers = new Map<string, Set<BrowserMessageHandler>>()
+
+export function subscribeBrowserMessage(type: string, handler: BrowserMessageHandler): () => void {
+  let set = subscribers.get(type)
+  if (!set) {
+    set = new Set()
+    subscribers.set(type, set)
+  }
+  set.add(handler)
+  return () => {
+    set?.delete(handler)
+  }
+}
+
+function dispatchToSubscribers(type: string, msg: Record<string, unknown>): void {
+  const set = subscribers.get(type)
+  if (!set) {
+    return
+  }
+  for (const handler of set) {
+    handler(msg)
+  }
+}
+
 export function handleWsMessage(raw: unknown, queryClient: QueryClient): void {
   if (!isWsMessageLike(raw)) {
     console.warn('WS: unexpected message shape', raw)
     return
   }
   switch (raw.type) {
+    case 'traceroute_update':
+      dispatchToSubscribers('traceroute_update', raw)
+      break
     case 'full_sync':
     case 'update':
     case 'server_online':

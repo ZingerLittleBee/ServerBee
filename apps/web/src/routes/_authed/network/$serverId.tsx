@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeft, Download, Loader2, Play, Settings2 } from 'lucide-react'
+import { ArrowLeft, Check, Download, Loader2, Play, Route as RouteIcon, Settings2, Trash2, X } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -7,25 +7,32 @@ import { AnomalyTable } from '@/components/network/anomaly-table'
 import { LatencyChart } from '@/components/network/latency-chart'
 import { TargetCard } from '@/components/network/target-card'
 import { StatusBadge } from '@/components/server/status-badge'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useServer } from '@/hooks/use-api'
 import { useAuth } from '@/hooks/use-auth'
 import {
+  useClearTracerouteHistory,
+  useDeleteTraceroute,
   useNetworkAnomalies,
   useNetworkRecords,
   useNetworkServerSummary,
   useNetworkTargets,
   useSetServerTargets,
   useStartTraceroute,
-  useTracerouteResult
+  useTracerouteHistory,
+  useTracerouteRecord
 } from '@/hooks/use-network-api'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
+import { useTracerouteStream } from '@/hooks/use-traceroute-stream'
 import { CHART_COLORS } from '@/lib/chart-colors'
 import {
   getNetworkProbeTypeLabel,
@@ -33,8 +40,22 @@ import {
   getNetworkTargetDisplayName,
   getNetworkTargetDisplayProvider
 } from '@/lib/network-i18n'
-import type { NetworkProbeRecord, NetworkProbeTarget, NetworkTargetSummary } from '@/lib/network-types'
-import { formatLatency, formatPacketLoss, getProviderLabel, latencyColorClass } from '@/lib/network-types'
+import type {
+  NetworkProbeRecord,
+  NetworkProbeTarget,
+  NetworkTargetSummary,
+  TracerouteHop,
+  TracerouteRecordSummary
+} from '@/lib/network-types'
+import {
+  formatLatency,
+  formatPacketLoss,
+  getLossTextClassName,
+  getProviderLabel,
+  isNewSchemaHop,
+  latencyColorClass,
+  type TraceProtocol
+} from '@/lib/network-types'
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/network/$serverId')({
@@ -154,14 +175,299 @@ function ProviderColumn({
   )
 }
 
-function TracerouteSection({ serverId, t }: { serverId: string; t: (key: string) => string }) {
-  const [target, setTarget] = useState('')
-  const [requestId, setRequestId] = useState<string | null>(null)
+function deriveHopStats(hop: TracerouteHop, isNew: boolean) {
+  const legacyRtts = [hop.rtt1, hop.rtt2, hop.rtt3].filter((v): v is number => v != null)
+  if (isNew) {
+    return {
+      lossPct: hop.loss_pct ?? null,
+      bestMs: hop.best_ms ?? null,
+      avgMs: hop.avg_ms ?? null,
+      worstMs: hop.worst_ms ?? null
+    }
+  }
+  const lossPct = legacyRtts.length === 0 ? 100 : ((3 - legacyRtts.length) / 3) * 100
+  const bestMs = legacyRtts.length > 0 ? Math.min(...legacyRtts) : null
+  const avgMs = legacyRtts.length > 0 ? legacyRtts.reduce((a, b) => a + b, 0) / legacyRtts.length : null
+  const worstMs = legacyRtts.length > 0 ? Math.max(...legacyRtts) : null
+  return { lossPct, bestMs, avgMs, worstMs }
+}
+
+function formatMs(value: number | null | undefined, digits = 1): string {
+  return value == null ? '—' : value.toFixed(digits)
+}
+
+function HopIpCell({ primaryIp, extraIps }: { primaryIp: string | null; extraIps: string[] }) {
+  return (
+    <TableCell className="font-mono">
+      {primaryIp ?? '* * *'}
+      {extraIps.length > 0 && (
+        <Tooltip>
+          <TooltipTrigger>
+            <Badge className="ml-1" variant="secondary">
+              +{extraIps.length}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>{extraIps.join(', ')}</TooltipContent>
+        </Tooltip>
+      )}
+    </TableCell>
+  )
+}
+
+function HopRow({ hop }: { hop: TracerouteHop }) {
+  const isNew = isNewSchemaHop(hop)
+  const primaryIp = isNew ? (hop.ips?.[0] ?? null) : (hop.ip ?? null)
+  const extraIps = isNew && (hop.ips?.length ?? 0) > 1 ? (hop.ips?.slice(1) ?? []) : []
+  const dimmed = isNew ? (hop.total_recv ?? 0) === 0 : hop.rtt1 == null && hop.rtt2 == null && hop.rtt3 == null
+
+  const { lossPct, bestMs, avgMs, worstMs } = deriveHopStats(hop, isNew)
+  const lossRatio = lossPct == null ? null : lossPct / 100
+
+  return (
+    <TableRow className={cn(dimmed && 'opacity-50')}>
+      <TableCell className="font-mono">{hop.hop}</TableCell>
+      <HopIpCell extraIps={extraIps} primaryIp={primaryIp} />
+      <TableCell className="max-w-[200px] truncate text-muted-foreground">{hop.hostname ?? '—'}</TableCell>
+      <TableCell className="text-muted-foreground">{hop.asn ?? '—'}</TableCell>
+      <TableCell className={cn('text-right font-mono', getLossTextClassName(lossRatio))}>
+        {lossPct == null ? '—' : `${lossPct.toFixed(0)}%`}
+      </TableCell>
+      <TableCell className="text-right font-mono">{formatMs(bestMs)}</TableCell>
+      <TableCell className={cn('text-right font-mono', latencyColorClass(avgMs, { failed: dimmed }))}>
+        {formatMs(avgMs)}
+      </TableCell>
+      <TableCell className="text-right font-mono">{formatMs(worstMs)}</TableCell>
+      <TableCell className="text-right font-mono">{formatMs(hop.jitter_ms, 2)}</TableCell>
+      <TableCell className="text-right font-mono">{formatMs(hop.stddev_ms, 2)}</TableCell>
+    </TableRow>
+  )
+}
+
+function formatRelativeTime(unixMs: number): string {
+  const diff = Date.now() - unixMs
+  if (diff < 60_000) {
+    return 'just now'
+  }
+  if (diff < 3_600_000) {
+    return `${Math.floor(diff / 60_000)}m ago`
+  }
+  if (diff < 86_400_000) {
+    return `${Math.floor(diff / 3_600_000)}h ago`
+  }
+  return `${Math.floor(diff / 86_400_000)}d ago`
+}
+
+interface TracerouteRunFormProps {
+  isPending: boolean
+  isRunning: boolean
+  onKeyDown: (e: React.KeyboardEvent) => void
+  onRun: () => void
+  protocol: TraceProtocol
+  setProtocol: (p: TraceProtocol) => void
+  setTarget: (v: string) => void
+  t: (key: string, opts?: Record<string, unknown>) => string
+  target: string
+}
+
+function TracerouteRunForm({
+  isPending,
+  isRunning,
+  onKeyDown,
+  onRun,
+  protocol,
+  setProtocol,
+  setTarget,
+  t,
+  target
+}: TracerouteRunFormProps) {
+  return (
+    <div className="flex gap-2">
+      <Input
+        disabled={isRunning || isPending}
+        onChange={(e) => setTarget(e.target.value)}
+        onKeyDown={onKeyDown}
+        placeholder={t('traceroute_target')}
+        value={target}
+      />
+      <Select onValueChange={(v) => setProtocol(v as TraceProtocol)} value={protocol}>
+        <SelectTrigger className="w-24">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="icmp">ICMP</SelectItem>
+          <SelectItem value="udp">UDP</SelectItem>
+          <SelectItem value="tcp">TCP</SelectItem>
+        </SelectContent>
+      </Select>
+      <Button disabled={!target.trim() || isRunning || isPending} onClick={onRun} size="sm">
+        {isRunning || isPending ? (
+          <Loader2 aria-hidden="true" className="mr-1 size-4 animate-spin" />
+        ) : (
+          <Play aria-hidden="true" className="mr-1 size-4" />
+        )}
+        {isRunning ? t('traceroute_running') : t('run_traceroute')}
+      </Button>
+    </div>
+  )
+}
+
+interface TracerouteHistoryListProps {
+  clearMutation: { mutate: () => void }
+  deleteMutation: { mutate: (id: string) => void }
+  history: TracerouteRecordSummary[] | undefined
+  isAdmin: boolean
+  selectedRecordId: string | null
+  setSelectedRecordId: (id: string | null) => void
+  t: (key: string, opts?: Record<string, unknown>) => string
+}
+
+function HistoryRow({
+  isAdmin,
+  isSelected,
+  onDelete,
+  onSelect,
+  record,
+  t
+}: {
+  isAdmin: boolean
+  isSelected: boolean
+  onDelete: (id: string) => void
+  onSelect: (id: string) => void
+  record: TracerouteRecordSummary
+  t: (key: string, opts?: Record<string, unknown>) => string
+}) {
+  return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: list items are supplemented by explicit icon buttons
+    // biome-ignore lint/a11y/noNoninteractiveElementInteractions: history rows act as selection targets
+    <li
+      className={cn(
+        'flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40',
+        isSelected && 'bg-muted'
+      )}
+      onClick={() => onSelect(record.request_id)}
+    >
+      <span className="flex-1 truncate font-mono">{record.target}</span>
+      <Badge variant={record.protocol === 'legacy' ? 'outline' : 'secondary'}>
+        {record.protocol === 'legacy' ? (
+          <Tooltip>
+            <TooltipTrigger>
+              <span>legacy</span>
+            </TooltipTrigger>
+            <TooltipContent>{t('legacy_record_tooltip')}</TooltipContent>
+          </Tooltip>
+        ) : (
+          record.protocol.toUpperCase()
+        )}
+      </Badge>
+      <span className="text-muted-foreground text-xs">{record.hop_count} hops</span>
+      <span className="text-muted-foreground text-xs">{formatRelativeTime(record.started_at)}</span>
+      {record.has_error ? <X className="size-3 text-destructive" /> : <Check className="size-3 text-emerald-500" />}
+      {isAdmin && (
+        <Button
+          aria-label={t('delete')}
+          onClick={(e) => {
+            e.stopPropagation()
+            onDelete(record.request_id)
+          }}
+          size="icon"
+          variant="ghost"
+        >
+          <Trash2 className="size-4" />
+        </Button>
+      )}
+    </li>
+  )
+}
+
+function TracerouteHistoryList({
+  clearMutation,
+  deleteMutation,
+  history,
+  isAdmin,
+  selectedRecordId,
+  setSelectedRecordId,
+  t
+}: TracerouteHistoryListProps) {
+  const count = history?.length ?? 0
+  const handleClear = useCallback(() => {
+    // biome-ignore lint/suspicious/noAlert: plan spec requires window.confirm for clear-all
+    if (window.confirm(t('clear_all_confirm', { count }))) {
+      clearMutation.mutate()
+    }
+  }, [clearMutation, count, t])
+
+  return (
+    <div className="mt-4 border-t pt-4">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="font-medium text-sm">
+          {t('history')} ({count})
+        </h3>
+        {isAdmin && count > 0 && (
+          <Button onClick={handleClear} size="sm" variant="ghost">
+            {t('clear_all')}
+          </Button>
+        )}
+      </div>
+      {count === 0 && <p className="text-muted-foreground text-sm">{t('history_empty')}</p>}
+      <div className="max-h-64 overflow-auto">
+        <ul className="space-y-1">
+          {history?.map((r) => (
+            <HistoryRow
+              isAdmin={isAdmin}
+              isSelected={selectedRecordId === r.request_id}
+              key={r.request_id}
+              onDelete={(id) => deleteMutation.mutate(id)}
+              onSelect={setSelectedRecordId}
+              record={r}
+              t={t}
+            />
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+interface TracerouteContentProps {
+  protocol: TraceProtocol
+  selectedRecordId: string | null
+  serverId: string
+  setProtocol: (p: TraceProtocol) => void
+  setSelectedRecordId: (id: string | null) => void
+  setTarget: (v: string) => void
+  setTraceRequestId: (id: string | null) => void
+  target: string
+  traceRequestId: string | null
+}
+
+function TracerouteContent({
+  protocol,
+  selectedRecordId,
+  serverId,
+  setProtocol,
+  setSelectedRecordId,
+  setTraceRequestId,
+  target,
+  traceRequestId,
+  setTarget
+}: TracerouteContentProps) {
+  const { t } = useTranslation('network')
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
 
   const startTraceroute = useStartTraceroute(serverId)
-  const { data: result } = useTracerouteResult(serverId, requestId)
+  const stream = useTracerouteStream(serverId, traceRequestId)
+  const { data: polled } = useTracerouteRecord(
+    serverId,
+    selectedRecordId ?? (stream?.completed ? null : traceRequestId)
+  )
+  const result = selectedRecordId ? (polled ?? null) : (stream ?? polled ?? null)
 
-  const isRunning = !!requestId && !result?.completed && !result?.error
+  const { data: history } = useTracerouteHistory(serverId)
+  const deleteMutation = useDeleteTraceroute(serverId)
+  const clearMutation = useClearTracerouteHistory(serverId)
+
+  const isRunning = !!traceRequestId && !result?.completed && !result?.error
 
   const handleRun = useCallback(() => {
     const trimmed = target.trim()
@@ -169,16 +475,20 @@ function TracerouteSection({ serverId, t }: { serverId: string; t: (key: string)
       return
     }
 
-    setRequestId(null)
-    startTraceroute.mutate(trimmed, {
-      onSuccess: (data) => {
-        setRequestId(data.request_id)
-      },
-      onError: (err) => {
-        toast.error(err instanceof Error ? err.message : t('traceroute_error'))
+    setTraceRequestId(null)
+    setSelectedRecordId(null)
+    startTraceroute.mutate(
+      { target: trimmed, protocol },
+      {
+        onSuccess: (data) => {
+          setTraceRequestId(data.request_id)
+        },
+        onError: (err) => {
+          toast.error(err instanceof Error ? err.message : t('traceroute_error'))
+        }
       }
-    })
-  }, [target, startTraceroute, t])
+    )
+  }, [target, protocol, startTraceroute, t, setTraceRequestId, setSelectedRecordId])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -190,84 +500,77 @@ function TracerouteSection({ serverId, t }: { serverId: string; t: (key: string)
   )
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t('traceroute')}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex gap-2">
-          <Input
-            disabled={isRunning || startTraceroute.isPending}
-            onChange={(e) => setTarget(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={t('traceroute_target')}
-            value={target}
-          />
-          <Button disabled={!target.trim() || isRunning || startTraceroute.isPending} onClick={handleRun} size="sm">
-            {isRunning || startTraceroute.isPending ? (
-              <Loader2 aria-hidden="true" className="mr-1 size-4 animate-spin" />
-            ) : (
-              <Play aria-hidden="true" className="mr-1 size-4" />
-            )}
-            {isRunning ? t('traceroute_running') : t('run_traceroute')}
-          </Button>
+    <div className="space-y-4">
+      {isAdmin && (
+        <TracerouteRunForm
+          isPending={startTraceroute.isPending}
+          isRunning={isRunning}
+          onKeyDown={handleKeyDown}
+          onRun={handleRun}
+          protocol={protocol}
+          setProtocol={setProtocol}
+          setTarget={setTarget}
+          t={t}
+          target={target}
+        />
+      )}
+      {!isAdmin && <p className="text-muted-foreground text-xs">{t('traceroute_readonly_note')}</p>}
+
+      {stream && !stream.completed && (
+        <span className="text-muted-foreground text-xs tabular-nums">
+          {t('round_progress', { current: stream.round, total: stream.total_rounds })}
+        </span>
+      )}
+
+      {result?.error && (
+        <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-destructive text-sm">
+          {result.error}
         </div>
+      )}
 
-        {result?.error && (
-          <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-destructive text-sm">
-            {result.error}
-          </div>
-        )}
-
-        {result && result.hops.length > 0 && (
+      {result && result.hops.length > 0 && (
+        <div className="max-h-[60vh] overflow-auto rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-16">{t('hop')}</TableHead>
+                <TableHead className="w-12">{t('hop')}</TableHead>
                 <TableHead>{t('ip_address')}</TableHead>
                 <TableHead>{t('hostname')}</TableHead>
-                <TableHead className="text-right">RTT1</TableHead>
-                <TableHead className="text-right">RTT2</TableHead>
-                <TableHead className="text-right">RTT3</TableHead>
                 <TableHead>{t('asn')}</TableHead>
+                <TableHead className="text-right">{t('loss_pct')}</TableHead>
+                <TableHead className="text-right">{t('best')}</TableHead>
+                <TableHead className="text-right">{t('avg')}</TableHead>
+                <TableHead className="text-right">{t('worst')}</TableHead>
+                <TableHead className="text-right">{t('jitter')}</TableHead>
+                <TableHead className="text-right">{t('stddev')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {result.hops.map((hop) => (
-                <TableRow key={hop.hop}>
-                  <TableCell className="font-mono">{hop.hop}</TableCell>
-                  <TableCell className="font-mono">{hop.ip ?? t('no_response')}</TableCell>
-                  <TableCell className="max-w-[200px] truncate text-muted-foreground">{hop.hostname ?? '-'}</TableCell>
-                  <TableCell
-                    className={cn('text-right font-mono', latencyColorClass(hop.rtt1, { failed: hop.rtt1 == null }))}
-                  >
-                    {hop.rtt1 != null ? `${hop.rtt1.toFixed(1)} ms` : t('no_response')}
-                  </TableCell>
-                  <TableCell
-                    className={cn('text-right font-mono', latencyColorClass(hop.rtt2, { failed: hop.rtt2 == null }))}
-                  >
-                    {hop.rtt2 != null ? `${hop.rtt2.toFixed(1)} ms` : t('no_response')}
-                  </TableCell>
-                  <TableCell
-                    className={cn('text-right font-mono', latencyColorClass(hop.rtt3, { failed: hop.rtt3 == null }))}
-                  >
-                    {hop.rtt3 != null ? `${hop.rtt3.toFixed(1)} ms` : t('no_response')}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{hop.asn ?? '-'}</TableCell>
-                </TableRow>
+                <HopRow hop={hop} key={hop.hop} />
               ))}
             </TableBody>
           </Table>
-        )}
+        </div>
+      )}
 
-        {isRunning && (
-          <div className="flex items-center justify-center gap-2 py-4 text-muted-foreground text-sm">
-            <Loader2 aria-hidden="true" className="size-4 animate-spin" />
-            {t('traceroute_running')}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      {isRunning && (
+        <div className="flex items-center justify-center gap-2 py-4 text-muted-foreground text-sm">
+          <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+          {t('traceroute_running')}
+        </div>
+      )}
+
+      <TracerouteHistoryList
+        clearMutation={clearMutation}
+        deleteMutation={deleteMutation}
+        history={history}
+        isAdmin={isAdmin}
+        selectedRecordId={selectedRecordId}
+        setSelectedRecordId={setSelectedRecordId}
+        t={t}
+      />
+    </div>
   )
 }
 
@@ -295,19 +598,29 @@ export function NetworkDetailPage() {
 
   // Manage Targets dialog state
   const [showManageDialog, setShowManageDialog] = useState(false)
+  const [showTracerouteDialog, setShowTracerouteDialog] = useState(false)
   const [selectedTargetIds, setSelectedTargetIds] = useState<Set<string>>(new Set())
   const selectedRef = useRef(selectedTargetIds)
   selectedRef.current = selectedTargetIds
 
+  // Traceroute lifted state
+  const [traceTarget, setTraceTarget] = useState('')
+  const [traceProtocol, setTraceProtocol] = useState<TraceProtocol>('icmp')
+  const [traceRequestId, setTraceRequestId] = useState<string | null>(null)
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
+
   const isRealtime = timeRange === 'realtime'
   const hours = isRealtime ? 1 : timeRange
+  // Anomalies are historical events; in realtime mode use 24h so the count matches
+  // the badge shown on the network overview card, which is also 24h-based.
+  const anomalyHours = isRealtime ? 24 : timeRange
 
   const { data: server, isLoading: serverLoading } = useServer(serverId)
   const { data: summary, isLoading: summaryLoading } = useNetworkServerSummary(serverId)
   const { data: historicalRecords } = useNetworkRecords(serverId, hours, { enabled: !isRealtime })
   // Fetch last 10 min of data as seed for realtime chart (immediate data on first load)
   const { data: seedRecords } = useNetworkRecords(serverId, 1, { enabled: isRealtime })
-  const { data: anomalies = [] } = useNetworkAnomalies(serverId, hours)
+  const { data: anomalies = [] } = useNetworkAnomalies(serverId, anomalyHours)
   const { data: realtimeData } = useNetworkRealtime(serverId)
   const { data: allTargets = [] } = useNetworkTargets()
   const setServerTargets = useSetServerTargets(serverId)
@@ -558,6 +871,10 @@ export function NetworkDetailPage() {
             <StatusBadge online={summary.online} />
           </div>
           <div className="flex items-center gap-2">
+            <Button onClick={() => setShowTracerouteDialog(true)} size="sm" variant="outline">
+              <RouteIcon aria-hidden="true" className="mr-1 size-4" />
+              {t('traceroute')}
+            </Button>
             {isAdmin && (
               <Button onClick={openManageDialog} size="sm" variant="outline">
                 <Settings2 aria-hidden="true" className="mr-1 size-4" />
@@ -685,12 +1002,27 @@ export function NetworkDetailPage() {
       </div>
 
       {/* Anomaly table */}
-      <AnomalyTable anomalies={anomalies} />
+      <AnomalyTable anomalies={anomalies} windowHours={anomalyHours} />
 
-      {/* Traceroute section */}
-      <div className="mt-6">
-        <TracerouteSection serverId={serverId} t={t} />
-      </div>
+      {/* Traceroute Dialog */}
+      <Dialog onOpenChange={setShowTracerouteDialog} open={showTracerouteDialog}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{t('traceroute')}</DialogTitle>
+          </DialogHeader>
+          <TracerouteContent
+            protocol={traceProtocol}
+            selectedRecordId={selectedRecordId}
+            serverId={serverId}
+            setProtocol={setTraceProtocol}
+            setSelectedRecordId={setSelectedRecordId}
+            setTarget={setTraceTarget}
+            setTraceRequestId={setTraceRequestId}
+            target={traceTarget}
+            traceRequestId={traceRequestId}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* Manage Targets Dialog */}
       <Dialog

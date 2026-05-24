@@ -8,7 +8,7 @@ import { createDevProxy } from './vite/dev-proxy'
 
 const apiRuntimePattern = /^\/api\//
 const pwaRuntimePattern = /^\/pwa-/
-const routeFileIgnorePattern = 'components|hooks|types\\.ts|\\.test\\.(ts|tsx)$'
+const routeFileIgnorePattern = 'components|hooks|types\\.ts|\\.test\\.(ts|tsx)$|-page\\.tsx$'
 
 function requireProdProxyEnv(env: Record<string, string>, name: string) {
   const value = env[name]?.trim()

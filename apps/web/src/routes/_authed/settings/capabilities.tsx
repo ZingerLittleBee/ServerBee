@@ -1,15 +1,25 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { type ColumnDef, getCoreRowModel, type RowSelectionState, useReactTable } from '@tanstack/react-table'
-import { RotateCcw, Search, ShieldAlert } from 'lucide-react'
+import { ChevronDown, RotateCcw, Search, ShieldAlert, X } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { createSelectColumn, DataTable } from '@/components/ui/data-table'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import { CAP_DEFAULT, CAPABILITIES, getEffectiveCapabilityEnabled, isClientCapabilityLocked } from '@/lib/capabilities'
 
@@ -20,14 +30,7 @@ export const Route = createFileRoute('/_authed/settings/capabilities')({
   component: CapabilitiesPage
 })
 
-interface ServerInfo {
-  agent_local_capabilities?: number | null
-  capabilities?: number | null
-  effective_capabilities?: number | null
-  id: string
-  name: string
-  protocol_version?: number | null
-}
+type ServerInfo = ServerMetrics
 
 const ORDERED_CAPABILITIES = [
   ...CAPABILITIES.filter(({ risk }) => risk === 'high'),
@@ -36,21 +39,22 @@ const ORDERED_CAPABILITIES = [
 
 export function CapabilitiesPage() {
   const { t } = useTranslation(['settings', 'servers'])
-  const queryClient = useQueryClient()
   const { q: search } = Route.useSearch()
   const navigate = Route.useNavigate()
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
 
   const { data: servers = [], isLoading } = useQuery<ServerInfo[]>({
-    queryKey: ['servers-list'],
-    queryFn: () => api.get<ServerInfo[]>('/api/servers')
+    queryKey: ['servers'],
+    queryFn: () => [],
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false
   })
 
   const { mutate: mutateSingleCap, isPending: isSinglePending } = useMutation({
     mutationFn: ({ id, capabilities }: { capabilities: number; id: string }) =>
       api.put(`/api/servers/${id}`, { capabilities }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['servers-list'] })
       toast.success(t('capabilities.toast_updated'))
     },
     onError: (err) => {
@@ -63,7 +67,6 @@ export function CapabilitiesPage() {
       api.put('/api/servers/batch-capabilities', { ids, capabilities }),
     onSuccess: () => {
       setRowSelection({})
-      queryClient.invalidateQueries({ queryKey: ['servers-list'] })
       toast.success(t('capabilities.toast_batch_updated'))
     },
     onError: (err) => {
@@ -87,6 +90,7 @@ export function CapabilitiesPage() {
   )
 
   const isPending = isSinglePending || isBatchPending
+  const onlineCount = useMemo(() => servers.filter((s) => s.online).length, [servers])
 
   const columns = useMemo<ColumnDef<ServerInfo>[]>(
     () => [
@@ -96,9 +100,19 @@ export function CapabilitiesPage() {
         header: () => t('capabilities.server'),
         cell: ({ row }) => {
           const hasOldAgent = row.original.protocol_version != null && row.original.protocol_version < 2
+          const isOffline = !row.original.online
           return (
             <div className="flex items-center gap-2">
-              <span className="font-medium">{row.original.name}</span>
+              <span
+                aria-hidden="true"
+                className={`size-2 rounded-full ${isOffline ? 'bg-muted-foreground/40' : 'bg-emerald-500'}`}
+              />
+              <span className={`font-medium ${isOffline ? 'text-muted-foreground' : ''}`}>{row.original.name}</span>
+              {isOffline && (
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground uppercase">
+                  {t('capabilities.offline')}
+                </span>
+              )}
               {hasOldAgent && (
                 <span title={t('cap_upgrade_warning', { ns: 'servers' })}>
                   <ShieldAlert aria-hidden="true" className="size-3.5 text-amber-500" />
@@ -128,14 +142,21 @@ export function CapabilitiesPage() {
                 bit
               )
               const isLocked = isClientCapabilityLocked(row.original.agent_local_capabilities, bit)
+              const isOffline = !row.original.online
+              let disabledReason: string | undefined
+              if (isOffline) {
+                disabledReason = t('capabilities.offline_disabled')
+              } else if (isLocked) {
+                disabledReason = t('capabilities.client_disabled')
+              }
               return (
                 <div className="text-center">
                   <Switch
                     aria-label={`${t(labelKey, { ns: 'servers' })} - ${row.original.name}`}
                     checked={isEnabled}
-                    disabled={isPending || isLocked}
+                    disabled={isPending || isLocked || isOffline}
                     onCheckedChange={() => toggleCap(row.original, bit)}
-                    title={isLocked ? '客户端关闭' : undefined}
+                    title={disabledReason}
                   />
                 </div>
               )
@@ -205,8 +226,8 @@ export function CapabilitiesPage() {
         <p className="text-muted-foreground text-sm">{t('capabilities.description')}</p>
       </div>
 
-      <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative w-full min-w-0 max-w-sm flex-1">
+      <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full min-w-0 sm:max-w-sm sm:flex-1">
           <Search
             aria-hidden="true"
             className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
@@ -221,41 +242,65 @@ export function CapabilitiesPage() {
             value={search}
           />
         </div>
-        {selectedIds.length > 0 && (
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="text-muted-foreground text-sm">
-              {t('capabilities.selected', { count: selectedIds.length })}
-            </span>
-            <Button disabled={isPending} onClick={batchReset} size="sm" variant="outline">
-              <RotateCcw className="mr-1 size-3.5" />
-              {t('capabilities.reset_default')}
-            </Button>
-          </div>
-        )}
+        <p className="text-muted-foreground text-sm sm:shrink-0">
+          {t('capabilities.summary', { total: servers.length, online: onlineCount })}
+        </p>
       </div>
 
       {selectedIds.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2 rounded-lg border bg-muted/30 p-3">
-          <span className="self-center text-muted-foreground text-sm">{t('capabilities.batch_toggle')}</span>
-          {ORDERED_CAPABILITIES.map(({ bit, labelKey }) => (
-            <div className="flex gap-1" key={bit}>
-              <Button disabled={isPending} onClick={() => batchEnable(bit)} size="sm" variant="outline">
-                {t('capabilities.batch_enable', { capability: t(labelKey, { ns: 'servers' }) })}
-              </Button>
-              <Button disabled={isPending} onClick={() => batchDisable(bit)} size="sm" variant="outline">
-                {t('capabilities.batch_disable', { capability: t(labelKey, { ns: 'servers' }) })}
-              </Button>
-            </div>
-          ))}
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+          <span className="font-medium text-sm">{t('capabilities.selected', { count: selectedIds.length })}</span>
+          <span className="text-muted-foreground text-xs">·</span>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button disabled={isPending} size="sm" variant="outline" />}>
+              {t('capabilities.batch_actions')}
+              <ChevronDown className="ml-1 size-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              {ORDERED_CAPABILITIES.map(({ bit, key, labelKey, risk }) => (
+                <DropdownMenuSub key={key}>
+                  <DropdownMenuSubTrigger>
+                    <div className="flex flex-col">
+                      <span>{t(labelKey, { ns: 'servers' })}</span>
+                      <span className={`text-[10px] ${risk === 'high' ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {t(risk === 'high' ? 'cap_high_risk' : 'cap_low_risk', { ns: 'servers' })}
+                      </span>
+                    </div>
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem disabled={isPending} onClick={() => batchEnable(bit)}>
+                      {t('capabilities.enable')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled={isPending} onClick={() => batchDisable(bit)}>
+                      {t('capabilities.disable')}
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button disabled={isPending} onClick={batchReset} size="sm" variant="outline">
+            <RotateCcw className="mr-1 size-3.5" />
+            {t('capabilities.reset_default')}
+          </Button>
+          <Button
+            className="ml-auto"
+            disabled={isPending}
+            onClick={() => setRowSelection({})}
+            size="sm"
+            variant="ghost"
+          >
+            <X className="mr-1 size-3.5" />
+            {t('capabilities.clear_selection')}
+          </Button>
         </div>
       )}
 
       {renderTableContent()}
 
-      {filtered.length > 0 && (
+      {filtered.length > 0 && search.length > 0 && (
         <p className="mt-3 text-muted-foreground text-xs">
           {t('capabilities.footer_showing', { filtered: filtered.length, total: servers.length })}
-          {selectedIds.length > 0 && ` · ${t('capabilities.footer_selected', { count: selectedIds.length })}`}
         </p>
       )}
     </div>

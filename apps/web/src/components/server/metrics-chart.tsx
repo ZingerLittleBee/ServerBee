@@ -72,10 +72,10 @@ export function MetricsChart({
             }
           />
           <Area
-            animationDuration={800}
             dataKey={dataKey}
             fill={`var(--color-${dataKey})`}
             fillOpacity={0.1}
+            isAnimationActive={false}
             stroke={`var(--color-${dataKey})`}
             strokeWidth={2}
             type="monotone"

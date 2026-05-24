@@ -225,25 +225,11 @@ GET /api/audit-logs?limit=50&offset=0
 
 #### 价值评分
 
-每台已配置成本的服务器都有一个 `score`（0-100）和对应的 `grade`：
-
-| Grade | 分数区间 | 含义 |
-|-------|---------|------|
-| `excellent` | ≥ 90 | 单价相对资源非常划算 |
-| `good` | ≥ 75 | 价值不错，仅有少量低效 |
-| `okay` | ≥ 60 | 还算合理，但有优化空间 |
-| `poor` | ≥ 40 | 实际使用相对支出偏低 |
-| `waste` | < 40 | 大量空转或单位资源价格过高 |
-
-评分由三部分组成：与同币种其他服务器对比的资源单位成本分位、利用率（CPU/内存空闲、缺乏网络/磁盘 IO 活动会贡献 `idle_burn` / `sleeping_money`）、以及最近 30 天的可用性（在线率驱动 `healthy_uptime` / `low_uptime`）。`confidence` 字段（`high` / `medium` / `low`）反映可用数据量；面板还会展示 `expensive_cpu`、`good_memory_value`、`expired_billing`、`free_or_zero_price`、`insufficient_data` 等定性原因。
-
-#### 输入校验
-
-成本洞察 API 在评分前会拒绝非法的计费输入，对应的 `invalid_reason` 包括 `missing_price`、`missing_billing_cycle`、`invalid_billing_cycle`、`invalid_price`。前端会把这些行标记为「invalid card cost config」而不是默默给 0 分。
+每台已配置成本的服务器都会拿到 0-100 的 `score` 和对应的 `grade`（`excellent` / `good` / `okay` / `poor` / `waste`），由资源单价分位、利用率、可用性三部分加权而成。完整算法、各子项权重、reasons 含义、confidence 计算与输入校验规则见[成本洞察与价值评分](/cn/docs/cost-insights)。
 
 #### API
 
-同样的数据也通过只读 API 暴露：`GET /api/cost/overview`（按币种汇总的舰队总览 + 每台服务器摘要）和 `GET /api/servers/{id}/cost-insights`（单台服务器的完整明细）。认证细节见 [API 参考](/cn/docs/api-reference#已认证读取端点)。
+同样的数据通过只读 API 暴露：`GET /api/cost/overview`（按币种汇总的舰队总览 + 每台服务器摘要）和 `GET /api/servers/{id}/cost-insights`（单台服务器的完整明细）。认证细节见 [API 参考](/cn/docs/api-reference#已认证读取端点)。
 
 ## Agent 注册管理
 

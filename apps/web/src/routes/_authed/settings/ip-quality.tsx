@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { type ColumnDef, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { CustomServiceDialog } from '@/components/ip-quality/custom-service-dialog'
 import { UnlockStatusBadge } from '@/components/ip-quality/unlock-status-badge'
@@ -33,6 +34,7 @@ export const Route = createFileRoute('/_authed/settings/ip-quality')({
 })
 
 export function IpQualitySettingsPage() {
+  const { t } = useTranslation('ip-quality')
   const { tab: activeTab } = Route.useSearch()
   const navigate = Route.useNavigate()
   const { user } = useAuth()
@@ -81,12 +83,12 @@ export function IpQualitySettingsPage() {
         { id: service.id, enabled: !service.enabled },
         {
           onError: (err) => {
-            toast.error(err instanceof Error ? err.message : 'Failed to update service')
+            toast.error(err instanceof Error ? err.message : t('settings_update_failed'))
           }
         }
       )
     },
-    [isAdmin, updateService]
+    [isAdmin, updateService, t]
   )
 
   const openAddDialog = () => {
@@ -105,11 +107,11 @@ export function IpQualitySettingsPage() {
     }
     deleteService.mutate(deleteServiceId, {
       onSuccess: () => {
-        toast.success('Service deleted')
+        toast.success(t('settings_deleted'))
         setDeleteServiceId(null)
       },
       onError: (err) => {
-        toast.error(err instanceof Error ? err.message : 'Failed to delete service')
+        toast.error(err instanceof Error ? err.message : t('settings_delete_failed'))
       }
     })
   }
@@ -120,10 +122,10 @@ export function IpQualitySettingsPage() {
       { check_interval_hours: intervalHours },
       {
         onSuccess: () => {
-          toast.success('Settings saved')
+          toast.success(t('settings_saved'))
         },
         onError: (err) => {
-          toast.error(err instanceof Error ? err.message : 'Failed to save settings')
+          toast.error(err instanceof Error ? err.message : t('settings_save_failed'))
         }
       }
     )
@@ -133,53 +135,53 @@ export function IpQualitySettingsPage() {
     () => [
       {
         accessorKey: 'name',
-        header: 'Name',
+        header: t('settings_col_name'),
         enableSorting: false,
         cell: ({ row }) => <span className="font-medium">{row.original.name}</span>
       },
       {
         accessorKey: 'category',
-        header: 'Category',
+        header: t('settings_col_category'),
         enableSorting: false,
         cell: ({ row }) => <span className="text-muted-foreground">{categoryLabel(row.original.category)}</span>
       },
       {
         accessorKey: 'enabled',
-        header: 'Status',
+        header: t('settings_col_status'),
         enableSorting: false,
         cell: ({ row }) => <UnlockStatusBadge status={row.original.enabled ? 'unlocked' : 'blocked'} />
       },
       {
         id: 'actions',
-        header: 'Manage',
+        header: t('settings_col_actions'),
         enableSorting: false,
         meta: { className: 'text-right' },
         cell: ({ row }) => (
           <div className="flex justify-end">
             <DropdownMenu>
               <DropdownMenuTrigger
-                aria-label={`More actions for ${row.original.name}`}
+                aria-label={t('settings_action_more', { name: row.original.name })}
                 render={<Button className="ml-auto" size="icon-sm" variant="ghost" />}
               >
                 <MoreHorizontal aria-hidden="true" className="size-4" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-36">
                 <DropdownMenuItem
-                  aria-label={`Edit ${row.original.name}`}
+                  aria-label={t('settings_action_edit_aria', { name: row.original.name })}
                   disabled={!isAdmin}
                   onClick={() => openEditDialog(row.original)}
                 >
                   <Pencil className="size-3.5" />
-                  Edit
+                  {t('settings_action_edit')}
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  aria-label={`Delete ${row.original.name}`}
+                  aria-label={t('settings_action_delete_aria', { name: row.original.name })}
                   disabled={!isAdmin}
                   onClick={() => setDeleteServiceId(row.original.id)}
                   variant="destructive"
                 >
                   <Trash2 className="size-3.5" />
-                  Delete
+                  {t('settings_action_delete')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -187,7 +189,7 @@ export function IpQualitySettingsPage() {
         )
       }
     ],
-    [isAdmin, openEditDialog]
+    [isAdmin, openEditDialog, t]
   )
 
   const customTable = useReactTable({
@@ -199,7 +201,7 @@ export function IpQualitySettingsPage() {
 
   return (
     <div className="flex min-h-0 w-full min-w-0 max-w-[calc(100vw-1.5rem)] flex-1 flex-col overflow-hidden sm:max-w-full">
-      <h1 className="mb-6 min-w-0 font-bold text-2xl">IP Quality</h1>
+      <h1 className="mb-6 min-w-0 font-bold text-2xl">{t('settings_title')}</h1>
       <Tabs
         className="flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col"
         onValueChange={(value) => navigate({ search: { tab: value } })}
@@ -207,13 +209,13 @@ export function IpQualitySettingsPage() {
       >
         <div className="flex w-full max-w-full flex-col items-stretch gap-3 sm:max-w-4xl sm:flex-row sm:items-center sm:justify-between">
           <TabsList className="w-full sm:w-auto">
-            <TabsTrigger value="catalog">Service Catalog</TabsTrigger>
-            <TabsTrigger value="settings">Settings</TabsTrigger>
+            <TabsTrigger value="catalog">{t('settings_tab_catalog')}</TabsTrigger>
+            <TabsTrigger value="settings">{t('settings_tab_settings')}</TabsTrigger>
           </TabsList>
           {activeTab === 'catalog' && isAdmin && (
             <Button className="w-full sm:w-auto" onClick={openAddDialog} size="sm" variant="outline">
               <Plus className="size-4" />
-              Add custom service
+              {t('settings_add_custom')}
             </Button>
           )}
         </div>
@@ -234,11 +236,11 @@ export function IpQualitySettingsPage() {
                 {/* Built-in services */}
                 <div className="space-y-2">
                   <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
-                    Built-in services
+                    {t('settings_builtin')}
                   </h2>
                   <div className="rounded-md border">
                     {builtinServices.length === 0 && (
-                      <p className="px-4 py-3 text-muted-foreground text-sm">No built-in services found.</p>
+                      <p className="px-4 py-3 text-muted-foreground text-sm">{t('settings_no_builtin')}</p>
                     )}
                     {builtinServices.map((service, idx) => (
                       <div
@@ -250,7 +252,12 @@ export function IpQualitySettingsPage() {
                           <span className="text-muted-foreground text-xs">{categoryLabel(service.category)}</span>
                         </div>
                         <Switch
-                          aria-label={`${service.enabled ? 'Disable' : 'Enable'} ${service.name}`}
+                          aria-label={t(
+                            service.enabled ? 'settings_toggle_disable_aria' : 'settings_toggle_enable_aria',
+                            {
+                              name: service.name
+                            }
+                          )}
                           checked={service.enabled}
                           disabled={!isAdmin || updateService.isPending}
                           onCheckedChange={() => handleToggleBuiltin(service)}
@@ -263,11 +270,11 @@ export function IpQualitySettingsPage() {
                 {/* Custom services */}
                 <div className="space-y-2">
                   <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
-                    Custom services
+                    {t('settings_custom')}
                   </h2>
                   <DataTable
                     className="w-full min-w-0 max-w-full"
-                    noResults="No custom services yet."
+                    noResults={t('settings_no_custom')}
                     table={customTable}
                   />
                 </div>
@@ -282,7 +289,7 @@ export function IpQualitySettingsPage() {
             <form className="max-w-xl space-y-6 pb-1" onSubmit={handleSaveSettings}>
               <div className="space-y-1.5">
                 <label className="font-medium text-sm" htmlFor="check-interval">
-                  Check interval (hours)
+                  {t('settings_check_interval')}
                 </label>
                 <Input
                   autoComplete="off"
@@ -295,13 +302,11 @@ export function IpQualitySettingsPage() {
                   type="number"
                   value={intervalHours}
                 />
-                <p className="text-muted-foreground text-xs">
-                  How often each capable agent checks its service unlock status and egress IP. Default: 12 hours.
-                </p>
+                <p className="text-muted-foreground text-xs">{t('settings_check_interval_hint')}</p>
               </div>
 
               <Button disabled={!isAdmin || updateSetting.isPending} size="sm" type="submit">
-                Save
+                {t('settings_save')}
               </Button>
             </form>
           </ScrollArea>
@@ -331,18 +336,16 @@ export function IpQualitySettingsPage() {
       >
         <DialogContent className="sm:max-w-sm" showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>Delete custom service</DialogTitle>
+            <DialogTitle>{t('settings_delete_dialog_title')}</DialogTitle>
           </DialogHeader>
-          <p className="text-muted-foreground text-sm">
-            This action cannot be undone. The service and all its stored results will be deleted.
-          </p>
+          <p className="text-muted-foreground text-sm">{t('settings_delete_dialog_description')}</p>
           <div className="flex gap-2">
             <Button disabled={deleteService.isPending} onClick={handleDeleteConfirm} size="sm" variant="destructive">
               <Trash2 className="mr-1 size-3.5" />
-              Delete
+              {t('settings_delete_confirm')}
             </Button>
             <Button onClick={() => setDeleteServiceId(null)} size="sm" type="button" variant="ghost">
-              Cancel
+              {t('settings_cancel')}
             </Button>
           </div>
         </DialogContent>

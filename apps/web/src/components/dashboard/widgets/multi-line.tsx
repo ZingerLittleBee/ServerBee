@@ -203,6 +203,7 @@ export function MultiLineWidget({ config, servers }: MultiLineWidgetProps) {
                 connectNulls
                 dataKey={sid}
                 dot={false}
+                isAnimationActive={false}
                 key={sid}
                 stroke={`var(--color-${sid})`}
                 strokeWidth={2}

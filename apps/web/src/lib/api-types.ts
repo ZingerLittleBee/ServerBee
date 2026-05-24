@@ -2112,6 +2112,14 @@ export interface components {
       ip: string
       user_id: string
     }
+    AuditOptionsResponse: {
+      actions: string[]
+      users: components['schemas']['AuditUserOption'][]
+    }
+    AuditUserOption: {
+      id: string
+      label: string
+    }
     BatchCapabilitiesRequest: {
       server_ids: string[]
       /** Format: int32 */

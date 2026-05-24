@@ -2,7 +2,11 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { UptimeDailyEntry } from '@/lib/api-schema'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
-import { UptimeTimeline } from './uptime-timeline'
+import { buildTimelineBackground, buildTimelineGeometry, UptimeTimeline } from './uptime-timeline'
+
+const LEFT_PIXEL_STYLE_RE = /left: \d+(?:\.\d+)?px/
+const WIDTH_PIXEL_STYLE_RE = /width: \d+(?:\.\d+)?px/
+const PIXEL_SNAP_TRANSFORM_RE = /transform:\s*translateZ\(0\)/
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -52,6 +56,39 @@ describe('UptimeTimeline', () => {
     const { container } = render(<UptimeTimeline days={days} rangeDays={30} />)
     const segments = container.querySelectorAll('[data-segment]')
     expect(segments).toHaveLength(30)
+  })
+
+  it('renders every segment as a pixel-stable DOM tracker block', () => {
+    const days = [
+      makeEntry({ date: '2026-03-01', online_minutes: 1440, total_minutes: 1440 }),
+      makeEntry({ date: '2026-03-02', online_minutes: 1400, total_minutes: 1440 }),
+      makeEntry({ date: '2026-03-03', online_minutes: 1000, total_minutes: 1440 })
+    ]
+    const { container } = render(<UptimeTimeline days={days} rangeDays={3} />)
+    const tracker = container.querySelector('[data-uptime-timeline]')
+    const paintLayer = container.querySelector('[data-uptime-track-paint]')
+    const segments = container.querySelectorAll('[data-segment]')
+
+    expect(container.querySelector('svg')).toBeNull()
+    expect(tracker).toHaveStyle({ height: '28px' })
+    expect(paintLayer).toBeInTheDocument()
+    expect(paintLayer?.getAttribute('class')).toContain('absolute')
+    expect(paintLayer?.getAttribute('class')).toContain('inset-0')
+    // Composite to a GPU layer so the gradient is pixel-snapped after scroll,
+    // otherwise dark-mode AA blends each color differently and segments look
+    // like they have different heights.
+    expect(paintLayer?.getAttribute('style')).toMatch(PIXEL_SNAP_TRANSFORM_RE)
+    expect(segments).toHaveLength(3)
+    for (const segment of segments) {
+      expect(segment.getAttribute('class')).toContain('absolute')
+      expect(segment.getAttribute('class')).toContain('top-0')
+      expect(segment.getAttribute('class')).toContain('h-full')
+      expect(segment.getAttribute('class')).toContain('rounded-none')
+      expect(segment.getAttribute('class')).not.toContain('rounded-[1px]')
+      expect(segment.getAttribute('class')).not.toContain('bg-')
+      expect(segment.getAttribute('style')).toMatch(LEFT_PIXEL_STYLE_RE)
+      expect(segment.getAttribute('style')).toMatch(WIDTH_PIXEL_STYLE_RE)
+    }
   })
 
   it('renders green segments for 100% uptime', () => {
@@ -134,5 +171,50 @@ describe('computeAggregateUptime', () => {
   it('returns 100 for full uptime', () => {
     const days = makeEntries(5)
     expect(computeAggregateUptime(days)).toBe(100)
+  })
+})
+
+describe('buildTimelineGeometry', () => {
+  it('preserves the requested visual gap between adjacent segments', () => {
+    const geometry = buildTimelineGeometry({ count: 5, gap: 1.5, width: 101 })
+
+    expect(geometry).toHaveLength(5)
+    for (let i = 0; i < geometry.length - 1; i += 1) {
+      const gap = geometry[i + 1].x - (geometry[i].x + geometry[i].width)
+      expect(gap).toBeCloseTo(1.5)
+    }
+  })
+
+  it('keeps the final segment inside the measured track width', () => {
+    const geometry = buildTimelineGeometry({ count: 5, gap: 1.5, width: 100 })
+    const lastSegment = geometry.at(-1)
+
+    expect(lastSegment).toBeDefined()
+    expect((lastSegment?.x ?? 0) + (lastSegment?.width ?? 0)).toBeCloseTo(100)
+  })
+
+  it('returns an empty array when count or width is non-positive', () => {
+    expect(buildTimelineGeometry({ count: 0, gap: 1.5, width: 100 })).toEqual([])
+    expect(buildTimelineGeometry({ count: 5, gap: 1.5, width: 0 })).toEqual([])
+  })
+})
+
+describe('buildTimelineBackground', () => {
+  it('renders all colored blocks in one hard-stop background layer', () => {
+    const geometry = [
+      { x: 0, width: 10 },
+      { x: 12, width: 10 },
+      { x: 24, width: 10 }
+    ]
+
+    expect(buildTimelineBackground({ colors: ['green', 'yellow', 'red'], geometry })).toBe(
+      'linear-gradient(to right, var(--uptime-operational) 0px 10px, transparent 10px 12px, var(--uptime-degraded) 12px 22px, transparent 22px 24px, var(--uptime-down) 24px 34px)'
+    )
+  })
+
+  it('uses the muted token for no-data blocks', () => {
+    expect(buildTimelineBackground({ colors: ['gray'], geometry: [{ x: 0, width: 10 }] })).toBe(
+      'linear-gradient(to right, var(--color-muted) 0px 10px)'
+    )
   })
 })

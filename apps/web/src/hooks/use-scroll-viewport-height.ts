@@ -19,16 +19,41 @@ export function useScrollViewportHeight<T extends HTMLElement>() {
     if (!viewport) {
       return
     }
-    const update = () => {
-      const offsetTop = el.getBoundingClientRect().top - viewport.getBoundingClientRect().top
-      const parent = el.parentElement
-      const padBottom = parent ? Number.parseFloat(getComputedStyle(parent).paddingBottom) || 0 : 0
-      setHeight(Math.max(0, viewport.clientHeight - offsetTop - padBottom))
+
+    let rafId: number | null = null
+    let lastHeight = -1
+
+    // Read layout in a rAF callback so it batches with the browser's natural
+    // paint cycle instead of forcing a synchronous reflow inside the
+    // ResizeObserver dispatch (which fires before paint).
+    const schedule = () => {
+      if (rafId !== null) {
+        return
+      }
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        const elRect = el.getBoundingClientRect()
+        const viewportRect = viewport.getBoundingClientRect()
+        const offsetTop = elRect.top - viewportRect.top
+        const parent = el.parentElement
+        const padBottom = parent ? Number.parseFloat(getComputedStyle(parent).paddingBottom) || 0 : 0
+        const next = Math.max(0, viewport.clientHeight - offsetTop - padBottom)
+        if (next !== lastHeight) {
+          lastHeight = next
+          setHeight(next)
+        }
+      })
     }
-    update()
-    const observer = new ResizeObserver(update)
+
+    schedule()
+    const observer = new ResizeObserver(schedule)
     observer.observe(viewport)
-    return () => observer.disconnect()
+    return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId)
+      }
+      observer.disconnect()
+    }
   }, [])
 
   return { ref, height }

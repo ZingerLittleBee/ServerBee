@@ -91,7 +91,7 @@ RBAC: Admin (full access) vs Member (read-only). `require_admin` middleware on w
 - **API responses**: All endpoints return `Json<ApiResponse<T>>` wrapping data in `{ data: T }`
 - **OpenAPI**: Every endpoint annotated with `#[utoipa::path]`, every DTO with `#[derive(ToSchema)]`. Swagger UI at `/swagger-ui/`
 - **Config**: Figment loads TOML then env vars. Prefix `SERVERBEE_`, nested separator `__` (double underscore). Example: `SERVERBEE_ADMIN__PASSWORD` → `admin.password`. **When adding/changing env vars, update `ENV.md` and `apps/docs/content/docs/{en,cn}/configuration.mdx` simultaneously.**
-- **Capabilities**: u32 bitmask per server, defined in `crates/common/src/constants.rs` — `CAP_TERMINAL=1, CAP_EXEC=2, CAP_UPGRADE=4, CAP_PING_ICMP=8, CAP_PING_TCP=16, CAP_PING_HTTP=32, CAP_FILE=64, CAP_DOCKER=128, CAP_SECURITY_EVENTS=256, CAP_FIREWALL_BLOCK=512`. Default `CAP_DEFAULT=316` (upgrade + ICMP/TCP/HTTP ping + security events). Effective caps = `server_caps & agent_local_caps`; defense-in-depth validated on both sides.
+- **Capabilities**: u32 bitmask per server, defined in `crates/common/src/constants.rs` — `CAP_TERMINAL=1, CAP_EXEC=2, CAP_UPGRADE=4, CAP_PING_ICMP=8, CAP_PING_TCP=16, CAP_PING_HTTP=32, CAP_FILE=64, CAP_DOCKER=128, CAP_SECURITY_EVENTS=256, CAP_FIREWALL_BLOCK=512, CAP_IP_QUALITY=1024`. Default `CAP_DEFAULT=1852` (upgrade + ICMP/TCP/HTTP ping + security events + firewall blocklist + IP quality). Effective caps = `server_caps & agent_local_caps`; defense-in-depth validated on both sides.
 - **Migrations**: sea-orm migrations in `crates/server/src/migration/`. Run automatically on startup. **Only implement `up()` — leave `down()` as a no-op (`Ok(())`).** Migrations are not reversible to avoid accidental data loss.
 
 ### Frontend

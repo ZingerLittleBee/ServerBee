@@ -94,6 +94,7 @@ export function DiskIoWidget({ config, servers }: DiskIoWidgetProps) {
             <Line
               dataKey="read_bytes_per_sec"
               dot={false}
+              isAnimationActive={false}
               stroke="var(--color-read_bytes_per_sec)"
               strokeWidth={2}
               type="monotone"
@@ -101,6 +102,7 @@ export function DiskIoWidget({ config, servers }: DiskIoWidgetProps) {
             <Line
               dataKey="write_bytes_per_sec"
               dot={false}
+              isAnimationActive={false}
               stroke="var(--color-write_bytes_per_sec)"
               strokeWidth={2}
               type="monotone"

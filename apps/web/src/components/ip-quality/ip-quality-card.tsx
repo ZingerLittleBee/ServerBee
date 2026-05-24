@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { IpQualitySnapshotData } from '@/lib/ip-quality-types'
@@ -17,14 +18,7 @@ const RISK_TONE: Record<string, string> = {
   unknown: 'border-muted-foreground/30 bg-muted text-muted-foreground'
 }
 
-const IP_TYPE_LABELS: Record<string, string> = {
-  residential: 'Residential',
-  datacenter: 'Datacenter',
-  hosting: 'Hosting',
-  mobile: 'Mobile',
-  isp: 'ISP',
-  unknown: 'Unknown'
-}
+const IP_TYPE_KEYS = new Set(['residential', 'datacenter', 'hosting', 'mobile', 'isp', 'unknown'])
 
 const MASKED_IP_PATTERN = /^\*+(\.\*+)*$/
 
@@ -44,6 +38,8 @@ function FieldRow({ label, value }: { label: string; value: string }) {
 }
 
 export function IpQualityCard({ ipQuality, serverName, className }: Props) {
+  const { t } = useTranslation('ip-quality')
+
   if (!ipQuality) {
     return (
       <Card className={cn('', className)} size="sm">
@@ -51,7 +47,7 @@ export function IpQualityCard({ ipQuality, serverName, className }: Props) {
           <CardTitle>{serverName}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground text-sm">No IP quality data yet.</p>
+          <p className="text-muted-foreground text-sm">{t('card_no_data')}</p>
         </CardContent>
       </Card>
     )
@@ -59,9 +55,13 @@ export function IpQualityCard({ ipQuality, serverName, className }: Props) {
 
   const riskLevel = ipQuality.risk_level || 'unknown'
   const riskTone = RISK_TONE[riskLevel] ?? RISK_TONE.unknown
-  const ipTypeLabel = IP_TYPE_LABELS[ipQuality.ip_type] ?? ipQuality.ip_type
+  const ipTypeLabel = IP_TYPE_KEYS.has(ipQuality.ip_type) ? t(`ip_type_${ipQuality.ip_type}`) : ipQuality.ip_type
   const location = [ipQuality.city, ipQuality.region, ipQuality.country].filter(Boolean).join(', ')
   const asLabel = [ipQuality.asn, ipQuality.as_org].filter(Boolean).join(' · ')
+  const riskBadge =
+    ipQuality.risk_score == null
+      ? t('card_risk', { level: riskLevel })
+      : t('card_risk_with_score', { score: ipQuality.risk_score, level: riskLevel })
 
   return (
     <Card className={cn('', className)} size="sm">
@@ -69,7 +69,7 @@ export function IpQualityCard({ ipQuality, serverName, className }: Props) {
         <CardTitle className="flex items-center justify-between gap-2">
           <span className="truncate">{serverName}</span>
           <Badge className={cn('border', riskTone)} variant="outline">
-            {ipQuality.risk_score == null ? `Risk: ${riskLevel}` : `Risk ${ipQuality.risk_score} · ${riskLevel}`}
+            {riskBadge}
           </Badge>
         </CardTitle>
       </CardHeader>
@@ -82,15 +82,15 @@ export function IpQualityCard({ ipQuality, serverName, className }: Props) {
           </span>
           <Badge variant="secondary">{ipTypeLabel}</Badge>
         </div>
-        {asLabel && <FieldRow label="ASN" value={asLabel} />}
-        {location && <FieldRow label="Location" value={location} />}
+        {asLabel && <FieldRow label={t('card_asn')} value={asLabel} />}
+        {location && <FieldRow label={t('card_location')} value={location} />}
         <div className="flex flex-wrap gap-1.5 pt-1">
           {ipQuality.is_proxy && (
             <Badge
               className="border border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-300"
               variant="outline"
             >
-              Proxy
+              {t('card_proxy')}
             </Badge>
           )}
           {ipQuality.is_vpn && (
@@ -98,12 +98,12 @@ export function IpQualityCard({ ipQuality, serverName, className }: Props) {
               className="border border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-300"
               variant="outline"
             >
-              VPN
+              {t('card_vpn')}
             </Badge>
           )}
           {ipQuality.is_hosting && (
             <Badge className="border border-muted-foreground/30 bg-muted text-muted-foreground" variant="outline">
-              Hosting
+              {t('card_hosting')}
             </Badge>
           )}
         </div>

@@ -61,7 +61,13 @@ export function GaugeWidget({ config, servers }: GaugeWidgetProps) {
             startAngle={90}
           >
             <PolarAngleAxis angleAxisId={0} domain={[0, max]} tick={false} type="number" />
-            <RadialBar angleAxisId={0} background={{ fill: 'var(--color-muted)' }} cornerRadius={5} dataKey="value" />
+            <RadialBar
+              angleAxisId={0}
+              background={{ fill: 'var(--color-muted)' }}
+              cornerRadius={5}
+              dataKey="value"
+              isAnimationActive={false}
+            />
             <text dominantBaseline="middle" textAnchor="middle" x="50%" y="50%">
               <tspan className="fill-foreground font-bold text-2xl">{value.toFixed(1)}%</tspan>
             </text>

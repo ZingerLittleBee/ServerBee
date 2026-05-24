@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 
 interface AnomalyTableProps {
   anomalies: NetworkProbeAnomaly[]
+  windowHours?: number
 }
 
 function isCritical(type: string): boolean {
@@ -83,7 +84,7 @@ function getColumns(t: (key: string) => string): ColumnDef<NetworkProbeAnomaly>[
   ]
 }
 
-export function AnomalyTable({ anomalies }: AnomalyTableProps) {
+export function AnomalyTable({ anomalies, windowHours }: AnomalyTableProps) {
   const { t } = useTranslation('network')
   const table = useReactTable({
     data: anomalies,
@@ -92,13 +93,20 @@ export function AnomalyTable({ anomalies }: AnomalyTableProps) {
   })
 
   if (anomalies.length === 0) {
-    return <p className="py-4 text-muted-foreground text-sm">{t('no_anomalies')}</p>
+    return (
+      <p className="py-4 text-muted-foreground text-sm">
+        {windowHours ? t('no_anomalies_in_window', { hours: windowHours }) : t('no_anomalies')}
+      </p>
+    )
   }
 
   return (
     <div className="rounded-lg border bg-card">
-      <div className="border-b px-4 py-3">
+      <div className="flex items-center justify-between border-b px-4 py-3">
         <h3 className="font-semibold text-sm">{t('anomaly_count_with_value', { count: anomalies.length })}</h3>
+        {windowHours && (
+          <span className="text-muted-foreground text-xs">{t('anomaly_window', { hours: windowHours })}</span>
+        )}
       </div>
       <DataTable className="rounded-none border-0" table={table} />
     </div>

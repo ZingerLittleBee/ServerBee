@@ -157,12 +157,12 @@ function PresetCard({ preset }: { preset: PresetDef }) {
   const Icon = preset.icon
 
   return (
-    <div className="flex flex-col gap-3 rounded-md border bg-card p-4">
-      <div className="flex items-start gap-2">
+    <div className="flex h-full flex-col gap-3 rounded-md border bg-card p-4">
+      <div className="flex flex-1 items-start gap-2">
         <Icon aria-hidden="true" className="mt-0.5 size-4 text-primary" />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="font-medium text-sm">{t(preset.titleKey, { defaultValue: preset.titleDefault })}</p>
-          <p className="mt-1 text-muted-foreground text-xs">
+          <p className="mt-1 min-h-[2lh] text-muted-foreground text-xs">
             {t(preset.descriptionKey, { defaultValue: preset.descriptionDefault })}
           </p>
         </div>

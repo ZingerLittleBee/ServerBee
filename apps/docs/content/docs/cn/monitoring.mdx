@@ -407,23 +407,42 @@ ServerBee 内置了网络质量监控系统，通过各 Agent 对网络目标发
 
 ### Traceroute
 
-网络详情页可以从选中的 Agent 对目标主机或 IP 发起 Traceroute，用于排查常规探测间隔之外的路由变化和丢包问题。
+网络详情页可以从选中的 Agent 对目标主机或 IP 发起 Traceroute，用于排查路由变化和丢包问题。
 
 - 需要 Agent 的 effective `CAP_PING_ICMP` 能力。
 - 目标只允许字母、数字、点、连字符和冒号。
-- Server 下发 `max_hops = 30`。
-- Agent 侧命令 60 秒超时。
-- Linux/macOS 上 Agent 优先尝试 `traceroute`，如果不存在则回退到 `mtr`。
-- Windows 上使用平台对应的 traceroute 命令。
+- Dialog 提供 ICMP / UDP / TCP 三种探测协议下拉选择。
+- 默认跑 5 轮，每轮一次增量更新通过 WebSocket 推送到浏览器，表格实时填充：
+  Hop / IP / 主机名 / ASN / 丢包率 / Best / Avg / Worst / Jitter / StdDev。
+- ECMP 多路径时同一 TTL 会有多个 IP，第一行显示主 IP，悬停 `+N` chip 查看其他 IP。
+- 已完成的 Traceroute 自动保存到本地 SQLite，可以在 dialog 历史区点击切换查看；
+  管理员可以删除单条或一键清空。
+- POST 触发需要管理员权限；只读用户能看到历史，但不能发起新 trace 或删除。
 
-API 流程：
+#### 权限
+
+ServerBee Agent 现在内嵌 [trippy-core](https://crates.io/crates/trippy-core) 直接发起 raw ICMP/UDP/TCP 包，
+**不再依赖系统的 `traceroute` / `mtr` 二进制**。但 raw socket 仍需要操作系统级权限：
+
+| 平台 | 要求 |
+|------|------|
+| Linux | `CAP_NET_RAW` 或以 root 运行。一次性配置：`sudo setcap cap_net_raw+ep $(which serverbee-agent)` |
+| macOS | 以 root 运行 (sudo)，或部分场景下可走 unprivileged ICMP datagram socket |
+| Windows | 以 Administrator 身份启动 Agent |
+
+权限不足时 Traceroute 会立刻返回带平台对应安装提示的错误消息，不需要重启 Agent。
+
+#### API 流程
 
 ```http
-POST /api/servers/{id}/traceroute
-GET  /api/servers/{id}/traceroute/{request_id}
+POST   /api/servers/{id}/traceroute          { target, protocol? }   → { request_id }
+GET    /api/servers/{id}/traceroute/{rid}    → 最新快照（含 protocol/started_at/round/total_rounds 等完整字段）
+GET    /api/servers/{id}/traceroute          → 该服务器的历史记录摘要列表，按时间倒序
+DELETE /api/servers/{id}/traceroute/{rid}    → 删除单条（admin）
+DELETE /api/servers/{id}/traceroute          → 清空全部（admin）
 ```
 
-第一个请求返回 `request_id`；轮询第二个端点直到 `completed` 为 true。
+WebSocket 推送 `BrowserMessage::TracerouteUpdate` 携带每轮增量结果。客户端在断开重连时可通过 GET 单条接口拉取最新累计快照。
 
 ### 数据保留
 
