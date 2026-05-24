@@ -40,6 +40,7 @@ pub mod session;
 pub mod status_page;
 pub mod task;
 pub mod task_result;
+pub mod traceroute_record;
 pub mod traffic_daily;
 pub mod traffic_hourly;
 pub mod traffic_state;
