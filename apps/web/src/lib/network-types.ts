@@ -84,25 +84,64 @@ export interface NetworkProbeResultData {
   timestamp: string
 }
 
+export type RecordedProtocol = 'icmp' | 'udp' | 'tcp' | 'legacy'
+export type TraceProtocol = 'icmp' | 'udp' | 'tcp'
+
+// Rust serializes Option::None with skip_serializing_if = "Option::is_none",
+// so old-agent JSON OMITS the new keys entirely. In JS that means
+// `total_sent === undefined`, not null. All discriminator checks MUST use
+// loose `value != null` to catch both undefined and null.
 export interface TracerouteHop {
   asn: string | null
+  avg_ms?: number | null
+  best_ms?: number | null
   hop: number
   hostname: string | null
-  ip: string | null
-  rtt1: number | null
-  rtt2: number | null
-  rtt3: number | null
+  // Legacy fields (filled only by old shell-based agents)
+  ip?: string | null
+  // New fields (filled by trippy-core agent); absent from old-agent payloads
+  ips?: string[]
+  jitter_ms?: number | null
+  loss_pct?: number | null
+  rtt1?: number | null
+  rtt2?: number | null
+  rtt3?: number | null
+  stddev_ms?: number | null
+  total_recv?: number | null
+  total_sent?: number | null
+  worst_ms?: number | null
 }
 
 export interface TracerouteResult {
   completed: boolean
+  completed_at: number | null
   error: string | null
   hops: TracerouteHop[]
+  /** 'legacy' = run by a pre-trippy agent; actual probe protocol unknown */
+  protocol: RecordedProtocol
+  request_id: string
+  round: number
+  started_at: number
+  target: string
+  total_rounds: number
+}
+
+export interface TracerouteRecordSummary {
+  completed_at: number | null
+  has_error: boolean
+  hop_count: number
+  protocol: RecordedProtocol
+  request_id: string
+  started_at: number
   target: string
 }
 
 export interface TracerouteResponse {
   request_id: string
+}
+
+export function isNewSchemaHop(hop: TracerouteHop): boolean {
+  return hop.total_sent != null
 }
 
 export const PROVIDER_LABELS: Record<string, string> = {
