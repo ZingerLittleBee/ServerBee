@@ -14,6 +14,7 @@ mod register;
 mod reporter;
 mod security;
 mod terminal;
+mod traceroute;
 mod upgrade;
 
 use std::sync::OnceLock;
