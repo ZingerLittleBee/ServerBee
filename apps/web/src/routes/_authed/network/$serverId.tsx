@@ -1,5 +1,16 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeft, Check, Download, Loader2, Play, Route as RouteIcon, Settings2, Trash2, X } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Check,
+  Download,
+  Loader2,
+  Play,
+  Route as RouteIcon,
+  Settings2,
+  Trash2,
+  X
+} from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -721,6 +732,7 @@ export function NetworkDetailPage() {
   // Manage Targets dialog state
   const [showManageDialog, setShowManageDialog] = useState(false)
   const [showTracerouteDialog, setShowTracerouteDialog] = useState(false)
+  const [anomalyOpen, setAnomalyOpen] = useState(false)
   const [selectedTargetIds, setSelectedTargetIds] = useState<Set<string>>(new Set())
   const selectedRef = useRef(selectedTargetIds)
   selectedRef.current = selectedTargetIds
@@ -1106,7 +1118,7 @@ export function NetworkDetailPage() {
       </div>
 
       {/* Bottom stats */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid gap-4 sm:grid-cols-4">
         <div className="rounded-lg border bg-card p-4 text-center">
           <p className="font-mono font-semibold text-lg tabular-nums">
             {stats.avgLatency != null ? `${stats.avgLatency.toFixed(1)} ms` : 'N/A'}
@@ -1121,10 +1133,40 @@ export function NetworkDetailPage() {
           <p className="font-mono font-semibold text-lg tabular-nums">{stats.targetCount}</p>
           <p className="text-muted-foreground text-xs">{t('targets')}</p>
         </div>
+        <button
+          aria-label={t('anomaly_count')}
+          className={cn(
+            'rounded-lg border bg-card p-4 text-center transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            anomalies.length > 0 &&
+              'border-amber-300 bg-amber-50 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-900/20 dark:hover:bg-amber-900/30'
+          )}
+          onClick={() => setAnomalyOpen(true)}
+          type="button"
+        >
+          <p
+            className={cn(
+              'flex items-center justify-center gap-1.5 font-mono font-semibold text-lg tabular-nums',
+              anomalies.length > 0 && 'text-amber-700 dark:text-amber-400'
+            )}
+          >
+            {anomalies.length > 0 && <AlertTriangle aria-hidden="true" className="size-4" />}
+            {anomalies.length}
+          </p>
+          <p className="text-muted-foreground text-xs">{t('anomaly_count')}</p>
+        </button>
       </div>
 
-      {/* Anomaly table */}
-      <AnomalyTable anomalies={anomalies} windowHours={anomalyHours} />
+      {/* Anomaly Dialog */}
+      <Dialog onOpenChange={setAnomalyOpen} open={anomalyOpen}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{t('anomaly_count_with_value', { count: anomalies.length })}</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="max-h-[70vh]">
+            <AnomalyTable anomalies={anomalies} windowHours={anomalyHours} />
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
 
       {/* Traceroute Dialog */}
       <Dialog onOpenChange={setShowTracerouteDialog} open={showTracerouteDialog}>
