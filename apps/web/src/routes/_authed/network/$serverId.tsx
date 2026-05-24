@@ -1,5 +1,16 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeft, Check, Download, Loader2, Play, Route as RouteIcon, Settings2, Trash2, X } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Check,
+  Download,
+  Loader2,
+  Play,
+  Route as RouteIcon,
+  Settings2,
+  Trash2,
+  X
+} from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -13,6 +24,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -291,7 +304,7 @@ function TracerouteRunForm({
       />
       <Select onValueChange={(v) => setProtocol(v as TraceProtocol)} value={protocol}>
         <SelectTrigger className="w-24">
-          <SelectValue />
+          <SelectValue>{(value: string) => value?.toUpperCase()}</SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="icmp">ICMP</SelectItem>
@@ -316,8 +329,8 @@ interface TracerouteHistoryListProps {
   deleteMutation: { mutate: (id: string) => void }
   history: TracerouteRecordSummary[] | undefined
   isAdmin: boolean
+  onSelect: (record: TracerouteRecordSummary) => void
   selectedRecordId: string | null
-  setSelectedRecordId: (id: string | null) => void
   t: (key: string, opts?: Record<string, unknown>) => string
 }
 
@@ -332,7 +345,7 @@ function HistoryRow({
   isAdmin: boolean
   isSelected: boolean
   onDelete: (id: string) => void
-  onSelect: (id: string) => void
+  onSelect: (record: TracerouteRecordSummary) => void
   record: TracerouteRecordSummary
   t: (key: string, opts?: Record<string, unknown>) => string
 }) {
@@ -344,7 +357,7 @@ function HistoryRow({
         'flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40',
         isSelected && 'bg-muted'
       )}
-      onClick={() => onSelect(record.request_id)}
+      onClick={() => onSelect(record)}
     >
       <span className="flex-1 truncate font-mono">{record.target}</span>
       <Badge variant={record.protocol === 'legacy' ? 'outline' : 'secondary'}>
@@ -384,8 +397,8 @@ function TracerouteHistoryList({
   deleteMutation,
   history,
   isAdmin,
+  onSelect,
   selectedRecordId,
-  setSelectedRecordId,
   t
 }: TracerouteHistoryListProps) {
   const count = history?.length ?? 0
@@ -397,7 +410,7 @@ function TracerouteHistoryList({
   }, [clearMutation, count, t])
 
   return (
-    <div className="mt-4 border-t pt-4">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="font-medium text-sm">
           {t('history')} ({count})
@@ -409,7 +422,7 @@ function TracerouteHistoryList({
         )}
       </div>
       {count === 0 && <p className="text-muted-foreground text-sm">{t('history_empty')}</p>}
-      <div className="max-h-64 overflow-auto">
+      <ScrollArea className="min-h-0 flex-1">
         <ul className="space-y-1">
           {history?.map((r) => (
             <HistoryRow
@@ -417,13 +430,107 @@ function TracerouteHistoryList({
               isSelected={selectedRecordId === r.request_id}
               key={r.request_id}
               onDelete={(id) => deleteMutation.mutate(id)}
-              onSelect={setSelectedRecordId}
+              onSelect={onSelect}
               record={r}
               t={t}
             />
           ))}
         </ul>
+      </ScrollArea>
+    </div>
+  )
+}
+
+interface TracerouteRecentChipsProps {
+  clearMutation: { mutate: () => void }
+  deleteMutation: { mutate: (id: string) => void }
+  history: TracerouteRecordSummary[] | undefined
+  isAdmin: boolean
+  onSelect: (record: TracerouteRecordSummary) => void
+  selectedRecordId: string | null
+  t: (key: string, opts?: Record<string, unknown>) => string
+}
+
+const RECENT_CHIPS_LIMIT = 6
+
+function TracerouteRecentChips({
+  clearMutation,
+  deleteMutation,
+  history,
+  isAdmin,
+  onSelect,
+  selectedRecordId,
+  t
+}: TracerouteRecentChipsProps) {
+  const recentChips = useMemo(() => {
+    if (!history?.length) {
+      return []
+    }
+    const seen = new Set<string>()
+    const out: TracerouteRecordSummary[] = []
+    for (const record of history) {
+      const key = `${record.target}|${record.protocol}`
+      if (seen.has(key)) {
+        continue
+      }
+      seen.add(key)
+      out.push(record)
+      if (out.length >= RECENT_CHIPS_LIMIT) {
+        break
+      }
+    }
+    return out
+  }, [history])
+
+  const total = history?.length ?? 0
+
+  if (total === 0) {
+    return null
+  }
+
+  return (
+    <div className="flex items-start gap-2">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+        <span className="text-muted-foreground text-xs">{t('traceroute_recent')}:</span>
+        {recentChips.map((record) => {
+          const isSelected = selectedRecordId === record.request_id
+          return (
+            <Button
+              className="h-7 gap-1.5 px-2 font-mono text-xs"
+              key={record.request_id}
+              onClick={() => onSelect(record)}
+              size="sm"
+              variant={isSelected ? 'secondary' : 'outline'}
+            >
+              <span className="truncate">{record.target}</span>
+              <span className="text-[10px] text-muted-foreground uppercase">
+                {record.protocol === 'legacy' ? '·' : record.protocol}
+              </span>
+              {record.has_error ? (
+                <X aria-hidden="true" className="size-3 text-destructive" />
+              ) : (
+                <Check aria-hidden="true" className="size-3 text-emerald-500" />
+              )}
+            </Button>
+          )
+        })}
       </div>
+      <Popover>
+        <PopoverTrigger render={<Button className="h-7 shrink-0 px-2 text-xs" size="sm" variant="ghost" />}>
+          {t('traceroute_view_all_history', { count: total })}
+        </PopoverTrigger>
+        <PopoverContent align="end" className="flex h-96 w-80 flex-col gap-2 overflow-hidden p-3">
+          <TracerouteHistoryList
+            clearMutation={clearMutation}
+            deleteMutation={deleteMutation}
+            history={history}
+            isAdmin={isAdmin}
+            onSelect={onSelect}
+            selectedRecordId={selectedRecordId}
+            t={t}
+          />
+        </PopoverContent>
+      </Popover>
     </div>
   )
 }
@@ -457,7 +564,7 @@ function TracerouteContent({
 
   const startTraceroute = useStartTraceroute(serverId)
   const stream = useTracerouteStream(serverId, traceRequestId)
-  const { data: polled } = useTracerouteRecord(
+  const { data: polled, isFetching: isFetchingRecord } = useTracerouteRecord(
     serverId,
     selectedRecordId ?? (stream?.completed ? null : traceRequestId)
   )
@@ -468,6 +575,7 @@ function TracerouteContent({
   const clearMutation = useClearTracerouteHistory(serverId)
 
   const isRunning = !!traceRequestId && !result?.completed && !result?.error
+  const isLoadingRecord = !!selectedRecordId && !polled && isFetchingRecord
 
   const handleRun = useCallback(() => {
     const trimmed = target.trim()
@@ -499,8 +607,20 @@ function TracerouteContent({
     [handleRun]
   )
 
+  const loadRecord = useCallback(
+    (record: TracerouteRecordSummary) => {
+      setTraceRequestId(null)
+      setSelectedRecordId(record.request_id)
+      setTarget(record.target)
+      if (record.protocol !== 'legacy') {
+        setProtocol(record.protocol as TraceProtocol)
+      }
+    },
+    [setTraceRequestId, setSelectedRecordId, setTarget, setProtocol]
+  )
+
   return (
-    <div className="space-y-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       {isAdmin && (
         <TracerouteRunForm
           isPending={startTraceroute.isPending}
@@ -516,6 +636,16 @@ function TracerouteContent({
       )}
       {!isAdmin && <p className="text-muted-foreground text-xs">{t('traceroute_readonly_note')}</p>}
 
+      <TracerouteRecentChips
+        clearMutation={clearMutation}
+        deleteMutation={deleteMutation}
+        history={history}
+        isAdmin={isAdmin}
+        onSelect={loadRecord}
+        selectedRecordId={selectedRecordId}
+        t={t}
+      />
+
       {stream && !stream.completed && (
         <span className="text-muted-foreground text-xs tabular-nums">
           {t('round_progress', { current: stream.round, total: stream.total_rounds })}
@@ -529,7 +659,7 @@ function TracerouteContent({
       )}
 
       {result && result.hops.length > 0 && (
-        <div className="max-h-[60vh] overflow-auto rounded-md border">
+        <ScrollArea className="min-h-0 flex-1 rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -551,25 +681,28 @@ function TracerouteContent({
               ))}
             </TableBody>
           </Table>
+        </ScrollArea>
+      )}
+
+      {isLoadingRecord && (
+        <div className="flex min-h-0 flex-1 items-center justify-center gap-2 rounded-md border border-dashed text-muted-foreground text-sm">
+          <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+          {t('traceroute_loading_record')}
         </div>
       )}
 
-      {isRunning && (
-        <div className="flex items-center justify-center gap-2 py-4 text-muted-foreground text-sm">
+      {isRunning && !(result || isLoadingRecord) && (
+        <div className="flex min-h-0 flex-1 items-center justify-center gap-2 rounded-md border border-dashed text-muted-foreground text-sm">
           <Loader2 aria-hidden="true" className="size-4 animate-spin" />
           {t('traceroute_running')}
         </div>
       )}
 
-      <TracerouteHistoryList
-        clearMutation={clearMutation}
-        deleteMutation={deleteMutation}
-        history={history}
-        isAdmin={isAdmin}
-        selectedRecordId={selectedRecordId}
-        setSelectedRecordId={setSelectedRecordId}
-        t={t}
-      />
+      {!(result || isRunning || isLoadingRecord) && (
+        <div className="flex min-h-0 flex-1 items-center justify-center rounded-md border border-dashed text-muted-foreground text-sm">
+          {t('traceroute_select_or_run')}
+        </div>
+      )}
     </div>
   )
 }
@@ -599,6 +732,7 @@ export function NetworkDetailPage() {
   // Manage Targets dialog state
   const [showManageDialog, setShowManageDialog] = useState(false)
   const [showTracerouteDialog, setShowTracerouteDialog] = useState(false)
+  const [anomalyOpen, setAnomalyOpen] = useState(false)
   const [selectedTargetIds, setSelectedTargetIds] = useState<Set<string>>(new Set())
   const selectedRef = useRef(selectedTargetIds)
   selectedRef.current = selectedTargetIds
@@ -984,7 +1118,7 @@ export function NetworkDetailPage() {
       </div>
 
       {/* Bottom stats */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid gap-4 sm:grid-cols-4">
         <div className="rounded-lg border bg-card p-4 text-center">
           <p className="font-mono font-semibold text-lg tabular-nums">
             {stats.avgLatency != null ? `${stats.avgLatency.toFixed(1)} ms` : 'N/A'}
@@ -999,14 +1133,47 @@ export function NetworkDetailPage() {
           <p className="font-mono font-semibold text-lg tabular-nums">{stats.targetCount}</p>
           <p className="text-muted-foreground text-xs">{t('targets')}</p>
         </div>
+        <button
+          aria-label={t('anomaly_count')}
+          className={cn(
+            'cursor-pointer rounded-lg border bg-card p-4 text-center transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            anomalies.length > 0 &&
+              'border-amber-300 bg-amber-50 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-900/20 dark:hover:bg-amber-900/30'
+          )}
+          onClick={() => setAnomalyOpen(true)}
+          type="button"
+        >
+          <p
+            className={cn(
+              'flex items-center justify-center gap-1.5 font-mono font-semibold text-lg tabular-nums',
+              anomalies.length > 0 && 'text-amber-700 dark:text-amber-400'
+            )}
+          >
+            {anomalies.length > 0 && <AlertTriangle aria-hidden="true" className="size-4" />}
+            {anomalies.length}
+          </p>
+          <p className="text-muted-foreground text-xs">{t('anomaly_count')}</p>
+        </button>
       </div>
 
-      {/* Anomaly table */}
-      <AnomalyTable anomalies={anomalies} windowHours={anomalyHours} />
+      {/* Anomaly Dialog */}
+      <Dialog onOpenChange={setAnomalyOpen} open={anomalyOpen}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <div className="flex items-center justify-between gap-4 pr-8">
+              <DialogTitle>{t('anomaly_count_with_value', { count: anomalies.length })}</DialogTitle>
+              <span className="text-muted-foreground text-xs">{t('anomaly_window', { hours: anomalyHours })}</span>
+            </div>
+          </DialogHeader>
+          <ScrollArea className="max-h-[70vh]">
+            <AnomalyTable anomalies={anomalies} windowHours={anomalyHours} />
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
 
       {/* Traceroute Dialog */}
       <Dialog onOpenChange={setShowTracerouteDialog} open={showTracerouteDialog}>
-        <DialogContent className="sm:max-w-3xl">
+        <DialogContent className="h-[92vh] sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle>{t('traceroute')}</DialogTitle>
           </DialogHeader>
@@ -1051,30 +1218,32 @@ export function NetworkDetailPage() {
           {allTargets.length === 0 ? (
             <p className="py-4 text-center text-muted-foreground text-sm">{t('no_targets')}</p>
           ) : (
-            <div className="max-h-80 space-y-1.5 overflow-y-auto rounded-md border p-3">
-              {allTargets.map((target) => (
-                // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
-                <label
-                  className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40"
-                  key={target.id}
-                >
-                  <Checkbox
-                    checked={selectedTargetIds.has(target.id)}
-                    onCheckedChange={() => toggleSelectedTarget(target.id)}
-                  />
-                  <span className="flex-1 font-medium">{getLocalizedTargetDisplayName(target)}</span>
-                  {target.provider && (
-                    <span className="text-muted-foreground text-xs">{getLocalizedTargetDisplayProvider(target)}</span>
-                  )}
-                  {target.location && (
-                    <span className="text-muted-foreground text-xs">{getLocalizedTargetDisplayLocation(target)}</span>
-                  )}
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
-                    {getProbeTypeLabel(target.probe_type)}
-                  </span>
-                </label>
-              ))}
-            </div>
+            <ScrollArea className="max-h-[70vh] rounded-md border">
+              <div className="space-y-1.5 p-3">
+                {allTargets.map((target) => (
+                  // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
+                  <label
+                    className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40"
+                    key={target.id}
+                  >
+                    <Checkbox
+                      checked={selectedTargetIds.has(target.id)}
+                      onCheckedChange={() => toggleSelectedTarget(target.id)}
+                    />
+                    <span className="flex-1 font-medium">{getLocalizedTargetDisplayName(target)}</span>
+                    {target.provider && (
+                      <span className="text-muted-foreground text-xs">{getLocalizedTargetDisplayProvider(target)}</span>
+                    )}
+                    {target.location && (
+                      <span className="text-muted-foreground text-xs">{getLocalizedTargetDisplayLocation(target)}</span>
+                    )}
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
+                      {getProbeTypeLabel(target.probe_type)}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </ScrollArea>
           )}
 
           <div className="flex gap-2">

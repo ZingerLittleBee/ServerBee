@@ -264,7 +264,14 @@ function PresetDialog({ preset }: { preset: PresetDef }) {
             <Label htmlFor={`preset-group-${preset.kind}`}>
               {t('preset.field_group', { defaultValue: 'Notification group' })}
             </Label>
-            <Select onValueChange={(v) => setGroupId(v ?? '')} value={groupId}>
+            <Select
+              items={{
+                '': t('preset.field_group_none', { defaultValue: 'None' }),
+                ...Object.fromEntries((groups ?? []).map((g) => [g.id, g.name]))
+              }}
+              onValueChange={(v) => setGroupId(v ?? '')}
+              value={groupId}
+            >
               <SelectTrigger id={`preset-group-${preset.kind}`}>
                 <SelectValue placeholder={t('preset.field_group_none', { defaultValue: 'None' })} />
               </SelectTrigger>

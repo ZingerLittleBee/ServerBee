@@ -40,6 +40,12 @@ impl AuditService {
         Ok(())
     }
 
+    /// Delete every audit log entry. Returns the number of rows removed.
+    pub async fn clear_all(db: &DatabaseConnection) -> Result<u64, AppError> {
+        let result = audit_log::Entity::delete_many().exec(db).await?;
+        Ok(result.rows_affected)
+    }
+
     /// List audit log entries, ordered by newest first.
     pub async fn list(
         db: &DatabaseConnection,

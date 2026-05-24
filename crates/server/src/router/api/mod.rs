@@ -1,5 +1,7 @@
+pub mod about;
 pub mod agent;
 pub mod alert;
+pub mod asn;
 pub mod audit;
 pub mod auth;
 pub mod brand;
@@ -49,6 +51,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(status::router())
         .merge(status_page::public_router())
         .merge(brand::public_router())
+        .merge(about::router())
         .merge(
             Router::new()
                 .merge(auth::protected_router())
@@ -73,6 +76,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 .merge(theme::read_router())
                 .merge(alert::alert_events_router())
                 .merge(geoip::read_router())
+                .merge(asn::read_router())
                 .merge(security::read_router())
                 .merge(firewall::read_router())
                 // Admin-only routes (write operations + management)
@@ -108,6 +112,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                         .merge(user::router())
                         .merge(incident::router())
                         .merge(geoip::write_router())
+                        .merge(asn::write_router())
                         .merge(maintenance_api::router())
                         .merge(security::write_router())
                         .merge(firewall::write_router())

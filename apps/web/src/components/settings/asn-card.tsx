@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, Globe2, RefreshCw } from 'lucide-react'
+import { Download, Network, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { SettingsRow } from '@/components/settings/settings-row'
@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 
-interface GeoIpStatus {
+interface AsnStatus {
   file_size?: number
   installed: boolean
   source?: string
@@ -24,47 +24,47 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function metaText(status: GeoIpStatus | undefined, t: (key: string) => string): string {
+function metaText(status: AsnStatus | undefined, t: (key: string) => string): string {
   if (!status) {
     return ''
   }
   if (!status.installed) {
-    return t('geoip.not_installed')
+    return t('asn.not_installed')
   }
-  const parts = [t('geoip.installed')]
+  const parts = [t('asn.installed')]
   if (status.file_size) {
     parts.push(formatBytes(status.file_size))
   }
   if (status.updated_at) {
-    parts.push(`${t('geoip.updated')} ${new Date(status.updated_at).toLocaleDateString()}`)
+    parts.push(`${t('asn.updated')} ${new Date(status.updated_at).toLocaleDateString()}`)
   }
   if (status.source === 'custom') {
-    parts.push(t('geoip.custom_file'))
+    parts.push(t('asn.custom_file'))
   }
   return parts.join(' · ')
 }
 
-export function GeoIpRow() {
+export function AsnRow() {
   const { t } = useTranslation('settings')
   const queryClient = useQueryClient()
 
-  const { data: status, isLoading } = useQuery<GeoIpStatus>({
-    queryKey: ['geoip-status'],
-    queryFn: () => api.get<GeoIpStatus>('/api/geoip/status')
+  const { data: status, isLoading } = useQuery<AsnStatus>({
+    queryKey: ['asn-status'],
+    queryFn: () => api.get<AsnStatus>('/api/asn/status')
   })
 
   const downloadMutation = useMutation({
-    mutationFn: () => api.post<{ success: boolean; message: string }>('/api/geoip/download'),
+    mutationFn: () => api.post<{ success: boolean; message: string }>('/api/asn/download'),
     onSuccess: (data) => {
       if (data.success) {
         toast.success(data.message)
-        queryClient.invalidateQueries({ queryKey: ['geoip-status'] })
+        queryClient.invalidateQueries({ queryKey: ['asn-status'] })
       } else {
         toast.error(data.message)
       }
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : t('geoip.download_failed'))
+      toast.error(err instanceof Error ? err.message : t('asn.download_failed'))
     }
   })
 
@@ -72,11 +72,11 @@ export function GeoIpRow() {
   const isCustom = status?.source === 'custom'
   const isPending = downloadMutation.isPending
 
-  let buttonLabel = t('geoip.download')
+  let buttonLabel = t('asn.download')
   if (isPending) {
-    buttonLabel = t('geoip.downloading')
+    buttonLabel = t('asn.downloading')
   } else if (installed) {
-    buttonLabel = t('geoip.update')
+    buttonLabel = t('asn.update')
   }
 
   return (
@@ -93,10 +93,10 @@ export function GeoIpRow() {
           </Button>
         )
       }
-      description={t('geoip.description')}
-      icon={<Globe2 className="size-4" />}
+      description={t('asn.description')}
+      icon={<Network className="size-4" />}
       meta={isLoading ? <Skeleton className="h-4 w-24" /> : metaText(status, t)}
-      title={t('geoip.title')}
+      title={t('asn.title')}
     />
   )
 }

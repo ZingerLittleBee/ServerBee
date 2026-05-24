@@ -214,6 +214,13 @@ function StatusPageFormDialog({
           <div className="space-y-1">
             <Label htmlFor="sp-theme">{t('status:theme.label')}</Label>
             <Select
+              items={{
+                [FOLLOW_ADMIN_THEME_VALUE]: t('status:theme.follow_admin'),
+                ...Object.fromEntries(themes.map((theme) => [`preset:${theme.id}`, `Preset · ${theme.name}`])),
+                ...Object.fromEntries(
+                  (customThemes ?? []).map((theme) => [`custom:${theme.id}`, `Custom · ${theme.name}`])
+                )
+              }}
               onValueChange={(value) => {
                 if (value !== null) {
                   setThemeRef(value === FOLLOW_ADMIN_THEME_VALUE ? null : value)

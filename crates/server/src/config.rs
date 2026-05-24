@@ -23,6 +23,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub geoip: GeoIpConfig,
     #[serde(default)]
+    pub asn: AsnConfig,
+    #[serde(default)]
     pub log: LogConfig,
     #[serde(default)]
     pub scheduler: SchedulerConfig,
@@ -40,6 +42,8 @@ pub struct AppConfig {
     pub firewall: FirewallConfig,
     #[serde(default)]
     pub ip_quality: IpQualityConfig,
+    #[serde(default)]
+    pub network_probe: NetworkProbeConfig,
 }
 
 impl Default for AppConfig {
@@ -52,6 +56,7 @@ impl Default for AppConfig {
             rate_limit: RateLimitConfig::default(),
             oauth: OAuthConfig::default(),
             geoip: GeoIpConfig::default(),
+            asn: AsnConfig::default(),
             log: LogConfig::default(),
             scheduler: SchedulerConfig::default(),
             upgrade: UpgradeConfig::default(),
@@ -61,6 +66,7 @@ impl Default for AppConfig {
             feature: FeatureConfig::default(),
             firewall: FirewallConfig::default(),
             ip_quality: IpQualityConfig::default(),
+            network_probe: NetworkProbeConfig::default(),
         }
     }
 }
@@ -230,6 +236,13 @@ fn default_oidc_scopes() -> Vec<String> {
 #[derive(Debug, Clone, Deserialize, Default)]
 #[allow(dead_code)]
 pub struct GeoIpConfig {
+    #[serde(default)]
+    pub mmdb_path: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[allow(dead_code)]
+pub struct AsnConfig {
     #[serde(default)]
     pub mmdb_path: String,
 }
@@ -416,6 +429,34 @@ where
         }
     }
     de.deserialize_any(CsvOrSeq)
+}
+
+/// Network probe anomaly classification thresholds. Records with
+/// `avg_latency > high_latency_ms` are labelled `high_latency`; records with
+/// `avg_latency > very_high_latency_ms` are labelled `very_high_latency`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct NetworkProbeConfig {
+    #[serde(default = "default_high_latency_ms")]
+    pub high_latency_ms: f64,
+    #[serde(default = "default_very_high_latency_ms")]
+    pub very_high_latency_ms: f64,
+}
+
+impl Default for NetworkProbeConfig {
+    fn default() -> Self {
+        Self {
+            high_latency_ms: default_high_latency_ms(),
+            very_high_latency_ms: default_very_high_latency_ms(),
+        }
+    }
+}
+
+fn default_high_latency_ms() -> f64 {
+    500.0
+}
+
+fn default_very_high_latency_ms() -> f64 {
+    800.0
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -627,6 +668,27 @@ mod tests {
     #[test]
     fn ip_quality_event_retention_default() {
         assert_eq!(RetentionConfig::default().ip_quality_event_days, 90);
+    }
+
+    #[test]
+    fn network_probe_thresholds_default_to_500_and_800() {
+        let cfg = NetworkProbeConfig::default();
+        assert!((cfg.high_latency_ms - 500.0).abs() < f64::EPSILON);
+        assert!((cfg.very_high_latency_ms - 800.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn network_probe_thresholds_from_env() {
+        figment::Jail::expect_with(|jail| {
+            jail.set_env("SERVERBEE_NETWORK_PROBE__HIGH_LATENCY_MS", "350");
+            jail.set_env("SERVERBEE_NETWORK_PROBE__VERY_HIGH_LATENCY_MS", "600");
+            let cfg: AppConfig = figment::Figment::new()
+                .merge(figment::providers::Env::prefixed("SERVERBEE_").split("__"))
+                .extract()?;
+            assert!((cfg.network_probe.high_latency_ms - 350.0).abs() < f64::EPSILON);
+            assert!((cfg.network_probe.very_high_latency_ms - 600.0).abs() < f64::EPSILON);
+            Ok(())
+        });
     }
 
     #[test]

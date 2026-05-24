@@ -69,7 +69,15 @@ function FirewallPage() {
                 value={targetQuery}
               />
             </div>
-            <Select onValueChange={(v) => setOriginFilter(v ?? '')} value={originFilter}>
+            <Select
+              items={{
+                '': t('filter.origin_all', { defaultValue: 'All origins' }),
+                manual: t('filter.origin_manual', { defaultValue: 'Manual' }),
+                auto: t('filter.origin_auto', { defaultValue: 'Auto' })
+              }}
+              onValueChange={(v) => setOriginFilter(v ?? '')}
+              value={originFilter}
+            >
               <SelectTrigger className="h-9 w-[180px]">
                 <SelectValue placeholder={t('filter.origin', { defaultValue: 'All origins' })} />
               </SelectTrigger>

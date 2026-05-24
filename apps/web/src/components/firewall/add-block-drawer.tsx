@@ -127,6 +127,11 @@ export function AddBlockDrawer({ open, onOpenChange, initialValues }: Props) {
             <div className="space-y-1">
               <Label htmlFor="firewall-cover-type">{t('add.field_cover_type', { defaultValue: 'Scope' })}</Label>
               <Select
+                items={{
+                  all: t('add.scope_all', { defaultValue: 'All servers' }),
+                  include: t('add.scope_include', { defaultValue: 'Selected servers' }),
+                  exclude: t('add.scope_exclude', { defaultValue: 'All except selected' })
+                }}
                 onValueChange={(v) => {
                   if (v === null) {
                     return

@@ -10,6 +10,7 @@ use crate::config::AppConfig;
 use crate::error::AppError;
 use crate::service::agent_manager::AgentManager;
 use crate::service::alert::AlertStateManager;
+use crate::service::asn::AsnService;
 use crate::service::docker_viewer::DockerViewerTracker;
 use crate::service::file_transfer::FileTransferManager;
 use crate::service::geoip::GeoIpService;
@@ -50,6 +51,8 @@ pub struct AppState {
     pub upgrade_release_service: UpgradeReleaseService,
     pub geoip: Arc<std::sync::RwLock<Option<GeoIpService>>>,
     pub geoip_downloading: AtomicBool,
+    pub asn: Arc<std::sync::RwLock<Option<AsnService>>>,
+    pub asn_downloading: AtomicBool,
     /// CSRF state tokens for OAuth flow, keyed by state string → provider.
     pub oauth_states: DashMap<String, (String, chrono::DateTime<chrono::Utc>)>,
     /// Pending TOTP secrets for 2FA setup, keyed by user_id.
@@ -161,6 +164,20 @@ impl AppState {
                 "GeoIP database not available — download via Settings or Server Map widget"
             );
         }
+        let asn = if !config.asn.mmdb_path.is_empty() {
+            AsnService::load(&config.asn.mmdb_path)
+        } else {
+            let default_path = std::path::Path::new(&config.server.data_dir)
+                .join(crate::service::asn::DBIP_ASN_FILENAME);
+            AsnService::load(&default_path.display().to_string())
+        };
+        if asn.is_some() {
+            tracing::info!("ASN database loaded");
+        } else {
+            tracing::info!(
+                "ASN database not available — download via Settings to enrich traceroute hops"
+            );
+        }
         let file_transfers = Arc::new(FileTransferManager::new(
             std::env::temp_dir().join("serverbee-transfers"),
         ));
@@ -190,6 +207,9 @@ impl AppState {
             firewall.clone(),
             agent_manager.clone(),
         ));
+        let asn_arc = Arc::new(std::sync::RwLock::new(asn));
+        let traceroute_enricher =
+            crate::service::traceroute_enrich::TracerouteEnricher::new().with_asn(asn_arc.clone());
         Ok(Arc::new(Self {
             db,
             agent_manager,
@@ -199,6 +219,8 @@ impl AppState {
             upgrade_release_service,
             geoip: Arc::new(std::sync::RwLock::new(geoip)),
             geoip_downloading: AtomicBool::new(false),
+            asn: asn_arc,
+            asn_downloading: AtomicBool::new(false),
             oauth_states: DashMap::new(),
             pending_totp: DashMap::new(),
             login_rate_limit: DashMap::new(),
@@ -214,7 +236,7 @@ impl AppState {
             terminal_audit_contexts: DashMap::new(),
             docker_logs_audit_contexts: DashMap::new(),
             exec_audit_contexts: DashMap::new(),
-            traceroute_enricher: crate::service::traceroute_enrich::TracerouteEnricher::new(),
+            traceroute_enricher,
         }))
     }
 }

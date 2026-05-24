@@ -1,11 +1,14 @@
 use std::sync::Arc;
 
-use axum::extract::{Query, State};
+use axum::extract::{ConnectInfo, Query, State};
+use axum::http::HeaderMap;
 use axum::routing::get;
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{ApiResponse, AppError, ok};
+use crate::middleware::auth::CurrentUser;
+use crate::router::utils::extract_client_ip;
 use crate::service::audit::{AuditListFilters, AuditService};
 use crate::state::AppState;
 
@@ -53,10 +56,15 @@ pub struct AuditOptionsResponse {
     pub users: Vec<AuditUserOption>,
 }
 
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct AuditClearResponse {
+    pub deleted: u64,
+}
+
 /// Admin-only audit log routes.
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/audit-logs", get(list_audit_logs))
+        .route("/audit-logs", get(list_audit_logs).delete(clear_audit_logs))
         .route("/audit-logs/options", get(list_audit_options))
 }
 
@@ -120,4 +128,43 @@ pub async fn list_audit_options(
         })
         .collect();
     ok(AuditOptionsResponse { actions, users })
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/audit-logs",
+    tag = "audit",
+    responses(
+        (status = 200, description = "Number of audit log entries removed", body = AuditClearResponse),
+        (status = 403, description = "Forbidden — admin only"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
+)]
+pub async fn clear_audit_logs(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    Extension(current_user): Extension<CurrentUser>,
+    headers: HeaderMap,
+) -> Result<Json<ApiResponse<AuditClearResponse>>, AppError> {
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+
+    let deleted = AuditService::clear_all(&state.db).await?;
+
+    // Record the clear action itself so the admin who cleared the table is auditable.
+    let detail = serde_json::json!({ "deleted": deleted }).to_string();
+    let _ = AuditService::log(
+        &state.db,
+        &current_user.user_id,
+        "audit_log_clear",
+        Some(&detail),
+        &ip,
+    )
+    .await;
+
+    ok(AuditClearResponse { deleted })
 }

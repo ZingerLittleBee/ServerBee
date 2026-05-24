@@ -61,6 +61,12 @@ These variables are for local repo tooling and development workflows. They are n
 |---------------------|----------|------|---------|-------------|
 | `SERVERBEE_GEOIP__MMDB_PATH` | `geoip.mmdb_path` | string | `""` | Path to MaxMind GeoLite2-City.mmdb file. Non-empty path enables GeoIP |
 
+### ASN (Optional)
+
+| Environment Variable | TOML Key | Type | Default | Description |
+|---------------------|----------|------|---------|-------------|
+| `SERVERBEE_ASN__MMDB_PATH` | `asn.mmdb_path` | string | `""` | Path to a DB-IP Lite ASN / MaxMind GeoLite2-ASN MMDB file. Non-empty path enables traceroute ASN enrichment; otherwise admins can download DB-IP Lite ASN from Settings → ASN Database |
+
 ### Resend (Email Notifications)
 
 | Environment Variable | TOML Key | Type | Default | Description |
@@ -116,6 +122,15 @@ Configure the optional third-party IP risk scoring provider. If no provider is c
 | `SERVERBEE_IP_QUALITY__PROXYCHECK__ENDPOINT` | `ip_quality.proxycheck.endpoint` | string | `""` | proxycheck.io endpoint override. Leave empty to use the default |
 | `SERVERBEE_IP_QUALITY__ABUSEIPDB__API_KEY` | `ip_quality.abuseipdb.api_key` | string | - | AbuseIPDB API key. Required when `risk_provider = "abuseipdb"` |
 | `SERVERBEE_IP_QUALITY__ABUSEIPDB__ENDPOINT` | `ip_quality.abuseipdb.endpoint` | string | `""` | AbuseIPDB endpoint override. Leave empty to use the default |
+
+### Network Probe Anomaly Thresholds
+
+Avg-latency cutoffs used to classify network-probe records as `high_latency` / `very_high_latency` in `/api/servers/{id}/network-probes/anomalies` and `anomaly_count` on the network-probe overview.
+
+| Environment Variable | TOML Key | Type | Default | Description |
+|---------------------|----------|------|---------|-------------|
+| `SERVERBEE_NETWORK_PROBE__HIGH_LATENCY_MS` | `network_probe.high_latency_ms` | f64 | `500` | Records with `avg_latency` strictly greater than this are tagged `high_latency` |
+| `SERVERBEE_NETWORK_PROBE__VERY_HIGH_LATENCY_MS` | `network_probe.very_high_latency_ms` | f64 | `800` | Records with `avg_latency` strictly greater than this are tagged `very_high_latency` (overrides the high tier) |
 
 ### Internal
 

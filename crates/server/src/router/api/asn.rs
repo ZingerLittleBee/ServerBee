@@ -8,11 +8,11 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::error::{ApiResponse, AppError, ok};
-use crate::service::geoip;
+use crate::service::asn;
 use crate::state::AppState;
 
 #[derive(Serialize, ToSchema)]
-pub struct GeoIpStatus {
+pub struct AsnStatus {
     pub installed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
@@ -23,26 +23,26 @@ pub struct GeoIpStatus {
 }
 
 #[derive(Serialize, ToSchema)]
-pub struct GeoIpDownloadResponse {
+pub struct AsnDownloadResponse {
     pub success: bool,
     pub message: String,
 }
 
 #[utoipa::path(
     get,
-    path = "/api/geoip/status",
-    tag = "geoip",
+    path = "/api/asn/status",
+    tag = "asn",
     responses(
-        (status = 200, description = "GeoIP database install status", body = GeoIpStatus),
+        (status = 200, description = "ASN database install status", body = AsnStatus),
     )
 )]
-pub async fn geoip_status(
+pub async fn asn_status(
     State(state): State<Arc<AppState>>,
-) -> Result<Json<ApiResponse<GeoIpStatus>>, AppError> {
-    let guard = state.geoip.read().unwrap();
+) -> Result<Json<ApiResponse<AsnStatus>>, AppError> {
+    let guard = state.asn.read().unwrap();
     let status = match guard.as_ref() {
         Some(service) => {
-            let source = if !state.config.geoip.mmdb_path.is_empty() {
+            let source = if !state.config.asn.mmdb_path.is_empty() {
                 "custom"
             } else {
                 "downloaded"
@@ -57,14 +57,14 @@ pub async fn geoip_status(
                     (Some(size), modified)
                 })
                 .unwrap_or((None, None));
-            GeoIpStatus {
+            AsnStatus {
                 installed: true,
                 source: Some(source.to_string()),
                 file_size,
                 updated_at,
             }
         }
-        None => GeoIpStatus {
+        None => AsnStatus {
             installed: false,
             source: None,
             file_size: None,
@@ -76,38 +76,38 @@ pub async fn geoip_status(
 
 #[utoipa::path(
     post,
-    path = "/api/geoip/download",
-    tag = "geoip",
+    path = "/api/asn/download",
+    tag = "asn",
     responses(
-        (status = 200, description = "GeoIP download result", body = GeoIpDownloadResponse),
+        (status = 200, description = "ASN download result", body = AsnDownloadResponse),
     )
 )]
-pub async fn geoip_download(
+pub async fn asn_download(
     State(state): State<Arc<AppState>>,
-) -> Result<Json<ApiResponse<GeoIpDownloadResponse>>, AppError> {
+) -> Result<Json<ApiResponse<AsnDownloadResponse>>, AppError> {
     // Concurrent download guard
-    if state.geoip_downloading.swap(true, Ordering::SeqCst) {
-        return ok(GeoIpDownloadResponse {
+    if state.asn_downloading.swap(true, Ordering::SeqCst) {
+        return ok(AsnDownloadResponse {
             success: false,
             message: "Download already in progress".to_string(),
         });
     }
 
-    let result = geoip::download_dbip(&state.config.server.data_dir).await;
+    let result = asn::download_dbip_asn(&state.config.server.data_dir).await;
 
     match result {
         Ok(service) => {
-            let mut guard = state.geoip.write().unwrap();
+            let mut guard = state.asn.write().unwrap();
             *guard = Some(service);
-            state.geoip_downloading.store(false, Ordering::SeqCst);
-            ok(GeoIpDownloadResponse {
+            state.asn_downloading.store(false, Ordering::SeqCst);
+            ok(AsnDownloadResponse {
                 success: true,
-                message: "GeoIP database installed successfully".to_string(),
+                message: "ASN database installed successfully".to_string(),
             })
         }
         Err(e) => {
-            state.geoip_downloading.store(false, Ordering::SeqCst);
-            ok(GeoIpDownloadResponse {
+            state.asn_downloading.store(false, Ordering::SeqCst);
+            ok(AsnDownloadResponse {
                 success: false,
                 message: e,
             })
@@ -116,9 +116,9 @@ pub async fn geoip_download(
 }
 
 pub fn read_router() -> Router<Arc<AppState>> {
-    Router::new().route("/geoip/status", routing::get(geoip_status))
+    Router::new().route("/asn/status", routing::get(asn_status))
 }
 
 pub fn write_router() -> Router<Arc<AppState>> {
-    Router::new().route("/geoip/download", routing::post(geoip_download))
+    Router::new().route("/asn/download", routing::post(asn_download))
 }
