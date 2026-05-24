@@ -507,6 +507,7 @@ impl FileManager {
             .await?;
         file.seek(std::io::SeekFrom::Start(offset)).await?;
         file.write_all(&decoded).await?;
+        file.flush().await?;
 
         Ok(offset + decoded.len() as u64)
     }
