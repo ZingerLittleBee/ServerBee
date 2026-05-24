@@ -26,7 +26,7 @@ impl MigrationTrait for Migration {
                 completed_rounds INTEGER NOT NULL,
                 hops_json TEXT NOT NULL,
                 error TEXT,
-                FOREIGN KEY (server_id) REFERENCES server(id) ON DELETE CASCADE
+                FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
             )",
         )
         .await?;
