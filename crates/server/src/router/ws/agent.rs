@@ -1703,7 +1703,7 @@ async fn handle_traceroute_round_update(state: &Arc<AppState>, server_id: &str, 
         return;
     }
 
-    // Server-side enrich (hostname only this iteration)
+    // Server-side enrich: PTR hostnames and ASN (when MMDB is installed).
     state.traceroute_enricher.enrich(&mut hops).await;
 
     // Update in-memory cache

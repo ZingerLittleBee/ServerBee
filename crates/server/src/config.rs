@@ -23,6 +23,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub geoip: GeoIpConfig,
     #[serde(default)]
+    pub asn: AsnConfig,
+    #[serde(default)]
     pub log: LogConfig,
     #[serde(default)]
     pub scheduler: SchedulerConfig,
@@ -52,6 +54,7 @@ impl Default for AppConfig {
             rate_limit: RateLimitConfig::default(),
             oauth: OAuthConfig::default(),
             geoip: GeoIpConfig::default(),
+            asn: AsnConfig::default(),
             log: LogConfig::default(),
             scheduler: SchedulerConfig::default(),
             upgrade: UpgradeConfig::default(),
@@ -230,6 +233,13 @@ fn default_oidc_scopes() -> Vec<String> {
 #[derive(Debug, Clone, Deserialize, Default)]
 #[allow(dead_code)]
 pub struct GeoIpConfig {
+    #[serde(default)]
+    pub mmdb_path: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[allow(dead_code)]
+pub struct AsnConfig {
     #[serde(default)]
     pub mmdb_path: String,
 }
