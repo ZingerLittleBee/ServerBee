@@ -18,6 +18,10 @@ use trippy_core::{Builder, Port, PortDirection, PrivilegeMode, Protocol, State};
 pub const DEFAULT_MAX_ROUNDS: u32 = 5;
 pub const ROUND_INTERVAL: Duration = Duration::from_millis(1000);
 pub const PROBE_TIMEOUT: Duration = Duration::from_millis(1500);
+/// Hard wall-clock budget for the whole trace. Normal completion is
+/// ~rounds × max_round_duration (≈10s). 60s leaves slack for slow links;
+/// anything longer is almost certainly a stuck OS socket.
+pub const TRACE_WALL_TIMEOUT: Duration = Duration::from_secs(60);
 pub const UDP_DEFAULT_DEST_PORT: u16 = 33_434;
 pub const TCP_DEFAULT_DEST_PORT: u16 = 80;
 
@@ -185,7 +189,7 @@ pub fn spawn_traceroute(
         let target_inner = target.clone();
         let tx_inner = tx.clone();
 
-        let result = tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let blocking = tokio::task::spawn_blocking(move || -> Result<(), String> {
             let round_no = Cell::new(0u32);
             let make_callback = || {
                 |state: &State| {
@@ -225,8 +229,33 @@ pub fn spawn_traceroute(
                 }
                 Err(e) => Err(format!("Tracer error: {e}")),
             }
-        })
-        .await;
+        });
+
+        // Bound the await with a wall-clock timeout. trippy's `run_with` has
+        // no cancellation hook, so on timeout the blocking thread keeps
+        // running until trippy returns; this is partial mitigation that
+        // unblocks the caller without leaking thread-pool slots forever in
+        // the common case (trippy still finishes within its own bookkeeping).
+        let result = match tokio::time::timeout(TRACE_WALL_TIMEOUT, blocking).await {
+            Ok(inner) => inner,
+            Err(_elapsed) => {
+                let _ = tx
+                    .send(AgentMessage::TracerouteRoundUpdate {
+                        request_id,
+                        target,
+                        round: 0,
+                        total_rounds: 0,
+                        hops: vec![],
+                        completed: true,
+                        error: Some(format!(
+                            "Traceroute exceeded {}s wall-clock timeout",
+                            TRACE_WALL_TIMEOUT.as_secs()
+                        )),
+                    })
+                    .await;
+                return;
+            }
+        };
 
         // Emit terminal error if the blocking task crashed or returned Err.
         match result {
