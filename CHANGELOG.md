@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.3] - 2026-05-25
+
+### Added
+
+- **ASN database for traceroute enrichment** -- A new ASN MMDB service labels every traceroute hop with its autonomous system number; the settings page exposes a download/update card mirroring the existing GeoIP control, and `SERVERBEE_ASN__MMDB_PATH` / the `[asn]` config section let operators bring a custom file
+- **Server version on the settings page** -- A public `/api/about` endpoint reports the running build's `CARGO_PKG_VERSION` and the settings page renders it in an About row so operators can confirm the version at a glance
+- **Manual audit log clear** -- Admins can wipe the audit log table from the audit logs page via a destructive button with a confirmation dialog; the clear itself is recorded as an `audit_log_clear` entry afterward so the operator who triggered it remains auditable
+
+### Changed
+
+- **Settings page redesigned** -- The standalone GeoIP/ASN/About cards were replaced with a unified `SettingsSection`/`SettingsRow` primitive grouped into "Data sources" and "About" panels in a macOS System Settings style; the DB-IP attribution moved into the section footer
+- **Traceroute dialog UX** -- The dialog was rebuilt around a quick-pick "Recent" chips row backed by a full-history popover, grew to 92vh, pins the all-history button to the right of the chips, renders the protocol select's uppercase label, and shows a loading spinner while a selected history snapshot is being fetched
+- **ScrollArea adoption on network surfaces** -- The traceroute result table, traceroute history list, and manage-targets dialog list all migrated from native `overflow-auto` to shadcn's `ScrollArea`; the manage-targets list also grew to 70vh so far fewer targets sit below the fold
+
+### Fixed
+
+- **Agent file receive flush** -- `receive_chunk` now flushes the file handle before returning so the last chunk reliably lands on disk
+- **Select trigger label vs. value** -- Several admin selects (users page role picker, traceroute protocol picker) were rendering the raw value instead of the label; the `items` prop is now passed through so the trigger shows the display string
+- **Self-delete button on users page** -- The current user's own row no longer shows a delete button that would have failed server-side
+
+### Documentation
+
+- **ASN configuration documented** -- `SERVERBEE_ASN__MMDB_PATH` and the `[asn]` config section are documented in ENV.md and the bilingual configuration MDX pages, and the GeoIP/ASN endpoints are now annotated with `utoipa::path` so they appear in `/swagger-ui/`
+
 ## [1.0.0-alpha.2] - 2026-05-24
 
 ### Added
