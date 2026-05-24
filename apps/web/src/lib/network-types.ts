@@ -158,3 +158,16 @@ export function getProviderLabel(provider: string): string {
 export function latencyColorClass(ms: number | null, options?: { failed?: boolean }): string {
   return getLatencyTextClass({ latencyMs: ms, failed: options?.failed })
 }
+
+export function getLossTextClassName(lossRatio: number | null): string {
+  if (lossRatio == null) {
+    return 'text-muted-foreground'
+  }
+  if (lossRatio >= 0.5) {
+    return 'text-destructive font-semibold'
+  }
+  if (lossRatio >= 0.1) {
+    return 'text-amber-600 dark:text-amber-400'
+  }
+  return ''
+}

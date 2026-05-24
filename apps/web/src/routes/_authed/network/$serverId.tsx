@@ -7,13 +7,16 @@ import { AnomalyTable } from '@/components/network/anomaly-table'
 import { LatencyChart } from '@/components/network/latency-chart'
 import { TargetCard } from '@/components/network/target-card'
 import { StatusBadge } from '@/components/server/status-badge'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useServer } from '@/hooks/use-api'
 import { useAuth } from '@/hooks/use-auth'
 import {
@@ -26,6 +29,7 @@ import {
   useTracerouteRecord
 } from '@/hooks/use-network-api'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
+import { useTracerouteStream } from '@/hooks/use-traceroute-stream'
 import { CHART_COLORS } from '@/lib/chart-colors'
 import {
   getNetworkProbeTypeLabel,
@@ -33,8 +37,16 @@ import {
   getNetworkTargetDisplayName,
   getNetworkTargetDisplayProvider
 } from '@/lib/network-i18n'
-import type { NetworkProbeRecord, NetworkProbeTarget, NetworkTargetSummary } from '@/lib/network-types'
-import { formatLatency, formatPacketLoss, getProviderLabel, latencyColorClass } from '@/lib/network-types'
+import type { NetworkProbeRecord, NetworkProbeTarget, NetworkTargetSummary, TracerouteHop } from '@/lib/network-types'
+import {
+  formatLatency,
+  formatPacketLoss,
+  getLossTextClassName,
+  getProviderLabel,
+  isNewSchemaHop,
+  latencyColorClass,
+  type TraceProtocol
+} from '@/lib/network-types'
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/network/$serverId')({
@@ -154,15 +166,157 @@ function ProviderColumn({
   )
 }
 
-function TracerouteContent({ serverId, t }: { serverId: string; t: (key: string) => string }) {
-  const [target, setTarget] = useState('')
-  const [requestId, setRequestId] = useState<string | null>(null)
+function deriveHopStats(hop: TracerouteHop, isNew: boolean) {
+  const legacyRtts = [hop.rtt1, hop.rtt2, hop.rtt3].filter((v): v is number => v != null)
+  if (isNew) {
+    return {
+      lossPct: hop.loss_pct ?? null,
+      bestMs: hop.best_ms ?? null,
+      avgMs: hop.avg_ms ?? null,
+      worstMs: hop.worst_ms ?? null
+    }
+  }
+  const lossPct = legacyRtts.length === 0 ? 100 : ((3 - legacyRtts.length) / 3) * 100
+  const bestMs = legacyRtts.length > 0 ? Math.min(...legacyRtts) : null
+  const avgMs = legacyRtts.length > 0 ? legacyRtts.reduce((a, b) => a + b, 0) / legacyRtts.length : null
+  const worstMs = legacyRtts.length > 0 ? Math.max(...legacyRtts) : null
+  return { lossPct, bestMs, avgMs, worstMs }
+}
+
+function formatMs(value: number | null | undefined, digits = 1): string {
+  return value == null ? '—' : value.toFixed(digits)
+}
+
+function HopIpCell({ primaryIp, extraIps }: { primaryIp: string | null; extraIps: string[] }) {
+  return (
+    <TableCell className="font-mono">
+      {primaryIp ?? '* * *'}
+      {extraIps.length > 0 && (
+        <Tooltip>
+          <TooltipTrigger>
+            <Badge className="ml-1" variant="secondary">
+              +{extraIps.length}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>{extraIps.join(', ')}</TooltipContent>
+        </Tooltip>
+      )}
+    </TableCell>
+  )
+}
+
+function HopRow({ hop }: { hop: TracerouteHop }) {
+  const isNew = isNewSchemaHop(hop)
+  const primaryIp = isNew ? (hop.ips?.[0] ?? null) : (hop.ip ?? null)
+  const extraIps = isNew && (hop.ips?.length ?? 0) > 1 ? (hop.ips?.slice(1) ?? []) : []
+  const dimmed = isNew ? (hop.total_recv ?? 0) === 0 : hop.rtt1 == null && hop.rtt2 == null && hop.rtt3 == null
+
+  const { lossPct, bestMs, avgMs, worstMs } = deriveHopStats(hop, isNew)
+  const lossRatio = lossPct == null ? null : lossPct / 100
+
+  return (
+    <TableRow className={cn(dimmed && 'opacity-50')}>
+      <TableCell className="font-mono">{hop.hop}</TableCell>
+      <HopIpCell extraIps={extraIps} primaryIp={primaryIp} />
+      <TableCell className="max-w-[200px] truncate text-muted-foreground">{hop.hostname ?? '—'}</TableCell>
+      <TableCell className="text-muted-foreground">{hop.asn ?? '—'}</TableCell>
+      <TableCell className={cn('text-right font-mono', getLossTextClassName(lossRatio))}>
+        {lossPct == null ? '—' : `${lossPct.toFixed(0)}%`}
+      </TableCell>
+      <TableCell className="text-right font-mono">{formatMs(bestMs)}</TableCell>
+      <TableCell className={cn('text-right font-mono', latencyColorClass(avgMs, { failed: dimmed }))}>
+        {formatMs(avgMs)}
+      </TableCell>
+      <TableCell className="text-right font-mono">{formatMs(worstMs)}</TableCell>
+      <TableCell className="text-right font-mono">{formatMs(hop.jitter_ms, 2)}</TableCell>
+      <TableCell className="text-right font-mono">{formatMs(hop.stddev_ms, 2)}</TableCell>
+    </TableRow>
+  )
+}
+
+interface TracerouteRunFormProps {
+  isPending: boolean
+  isRunning: boolean
+  onKeyDown: (e: React.KeyboardEvent) => void
+  onRun: () => void
+  protocol: TraceProtocol
+  setProtocol: (p: TraceProtocol) => void
+  setTarget: (v: string) => void
+  t: (key: string, opts?: Record<string, unknown>) => string
+  target: string
+}
+
+function TracerouteRunForm({
+  isPending,
+  isRunning,
+  onKeyDown,
+  onRun,
+  protocol,
+  setProtocol,
+  setTarget,
+  t,
+  target
+}: TracerouteRunFormProps) {
+  return (
+    <div className="flex gap-2">
+      <Input
+        disabled={isRunning || isPending}
+        onChange={(e) => setTarget(e.target.value)}
+        onKeyDown={onKeyDown}
+        placeholder={t('traceroute_target')}
+        value={target}
+      />
+      <Select onValueChange={(v) => setProtocol(v as TraceProtocol)} value={protocol}>
+        <SelectTrigger className="w-24">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="icmp">ICMP</SelectItem>
+          <SelectItem value="udp">UDP</SelectItem>
+          <SelectItem value="tcp">TCP</SelectItem>
+        </SelectContent>
+      </Select>
+      <Button disabled={!target.trim() || isRunning || isPending} onClick={onRun} size="sm">
+        {isRunning || isPending ? (
+          <Loader2 aria-hidden="true" className="mr-1 size-4 animate-spin" />
+        ) : (
+          <Play aria-hidden="true" className="mr-1 size-4" />
+        )}
+        {isRunning ? t('traceroute_running') : t('run_traceroute')}
+      </Button>
+    </div>
+  )
+}
+
+interface TracerouteContentProps {
+  protocol: TraceProtocol
+  serverId: string
+  setProtocol: (p: TraceProtocol) => void
+  setTarget: (v: string) => void
+  setTraceRequestId: (id: string | null) => void
+  target: string
+  traceRequestId: string | null
+}
+
+function TracerouteContent({
+  protocol,
+  serverId,
+  setProtocol,
+  setTraceRequestId,
+  target,
+  traceRequestId,
+  setTarget
+}: TracerouteContentProps) {
+  const { t } = useTranslation('network')
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
 
   const startTraceroute = useStartTraceroute(serverId)
-  // TODO Task 19: useTracerouteRecord replaces old useTracerouteResult
-  const { data: result } = useTracerouteRecord(serverId, requestId)
+  const stream = useTracerouteStream(serverId, traceRequestId)
+  const { data: polled } = useTracerouteRecord(serverId, stream?.completed ? null : traceRequestId)
+  const result = stream ?? polled ?? null
 
-  const isRunning = !!requestId && !result?.completed && !result?.error
+  const isRunning = !!traceRequestId && !result?.completed && !result?.error
 
   const handleRun = useCallback(() => {
     const trimmed = target.trim()
@@ -170,20 +324,19 @@ function TracerouteContent({ serverId, t }: { serverId: string; t: (key: string)
       return
     }
 
-    setRequestId(null)
-    // TODO Task 19: protocol will be lifted to state; hardcoded 'icmp' for now
+    setTraceRequestId(null)
     startTraceroute.mutate(
-      { target: trimmed, protocol: 'icmp' },
+      { target: trimmed, protocol },
       {
         onSuccess: (data) => {
-          setRequestId(data.request_id)
+          setTraceRequestId(data.request_id)
         },
         onError: (err) => {
           toast.error(err instanceof Error ? err.message : t('traceroute_error'))
         }
       }
     )
-  }, [target, startTraceroute, t])
+  }, [target, protocol, startTraceroute, t, setTraceRequestId])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -196,23 +349,26 @@ function TracerouteContent({ serverId, t }: { serverId: string; t: (key: string)
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
-        <Input
-          disabled={isRunning || startTraceroute.isPending}
-          onChange={(e) => setTarget(e.target.value)}
+      {isAdmin && (
+        <TracerouteRunForm
+          isPending={startTraceroute.isPending}
+          isRunning={isRunning}
           onKeyDown={handleKeyDown}
-          placeholder={t('traceroute_target')}
-          value={target}
+          onRun={handleRun}
+          protocol={protocol}
+          setProtocol={setProtocol}
+          setTarget={setTarget}
+          t={t}
+          target={target}
         />
-        <Button disabled={!target.trim() || isRunning || startTraceroute.isPending} onClick={handleRun} size="sm">
-          {isRunning || startTraceroute.isPending ? (
-            <Loader2 aria-hidden="true" className="mr-1 size-4 animate-spin" />
-          ) : (
-            <Play aria-hidden="true" className="mr-1 size-4" />
-          )}
-          {isRunning ? t('traceroute_running') : t('run_traceroute')}
-        </Button>
-      </div>
+      )}
+      {!isAdmin && <p className="text-muted-foreground text-xs">{t('traceroute_readonly_note')}</p>}
+
+      {stream && !stream.completed && (
+        <span className="text-muted-foreground text-xs tabular-nums">
+          {t('round_progress', { current: stream.round, total: stream.total_rounds })}
+        </span>
+      )}
 
       {result?.error && (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-destructive text-sm">
@@ -225,47 +381,21 @@ function TracerouteContent({ serverId, t }: { serverId: string; t: (key: string)
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-16">{t('hop')}</TableHead>
+                <TableHead className="w-12">{t('hop')}</TableHead>
                 <TableHead>{t('ip_address')}</TableHead>
                 <TableHead>{t('hostname')}</TableHead>
-                <TableHead className="text-right">RTT1</TableHead>
-                <TableHead className="text-right">RTT2</TableHead>
-                <TableHead className="text-right">RTT3</TableHead>
                 <TableHead>{t('asn')}</TableHead>
+                <TableHead className="text-right">{t('loss_pct')}</TableHead>
+                <TableHead className="text-right">{t('best')}</TableHead>
+                <TableHead className="text-right">{t('avg')}</TableHead>
+                <TableHead className="text-right">{t('worst')}</TableHead>
+                <TableHead className="text-right">{t('jitter')}</TableHead>
+                <TableHead className="text-right">{t('stddev')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {result.hops.map((hop) => (
-                <TableRow key={hop.hop}>
-                  <TableCell className="font-mono">{hop.hop}</TableCell>
-                  <TableCell className="font-mono">{hop.ip ?? t('no_response')}</TableCell>
-                  <TableCell className="max-w-[200px] truncate text-muted-foreground">{hop.hostname ?? '-'}</TableCell>
-                  <TableCell
-                    className={cn(
-                      'text-right font-mono',
-                      latencyColorClass(hop.rtt1 ?? null, { failed: hop.rtt1 == null })
-                    )}
-                  >
-                    {hop.rtt1 != null ? `${hop.rtt1.toFixed(1)} ms` : t('no_response')}
-                  </TableCell>
-                  <TableCell
-                    className={cn(
-                      'text-right font-mono',
-                      latencyColorClass(hop.rtt2 ?? null, { failed: hop.rtt2 == null })
-                    )}
-                  >
-                    {hop.rtt2 != null ? `${hop.rtt2.toFixed(1)} ms` : t('no_response')}
-                  </TableCell>
-                  <TableCell
-                    className={cn(
-                      'text-right font-mono',
-                      latencyColorClass(hop.rtt3 ?? null, { failed: hop.rtt3 == null })
-                    )}
-                  >
-                    {hop.rtt3 != null ? `${hop.rtt3.toFixed(1)} ms` : t('no_response')}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{hop.asn ?? '-'}</TableCell>
-                </TableRow>
+                <HopRow hop={hop} key={hop.hop} />
               ))}
             </TableBody>
           </Table>
@@ -310,6 +440,11 @@ export function NetworkDetailPage() {
   const [selectedTargetIds, setSelectedTargetIds] = useState<Set<string>>(new Set())
   const selectedRef = useRef(selectedTargetIds)
   selectedRef.current = selectedTargetIds
+
+  // Traceroute lifted state
+  const [traceTarget, setTraceTarget] = useState('')
+  const [traceProtocol, setTraceProtocol] = useState<TraceProtocol>('icmp')
+  const [traceRequestId, setTraceRequestId] = useState<string | null>(null)
 
   const isRealtime = timeRange === 'realtime'
   const hours = isRealtime ? 1 : timeRange
@@ -712,7 +847,15 @@ export function NetworkDetailPage() {
           <DialogHeader>
             <DialogTitle>{t('traceroute')}</DialogTitle>
           </DialogHeader>
-          <TracerouteContent serverId={serverId} t={t} />
+          <TracerouteContent
+            protocol={traceProtocol}
+            serverId={serverId}
+            setProtocol={setTraceProtocol}
+            setTarget={setTraceTarget}
+            setTraceRequestId={setTraceRequestId}
+            target={traceTarget}
+            traceRequestId={traceRequestId}
+          />
         </DialogContent>
       </Dialog>
 
