@@ -799,6 +799,7 @@ impl Reporter {
                 request_id,
                 target,
                 max_hops,
+                ..
             } => {
                 let caps = capabilities.load(Ordering::SeqCst);
                 if !has_capability(caps, CAP_PING_ICMP) {
