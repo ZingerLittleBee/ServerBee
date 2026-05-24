@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useAuth } from '@/hooks/use-auth'
 import { api } from '@/lib/api-client'
 import type { UserResponse } from '@/lib/api-schema'
 
@@ -29,6 +30,7 @@ export const Route = createFileRoute('/_authed/settings/users')({
 function UsersPage() {
   const { t } = useTranslation(['settings', 'common'])
   const queryClient = useQueryClient()
+  const { user: currentUser } = useAuth()
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editRole, setEditRole] = useState('')
@@ -243,46 +245,48 @@ function UsersPage() {
                       </p>
                     </div>
                   </div>
-                  <AlertDialog
-                    onOpenChange={(open) => {
-                      if (!open) {
-                        setDeleteUserId(null)
-                      }
-                    }}
-                    open={deleteUserId === user.id}
-                  >
-                    <AlertDialogTrigger
-                      onClick={() => setDeleteUserId(user.id)}
-                      render={
-                        <Button
-                          aria-label={`${t('users.delete')} ${user.username}`}
-                          disabled={deleteMutation.isPending}
-                          size="sm"
-                          variant="destructive"
-                        />
-                      }
+                  {currentUser?.user_id !== user.id && (
+                    <AlertDialog
+                      onOpenChange={(open) => {
+                        if (!open) {
+                          setDeleteUserId(null)
+                        }
+                      }}
+                      open={deleteUserId === user.id}
                     >
-                      <Trash2 aria-hidden="true" className="size-3.5" />
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
-                        <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={() => {
-                            deleteMutation.mutate(user.id)
-                            setDeleteUserId(null)
-                          }}
-                          variant="destructive"
-                        >
-                          {t('common:delete')}
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+                      <AlertDialogTrigger
+                        onClick={() => setDeleteUserId(user.id)}
+                        render={
+                          <Button
+                            aria-label={`${t('users.delete')} ${user.username}`}
+                            disabled={deleteMutation.isPending}
+                            size="sm"
+                            variant="destructive"
+                          />
+                        }
+                      >
+                        <Trash2 aria-hidden="true" className="size-3.5" />
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
+                          <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => {
+                              deleteMutation.mutate(user.id)
+                              setDeleteUserId(null)
+                            }}
+                            variant="destructive"
+                          >
+                            {t('common:delete')}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
                 </div>
               ))}
             </div>
