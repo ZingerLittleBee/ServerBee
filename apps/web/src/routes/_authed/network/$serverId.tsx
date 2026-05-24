@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -291,7 +292,7 @@ function TracerouteRunForm({
       />
       <Select onValueChange={(v) => setProtocol(v as TraceProtocol)} value={protocol}>
         <SelectTrigger className="w-24">
-          <SelectValue />
+          <SelectValue>{(value: string) => value?.toUpperCase()}</SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="icmp">ICMP</SelectItem>
@@ -316,8 +317,8 @@ interface TracerouteHistoryListProps {
   deleteMutation: { mutate: (id: string) => void }
   history: TracerouteRecordSummary[] | undefined
   isAdmin: boolean
+  onSelect: (record: TracerouteRecordSummary) => void
   selectedRecordId: string | null
-  setSelectedRecordId: (id: string | null) => void
   t: (key: string, opts?: Record<string, unknown>) => string
 }
 
@@ -332,7 +333,7 @@ function HistoryRow({
   isAdmin: boolean
   isSelected: boolean
   onDelete: (id: string) => void
-  onSelect: (id: string) => void
+  onSelect: (record: TracerouteRecordSummary) => void
   record: TracerouteRecordSummary
   t: (key: string, opts?: Record<string, unknown>) => string
 }) {
@@ -344,7 +345,7 @@ function HistoryRow({
         'flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40',
         isSelected && 'bg-muted'
       )}
-      onClick={() => onSelect(record.request_id)}
+      onClick={() => onSelect(record)}
     >
       <span className="flex-1 truncate font-mono">{record.target}</span>
       <Badge variant={record.protocol === 'legacy' ? 'outline' : 'secondary'}>
@@ -384,8 +385,8 @@ function TracerouteHistoryList({
   deleteMutation,
   history,
   isAdmin,
+  onSelect,
   selectedRecordId,
-  setSelectedRecordId,
   t
 }: TracerouteHistoryListProps) {
   const count = history?.length ?? 0
@@ -397,7 +398,7 @@ function TracerouteHistoryList({
   }, [clearMutation, count, t])
 
   return (
-    <div className="mt-4 border-t pt-4">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="font-medium text-sm">
           {t('history')} ({count})
@@ -409,7 +410,7 @@ function TracerouteHistoryList({
         )}
       </div>
       {count === 0 && <p className="text-muted-foreground text-sm">{t('history_empty')}</p>}
-      <div className="max-h-64 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto">
         <ul className="space-y-1">
           {history?.map((r) => (
             <HistoryRow
@@ -417,13 +418,105 @@ function TracerouteHistoryList({
               isSelected={selectedRecordId === r.request_id}
               key={r.request_id}
               onDelete={(id) => deleteMutation.mutate(id)}
-              onSelect={setSelectedRecordId}
+              onSelect={onSelect}
               record={r}
               t={t}
             />
           ))}
         </ul>
       </div>
+    </div>
+  )
+}
+
+interface TracerouteRecentChipsProps {
+  clearMutation: { mutate: () => void }
+  deleteMutation: { mutate: (id: string) => void }
+  history: TracerouteRecordSummary[] | undefined
+  isAdmin: boolean
+  onSelect: (record: TracerouteRecordSummary) => void
+  selectedRecordId: string | null
+  t: (key: string, opts?: Record<string, unknown>) => string
+}
+
+const RECENT_CHIPS_LIMIT = 6
+
+function TracerouteRecentChips({
+  clearMutation,
+  deleteMutation,
+  history,
+  isAdmin,
+  onSelect,
+  selectedRecordId,
+  t
+}: TracerouteRecentChipsProps) {
+  const recentChips = useMemo(() => {
+    if (!history?.length) {
+      return []
+    }
+    const seen = new Set<string>()
+    const out: TracerouteRecordSummary[] = []
+    for (const record of history) {
+      const key = `${record.target}|${record.protocol}`
+      if (seen.has(key)) {
+        continue
+      }
+      seen.add(key)
+      out.push(record)
+      if (out.length >= RECENT_CHIPS_LIMIT) {
+        break
+      }
+    }
+    return out
+  }, [history])
+
+  const total = history?.length ?? 0
+
+  if (total === 0) {
+    return null
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="text-muted-foreground text-xs">{t('traceroute_recent')}:</span>
+      {recentChips.map((record) => {
+        const isSelected = selectedRecordId === record.request_id
+        return (
+          <Button
+            className="h-7 gap-1.5 px-2 font-mono text-xs"
+            key={record.request_id}
+            onClick={() => onSelect(record)}
+            size="sm"
+            variant={isSelected ? 'secondary' : 'outline'}
+          >
+            <span className="truncate">{record.target}</span>
+            <span className="text-[10px] text-muted-foreground uppercase">
+              {record.protocol === 'legacy' ? '·' : record.protocol}
+            </span>
+            {record.has_error ? (
+              <X aria-hidden="true" className="size-3 text-destructive" />
+            ) : (
+              <Check aria-hidden="true" className="size-3 text-emerald-500" />
+            )}
+          </Button>
+        )
+      })}
+      <Popover>
+        <PopoverTrigger render={<Button className="h-7 px-2 text-xs" size="sm" variant="ghost" />}>
+          {t('traceroute_view_all_history', { count: total })}
+        </PopoverTrigger>
+        <PopoverContent align="end" className="flex h-96 w-80 flex-col gap-2 p-3">
+          <TracerouteHistoryList
+            clearMutation={clearMutation}
+            deleteMutation={deleteMutation}
+            history={history}
+            isAdmin={isAdmin}
+            onSelect={onSelect}
+            selectedRecordId={selectedRecordId}
+            t={t}
+          />
+        </PopoverContent>
+      </Popover>
     </div>
   )
 }
@@ -499,8 +592,19 @@ function TracerouteContent({
     [handleRun]
   )
 
+  const loadRecord = useCallback(
+    (record: TracerouteRecordSummary) => {
+      setSelectedRecordId(record.request_id)
+      setTarget(record.target)
+      if (record.protocol !== 'legacy') {
+        setProtocol(record.protocol as TraceProtocol)
+      }
+    },
+    [setSelectedRecordId, setTarget, setProtocol]
+  )
+
   return (
-    <div className="space-y-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       {isAdmin && (
         <TracerouteRunForm
           isPending={startTraceroute.isPending}
@@ -516,6 +620,16 @@ function TracerouteContent({
       )}
       {!isAdmin && <p className="text-muted-foreground text-xs">{t('traceroute_readonly_note')}</p>}
 
+      <TracerouteRecentChips
+        clearMutation={clearMutation}
+        deleteMutation={deleteMutation}
+        history={history}
+        isAdmin={isAdmin}
+        onSelect={loadRecord}
+        selectedRecordId={selectedRecordId}
+        t={t}
+      />
+
       {stream && !stream.completed && (
         <span className="text-muted-foreground text-xs tabular-nums">
           {t('round_progress', { current: stream.round, total: stream.total_rounds })}
@@ -529,7 +643,7 @@ function TracerouteContent({
       )}
 
       {result && result.hops.length > 0 && (
-        <div className="max-h-[60vh] overflow-auto rounded-md border">
+        <div className="min-h-0 flex-1 overflow-auto rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -554,22 +668,18 @@ function TracerouteContent({
         </div>
       )}
 
-      {isRunning && (
-        <div className="flex items-center justify-center gap-2 py-4 text-muted-foreground text-sm">
+      {!(result || isRunning) && (
+        <div className="flex min-h-0 flex-1 items-center justify-center rounded-md border border-dashed text-muted-foreground text-sm">
+          {t('traceroute_select_or_run')}
+        </div>
+      )}
+
+      {isRunning && !result && (
+        <div className="flex min-h-0 flex-1 items-center justify-center gap-2 rounded-md border border-dashed text-muted-foreground text-sm">
           <Loader2 aria-hidden="true" className="size-4 animate-spin" />
           {t('traceroute_running')}
         </div>
       )}
-
-      <TracerouteHistoryList
-        clearMutation={clearMutation}
-        deleteMutation={deleteMutation}
-        history={history}
-        isAdmin={isAdmin}
-        selectedRecordId={selectedRecordId}
-        setSelectedRecordId={setSelectedRecordId}
-        t={t}
-      />
     </div>
   )
 }
@@ -1006,7 +1116,7 @@ export function NetworkDetailPage() {
 
       {/* Traceroute Dialog */}
       <Dialog onOpenChange={setShowTracerouteDialog} open={showTracerouteDialog}>
-        <DialogContent className="sm:max-w-3xl">
+        <DialogContent className="h-[85vh] sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle>{t('traceroute')}</DialogTitle>
           </DialogHeader>
