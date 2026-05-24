@@ -138,6 +138,12 @@
   "jitter": "抖动",
   "stddev": "标准差",
   "round_progress": "第 {{current}} 轮 / 共 {{total}} 轮",
+  "history": "历史记录",
+  "clear_all": "清空全部",
+  "clear_all_confirm": "将删除 {{count}} 条历史记录，确定？",
+  "history_empty": "暂无历史",
+  "legacy_record_tooltip": "由旧版 Agent 生成，实际协议未知",
+  "delete": "删除",
 
   "latency_title": "延迟 (ms)",
   "latency_inbound": "入站",

@@ -138,6 +138,12 @@
   "jitter": "Jitter",
   "stddev": "StdDev",
   "round_progress": "Round {{current}} / {{total}}",
+  "history": "History",
+  "clear_all": "Clear All",
+  "clear_all_confirm": "Delete {{count}} history record(s)?",
+  "history_empty": "No history yet.",
+  "legacy_record_tooltip": "Recorded by a pre-trippy agent; actual probe protocol unknown.",
+  "delete": "Delete",
 
   "latency_title": "Latency (ms)",
   "latency_inbound": "Inbound",

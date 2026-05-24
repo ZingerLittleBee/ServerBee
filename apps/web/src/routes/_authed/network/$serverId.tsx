@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeft, Download, Loader2, Play, Route as RouteIcon, Settings2 } from 'lucide-react'
+import { ArrowLeft, Check, Download, Loader2, Play, Route as RouteIcon, Settings2, Trash2, X } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -20,12 +20,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useServer } from '@/hooks/use-api'
 import { useAuth } from '@/hooks/use-auth'
 import {
+  useClearTracerouteHistory,
+  useDeleteTraceroute,
   useNetworkAnomalies,
   useNetworkRecords,
   useNetworkServerSummary,
   useNetworkTargets,
   useSetServerTargets,
   useStartTraceroute,
+  useTracerouteHistory,
   useTracerouteRecord
 } from '@/hooks/use-network-api'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
@@ -37,7 +40,13 @@ import {
   getNetworkTargetDisplayName,
   getNetworkTargetDisplayProvider
 } from '@/lib/network-i18n'
-import type { NetworkProbeRecord, NetworkProbeTarget, NetworkTargetSummary, TracerouteHop } from '@/lib/network-types'
+import type {
+  NetworkProbeRecord,
+  NetworkProbeTarget,
+  NetworkTargetSummary,
+  TracerouteHop,
+  TracerouteRecordSummary
+} from '@/lib/network-types'
 import {
   formatLatency,
   formatPacketLoss,
@@ -234,6 +243,20 @@ function HopRow({ hop }: { hop: TracerouteHop }) {
   )
 }
 
+function formatRelativeTime(unixMs: number): string {
+  const diff = Date.now() - unixMs
+  if (diff < 60_000) {
+    return 'just now'
+  }
+  if (diff < 3_600_000) {
+    return `${Math.floor(diff / 60_000)}m ago`
+  }
+  if (diff < 86_400_000) {
+    return `${Math.floor(diff / 3_600_000)}h ago`
+  }
+  return `${Math.floor(diff / 86_400_000)}d ago`
+}
+
 interface TracerouteRunFormProps {
   isPending: boolean
   isRunning: boolean
@@ -288,10 +311,129 @@ function TracerouteRunForm({
   )
 }
 
+interface TracerouteHistoryListProps {
+  clearMutation: { mutate: () => void }
+  deleteMutation: { mutate: (id: string) => void }
+  history: TracerouteRecordSummary[] | undefined
+  isAdmin: boolean
+  selectedRecordId: string | null
+  setSelectedRecordId: (id: string | null) => void
+  t: (key: string, opts?: Record<string, unknown>) => string
+}
+
+function HistoryRow({
+  isAdmin,
+  isSelected,
+  onDelete,
+  onSelect,
+  record,
+  t
+}: {
+  isAdmin: boolean
+  isSelected: boolean
+  onDelete: (id: string) => void
+  onSelect: (id: string) => void
+  record: TracerouteRecordSummary
+  t: (key: string, opts?: Record<string, unknown>) => string
+}) {
+  return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: list items are supplemented by explicit icon buttons
+    // biome-ignore lint/a11y/noNoninteractiveElementInteractions: history rows act as selection targets
+    <li
+      className={cn(
+        'flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40',
+        isSelected && 'bg-muted'
+      )}
+      onClick={() => onSelect(record.request_id)}
+    >
+      <span className="flex-1 truncate font-mono">{record.target}</span>
+      <Badge variant={record.protocol === 'legacy' ? 'outline' : 'secondary'}>
+        {record.protocol === 'legacy' ? (
+          <Tooltip>
+            <TooltipTrigger>
+              <span>legacy</span>
+            </TooltipTrigger>
+            <TooltipContent>{t('legacy_record_tooltip')}</TooltipContent>
+          </Tooltip>
+        ) : (
+          record.protocol.toUpperCase()
+        )}
+      </Badge>
+      <span className="text-muted-foreground text-xs">{record.hop_count} hops</span>
+      <span className="text-muted-foreground text-xs">{formatRelativeTime(record.started_at)}</span>
+      {record.has_error ? <X className="size-3 text-destructive" /> : <Check className="size-3 text-emerald-500" />}
+      {isAdmin && (
+        <Button
+          aria-label={t('delete')}
+          onClick={(e) => {
+            e.stopPropagation()
+            onDelete(record.request_id)
+          }}
+          size="icon"
+          variant="ghost"
+        >
+          <Trash2 className="size-4" />
+        </Button>
+      )}
+    </li>
+  )
+}
+
+function TracerouteHistoryList({
+  clearMutation,
+  deleteMutation,
+  history,
+  isAdmin,
+  selectedRecordId,
+  setSelectedRecordId,
+  t
+}: TracerouteHistoryListProps) {
+  const count = history?.length ?? 0
+  const handleClear = useCallback(() => {
+    // biome-ignore lint/suspicious/noAlert: plan spec requires window.confirm for clear-all
+    if (window.confirm(t('clear_all_confirm', { count }))) {
+      clearMutation.mutate()
+    }
+  }, [clearMutation, count, t])
+
+  return (
+    <div className="mt-4 border-t pt-4">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="font-medium text-sm">
+          {t('history')} ({count})
+        </h3>
+        {isAdmin && count > 0 && (
+          <Button onClick={handleClear} size="sm" variant="ghost">
+            {t('clear_all')}
+          </Button>
+        )}
+      </div>
+      {count === 0 && <p className="text-muted-foreground text-sm">{t('history_empty')}</p>}
+      <div className="max-h-64 overflow-auto">
+        <ul className="space-y-1">
+          {history?.map((r) => (
+            <HistoryRow
+              isAdmin={isAdmin}
+              isSelected={selectedRecordId === r.request_id}
+              key={r.request_id}
+              onDelete={(id) => deleteMutation.mutate(id)}
+              onSelect={setSelectedRecordId}
+              record={r}
+              t={t}
+            />
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
 interface TracerouteContentProps {
   protocol: TraceProtocol
+  selectedRecordId: string | null
   serverId: string
   setProtocol: (p: TraceProtocol) => void
+  setSelectedRecordId: (id: string | null) => void
   setTarget: (v: string) => void
   setTraceRequestId: (id: string | null) => void
   target: string
@@ -300,8 +442,10 @@ interface TracerouteContentProps {
 
 function TracerouteContent({
   protocol,
+  selectedRecordId,
   serverId,
   setProtocol,
+  setSelectedRecordId,
   setTraceRequestId,
   target,
   traceRequestId,
@@ -313,8 +457,15 @@ function TracerouteContent({
 
   const startTraceroute = useStartTraceroute(serverId)
   const stream = useTracerouteStream(serverId, traceRequestId)
-  const { data: polled } = useTracerouteRecord(serverId, stream?.completed ? null : traceRequestId)
-  const result = stream ?? polled ?? null
+  const { data: polled } = useTracerouteRecord(
+    serverId,
+    selectedRecordId ?? (stream?.completed ? null : traceRequestId)
+  )
+  const result = selectedRecordId ? (polled ?? null) : (stream ?? polled ?? null)
+
+  const { data: history } = useTracerouteHistory(serverId)
+  const deleteMutation = useDeleteTraceroute(serverId)
+  const clearMutation = useClearTracerouteHistory(serverId)
 
   const isRunning = !!traceRequestId && !result?.completed && !result?.error
 
@@ -325,6 +476,7 @@ function TracerouteContent({
     }
 
     setTraceRequestId(null)
+    setSelectedRecordId(null)
     startTraceroute.mutate(
       { target: trimmed, protocol },
       {
@@ -336,7 +488,7 @@ function TracerouteContent({
         }
       }
     )
-  }, [target, protocol, startTraceroute, t, setTraceRequestId])
+  }, [target, protocol, startTraceroute, t, setTraceRequestId, setSelectedRecordId])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -408,6 +560,16 @@ function TracerouteContent({
           {t('traceroute_running')}
         </div>
       )}
+
+      <TracerouteHistoryList
+        clearMutation={clearMutation}
+        deleteMutation={deleteMutation}
+        history={history}
+        isAdmin={isAdmin}
+        selectedRecordId={selectedRecordId}
+        setSelectedRecordId={setSelectedRecordId}
+        t={t}
+      />
     </div>
   )
 }
@@ -445,6 +607,7 @@ export function NetworkDetailPage() {
   const [traceTarget, setTraceTarget] = useState('')
   const [traceProtocol, setTraceProtocol] = useState<TraceProtocol>('icmp')
   const [traceRequestId, setTraceRequestId] = useState<string | null>(null)
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
 
   const isRealtime = timeRange === 'realtime'
   const hours = isRealtime ? 1 : timeRange
@@ -849,8 +1012,10 @@ export function NetworkDetailPage() {
           </DialogHeader>
           <TracerouteContent
             protocol={traceProtocol}
+            selectedRecordId={selectedRecordId}
             serverId={serverId}
             setProtocol={setTraceProtocol}
+            setSelectedRecordId={setSelectedRecordId}
             setTarget={setTraceTarget}
             setTraceRequestId={setTraceRequestId}
             target={traceTarget}
