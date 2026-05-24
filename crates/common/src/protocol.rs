@@ -557,6 +557,10 @@ pub enum ServerMessage {
         request_id: String,
         target: String,
         max_hops: u8,
+        /// Strict enum; defaults to ICMP behavior when missing for old-agent
+        /// compatibility.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        protocol: Option<TraceProtocol>,
     },
     Ping,
     /// Agent 自升级。`download_url`/`sha256` 自 pinned-source 版本起**废弃**:
@@ -1364,6 +1368,7 @@ mod tests {
             request_id: "req-1".to_string(),
             target: "8.8.8.8".to_string(),
             max_hops: 30,
+            protocol: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("\"type\":\"traceroute\""));
@@ -1374,6 +1379,7 @@ mod tests {
                 request_id,
                 target,
                 max_hops,
+                ..
             } => {
                 assert_eq!(request_id, "req-1");
                 assert_eq!(target, "8.8.8.8");
@@ -2040,6 +2046,36 @@ mod tests {
             }
             _ => panic!("Expected IpQualityUpdate"),
         }
+    }
+
+    #[test]
+    fn test_traceroute_server_message_with_protocol_round_trip() {
+        let msg = ServerMessage::Traceroute {
+            request_id: "rid-1".into(),
+            target: "1.1.1.1".into(),
+            max_hops: 30,
+            protocol: Some(TraceProtocol::Udp),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"protocol\":\"udp\""));
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ServerMessage::Traceroute { protocol, .. } => assert_eq!(protocol, Some(TraceProtocol::Udp)),
+            _ => panic!("Expected Traceroute"),
+        }
+    }
+
+    #[test]
+    fn test_traceroute_server_message_protocol_omitted_when_none() {
+        // Old agents will see absent key and default to ICMP via existing behavior.
+        let msg = ServerMessage::Traceroute {
+            request_id: "rid-2".into(),
+            target: "8.8.8.8".into(),
+            max_hops: 30,
+            protocol: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(!json.contains("\"protocol\""), "got: {json}");
     }
 
     #[test]
