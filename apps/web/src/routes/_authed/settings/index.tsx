@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
+import { AsnCard } from '@/components/settings/asn-card'
 import { GeoIpCard } from '@/components/settings/geoip-card'
 
 export const Route = createFileRoute('/_authed/settings/')({
@@ -15,6 +16,7 @@ function SettingsPage() {
 
       <div className="w-full min-w-0 max-w-xl space-y-6">
         <GeoIpCard />
+        <AsnCard />
       </div>
     </div>
   )
