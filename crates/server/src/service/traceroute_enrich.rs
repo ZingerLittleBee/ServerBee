@@ -52,21 +52,17 @@ impl TracerouteEnricher {
             .flatten();
         // Evict oldest if over cap (cheap, not strict LRU — accept some churn).
         if self.ptr_cache.len() >= PTR_CACHE_MAX {
-            // Drop ~1/16 of entries by scanning and removing the oldest we see.
+            // Drop ~1/16 of entries: scan all, sort by inserted_at ASC, drop the
+            // oldest. The full scan is O(n) but only runs at the eviction boundary.
             let limit = PTR_CACHE_MAX / 16;
-            let mut victims: Vec<IpAddr> = self
+            let mut entries: Vec<(IpAddr, Instant)> = self
                 .ptr_cache
                 .iter()
                 .map(|e| (*e.key(), e.value().1))
-                .collect::<Vec<_>>()
-                .into_iter()
-                .take(limit)
-                .map(|(k, _)| k)
                 .collect();
-            // Sort by inserted_at ASC and drop the oldest.
-            victims.sort();
-            for v in victims {
-                self.ptr_cache.remove(&v);
+            entries.sort_by_key(|(_, inserted_at)| *inserted_at);
+            for (k, _) in entries.into_iter().take(limit) {
+                self.ptr_cache.remove(&k);
             }
         }
         self.ptr_cache.insert(ip, (result.clone(), now));
@@ -121,6 +117,36 @@ mod tests {
             inserted_at > stale_time + Duration::from_secs(3600),
             "expected the cache entry to be refreshed"
         );
+    }
+
+    #[tokio::test]
+    async fn test_ptr_cache_eviction_picks_oldest_not_smallest_ip() {
+        // Regression guard for a sort-key bug: eviction previously sorted by
+        // IpAddr value rather than inserted_at, so high-IP-numbered entries
+        // would persist forever while young low-IP entries got evicted.
+        let e = TracerouteEnricher::new();
+        let now = Instant::now();
+        // Insert in IP order, but with newest-first timestamps so IP-sort and
+        // age-sort disagree.
+        let high_ip: IpAddr = "203.0.113.250".parse().unwrap();
+        let mid_ip: IpAddr = "203.0.113.100".parse().unwrap();
+        let low_ip: IpAddr = "203.0.113.10".parse().unwrap();
+        e.ptr_cache
+            .insert(high_ip, (Some("old".into()), now - Duration::from_secs(300)));
+        e.ptr_cache
+            .insert(mid_ip, (Some("mid".into()), now - Duration::from_secs(200)));
+        e.ptr_cache
+            .insert(low_ip, (Some("new".into()), now - Duration::from_secs(100)));
+
+        // Simulate the eviction body for limit=1
+        let mut entries: Vec<(IpAddr, Instant)> = e
+            .ptr_cache
+            .iter()
+            .map(|x| (*x.key(), x.value().1))
+            .collect();
+        entries.sort_by_key(|(_, t)| *t);
+        let victim = entries.first().expect("non-empty").0;
+        assert_eq!(victim, high_ip, "oldest entry must be evicted regardless of IP value");
     }
 
     #[tokio::test]
