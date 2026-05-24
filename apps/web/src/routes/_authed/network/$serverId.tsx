@@ -552,7 +552,7 @@ function TracerouteContent({
 
   const startTraceroute = useStartTraceroute(serverId)
   const stream = useTracerouteStream(serverId, traceRequestId)
-  const { data: polled } = useTracerouteRecord(
+  const { data: polled, isFetching: isFetchingRecord } = useTracerouteRecord(
     serverId,
     selectedRecordId ?? (stream?.completed ? null : traceRequestId)
   )
@@ -563,6 +563,7 @@ function TracerouteContent({
   const clearMutation = useClearTracerouteHistory(serverId)
 
   const isRunning = !!traceRequestId && !result?.completed && !result?.error
+  const isLoadingRecord = !!selectedRecordId && !polled && isFetchingRecord
 
   const handleRun = useCallback(() => {
     const trimmed = target.trim()
@@ -596,13 +597,14 @@ function TracerouteContent({
 
   const loadRecord = useCallback(
     (record: TracerouteRecordSummary) => {
+      setTraceRequestId(null)
       setSelectedRecordId(record.request_id)
       setTarget(record.target)
       if (record.protocol !== 'legacy') {
         setProtocol(record.protocol as TraceProtocol)
       }
     },
-    [setSelectedRecordId, setTarget, setProtocol]
+    [setTraceRequestId, setSelectedRecordId, setTarget, setProtocol]
   )
 
   return (
@@ -670,16 +672,23 @@ function TracerouteContent({
         </div>
       )}
 
-      {!(result || isRunning) && (
-        <div className="flex min-h-0 flex-1 items-center justify-center rounded-md border border-dashed text-muted-foreground text-sm">
-          {t('traceroute_select_or_run')}
+      {isLoadingRecord && (
+        <div className="flex min-h-0 flex-1 items-center justify-center gap-2 rounded-md border border-dashed text-muted-foreground text-sm">
+          <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+          {t('traceroute_loading_record')}
         </div>
       )}
 
-      {isRunning && !result && (
+      {isRunning && !(result || isLoadingRecord) && (
         <div className="flex min-h-0 flex-1 items-center justify-center gap-2 rounded-md border border-dashed text-muted-foreground text-sm">
           <Loader2 aria-hidden="true" className="size-4 animate-spin" />
           {t('traceroute_running')}
+        </div>
+      )}
+
+      {!(result || isRunning || isLoadingRecord) && (
+        <div className="flex min-h-0 flex-1 items-center justify-center rounded-md border border-dashed text-muted-foreground text-sm">
+          {t('traceroute_select_or_run')}
         </div>
       )}
     </div>

@@ -135,6 +135,7 @@
   "traceroute_recent": "最近",
   "traceroute_view_all_history": "全部历史 ({{count}})",
   "traceroute_no_history": "暂无历史记录",
+  "traceroute_loading_record": "加载历史记录中...",
   "loss_pct": "丢包率",
   "best": "最优",
   "avg": "平均",

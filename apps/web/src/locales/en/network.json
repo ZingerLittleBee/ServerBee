@@ -135,6 +135,7 @@
   "traceroute_recent": "Recent",
   "traceroute_view_all_history": "All history ({{count}})",
   "traceroute_no_history": "No history yet",
+  "traceroute_loading_record": "Loading history record...",
   "loss_pct": "Loss%",
   "best": "Best",
   "avg": "Avg",
