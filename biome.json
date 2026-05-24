@@ -94,9 +94,11 @@
         "apps/docs/src/routes/$lang/docs/$.tsx",
         "apps/docs/src/routes/llms*",
         "apps/web/src/routes/_authed/terminal.$serverId.tsx",
+        "apps/web/src/routes/_authed/terminal.$serverId-page.tsx",
         "apps/web/src/routes/_authed/network/$serverId.tsx",
         "apps/web/src/routes/_authed/security/$serverId.tsx",
         "apps/web/src/routes/_authed/files.$serverId.tsx",
+        "apps/web/src/routes/_authed/servers/$id-page.tsx",
         "apps/web/src/routes/status.$slug.tsx"
       ],
       "linter": {
@@ -170,6 +172,16 @@
             "useSemanticElements": "off",
             "useKeyWithClickEvents": "off",
             "noNoninteractiveElementInteractions": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/web/src/routes/_authed/servers/$id-page.tsx"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noExcessiveCognitiveComplexity": "off"
           }
         }
       }
