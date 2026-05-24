@@ -123,7 +123,7 @@ pub struct TracerouteHop {
 }
 ```
 
-Frontend rendering rule: when `ips` is non-empty, treat the hop as new-schema and use the trippy fields; otherwise fall back to `ip` and `rtt1/2/3`.
+Frontend rendering rule: a hop is new-schema when `total_sent !== null` (or equivalently `loss_pct !== null`). These fields are populated by trippy-core for every hop the tracer touched, even when there are zero responses (`ips: []`, 100% loss). Using `ips.is_empty()` as the discriminator would mis-classify a fully-lost hop from a new agent as legacy. When new-schema, render from the trippy fields; otherwise fall back to `ip` and `rtt1/2/3`.
 
 ### `ServerMessage::Traceroute` adds optional protocol
 
@@ -227,10 +227,13 @@ pub fn spawn_traceroute(
 
 Inside `spawn_traceroute`:
 
-1. Resolve hostname to `IpAddr` (literal IP passes through).
+1. Resolve hostname to `IpAddr` (literal IP parses first; if it fails, fall back to `tokio::net::lookup_host((target, 0u16))` and take the first address). Both stages must run on tokio because `lookup_host` is async — perform resolution **before** entering `spawn_blocking`.
 2. `tokio::task::spawn_blocking` to host the synchronous `Tracer::run_with` loop.
-3. Build the tracer with `PrivilegeMode::Privileged` first; on failure (typically `Error::InsufficientPrivileges`), rebuild once with `PrivilegeMode::Unprivileged`. Two failures send a `TracerouteRoundUpdate { completed: true, error: Some(...) }` carrying an installation/setcap hint.
-4. Maintain a `trippy_core::State` outside the round callback so each callback can call `state.update_from_round(round)` and then snapshot `state.hops()` → `Vec<TracerouteHop>`.
+3. Build the tracer with `PrivilegeMode::Privileged` first; on failure (typically `Error::InsufficientPrivileges`), rebuild once with `PrivilegeMode::Unprivileged`. Two failures send a `TracerouteRoundUpdate { completed: true, error: Some(...) }` carrying platform-specific guidance (see *Privilege model* below).
+4. `Tracer::run_with` takes `Fn(&Round)` — the closure is **not** `FnMut`. State must be mutated via interior mutability inside the closure. Wrap `trippy_core::State` in a `std::cell::RefCell<State>` (the closure runs on the single blocking thread, so `RefCell` is sufficient; no need for `Mutex`). Each invocation does:
+   - `state.borrow_mut().update_from_round(round)`
+   - Read `state.borrow().hops()` → snapshot `Vec<TracerouteHop>`
+   - Mutate a `Cell<u32>` round counter, decide whether `completed = (round_no >= DEFAULT_MAX_ROUNDS)`.
 5. Send one `TracerouteRoundUpdate` per round. Mark the last round as `completed=true`.
 6. Use `Sender::blocking_send` (we are inside `spawn_blocking`, no `.await` allowed).
 
@@ -317,31 +320,46 @@ sea-orm entity: `crates/server/src/entity/traceroute_record.rs`. Migration: `cra
 
 ### `agent_manager` changes
 
-`update_traceroute_round` becomes the single entry point invoked by the WS agent handler:
+The protocol is decided server-side at POST time and is **never** echoed back by the agent. `insert_traceroute_placeholder` is extended to cache the full request metadata; the WS handler later joins agent updates with this cached metadata when persisting.
 
 ```rust
-pub async fn update_traceroute_round(
-    &self,
-    db: &DatabaseConnection,
-    request_id: &str,
-    server_id: &str,
-    target: &str,
-    protocol: &str,
-    round: u32,
-    total_rounds: u32,
-    hops: Vec<TracerouteHop>,
-    completed: bool,
-    error: Option<String>,
-) -> Result<(), AppError>;
+pub struct TracerouteRequestMeta {
+    pub server_id: String,
+    pub target: String,
+    pub protocol: String,        // 'icmp' | 'udp' | 'tcp'
+    pub started_at: i64,         // unix ms, captured at POST
+}
+
+impl AgentManager {
+    pub fn insert_traceroute_placeholder(
+        &self,
+        request_id: &str,
+        meta: TracerouteRequestMeta,
+    );
+
+    /// Apply one round of trippy data to the in-memory cache, and on
+    /// completed=true persist the run via the cached metadata.
+    pub async fn update_traceroute_round(
+        &self,
+        db: &DatabaseConnection,
+        request_id: &str,
+        round: u32,
+        total_rounds: u32,
+        hops: Vec<TracerouteHop>,
+        completed: bool,
+        error: Option<String>,
+    ) -> Result<(), AppError>;
+}
 ```
 
 Behavior:
 
-1. Update the in-memory cache (the HTTP polling endpoint reads this).
-2. If `completed == true`, INSERT a row into `traceroute_record`. Mid-rounds do not write.
-3. Bookkeeping for cleanup (an existing background `cleanup_traceroute_results` evicts old in-memory entries).
+1. Look up the cached `TracerouteRequestMeta` by `request_id`. If absent (placeholder expired or the agent sent a stale update), drop the message with a warning.
+2. Update the in-memory cache slot for this request (target, protocol, latest hops, completed flag). The HTTP polling endpoint reads from this cache.
+3. If `completed == true`, INSERT a row into `traceroute_record` using metadata + the final hops. Mid-rounds do not write.
+4. Bookkeeping for cleanup (an existing background `cleanup_traceroute_results` evicts old in-memory entries).
 
-Legacy `AgentMessage::TracerouteResult` from old agents is normalized into the same code path: the WS handler builds a synthetic `TracerouteRoundUpdate` with `round = 1, total_rounds = 1, completed = true` and reuses the same enricher + persistence + broadcast path. The browser only needs to handle one BrowserMessage variant.
+Legacy `AgentMessage::TracerouteResult` from old agents is normalized into the same code path: the WS handler builds a synthetic `TracerouteRoundUpdate { round: 1, total_rounds: 1, completed: true }` and reuses the same enricher + persistence + broadcast path. The WS handler also overwrites the cached `TracerouteRequestMeta.protocol` to `"icmp"` for the legacy path — old agents always run ICMP regardless of the protocol the user picked, and the persisted label must reflect what actually ran, not what was requested. The browser UI shows the actual protocol in the history list.
 
 ### New `service/traceroute.rs`
 
@@ -353,13 +371,18 @@ pub async fn list_records_for_server(
     offset: u64,
 ) -> Result<Vec<TracerouteRecordSummary>, AppError>;
 
+/// Both `server_id` and `request_id` are required so the WHERE clause
+/// enforces the path-supplied server scope. Returns NotFound if the
+/// record exists under a different server.
 pub async fn get_record_detail(
     db: &DatabaseConnection,
+    server_id: &str,
     request_id: &str,
 ) -> Result<TracerouteRecordDetail, AppError>;
 
 pub async fn delete_record(
     db: &DatabaseConnection,
+    server_id: &str,
     request_id: &str,
 ) -> Result<(), AppError>;
 
@@ -374,15 +397,19 @@ pub async fn insert_completed_record(
 ) -> Result<(), AppError>;
 ```
 
+All scoped reads/writes filter on `server_id` so a stray UUID from one server's history cannot be fetched or deleted via another server's route. Drift prevention, not anti-guessing security.
+
 ### API endpoints
 
 | Method | Path | Behavior | Auth |
 |--------|------|----------|------|
-| `POST` | `/api/servers/{id}/traceroute` | Trigger a trace; returns `request_id`. Existing. | Authenticated |
+| `POST` | `/api/servers/{id}/traceroute` | Trigger a trace; returns `request_id`. Existing. | **Admin** (unchanged from current `write_router` placement under `require_admin`) |
 | `GET` | `/api/servers/{id}/traceroute/{request_id}` | Latest snapshot (in-memory cache; falls back to DB if evicted). Existing endpoint, response shape unchanged. | Authenticated |
 | `GET` | `/api/servers/{id}/traceroute` | **New**: list `TracerouteRecordSummary[]`, recent first, default limit 50. | Authenticated |
 | `DELETE` | `/api/servers/{id}/traceroute/{request_id}` | **New**: delete one record. | Admin |
 | `DELETE` | `/api/servers/{id}/traceroute` | **New**: clear all records for this server. | Admin |
+
+POST stays admin-only because it causes the agent to send raw probe packets to an arbitrary target — that is an outbound side effect against external infrastructure and reasonably belongs under operator authority. Members can read history (read-only diagnostic forensics) and trigger no network activity. If we later want member-initiated traceroutes, that needs an explicit security review, a rate limit per (user, server), and audit logging — out of scope for this spec.
 
 DTOs:
 
@@ -526,20 +553,22 @@ This keeps the trace running when the user closes the dialog, and lets them reop
 
 ### Table rendering rules
 
-| Column | Source |
-|--------|--------|
-| Hop | `hop` |
-| IP | `ips[0]` + `+N` chip when `ips.length > 1`; tooltip shows the rest. Fallback to `ip ?? '* * *'`. |
-| Host | `hostname ?? '—'` |
-| ASN | `asn ?? '—'` |
-| Loss% | `loss_pct ?? compute_from(rtt1/2/3)` ; coloured via existing `getLossTextClassName` |
-| Best | `best_ms ?? min(rtt1,rtt2,rtt3)` |
-| Avg | `avg_ms ?? avg(rtt1,rtt2,rtt3)` ; coloured via existing `latencyColorClass` |
-| Worst | `worst_ms ?? max(rtt1,rtt2,rtt3)` |
-| Jitter | `jitter_ms ?? '—'` |
-| StdDev | `stddev_ms ?? '—'` |
+A helper `isNewSchema(hop)` returns `hop.total_sent !== null`. Branch per-hop, not per-record (in theory all hops of a single response come from the same agent, but per-hop is the safer rule and free).
 
-Rows where `total_recv === 0` or all RTTs are null render dimmed with `* * *` in the IP column.
+| Column | New schema (`isNewSchema === true`) | Legacy fallback |
+|--------|------------------------------------|-----------------|
+| Hop | `hop` | `hop` |
+| IP | `ips[0]` + `+N` chip when `ips.length > 1`; tooltip shows the rest. When `ips.length === 0`, render `* * *` (no response). | `ip ?? '* * *'` |
+| Host | `hostname ?? '—'` | same |
+| ASN | `asn ?? '—'` | same |
+| Loss% | `loss_pct?.toFixed(0) + '%'`; coloured via existing `getLossTextClassName` | computed from `rtt1/2/3` (count of nulls / 3) |
+| Best | `best_ms` | `min(rtt1, rtt2, rtt3)` filtering nulls |
+| Avg | `avg_ms`; coloured via existing `latencyColorClass` | `avg(rtt1, rtt2, rtt3)` filtering nulls |
+| Worst | `worst_ms` | `max(rtt1, rtt2, rtt3)` filtering nulls |
+| Jitter | `jitter_ms ?? '—'` | `—` (always unavailable) |
+| StdDev | `stddev_ms ?? '—'` | `—` (always unavailable) |
+
+Rows where new-schema `total_recv === 0`, or where legacy has all three RTTs null, render the row dimmed.
 
 ### Progress indicator
 
@@ -549,12 +578,13 @@ The dialog header shows `Round {{current}} / {{total}}` only while `completed ==
 
 - `use-traceroute-stream.ts` — vitest with a stubbed BrowserMessage dispatcher, asserting requestId filtering and the completed transition.
 - `TracerouteContent` rendering tests:
-  - Legacy hops (only `rtt1/2/3`) render best / avg / worst correctly.
-  - New-schema hops prefer the new fields.
-  - `ips.length > 1` renders the `+N` chip.
+  - Legacy hops (only `rtt1/2/3`, `total_sent === null`) render best / avg / worst correctly.
+  - New-schema hops (`total_sent !== null`) prefer the new fields.
+  - **A new-schema hop with `ips: []` and 100% loss still renders as new-schema** (regression guard for the discriminator fix — must not silently fall back to legacy and lose `loss_pct` / `total_sent` display).
+  - `ips.length > 1` renders the `+N` chip and tooltip lists the rest.
   - Empty history renders an empty-state message.
   - Clicking a history row swaps the displayed record.
-  - Non-admin user does not see delete buttons.
+  - Non-admin user does not see delete buttons or "Clear all".
   - `error` non-null renders the error banner instead of the table body.
 
 ## Capabilities
@@ -565,9 +595,26 @@ If we later want operators to disable traceroute independently of ping, a `CAP_T
 
 ## Privilege model
 
-trippy-core attempts `PrivilegeMode::Privileged` first (raw ICMP/UDP/TCP sockets via `CAP_NET_RAW` or setuid). On `Error::InsufficientPrivileges`, the agent rebuilds the tracer with `PrivilegeMode::Unprivileged` (Linux ICMP datagram sockets via `net.ipv4.ping_group_range`, macOS equivalent). Two failures send back a final `TracerouteRoundUpdate` whose `error` field carries platform-specific guidance (e.g., `Run agent as root or apply: sudo setcap cap_net_raw+ep $(which serverbee-agent)` on Linux).
+Per [Trippy's privilege guide](https://trippy.rs/guides/privileges/), `PrivilegeMode::Unprivileged` is currently supported on **macOS only**. Linux and Windows always require elevated privileges:
 
-No restart needed when the capability is granted — the next traceroute request retries from scratch.
+| Platform | Privileged path | Unprivileged path |
+|----------|-----------------|-------------------|
+| Linux | `CAP_NET_RAW` capability or root | **Not supported.** ICMP datagram sockets via `ping_group_range` are an ICMP-only escape hatch that does not implement Trippy's tracing semantics. |
+| macOS | Root | Supported (ICMP datagram sockets) |
+| Windows | Administrator | Not supported |
+
+Fallback behavior:
+
+1. The agent first attempts `Builder::build()` with `PrivilegeMode::Privileged`.
+2. On `Error::InsufficientPrivileges` (or any platform-specific privilege error), the agent retries once with `PrivilegeMode::Unprivileged`. This second attempt only succeeds on macOS in practice; on Linux/Windows it will also fail.
+3. After both attempts fail, the agent emits one final `TracerouteRoundUpdate` with `completed: true` and an `error` string that carries platform-aware guidance:
+   - Linux: `Traceroute requires elevated privileges. Run the agent as root, or grant CAP_NET_RAW: sudo setcap cap_net_raw+ep $(which serverbee-agent)`
+   - Windows: `Traceroute requires Administrator privileges. Restart the agent as Administrator.`
+   - macOS: same as Linux but with `sudo` only (setcap is not applicable).
+
+**Implication for documentation**: embedding trippy-core removes the runtime dependency on `traceroute`/`mtr`/`tracert` binaries, but does **not** remove the raw-socket privilege requirement on Linux/Windows. The deployment story changes from "install traceroute + (most distros come with setuid)" to "the agent itself needs CAP_NET_RAW once" — a one-time setup that the install script can automate.
+
+No restart needed when the capability is granted — the next traceroute request retries from scratch (each request builds its own tracer).
 
 ## Backward compatibility
 
@@ -588,8 +635,9 @@ The `protocol` field on `ServerMessage::Traceroute` is optional; old agents igno
 
 - Add the ICMP / UDP / TCP protocol selector.
 - Document the persistent history feature (default-on; admin can delete or clear).
-- Remove the previous note that traceroute / mtr must be installed on the agent.
-- Add a small troubleshooting block on raw socket privileges (setcap / root) for hosts where unprivileged mode is not available.
+- Remove the previous "Agent tries `traceroute` then `mtr`" note — the agent now uses an embedded library and no external binary is needed.
+- Add a privilege block that states the actual platform matrix from the *Privilege model* section: Linux/Windows need root or `CAP_NET_RAW` (Administrator on Windows); macOS supports unprivileged mode. Include the `setcap` one-liner.
+- Note: removing the binary dependency does **not** remove the raw-socket privilege requirement on Linux/Windows. This is the most likely source of post-upgrade tickets, so call it out clearly.
 
 `apps/docs/content/docs/{cn,en}/admin.mdx` — Capabilities note: clarify that `CAP_PING_ICMP` continues to gate traceroute including TCP/UDP modes.
 
