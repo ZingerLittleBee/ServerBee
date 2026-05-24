@@ -102,12 +102,6 @@ export function AnomalyTable({ anomalies, windowHours }: AnomalyTableProps) {
 
   return (
     <div className="rounded-lg border bg-card">
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <h3 className="font-semibold text-sm">{t('anomaly_count_with_value', { count: anomalies.length })}</h3>
-        {windowHours && (
-          <span className="text-muted-foreground text-xs">{t('anomaly_window', { hours: windowHours })}</span>
-        )}
-      </div>
       <DataTable className="rounded-none border-0" table={table} />
     </div>
   )

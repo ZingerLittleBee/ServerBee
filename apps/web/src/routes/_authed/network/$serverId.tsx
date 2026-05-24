@@ -1160,7 +1160,10 @@ export function NetworkDetailPage() {
       <Dialog onOpenChange={setAnomalyOpen} open={anomalyOpen}>
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{t('anomaly_count_with_value', { count: anomalies.length })}</DialogTitle>
+            <div className="flex items-center justify-between gap-4 pr-8">
+              <DialogTitle>{t('anomaly_count_with_value', { count: anomalies.length })}</DialogTitle>
+              <span className="text-muted-foreground text-xs">{t('anomaly_window', { hours: anomalyHours })}</span>
+            </div>
           </DialogHeader>
           <ScrollArea className="max-h-[70vh]">
             <AnomalyTable anomalies={anomalies} windowHours={anomalyHours} />
