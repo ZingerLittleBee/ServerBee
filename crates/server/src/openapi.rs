@@ -237,6 +237,12 @@ impl Modify for SecurityAddon {
         crate::router::api::firewall::create_block,
         crate::router::api::firewall::delete_block,
         crate::router::api::firewall::stats,
+        // geoip
+        crate::router::api::geoip::geoip_status,
+        crate::router::api::geoip::geoip_download,
+        // asn
+        crate::router::api::asn::asn_status,
+        crate::router::api::asn::asn_download,
         // ip-quality
         crate::router::api::ip_quality::list_services,
         crate::router::api::ip_quality::create_service,
@@ -454,6 +460,12 @@ impl Modify for SecurityAddon {
             crate::router::api::firewall::BlockListItem,
             crate::router::api::firewall::ListResp,
             crate::router::api::firewall::StatsResp,
+            // geoip
+            crate::router::api::geoip::GeoIpStatus,
+            crate::router::api::geoip::GeoIpDownloadResponse,
+            // asn
+            crate::router::api::asn::AsnStatus,
+            crate::router::api::asn::AsnDownloadResponse,
             // ip-quality
             crate::service::ip_quality::CreateCustomServiceInput,
             crate::service::ip_quality::UpdateServiceInput,
@@ -495,6 +507,8 @@ impl Modify for SecurityAddon {
         (name = "security", description = "Security events (SSH brute force, port scans, new IP logins)"),
         (name = "firewall", description = "Firewall blocklist (manual & auto-blocked IPs/CIDRs)"),
         (name = "ip-quality", description = "IP quality: service unlock detection + IP metadata & risk scoring"),
+        (name = "geoip", description = "GeoIP MMDB database management (DB-IP Lite Country)"),
+        (name = "asn", description = "ASN MMDB database management for traceroute enrichment (DB-IP Lite ASN)"),
     ),
     security(
         ("session_cookie" = []),

@@ -5,29 +5,38 @@ use axum::extract::State;
 use axum::routing;
 use axum::{Json, Router};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::error::{ApiResponse, AppError, ok};
 use crate::service::geoip;
 use crate::state::AppState;
 
-#[derive(Serialize)]
-struct GeoIpStatus {
-    installed: bool,
+#[derive(Serialize, ToSchema)]
+pub struct GeoIpStatus {
+    pub installed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    source: Option<String>,
+    pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    file_size: Option<i64>,
+    pub file_size: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    updated_at: Option<String>,
+    pub updated_at: Option<String>,
 }
 
-#[derive(Serialize)]
-struct DownloadResponse {
-    success: bool,
-    message: String,
+#[derive(Serialize, ToSchema)]
+pub struct GeoIpDownloadResponse {
+    pub success: bool,
+    pub message: String,
 }
 
-async fn geoip_status(
+#[utoipa::path(
+    get,
+    path = "/api/geoip/status",
+    tag = "geoip",
+    responses(
+        (status = 200, description = "GeoIP database install status", body = GeoIpStatus),
+    )
+)]
+pub async fn geoip_status(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<GeoIpStatus>>, AppError> {
     let guard = state.geoip.read().unwrap();
@@ -65,12 +74,20 @@ async fn geoip_status(
     ok(status)
 }
 
-async fn geoip_download(
+#[utoipa::path(
+    post,
+    path = "/api/geoip/download",
+    tag = "geoip",
+    responses(
+        (status = 200, description = "GeoIP download result", body = GeoIpDownloadResponse),
+    )
+)]
+pub async fn geoip_download(
     State(state): State<Arc<AppState>>,
-) -> Result<Json<ApiResponse<DownloadResponse>>, AppError> {
+) -> Result<Json<ApiResponse<GeoIpDownloadResponse>>, AppError> {
     // Concurrent download guard
     if state.geoip_downloading.swap(true, Ordering::SeqCst) {
-        return ok(DownloadResponse {
+        return ok(GeoIpDownloadResponse {
             success: false,
             message: "Download already in progress".to_string(),
         });
@@ -83,14 +100,14 @@ async fn geoip_download(
             let mut guard = state.geoip.write().unwrap();
             *guard = Some(service);
             state.geoip_downloading.store(false, Ordering::SeqCst);
-            ok(DownloadResponse {
+            ok(GeoIpDownloadResponse {
                 success: true,
                 message: "GeoIP database installed successfully".to_string(),
             })
         }
         Err(e) => {
             state.geoip_downloading.store(false, Ordering::SeqCst);
-            ok(DownloadResponse {
+            ok(GeoIpDownloadResponse {
                 success: false,
                 message: e,
             })

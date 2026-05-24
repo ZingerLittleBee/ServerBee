@@ -5,29 +5,38 @@ use axum::extract::State;
 use axum::routing;
 use axum::{Json, Router};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::error::{ApiResponse, AppError, ok};
 use crate::service::asn;
 use crate::state::AppState;
 
-#[derive(Serialize)]
-struct AsnStatus {
-    installed: bool,
+#[derive(Serialize, ToSchema)]
+pub struct AsnStatus {
+    pub installed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    source: Option<String>,
+    pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    file_size: Option<i64>,
+    pub file_size: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    updated_at: Option<String>,
+    pub updated_at: Option<String>,
 }
 
-#[derive(Serialize)]
-struct DownloadResponse {
-    success: bool,
-    message: String,
+#[derive(Serialize, ToSchema)]
+pub struct AsnDownloadResponse {
+    pub success: bool,
+    pub message: String,
 }
 
-async fn asn_status(
+#[utoipa::path(
+    get,
+    path = "/api/asn/status",
+    tag = "asn",
+    responses(
+        (status = 200, description = "ASN database install status", body = AsnStatus),
+    )
+)]
+pub async fn asn_status(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<AsnStatus>>, AppError> {
     let guard = state.asn.read().unwrap();
@@ -65,12 +74,20 @@ async fn asn_status(
     ok(status)
 }
 
-async fn asn_download(
+#[utoipa::path(
+    post,
+    path = "/api/asn/download",
+    tag = "asn",
+    responses(
+        (status = 200, description = "ASN download result", body = AsnDownloadResponse),
+    )
+)]
+pub async fn asn_download(
     State(state): State<Arc<AppState>>,
-) -> Result<Json<ApiResponse<DownloadResponse>>, AppError> {
+) -> Result<Json<ApiResponse<AsnDownloadResponse>>, AppError> {
     // Concurrent download guard
     if state.asn_downloading.swap(true, Ordering::SeqCst) {
-        return ok(DownloadResponse {
+        return ok(AsnDownloadResponse {
             success: false,
             message: "Download already in progress".to_string(),
         });
@@ -83,14 +100,14 @@ async fn asn_download(
             let mut guard = state.asn.write().unwrap();
             *guard = Some(service);
             state.asn_downloading.store(false, Ordering::SeqCst);
-            ok(DownloadResponse {
+            ok(AsnDownloadResponse {
                 success: true,
                 message: "ASN database installed successfully".to_string(),
             })
         }
         Err(e) => {
             state.asn_downloading.store(false, Ordering::SeqCst);
-            ok(DownloadResponse {
+            ok(AsnDownloadResponse {
                 success: false,
                 message: e,
             })
