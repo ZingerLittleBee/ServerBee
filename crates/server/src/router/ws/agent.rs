@@ -1675,7 +1675,7 @@ async fn update_server_geo(
     Ok(())
 }
 
-async fn handle_traceroute_round_update(state: &Arc<AppState>, _server_id: &str, msg: AgentMessage) {
+async fn handle_traceroute_round_update(state: &Arc<AppState>, server_id: &str, msg: AgentMessage) {
     let AgentMessage::TracerouteRoundUpdate {
         request_id,
         target: _,
@@ -1688,6 +1688,20 @@ async fn handle_traceroute_round_update(state: &Arc<AppState>, _server_id: &str,
     else {
         unreachable!("handle_traceroute_round_update called with non-TracerouteRoundUpdate msg");
     };
+
+    // Defense-in-depth: reject updates whose request_id was registered for a
+    // different server. The placeholder is keyed by request_id only, so a
+    // compromised agent that learned another server's request_id could
+    // otherwise overwrite the victim's cache and trigger a poisoned DB insert.
+    if let Some(meta) = state.agent_manager.get_traceroute_meta(&request_id)
+        && meta.server_id != server_id
+    {
+        tracing::warn!(
+            "Dropping TracerouteRoundUpdate {request_id}: server_id mismatch (placeholder={}, sender={server_id})",
+            meta.server_id
+        );
+        return;
+    }
 
     // Server-side enrich (hostname only this iteration)
     state.traceroute_enricher.enrich(&mut hops).await;
