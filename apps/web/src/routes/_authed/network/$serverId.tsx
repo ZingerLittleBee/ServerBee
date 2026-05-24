@@ -23,7 +23,7 @@ import {
   useNetworkTargets,
   useSetServerTargets,
   useStartTraceroute,
-  useTracerouteResult
+  useTracerouteRecord
 } from '@/hooks/use-network-api'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
 import { CHART_COLORS } from '@/lib/chart-colors'
@@ -159,7 +159,8 @@ function TracerouteContent({ serverId, t }: { serverId: string; t: (key: string)
   const [requestId, setRequestId] = useState<string | null>(null)
 
   const startTraceroute = useStartTraceroute(serverId)
-  const { data: result } = useTracerouteResult(serverId, requestId)
+  // TODO Task 19: useTracerouteRecord replaces old useTracerouteResult
+  const { data: result } = useTracerouteRecord(serverId, requestId)
 
   const isRunning = !!requestId && !result?.completed && !result?.error
 
@@ -170,14 +171,18 @@ function TracerouteContent({ serverId, t }: { serverId: string; t: (key: string)
     }
 
     setRequestId(null)
-    startTraceroute.mutate(trimmed, {
-      onSuccess: (data) => {
-        setRequestId(data.request_id)
-      },
-      onError: (err) => {
-        toast.error(err instanceof Error ? err.message : t('traceroute_error'))
+    // TODO Task 19: protocol will be lifted to state; hardcoded 'icmp' for now
+    startTraceroute.mutate(
+      { target: trimmed, protocol: 'icmp' },
+      {
+        onSuccess: (data) => {
+          setRequestId(data.request_id)
+        },
+        onError: (err) => {
+          toast.error(err instanceof Error ? err.message : t('traceroute_error'))
+        }
       }
-    })
+    )
   }, [target, startTraceroute, t])
 
   const handleKeyDown = useCallback(
@@ -236,17 +241,26 @@ function TracerouteContent({ serverId, t }: { serverId: string; t: (key: string)
                   <TableCell className="font-mono">{hop.ip ?? t('no_response')}</TableCell>
                   <TableCell className="max-w-[200px] truncate text-muted-foreground">{hop.hostname ?? '-'}</TableCell>
                   <TableCell
-                    className={cn('text-right font-mono', latencyColorClass(hop.rtt1, { failed: hop.rtt1 == null }))}
+                    className={cn(
+                      'text-right font-mono',
+                      latencyColorClass(hop.rtt1 ?? null, { failed: hop.rtt1 == null })
+                    )}
                   >
                     {hop.rtt1 != null ? `${hop.rtt1.toFixed(1)} ms` : t('no_response')}
                   </TableCell>
                   <TableCell
-                    className={cn('text-right font-mono', latencyColorClass(hop.rtt2, { failed: hop.rtt2 == null }))}
+                    className={cn(
+                      'text-right font-mono',
+                      latencyColorClass(hop.rtt2 ?? null, { failed: hop.rtt2 == null })
+                    )}
                   >
                     {hop.rtt2 != null ? `${hop.rtt2.toFixed(1)} ms` : t('no_response')}
                   </TableCell>
                   <TableCell
-                    className={cn('text-right font-mono', latencyColorClass(hop.rtt3, { failed: hop.rtt3 == null }))}
+                    className={cn(
+                      'text-right font-mono',
+                      latencyColorClass(hop.rtt3 ?? null, { failed: hop.rtt3 == null })
+                    )}
                   >
                     {hop.rtt3 != null ? `${hop.rtt3.toFixed(1)} ms` : t('no_response')}
                   </TableCell>

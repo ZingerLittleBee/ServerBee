@@ -6,6 +6,8 @@ import type {
   NetworkProbeSetting,
   NetworkProbeTarget,
   NetworkServerSummary,
+  TraceProtocol,
+  TracerouteRecordSummary,
   TracerouteResponse,
   TracerouteResult
 } from '@/lib/network-types'
@@ -137,15 +139,43 @@ export function useSetServerTargets(serverId: string) {
 
 export function useStartTraceroute(serverId: string) {
   return useMutation({
-    mutationFn: (target: string) => api.post<TracerouteResponse>(`/api/servers/${serverId}/traceroute`, { target })
+    mutationFn: (input: { target: string; protocol: TraceProtocol }) =>
+      api.post<TracerouteResponse>(`/api/servers/${serverId}/traceroute`, input)
   })
 }
 
-export function useTracerouteResult(serverId: string, requestId: string | null) {
+export function useTracerouteRecord(serverId: string, requestId: string | null) {
   return useQuery<TracerouteResult>({
     queryKey: ['servers', serverId, 'traceroute', requestId],
     queryFn: () => api.get(`/api/servers/${serverId}/traceroute/${requestId}`),
     enabled: !!requestId,
     refetchInterval: (query) => (query.state.data?.completed ? false : 2000)
+  })
+}
+
+export function useTracerouteHistory(serverId: string) {
+  return useQuery<TracerouteRecordSummary[]>({
+    queryKey: ['servers', serverId, 'traceroute-history'],
+    queryFn: () => api.get(`/api/servers/${serverId}/traceroute?limit=50`)
+  })
+}
+
+export function useDeleteTraceroute(serverId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (requestId: string) => api.delete(`/api/servers/${serverId}/traceroute/${requestId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['servers', serverId, 'traceroute-history'] })
+    }
+  })
+}
+
+export function useClearTracerouteHistory(serverId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.delete(`/api/servers/${serverId}/traceroute`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['servers', serverId, 'traceroute-history'] })
+    }
   })
 }
