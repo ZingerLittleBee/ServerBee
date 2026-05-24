@@ -450,6 +450,10 @@
   "asn.data_provider": "Data provided by",
   "asn.license": "licensed under",
 
+  "about.title": "About",
+  "about.description": "ServerBee build info",
+  "about.version": "Version",
+
   "appearance.legacy_theme_migration.detected": "Detected your previous browser theme \"{{theme}}\". Apply it as the global dashboard theme?",
   "appearance.legacy_theme_migration.ignore": "Ignore",
   "appearance.legacy_theme_migration.apply": "Apply",

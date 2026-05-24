@@ -1,3 +1,4 @@
+pub mod about;
 pub mod agent;
 pub mod alert;
 pub mod asn;
@@ -50,6 +51,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(status::router())
         .merge(status_page::public_router())
         .merge(brand::public_router())
+        .merge(about::router())
         .merge(
             Router::new()
                 .merge(auth::protected_router())

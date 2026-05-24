@@ -58,6 +58,8 @@ impl Modify for SecurityAddon {
         crate::router::api::oauth::oauth_callback,
         // status (public)
         crate::router::api::status::public_status,
+        // about (public)
+        crate::router::api::about::get_about,
         // agent
         crate::router::api::agent::latest_version,
         crate::router::api::agent::register,
@@ -345,6 +347,8 @@ impl Modify for SecurityAddon {
             crate::router::api::status::StatusServer,
             crate::router::api::status::StatusMetrics,
             crate::router::api::status::StatusGroup,
+            // about
+            crate::router::api::about::AboutInfo,
             // audit
             crate::router::api::audit::AuditLogEntry,
             crate::router::api::audit::AuditListResponse,

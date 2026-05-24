@@ -431,6 +431,10 @@
   "asn.data_provider": "数据提供方",
   "asn.license": "授权协议",
 
+  "about.title": "关于",
+  "about.description": "ServerBee 构建信息",
+  "about.version": "版本",
+
   "appearance.legacy_theme_migration.detected": "检测到此浏览器之前使用过「{{theme}}」主题。要把它应用为全局后台主题吗？",
   "appearance.legacy_theme_migration.ignore": "忽略",
   "appearance.legacy_theme_migration.apply": "应用",
