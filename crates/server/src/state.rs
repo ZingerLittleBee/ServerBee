@@ -82,6 +82,8 @@ pub struct AppState {
     pub docker_logs_audit_contexts: DashMap<String, DockerLogsAuditContext>,
     /// Manual scheduled-task exec audit contexts keyed by run_id.
     pub exec_audit_contexts: DashMap<String, ExecAuditContext>,
+    /// DNS PTR enricher for traceroute hops (shared across requests).
+    pub traceroute_enricher: crate::service::traceroute_enrich::TracerouteEnricher,
 }
 
 static RATE_CHECK_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -212,6 +214,7 @@ impl AppState {
             terminal_audit_contexts: DashMap::new(),
             docker_logs_audit_contexts: DashMap::new(),
             exec_audit_contexts: DashMap::new(),
+            traceroute_enricher: crate::service::traceroute_enrich::TracerouteEnricher::new(),
         }))
     }
 }
