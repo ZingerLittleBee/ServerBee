@@ -196,6 +196,11 @@
   "audit.filter_action": "Action",
   "audit.filter_user": "User",
   "audit.filter_all": "All",
+  "audit.clear": "Clear",
+  "audit.clear_confirm_title": "Clear all audit logs?",
+  "audit.clear_confirm_description": "This permanently removes every audit log entry. A new entry recording who triggered the clear will be inserted afterward.",
+  "audit.clear_success": "Removed {{count}} audit log entries",
+  "audit.clear_failed": "Failed to clear audit logs",
 
   "ping.title": "Ping Tasks",
   "ping.probe_tasks": "Probe Tasks",

@@ -196,6 +196,11 @@
   "audit.filter_action": "操作类型",
   "audit.filter_user": "用户",
   "audit.filter_all": "全部",
+  "audit.clear": "清空",
+  "audit.clear_confirm_title": "确认清空全部审计日志？",
+  "audit.clear_confirm_description": "此操作会永久删除所有审计日志记录。清空完成后会自动插入一条记录本次操作者的新条目。",
+  "audit.clear_success": "已删除 {{count}} 条审计日志",
+  "audit.clear_failed": "清空审计日志失败",
 
   "ping.title": "Ping 任务",
   "ping.probe_tasks": "探测任务",

@@ -1,13 +1,31 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { type ColumnDef, getCoreRowModel, useReactTable } from '@tanstack/react-table'
-import { useMemo } from 'react'
+import { Trash2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
 import { DataTable, DataTablePagination } from '@/components/ui/data-table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { AuditListResponse, AuditLogEntry, AuditOptionsResponse } from '@/lib/api-schema'
+
+interface AuditClearResponse {
+  deleted: number
+}
 
 const ALL_VALUE = '__all__'
 
@@ -30,8 +48,10 @@ const PAGE_SIZE = 25
 
 function AuditLogsPage() {
   const { t } = useTranslation('settings')
+  const queryClient = useQueryClient()
   const { page, action, user_id } = Route.useSearch()
   const navigate = Route.useNavigate()
+  const [clearOpen, setClearOpen] = useState(false)
 
   const { data: options } = useQuery<AuditOptionsResponse>({
     queryKey: ['audit-logs', 'options'],
@@ -129,6 +149,18 @@ function AuditLogsPage() {
     placeholderData: (prev) => prev
   })
 
+  const clearMutation = useMutation({
+    mutationFn: () => api.delete<AuditClearResponse>('/api/audit-logs'),
+    onSuccess: (res) => {
+      toast.success(t('audit.clear_success', { count: res.deleted }))
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      setClearOpen(false)
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : t('audit.clear_failed'))
+    }
+  })
+
   const total = data?.total ?? 0
   const entries = data?.entries ?? []
   const totalPages = Math.ceil(total / PAGE_SIZE)
@@ -160,7 +192,35 @@ function AuditLogsPage() {
 
   return (
     <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
-      <h1 className="mb-6 font-bold text-2xl">{t('audit.title')}</h1>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <h1 className="font-bold text-2xl">{t('audit.title')}</h1>
+        <AlertDialog onOpenChange={setClearOpen} open={clearOpen}>
+          <AlertDialogTrigger
+            render={
+              <Button disabled={clearMutation.isPending || total === 0} size="sm" variant="destructive">
+                <Trash2 aria-hidden="true" className="mr-1.5 size-4" />
+                {t('audit.clear')}
+              </Button>
+            }
+          />
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('audit.clear_confirm_title')}</AlertDialogTitle>
+              <AlertDialogDescription>{t('audit.clear_confirm_description')}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={clearMutation.isPending}
+                onClick={() => clearMutation.mutate()}
+                variant="destructive"
+              >
+                {t('audit.clear')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
         <div className="flex w-full flex-col gap-1 sm:w-56">
