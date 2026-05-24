@@ -55,7 +55,7 @@ Browser                Server                                    Agent
           round, total_rounds, completed                       │                  }   (one per round)
        }                                                       │
    ◄── (next round update)                                     │ TracerouteEnricher.enrich(&mut hops)
-   ◄── (… completed=true)                                      │   ↳ ASN from MMDB, hostname via cached PTR
+   ◄── (… completed=true)                                      │   ↳ hostname via cached PTR (ASN deferred)
                                                                │ agent_manager.update_traceroute_round(...)
                                                                │   ↳ in-memory cache (for polling fallback)
                                                                │   ↳ on completed=true, INSERT row into traceroute_record
@@ -168,7 +168,7 @@ TracerouteUpdate {
     target: String,
     round: u32,
     total_rounds: u32,
-    /// Server-side enriched (ASN + hostname filled in).
+    /// Server-side enriched (hostname filled in; ASN is deferred — see Server section).
     hops: Vec<TracerouteHop>,
     completed: bool,
     error: Option<String>,
@@ -257,7 +257,33 @@ Inside `spawn_traceroute`:
    }
    ```
 
-   `is_privilege_error` matches against `trippy_core::Error::InsufficientPrivileges` and platform-specific equivalents (likely `Error::IoError` wrapping `EACCES`/`EPERM` — exact discriminants TBD at implementation time when we can read the actual enum variants).
+   Per [trippy-core 0.13's Error enum](https://docs.rs/trippy-core/0.13.0/trippy_core/enum.Error.html), the variants relevant to privilege failures are:
+
+   ```rust
+   pub enum Error {
+       // ...
+       IoError(std::io::Error),
+       ProbeFailed(std::io::Error),
+       PrivilegeError(trippy_privilege::Error),
+       // ...
+   }
+   ```
+
+   `is_privilege_error` matches:
+
+   ```rust
+   fn is_privilege_error(e: &trippy_core::Error) -> bool {
+       use trippy_core::Error::*;
+       use std::io::ErrorKind::PermissionDenied;
+       match e {
+           PrivilegeError(_) => true,
+           IoError(io) | ProbeFailed(io) => io.kind() == PermissionDenied,
+           _ => false,
+       }
+   }
+   ```
+
+   `trippy_privilege::Error` variants are inspected at implementation time and emitted via `Display` into the user-facing error string; no need to pattern-match its inner variants for the retry decision (any privilege-family error triggers the unprivileged retry).
 4. **Stop condition lives on the builder**, not on the callback. `Tracer::run_with`'s callback is `Fn(&Round)` and **cannot signal stop**. Use `.max_rounds(Some(DEFAULT_MAX_ROUNDS as usize))` so the tracer exits after N rounds and `run_with` returns. The callback only emits messages.
 5. **State accumulation via interior mutability.** Wrap `trippy_core::State` in `std::cell::RefCell<State>` (the closure runs on the single blocking thread, so `RefCell` is sufficient; no `Mutex` needed). Also wrap the round counter in `std::cell::Cell<u32>`. Each callback invocation:
    - `state.borrow_mut().update_from_round(round)`
@@ -442,7 +468,7 @@ All scoped reads/writes filter on `server_id` so a stray UUID from one server's 
 | Method | Path | Behavior | Auth |
 |--------|------|----------|------|
 | `POST` | `/api/servers/{id}/traceroute` | Trigger a trace; returns `request_id`. Existing. | **Admin** (unchanged from current `write_router` placement under `require_admin`) |
-| `GET` | `/api/servers/{id}/traceroute/{request_id}` | Latest snapshot (in-memory cache; falls back to DB if evicted). Existing endpoint, response shape unchanged. | Authenticated |
+| `GET` | `/api/servers/{id}/traceroute/{request_id}` | Latest snapshot (in-memory cache; falls back to DB if evicted). Existing endpoint — response shape **extended** to include `protocol`, `started_at`, `completed_at` so a record selected in the UI carries its provenance and the "legacy" tooltip is not lost when switching from history list to detail view. | Authenticated |
 | `GET` | `/api/servers/{id}/traceroute` | **New**: list `TracerouteRecordSummary[]`, recent first, default limit 50. | Authenticated |
 | `DELETE` | `/api/servers/{id}/traceroute/{request_id}` | **New**: delete one record. | Admin |
 | `DELETE` | `/api/servers/{id}/traceroute` | **New**: clear all records for this server. | Admin |
@@ -497,29 +523,39 @@ The list endpoint returns summaries only; clients fetch full hops via the existi
 ### Type updates (`lib/network-types.ts`)
 
 ```ts
+// New fields are marked `?: T | null` because Rust serializes Option::None
+// with `skip_serializing_if = "Option::is_none"`, so the key is OMITTED
+// from old-agent JSON. Treating them as `T | null` only would let
+// `total_sent === null` pass on a legacy hop (where the key is undefined).
+// The API client may optionally normalize undefined to null at the boundary;
+// either way, all consumers MUST use loose `value != null` checks.
 export interface TracerouteHop {
   hop: number
   // legacy
-  ip: string | null
+  ip?: string | null
   hostname: string | null
-  rtt1: number | null
-  rtt2: number | null
-  rtt3: number | null
+  rtt1?: number | null
+  rtt2?: number | null
+  rtt3?: number | null
   asn: string | null
-  // new
-  ips: string[]
-  total_sent: number | null
-  total_recv: number | null
-  loss_pct: number | null
-  best_ms: number | null
-  worst_ms: number | null
-  avg_ms: number | null
-  stddev_ms: number | null
-  jitter_ms: number | null
+  // new (all optional; absent from old-agent payloads)
+  ips?: string[]
+  total_sent?: number | null
+  total_recv?: number | null
+  loss_pct?: number | null
+  best_ms?: number | null
+  worst_ms?: number | null
+  avg_ms?: number | null
+  stddev_ms?: number | null
+  jitter_ms?: number | null
 }
 
 export interface TracerouteResult {
   target: string
+  /** 'legacy' = run by a pre-trippy agent; actual probe protocol unknown */
+  protocol: 'icmp' | 'udp' | 'tcp' | 'legacy'
+  started_at: number
+  completed_at: number | null
   hops: TracerouteHop[]
   completed: boolean
   error: string | null
@@ -543,9 +579,11 @@ The OpenAPI-generated `api-types.ts` follows the backend schema automatically.
 
 ### New hooks (`hooks/use-network-api.ts` + `hooks/use-traceroute-stream.ts`)
 
-- `useTracerouteHistory(serverId)` — TanStack Query, paginated.
-- `useTracerouteRecord(requestId)` — fetch one full record by id; enabled when `selectedRecordId` is set.
-- `useDeleteTraceroute(serverId)` — mutation, invalidates history.
+All hooks pass `serverId` so the underlying API calls hit the server-scoped routes; this matches the backend `service::traceroute` helpers, which take `server_id` alongside `request_id`.
+
+- `useTracerouteHistory(serverId)` — TanStack Query, paginated. `GET /api/servers/{serverId}/traceroute`.
+- `useTracerouteRecord(serverId, requestId)` — fetch one full record by id; enabled when `selectedRecordId != null`. `GET /api/servers/{serverId}/traceroute/{request_id}`. Returns the extended response shape (includes `protocol`, `started_at`, `completed_at`).
+- `useDeleteTraceroute(serverId)` — mutation, takes `requestId` at call time, invalidates history.
 - `useClearTracerouteHistory(serverId)` — mutation, invalidates history.
 - `useTracerouteStream(serverId, requestId)` — subscribes to the existing servers WS dispatcher, listens for `traceroute_update` messages filtered by both `server_id` and `request_id`. The WS connection itself is the one already opened in the layout for server updates; this hook only adds a new message type to the in-process dispatcher.
 
@@ -621,8 +659,8 @@ The dialog header shows `Round {{current}} / {{total}}` only while `completed ==
 
 - `use-traceroute-stream.ts` — vitest with a stubbed BrowserMessage dispatcher, asserting requestId filtering and the completed transition.
 - `TracerouteContent` rendering tests:
-  - Legacy hops (only `rtt1/2/3`, `total_sent === null`) render best / avg / worst correctly.
-  - New-schema hops (`total_sent !== null`) prefer the new fields.
+  - Legacy hops (only `rtt1/2/3`, `total_sent == null` — covers both omitted key and explicit null) render best / avg / worst correctly.
+  - New-schema hops (`total_sent != null`) prefer the new fields.
   - **A new-schema hop with `ips: []` and 100% loss still renders as new-schema** (regression guard for the discriminator fix — must not silently fall back to legacy and lose `loss_pct` / `total_sent` display).
   - `ips.length > 1` renders the `+N` chip and tooltip lists the rest.
   - Empty history renders an empty-state message.
@@ -649,7 +687,7 @@ Per [Trippy's privilege guide](https://trippy.rs/guides/privileges/), `Privilege
 Fallback behavior:
 
 1. The agent first attempts `Builder::build()` with `PrivilegeMode::Privileged`.
-2. On `Error::InsufficientPrivileges` (or any platform-specific privilege error), the agent retries once with `PrivilegeMode::Unprivileged`. This second attempt only succeeds on macOS in practice; on Linux/Windows it will also fail.
+2. On any privilege-family error (`Error::PrivilegeError(_)` or `Error::IoError(io)` / `Error::ProbeFailed(io)` where `io.kind() == PermissionDenied` — see `is_privilege_error` in the *Agent* section), the agent retries once with `PrivilegeMode::Unprivileged`. This second attempt only succeeds on macOS in practice; on Linux/Windows it will also fail.
 3. After both attempts fail, the agent emits one final `TracerouteRoundUpdate` with `completed: true` and an `error` string that carries platform-aware guidance:
    - Linux: `Traceroute requires elevated privileges. Run the agent as root, or grant CAP_NET_RAW: sudo setcap cap_net_raw+ep $(which serverbee-agent)`
    - Windows: `Traceroute requires Administrator privileges. Restart the agent as Administrator.`
@@ -670,7 +708,7 @@ Old agents (still running the shell implementation):
 
 New agents always send `TracerouteRoundUpdate` and never `TracerouteResult`. The old variant remains in the protocol enum forever (or until a major-version protocol break).
 
-The `protocol` field on `ServerMessage::Traceroute` is optional; old agents ignore it and default to ICMP, which matches their current behavior.
+The `protocol` field on `ServerMessage::Traceroute` is optional; old agents ignore it and run their platform's legacy shell implementation (which is **UDP** by default on Unix when `traceroute` is installed, **ICMP** when only `mtr` is available, and **ICMP** for Windows `tracert`). The server cannot infer which one actually ran, so persisted records from the legacy path use the `"legacy"` protocol sentinel rather than the user's requested value or a guess.
 
 ## Documentation
 
