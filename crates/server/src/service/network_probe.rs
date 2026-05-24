@@ -5,7 +5,7 @@ use sea_orm::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::config::RetentionConfig;
+use crate::config::{NetworkProbeConfig, RetentionConfig};
 use crate::entity::{
     network_probe_config, network_probe_record, network_probe_record_hourly, network_probe_target,
     server,
@@ -612,6 +612,7 @@ impl NetworkProbeService {
         db: &DatabaseConnection,
         agent_manager: &AgentManager,
         server_id: &str,
+        config: &NetworkProbeConfig,
     ) -> Result<ServerSummary, AppError> {
         // Get server name
         let srv = server::Entity::find_by_id(server_id)
@@ -679,7 +680,8 @@ impl NetworkProbeService {
 
         // Count anomalies from the last 24 hours
         let anomaly_from = Utc::now() - Duration::hours(24);
-        let anomaly_count = Self::count_anomalies(db, server_id, anomaly_from).await?;
+        let anomaly_count =
+            Self::count_anomalies(db, server_id, anomaly_from, config.high_latency_ms).await?;
 
         Ok(ServerSummary {
             server_id: server_id.to_string(),
@@ -695,6 +697,7 @@ impl NetworkProbeService {
     pub async fn get_overview(
         db: &DatabaseConnection,
         agent_manager: &AgentManager,
+        config: &NetworkProbeConfig,
     ) -> Result<Vec<ServerOverview>, AppError> {
         // Load ALL servers (not just ones with probe config)
         let servers = server::Entity::find().all(db).await?;
@@ -808,7 +811,8 @@ impl NetworkProbeService {
                 }
             }
 
-            let anomaly_count = Self::count_anomalies(db, server_id, anomaly_from).await?;
+            let anomaly_count =
+                Self::count_anomalies(db, server_id, anomaly_from, config.high_latency_ms).await?;
             let sparkline_bundle = sparklines
                 .get(server_id)
                 .cloned()
@@ -830,12 +834,13 @@ impl NetworkProbeService {
     }
 
     /// Get anomalous probe records for a server within a time range.
-    /// Anomalies: avg_latency > 150ms OR packet_loss > 0.1 (10%).
+    /// Anomalies: avg_latency > `config.high_latency_ms` OR packet_loss > 0.1 (10%).
     pub async fn get_anomalies(
         db: &DatabaseConnection,
         server_id: &str,
         from: DateTime<Utc>,
         to: DateTime<Utc>,
+        config: &NetworkProbeConfig,
     ) -> Result<Vec<NetworkProbeAnomaly>, AppError> {
         use sea_orm::sea_query::{Condition, Expr};
 
@@ -854,7 +859,10 @@ impl NetworkProbeService {
             .add(
                 Condition::all()
                     .add(network_probe_record::Column::AvgLatency.is_not_null())
-                    .add(Expr::col(network_probe_record::Column::AvgLatency).gt(150.0)),
+                    .add(
+                        Expr::col(network_probe_record::Column::AvgLatency)
+                            .gt(config.high_latency_ms),
+                    ),
             );
 
         let records = network_probe_record::Entity::find()
@@ -889,7 +897,7 @@ impl NetworkProbeService {
 
             // Check latency anomalies
             if let Some(latency) = record.avg_latency {
-                if latency > 240.0 {
+                if latency > config.very_high_latency_ms {
                     anomalies.push(NetworkProbeAnomaly {
                         timestamp: record.timestamp.to_rfc3339(),
                         target_id: record.target_id.clone(),
@@ -897,7 +905,7 @@ impl NetworkProbeService {
                         anomaly_type: "very_high_latency".to_string(),
                         value: latency,
                     });
-                } else if latency > 150.0 {
+                } else if latency > config.high_latency_ms {
                     anomalies.push(NetworkProbeAnomaly {
                         timestamp: record.timestamp.to_rfc3339(),
                         target_id: record.target_id.clone(),
@@ -1059,20 +1067,26 @@ impl NetworkProbeService {
     }
 
     /// Count anomalous records for a server since a given time.
-    /// Anomalies: unreachable (packet_loss == 1.0), high latency (>150ms), high packet loss (>0.1).
+    /// Anomalies: unreachable (packet_loss == 1.0), high latency
+    /// (`avg_latency > high_latency_threshold`), high packet loss (>0.1).
     async fn count_anomalies(
         db: &DatabaseConnection,
         server_id: &str,
         from: DateTime<Utc>,
+        high_latency_threshold: f64,
     ) -> Result<i64, AppError> {
         let from_str = from.to_rfc3339();
         let sql = "SELECT COUNT(*) as count FROM network_probe_record \
                    WHERE server_id = ? AND timestamp >= ? AND \
-                   (packet_loss >= 1.0 OR (avg_latency IS NOT NULL AND avg_latency > 150.0) OR packet_loss > 0.1)";
+                   (packet_loss >= 1.0 OR (avg_latency IS NOT NULL AND avg_latency > ?) OR packet_loss > 0.1)";
         let stmt = Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
             sql,
-            vec![server_id.into(), from_str.into()],
+            vec![
+                server_id.into(),
+                from_str.into(),
+                high_latency_threshold.into(),
+            ],
         );
         let result = db.query_one(stmt).await?;
         let count = result
@@ -1442,14 +1456,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_anomaly_thresholds() {
-        // Verify anomaly classification logic (NodeQuality-aligned thresholds)
-        let high_latency = 200.0_f64;
-        let very_high_latency = 300.0_f64;
+        // Verify anomaly classification logic uses the default config thresholds
+        let config = NetworkProbeConfig::default();
+        assert!((config.high_latency_ms - 500.0).abs() < f64::EPSILON);
+        assert!((config.very_high_latency_ms - 800.0).abs() < f64::EPSILON);
+
+        let high_latency = 600.0_f64;
+        let very_high_latency = 900.0_f64;
         let normal_latency = 50.0_f64;
 
-        assert!(high_latency > 150.0 && high_latency <= 240.0);
-        assert!(very_high_latency > 240.0);
-        assert!(normal_latency <= 150.0);
+        assert!(high_latency > config.high_latency_ms && high_latency <= config.very_high_latency_ms);
+        assert!(very_high_latency > config.very_high_latency_ms);
+        assert!(normal_latency <= config.high_latency_ms);
 
         let high_loss = 0.15_f64;
         let very_high_loss = 0.6_f64;
@@ -1470,13 +1488,13 @@ mod tests {
         insert_test_server(&db, "srv-anom", "AnomServer").await;
 
         let now = Utc::now();
-        // Insert one recent high-latency anomaly.
+        // Insert one recent high-latency anomaly (above the default 500ms threshold).
         network_probe_record::ActiveModel {
             server_id: Set("srv-anom".to_string()),
             target_id: Set("tgt-1".to_string()),
-            avg_latency: Set(Some(220.0)),
-            min_latency: Set(Some(200.0)),
-            max_latency: Set(Some(240.0)),
+            avg_latency: Set(Some(620.0)),
+            min_latency: Set(Some(600.0)),
+            max_latency: Set(Some(640.0)),
             packet_loss: Set(0.0),
             packet_sent: Set(10),
             packet_received: Set(10),
@@ -1507,18 +1525,20 @@ mod tests {
             .expect("insert healthy record");
         }
 
+        let config = NetworkProbeConfig::default();
         let anomalies = NetworkProbeService::get_anomalies(
             &db,
             "srv-anom",
             now - Duration::hours(24),
             now + Duration::minutes(1),
+            &config,
         )
         .await
         .expect("get_anomalies");
 
         assert_eq!(anomalies.len(), 1, "should surface the single high-latency record");
         assert_eq!(anomalies[0].anomaly_type, "high_latency");
-        assert!((anomalies[0].value - 220.0).abs() < f64::EPSILON);
+        assert!((anomalies[0].value - 620.0).abs() < f64::EPSILON);
     }
 
     #[tokio::test]
@@ -2073,9 +2093,13 @@ mod tests {
         )
         .await;
 
-        let overviews = NetworkProbeService::get_overview(&db, &test_agent_manager())
-            .await
-            .unwrap();
+        let overviews = NetworkProbeService::get_overview(
+            &db,
+            &test_agent_manager(),
+            &NetworkProbeConfig::default(),
+        )
+        .await
+        .unwrap();
         let adaptive = overviews
             .iter()
             .find(|overview| overview.server_id == "srv-adaptive")
@@ -2134,9 +2158,13 @@ mod tests {
         )
         .await;
 
-        let overviews = NetworkProbeService::get_overview(&db, &test_agent_manager())
-            .await
-            .unwrap();
+        let overviews = NetworkProbeService::get_overview(
+            &db,
+            &test_agent_manager(),
+            &NetworkProbeConfig::default(),
+        )
+        .await
+        .unwrap();
         let overview = overviews
             .iter()
             .find(|candidate| candidate.server_id == "srv-wide")

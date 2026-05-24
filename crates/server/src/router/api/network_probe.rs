@@ -79,7 +79,12 @@ async fn get_setting(
 async fn get_overview(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<Vec<ServerOverview>>>, AppError> {
-    let overview = NetworkProbeService::get_overview(&state.db, &state.agent_manager).await?;
+    let overview = NetworkProbeService::get_overview(
+        &state.db,
+        &state.agent_manager,
+        &state.config.network_probe,
+    )
+    .await?;
     ok(overview)
 }
 
@@ -303,8 +308,13 @@ pub async fn get_server_network_summary(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<crate::service::network_probe::ServerSummary>>, AppError> {
-    let summary =
-        NetworkProbeService::get_server_summary(&state.db, &state.agent_manager, &id).await?;
+    let summary = NetworkProbeService::get_server_summary(
+        &state.db,
+        &state.agent_manager,
+        &id,
+        &state.config.network_probe,
+    )
+    .await?;
     ok(summary)
 }
 
@@ -327,6 +337,13 @@ pub async fn get_server_network_anomalies(
     Path(id): Path<String>,
     axum::extract::Query(q): axum::extract::Query<NetworkProbeAnomalyQuery>,
 ) -> Result<Json<ApiResponse<Vec<NetworkProbeAnomaly>>>, AppError> {
-    let anomalies = NetworkProbeService::get_anomalies(&state.db, &id, q.from, q.to).await?;
+    let anomalies = NetworkProbeService::get_anomalies(
+        &state.db,
+        &id,
+        q.from,
+        q.to,
+        &state.config.network_probe,
+    )
+    .await?;
     ok(anomalies)
 }
