@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.2] - 2026-05-24
+
+### Added
+
+- **Embedded traceroute with history and protocol selection** -- The shell `traceroute` invocation is replaced by an embedded `trippy-core` engine that runs per-hop probes over ICMP, UDP, or TCP and streams round updates back to the browser. Results are persisted to a new `traceroute_record` table with admin delete and clear controls, hops are enriched with PTR (reverse DNS) data via a server-side LRU cache, and the network detail page renders a 10-column streaming hop table inside a header dialog backed by a history list. New protocol enums (`TraceProtocol`, `RecordedProtocol`), `TracerouteRoundUpdate` agent messages, and a `TracerouteEnricher` on `AppState` make round-by-round streaming defense-in-depth safe -- updates from a mismatched `server_id` are rejected and each traceroute is bounded by a 60s wall-clock timeout
+- **Capability picker during agent install** -- When adding a server from the web UI, admins can now pick exactly which agent capabilities to enable instead of accepting the default set, and the install script (`deploy/install.sh`) gained a matching interactive capability picker so the choice flows through to the new agent on first run. Capability toggles are also disabled for offline servers in the capabilities settings to avoid silent drift
+- **Audit log filtering** -- The audit log page renders full-width and supports filtering by action and by user, so security reviews on long histories no longer require scrolling through every entry
+- **Railway pre-release pinning** -- The Railway deployment template now accepts a `SERVERBEE_IMAGE_TAG` build argument so operators can pin a specific pre-release image (e.g. `1.0.0-alpha.2`) without forking the template, and the deployment docs describe the override
+
+### Changed
+
+- **Default capabilities include firewall and IP quality** -- `CAP_DEFAULT` now grants `CAP_FIREWALL_BLOCK` and `CAP_IP_QUALITY` out of the box so new agents get the full operational toolkit without manual toggling
+- **IP quality blocked-state explanation** -- When an IP quality check is denied, the server reports which side blocked the request and the web UI surfaces the explanation inline on the server detail tab instead of showing an opaque failure
+- **Network anomaly window alignment** -- The network detail anomaly window now matches the overview badge, and recent anomalies are surfaced regardless of the active window size so a short window no longer hides events the overview is highlighting
+- **Capabilities page toolbar** -- The capabilities settings page was streamlined with a tighter toolbar and batch actions, and security preset cards now have consistent button alignment with reserved space for two-line descriptions
+- **i18n coverage** -- The server detail tab labels are now translated, a dedicated i18n namespace was added for the IP Quality feature, and the security page filter dropdowns show their localized labels instead of raw keys
+
+### Performance
+
+- **Server detail CLS reduction** -- Cumulative Layout Shift on the server detail page dropped from 0.48 to 0.04 by deferring offscreen content, reserving space for late-loading widgets, and disabling Recharts animations on every chart in the route
+- **Uptime timeline rewrite** -- The 90-day uptime timeline now paints as a single pixel-snapped CSS gradient on its own compositor layer with one shared tooltip popup across all segments, eliminating per-segment React nodes and the gradient seams that appeared on subpixel widths
+- **Dashboard widget lazy loading** -- Dashboard widgets are now viewport-gated and chart animations are disabled by default, so a dashboard with many widgets no longer stalls the initial paint; a new docs page records the recommended widget capacity limits
+- **Route-level code splitting** -- The server detail and terminal routes are now lazy-loaded, and the route generator ignores `-page.tsx` lazy modules so the `/servers` list page ships a noticeably smaller initial bundle
+
+### Fixed
+
+- **Traceroute correctness** -- Traceroute updates from a mismatched `server_id` are rejected at the server, the agent bounds each traceroute with a 60s wall-clock timeout, the PTR cache evicts by `inserted_at` instead of by IP ordering, and the `traceroute_record` foreign key was corrected to reference the `servers` table
+- **Server card layout stability** -- Server card height now stays consistent whether the card has tags or not, and the route generator no longer treats `-page.tsx` lazy modules as routable, preventing accidental layout shifts on first paint
+- **DataTable width blowup** -- Removed `table-fixed` from the shared `DataTable` so wide cells no longer force the whole grid to overflow horizontally
+- **Add-server install command host** -- The install command shown in the add-server dialog now points at `raw.githubusercontent.com` so the copy-pasted one-liner actually fetches the script
+
+### Documentation
+
+- **Traceroute design and operations** -- New design spec (with four review passes), a matching implementation plan, and a manual E2E checklist describe how the embedded trippy-core flow replaced the prior shell-based path
+- **Cost insights reference** -- A new dedicated docs page covers the cost insights and value-score feature so the configuration is no longer buried inside the alerts docs
+- **Dashboard widget capacity limits** -- A new docs page records the recommended upper bound on widgets per dashboard, derived from the viewport-gating performance work in this release
+
 ## [1.0.0-alpha.1] - 2026-05-23
 
 ### Added
