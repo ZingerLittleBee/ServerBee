@@ -123,6 +123,15 @@ Configure the optional third-party IP risk scoring provider. If no provider is c
 | `SERVERBEE_IP_QUALITY__ABUSEIPDB__API_KEY` | `ip_quality.abuseipdb.api_key` | string | - | AbuseIPDB API key. Required when `risk_provider = "abuseipdb"` |
 | `SERVERBEE_IP_QUALITY__ABUSEIPDB__ENDPOINT` | `ip_quality.abuseipdb.endpoint` | string | `""` | AbuseIPDB endpoint override. Leave empty to use the default |
 
+### Network Probe Anomaly Thresholds
+
+Avg-latency cutoffs used to classify network-probe records as `high_latency` / `very_high_latency` in `/api/servers/{id}/network-probes/anomalies` and `anomaly_count` on the network-probe overview.
+
+| Environment Variable | TOML Key | Type | Default | Description |
+|---------------------|----------|------|---------|-------------|
+| `SERVERBEE_NETWORK_PROBE__HIGH_LATENCY_MS` | `network_probe.high_latency_ms` | f64 | `500` | Records with `avg_latency` strictly greater than this are tagged `high_latency` |
+| `SERVERBEE_NETWORK_PROBE__VERY_HIGH_LATENCY_MS` | `network_probe.very_high_latency_ms` | f64 | `800` | Records with `avg_latency` strictly greater than this are tagged `very_high_latency` (overrides the high tier) |
+
 ### Internal
 
 > The following variables have sensible defaults and rarely need modification. Only adjust when you have a specific requirement.
