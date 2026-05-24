@@ -1136,7 +1136,7 @@ export function NetworkDetailPage() {
         <button
           aria-label={t('anomaly_count')}
           className={cn(
-            'rounded-lg border bg-card p-4 text-center transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            'cursor-pointer rounded-lg border bg-card p-4 text-center transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             anomalies.length > 0 &&
               'border-amber-300 bg-amber-50 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-900/20 dark:hover:bg-amber-900/30'
           )}
