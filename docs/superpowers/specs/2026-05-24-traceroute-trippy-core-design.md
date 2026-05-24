@@ -123,7 +123,7 @@ pub struct TracerouteHop {
 }
 ```
 
-Frontend rendering rule: a hop is new-schema when `total_sent !== null` (or equivalently `loss_pct !== null`). These fields are populated by trippy-core for every hop the tracer touched, even when there are zero responses (`ips: []`, 100% loss). Using `ips.is_empty()` as the discriminator would mis-classify a fully-lost hop from a new agent as legacy. When new-schema, render from the trippy fields; otherwise fall back to `ip` and `rtt1/2/3`.
+Frontend rendering rule: a hop is new-schema when `hop.total_sent != null` (the loose `!=` is intentional — `Option::None` in Rust with `skip_serializing_if = "Option::is_none"` is **omitted** from the JSON entirely, so in the browser the field is `undefined`, not `null`; loose `!=` catches both). `loss_pct != null` is an equivalent check. These fields are populated by trippy-core for every hop the tracer touched, even when there are zero responses (`ips: []`, 100% loss). Using `ips.length === 0` as the discriminator would mis-classify a fully-lost hop from a new agent as legacy. When new-schema, render from the trippy fields; otherwise fall back to `ip` and `rtt1/2/3`.
 
 ### `ServerMessage::Traceroute` adds optional protocol
 
@@ -227,15 +227,45 @@ pub fn spawn_traceroute(
 
 Inside `spawn_traceroute`:
 
-1. Resolve hostname to `IpAddr` (literal IP parses first; if it fails, fall back to `tokio::net::lookup_host((target, 0u16))` and take the first address). Both stages must run on tokio because `lookup_host` is async — perform resolution **before** entering `spawn_blocking`.
-2. `tokio::task::spawn_blocking` to host the synchronous `Tracer::run_with` loop.
-3. Build the tracer with `PrivilegeMode::Privileged` first; on failure (typically `Error::InsufficientPrivileges`), rebuild once with `PrivilegeMode::Unprivileged`. Two failures send a `TracerouteRoundUpdate { completed: true, error: Some(...) }` carrying platform-specific guidance (see *Privilege model* below).
-4. `Tracer::run_with` takes `Fn(&Round)` — the closure is **not** `FnMut`. State must be mutated via interior mutability inside the closure. Wrap `trippy_core::State` in a `std::cell::RefCell<State>` (the closure runs on the single blocking thread, so `RefCell` is sufficient; no need for `Mutex`). Each invocation does:
+1. **Resolve** hostname to `IpAddr` (literal IP parses first; if it fails, fall back to `tokio::net::lookup_host((target, 0u16))` and take the first address). Resolution runs on tokio because `lookup_host` is async — perform it **before** entering `spawn_blocking`.
+2. **Enter** `tokio::task::spawn_blocking` for the synchronous tracer lifecycle.
+3. **Build + run with two-stage privilege fallback.** Both `Builder::build()` and `Tracer::run_with()` can fail with privilege errors — `build()` does config validation and may trigger a probe socket open early on some platforms, but actual `sendto`/`recvfrom` privilege errors typically surface inside `run_with`. The retry must wrap both:
+
+   ```rust
+   fn try_trace(addr, max_hops, proto, priv_mode) -> Result<(), trippy_core::Error> {
+       let tracer = Builder::new(addr)
+           .max_ttl(max_hops)
+           .max_rounds(Some(DEFAULT_MAX_ROUNDS as usize))   // ← what stops run_with
+           .min_round_duration(ROUND_INTERVAL)
+           .max_round_duration(ROUND_INTERVAL * 2)
+           .read_timeout(PROBE_TIMEOUT)
+           .protocol(proto)
+           .privilege_mode(priv_mode)
+           .build()?;
+       tracer.run_with(|round| { /* see step 4 */ })
+   }
+
+   match try_trace(addr, max_hops, proto, PrivilegeMode::Privileged) {
+       Ok(()) => {},
+       Err(e) if is_privilege_error(&e) => {
+           match try_trace(addr, max_hops, proto, PrivilegeMode::Unprivileged) {
+               Ok(()) => {},
+               Err(e2) => emit_terminal_error(platform_guidance(e2)),
+           }
+       }
+       Err(e) => emit_terminal_error(format!("{e}")),
+   }
+   ```
+
+   `is_privilege_error` matches against `trippy_core::Error::InsufficientPrivileges` and platform-specific equivalents (likely `Error::IoError` wrapping `EACCES`/`EPERM` — exact discriminants TBD at implementation time when we can read the actual enum variants).
+4. **Stop condition lives on the builder**, not on the callback. `Tracer::run_with`'s callback is `Fn(&Round)` and **cannot signal stop**. Use `.max_rounds(Some(DEFAULT_MAX_ROUNDS as usize))` so the tracer exits after N rounds and `run_with` returns. The callback only emits messages.
+5. **State accumulation via interior mutability.** Wrap `trippy_core::State` in `std::cell::RefCell<State>` (the closure runs on the single blocking thread, so `RefCell` is sufficient; no `Mutex` needed). Also wrap the round counter in `std::cell::Cell<u32>`. Each callback invocation:
    - `state.borrow_mut().update_from_round(round)`
-   - Read `state.borrow().hops()` → snapshot `Vec<TracerouteHop>`
-   - Mutate a `Cell<u32>` round counter, decide whether `completed = (round_no >= DEFAULT_MAX_ROUNDS)`.
-5. Send one `TracerouteRoundUpdate` per round. Mark the last round as `completed=true`.
-6. Use `Sender::blocking_send` (we are inside `spawn_blocking`, no `.await` allowed).
+   - Read `state.borrow().hops()` → snapshot into `Vec<TracerouteHop>`
+   - Increment `round_no` via `Cell::set(round_no.get() + 1)`
+   - Build a `TracerouteRoundUpdate` with `completed = (round_no.get() >= DEFAULT_MAX_ROUNDS)` (this flag only marks the message; trippy stops on its own when `max_rounds` is hit)
+   - `tx.blocking_send(msg)` — `Sender::blocking_send` because we are inside `spawn_blocking`.
+6. **Terminal error path.** Both `try_trace` failures emit one final `TracerouteRoundUpdate { round: 0, total_rounds: 0, completed: true, hops: vec![], error: Some(...) }` and return. The server then persists this row with the error string so the user sees it in history.
 
 ### `reporter.rs` changes
 
@@ -268,26 +298,30 @@ The end-to-end tracer integration is not covered by automated tests because raw 
 
 ### New module `service/traceroute_enrich.rs`
 
+This iteration enriches **hostname only**. ASN enrichment is out of scope.
+
 ```rust
 pub struct TracerouteEnricher {
-    mmdb: Option<Arc<maxminddb::Reader<Vec<u8>>>>,
     ptr_cache: Arc<DashMap<IpAddr, (Option<String>, Instant)>>,
 }
 
 impl TracerouteEnricher {
-    pub fn new(mmdb: Option<Arc<maxminddb::Reader<Vec<u8>>>>) -> Self;
+    pub fn new() -> Self;
     pub async fn enrich(&self, hops: &mut [TracerouteHop]);
     async fn ptr_lookup(&self, ip: IpAddr) -> Option<String>;
-    fn asn_lookup(&self, ip: IpAddr) -> Option<String>;
 }
 ```
 
-- ASN read uses the same MMDB Arc already loaded in `AppState` for the IP Quality feature (see `geoip.mmdb_path` in `apps/docs/content/docs/{cn,en}/configuration.mdx`).
-- PTR lookup uses `tokio::task::spawn_blocking + dns_lookup::lookup_addr` (or `getnameinfo` direct). LRU is approximated with a `DashMap` plus a 1 h TTL and a max cap of 4096 entries; eviction runs piggybacked on inserts (drop oldest when over cap). No extra crate.
+- **PTR lookup** uses `tokio::task::spawn_blocking + dns_lookup::lookup_addr` (or `getnameinfo` direct). LRU is approximated with a `DashMap` plus a 1 h TTL and a max cap of 4096 entries; eviction runs piggybacked on inserts (drop oldest when over cap). No extra crate.
+- **ASN is deferred.** The existing `GeoIpService` is country/region only (loaded from `dbip-country-lite.mmdb`); it does not contain ASN data. The IP Quality service has ASN, but only for the agent's own outbound IP — it cannot answer ASN for arbitrary hop IPs along a traceroute path. Properly populating ASN requires either:
+  - Adding a separate `dbip-asn-lite.mmdb` (or equivalent) plus a config key, loader, and downloader, or
+  - Calling an external whois / Team Cymru DNS service per hop, with caching and rate limits.
+
+  Both options are real work and out of scope for this iteration. The `asn` wire field stays in `TracerouteHop` (always `None` from the new agent path; old agents may have parsed it from `traceroute` stdout but it's unreliable). The UI shows `—` in the ASN column. A follow-up spec can add proper ASN lookup.
 
 ### `AppState` wiring
 
-`crates/server/src/state.rs` gains `pub traceroute_enricher: TracerouteEnricher`. Constructed in `AppState::new` using the existing MMDB Arc.
+`crates/server/src/state.rs` gains `pub traceroute_enricher: TracerouteEnricher`. Constructed in `AppState::new` with `TracerouteEnricher::new()`.
 
 ### New table `traceroute_record`
 
@@ -296,7 +330,7 @@ CREATE TABLE traceroute_record (
     id               TEXT PRIMARY KEY,            -- = request_id (UUID)
     server_id        TEXT NOT NULL,
     target           TEXT NOT NULL,
-    protocol         TEXT NOT NULL,               -- 'icmp' | 'udp' | 'tcp'
+    protocol         TEXT NOT NULL,               -- 'icmp' | 'udp' | 'tcp' | 'legacy'
     started_at       INTEGER NOT NULL,            -- unix ms
     completed_at     INTEGER,                     -- NULL when interrupted
     total_rounds     INTEGER NOT NULL,
@@ -359,7 +393,11 @@ Behavior:
 3. If `completed == true`, INSERT a row into `traceroute_record` using metadata + the final hops. Mid-rounds do not write.
 4. Bookkeeping for cleanup (an existing background `cleanup_traceroute_results` evicts old in-memory entries).
 
-Legacy `AgentMessage::TracerouteResult` from old agents is normalized into the same code path: the WS handler builds a synthetic `TracerouteRoundUpdate { round: 1, total_rounds: 1, completed: true }` and reuses the same enricher + persistence + broadcast path. The WS handler also overwrites the cached `TracerouteRequestMeta.protocol` to `"icmp"` for the legacy path — old agents always run ICMP regardless of the protocol the user picked, and the persisted label must reflect what actually ran, not what was requested. The browser UI shows the actual protocol in the history list.
+Legacy `AgentMessage::TracerouteResult` from old agents is normalized into the same code path: the WS handler builds a synthetic `TracerouteRoundUpdate { round: 1, total_rounds: 1, completed: true }` and reuses the same enricher + persistence + broadcast path.
+
+The persisted `protocol` for the legacy path is set to the sentinel string `"legacy"`, **not** the protocol the user picked and **not** a guessed value. Reasoning: old agents shell out to `traceroute -n -m N` (which is UDP by default on Unix), then fall back to `mtr` (ICMP), with `tracert` (ICMP) on Windows. The old agent doesn't report which of these actually ran, so the server cannot know — labeling it `"icmp"` would be wrong on every Linux/macOS host where `traceroute` is installed. The browser renders `"legacy"` records with a distinct chip and tooltip ("Traceroute from a pre-trippy agent; actual probe protocol unknown"). Once the agent self-upgrades, all new records carry the real selected protocol.
+
+`TracerouteRequestMeta.protocol` in the cache keeps the user's requested value (for in-flight display). Only the persisted DB row uses the `"legacy"` sentinel when normalizing from `TracerouteResult`.
 
 ### New `service/traceroute.rs`
 
@@ -444,11 +482,11 @@ The list endpoint returns summaries only; clients fetch full hops via the existi
 - `entity/traceroute_record.rs#tests` — JSON serialization round-trip.
 - `service/traceroute.rs#tests` — list / get_detail / delete / delete_all using a SeaORM in-memory test DB.
 - `service/traceroute_enrich.rs#tests`:
-  - `test_enrich_fills_asn_from_mmdb` (fixture MMDB)
-  - `test_enrich_skips_when_mmdb_missing`
   - `test_ptr_cache_hit_does_not_relookup`
   - `test_ptr_cache_evicts_after_ttl`
+  - `test_ptr_cache_evicts_oldest_when_at_cap`
   - `test_enrich_handles_ipv6`
+  - `test_enrich_leaves_asn_field_none` (regression guard so a future ASN fix doesn't silently drop the field)
 - `crates/server/tests/traceroute_persistence.rs` (integration):
   - POST → simulated agent RoundUpdate stream → GET list contains entry → GET detail → DELETE → list empty.
   - Member token attempting DELETE returns 403.
@@ -492,7 +530,8 @@ export interface TracerouteResult {
 export interface TracerouteRecordSummary {
   request_id: string
   target: string
-  protocol: 'icmp' | 'udp' | 'tcp'
+  /** 'legacy' = run by a pre-trippy agent; actual probe protocol unknown */
+  protocol: 'icmp' | 'udp' | 'tcp' | 'legacy'
   started_at: number
   completed_at: number | null
   hop_count: number
@@ -535,7 +574,11 @@ Behavior:
 - Default display shows the most recent completed trace (if any) so users see context immediately.
 - "Run" starts a new stream; the current section switches to live updates.
 - Clicking a history row fetches that record's detail and shows it.
-- "Clear all" / per-row trash icons require admin role; they are hidden for member users (`useAuth().user.role`).
+- **Admin-only controls** (hidden for members via `useAuth().user.role !== 'admin'`):
+  - The entire Run form (target input + protocol selector + Run button) — POST is admin-only on the server (matches existing `write_router` placement under `require_admin`); members would only hit a dead 403 path, so the form should not be rendered at all.
+  - Per-row trash icons.
+  - "Clear all" button.
+- Members see the dialog title, the currently-selected record's hop table (or empty state), and the history list — strictly read-only. The header shows a small "read-only" note when admin controls are hidden so members understand why there's no Run form.
 - Mutations invalidate the history query, so new completed traces appear immediately.
 
 Active stream vs. selected record state lives in the parent route component:
@@ -553,14 +596,14 @@ This keeps the trace running when the user closes the dialog, and lets them reop
 
 ### Table rendering rules
 
-A helper `isNewSchema(hop)` returns `hop.total_sent !== null`. Branch per-hop, not per-record (in theory all hops of a single response come from the same agent, but per-hop is the safer rule and free).
+A helper `isNewSchema(hop)` returns `hop.total_sent != null` (loose `!=` so both missing JSON keys and explicit `null` are treated as legacy). Branch per-hop, not per-record (in theory all hops of a single response come from the same agent, but per-hop is the safer rule and free).
 
 | Column | New schema (`isNewSchema === true`) | Legacy fallback |
 |--------|------------------------------------|-----------------|
 | Hop | `hop` | `hop` |
 | IP | `ips[0]` + `+N` chip when `ips.length > 1`; tooltip shows the rest. When `ips.length === 0`, render `* * *` (no response). | `ip ?? '* * *'` |
 | Host | `hostname ?? '—'` | same |
-| ASN | `asn ?? '—'` | same |
+| ASN | `'—'` (deferred; see *Server* section) | `asn ?? '—'` (may be set by old shell-parsed agents but unreliable) |
 | Loss% | `loss_pct?.toFixed(0) + '%'`; coloured via existing `getLossTextClassName` | computed from `rtt1/2/3` (count of nulls / 3) |
 | Best | `best_ms` | `min(rtt1, rtt2, rtt3)` filtering nulls |
 | Avg | `avg_ms`; coloured via existing `latencyColorClass` | `avg(rtt1, rtt2, rtt3)` filtering nulls |
@@ -584,7 +627,7 @@ The dialog header shows `Round {{current}} / {{total}}` only while `completed ==
   - `ips.length > 1` renders the `+N` chip and tooltip lists the rest.
   - Empty history renders an empty-state message.
   - Clicking a history row swaps the displayed record.
-  - Non-admin user does not see delete buttons or "Clear all".
+  - Non-admin user does not see the Run form, delete buttons, or "Clear all" — only the selected record's table and the history list. The header shows the read-only note.
   - `error` non-null renders the error banner instead of the table body.
 
 ## Capabilities
@@ -649,7 +692,7 @@ The `protocol` field on `ServerMessage::Traceroute` is optional; old agents igno
 |-------|-------|
 | Wire (`common`) | Round-trip serialization for new message variants, legacy-field skip. |
 | Agent | Pure functions (protocol parsing, target validation, hostname resolution). End-to-end trace not in CI (raw socket). |
-| Server | sea-orm entity round-trip, service layer CRUD, enricher with MMDB fixture, integration test for POST → stream → list → delete → 403 for member, legacy `TracerouteResult` normalization. |
+| Server | sea-orm entity round-trip, service layer CRUD (server-scoped methods), enricher PTR cache TTL/eviction behavior, integration test for POST → stream → list → delete (admin) + member-token POST/DELETE → 403, legacy `TracerouteResult` normalization persists with protocol="legacy". |
 | Frontend | `useTracerouteStream` dispatcher, `TracerouteContent` rendering with both schemas, role-based delete button visibility. |
 | Manual | `tests/traceroute.md` checklist: privileged + unprivileged modes, all three protocols, history persistence across server restart, capability denied, invalid target. |
 
