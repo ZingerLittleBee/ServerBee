@@ -23,6 +23,12 @@ enum SpaThemes {
     IsSuperseded,
 }
 
+#[derive(DeriveIden)]
+enum Users {
+    Table,
+    Id,
+}
+
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
@@ -50,6 +56,14 @@ impl MigrationTrait for Migration {
                             .default(Expr::current_timestamp()),
                     )
                     .col(ColumnDef::new(SpaThemes::IsSuperseded).integer().not_null().default(0))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_spa_themes_uploaded_by")
+                            .from(SpaThemes::Table, SpaThemes::UploadedBy)
+                            .to(Users::Table, Users::Id)
+                            .on_delete(ForeignKeyAction::Restrict)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
                     .to_owned(),
             )
             .await?;

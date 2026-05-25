@@ -1,4 +1,5 @@
 use sea_orm::prelude::Expr;
+use sea_orm::{FromQueryResult, QuerySelect};
 use sea_orm::*;
 use uuid::Uuid;
 
@@ -13,6 +14,29 @@ use crate::service::spa_theme::manifest::ThemeManifest;
 pub const ACTIVE_SPA_THEME_KEY: &str = "active_spa_theme_uuid";
 
 pub struct SpaThemeService;
+
+#[derive(FromQueryResult)]
+struct SummaryRow {
+    uuid: String,
+    manifest_id: String,
+    name: String,
+    version: String,
+    author: Option<String>,
+    description: Option<String>,
+    size_bytes: i64,
+    uploaded_by: String,
+    uploaded_at: chrono::DateTime<chrono::Utc>,
+    is_superseded: i32,
+    preview_present: i32, // SQLite-returned boolean
+}
+
+#[derive(FromQueryResult)]
+struct VersionRow {
+    uuid: String,
+    #[allow(dead_code)]
+    manifest_id: String,
+    version: String,
+}
 
 #[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct SpaThemeSummary {
@@ -53,23 +77,39 @@ impl SpaThemeService {
 
     pub async fn list(db: &DatabaseConnection) -> Result<Vec<SpaThemeSummary>, AppError> {
         let active = ConfigService::get(db, ACTIVE_SPA_THEME_KEY).await?.unwrap_or_default();
-        let rows = spa_theme::Entity::find()
+        let rows: Vec<SummaryRow> = spa_theme::Entity::find()
+            .select_only()
+            .column(spa_theme::Column::Uuid)
+            .column(spa_theme::Column::ManifestId)
+            .column(spa_theme::Column::Name)
+            .column(spa_theme::Column::Version)
+            .column(spa_theme::Column::Author)
+            .column(spa_theme::Column::Description)
+            .column(spa_theme::Column::SizeBytes)
+            .column(spa_theme::Column::UploadedBy)
+            .column(spa_theme::Column::UploadedAt)
+            .column(spa_theme::Column::IsSuperseded)
+            .column_as(
+                Expr::cust("preview_data IS NOT NULL"),
+                "preview_present",
+            )
             .order_by_desc(spa_theme::Column::UploadedAt)
+            .into_model::<SummaryRow>()
             .all(db)
             .await?;
-        Ok(rows.into_iter().map(|m| SpaThemeSummary {
-            is_active: !active.is_empty() && m.uuid == active,
-            is_superseded: m.is_superseded != 0,
-            has_preview: m.preview_data.is_some(),
-            uuid: m.uuid,
-            manifest_id: m.manifest_id,
-            name: m.name,
-            version: m.version,
-            author: m.author,
-            description: m.description,
-            size_bytes: m.size_bytes,
-            uploaded_by: m.uploaded_by,
-            uploaded_at: m.uploaded_at.to_rfc3339(),
+        Ok(rows.into_iter().map(|r| SpaThemeSummary {
+            is_active: !active.is_empty() && r.uuid == active,
+            is_superseded: r.is_superseded != 0,
+            has_preview: r.preview_present != 0,
+            uuid: r.uuid,
+            manifest_id: r.manifest_id,
+            name: r.name,
+            version: r.version,
+            author: r.author,
+            description: r.description,
+            size_bytes: r.size_bytes,
+            uploaded_by: r.uploaded_by,
+            uploaded_at: r.uploaded_at.to_rfc3339(),
         }).collect())
     }
 
@@ -86,8 +126,13 @@ impl SpaThemeService {
         if active == uuid {
             return Err(SpaThemeError::ThemeInUse { uuid: uuid.to_string() }.into());
         }
-        let row = Self::get(db, uuid).await?;
-        spa_theme::Entity::delete_by_id(row.id).exec(db).await?;
+        let res = spa_theme::Entity::delete_many()
+            .filter(spa_theme::Column::Uuid.eq(uuid))
+            .exec(db)
+            .await?;
+        if res.rows_affected == 0 {
+            return Err(SpaThemeError::ThemeNotFound { uuid: uuid.to_string() }.into());
+        }
         Ok(())
     }
 
@@ -151,15 +196,20 @@ impl SpaThemeService {
         db: &DatabaseConnection,
         manifest: &ThemeManifest,
     ) -> Result<Option<UpgradeOf>, AppError> {
-        let rows = spa_theme::Entity::find()
+        let rows: Vec<VersionRow> = spa_theme::Entity::find()
+            .select_only()
+            .column(spa_theme::Column::Uuid)
+            .column(spa_theme::Column::ManifestId)
+            .column(spa_theme::Column::Version)
             .filter(spa_theme::Column::ManifestId.eq(manifest.id.clone()))
             .order_by_desc(spa_theme::Column::UploadedAt)
+            .into_model::<VersionRow>()
             .all(db)
             .await?;
         if rows.is_empty() { return Ok(None); }
         let uploaded = semver::Version::parse(&manifest.version)
             .map_err(|_| SpaThemeError::InvalidManifest { field: "version", reason: "invalid semver".into() })?;
-        let mut best: Option<(semver::Version, spa_theme::Model)> = None;
+        let mut best: Option<(semver::Version, VersionRow)> = None;
         for r in rows {
             if let Ok(v) = semver::Version::parse(&r.version)
                 && best.as_ref().map(|(b, _)| &v > b).unwrap_or(true)
@@ -176,9 +226,7 @@ impl SpaThemeService {
         }
         Ok(Some(UpgradeOf { previous_uuid: latest_row.uuid, previous_version: latest_v.to_string() }))
     }
-}
 
-impl SpaThemeService {
     /// Set the active theme (uuid). None deactivates.
     pub async fn set_active(
         db: &DatabaseConnection,
@@ -227,7 +275,12 @@ impl SpaThemeService {
                     Ok(loaded) => slot.store(std::sync::Arc::new(Some(loaded))),
                     Err(e) => tracing::warn!("active SPA theme {u} failed to load: {e}; falling back to default"),
                 },
-                Err(_) => tracing::warn!("active SPA theme {u} not found; falling back to default"),
+                Err(AppError::Domain { code: "THEME_NOT_FOUND", .. }) => {
+                    tracing::warn!("active SPA theme {u} not found; falling back to default");
+                }
+                Err(e) => {
+                    tracing::warn!("active SPA theme {u} lookup failed: {e}; falling back to default");
+                }
             },
             Ok(None) => {}
             Err(e) => tracing::warn!("read active spa theme key failed: {e}"),
@@ -362,6 +415,33 @@ mod tests {
     async fn startup_load_with_dangling_key_falls_back() {
         let db = db().await;
         ConfigService::set(&db, ACTIVE_SPA_THEME_KEY, "does-not-exist").await.unwrap();
+        let slot = crate::service::spa_theme::loaded::new_slot();
+        SpaThemeService::load_on_startup(&db, &slot).await;
+        assert!(slot.load().is_none());
+    }
+
+    #[tokio::test]
+    async fn startup_load_with_corrupt_blob_falls_back() {
+        let db = db().await;
+        ensure_user(&db, "u1").await;
+        spa_theme::ActiveModel {
+            id: NotSet,
+            uuid: Set("corrupt-uuid".into()),
+            manifest_id: Set("test-id".into()),
+            name: Set("Test".into()),
+            version: Set("1.0.0".into()),
+            author: Set(None),
+            description: Set(None),
+            manifest_json: Set("{}".into()),
+            package_data: Set(b"not a zip".to_vec()),
+            preview_data: Set(None),
+            preview_mime: Set(None),
+            size_bytes: Set(9),
+            uploaded_by: Set("u1".into()),
+            uploaded_at: Set(chrono::Utc::now()),
+            is_superseded: Set(0),
+        }.insert(&db).await.unwrap();
+        ConfigService::set(&db, ACTIVE_SPA_THEME_KEY, "corrupt-uuid").await.unwrap();
         let slot = crate::service::spa_theme::loaded::new_slot();
         SpaThemeService::load_on_startup(&db, &slot).await;
         assert!(slot.load().is_none());
