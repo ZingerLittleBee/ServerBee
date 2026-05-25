@@ -1038,6 +1038,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn validate_agent_token_rejects_row_with_prefix_but_null_hash() {
+        // Defense-in-depth: if a future schema regression ever produced a row
+        // with a non-NULL token_prefix but NULL token_hash, the query-level
+        // `is_not_null()` filter must keep the row out of the candidate set.
+        use serverbee_common::constants::CAP_DEFAULT;
+
+        let (db, _tmp) = setup_test_db().await;
+        let now = Utc::now();
+        let sid = Uuid::new_v4().to_string();
+
+        server::ActiveModel {
+            id: Set(sid.clone()),
+            token_hash: Set(None),
+            token_prefix: Set(Some("testtest".into())),
+            name: Set("half-bound".into()),
+            cpu_name: Set(None),
+            cpu_cores: Set(None),
+            cpu_arch: Set(None),
+            os: Set(None),
+            kernel_version: Set(None),
+            mem_total: Set(None),
+            swap_total: Set(None),
+            disk_total: Set(None),
+            ipv4: Set(None),
+            ipv6: Set(None),
+            region: Set(None),
+            country_code: Set(None),
+            virtualization: Set(None),
+            agent_version: Set(None),
+            group_id: Set(None),
+            weight: Set(0),
+            hidden: Set(false),
+            remark: Set(None),
+            public_remark: Set(None),
+            price: Set(None),
+            billing_cycle: Set(None),
+            currency: Set(None),
+            expired_at: Set(None),
+            traffic_limit: Set(None),
+            traffic_limit_type: Set(None),
+            billing_start_day: Set(None),
+            capabilities: Set(CAP_DEFAULT as i32),
+            protocol_version: Set(1),
+            features: Set("[]".into()),
+            last_remote_addr: Set(None),
+            fingerprint: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        // Token whose 8-char prefix matches the row's `token_prefix`.
+        let result = AuthService::validate_agent_token(&db, "testtest-not-a-real-token")
+            .await
+            .unwrap();
+        assert!(
+            result.is_none(),
+            "row with non-NULL prefix but NULL token_hash must not validate"
+        );
+    }
+
+    #[tokio::test]
     async fn test_init_admin_noop_when_users_exist() {
         let (db, _tmp) = setup_test_db().await;
         AuthService::create_user(&db, "someone", "pass1234", "admin")
