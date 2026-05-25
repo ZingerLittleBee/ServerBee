@@ -849,6 +849,64 @@ impl IpRiskProvider for IpApiProvider {
 }
 
 // ---------------------------------------------------------------------------
+// Provider: ipapi.is
+// ---------------------------------------------------------------------------
+
+pub const IPAPI_IS_DEFAULT_ENDPOINT: &str = "https://api.ipapi.is";
+
+pub struct IpApiIsProvider {
+    pub api_key: Option<String>,
+    pub endpoint: String,
+    client: reqwest::Client,
+}
+
+impl IpApiIsProvider {
+    pub fn from_config(key: Option<&crate::config::RiskProviderKey>) -> Self {
+        let (api_key, endpoint) = match key {
+            Some(k) => (
+                (!k.api_key.is_empty()).then(|| k.api_key.clone()),
+                if k.endpoint.is_empty() {
+                    IPAPI_IS_DEFAULT_ENDPOINT.to_string()
+                } else {
+                    k.endpoint.clone()
+                },
+            ),
+            None => (None, IPAPI_IS_DEFAULT_ENDPOINT.to_string()),
+        };
+        Self {
+            api_key,
+            endpoint,
+            client: build_provider_client(),
+        }
+    }
+}
+
+#[async_trait]
+impl IpRiskProvider for IpApiIsProvider {
+    fn name(&self) -> &'static str {
+        "ipapi_is"
+    }
+
+    async fn lookup(&self, ip: &str) -> anyhow::Result<ProviderResult> {
+        let mut url = format!("{}/?q={}", self.endpoint, ip);
+        if let Some(k) = &self.api_key {
+            url.push_str(&format!("&key={k}"));
+        }
+
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<JsonValue>()
+            .await?;
+
+        Ok(parse_ipapi_is_response(resp))
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1430,5 +1488,40 @@ mod tests {
         });
         let r = super::parse_ipapi_is_response(json);
         assert_eq!(r.ip_type.as_deref(), Some("isp"));
+    }
+
+    #[test]
+    fn ipapi_is_provider_from_config_no_key() {
+        let p = super::IpApiIsProvider::from_config(None);
+        assert!(p.api_key.is_none());
+        assert_eq!(p.endpoint, super::IPAPI_IS_DEFAULT_ENDPOINT);
+    }
+
+    #[test]
+    fn ipapi_is_provider_from_config_with_key() {
+        let key = crate::config::RiskProviderKey {
+            api_key: "abc123".to_string(),
+            endpoint: String::new(),
+        };
+        let p = super::IpApiIsProvider::from_config(Some(&key));
+        assert_eq!(p.api_key.as_deref(), Some("abc123"));
+        assert_eq!(p.endpoint, super::IPAPI_IS_DEFAULT_ENDPOINT);
+    }
+
+    #[test]
+    fn ipapi_is_provider_empty_key_treated_as_none() {
+        let key = crate::config::RiskProviderKey {
+            api_key: String::new(),
+            endpoint: "https://example.com".to_string(),
+        };
+        let p = super::IpApiIsProvider::from_config(Some(&key));
+        assert!(p.api_key.is_none());
+        assert_eq!(p.endpoint, "https://example.com");
+    }
+
+    #[test]
+    fn ipapi_is_provider_name() {
+        let p = super::IpApiIsProvider::from_config(None);
+        assert_eq!((&p as &dyn super::IpRiskProvider).name(), "ipapi_is");
     }
 }
