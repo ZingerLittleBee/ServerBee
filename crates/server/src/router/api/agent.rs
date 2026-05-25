@@ -6,12 +6,8 @@ use axum::http::HeaderMap;
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 use chrono::Utc;
-use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DbErr, EntityTrait, PaginatorTrait,
-    QueryFilter,
-};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, TransactionTrait};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::entity::server;
 use crate::error::{ApiResponse, AppError, ok};
@@ -20,12 +16,8 @@ use crate::router::utils::extract_client_ip;
 use crate::service::audit::AuditService;
 use crate::service::auth::AuthService;
 use crate::service::enrollment::{DEFAULT_TTL_SECS, EnrollmentService};
-use crate::service::network_probe::NetworkProbeService;
 use crate::service::upgrade_release::LatestAgentVersionResponse;
 use crate::state::AppState;
-use serverbee_common::constants::CAP_DEFAULT;
-
-const DEFAULT_SERVER_NAME: &str = "New Server";
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct RegisterRequest {
@@ -104,9 +96,9 @@ pub async fn latest_version(
     path = "/api/agent/register",
     tag = "agent",
     responses(
-        (status = 200, description = "Agent registered", body = RegisterResponse),
-        (status = 400, description = "Server limit reached"),
-        (status = 401, description = "Invalid, expired, or already-used enrollment code"),
+        (status = 200, description = "Agent registered against the bound server", body = RegisterResponse),
+        (status = 400, description = "Invalid fingerprint format"),
+        (status = 401, description = "Invalid, expired, revoked, or already-used enrollment code"),
     ),
     security(("bearer_token" = []))
 )]
@@ -116,7 +108,7 @@ async fn register(
     headers: HeaderMap,
     body: Option<Json<RegisterRequest>>,
 ) -> Result<Json<ApiResponse<RegisterResponse>>, AppError> {
-    // 1. Rate limiting
+    // 1. Rate limiting by client IP.
     let ip = extract_client_ip(
         &ConnectInfo(addr),
         &headers,
@@ -129,206 +121,95 @@ async fn register(
         ));
     }
 
-    // 2. Enrollment code validation (single-use, TTL, constant-time argon2)
-    let auth_header = headers
+    // 2. Extract Bearer enrollment code.
+    let bearer = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .ok_or(AppError::Unauthorized)?;
+        .ok_or(AppError::Unauthorized)?
+        .to_string();
 
-    // TODO: T8 will rewrite this entire register flow against the bound-
-    // enrollment model and wrap consume + server update in a single tx.
-    // For now we pass `&state.db` (which implements ConnectionTrait) so the
-    // call site keeps compiling.
-    let enrollment =
-        EnrollmentService::verify_and_consume_tx(&state.db, auth_header)
-            .await?
-            .ok_or(AppError::Unauthorized)?;
-
+    // 3. Validate fingerprint format BEFORE opening the transaction so a
+    //    malformed payload cannot burn the operator's single-use code.
+    //    The fingerprint is informational only — it is recorded on the
+    //    server row but NEVER used for lookup or deduplication.
     let fingerprint = body
         .as_ref()
         .map(|b| b.fingerprint.clone())
-        .unwrap_or_default();
-
-    // Validate fingerprint format if provided
-    if !fingerprint.is_empty()
-        && (fingerprint.len() != 64 || !fingerprint.chars().all(|c| c.is_ascii_hexdigit()))
+        .filter(|f| !f.is_empty());
+    if let Some(ref fp) = fingerprint
+        && (fp.len() != 64 || !fp.chars().all(|c| c.is_ascii_hexdigit()))
     {
         return Err(AppError::BadRequest(
             "Invalid fingerprint format".to_string(),
         ));
     }
 
-    // 3. Fingerprint dedup: try to reuse existing server
-    if !fingerprint.is_empty()
-        && let Some(existing) = server::Entity::find()
-            .filter(server::Column::Fingerprint.eq(&fingerprint))
-            .one(&state.db)
-            .await?
-    {
-        let server_id = existing.id.clone();
-        tracing::info!("Reusing server {server_id} for fingerprint {fingerprint}");
+    // 4. Single transaction: consume enrollment + stamp token on the bound
+    //    server. If anything fails the consume is rolled back so the operator
+    //    can retry with the same code.
+    let tx_bearer = bearer.clone();
+    let tx_ip = ip.clone();
+    let tx_fp = fingerprint.clone();
+    let (server_id, plaintext_token, enrollment_id, enrollment_prefix) = state
+        .db
+        .transaction::<_, (String, String, String, String), AppError>(move |tx| {
+            Box::pin(async move {
+                let enrollment =
+                    EnrollmentService::verify_and_consume_tx(tx, &tx_bearer)
+                        .await?
+                        .ok_or(AppError::Unauthorized)?;
 
-        let plaintext_token = AuthService::generate_session_token();
-        let token_hash = AuthService::hash_password(&plaintext_token)?;
-        let token_prefix = &plaintext_token[..8.min(plaintext_token.len())];
+                let server_row = server::Entity::find_by_id(&enrollment.target_server_id)
+                    .one(tx)
+                    .await?
+                    .ok_or_else(|| {
+                        // Should be impossible: the FK on agent_enrollments
+                        // guarantees the bound server exists.
+                        AppError::Internal("Bound server vanished".to_string())
+                    })?;
 
-        let mut active: server::ActiveModel = existing.into();
-        // TODO: T8 will rewrite this entire register flow against the bound-enrollment model.
-        active.token_hash = Set(Some(token_hash));
-        active.token_prefix = Set(Some(token_prefix.to_string()));
-        active.last_remote_addr = Set(Some(ip.clone()));
-        active.updated_at = Set(Utc::now());
-        active.update(&state.db).await?;
+                let plaintext = AuthService::generate_session_token();
+                let token_hash = AuthService::hash_password(&plaintext)?;
+                let token_prefix = plaintext[..8.min(plaintext.len())].to_string();
+                let server_id = server_row.id.clone();
+                let enrollment_id = enrollment.id.clone();
+                let enrollment_prefix = enrollment.code_prefix.clone();
 
-        let _ = AuditService::log(
-            &state.db,
-            "system",
-            "agent_enrolled",
-            Some(&format!(
-                "server_id={server_id} enrollment={} prefix={}",
-                enrollment.id, enrollment.code_prefix
-            )),
-            &ip,
-        )
-        .await;
-
-        return ok(RegisterResponse {
-            server_id,
-            token: plaintext_token,
-        });
-    }
-
-    // 4. Global server limit check (soft cap, only for new servers)
-    let max_servers = state.config.auth.max_servers;
-    if max_servers > 0 {
-        let count = server::Entity::find().count(&state.db).await?;
-        if count >= max_servers as u64 {
-            return Err(AppError::BadRequest(format!(
-                "Server limit reached ({max_servers}). Delete unused servers or increase max_servers in config."
-            )));
-        }
-    }
-
-    // 5. Create new server
-    let server_id = Uuid::new_v4().to_string();
-    let plaintext_token = AuthService::generate_session_token();
-    let token_hash = AuthService::hash_password(&plaintext_token)?;
-    let token_prefix = &plaintext_token[..8.min(plaintext_token.len())];
-    let now = Utc::now();
-
-    let fp = if fingerprint.is_empty() {
-        None
-    } else {
-        Some(fingerprint.clone())
-    };
-
-    let new_server = server::ActiveModel {
-        id: Set(server_id.clone()),
-        // TODO: T8 will switch this to use the bound-enrollment server row.
-        token_hash: Set(Some(token_hash)),
-        token_prefix: Set(Some(token_prefix.to_string())),
-        name: Set(DEFAULT_SERVER_NAME.to_string()),
-        cpu_name: Set(None),
-        cpu_cores: Set(None),
-        cpu_arch: Set(None),
-        os: Set(None),
-        kernel_version: Set(None),
-        mem_total: Set(None),
-        swap_total: Set(None),
-        disk_total: Set(None),
-        ipv4: Set(None),
-        ipv6: Set(None),
-        region: Set(None),
-        country_code: Set(None),
-        virtualization: Set(None),
-        agent_version: Set(None),
-        group_id: Set(None),
-        weight: Set(0),
-        hidden: Set(false),
-        remark: Set(None),
-        public_remark: Set(None),
-        price: Set(None),
-        billing_cycle: Set(None),
-        currency: Set(None),
-        expired_at: Set(None),
-        traffic_limit: Set(None),
-        traffic_limit_type: Set(None),
-        billing_start_day: Set(None),
-        capabilities: Set(CAP_DEFAULT as i32),
-        protocol_version: Set(1),
-        features: Set("[]".to_string()),
-        last_remote_addr: Set(Some(ip.clone())),
-        fingerprint: Set(fp.clone()),
-        created_at: Set(now),
-        updated_at: Set(now),
-    };
-
-    // Handle race condition: if another request with the same fingerprint inserted
-    // between our SELECT and INSERT, catch the unique constraint violation and retry as reuse.
-    match new_server.insert(&state.db).await {
-        Ok(_) => {}
-        Err(DbErr::Query(ref e)) if fp.is_some() && e.to_string().contains("UNIQUE") => {
-            tracing::info!("Fingerprint race detected, falling back to reuse path");
-            if let Some(existing) = server::Entity::find()
-                .filter(server::Column::Fingerprint.eq(fp.as_ref().unwrap()))
-                .one(&state.db)
-                .await?
-            {
-                let server_id = existing.id.clone();
-                let plaintext_token = AuthService::generate_session_token();
-                let token_hash = AuthService::hash_password(&plaintext_token)?;
-                let token_prefix = &plaintext_token[..8.min(plaintext_token.len())];
-
-                let mut active: server::ActiveModel = existing.into();
-                // TODO: T8 will rewrite this race-recovery path under the bound-enrollment model.
+                let mut active: server::ActiveModel = server_row.into();
                 active.token_hash = Set(Some(token_hash));
-                active.token_prefix = Set(Some(token_prefix.to_string()));
-                active.last_remote_addr = Set(Some(ip.clone()));
+                active.token_prefix = Set(Some(token_prefix));
+                active.last_remote_addr = Set(Some(tx_ip));
+                active.fingerprint = Set(tx_fp);
                 active.updated_at = Set(Utc::now());
-                active.update(&state.db).await?;
+                active.update(tx).await?;
 
-                let _ = AuditService::log(
-                    &state.db,
-                    "system",
-                    "agent_enrolled",
-                    Some(&format!(
-                        "server_id={server_id} enrollment={} prefix={}",
-                        enrollment.id, enrollment.code_prefix
-                    )),
-                    &ip,
-                )
-                .await;
+                Ok((server_id, plaintext, enrollment_id, enrollment_prefix))
+            })
+        })
+        .await
+        .map_err(|e| match e {
+            sea_orm::TransactionError::Connection(db_err) => AppError::from(db_err),
+            sea_orm::TransactionError::Transaction(app_err) => app_err,
+        })?;
 
-                return ok(RegisterResponse {
-                    server_id,
-                    token: plaintext_token,
-                });
-            }
-            return Err(AppError::Internal(
-                "Fingerprint race recovery failed".to_string(),
-            ));
-        }
-        Err(e) => return Err(e.into()),
-    }
-
-    // Apply default network probe targets
-    if let Err(e) = NetworkProbeService::apply_defaults(&state.db, &server_id).await {
-        tracing::warn!("Failed to apply default network probe targets to {server_id}: {e}");
-    }
-
+    // Audit log AFTER commit so we don't log fictitious enrollments on rollback.
     let _ = AuditService::log(
         &state.db,
         "system",
         "agent_enrolled",
         Some(&format!(
-            "server_id={server_id} enrollment={} prefix={}",
-            enrollment.id, enrollment.code_prefix
+            "server_id={server_id} enrollment={enrollment_id} prefix={enrollment_prefix}"
         )),
         &ip,
     )
     .await;
 
+    // No ServerOnline broadcast here — that event belongs to
+    // `AgentManager::add_connection` when the WS actually connects. The UI
+    // picks up the pending→registered flip on its next list refresh, and the
+    // agent immediately opens a WS after this response which triggers the
+    // proper online event.
     ok(RegisterResponse {
         server_id,
         token: plaintext_token,

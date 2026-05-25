@@ -10,6 +10,13 @@ use serverbee_server::router::create_router;
 use serverbee_server::service::auth::AuthService;
 use serverbee_server::state::AppState;
 
+/// Build the absolute path to the test SQLite file for direct DB access in
+/// tests that need to mutate state the public API does not expose (e.g.
+/// expiring an enrollment).
+fn db_path_for(tmp: &tempfile::TempDir) -> String {
+    format!("{}/test.db", tmp.path().to_str().unwrap())
+}
+
 async fn start_test_server_with_cap(max_servers: u32) -> (String, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("Failed to create temp dir");
     let data_dir = tmp.path().to_str().unwrap().to_string();
@@ -293,5 +300,357 @@ async fn get_server_returns_has_token_and_outstanding_enrollment() {
     assert!(
         outstanding.get("code").is_none(),
         "GET response must not include plaintext code"
+    );
+}
+
+/// Helper: POST /api/servers and return (server_id, enrollment_id, code).
+async fn create_pending_server(
+    client: &reqwest::Client,
+    base_url: &str,
+    name: &str,
+) -> (String, String, String) {
+    let resp = client
+        .post(format!("{}/api/servers", base_url))
+        .json(&json!({"name": name}))
+        .send()
+        .await
+        .expect("create server request failed");
+    assert_eq!(resp.status(), 200, "POST /api/servers should succeed");
+    let body: Value = resp.json().await.expect("Failed to parse response");
+    let server_id = body["data"]["server_id"]
+        .as_str()
+        .expect("server_id")
+        .to_string();
+    let enrollment_id = body["data"]["enrollment"]["id"]
+        .as_str()
+        .expect("enrollment.id")
+        .to_string();
+    let code = body["data"]["enrollment"]["code"]
+        .as_str()
+        .expect("enrollment.code")
+        .to_string();
+    (server_id, enrollment_id, code)
+}
+
+#[tokio::test]
+async fn agent_register_updates_bound_server_does_not_create() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, _enrollment_id, code) =
+        create_pending_server(&client, &base_url, "vps-bound").await;
+
+    // Count servers before register.
+    let list_before: Value = client
+        .get(format!("{}/api/servers", base_url))
+        .send()
+        .await
+        .expect("list before failed")
+        .json()
+        .await
+        .expect("parse list before");
+    let count_before = list_before["data"]
+        .as_array()
+        .expect("list data is array")
+        .len();
+
+    // Anonymous client (no admin cookies) using the enrollment as Bearer.
+    let anon = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .expect("anon client");
+    let resp = anon
+        .post(format!("{}/api/agent/register", base_url))
+        .bearer_auth(&code)
+        .json(&json!({"fingerprint": ""}))
+        .send()
+        .await
+        .expect("register request failed");
+    assert_eq!(resp.status(), 200, "register should succeed");
+    let body: Value = resp.json().await.expect("parse register response");
+    assert_eq!(
+        body["data"]["server_id"].as_str().expect("server_id"),
+        server_id,
+        "register must return the bound server_id, not create a new one",
+    );
+    assert!(
+        body["data"]["token"]
+            .as_str()
+            .map(|t| !t.is_empty())
+            .unwrap_or(false),
+        "register must return a non-empty token",
+    );
+
+    // No new server row was created.
+    let list_after: Value = client
+        .get(format!("{}/api/servers", base_url))
+        .send()
+        .await
+        .expect("list after failed")
+        .json()
+        .await
+        .expect("parse list after");
+    let count_after = list_after["data"]
+        .as_array()
+        .expect("list data is array")
+        .len();
+    assert_eq!(
+        count_after, count_before,
+        "register must NOT create a new server row",
+    );
+
+    // The bound server now has a token; outstanding_enrollment is gone.
+    let get_resp: Value = client
+        .get(format!("{}/api/servers/{}", base_url, server_id))
+        .send()
+        .await
+        .expect("get server failed")
+        .json()
+        .await
+        .expect("parse get server");
+    assert_eq!(
+        get_resp["data"]["has_token"], true,
+        "registered server must have_token=true",
+    );
+    assert!(
+        get_resp["data"]["outstanding_enrollment"].is_null(),
+        "consumed enrollment should not show as outstanding: {:?}",
+        get_resp["data"]["outstanding_enrollment"],
+    );
+}
+
+#[tokio::test]
+async fn agent_register_with_revoked_code_returns_401_and_does_not_set_token() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, enrollment_id, code) =
+        create_pending_server(&client, &base_url, "vps-revoked").await;
+
+    // Revoke via the existing admin DELETE endpoint (T6 maps DELETE to revoke).
+    let revoke_resp = client
+        .delete(format!(
+            "{}/api/agent/enrollments/{}",
+            base_url, enrollment_id
+        ))
+        .send()
+        .await
+        .expect("revoke request failed");
+    assert_eq!(revoke_resp.status(), 200, "revoke should succeed");
+
+    let anon = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .expect("anon client");
+    let resp = anon
+        .post(format!("{}/api/agent/register", base_url))
+        .bearer_auth(&code)
+        .json(&json!({"fingerprint": ""}))
+        .send()
+        .await
+        .expect("register request failed");
+    assert_eq!(
+        resp.status(),
+        401,
+        "register with revoked code must return 401",
+    );
+
+    // Server stays pending: no token, outstanding stays missing (we revoked it).
+    let get_resp: Value = client
+        .get(format!("{}/api/servers/{}", base_url, server_id))
+        .send()
+        .await
+        .expect("get server failed")
+        .json()
+        .await
+        .expect("parse get server");
+    assert_eq!(
+        get_resp["data"]["has_token"], false,
+        "revoked-code register must not stamp a token onto the bound server",
+    );
+}
+
+#[tokio::test]
+async fn agent_register_with_expired_code_returns_401() {
+    let (base_url, tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (_server_id, enrollment_id, code) =
+        create_pending_server(&client, &base_url, "vps-expired").await;
+
+    // Flip the enrollment's expires_at to the epoch directly via SQLite, since
+    // no public endpoint can force expiry.
+    let db_url = format!("sqlite://{}?mode=rw", db_path_for(&tmp));
+    let mut opt = ConnectOptions::new(&db_url);
+    opt.max_connections(2);
+    opt.sqlx_logging(false);
+    let db = Database::connect(opt).await.expect("connect test db");
+    let stmt = sea_orm::Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Sqlite,
+        "UPDATE agent_enrollments SET expires_at = ? WHERE id = ?",
+        [
+            "1970-01-01T00:00:00+00:00".into(),
+            enrollment_id.clone().into(),
+        ],
+    );
+    db.execute(stmt).await.expect("force-expire enrollment");
+    drop(db);
+
+    let anon = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .expect("anon client");
+    let resp = anon
+        .post(format!("{}/api/agent/register", base_url))
+        .bearer_auth(&code)
+        .json(&json!({"fingerprint": ""}))
+        .send()
+        .await
+        .expect("register request failed");
+    assert_eq!(
+        resp.status(),
+        401,
+        "register with expired code must return 401",
+    );
+}
+
+#[tokio::test]
+async fn agent_register_records_fingerprint_does_not_dedup() {
+    let (base_url, tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    // Two pending servers, each with its own bound enrollment.
+    let (server_a, _, code_a) = create_pending_server(&client, &base_url, "vps-a").await;
+    let (server_b, _, code_b) = create_pending_server(&client, &base_url, "vps-b").await;
+
+    let fp: String = "a".repeat(64);
+    let anon = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .expect("anon client");
+
+    let resp_a = anon
+        .post(format!("{}/api/agent/register", base_url))
+        .bearer_auth(&code_a)
+        .json(&json!({"fingerprint": fp}))
+        .send()
+        .await
+        .expect("register A failed");
+    assert_eq!(resp_a.status(), 200, "register A must succeed");
+    let body_a: Value = resp_a.json().await.expect("parse A");
+    assert_eq!(body_a["data"]["server_id"].as_str().unwrap(), server_a);
+
+    // Register B with the SAME fingerprint — must NOT be silently mapped to A.
+    let resp_b = anon
+        .post(format!("{}/api/agent/register", base_url))
+        .bearer_auth(&code_b)
+        .json(&json!({"fingerprint": fp}))
+        .send()
+        .await
+        .expect("register B failed");
+    assert_eq!(resp_b.status(), 200, "register B must succeed");
+    let body_b: Value = resp_b.json().await.expect("parse B");
+    assert_eq!(
+        body_b["data"]["server_id"].as_str().unwrap(),
+        server_b,
+        "B must return B's id, not be deduped onto A",
+    );
+
+    // Both rows present and both have tokens via the REST list.
+    let list: Value = client
+        .get(format!("{}/api/servers", base_url))
+        .send()
+        .await
+        .expect("list failed")
+        .json()
+        .await
+        .expect("parse list");
+    let arr = list["data"].as_array().expect("list array");
+    assert_eq!(arr.len(), 2, "both servers must remain in the list");
+    for s in arr {
+        assert_eq!(s["has_token"], true, "both rows must have_token=true");
+    }
+
+    // Verify both rows persist the supplied fingerprint at the DB level —
+    // the public ServerResponse intentionally does not expose `fingerprint`,
+    // so we read it directly. The key invariant: no fingerprint dedup, so
+    // BOTH rows carry the same fingerprint value.
+    let db_url = format!("sqlite://{}?mode=ro", db_path_for(&tmp));
+    let mut opt = ConnectOptions::new(&db_url);
+    opt.max_connections(2);
+    opt.sqlx_logging(false);
+    let db = Database::connect(opt).await.expect("connect test db");
+    for sid in [&server_a, &server_b] {
+        let stmt = sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Sqlite,
+            "SELECT fingerprint FROM servers WHERE id = ?",
+            [sid.clone().into()],
+        );
+        let row = db
+            .query_one(stmt)
+            .await
+            .expect("query")
+            .expect("row must exist");
+        let stored: Option<String> = row.try_get("", "fingerprint").expect("fingerprint col");
+        assert_eq!(
+            stored.as_deref(),
+            Some(fp.as_str()),
+            "server {sid} must record the supplied fingerprint (no dedup)",
+        );
+    }
+}
+
+#[tokio::test]
+async fn agent_register_with_invalid_fingerprint_format_returns_400() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, enrollment_id, code) =
+        create_pending_server(&client, &base_url, "vps-badfp").await;
+
+    let anon = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .expect("anon client");
+    let resp = anon
+        .post(format!("{}/api/agent/register", base_url))
+        .bearer_auth(&code)
+        .json(&json!({"fingerprint": "short"}))
+        .send()
+        .await
+        .expect("register request failed");
+    assert_eq!(
+        resp.status(),
+        400,
+        "invalid fingerprint format must be rejected",
+    );
+
+    // Server stays pending: no token.
+    let get_resp: Value = client
+        .get(format!("{}/api/servers/{}", base_url, server_id))
+        .send()
+        .await
+        .expect("get server failed")
+        .json()
+        .await
+        .expect("parse get server");
+    assert_eq!(
+        get_resp["data"]["has_token"], false,
+        "invalid fingerprint must not stamp a token onto the bound server",
+    );
+    let outstanding = &get_resp["data"]["outstanding_enrollment"];
+    assert!(
+        outstanding.is_object(),
+        "invalid fingerprint must NOT burn the code: outstanding enrollment must remain",
+    );
+    assert_eq!(
+        outstanding["id"].as_str().unwrap(),
+        enrollment_id,
+        "outstanding enrollment should still be the original one",
     );
 }
