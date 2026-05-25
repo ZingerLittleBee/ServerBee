@@ -1,5 +1,6 @@
 pub mod api;
 mod static_files;
+mod system;
 pub mod utils;
 pub mod ws;
 
@@ -29,8 +30,11 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .nest("/api", ws::docker_logs::router())
         // Swagger UI
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        // Embedded frontend: serve static files, SPA fallback to index.html
-        .fallback(static_files::static_handler)
+        // System reserved routes must be mounted before the catch-all fallback so
+        // they are never shadowed by custom theme packages (spec § 6.4).
+        .nest("/__system", system::router())
+        // Embedded frontend: theme-aware serve with cookie precedence (spec § 6.5).
+        .fallback(static_files::theme_handler)
         // Security headers
         .layer(SetResponseHeaderLayer::overriding(
             axum::http::header::X_FRAME_OPTIONS,
