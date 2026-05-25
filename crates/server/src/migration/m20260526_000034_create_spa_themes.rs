@@ -30,7 +30,7 @@ impl MigrationTrait for Migration {
             .create_table(
                 Table::create()
                     .table(SpaThemes::Table)
-                    .col(ColumnDef::new(SpaThemes::Id).integer().not_null().auto_increment().primary_key())
+                    .col(ColumnDef::new(SpaThemes::Id).big_integer().not_null().auto_increment().primary_key())
                     .col(ColumnDef::new(SpaThemes::Uuid).text().not_null().unique_key())
                     .col(ColumnDef::new(SpaThemes::ManifestId).text().not_null())
                     .col(ColumnDef::new(SpaThemes::Name).text().not_null())

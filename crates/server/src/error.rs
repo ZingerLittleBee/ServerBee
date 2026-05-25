@@ -63,17 +63,18 @@ pub enum AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status, code, message, details) = match self {
-            AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, "BAD_REQUEST".to_string(), m, None),
-            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED".to_string(), "Unauthorized".into(), None),
-            AppError::Forbidden(m) => (StatusCode::FORBIDDEN, "FORBIDDEN".to_string(), m, None),
-            AppError::TooManyRequests(m) => (StatusCode::TOO_MANY_REQUESTS, "TOO_MANY_REQUESTS".to_string(), m, None),
-            AppError::NotFound(m) => (StatusCode::NOT_FOUND, "NOT_FOUND".to_string(), m, None),
-            AppError::Conflict(m) => (StatusCode::CONFLICT, "CONFLICT".to_string(), m, None),
-            AppError::Validation(m) => (StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR".to_string(), m, None),
-            AppError::RequestTimeout(m) => (StatusCode::REQUEST_TIMEOUT, "REQUEST_TIMEOUT".to_string(), m, None),
-            AppError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR".to_string(), m, None),
-            AppError::Domain { status, code, message, details } => (status, code.to_string(), message, details),
+        let message = self.to_string();
+        let (status, code, details) = match self {
+            AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, "BAD_REQUEST".to_string(), None),
+            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED".to_string(), None),
+            AppError::Forbidden(_) => (StatusCode::FORBIDDEN, "FORBIDDEN".to_string(), None),
+            AppError::TooManyRequests(_) => (StatusCode::TOO_MANY_REQUESTS, "TOO_MANY_REQUESTS".to_string(), None),
+            AppError::NotFound(_) => (StatusCode::NOT_FOUND, "NOT_FOUND".to_string(), None),
+            AppError::Conflict(_) => (StatusCode::CONFLICT, "CONFLICT".to_string(), None),
+            AppError::Validation(_) => (StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR".to_string(), None),
+            AppError::RequestTimeout(_) => (StatusCode::REQUEST_TIMEOUT, "REQUEST_TIMEOUT".to_string(), None),
+            AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR".to_string(), None),
+            AppError::Domain { status, code, details, .. } => (status, code.to_string(), details),
         };
         let body = ErrorBody { error: ErrorDetail { code, message, details } };
         (status, Json(body)).into_response()
@@ -133,5 +134,28 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["error"]["code"], "BAD_REQUEST");
         assert!(json["error"].get("details").is_none(), "details must be omitted when absent");
+    }
+
+    #[tokio::test]
+    async fn bad_request_preserves_prefixed_message() {
+        let err = AppError::BadRequest("foo".to_string());
+        let resp = err.into_response();
+        let body = to_bytes(resp.into_body(), 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["error"]["message"], "Bad request: foo");
+    }
+
+    #[tokio::test]
+    async fn domain_uses_bare_message() {
+        let err = AppError::Domain {
+            status: StatusCode::BAD_REQUEST,
+            code: "TEST",
+            message: "bare message".to_string(),
+            details: None,
+        };
+        let resp = err.into_response();
+        let body = to_bytes(resp.into_body(), 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["error"]["message"], "bare message");
     }
 }
