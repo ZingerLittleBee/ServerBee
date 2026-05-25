@@ -5,32 +5,26 @@
 
 use std::sync::Arc;
 
-use axum::extract::{ConnectInfo, DefaultBodyLimit, Extension, Path, State};
 use axum::extract::multipart::MultipartRejection;
-use axum::http::StatusCode;
+use axum::extract::{
+    ConnectInfo, DefaultBodyLimit, Extension, FromRequest, Multipart, Path, Request, State,
+};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
-use axum::extract::{FromRequest, Multipart, Request};
-use axum::http::HeaderMap;
 
 use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
 use crate::router::utils::extract_client_ip;
 use crate::service::audit::AuditService;
-use crate::service::spa_theme::SpaThemeService;
 use crate::service::spa_theme::error::SpaThemeError;
 use crate::service::spa_theme::service::{SpaThemeSummary, UploadResult};
+use crate::service::spa_theme::{SpaThemeService, UPLOAD_LIMIT_BYTES};
 use crate::state::AppState;
 
 // ---------------------------------------------------------------------------
-// Upload size limit
-// ---------------------------------------------------------------------------
-
-pub const UPLOAD_LIMIT_BYTES: u64 = 25 * 1024 * 1024;
-
-// ---------------------------------------------------------------------------
-// Task 11: custom multipart extractor that translates 413 → our JSON contract
+// Custom multipart extractor that translates 413 → our JSON contract
 // ---------------------------------------------------------------------------
 
 pub struct SpaThemeUpload(pub Multipart);
@@ -51,22 +45,31 @@ where
 
 fn map_rejection(rej: MultipartRejection) -> AppError {
     if rej.status() == StatusCode::PAYLOAD_TOO_LARGE {
-        return SpaThemeError::UploadTooLarge { limit_bytes: UPLOAD_LIMIT_BYTES }.into();
+        return SpaThemeError::UploadTooLarge {
+            limit_bytes: UPLOAD_LIMIT_BYTES,
+        }
+        .into();
     }
     SpaThemeError::InvalidMultipart(rej.to_string()).into()
 }
 
 // ---------------------------------------------------------------------------
-// Task 12: router + handlers
+// Router + handlers
 // ---------------------------------------------------------------------------
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/settings/spa-themes", get(list).post(upload))
-        .route("/settings/spa-themes/{uuid}", get(get_one).delete(delete_one))
+        .route(
+            "/settings/spa-themes/{uuid}",
+            get(get_one).delete(delete_one),
+        )
         .route("/settings/spa-themes/{uuid}/preview", get(get_preview))
         .route("/settings/spa-themes/{uuid}/package", get(get_package))
-        .route("/settings/active-spa-theme", get(get_active).put(put_active))
+        .route(
+            "/settings/active-spa-theme",
+            get(get_active).put(put_active),
+        )
         .layer(DefaultBodyLimit::max(UPLOAD_LIMIT_BYTES as usize))
 }
 
@@ -78,7 +81,10 @@ pub fn router() -> Router<Arc<AppState>> {
     get,
     path = "/api/settings/spa-themes",
     tag = "spa-themes",
-    responses((status = 200, description = "List of uploaded SPA themes", body = Vec<SpaThemeSummary>)),
+    responses(
+        (status = 200, description = "List of uploaded SPA themes", body = Vec<SpaThemeSummary>),
+        (status = 403, description = "Forbidden — admin only"),
+    ),
     security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn list(
@@ -94,6 +100,7 @@ pub async fn list(
     params(("uuid" = String, Path, description = "Theme UUID")),
     responses(
         (status = 200, description = "Theme metadata", body = SpaThemeSummary),
+        (status = 403, description = "Forbidden — admin only"),
         (status = 404, description = "Not found"),
     ),
     security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
@@ -103,7 +110,9 @@ pub async fn get_one(
     Path(uuid): Path<String>,
 ) -> Result<Json<ApiResponse<SpaThemeSummary>>, AppError> {
     let row = SpaThemeService::get(&state.db, &uuid).await?;
-    let active = SpaThemeService::active_uuid(&state.db).await?.unwrap_or_default();
+    let active = SpaThemeService::active_uuid(&state.db)
+        .await?
+        .unwrap_or_default();
     ok(SpaThemeSummary {
         is_active: active == row.uuid,
         is_superseded: row.is_superseded != 0,
@@ -127,6 +136,7 @@ pub async fn get_one(
     params(("uuid" = String, Path, description = "Theme UUID")),
     responses(
         (status = 200, description = "Preview image bytes"),
+        (status = 403, description = "Forbidden — admin only"),
         (status = 404, description = "No preview or theme not found"),
     ),
     security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
@@ -139,7 +149,9 @@ pub async fn get_preview(
     let Some(bytes) = row.preview_data else {
         return Err(AppError::NotFound("no preview".into()));
     };
-    let mime = row.preview_mime.unwrap_or_else(|| "application/octet-stream".into());
+    let mime = row
+        .preview_mime
+        .unwrap_or_else(|| "application/octet-stream".into());
     Ok(([(axum::http::header::CONTENT_TYPE, mime)], bytes).into_response())
 }
 
@@ -150,6 +162,7 @@ pub async fn get_preview(
     params(("uuid" = String, Path, description = "Theme UUID")),
     responses(
         (status = 200, description = "Theme package (zip)"),
+        (status = 403, description = "Forbidden — admin only"),
         (status = 404, description = "Not found"),
     ),
     security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
@@ -162,15 +175,65 @@ pub async fn get_package(
     let filename = format!("{}-{}.sbtheme", row.manifest_id, row.version);
     Ok((
         [
-            (axum::http::header::CONTENT_TYPE, "application/zip".to_string()),
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/zip".to_string(),
+            ),
             (
                 axum::http::header::CONTENT_DISPOSITION,
-                format!("attachment; filename=\"{filename}\""),
+                content_disposition_attachment(&filename),
             ),
         ],
         row.package_data,
     )
         .into_response())
+}
+
+/// Build a `Content-Disposition: attachment` header value that is safe for
+/// arbitrary filenames.
+///
+/// Emits both the legacy `filename="..."` (ASCII-sanitized, for old clients)
+/// and the RFC 5987 `filename*=UTF-8''<percent-encoded>` (preferred by modern
+/// clients). Using both maximizes compatibility while keeping the value
+/// well-formed even when the input contains characters like `+` (semver build
+/// metadata), spaces, quotes, or non-ASCII.
+fn content_disposition_attachment(filename: &str) -> String {
+    // For the RFC 5987 `filename*` value we percent-encode anything outside a
+    // conservative subset of the spec's `attr-char` set. RFC 8187 `attr-char`
+    // technically allows `+`, but we intentionally encode it because some HTTP
+    // clients and intermediaries treat raw `+` in encoded extensions as a
+    // space, which corrupts semver build-metadata filenames like
+    // `theme-1.0.0+build1.sbtheme`.
+    fn is_safe(b: u8) -> bool {
+        b.is_ascii_alphanumeric()
+            || matches!(
+                b,
+                b'!' | b'#' | b'$' | b'&' | b'-' | b'.' | b'^' | b'_' | b'`' | b'|' | b'~'
+            )
+    }
+
+    let mut encoded = String::with_capacity(filename.len());
+    for &b in filename.as_bytes() {
+        if is_safe(b) {
+            encoded.push(b as char);
+        } else {
+            encoded.push_str(&format!("%{b:02X}"));
+        }
+    }
+
+    // ASCII fallback: keep safe bytes plus space; replace everything else with
+    // `_`. This guarantees the quoted `filename="..."` form is well-formed and
+    // cannot contain `"` (header injection) or `\` (line folding / smuggling).
+    let mut ascii_fallback = String::with_capacity(filename.len());
+    for &b in filename.as_bytes() {
+        if is_safe(b) || b == b' ' {
+            ascii_fallback.push(b as char);
+        } else {
+            ascii_fallback.push('_');
+        }
+    }
+
+    format!("attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded}")
 }
 
 #[utoipa::path(
@@ -322,7 +385,10 @@ pub struct ActiveResp {
     get,
     path = "/api/settings/active-spa-theme",
     tag = "spa-themes",
-    responses((status = 200, description = "Currently active theme UUID (null if default)", body = ActiveResp)),
+    responses(
+        (status = 200, description = "Currently active theme UUID (null if default)", body = ActiveResp),
+        (status = 403, description = "Forbidden — admin only"),
+    ),
     security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
 pub async fn get_active(
@@ -361,12 +427,21 @@ pub async fn put_active(
         &headers,
         &state.config.server.trusted_proxies,
     );
-    let (action, audit_uuid) = match (&previous, &new) {
-        (_, Some(u)) => ("spa_theme.activate", u.clone()),
-        (Some(p), None) => ("spa_theme.deactivate", p.clone()),
-        (None, None) => ("spa_theme.deactivate", String::new()),
+    let audit = match (&previous, &new) {
+        (_, Some(u)) => Some(("spa_theme.activate", u.clone())),
+        (Some(p), None) => Some(("spa_theme.deactivate", p.clone())),
+        (None, None) => {
+            // No state change: there was no active theme and the request also
+            // asks for none. Skip the audit entry so the log reflects actual
+            // transitions only.
+            tracing::debug!(
+                user_id = %current_user.user_id,
+                "spa_theme.put_active no-op: no previous active theme and request requests none"
+            );
+            None
+        }
     };
-    if !audit_uuid.is_empty() {
+    if let Some((action, audit_uuid)) = audit {
         let _ = AuditService::log(
             &state.db,
             &current_user.user_id,
@@ -377,4 +452,46 @@ pub async fn put_active(
         .await;
     }
     ok(ActiveResp { theme_id: new })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::content_disposition_attachment;
+
+    #[test]
+    fn plain_ascii_filename() {
+        let v = content_disposition_attachment("acme-1.0.0.sbtheme");
+        assert_eq!(
+            v,
+            "attachment; filename=\"acme-1.0.0.sbtheme\"; filename*=UTF-8''acme-1.0.0.sbtheme"
+        );
+    }
+
+    #[test]
+    fn semver_build_metadata_plus_is_encoded() {
+        // The `+` in semver build metadata must be percent-encoded — some
+        // clients otherwise interpret raw `+` as a space.
+        let v = content_disposition_attachment("acme-1.0.0+build1.sbtheme");
+        assert!(v.contains("filename*=UTF-8''acme-1.0.0%2Bbuild1.sbtheme"));
+        // ASCII fallback replaces `+` with `_`.
+        assert!(v.contains("filename=\"acme-1.0.0_build1.sbtheme\""));
+    }
+
+    #[test]
+    fn quotes_and_backslashes_are_stripped_from_fallback() {
+        let v = content_disposition_attachment("a\"b\\c.sbtheme");
+        // Fallback must not contain `"` or `\` (header injection / smuggling).
+        let fallback_start = v.find("filename=\"").unwrap() + "filename=\"".len();
+        let fallback_end = v[fallback_start..].find('"').unwrap() + fallback_start;
+        let fallback = &v[fallback_start..fallback_end];
+        assert!(!fallback.contains('"'));
+        assert!(!fallback.contains('\\'));
+    }
+
+    #[test]
+    fn non_ascii_is_percent_encoded() {
+        // UTF-8 bytes for "é" are 0xC3 0xA9 → "%C3%A9".
+        let v = content_disposition_attachment("café.sbtheme");
+        assert!(v.contains("filename*=UTF-8''caf%C3%A9.sbtheme"));
+    }
 }

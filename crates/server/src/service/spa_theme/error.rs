@@ -28,7 +28,11 @@ pub enum SpaThemeError {
     #[error("file extension is not allowed")]
     DisallowedExtension { entry: String, ext: String },
     #[error("file too large")]
-    FileTooLarge { entry: String, size: u64, limit: u64 },
+    FileTooLarge {
+        entry: String,
+        size: u64,
+        limit: u64,
+    },
     #[error("too many files in package")]
     TooManyFiles { count: usize, limit: usize },
     #[error("total uncompressed size exceeded")]
@@ -38,7 +42,10 @@ pub enum SpaThemeError {
     #[error("version downgrade not allowed")]
     NoDowngrade { uploaded: String, existing: String },
     #[error("this version already exists")]
-    VersionExists { manifest_id: String, version: String },
+    VersionExists {
+        manifest_id: String,
+        version: String,
+    },
     #[error("theme is currently active")]
     ThemeInUse { uuid: String },
     #[error("theme not found")]
@@ -83,24 +90,35 @@ impl SpaThemeError {
         match self {
             Self::UploadTooLarge { limit_bytes } => Some(json!({ "limit_bytes": limit_bytes })),
             Self::InvalidMultipart(reason) => Some(json!({ "reason": reason })),
-            Self::InvalidManifest { field, reason } => Some(json!({ "field": field, "reason": reason })),
-            Self::MissingEntry { entry } => Some(json!({ "entry": entry })),
-            Self::IncompatibleVersion { min, running } => Some(json!({ "min": min, "running": running })),
-            Self::ZipSlip { entry } | Self::SymlinkNotAllowed { entry } | Self::DuplicateEntry { entry } => {
-                Some(json!({ "entry": entry }))
+            Self::InvalidManifest { field, reason } => {
+                Some(json!({ "field": field, "reason": reason }))
             }
+            Self::MissingEntry { entry } => Some(json!({ "entry": entry })),
+            Self::IncompatibleVersion { min, running } => {
+                Some(json!({ "min": min, "running": running }))
+            }
+            Self::ZipSlip { entry }
+            | Self::SymlinkNotAllowed { entry }
+            | Self::DuplicateEntry { entry } => Some(json!({ "entry": entry })),
             Self::ZipBomb { entry, ratio } => Some(json!({ "entry": entry, "ratio": ratio })),
             Self::DisallowedExtension { entry, ext } => Some(json!({ "entry": entry, "ext": ext })),
-            Self::FileTooLarge { entry, size, limit } => Some(json!({ "entry": entry, "size": size, "limit": limit })),
+            Self::FileTooLarge { entry, size, limit } => {
+                Some(json!({ "entry": entry, "size": size, "limit": limit }))
+            }
             Self::TooManyFiles { count, limit } => Some(json!({ "count": count, "limit": limit })),
             Self::TotalSizeExceeded { size, limit } | Self::PreviewTooLarge { size, limit } => {
                 Some(json!({ "size": size, "limit": limit }))
             }
-            Self::NoDowngrade { uploaded, existing } => Some(json!({ "uploaded": uploaded, "existing": existing })),
-            Self::VersionExists { manifest_id, version } => {
-                Some(json!({ "manifest_id": manifest_id, "version": version }))
+            Self::NoDowngrade { uploaded, existing } => {
+                Some(json!({ "uploaded": uploaded, "existing": existing }))
             }
-            Self::ThemeNotFound { uuid } | Self::ThemeInUse { uuid } => Some(json!({ "uuid": uuid })),
+            Self::VersionExists {
+                manifest_id,
+                version,
+            } => Some(json!({ "manifest_id": manifest_id, "version": version })),
+            Self::ThemeNotFound { uuid } | Self::ThemeInUse { uuid } => {
+                Some(json!({ "uuid": uuid }))
+            }
             Self::MissingManifest => None,
         }
     }
@@ -112,7 +130,12 @@ impl From<SpaThemeError> for AppError {
         let code = err.code();
         let details = err.details();
         let message = err.to_string();
-        AppError::Domain { status, code, message, details }
+        AppError::Domain {
+            status,
+            code,
+            message,
+            details,
+        }
     }
 }
 
@@ -124,7 +147,10 @@ mod tests {
 
     #[tokio::test]
     async fn zip_slip_maps_to_domain_error() {
-        let err: AppError = SpaThemeError::ZipSlip { entry: "../etc/passwd".into() }.into();
+        let err: AppError = SpaThemeError::ZipSlip {
+            entry: "../etc/passwd".into(),
+        }
+        .into();
         let resp = err.into_response();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
         let body = to_bytes(resp.into_body(), 1024).await.unwrap();
@@ -142,7 +168,10 @@ mod tests {
 
     #[tokio::test]
     async fn upload_too_large_is_413() {
-        let err: AppError = SpaThemeError::UploadTooLarge { limit_bytes: 25 * 1024 * 1024 }.into();
+        let err: AppError = SpaThemeError::UploadTooLarge {
+            limit_bytes: crate::service::spa_theme::UPLOAD_LIMIT_BYTES,
+        }
+        .into();
         let resp = err.into_response();
         assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
