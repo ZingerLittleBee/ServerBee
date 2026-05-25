@@ -266,8 +266,6 @@ function AlertsPage() {
 
   return (
     <div>
-      <h1 className="mb-6 font-bold text-2xl">{t('alerts.title')}</h1>
-
       <div className="max-w-4xl space-y-6">
         <div className="rounded-lg border bg-card p-6">
           <SecurityAlertPresets />

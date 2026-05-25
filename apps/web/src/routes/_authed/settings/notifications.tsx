@@ -541,8 +541,6 @@ function NotificationsPage() {
 
   return (
     <div>
-      <h1 className="mb-6 font-bold text-2xl">{t('notifications.title')}</h1>
-
       <div className="max-w-2xl space-y-6">
         {/* Create notification */}
         <div className="rounded-lg border bg-card p-6">

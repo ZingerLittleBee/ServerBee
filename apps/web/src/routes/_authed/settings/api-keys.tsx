@@ -87,8 +87,6 @@ function ApiKeysPage() {
 
   return (
     <div>
-      <h1 className="mb-6 font-bold text-2xl">{t('api_keys.title')}</h1>
-
       <div className="max-w-2xl space-y-6">
         <div className="rounded-lg border bg-card p-6">
           <h2 className="mb-4 font-semibold text-lg">{t('api_keys.create_new')}</h2>

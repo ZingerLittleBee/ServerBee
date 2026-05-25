@@ -221,10 +221,7 @@ export function CapabilitiesPage() {
 
   return (
     <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
-      <div className="mb-6 min-w-0">
-        <h1 className="font-bold text-2xl">{t('capabilities.title')}</h1>
-        <p className="text-muted-foreground text-sm">{t('capabilities.description')}</p>
-      </div>
+      <p className="mb-6 min-w-0 text-muted-foreground text-sm">{t('capabilities.description')}</p>
 
       <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full min-w-0 sm:max-w-sm sm:flex-1">

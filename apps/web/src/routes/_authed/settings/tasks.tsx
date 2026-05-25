@@ -29,8 +29,6 @@ function TasksPage() {
 
   return (
     <div>
-      <h1 className="mb-6 font-bold text-2xl">{t('tasks.title')}</h1>
-
       <Tabs className="max-w-3xl" defaultValue="oneshot">
         <TabsList>
           <TabsTrigger value="oneshot">{t('tasks.tab_oneshot', { defaultValue: 'One-shot' })}</TabsTrigger>

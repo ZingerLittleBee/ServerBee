@@ -192,8 +192,7 @@ function AuditLogsPage() {
 
   return (
     <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <h1 className="font-bold text-2xl">{t('audit.title')}</h1>
+      <div className="mb-6 flex items-center justify-end gap-4">
         <AlertDialog onOpenChange={setClearOpen} open={clearOpen}>
           <AlertDialogTrigger
             render={
