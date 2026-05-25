@@ -870,3 +870,229 @@ async fn recover_on_unknown_server_returns_404() {
         "recover on unknown server must return 404"
     );
 }
+
+#[tokio::test]
+async fn regenerate_supersedes_outstanding_on_pending() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, enrollment_id_1, _code) =
+        create_pending_server(&client, &base_url, "vps-regen-cas").await;
+
+    let resp = client
+        .post(format!(
+            "{}/api/servers/{}/regenerate-code",
+            base_url, server_id
+        ))
+        .json(&json!({"expected_enrollment_id": enrollment_id_1}))
+        .send()
+        .await
+        .expect("regenerate request failed");
+    assert_eq!(resp.status(), 200, "regenerate should succeed");
+    let body: Value = resp.json().await.expect("parse regenerate response");
+    let new_id = body["data"]["enrollment"]["id"]
+        .as_str()
+        .expect("new enrollment id");
+    assert_ne!(
+        new_id, enrollment_id_1,
+        "regenerate must return a new enrollment id"
+    );
+
+    let get_resp: Value = client
+        .get(format!("{}/api/servers/{}", base_url, server_id))
+        .send()
+        .await
+        .expect("get server failed")
+        .json()
+        .await
+        .expect("parse get server");
+    let outstanding = &get_resp["data"]["outstanding_enrollment"];
+    assert!(
+        outstanding.is_object(),
+        "outstanding_enrollment must be set after regenerate"
+    );
+    assert_eq!(
+        outstanding["id"].as_str().unwrap(),
+        new_id,
+        "outstanding_enrollment must be the new id, not the superseded one"
+    );
+}
+
+#[tokio::test]
+async fn regenerate_with_no_expected_id_supersedes_last_writer_wins() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, enrollment_id_1, _code) =
+        create_pending_server(&client, &base_url, "vps-regen-noexpect").await;
+
+    let resp = client
+        .post(format!(
+            "{}/api/servers/{}/regenerate-code",
+            base_url, server_id
+        ))
+        .json(&json!({}))
+        .send()
+        .await
+        .expect("regenerate request failed");
+    assert_eq!(
+        resp.status(),
+        200,
+        "regenerate without expected_enrollment_id must succeed (last-writer-wins)"
+    );
+    let body: Value = resp.json().await.expect("parse regenerate response");
+    let new_id = body["data"]["enrollment"]["id"]
+        .as_str()
+        .expect("new enrollment id");
+    assert_ne!(new_id, enrollment_id_1);
+}
+
+#[tokio::test]
+async fn regenerate_with_stale_expected_id_returns_409() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, _enrollment_id, _code) =
+        create_pending_server(&client, &base_url, "vps-regen-stale").await;
+
+    let resp = client
+        .post(format!(
+            "{}/api/servers/{}/regenerate-code",
+            base_url, server_id
+        ))
+        .json(&json!({"expected_enrollment_id": "this-does-not-match"}))
+        .send()
+        .await
+        .expect("regenerate request failed");
+    assert_eq!(
+        resp.status(),
+        409,
+        "stale expected_enrollment_id must return 409"
+    );
+}
+
+#[tokio::test]
+async fn regenerate_when_no_outstanding_and_expected_id_provided_returns_409() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, enrollment_id_1, _code) =
+        create_pending_server(&client, &base_url, "vps-regen-revoked").await;
+
+    let revoke_resp = client
+        .delete(format!(
+            "{}/api/agent/enrollments/{}",
+            base_url, enrollment_id_1
+        ))
+        .send()
+        .await
+        .expect("revoke request failed");
+    assert_eq!(revoke_resp.status(), 200, "revoke should succeed");
+
+    let resp = client
+        .post(format!(
+            "{}/api/servers/{}/regenerate-code",
+            base_url, server_id
+        ))
+        .json(&json!({"expected_enrollment_id": enrollment_id_1}))
+        .send()
+        .await
+        .expect("regenerate request failed");
+    assert_eq!(
+        resp.status(),
+        409,
+        "expected_enrollment_id pointing to a revoked row must return 409"
+    );
+}
+
+#[tokio::test]
+async fn regenerate_when_no_outstanding_and_no_expected_id_succeeds() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, enrollment_id_1, _code) =
+        create_pending_server(&client, &base_url, "vps-regen-fresh").await;
+
+    let revoke_resp = client
+        .delete(format!(
+            "{}/api/agent/enrollments/{}",
+            base_url, enrollment_id_1
+        ))
+        .send()
+        .await
+        .expect("revoke request failed");
+    assert_eq!(revoke_resp.status(), 200, "revoke should succeed");
+
+    let resp = client
+        .post(format!(
+            "{}/api/servers/{}/regenerate-code",
+            base_url, server_id
+        ))
+        .json(&json!({}))
+        .send()
+        .await
+        .expect("regenerate request failed");
+    assert_eq!(
+        resp.status(),
+        200,
+        "regenerate with no outstanding and no expected id must succeed"
+    );
+    let body: Value = resp.json().await.expect("parse regenerate response");
+    let new_id = body["data"]["enrollment"]["id"]
+        .as_str()
+        .expect("new enrollment id");
+    assert_ne!(new_id, enrollment_id_1);
+}
+
+#[tokio::test]
+async fn regenerate_on_non_pending_returns_400() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, _enrollment_id, code) =
+        create_pending_server(&client, &base_url, "vps-regen-online").await;
+    let _token = enroll_pending_server(&base_url, &code).await;
+
+    let resp = client
+        .post(format!(
+            "{}/api/servers/{}/regenerate-code",
+            base_url, server_id
+        ))
+        .json(&json!({}))
+        .send()
+        .await
+        .expect("regenerate request failed");
+    assert_eq!(
+        resp.status(),
+        400,
+        "regenerate on non-pending server must return 400"
+    );
+}
+
+#[tokio::test]
+async fn regenerate_on_unknown_server_returns_404() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let resp = client
+        .post(format!(
+            "{}/api/servers/{}/regenerate-code",
+            base_url, "non-existent-id"
+        ))
+        .json(&json!({}))
+        .send()
+        .await
+        .expect("regenerate request failed");
+    assert_eq!(
+        resp.status(),
+        404,
+        "regenerate on unknown server must return 404"
+    );
+}

@@ -198,6 +198,21 @@ pub struct RecoverResponse {
     pub enrollment: EnrollmentIssueResponse,
 }
 
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
+pub struct RegenerateCodeRequest {
+    /// Optimistic concurrency token. If `Some`, must match the current
+    /// outstanding enrollment id exactly; otherwise the server returns 409.
+    /// If `None`, last-writer-wins: any outstanding enrollment is revoked
+    /// and a fresh one is minted.
+    #[serde(default)]
+    pub expected_enrollment_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct RegenerateCodeResponse {
+    pub enrollment: EnrollmentIssueResponse,
+}
+
 fn runtime_capability_fields(
     agent_manager: &AgentManager,
     server_id: &str,
@@ -409,6 +424,10 @@ pub fn write_router() -> Router<Arc<AppState>> {
         )
         .route("/servers/{id}/upgrade", post(trigger_upgrade))
         .route("/servers/{id}/recover", post(recover_server))
+        .route(
+            "/servers/{id}/regenerate-code",
+            post(regenerate_code),
+        )
         .route(
             "/servers/{id}/network-probes/targets",
             put(set_server_network_targets),
@@ -761,6 +780,123 @@ async fn recover_server(
     .await;
 
     ok(RecoverResponse {
+        enrollment: EnrollmentIssueResponse {
+            id: enrollment_model.id,
+            code: plaintext_code,
+            code_prefix: enrollment_model.code_prefix,
+            expires_at: enrollment_model.expires_at.to_rfc3339(),
+        },
+    })
+}
+
+/// Mint a fresh bound enrollment for a pending server, auto-superseding the
+/// previous outstanding enrollment (if any) inside one transaction. The target
+/// server MUST be pending (`token_hash IS NULL`); use `recover` for an already-
+/// enrolled server.
+///
+/// Optimistic concurrency: callers pass `expected_enrollment_id` to guard
+/// against stomping on a concurrent operator's regenerated code. Semantics:
+/// - `Some(id) && matches current outstanding` → proceed (CAS pass)
+/// - `Some(id) && does NOT match` (including: there is no outstanding row, or
+///   the row referenced has been revoked/consumed) → 409
+/// - `None && outstanding exists` → proceed (last-writer-wins)
+/// - `None && no outstanding` → proceed (fresh mint)
+#[utoipa::path(
+    post,
+    path = "/api/servers/{id}/regenerate-code",
+    tag = "servers",
+    params(("id" = String, Path, description = "Server ID")),
+    request_body = RegenerateCodeRequest,
+    responses(
+        (status = 200, description = "Regenerate enrollment minted", body = RegenerateCodeResponse),
+        (status = 400, description = "Server is not pending; use recover instead"),
+        (status = 404, description = "Server not found"),
+        (status = 409, description = "expected_enrollment_id mismatch"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+async fn regenerate_code(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Extension(current_user): Extension<CurrentUser>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(body): Json<RegenerateCodeRequest>,
+) -> Result<Json<ApiResponse<RegenerateCodeResponse>>, AppError> {
+    let user_id = current_user.user_id.clone();
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+
+    let tx_id = id.clone();
+    let tx_user_id = user_id.clone();
+    let expected = body.expected_enrollment_id.clone();
+
+    let (enrollment_model, plaintext_code) = state
+        .db
+        .transaction::<_, (agent_enrollment::Model, String), AppError>(move |tx| {
+            Box::pin(async move {
+                // 1. Load the server row; 404 if it doesn't exist.
+                let row = server::Entity::find_by_id(&tx_id)
+                    .one(tx)
+                    .await?
+                    .ok_or_else(|| AppError::NotFound("server not found".into()))?;
+
+                // 2. regenerate-code is only for pending servers. An already-
+                //    enrolled server (token_hash IS NOT NULL) must use recover.
+                if row.token_hash.is_some() {
+                    return Err(AppError::BadRequest(
+                        "server is not pending; use recover instead".into(),
+                    ));
+                }
+
+                // 3. Optimistic CAS: if caller provided expected_enrollment_id,
+                //    it must match the current OUTSTANDING enrollment exactly.
+                //    A None value means "I don't care what's outstanding"
+                //    (last-writer-wins).
+                let current = agent_enrollment::Entity::find()
+                    .filter(agent_enrollment::Column::TargetServerId.eq(&tx_id))
+                    .filter(agent_enrollment::Column::ConsumedAt.is_null())
+                    .filter(agent_enrollment::Column::RevokedAt.is_null())
+                    .one(tx)
+                    .await?;
+                let current_id = current.as_ref().map(|m| m.id.clone());
+                if expected.is_some() && expected != current_id {
+                    return Err(AppError::Conflict(
+                        "expected_enrollment_id mismatch".into(),
+                    ));
+                }
+
+                // 4. Revoke any outstanding row, then mint a fresh one.
+                EnrollmentService::revoke_outstanding_tx(tx, &tx_id).await?;
+                let (model, plaintext) =
+                    EnrollmentService::mint_for_server(tx, &tx_id, &tx_user_id, DEFAULT_TTL_SECS)
+                        .await?;
+                Ok((model, plaintext))
+            })
+        })
+        .await
+        .map_err(|e| match e {
+            sea_orm::TransactionError::Connection(db_err) => AppError::from(db_err),
+            sea_orm::TransactionError::Transaction(app_err) => app_err,
+        })?;
+
+    let _ = AuditService::log(
+        &state.db,
+        &user_id,
+        "server_regenerate_code",
+        Some(&format!(
+            "server_id={id} enrollment={} prefix={}",
+            enrollment_model.id, enrollment_model.code_prefix
+        )),
+        &ip,
+    )
+    .await;
+
+    ok(RegenerateCodeResponse {
         enrollment: EnrollmentIssueResponse {
             id: enrollment_model.id,
             code: plaintext_code,
