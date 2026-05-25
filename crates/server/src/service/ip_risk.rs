@@ -231,7 +231,7 @@ impl IpRiskService {
         geoip: &Arc<RwLock<Option<GeoIpService>>>,
         ip: &str,
     ) -> Option<IpQualitySnapshotData> {
-        let provider = provider_for_config(&self.config);
+        let provider = provider_for_config(&self.config, &self.config.risk_provider);
         self.score_ip_with(db, geoip, ip, provider).await
     }
 
@@ -449,12 +449,18 @@ fn build_provider_client() -> reqwest::Client {
         .unwrap_or_else(|_| reqwest::Client::new())
 }
 
-pub fn provider_for_config(config: &IpQualityConfig) -> Option<Box<dyn IpRiskProvider>> {
-    match config.risk_provider.as_str() {
+pub fn provider_for_config(
+    config: &IpQualityConfig,
+    provider_name: &str,
+) -> Option<Box<dyn IpRiskProvider>> {
+    match provider_name {
+        "ipapi_is" => Some(Box::new(IpApiIsProvider::from_config(
+            config.ipapi_is.as_ref(),
+        )) as Box<dyn IpRiskProvider>),
         "ip-api" => Some(Box::new(IpApiProvider {
             client: build_provider_client(),
         }) as Box<dyn IpRiskProvider>),
-        _ => None,
+        _ => None, // "none" or unknown
     }
 }
 
@@ -951,12 +957,11 @@ mod tests {
         let _: Option<Box<dyn IpRiskProvider>> = None;
     }
 
-    // provider_for_config returns None when risk_provider is not "ip-api"
+    // provider_for_config returns None when provider_name is "none"
     #[test]
     fn provider_for_config_none() {
-        let mut cfg = IpQualityConfig::default();
-        cfg.risk_provider = "none".to_string();
-        assert!(provider_for_config(&cfg).is_none());
+        let cfg = IpQualityConfig::default();
+        assert!(provider_for_config(&cfg, "none").is_none());
     }
 
     // provider_for_config returns Some(IpApiProvider) for "ip-api"
@@ -966,7 +971,7 @@ mod tests {
             risk_provider: "ip-api".to_string(),
             ..Default::default()
         };
-        let provider = provider_for_config(&cfg);
+        let provider = provider_for_config(&cfg, "ip-api");
         assert!(provider.is_some());
         assert_eq!(provider.unwrap().name(), "ip-api");
     }
@@ -1495,5 +1500,28 @@ mod tests {
     fn ipapi_is_provider_name() {
         let p = super::IpApiIsProvider::from_config(None);
         assert_eq!((&p as &dyn super::IpRiskProvider).name(), "ipapi_is");
+    }
+
+    #[test]
+    fn provider_for_config_ipapi_is_returns_provider() {
+        let cfg = crate::config::IpQualityConfig {
+            risk_provider: "ipapi_is".to_string(),
+            risk_provider_fallback: "ip-api".to_string(),
+            ipapi_is: None,
+        };
+        let p = super::provider_for_config(&cfg, "ipapi_is");
+        assert!(p.is_some());
+        assert_eq!(p.unwrap().name(), "ipapi_is");
+    }
+
+    #[test]
+    fn provider_for_config_unknown_legacy_returns_none() {
+        // Legacy provider names (deleted in this refactor) should resolve to None,
+        // not panic — this preserves graceful degradation for users still on old config.
+        let cfg = crate::config::IpQualityConfig::default();
+        assert!(super::provider_for_config(&cfg, "scamalytics").is_none());
+        assert!(super::provider_for_config(&cfg, "abuseipdb").is_none());
+        assert!(super::provider_for_config(&cfg, "ipqs").is_none());
+        assert!(super::provider_for_config(&cfg, "proxycheck").is_none());
     }
 }
