@@ -109,6 +109,12 @@
   "notifications.group_update_failed": "更新通知组失败",
   "notifications.enabled_label": "启用",
   "notifications.type_locked_in_edit": "编辑时不能修改类型。",
+  "notifications.add_channel_title": "添加通知渠道",
+  "notifications.edit_channel_title": "编辑通知渠道",
+  "notifications.channel_dialog_description": "配置通道名称、类型及对应参数。",
+  "notifications.add_group_title": "添加通知组",
+  "notifications.edit_group_title": "编辑通知组",
+  "notifications.group_dialog_description": "为告警触发选择一组通知渠道。",
 
   "alerts.title": "告警规则",
   "alerts.rules": "规则",

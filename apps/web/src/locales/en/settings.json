@@ -109,6 +109,12 @@
   "notifications.group_update_failed": "Failed to update group",
   "notifications.enabled_label": "Enabled",
   "notifications.type_locked_in_edit": "Type is locked while editing.",
+  "notifications.add_channel_title": "Add channel",
+  "notifications.edit_channel_title": "Edit channel",
+  "notifications.channel_dialog_description": "Configure the channel name, type, and provider settings.",
+  "notifications.add_group_title": "Add group",
+  "notifications.edit_group_title": "Edit group",
+  "notifications.group_dialog_description": "Select notification channels to bundle for an alert.",
 
   "alerts.title": "Alert Rules",
   "alerts.rules": "Rules",
