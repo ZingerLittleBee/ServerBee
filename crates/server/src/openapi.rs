@@ -63,7 +63,6 @@ impl Modify for SecurityAddon {
         // agent
         crate::router::api::agent::latest_version,
         crate::router::api::agent::register,
-        crate::router::api::agent::create_enrollment,
         crate::router::api::agent::list_enrollments,
         crate::router::api::agent::delete_enrollment,
         crate::router::api::agent::rotate_token,
@@ -283,8 +282,6 @@ impl Modify for SecurityAddon {
             // agent
             crate::service::upgrade_release::LatestAgentVersionResponse,
             crate::router::api::agent::RegisterResponse,
-            crate::router::api::agent::CreateEnrollmentRequest,
-            crate::router::api::agent::CreateEnrollmentResponse,
             crate::router::api::agent::EnrollmentSummary,
             crate::router::api::agent::RotateTokenResponse,
             // servers

@@ -1096,3 +1096,127 @@ async fn regenerate_on_unknown_server_returns_404() {
         "regenerate on unknown server must return 404"
     );
 }
+
+#[tokio::test]
+async fn list_enrollments_includes_id_and_target_server_id() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, enrollment_id, code) =
+        create_pending_server(&client, &base_url, "vps-list").await;
+
+    let resp = client
+        .get(format!("{}/api/agent/enrollments", base_url))
+        .send()
+        .await
+        .expect("list enrollments request failed");
+    assert_eq!(resp.status(), 200, "list enrollments should succeed");
+    let body: Value = resp.json().await.expect("parse list response");
+    let arr = body["data"].as_array().expect("data must be array");
+    assert_eq!(arr.len(), 1, "exactly one enrollment exists");
+
+    let row = &arr[0];
+    assert_eq!(row["id"].as_str().expect("id must be string"), enrollment_id);
+    assert_eq!(
+        row["target_server_id"]
+            .as_str()
+            .expect("target_server_id must be string"),
+        server_id,
+    );
+    assert_eq!(
+        row["code_prefix"].as_str().expect("code_prefix must be string"),
+        &code[..8],
+    );
+    assert!(row["expires_at"].is_string(), "expires_at must be present");
+    assert!(row["created_at"].is_string(), "created_at must be present");
+    assert!(
+        row["consumed_at"].is_null(),
+        "consumed_at must be null for a fresh enrollment"
+    );
+    assert!(
+        row["revoked_at"].is_null(),
+        "revoked_at must be null for a fresh enrollment"
+    );
+
+    // The DTO must drop `label` and never expose the plaintext code.
+    assert!(
+        row.get("label").is_none(),
+        "EnrollmentSummary must not expose `label` after T11"
+    );
+    assert!(
+        row.get("code").is_none(),
+        "EnrollmentSummary must never expose plaintext code"
+    );
+}
+
+#[tokio::test]
+async fn delete_enrollment_revokes_only_does_not_delete_server() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, enrollment_id, _code) =
+        create_pending_server(&client, &base_url, "vps-revoke-only").await;
+
+    let resp = client
+        .delete(format!(
+            "{}/api/agent/enrollments/{}",
+            base_url, enrollment_id
+        ))
+        .send()
+        .await
+        .expect("delete enrollment request failed");
+    assert_eq!(resp.status(), 200, "DELETE enrollment should succeed");
+
+    // The bound server still exists (DELETE enrollment does NOT cascade).
+    let get_resp = client
+        .get(format!("{}/api/servers/{}", base_url, server_id))
+        .send()
+        .await
+        .expect("get server request failed");
+    assert_eq!(
+        get_resp.status(),
+        200,
+        "server must still exist after enrollment revoke"
+    );
+
+    // The enrollment row remains in the list with a non-null revoked_at.
+    let list_resp: Value = client
+        .get(format!("{}/api/agent/enrollments", base_url))
+        .send()
+        .await
+        .expect("list enrollments failed")
+        .json()
+        .await
+        .expect("parse list");
+    let arr = list_resp["data"].as_array().expect("data array");
+    let row = arr
+        .iter()
+        .find(|r| r["id"].as_str() == Some(enrollment_id.as_str()))
+        .expect("revoked enrollment must remain in the list");
+    assert!(
+        row["revoked_at"].is_string(),
+        "revoked_at must be a string after revoke, got {:?}",
+        row["revoked_at"]
+    );
+}
+
+#[tokio::test]
+async fn create_enrollment_route_is_gone() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let resp = client
+        .post(format!("{}/api/agent/enrollments", base_url))
+        .json(&json!({"label": "x", "ttl_secs": 600}))
+        .send()
+        .await
+        .expect("post enrollments request failed");
+    let status = resp.status().as_u16();
+    assert!(
+        status == 404 || status == 405,
+        "POST /api/agent/enrollments must be 404 or 405 (route removed), got {status}"
+    );
+}

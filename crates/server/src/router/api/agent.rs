@@ -15,7 +15,7 @@ use crate::middleware::auth::CurrentUser;
 use crate::router::utils::extract_client_ip;
 use crate::service::audit::AuditService;
 use crate::service::auth::AuthService;
-use crate::service::enrollment::{DEFAULT_TTL_SECS, EnrollmentService};
+use crate::service::enrollment::EnrollmentService;
 use crate::service::upgrade_release::LatestAgentVersionResponse;
 use crate::state::AppState;
 
@@ -31,32 +31,16 @@ pub struct RegisterResponse {
     token: String,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-#[allow(dead_code)] // TODO: T11 removes this DTO together with create_enrollment.
-pub struct CreateEnrollmentRequest {
-    #[serde(default)]
-    label: Option<String>,
-    /// Lifetime in seconds. Defaults to 600 (10 min), max 86400.
-    ttl_secs: Option<i64>,
-}
-
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub struct CreateEnrollmentResponse {
-    id: String,
-    /// Plaintext enrollment code — shown exactly once, never retrievable again.
-    code: String,
-    expires_at: String,
-}
-
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct EnrollmentSummary {
-    id: String,
-    label: Option<String>,
-    code_prefix: String,
-    created_by: String,
-    expires_at: String,
-    consumed_at: Option<String>,
-    created_at: String,
+    pub id: String,
+    pub target_server_id: String,
+    pub code_prefix: String,
+    pub created_by: String,
+    pub expires_at: String,
+    pub consumed_at: Option<String>,
+    pub revoked_at: Option<String>,
+    pub created_at: String,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -219,37 +203,12 @@ async fn register(
 /// Admin-only routes for managing enrollment codes.
 pub fn admin_router() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/agent/enrollments", post(create_enrollment))
         .route("/agent/enrollments", get(list_enrollments))
         .route(
             "/agent/enrollments/{id}",
             axum::routing::delete(delete_enrollment),
         )
         .route("/agent/{id}/rotate-token", post(rotate_token))
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/agent/enrollments",
-    tag = "agent",
-    request_body = CreateEnrollmentRequest,
-    responses((status = 200, description = "Enrollment code created", body = CreateEnrollmentResponse)),
-    security(("session_cookie" = []), ("api_key" = []))
-)]
-async fn create_enrollment(
-    State(_state): State<Arc<AppState>>,
-    ConnectInfo(_addr): ConnectInfo<SocketAddr>,
-    _headers: HeaderMap,
-    Extension(_current_user): Extension<CurrentUser>,
-    Json(_body): Json<CreateEnrollmentRequest>,
-) -> Result<Json<ApiResponse<CreateEnrollmentResponse>>, AppError> {
-    // TODO: T11 will remove this handler. Enrollments are now minted only
-    // by POST /api/servers (T7), recover (T9), and regenerate-code (T10);
-    // there is no standalone "create enrollment" endpoint in the new model.
-    let _ = DEFAULT_TTL_SECS;
-    Err(AppError::Internal(
-        "create_enrollment is deprecated; use POST /api/servers instead".to_string(),
-    ))
 }
 
 #[utoipa::path(
@@ -267,12 +226,12 @@ async fn list_enrollments(
         .into_iter()
         .map(|m| EnrollmentSummary {
             id: m.id,
-            // TODO: T11 will replace `label` with `target_server_id` in the DTO.
-            label: None,
+            target_server_id: m.target_server_id,
             code_prefix: m.code_prefix,
             created_by: m.created_by,
             expires_at: m.expires_at.to_rfc3339(),
             consumed_at: m.consumed_at.map(|d| d.to_rfc3339()),
+            revoked_at: m.revoked_at.map(|d| d.to_rfc3339()),
             created_at: m.created_at.to_rfc3339(),
         })
         .collect();
@@ -294,9 +253,8 @@ async fn delete_enrollment(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
-    // TODO: T11 will replace this endpoint with "revoke enrollment". The
-    // DELETE method is preserved for now but mapped to revoke(), which is
-    // idempotent and keeps the audit trail in the table.
+    // DELETE is mapped to revoke(): the row stays in the table with a
+    // non-null `revoked_at` for audit/history. Idempotent.
     EnrollmentService::revoke(&state.db, &id).await?;
     let ip = extract_client_ip(
         &ConnectInfo(addr),
@@ -308,12 +266,12 @@ async fn delete_enrollment(
     let _ = AuditService::log(
         &state.db,
         &current_user.user_id,
-        "agent_enrollment_deleted",
+        "agent_enrollment_revoked",
         Some(&detail),
         &ip,
     )
     .await;
-    ok("deleted")
+    ok("revoked")
 }
 
 #[utoipa::path(
@@ -563,14 +521,14 @@ mod enrollment_endpoint_tests {
             .unwrap();
 
         // Mirror exactly the mapping in `list_enrollments`.
-        // TODO: T11 will replace `label` with `target_server_id` in the DTO.
         let summary = super::EnrollmentSummary {
             id: model.id,
-            label: None,
+            target_server_id: model.target_server_id,
             code_prefix: model.code_prefix,
             created_by: model.created_by,
             expires_at: model.expires_at.to_rfc3339(),
             consumed_at: model.consumed_at.map(|d| d.to_rfc3339()),
+            revoked_at: model.revoked_at.map(|d| d.to_rfc3339()),
             created_at: model.created_at.to_rfc3339(),
         };
         let json = serde_json::to_string(&summary).expect("serialize");
@@ -585,5 +543,12 @@ mod enrollment_endpoint_tests {
         );
         // code_prefix is the only code-derived field that may appear.
         assert!(json.contains(&format!("\"code_prefix\":\"{}\"", &code[..8])));
+        // The bound server id is part of the DTO post-T11.
+        assert!(json.contains(&format!("\"target_server_id\":\"{sid}\"")));
+        // The `label` field is gone post-T11.
+        assert!(
+            !json.contains("\"label\""),
+            "EnrollmentSummary must not expose `label` after T11"
+        );
     }
 }
