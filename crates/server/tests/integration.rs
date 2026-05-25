@@ -160,19 +160,27 @@ async fn list_audit_entries(client: &reqwest::Client, base_url: &str) -> Vec<ser
 }
 
 async fn mint_enrollment_code(client: &reqwest::Client, base_url: &str) -> String {
+    create_pending_server_named(client, base_url, "integration-test-server").await
+}
+
+async fn create_pending_server_named(
+    client: &reqwest::Client,
+    base_url: &str,
+    name: &str,
+) -> String {
     login_admin(client, base_url).await;
     let resp = client
-        .post(format!("{}/api/agent/enrollments", base_url))
-        .json(&json!({}))
+        .post(format!("{}/api/servers", base_url))
+        .json(&json!({ "name": name }))
         .send()
         .await
-        .expect("Enrollment mint request failed");
-    assert_eq!(resp.status(), 200, "Enrollment mint should succeed");
+        .expect("Create-server request failed");
+    assert_eq!(resp.status(), 200, "Create server should succeed");
     let body: serde_json::Value = resp
         .json()
         .await
-        .expect("Failed to parse enrollment response");
-    body["data"]["code"]
+        .expect("Failed to parse create-server response");
+    body["data"]["enrollment"]["code"]
         .as_str()
         .expect("enrollment code missing")
         .to_string()
@@ -1952,85 +1960,12 @@ async fn test_user_management_crud() {
     );
 }
 
-#[tokio::test]
-async fn test_agent_register_reuses_existing_server_for_same_fingerprint() {
-    let (base_url, _tmp) = start_test_server().await;
-    let client = http_client();
-    let fingerprint = "a".repeat(64);
-
-    let first_code = mint_enrollment_code(&client, &base_url).await;
-    let first_resp = client
-        .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", format!("Bearer {first_code}"))
-        .json(&json!({ "fingerprint": fingerprint }))
-        .send()
-        .await
-        .expect("First register request failed");
-
-    assert_eq!(
-        first_resp.status(),
-        200,
-        "First registration should succeed"
-    );
-    let first_body: serde_json::Value = first_resp.json().await.unwrap();
-    let first_server_id = first_body["data"]["server_id"]
-        .as_str()
-        .expect("server_id missing on first registration")
-        .to_string();
-    let first_token = first_body["data"]["token"]
-        .as_str()
-        .expect("token missing on first registration")
-        .to_string();
-
-    let second_code = mint_enrollment_code(&client, &base_url).await;
-    let second_resp = client
-        .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", format!("Bearer {second_code}"))
-        .json(&json!({ "fingerprint": fingerprint }))
-        .send()
-        .await
-        .expect("Second register request failed");
-
-    assert_eq!(
-        second_resp.status(),
-        200,
-        "Second registration should succeed"
-    );
-    let second_body: serde_json::Value = second_resp.json().await.unwrap();
-    let second_server_id = second_body["data"]["server_id"]
-        .as_str()
-        .expect("server_id missing on second registration")
-        .to_string();
-    let second_token = second_body["data"]["token"]
-        .as_str()
-        .expect("token missing on second registration")
-        .to_string();
-
-    assert_eq!(
-        first_server_id, second_server_id,
-        "Same fingerprint should reuse the existing server row"
-    );
-    assert_ne!(
-        first_token, second_token,
-        "Re-registration should rotate the agent token"
-    );
-
-    login_admin(&client, &base_url).await;
-    let list_resp = client
-        .get(format!("{}/api/servers", base_url))
-        .send()
-        .await
-        .expect("GET /api/servers failed");
-
-    assert_eq!(list_resp.status(), 200);
-    let list_body: serde_json::Value = list_resp.json().await.unwrap();
-    let servers = list_body["data"]
-        .as_array()
-        .expect("servers should be an array");
-
-    assert_eq!(servers.len(), 1, "Only one server row should exist");
-    assert_eq!(servers[0]["id"], first_server_id);
-}
+// Removed: test_agent_register_reuses_existing_server_for_same_fingerprint
+// The agent-registration redesign (spec 2026-05-25) makes fingerprint
+// informational only — it is never used for lookup or dedup. Two minted
+// enrollments now MUST produce two distinct server rows even if their
+// fingerprints match. Coverage for the new behaviour lives in
+// `agent_registration_integration.rs::agent_register_records_fingerprint_does_not_dedup`.
 
 #[tokio::test]
 async fn test_cleanup_orphans_skips_online_uninitialized_server() {
@@ -2038,7 +1973,9 @@ async fn test_cleanup_orphans_skips_online_uninitialized_server() {
     let client = http_client();
     login_admin(&client, &base_url).await;
 
-    let orphan_code = mint_enrollment_code(&client, &base_url).await;
+    // The cleanup heuristic matches `name == "New Server"` AND `os IS NULL`,
+    // so the test must create rows with that name explicitly.
+    let orphan_code = create_pending_server_named(&client, &base_url, "New Server").await;
     let orphan_resp = client
         .post(format!("{}/api/agent/register", base_url))
         .header("Authorization", format!("Bearer {orphan_code}"))
@@ -2053,7 +1990,7 @@ async fn test_cleanup_orphans_skips_online_uninitialized_server() {
         .expect("orphan server_id missing")
         .to_string();
 
-    let online_code = mint_enrollment_code(&client, &base_url).await;
+    let online_code = create_pending_server_named(&client, &base_url, "New Server").await;
     let online_resp = client
         .post(format!("{}/api/agent/register", base_url))
         .header("Authorization", format!("Bearer {online_code}"))

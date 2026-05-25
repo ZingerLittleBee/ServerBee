@@ -104,27 +104,32 @@ async fn login_admin(client: &reqwest::Client, base_url: &str) {
     assert_eq!(resp.status(), 200, "Login should succeed");
 }
 
-async fn mint_enrollment_code(client: &reqwest::Client, base_url: &str) -> String {
+async fn create_pending_server(client: &reqwest::Client, base_url: &str) -> (String, String) {
     login_admin(client, base_url).await;
     let resp = client
-        .post(format!("{}/api/agent/enrollments", base_url))
-        .json(&json!({}))
+        .post(format!("{}/api/servers", base_url))
+        .json(&json!({ "name": "cost-integration-test" }))
         .send()
         .await
-        .expect("Enrollment mint request failed");
-    assert_eq!(resp.status(), 200, "Enrollment mint should succeed");
+        .expect("Create server request failed");
+    assert_eq!(resp.status(), 200, "Create server should succeed");
     let body: Value = resp
         .json()
         .await
-        .expect("Failed to parse enrollment response");
-    body["data"]["code"]
+        .expect("Failed to parse create-server response");
+    let server_id = body["data"]["server_id"]
+        .as_str()
+        .expect("server_id missing")
+        .to_string();
+    let code = body["data"]["enrollment"]["code"]
         .as_str()
         .expect("enrollment code missing")
-        .to_string()
+        .to_string();
+    (server_id, code)
 }
 
 async fn register_agent(client: &reqwest::Client, base_url: &str) -> String {
-    let code = mint_enrollment_code(client, base_url).await;
+    let (server_id, code) = create_pending_server(client, base_url).await;
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
         .header("Authorization", format!("Bearer {code}"))
@@ -142,10 +147,12 @@ async fn register_agent(client: &reqwest::Client, base_url: &str) -> String {
         .await
         .expect("Failed to parse register response");
 
-    register_body["data"]["server_id"]
+    let returned_id = register_body["data"]["server_id"]
         .as_str()
         .expect("server_id missing")
-        .to_string()
+        .to_string();
+    assert_eq!(returned_id, server_id, "register must bind to pending row");
+    server_id
 }
 
 async fn configure_server_cost(client: &reqwest::Client, base_url: &str, server_id: &str) {
