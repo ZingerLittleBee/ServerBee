@@ -8,16 +8,16 @@ use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use futures_util::{SinkExt, StreamExt};
-use sea_orm::{EntityTrait, QueryOrder};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 
-use crate::entity::server_tag;
+use crate::entity::{agent_enrollment, server_tag};
 use crate::service::agent_manager::aggregate_disk_io;
 use crate::service::auth::AuthService;
 use crate::service::server::ServerService;
 use crate::state::AppState;
 use serverbee_common::constants::MAX_WS_MESSAGE_SIZE;
 use serverbee_common::protocol::{BrowserClientMessage, BrowserMessage, ServerMessage};
-use serverbee_common::types::ServerStatus;
+use serverbee_common::types::{OutstandingEnrollmentSummary, ServerStatus};
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new().route("/ws/servers", get(browser_ws_handler))
@@ -284,6 +284,31 @@ async fn build_full_sync(state: &Arc<AppState>, _is_admin: bool) -> BrowserMessa
             .push(row.tag);
     }
 
+    let server_ids: Vec<String> = servers.iter().map(|s| s.id.clone()).collect();
+    let outstanding_rows = if server_ids.is_empty() {
+        Vec::new()
+    } else {
+        agent_enrollment::Entity::find()
+            .filter(agent_enrollment::Column::TargetServerId.is_in(server_ids))
+            .filter(agent_enrollment::Column::ConsumedAt.is_null())
+            .filter(agent_enrollment::Column::RevokedAt.is_null())
+            .all(&state.db)
+            .await
+            .unwrap_or_default()
+    };
+    let mut outstanding_by_server: HashMap<String, OutstandingEnrollmentSummary> = HashMap::new();
+    for row in outstanding_rows {
+        outstanding_by_server.insert(
+            row.target_server_id.clone(),
+            OutstandingEnrollmentSummary {
+                id: row.id,
+                code_prefix: row.code_prefix,
+                expires_at: row.expires_at.to_rfc3339(),
+                created_at: row.created_at.to_rfc3339(),
+            },
+        );
+    }
+
     let statuses: Vec<ServerStatus> = servers
         .into_iter()
         .map(|server| {
@@ -374,6 +399,8 @@ async fn build_full_sync(state: &Arc<AppState>, _is_admin: bool) -> BrowserMessa
                 disk_write_bytes_per_sec,
                 tags: tags_by_server.remove(&server.id).unwrap_or_default(),
                 cpu_cores: server.cpu_cores,
+                has_token: server.token_hash.is_some(),
+                outstanding_enrollment: outstanding_by_server.remove(&server.id),
             }
         })
         .collect();

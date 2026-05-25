@@ -35,7 +35,7 @@ use crate::service::upgrade_tracker::{StartUpgradeJobError, UpgradeLookup};
 use crate::state::AppState;
 use serverbee_common::constants::effective_capabilities;
 use serverbee_common::protocol::{BrowserMessage, ServerMessage};
-use serverbee_common::types::NetworkProbeTarget;
+use serverbee_common::types::{NetworkProbeTarget, OutstandingEnrollmentSummary};
 
 const DEFAULT_SERVER_NAME: &str = "New Server";
 
@@ -119,18 +119,6 @@ pub struct ServerResponse {
     pub outstanding_enrollment: Option<OutstandingEnrollmentSummary>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
-}
-
-/// Outstanding-enrollment summary returned alongside a `ServerResponse` so the
-/// UI can render pending state and offer the install command without a second
-/// fetch. The plaintext code is only ever returned by the mint endpoints —
-/// never here.
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub struct OutstandingEnrollmentSummary {
-    pub id: String,
-    pub code_prefix: String,
-    pub expires_at: String,
-    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]

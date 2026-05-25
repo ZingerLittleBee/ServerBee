@@ -252,6 +252,8 @@ impl AgentManager {
             disk_write_bytes_per_sec,
             tags: Vec::new(),
             cpu_cores: None,
+            has_token: true,
+            outstanding_enrollment: None,
         };
 
         let _ = self.browser_tx.send(BrowserMessage::Update {
