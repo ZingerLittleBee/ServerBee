@@ -40,6 +40,7 @@ pub struct RegisterResponse {
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[allow(dead_code)] // TODO: T11 removes this DTO together with create_enrollment.
 pub struct CreateEnrollmentRequest {
     #[serde(default)]
     label: Option<String>,
@@ -135,8 +136,12 @@ async fn register(
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or(AppError::Unauthorized)?;
 
+    // TODO: T8 will rewrite this entire register flow against the bound-
+    // enrollment model and wrap consume + server update in a single tx.
+    // For now we pass `&state.db` (which implements ConnectionTrait) so the
+    // call site keeps compiling.
     let enrollment =
-        EnrollmentService::verify_and_consume(&state.db, auth_header)
+        EnrollmentService::verify_and_consume_tx(&state.db, auth_header)
             .await?
             .ok_or(AppError::Unauthorized)?;
 
@@ -351,35 +356,19 @@ pub fn admin_router() -> Router<Arc<AppState>> {
     security(("session_cookie" = []), ("api_key" = []))
 )]
 async fn create_enrollment(
-    State(state): State<Arc<AppState>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    headers: HeaderMap,
-    Extension(current_user): Extension<CurrentUser>,
-    Json(body): Json<CreateEnrollmentRequest>,
+    State(_state): State<Arc<AppState>>,
+    ConnectInfo(_addr): ConnectInfo<SocketAddr>,
+    _headers: HeaderMap,
+    Extension(_current_user): Extension<CurrentUser>,
+    Json(_body): Json<CreateEnrollmentRequest>,
 ) -> Result<Json<ApiResponse<CreateEnrollmentResponse>>, AppError> {
-    let ttl = body.ttl_secs.unwrap_or(DEFAULT_TTL_SECS);
-    let (model, code) =
-        EnrollmentService::mint(&state.db, &current_user.user_id, body.label.clone(), ttl).await?;
-    let ip = extract_client_ip(
-        &ConnectInfo(addr),
-        &headers,
-        &state.config.server.trusted_proxies,
-    )
-    .to_string();
-    let detail = format!("id={} prefix={}", model.id, model.code_prefix);
-    let _ = AuditService::log(
-        &state.db,
-        &current_user.user_id,
-        "agent_enrollment_created",
-        Some(&detail),
-        &ip,
-    )
-    .await;
-    ok(CreateEnrollmentResponse {
-        id: model.id,
-        code,
-        expires_at: model.expires_at.to_rfc3339(),
-    })
+    // TODO: T11 will remove this handler. Enrollments are now minted only
+    // by POST /api/servers (T7), recover (T9), and regenerate-code (T10);
+    // there is no standalone "create enrollment" endpoint in the new model.
+    let _ = DEFAULT_TTL_SECS;
+    Err(AppError::Internal(
+        "create_enrollment is deprecated; use POST /api/servers instead".to_string(),
+    ))
 }
 
 #[utoipa::path(
@@ -424,7 +413,10 @@ async fn delete_enrollment(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
-    EnrollmentService::delete(&state.db, &id).await?;
+    // TODO: T11 will replace this endpoint with "revoke enrollment". The
+    // DELETE method is preserved for now but mapped to revoke(), which is
+    // idempotent and keeps the audit trail in the table.
+    EnrollmentService::revoke(&state.db, &id).await?;
     let ip = extract_client_ip(
         &ConnectInfo(addr),
         &headers,
@@ -504,11 +496,12 @@ async fn rotate_token(
 
 #[cfg(test)]
 mod enrollment_endpoint_tests {
-    use crate::entity::user;
+    use crate::entity::{server, user};
     use crate::service::enrollment::EnrollmentService;
     use crate::test_utils::setup_test_db;
     use chrono::Utc;
     use sea_orm::*;
+    use serverbee_common::constants::CAP_DEFAULT;
     use uuid::Uuid;
 
     /// Seed a user so the `created_by` FK on `agent_enrollments` is satisfied.
@@ -531,12 +524,64 @@ mod enrollment_endpoint_tests {
         id
     }
 
+    /// Seed a pending server (no token yet) so the new `target_server_id`
+    /// FK on `agent_enrollments` is satisfied.
+    async fn seed_pending_server(db: &DatabaseConnection) -> String {
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now();
+        server::ActiveModel {
+            id: Set(id.clone()),
+            token_hash: Set(None),
+            token_prefix: Set(None),
+            name: Set("t".to_string()),
+            cpu_name: Set(None),
+            cpu_cores: Set(None),
+            cpu_arch: Set(None),
+            os: Set(None),
+            kernel_version: Set(None),
+            mem_total: Set(None),
+            swap_total: Set(None),
+            disk_total: Set(None),
+            ipv4: Set(None),
+            ipv6: Set(None),
+            region: Set(None),
+            country_code: Set(None),
+            virtualization: Set(None),
+            agent_version: Set(None),
+            group_id: Set(None),
+            weight: Set(0),
+            hidden: Set(false),
+            remark: Set(None),
+            public_remark: Set(None),
+            price: Set(None),
+            billing_cycle: Set(None),
+            currency: Set(None),
+            expired_at: Set(None),
+            traffic_limit: Set(None),
+            traffic_limit_type: Set(None),
+            billing_start_day: Set(None),
+            capabilities: Set(CAP_DEFAULT as i32),
+            protocol_version: Set(1),
+            features: Set("[]".to_string()),
+            last_remote_addr: Set(None),
+            fingerprint: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(db)
+        .await
+        .expect("seed pending server");
+        id
+    }
+
     #[tokio::test]
-    #[ignore = "TODO: T6 will rewrite mint(); list-after-mint test depends on it"]
     async fn mint_then_list_shows_prefix_not_code() {
         let (db, _tmp) = setup_test_db().await;
         let uid = seed_user(&db).await;
-        let (_m, code) = EnrollmentService::mint(&db, &uid, None, 600).await.unwrap();
+        let sid = seed_pending_server(&db).await;
+        let (_m, code) = EnrollmentService::mint_for_server(&db, &sid, &uid, 600)
+            .await
+            .unwrap();
         let list = EnrollmentService::list(&db).await.unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].code_prefix, &code[..8]);
@@ -546,35 +591,14 @@ mod enrollment_endpoint_tests {
         );
     }
 
-    #[tokio::test]
-    #[ignore = "TODO: T6 + T8 will rewrite mint() and register flow"]
-    async fn register_flow_consumes_code_single_use() {
-        let (db, _tmp) = setup_test_db().await;
-        let uid = seed_user(&db).await;
-        let (_m, code) = EnrollmentService::mint(&db, &uid, None, 600)
-            .await
-            .unwrap();
-        assert!(
-            EnrollmentService::verify_and_consume(&db, &code)
-                .await
-                .unwrap()
-                .is_some(),
-            "first registration consumes the code"
-        );
-        assert!(
-            EnrollmentService::verify_and_consume(&db, &code)
-                .await
-                .unwrap()
-                .is_none(),
-            "a replayed enrollment code is rejected"
-        );
-    }
+    // `register_flow_consumes_code_single_use` deleted: the new service-level
+    // `verify_and_consume_single_use` test in `service::enrollment::tests`
+    // already covers the same property at higher fidelity (real tx). The
+    // end-to-end register flow will get its own integration test in T8.
 
     #[tokio::test]
     async fn rotate_token_invalidates_old_token() {
-        use crate::entity::server;
         use crate::service::auth::AuthService;
-        use serverbee_common::constants::CAP_DEFAULT;
 
         let (db, _tmp) = setup_test_db().await;
 
@@ -649,11 +673,11 @@ mod enrollment_endpoint_tests {
     }
 
     #[tokio::test]
-    #[ignore = "TODO: T6 will rewrite mint(); DTO mirror test depends on it"]
     async fn enrollment_summary_dto_never_exposes_code_or_hash() {
         let (db, _tmp) = setup_test_db().await;
         let uid = seed_user(&db).await;
-        let (model, code) = EnrollmentService::mint(&db, &uid, None, 600)
+        let sid = seed_pending_server(&db).await;
+        let (model, code) = EnrollmentService::mint_for_server(&db, &sid, &uid, 600)
             .await
             .unwrap();
 
