@@ -34,6 +34,51 @@ pub struct ProviderResult {
 }
 
 // ---------------------------------------------------------------------------
+// ipapi.is response parser
+// ---------------------------------------------------------------------------
+
+/// Extract a numeric risk score from an ipapi.is `abuser_score` string.
+/// ipapi.is returns strings like `"0.0039 (Low)"`, `"0.5"`, `"null"`.
+/// The numeric portion is a 0..=1 fraction; we round (* 100) into 0..=100.
+fn parse_ipapi_is_abuser_score(raw: Option<&str>) -> Option<i32> {
+    raw.and_then(|s| s.split_whitespace().next())
+        .and_then(|n| n.parse::<f64>().ok())
+        .map(|f| (f * 100.0).round() as i32)
+}
+
+pub(crate) fn parse_ipapi_is_response(v: JsonValue) -> ProviderResult {
+    let raw = v.clone();
+
+    let company_score = v
+        .pointer("/company/abuser_score")
+        .and_then(JsonValue::as_str);
+    let asn_score = v.pointer("/asn/abuser_score").and_then(JsonValue::as_str);
+
+    let ip_type = v
+        .pointer("/company/type")
+        .or_else(|| v.pointer("/asn/type"))
+        .and_then(JsonValue::as_str)
+        .map(str::to_string);
+
+    ProviderResult {
+        risk_score: parse_ipapi_is_abuser_score(company_score),
+        asn_abuser_score: parse_ipapi_is_abuser_score(asn_score),
+        is_proxy: v.get("is_proxy").and_then(JsonValue::as_bool),
+        is_vpn: v.get("is_vpn").and_then(JsonValue::as_bool),
+        is_hosting: v.get("is_datacenter").and_then(JsonValue::as_bool),
+        is_tor: v.get("is_tor").and_then(JsonValue::as_bool).unwrap_or(false),
+        is_abuser: v.get("is_abuser").and_then(JsonValue::as_bool).unwrap_or(false),
+        is_mobile: v.get("is_mobile").and_then(JsonValue::as_bool).unwrap_or(false),
+        abuse_email: v
+            .pointer("/abuse/email")
+            .and_then(JsonValue::as_str)
+            .map(str::to_string),
+        ip_type,
+        raw,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // IpRiskProvider trait
 // ---------------------------------------------------------------------------
 
@@ -1296,5 +1341,94 @@ mod tests {
     fn ipqs_parse_invalid_json() {
         let result = IpQualityScoreProvider::parse_response("{}");
         assert!(result.risk_score.is_none());
+    }
+
+    #[test]
+    fn parse_ipapi_is_full_response_8888() {
+        let json = serde_json::json!({
+            "ip": "8.8.8.8",
+            "is_datacenter": true,
+            "is_proxy": false,
+            "is_vpn": false,
+            "is_tor": false,
+            "is_abuser": false,
+            "is_mobile": false,
+            "company": {
+                "name": "Google LLC",
+                "abuser_score": "0.0039 (Low)",
+                "type": "hosting"
+            },
+            "asn": {
+                "abuser_score": "0.001 (Low)",
+                "type": "hosting"
+            },
+            "abuse": { "email": "network-abuse@google.com" }
+        });
+
+        let r = super::parse_ipapi_is_response(json);
+
+        assert_eq!(r.risk_score, Some(0));
+        assert_eq!(r.asn_abuser_score, Some(0));
+        assert_eq!(r.is_proxy, Some(false));
+        assert_eq!(r.is_vpn, Some(false));
+        assert_eq!(r.is_hosting, Some(true));
+        assert!(!r.is_tor);
+        assert!(!r.is_abuser);
+        assert!(!r.is_mobile);
+        assert_eq!(r.ip_type.as_deref(), Some("hosting"));
+        assert_eq!(r.abuse_email.as_deref(), Some("network-abuse@google.com"));
+    }
+
+    #[test]
+    fn parse_ipapi_is_handles_missing_fields() {
+        let json = serde_json::json!({ "ip": "1.2.3.4" });
+        let r = super::parse_ipapi_is_response(json);
+        assert_eq!(r.risk_score, None);
+        assert_eq!(r.is_proxy, None);
+        assert!(!r.is_tor);
+        assert_eq!(r.abuse_email, None);
+    }
+
+    #[test]
+    fn parse_ipapi_is_abuser_score_formats() {
+        let cases = vec![
+            ("0.0039 (Low)", Some(0)),
+            ("0.005", Some(1)),       // 0.005 * 100 = 0.5 → round() = 1 (Rust rounds half away from zero)
+            ("0.5 (Medium)", Some(50)),
+            ("1.0 (Very High)", Some(100)),
+            ("null", None),
+            ("garbage", None),
+            ("", None),
+        ];
+        for (raw, want) in cases {
+            let json = serde_json::json!({
+                "company": { "abuser_score": raw }
+            });
+            let r = super::parse_ipapi_is_response(json);
+            assert_eq!(r.risk_score, want, "input was {raw:?}");
+        }
+    }
+
+    #[test]
+    fn parse_ipapi_is_tor_exit_node() {
+        let json = serde_json::json!({
+            "is_tor": true,
+            "is_abuser": true,
+            "company": { "abuser_score": "0.85 (Very High)", "type": "isp" }
+        });
+        let r = super::parse_ipapi_is_response(json);
+        assert!(r.is_tor);
+        assert!(r.is_abuser);
+        assert_eq!(r.risk_score, Some(85));
+        assert_eq!(super::derive_risk_level(r.risk_score), "high");
+    }
+
+    #[test]
+    fn parse_ipapi_is_falls_back_to_asn_type_when_company_type_missing() {
+        let json = serde_json::json!({
+            "asn": { "type": "isp" }
+        });
+        let r = super::parse_ipapi_is_response(json);
+        assert_eq!(r.ip_type.as_deref(), Some("isp"));
     }
 }
