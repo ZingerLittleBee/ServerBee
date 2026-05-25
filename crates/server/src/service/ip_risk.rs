@@ -43,7 +43,7 @@ pub struct ProviderResult {
 fn parse_ipapi_is_abuser_score(raw: Option<&str>) -> Option<i32> {
     raw.and_then(|s| s.split_whitespace().next())
         .and_then(|n| n.parse::<f64>().ok())
-        .map(|f| (f * 100.0).round() as i32)
+        .map(|f| (f * 100.0).round().clamp(0.0, 100.0) as i32)
 }
 
 pub(crate) fn parse_ipapi_is_response(v: JsonValue) -> ProviderResult {
@@ -1042,6 +1042,8 @@ mod tests {
             ("null", None),
             ("garbage", None),
             ("", None),
+            ("1.5 (Out of range)", Some(100)),  // clamped from 150
+            ("-0.5", Some(0)),                   // clamped from -50
         ];
         for (raw, want) in cases {
             let json = serde_json::json!({
