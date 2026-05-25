@@ -44,7 +44,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             axum::http::header::X_CONTENT_TYPE_OPTIONS,
             HeaderValue::from_static("nosniff"),
         ))
-        .layer(SetResponseHeaderLayer::overriding(
+        // Referrer-Policy uses `if_not_present` so the theme serve handler can
+        // override it to `same-origin` per spec § 5.5. All other responses fall
+        // back to `strict-origin-when-cross-origin` as the implicit default.
+        .layer(SetResponseHeaderLayer::if_not_present(
             axum::http::header::REFERRER_POLICY,
             HeaderValue::from_static("strict-origin-when-cross-origin"),
         ))

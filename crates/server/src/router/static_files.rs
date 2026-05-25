@@ -4,6 +4,10 @@ use axum::body::Body;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use rand::RngCore;
+use rand::rngs::OsRng;
 use rust_embed::Embed;
 use serde::Deserialize;
 
@@ -16,6 +20,10 @@ struct Assets;
 
 const FORCE_DEFAULT_COOKIE: &str = "sb_force_default";
 const PREVIEW_COOKIE: &str = "sb_preview_theme";
+/// Lifetime of the preview cookie in seconds — kept in sync with the
+/// `Max-Age` value we set on `sb_preview_theme`. Also drives the banner
+/// countdown timer's expiry epoch.
+const PREVIEW_MAX_AGE_SECS: u64 = 900;
 
 #[derive(Debug, Deserialize)]
 pub struct ThemeQuery {
@@ -84,7 +92,7 @@ pub async fn theme_handler(
         Some(t) if t.starts_with("preview:") && is_admin => {
             let uuid = t.trim_start_matches("preview:").to_string();
             set_cookies.push(format!(
-                "{PREVIEW_COOKIE}={uuid}; Path=/; Max-Age=900; SameSite=Strict"
+                "{PREVIEW_COOKIE}={uuid}; Path=/; Max-Age={PREVIEW_MAX_AGE_SECS}; SameSite=Strict"
             ));
             Source::Preview { uuid, theme: None }
         }
@@ -189,6 +197,35 @@ fn embedded_file_response(path: &str, file: &rust_embed::EmbeddedFile) -> Respon
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
+/// Generate a fresh CSP nonce (16 random bytes, URL-safe base64-encoded).
+fn fresh_nonce() -> String {
+    let mut bytes = [0u8; 16];
+    OsRng.fill_bytes(&mut bytes);
+    URL_SAFE_NO_PAD.encode(bytes)
+}
+
+/// Build the CSP header value. When `nonce` is `Some`, adds `'nonce-...'` to
+/// `script-src` alongside `'unsafe-inline'` so the injected preview banner
+/// script is covered by an explicit allowance in addition to the blanket
+/// inline rule (spec § 6.6).
+fn csp_header(nonce: Option<&str>) -> String {
+    let script_src = match nonce {
+        Some(n) => format!("script-src 'self' 'unsafe-inline' 'unsafe-eval' 'nonce-{n}'"),
+        None => "script-src 'self' 'unsafe-inline' 'unsafe-eval'".to_string(),
+    };
+    format!(
+        "default-src 'self'; \
+         {script_src}; \
+         style-src 'self' 'unsafe-inline'; \
+         img-src 'self' data: blob:; \
+         font-src 'self' data:; \
+         connect-src 'self'; \
+         frame-ancestors 'none'; \
+         base-uri 'self'; \
+         form-action 'self'"
+    )
+}
+
 /// Serve a file from a custom theme, with CSP headers and optional preview banner.
 fn serve_theme(path: &str, theme: &LoadedTheme, inject_banner: bool) -> Response {
     let p = if path.is_empty() { theme.entry.as_str() } else { path };
@@ -203,26 +240,29 @@ fn serve_theme(path: &str, theme: &LoadedTheme, inject_banner: bool) -> Response
 
     let mime = mime_guess::from_path(&served_path).first_or_octet_stream();
     let is_html = mime.essence_str() == "text/html";
-    let body_bytes = if is_html && inject_banner {
-        inject_preview_banner(&bytes)
+
+    // Banner is only injected for HTML responses in preview mode. The nonce is
+    // produced fresh per response and threaded into both the CSP header and the
+    // injected `<script>` tag.
+    let (body_bytes, nonce) = if is_html && inject_banner {
+        let nonce = fresh_nonce();
+        let expires_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+            + PREVIEW_MAX_AGE_SECS;
+        let injected = inject_preview_banner(&bytes, &nonce, expires_at);
+        (injected, Some(nonce))
     } else {
-        bytes
+        (bytes, None)
     };
 
     let mut builder = Response::builder()
         .header(header::CONTENT_TYPE, mime.as_ref())
-        .header(
-            header::CONTENT_SECURITY_POLICY,
-            "default-src 'self'; \
-             script-src 'self' 'unsafe-inline' 'unsafe-eval'; \
-             style-src 'self' 'unsafe-inline'; \
-             img-src 'self' data: blob:; \
-             font-src 'self' data:; \
-             connect-src 'self'; \
-             frame-ancestors 'none'; \
-             base-uri 'self'; \
-             form-action 'self'",
-        );
+        .header(header::CONTENT_SECURITY_POLICY, csp_header(nonce.as_deref()))
+        // Spec § 5.5 — theme responses use `same-origin` (the global tower-http
+        // layer is configured with `if_not_present`, so this value wins).
+        .header(header::REFERRER_POLICY, "same-origin");
     if served_path.starts_with("assets/") && !is_html {
         builder = builder.header(header::CACHE_CONTROL, "public, max-age=31536000, immutable");
     } else {
@@ -234,29 +274,57 @@ fn serve_theme(path: &str, theme: &LoadedTheme, inject_banner: bool) -> Response
 }
 
 /// Inject a preview-mode banner just before `</body>` in an HTML response.
-/// The banner is visible to the previewing admin and provides an exit button.
-fn inject_preview_banner(html: &axum::body::Bytes) -> axum::body::Bytes {
-    const BANNER: &str = concat!(
-        r#"<div id="__sb_preview" style="position:fixed;top:0;left:0;right:0;z-index:2147483647;"#,
-        r#"background:#fde68a;color:#111;padding:8px 12px;font:14px/1.4 sans-serif;"#,
-        r#"text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.2)">"#,
-        r#"Preview mode &middot; this theme is being previewed by an admin &middot; "#,
-        r#"<button id="__sb_exit" style="margin-left:8px;padding:4px 10px;border:1px solid #333;"#,
-        r#"background:#fff;cursor:pointer">Exit preview</button></div>"#,
-        r#"<script>(function(){"#,
-        r#"var b=document.getElementById('__sb_exit');"#,
-        r#"if(!b)return;"#,
-        r#"b.onclick=function(){"#,
-        r#"fetch('/__system/clear-preview',{method:'POST',credentials:'include'})"#,
-        r#".then(function(){location.reload()})"#,
-        r#"}"#,
-        r#"})();</script>"#,
+///
+/// The banner shows a countdown timer (`MM:SS`) driven by the `data-expires`
+/// attribute on the container div; the inline script ticks once per second
+/// and swaps to "Preview expired" on hit zero. Spec § 6.6.
+///
+/// The `<script>` tag carries the `nonce` attribute so the CSP `'nonce-...'`
+/// rule covers it explicitly, in addition to `'unsafe-inline'`.
+fn inject_preview_banner(html: &axum::body::Bytes, nonce: &str, expires_at: u64) -> axum::body::Bytes {
+    // Pre-built CSS / structure pieces. The runtime parts (expires epoch and
+    // nonce) are formatted in below.
+    const STYLE: &str = "position:fixed;top:0;left:0;right:0;z-index:2147483647;\
+        background:#fde68a;color:#111;padding:8px 12px;font:14px/1.4 sans-serif;\
+        text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.2)";
+    const BTN_STYLE: &str = "margin-left:8px;padding:4px 10px;border:1px solid #333;\
+        background:#fff;cursor:pointer";
+    // Inline JS — keeps the banner under 1 KB total (spec § 6.6). Uses
+    // `var` / function expressions (no ES6) for broad compatibility.
+    const SCRIPT_BODY: &str = "(function(){\
+        var d=document.getElementById('__sb_preview');\
+        var t=document.getElementById('__sb_timer');\
+        var b=document.getElementById('__sb_exit');\
+        if(!d||!t||!b)return;\
+        var exp=parseInt(d.getAttribute('data-expires'),10)||0;\
+        function fmt(s){var m=Math.floor(s/60);var ss=s%60;\
+            return m+':'+(ss<10?'0'+ss:ss);}\
+        function tick(){\
+            var now=Math.floor(Date.now()/1000);\
+            var rem=exp-now;\
+            if(rem<=0){t.textContent='expired';b.disabled=true;clearInterval(iv);return;}\
+            t.textContent='expires in '+fmt(rem);\
+        }\
+        tick();var iv=setInterval(tick,1000);\
+        b.onclick=function(){\
+            fetch('/__system/clear-preview',{method:'POST',credentials:'include'})\
+                .then(function(){location.reload()});\
+        };\
+    })();";
+
+    let banner = format!(
+        "<div id=\"__sb_preview\" data-expires=\"{expires_at}\" style=\"{STYLE}\">\
+            Preview mode &middot; <span id=\"__sb_timer\">expires in --:--</span> &middot; \
+            <button id=\"__sb_exit\" style=\"{BTN_STYLE}\">Exit preview</button>\
+        </div>\
+        <script nonce=\"{nonce}\">{SCRIPT_BODY}</script>"
     );
+
     let s = std::str::from_utf8(html).unwrap_or("");
     let lower = s.to_ascii_lowercase();
     let injected = match lower.rfind("</body>") {
-        Some(i) => format!("{}{}{}", &s[..i], BANNER, &s[i..]),
-        None => format!("{s}{BANNER}"),
+        Some(i) => format!("{}{}{}", &s[..i], banner, &s[i..]),
+        None => format!("{s}{banner}"),
     };
     axum::body::Bytes::from(injected)
 }
@@ -268,7 +336,7 @@ mod tests {
     #[test]
     fn inject_banner_before_body_close() {
         let html = axum::body::Bytes::from("<html><body><h1>Hi</h1></body></html>");
-        let out = inject_preview_banner(&html);
+        let out = inject_preview_banner(&html, "abc123", 1_700_000_900);
         let s = std::str::from_utf8(&out).unwrap();
         assert!(s.contains("__sb_preview"));
         assert!(s.contains("__sb_exit"));
@@ -281,7 +349,7 @@ mod tests {
     #[test]
     fn inject_banner_no_body_tag_appends_at_end() {
         let html = axum::body::Bytes::from("<html><p>No body tag</p></html>");
-        let out = inject_preview_banner(&html);
+        let out = inject_preview_banner(&html, "xyz", 0);
         let s = std::str::from_utf8(&out).unwrap();
         assert!(s.contains("__sb_preview"));
         // Appended after the original content
@@ -292,12 +360,53 @@ mod tests {
     fn inject_banner_uses_last_body_close() {
         // Malformed HTML with two </body> tags — inject before the last one.
         let html = axum::body::Bytes::from("<body>A</body><body>B</body>");
-        let out = inject_preview_banner(&html);
+        let out = inject_preview_banner(&html, "n", 0);
         let s = std::str::from_utf8(&out).unwrap();
         // rfind picks the last </body>
         assert!(s.ends_with("</body>"));
         let last_body = s.rfind("</body>").unwrap();
         let banner = s.rfind("__sb_preview").unwrap();
         assert!(banner < last_body);
+    }
+
+    #[test]
+    fn inject_banner_includes_expiry_and_nonce() {
+        let html = axum::body::Bytes::from("<body></body>");
+        let out = inject_preview_banner(&html, "NONCE-XYZ", 1_700_000_999);
+        let s = std::str::from_utf8(&out).unwrap();
+        assert!(s.contains(r#"data-expires="1700000999""#));
+        assert!(s.contains(r#"<script nonce="NONCE-XYZ">"#));
+        assert!(s.contains("__sb_timer"));
+        // Countdown logic markers
+        assert!(s.contains("setInterval"));
+        assert!(s.contains("Date.now"));
+    }
+
+    #[test]
+    fn csp_header_includes_nonce_when_provided() {
+        let csp = csp_header(Some("ABC123"));
+        assert!(csp.contains("'nonce-ABC123'"));
+        assert!(csp.contains("'unsafe-inline'"));
+        assert!(csp.contains("'unsafe-eval'"));
+    }
+
+    #[test]
+    fn csp_header_omits_nonce_when_none() {
+        let csp = csp_header(None);
+        assert!(!csp.contains("nonce-"));
+        assert!(csp.contains("script-src 'self' 'unsafe-inline' 'unsafe-eval'"));
+    }
+
+    #[test]
+    fn fresh_nonce_is_unique_and_url_safe() {
+        let a = fresh_nonce();
+        let b = fresh_nonce();
+        assert_ne!(a, b);
+        // URL-safe base64 alphabet only
+        for c in a.chars() {
+            assert!(c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        }
+        // 16 bytes → ceil(16/3 * 4) = 22 chars (no padding)
+        assert_eq!(a.len(), 22);
     }
 }
