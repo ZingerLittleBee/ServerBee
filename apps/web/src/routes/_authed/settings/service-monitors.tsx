@@ -733,7 +733,8 @@ export function ServiceMonitorsPage() {
 
   return (
     <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
-      <div className="mb-6 flex w-full min-w-0 max-w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+      <div className="mb-6 flex w-full min-w-0 max-w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="min-w-0 text-muted-foreground text-sm">{t('page.description')}</p>
         <Button className="w-full sm:w-auto" onClick={openCreate} size="sm">
           <Plus className="size-4" />
           {tCommon('actions.addMonitor')}
