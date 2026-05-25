@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::body::Body;
+use axum::body::{Body, Bytes};
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
@@ -18,12 +18,20 @@ use crate::state::AppState;
 #[folder = "../../apps/web/dist"]
 struct Assets;
 
-const FORCE_DEFAULT_COOKIE: &str = "sb_force_default";
-const PREVIEW_COOKIE: &str = "sb_preview_theme";
+/// Recovery cookie — pinned by `?theme=default`, drops the entire origin
+/// onto the bundled SPA for one hour. Shared with `router::system`.
+pub(super) const FORCE_DEFAULT_COOKIE: &str = "sb_force_default";
+/// Preview cookie — pinned by `?theme=preview:<uuid>` (admin-only), serves
+/// the previewed theme to the same browser for 15 minutes. Shared with
+/// `router::system`.
+pub(super) const PREVIEW_COOKIE: &str = "sb_preview_theme";
+/// Lifetime of the recovery cookie in seconds (1 hour). Shared with
+/// `router::system` for consistency between handler and clear endpoint.
+pub(super) const RECOVERY_MAX_AGE_SECS: u64 = 3600;
 /// Lifetime of the preview cookie in seconds — kept in sync with the
 /// `Max-Age` value we set on `sb_preview_theme`. Also drives the banner
 /// countdown timer's expiry epoch.
-const PREVIEW_MAX_AGE_SECS: u64 = 900;
+pub(super) const PREVIEW_MAX_AGE_SECS: u64 = 900;
 
 #[derive(Debug, Deserialize)]
 pub struct ThemeQuery {
@@ -45,11 +53,6 @@ pub async fn theme_handler(
 ) -> Response {
     let path = uri.path().trim_start_matches('/');
 
-    // Resolve the authenticated user (if any) — the fallback lives outside the auth
-    // middleware layer, so we call resolve_optional_user directly.
-    let user = crate::middleware::auth::resolve_optional_user(&headers, &state).await;
-    let is_admin = user.as_ref().map(|u| u.role == "admin").unwrap_or(false);
-
     // Parse cookies inline (no extra deps).
     let cookie_str = headers
         .get(header::COOKIE)
@@ -68,6 +71,25 @@ pub async fn theme_handler(
         .find(|(k, _)| *k == PREVIEW_COOKIE)
         .map(|(_, v)| *v);
 
+    // Admin status is only consulted on preview paths (query or cookie). Skipping
+    // the auth lookup for normal SPA / asset requests avoids up to three DB
+    // round-trips per static request, a real win for asset-heavy pages.
+    let query_is_preview = q
+        .theme
+        .as_deref()
+        .map(|t| t.starts_with("preview:"))
+        .unwrap_or(false);
+    let needs_admin_check = query_is_preview || preview_cookie.is_some();
+    let is_admin = if needs_admin_check {
+        crate::middleware::auth::resolve_optional_user(&headers, &state)
+            .await
+            .as_ref()
+            .map(|u| u.role == "admin")
+            .unwrap_or(false)
+    } else {
+        false
+    };
+
     // Cookie(s) to set, stored as individual header value strings.
     let mut set_cookies: Vec<String> = Vec::new();
 
@@ -83,7 +105,7 @@ pub async fn theme_handler(
         // 1. ?theme=default → serve default SPA, set recovery cookie
         Some("default") => {
             set_cookies.push(format!(
-                "{FORCE_DEFAULT_COOKIE}=1; Path=/; Max-Age=3600; SameSite=Strict"
+                "{FORCE_DEFAULT_COOKIE}=1; Path=/; Max-Age={RECOVERY_MAX_AGE_SECS}; SameSite=Strict"
             ));
             Source::Default
         }
@@ -145,9 +167,9 @@ pub async fn theme_handler(
     let resp = match &source {
         Source::Default => serve_default(path),
         Source::Active(theme) => serve_theme(path, theme, false),
-        Source::Preview { uuid: _, theme: Some(theme) } => serve_theme(path, theme, true),
+        Source::Preview { theme: Some(theme), .. } => serve_theme(path, theme, true),
         // Preview requested but theme not found — fall back to default.
-        Source::Preview { uuid: _, theme: None } => serve_default(path),
+        Source::Preview { theme: None, .. } => serve_default(path),
     };
 
     // Append Set-Cookie headers (each as a separate header value per RFC 6265 §3).
@@ -156,8 +178,17 @@ pub async fn theme_handler(
     } else {
         let mut r = resp;
         for cookie in set_cookies {
-            if let Ok(v) = HeaderValue::from_str(&cookie) {
-                r.headers_mut().append(header::SET_COOKIE, v);
+            match HeaderValue::from_str(&cookie) {
+                Ok(v) => {
+                    r.headers_mut().append(header::SET_COOKIE, v);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        cookie = %cookie,
+                        "failed to construct Set-Cookie header; dropping cookie"
+                    );
+                }
             }
         }
         r
@@ -281,7 +312,7 @@ fn serve_theme(path: &str, theme: &LoadedTheme, inject_banner: bool) -> Response
 ///
 /// The `<script>` tag carries the `nonce` attribute so the CSP `'nonce-...'`
 /// rule covers it explicitly, in addition to `'unsafe-inline'`.
-fn inject_preview_banner(html: &axum::body::Bytes, nonce: &str, expires_at: u64) -> axum::body::Bytes {
+fn inject_preview_banner(html: &Bytes, nonce: &str, expires_at: u64) -> Bytes {
     // Pre-built CSS / structure pieces. The runtime parts (expires epoch and
     // nonce) are formatted in below.
     const STYLE: &str = "position:fixed;top:0;left:0;right:0;z-index:2147483647;\
@@ -326,7 +357,7 @@ fn inject_preview_banner(html: &axum::body::Bytes, nonce: &str, expires_at: u64)
         Some(i) => format!("{}{}{}", &s[..i], banner, &s[i..]),
         None => format!("{s}{banner}"),
     };
-    axum::body::Bytes::from(injected)
+    Bytes::from(injected)
 }
 
 #[cfg(test)]
@@ -335,7 +366,7 @@ mod tests {
 
     #[test]
     fn inject_banner_before_body_close() {
-        let html = axum::body::Bytes::from("<html><body><h1>Hi</h1></body></html>");
+        let html = Bytes::from("<html><body><h1>Hi</h1></body></html>");
         let out = inject_preview_banner(&html, "abc123", 1_700_000_900);
         let s = std::str::from_utf8(&out).unwrap();
         assert!(s.contains("__sb_preview"));
@@ -348,7 +379,7 @@ mod tests {
 
     #[test]
     fn inject_banner_no_body_tag_appends_at_end() {
-        let html = axum::body::Bytes::from("<html><p>No body tag</p></html>");
+        let html = Bytes::from("<html><p>No body tag</p></html>");
         let out = inject_preview_banner(&html, "xyz", 0);
         let s = std::str::from_utf8(&out).unwrap();
         assert!(s.contains("__sb_preview"));
@@ -359,7 +390,7 @@ mod tests {
     #[test]
     fn inject_banner_uses_last_body_close() {
         // Malformed HTML with two </body> tags — inject before the last one.
-        let html = axum::body::Bytes::from("<body>A</body><body>B</body>");
+        let html = Bytes::from("<body>A</body><body>B</body>");
         let out = inject_preview_banner(&html, "n", 0);
         let s = std::str::from_utf8(&out).unwrap();
         // rfind picks the last </body>
@@ -371,7 +402,7 @@ mod tests {
 
     #[test]
     fn inject_banner_includes_expiry_and_nonce() {
-        let html = axum::body::Bytes::from("<body></body>");
+        let html = Bytes::from("<body></body>");
         let out = inject_preview_banner(&html, "NONCE-XYZ", 1_700_000_999);
         let s = std::str::from_utf8(&out).unwrap();
         assert!(s.contains(r#"data-expires="1700000999""#));
@@ -380,6 +411,21 @@ mod tests {
         // Countdown logic markers
         assert!(s.contains("setInterval"));
         assert!(s.contains("Date.now"));
+    }
+
+    #[test]
+    fn inject_banner_on_invalid_utf8_returns_banner_only() {
+        // A theme that ships non-UTF-8 HTML is malformed, but the function
+        // must not panic. The current contract: drop the original bytes
+        // and serve a banner-only body. This test pins that behavior so
+        // any future change is intentional.
+        let bad = Bytes::from(vec![0xff, 0xfe, 0xfd, b'<', b'p', b'>']);
+        let out = inject_preview_banner(&bad, "n", 0);
+        let s = std::str::from_utf8(&out).expect("banner output must be valid UTF-8");
+        assert!(s.contains("__sb_preview"));
+        assert!(s.contains("__sb_exit"));
+        // Original (invalid) bytes are not preserved.
+        assert!(!s.starts_with("\u{fffd}"));
     }
 
     #[test]

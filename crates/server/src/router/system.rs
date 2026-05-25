@@ -9,12 +9,31 @@ use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 
+use crate::router::static_files::{FORCE_DEFAULT_COOKIE, PREVIEW_COOKIE};
 use crate::state::AppState;
 
 pub fn router() -> axum::Router<Arc<AppState>> {
     axum::Router::new()
         .route("/clear-recovery", post(clear_recovery))
         .route("/clear-preview", post(clear_preview))
+}
+
+/// Build a cookie-clear `Set-Cookie` header value for the given cookie name.
+///
+/// Cookie names in this module are fixed ASCII identifiers, so `from_str`
+/// cannot fail in practice. The defensive log + fallback keeps a hypothetical
+/// future regression observable instead of silently returning a header value
+/// the browser can't parse.
+fn clear_cookie_header(name: &'static str) -> HeaderValue {
+    let value = format!("{name}=; Path=/; Max-Age=0; SameSite=Strict");
+    HeaderValue::from_str(&value).unwrap_or_else(|e| {
+        tracing::warn!(
+            error = %e,
+            cookie = %name,
+            "failed to construct clear Set-Cookie header; sending empty value"
+        );
+        HeaderValue::from_static("")
+    })
 }
 
 /// Clear the `sb_force_default` recovery cookie.
@@ -24,10 +43,8 @@ pub fn router() -> axum::Router<Arc<AppState>> {
 /// active custom theme.
 async fn clear_recovery() -> Response {
     let mut r = StatusCode::NO_CONTENT.into_response();
-    r.headers_mut().append(
-        header::SET_COOKIE,
-        HeaderValue::from_static("sb_force_default=; Path=/; Max-Age=0; SameSite=Strict"),
-    );
+    r.headers_mut()
+        .append(header::SET_COOKIE, clear_cookie_header(FORCE_DEFAULT_COOKIE));
     r
 }
 
@@ -38,9 +55,7 @@ async fn clear_recovery() -> Response {
 /// if no recovery cookie is present).
 async fn clear_preview() -> Response {
     let mut r = StatusCode::NO_CONTENT.into_response();
-    r.headers_mut().append(
-        header::SET_COOKIE,
-        HeaderValue::from_static("sb_preview_theme=; Path=/; Max-Age=0; SameSite=Strict"),
-    );
+    r.headers_mut()
+        .append(header::SET_COOKIE, clear_cookie_header(PREVIEW_COOKIE));
     r
 }
