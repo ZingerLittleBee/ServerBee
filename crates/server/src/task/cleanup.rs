@@ -242,8 +242,8 @@ mod tests {
         let now = Utc::now();
         server::ActiveModel {
             id: Set("srv-cleanup".to_string()),
-            token_hash: Set(hash),
-            token_prefix: Set("serverbee_test".to_string()),
+            token_hash: Set(Some(hash)),
+            token_prefix: Set(Some("serverbee_test".to_string())),
             name: Set("cleanup-test-server".to_string()),
             weight: Set(0),
             hidden: Set(false),

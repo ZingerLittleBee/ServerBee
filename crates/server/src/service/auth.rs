@@ -331,7 +331,12 @@ impl AuthService {
             .await?;
 
         for candidate in candidates {
-            if Self::verify_password(token, &candidate.token_hash)? {
+            // TODO: T5 will additionally filter out servers with NULL token_hash
+            // at the query level (pending-bound servers without an active token).
+            let Some(hash) = candidate.token_hash.as_deref() else {
+                continue;
+            };
+            if Self::verify_password(token, hash)? {
                 return Ok(Some(candidate));
             }
         }

@@ -1234,8 +1234,8 @@ mod tests {
 
         server::ActiveModel {
             id: Set(id.to_string()),
-            token_hash: Set(token_hash),
-            token_prefix: Set("serverbee_test".to_string()),
+            token_hash: Set(Some(token_hash)),
+            token_prefix: Set(Some("serverbee_test".to_string())),
             name: Set(name.to_string()),
             weight: Set(0),
             hidden: Set(false),
@@ -1640,8 +1640,8 @@ mod tests {
         let now = chrono::Utc::now();
         let srv = server::ActiveModel {
             id: Set("srv-test".to_string()),
-            token_hash: Set("hash".to_string()),
-            token_prefix: Set("prefix".to_string()),
+            token_hash: Set(Some("hash".to_string())),
+            token_prefix: Set(Some("prefix".to_string())),
             name: Set("Test Server".to_string()),
             weight: Set(0),
             hidden: Set(false),

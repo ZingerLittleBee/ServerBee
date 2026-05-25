@@ -1085,8 +1085,8 @@ mod cleanup_tests {
         let now = Utc::now();
         server::Model {
             id: id.to_string(),
-            token_hash: "hash".to_string(),
-            token_prefix: "prefix".to_string(),
+            token_hash: Some("hash".to_string()),
+            token_prefix: Some("prefix".to_string()),
             name: name.to_string(),
             cpu_name: None,
             cpu_cores: None,
