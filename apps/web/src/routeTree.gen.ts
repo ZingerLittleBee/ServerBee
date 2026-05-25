@@ -28,6 +28,7 @@ import { Route as AuthedSettingsTasksRouteImport } from './routes/_authed/settin
 import { Route as AuthedSettingsStatusPagesRouteImport } from './routes/_authed/settings/status-pages'
 import { Route as AuthedSettingsServiceMonitorsRouteImport } from './routes/_authed/settings/service-monitors'
 import { Route as AuthedSettingsSecurityRouteImport } from './routes/_authed/settings/security'
+import { Route as AuthedSettingsRateLimitsRouteImport } from './routes/_authed/settings/rate-limits'
 import { Route as AuthedSettingsPingTasksRouteImport } from './routes/_authed/settings/ping-tasks'
 import { Route as AuthedSettingsNotificationsRouteImport } from './routes/_authed/settings/notifications'
 import { Route as AuthedSettingsNetworkProbesRouteImport } from './routes/_authed/settings/network-probes'
@@ -144,6 +145,12 @@ const AuthedSettingsSecurityRoute = AuthedSettingsSecurityRouteImport.update({
   path: '/settings/security',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedSettingsRateLimitsRoute =
+  AuthedSettingsRateLimitsRouteImport.update({
+    id: '/settings/rate-limits',
+    path: '/settings/rate-limits',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 const AuthedSettingsPingTasksRoute = AuthedSettingsPingTasksRouteImport.update({
   id: '/settings/ping-tasks',
   path: '/settings/ping-tasks',
@@ -272,6 +279,7 @@ export interface FileRoutesByFullPath {
   '/settings/network-probes': typeof AuthedSettingsNetworkProbesRoute
   '/settings/notifications': typeof AuthedSettingsNotificationsRoute
   '/settings/ping-tasks': typeof AuthedSettingsPingTasksRoute
+  '/settings/rate-limits': typeof AuthedSettingsRateLimitsRoute
   '/settings/security': typeof AuthedSettingsSecurityRoute
   '/settings/service-monitors': typeof AuthedSettingsServiceMonitorsRoute
   '/settings/status-pages': typeof AuthedSettingsStatusPagesRoute
@@ -310,6 +318,7 @@ export interface FileRoutesByTo {
   '/settings/network-probes': typeof AuthedSettingsNetworkProbesRoute
   '/settings/notifications': typeof AuthedSettingsNotificationsRoute
   '/settings/ping-tasks': typeof AuthedSettingsPingTasksRoute
+  '/settings/rate-limits': typeof AuthedSettingsRateLimitsRoute
   '/settings/security': typeof AuthedSettingsSecurityRoute
   '/settings/service-monitors': typeof AuthedSettingsServiceMonitorsRoute
   '/settings/status-pages': typeof AuthedSettingsStatusPagesRoute
@@ -351,6 +360,7 @@ export interface FileRoutesById {
   '/_authed/settings/network-probes': typeof AuthedSettingsNetworkProbesRoute
   '/_authed/settings/notifications': typeof AuthedSettingsNotificationsRoute
   '/_authed/settings/ping-tasks': typeof AuthedSettingsPingTasksRoute
+  '/_authed/settings/rate-limits': typeof AuthedSettingsRateLimitsRoute
   '/_authed/settings/security': typeof AuthedSettingsSecurityRoute
   '/_authed/settings/service-monitors': typeof AuthedSettingsServiceMonitorsRoute
   '/_authed/settings/status-pages': typeof AuthedSettingsStatusPagesRoute
@@ -392,6 +402,7 @@ export interface FileRouteTypes {
     | '/settings/network-probes'
     | '/settings/notifications'
     | '/settings/ping-tasks'
+    | '/settings/rate-limits'
     | '/settings/security'
     | '/settings/service-monitors'
     | '/settings/status-pages'
@@ -430,6 +441,7 @@ export interface FileRouteTypes {
     | '/settings/network-probes'
     | '/settings/notifications'
     | '/settings/ping-tasks'
+    | '/settings/rate-limits'
     | '/settings/security'
     | '/settings/service-monitors'
     | '/settings/status-pages'
@@ -470,6 +482,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/network-probes'
     | '/_authed/settings/notifications'
     | '/_authed/settings/ping-tasks'
+    | '/_authed/settings/rate-limits'
     | '/_authed/settings/security'
     | '/_authed/settings/service-monitors'
     | '/_authed/settings/status-pages'
@@ -626,6 +639,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/security'
       fullPath: '/settings/security'
       preLoaderRoute: typeof AuthedSettingsSecurityRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/rate-limits': {
+      id: '/_authed/settings/rate-limits'
+      path: '/settings/rate-limits'
+      fullPath: '/settings/rate-limits'
+      preLoaderRoute: typeof AuthedSettingsRateLimitsRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/settings/ping-tasks': {
@@ -801,6 +821,7 @@ interface AuthedRouteChildren {
   AuthedSettingsNetworkProbesRoute: typeof AuthedSettingsNetworkProbesRoute
   AuthedSettingsNotificationsRoute: typeof AuthedSettingsNotificationsRoute
   AuthedSettingsPingTasksRoute: typeof AuthedSettingsPingTasksRoute
+  AuthedSettingsRateLimitsRoute: typeof AuthedSettingsRateLimitsRoute
   AuthedSettingsSecurityRoute: typeof AuthedSettingsSecurityRoute
   AuthedSettingsServiceMonitorsRoute: typeof AuthedSettingsServiceMonitorsRoute
   AuthedSettingsStatusPagesRoute: typeof AuthedSettingsStatusPagesRoute
@@ -834,6 +855,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedSettingsNetworkProbesRoute: AuthedSettingsNetworkProbesRoute,
   AuthedSettingsNotificationsRoute: AuthedSettingsNotificationsRoute,
   AuthedSettingsPingTasksRoute: AuthedSettingsPingTasksRoute,
+  AuthedSettingsRateLimitsRoute: AuthedSettingsRateLimitsRoute,
   AuthedSettingsSecurityRoute: AuthedSettingsSecurityRoute,
   AuthedSettingsServiceMonitorsRoute: AuthedSettingsServiceMonitorsRoute,
   AuthedSettingsStatusPagesRoute: AuthedSettingsStatusPagesRoute,
