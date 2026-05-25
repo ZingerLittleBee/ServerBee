@@ -8,6 +8,16 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -173,6 +183,10 @@ function PingTasksPage() {
     if (name.trim().length === 0 || target.trim().length === 0) {
       return
     }
+    if (selectedServerIds.length === 0) {
+      toast.error(t('ping.no_servers_selected'))
+      return
+    }
     createMutation.mutate(
       {
         name: name.trim(),
@@ -205,208 +219,233 @@ function PingTasksPage() {
 
   return (
     <div>
-      <h1 className="mb-6 font-bold text-2xl">{t('ping.title')}</h1>
-
-      <div className="max-w-3xl space-y-6">
-        <div className="rounded-lg border bg-card p-6">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="font-semibold text-lg">{t('ping.probe_tasks')}</h2>
-            <Button onClick={() => setShowForm(!showForm)} size="sm" variant="outline">
+      <div className="max-w-3xl space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="font-semibold text-lg">{t('ping.probe_tasks')}</h2>
+          <Dialog
+            onOpenChange={(open) => {
+              setShowForm(open)
+              if (!open) {
+                setName('')
+                setProbeType('icmp')
+                setTarget('')
+                setInterval(60)
+                setSelectedServerIds([])
+              }
+            }}
+            open={showForm}
+          >
+            <DialogTrigger render={<Button size="sm" variant="outline" />}>
               <Plus className="size-4" />
               {t('common:add')}
-            </Button>
-          </div>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>{t('ping.add_title')}</DialogTitle>
+                <DialogDescription>{t('ping.add_description')}</DialogDescription>
+              </DialogHeader>
+              <DialogBody>
+                <form className="space-y-3" id="create-ping-task-form" onSubmit={handleCreate}>
+                  <Input
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder={t('ping.task_name')}
+                    required
+                    type="text"
+                    value={name}
+                  />
 
-          {showForm && (
-            <form className="mb-4 space-y-3 rounded-md border bg-muted/30 p-4" onSubmit={handleCreate}>
-              <Input
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t('ping.task_name')}
-                required
-                type="text"
-                value={name}
-              />
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <Select
+                      items={probeTypeLabels}
+                      onValueChange={(value) => setProbeType(value as ProbeType)}
+                      value={probeType}
+                    >
+                      <SelectTrigger className="w-full flex-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(probeTypeLabels).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Select
-                  items={probeTypeLabels}
-                  onValueChange={(value) => setProbeType(value as ProbeType)}
-                  value={probeType}
-                >
-                  <SelectTrigger className="w-full flex-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(probeTypeLabels).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                    <Input
+                      className="w-24"
+                      min={5}
+                      onChange={(e) => setInterval(Number.parseInt(e.target.value, 10) || 60)}
+                      placeholder={t('ping.interval')}
+                      type="number"
+                      value={interval}
+                    />
+                    <span className="flex items-center text-muted-foreground text-sm">sec</span>
+                  </div>
 
-                <Input
-                  className="w-24"
-                  min={5}
-                  onChange={(e) => setInterval(Number.parseInt(e.target.value, 10) || 60)}
-                  placeholder={t('ping.interval')}
-                  type="number"
-                  value={interval}
-                />
-                <span className="flex items-center text-muted-foreground text-sm">sec</span>
-              </div>
+                  <Input
+                    onChange={(e) => setTarget(e.target.value)}
+                    placeholder={targetPlaceholder[probeType]}
+                    required
+                    type="text"
+                    value={target}
+                  />
 
-              <Input
-                onChange={(e) => setTarget(e.target.value)}
-                placeholder={targetPlaceholder[probeType]}
-                required
-                type="text"
-                value={target}
-              />
-
-              {servers && servers.length > 0 && (
-                <fieldset className="space-y-1">
-                  <legend className="text-sm">{t('ping.run_from_servers')}</legend>
-                  {servers.map((s) => (
-                    // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
-                    <label className="flex items-center gap-2 text-sm" key={s.id}>
-                      <Checkbox
-                        checked={selectedServerIds.includes(s.id)}
-                        onCheckedChange={(checked) => {
-                          setSelectedServerIds((prev) =>
-                            checked ? [...prev, s.id] : prev.filter((sid) => sid !== s.id)
-                          )
-                        }}
-                      />
-                      {s.name}
-                    </label>
-                  ))}
-                </fieldset>
-              )}
-
-              <div className="flex gap-2">
-                <Button disabled={createMutation.isPending} size="sm" type="submit">
-                  {t('common:create')}
-                </Button>
+                  {servers && servers.length > 0 && (
+                    <fieldset className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <legend className="text-sm">{t('ping.run_from_servers')}</legend>
+                        <button
+                          className="text-primary text-xs hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={() => {
+                            setSelectedServerIds(
+                              selectedServerIds.length === servers.length ? [] : servers.map((s) => s.id)
+                            )
+                          }}
+                          type="button"
+                        >
+                          {selectedServerIds.length === servers.length ? t('ping.deselect_all') : t('ping.select_all')}
+                        </button>
+                      </div>
+                      <div className="space-y-1 rounded-md border p-2">
+                        {servers.map((s) => (
+                          // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
+                          <label className="flex items-center gap-2 text-sm" key={s.id}>
+                            <Checkbox
+                              checked={selectedServerIds.includes(s.id)}
+                              onCheckedChange={(checked) => {
+                                setSelectedServerIds((prev) =>
+                                  checked ? [...prev, s.id] : prev.filter((sid) => sid !== s.id)
+                                )
+                              }}
+                            />
+                            {s.name}
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+                  )}
+                </form>
+              </DialogBody>
+              <DialogFooter>
                 <Button onClick={resetForm} size="sm" type="button" variant="ghost">
                   {t('common:cancel')}
                 </Button>
-              </div>
-            </form>
-          )}
+                <Button disabled={createMutation.isPending} form="create-ping-task-form" size="sm" type="submit">
+                  {t('common:create')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
 
-          {isLoading && (
-            <div className="space-y-2">
-              {Array.from({ length: 2 }, (_, i) => (
-                <Skeleton className="h-12" key={`skel-${i.toString()}`} />
-              ))}
-            </div>
-          )}
-          {!isLoading && (!tasks || tasks.length === 0) && (
-            <p className="text-center text-muted-foreground text-sm">{t('ping.no_tasks')}</p>
-          )}
-          {tasks && tasks.length > 0 && (
-            <div className="divide-y rounded-md border">
-              {tasks.map((task) => {
-                let serverIds: string[] = []
-                try {
-                  serverIds = JSON.parse(task.server_ids_json || '[]') as string[]
-                } catch {
-                  // ignore malformed JSON
-                }
-                const isExpanded = expandedTaskId === task.id
-                return (
-                  <div key={task.id}>
-                    <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex items-center gap-3">
-                        <Activity className={`size-4 ${task.enabled ? 'text-green-500' : 'text-muted-foreground'}`} />
-                        <div>
-                          <p className="font-medium text-sm">
-                            {task.name}
-                            {!task.enabled && (
-                              <span className="ml-2 text-muted-foreground text-xs">{t('ping.disabled')}</span>
-                            )}
-                          </p>
-                          <p className="text-muted-foreground text-xs">
-                            {probeTypeLabels[task.probe_type as ProbeType] ?? task.probe_type} | {task.target} |{' '}
-                            {task.interval}s
-                            {serverIds.length > 0
-                              ? ` | ${t('ping.server_count', { count: serverIds.length })}`
-                              : ` | ${t('ping.all_servers')}`}
-                          </p>
-                        </div>
+        {isLoading && (
+          <div className="space-y-2">
+            {Array.from({ length: 2 }, (_, i) => (
+              <Skeleton className="h-12" key={`skel-${i.toString()}`} />
+            ))}
+          </div>
+        )}
+        {!isLoading && (!tasks || tasks.length === 0) && (
+          <p className="text-center text-muted-foreground text-sm">{t('ping.no_tasks')}</p>
+        )}
+        {tasks && tasks.length > 0 && (
+          <div className="divide-y rounded-md border">
+            {tasks.map((task) => {
+              let serverIds: string[] = []
+              try {
+                serverIds = JSON.parse(task.server_ids_json || '[]') as string[]
+              } catch {
+                // ignore malformed JSON
+              }
+              const isExpanded = expandedTaskId === task.id
+              return (
+                <div key={task.id}>
+                  <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      <Activity className={`size-4 ${task.enabled ? 'text-green-500' : 'text-muted-foreground'}`} />
+                      <div>
+                        <p className="font-medium text-sm">
+                          {task.name}
+                          {!task.enabled && (
+                            <span className="ml-2 text-muted-foreground text-xs">{t('ping.disabled')}</span>
+                          )}
+                        </p>
+                        <p className="text-muted-foreground text-xs">
+                          {probeTypeLabels[task.probe_type as ProbeType] ?? task.probe_type} | {task.target} |{' '}
+                          {task.interval}s
+                          {serverIds.length > 0
+                            ? ` | ${t('ping.server_count', { count: serverIds.length })}`
+                            : ` | ${t('ping.all_servers')}`}
+                        </p>
                       </div>
-                      <div className="flex gap-1">
-                        <Button
-                          onClick={() => setExpandedTaskId(isExpanded ? null : task.id)}
-                          size="sm"
-                          variant="ghost"
-                        >
-                          <BarChart3 className="size-3.5" />
-                        </Button>
-                        <Button
-                          disabled={toggleMutation.isPending}
-                          onClick={() =>
-                            toggleMutation.mutate(
-                              { id: task.id, enabled: !task.enabled },
-                              {
-                                onSuccess: () => {
-                                  toast.success(
-                                    task.enabled
-                                      ? t('ping.task_disabled', { defaultValue: 'Ping task disabled' })
-                                      : t('ping.task_enabled', { defaultValue: 'Ping task enabled' })
-                                  )
-                                },
-                                onError: (err) => {
-                                  toast.error(
-                                    err instanceof Error
-                                      ? err.message
-                                      : t('ping.task_toggle_failed', { defaultValue: 'Failed to update ping task' })
-                                  )
-                                }
-                              }
-                            )
-                          }
-                          size="sm"
-                          variant="outline"
-                        >
-                          {task.enabled ? t('common:disable') : t('common:enable')}
-                        </Button>
-                        <Button
-                          aria-label={`Delete task ${task.name}`}
-                          disabled={deleteMutation.isPending}
-                          onClick={() =>
-                            deleteMutation.mutate(task.id, {
+                    </div>
+                    <div className="flex gap-1">
+                      <Button onClick={() => setExpandedTaskId(isExpanded ? null : task.id)} size="sm" variant="ghost">
+                        <BarChart3 className="size-3.5" />
+                      </Button>
+                      <Button
+                        disabled={toggleMutation.isPending}
+                        onClick={() =>
+                          toggleMutation.mutate(
+                            { id: task.id, enabled: !task.enabled },
+                            {
                               onSuccess: () => {
-                                toast.success(t('ping.task_deleted', { defaultValue: 'Ping task deleted' }))
+                                toast.success(
+                                  task.enabled
+                                    ? t('ping.task_disabled', { defaultValue: 'Ping task disabled' })
+                                    : t('ping.task_enabled', { defaultValue: 'Ping task enabled' })
+                                )
                               },
                               onError: (err) => {
                                 toast.error(
                                   err instanceof Error
                                     ? err.message
-                                    : t('ping.task_delete_failed', { defaultValue: 'Failed to delete ping task' })
+                                    : t('ping.task_toggle_failed', { defaultValue: 'Failed to update ping task' })
                                 )
                               }
-                            })
-                          }
-                          size="sm"
-                          variant="destructive"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
-                      </div>
+                            }
+                          )
+                        }
+                        size="sm"
+                        variant="outline"
+                      >
+                        {task.enabled ? t('common:disable') : t('common:enable')}
+                      </Button>
+                      <Button
+                        aria-label={`Delete task ${task.name}`}
+                        disabled={deleteMutation.isPending}
+                        onClick={() =>
+                          deleteMutation.mutate(task.id, {
+                            onSuccess: () => {
+                              toast.success(t('ping.task_deleted', { defaultValue: 'Ping task deleted' }))
+                            },
+                            onError: (err) => {
+                              toast.error(
+                                err instanceof Error
+                                  ? err.message
+                                  : t('ping.task_delete_failed', { defaultValue: 'Failed to delete ping task' })
+                              )
+                            }
+                          })
+                        }
+                        size="sm"
+                        variant="destructive"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
                     </div>
-                    {isExpanded && (
-                      <div className="border-t bg-muted/20 px-4 py-3">
-                        <PingResultsChart taskId={task.id} />
-                      </div>
-                    )}
                   </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
+                  {isExpanded && (
+                    <div className="border-t bg-muted/20 px-4 py-3">
+                      <PingResultsChart taskId={task.id} />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )
