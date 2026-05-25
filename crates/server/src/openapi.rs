@@ -181,6 +181,9 @@ impl Modify for SecurityAddon {
         crate::router::api::maintenance_api::create_maintenance,
         crate::router::api::maintenance_api::update_maintenance,
         crate::router::api::maintenance_api::delete_maintenance,
+        // rate-limit
+        crate::router::api::rate_limit::list_rate_limits,
+        crate::router::api::rate_limit::reset_rate_limit,
         // ping-tasks
         crate::router::api::ping::list_tasks,
         crate::router::api::ping::get_task,
@@ -384,6 +387,12 @@ impl Modify for SecurityAddon {
             crate::service::maintenance::CreateMaintenance,
             crate::service::maintenance::UpdateMaintenance,
             crate::entity::maintenance::Model,
+            // rate-limit
+            crate::router::api::rate_limit::RateLimitScope,
+            crate::router::api::rate_limit::RateLimitEntryDto,
+            crate::router::api::rate_limit::RateLimitListResponse,
+            crate::router::api::rate_limit::RateLimitResetRequest,
+            crate::router::api::rate_limit::RateLimitResetResponse,
             // uptime
             crate::entity::uptime_daily::Model,
             crate::service::uptime::UptimeDailyEntry,
@@ -495,6 +504,7 @@ impl Modify for SecurityAddon {
         (name = "status-pages", description = "Status page management & public view"),
         (name = "incidents", description = "Incident management"),
         (name = "maintenances", description = "Maintenance window management"),
+        (name = "rate-limit", description = "In-memory per-IP rate limit inspection & manual reset (admin only)"),
         (name = "audit", description = "Audit logs (admin only)"),
         (name = "users", description = "User management (admin only)"),
         (name = "tasks", description = "Remote command execution"),
