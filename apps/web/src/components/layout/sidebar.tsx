@@ -5,6 +5,7 @@ import {
   BarChart3,
   Bell,
   ClipboardList,
+  Gauge,
   Globe,
   HeartPulse,
   Key,
@@ -45,6 +46,7 @@ const navItems = [
   { to: '/settings/security', labelKey: 'nav_security' as const, icon: Shield },
   { to: '/settings/appearance', labelKey: 'nav_appearance' as const, icon: Palette },
   { to: '/settings/audit-logs', labelKey: 'nav_audit_logs' as const, icon: ClipboardList, adminOnly: true },
+  { to: '/settings/rate-limits', labelKey: 'nav_rate_limits' as const, icon: Gauge, adminOnly: true },
   { to: '/settings', labelKey: 'nav_settings' as const, icon: Settings, adminOnly: true }
 ] as const
 

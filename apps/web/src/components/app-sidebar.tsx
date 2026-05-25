@@ -6,6 +6,7 @@ import {
   Bell,
   ChevronsUpDown,
   ClipboardList,
+  Gauge,
   Globe,
   HeartPulse,
   Key,
@@ -74,6 +75,7 @@ const settingsItems = [
   { to: '/settings/security', labelKey: 'nav_security', icon: Shield },
   { to: '/settings/appearance', labelKey: 'nav_appearance', icon: Palette },
   { to: '/settings/audit-logs', labelKey: 'nav_audit_logs', icon: ClipboardList, adminOnly: true },
+  { to: '/settings/rate-limits', labelKey: 'nav_rate_limits', icon: Gauge, adminOnly: true },
   { to: '/settings', labelKey: 'nav_settings', icon: Settings, adminOnly: true }
 ] as const
 

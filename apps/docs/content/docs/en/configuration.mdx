@@ -152,7 +152,7 @@ Average-latency cutoffs used to classify network-probe records returned by `/api
 | `SERVERBEE_AUTH__SESSION_TTL` | `86400` | Session token TTL in seconds (default 24h) |
 | `SERVERBEE_AUTH__SECURE_COOKIE` | `true` | Set the Secure flag on session cookies. Use `false` only when the browser accesses ServerBee over plain HTTP, such as direct IP quick-start installs |
 | `SERVERBEE_RATE_LIMIT__LOGIN_MAX` | `5` | Max login attempts per IP within 15-minute window |
-| `SERVERBEE_RATE_LIMIT__REGISTER_MAX` | `3` | Max agent registrations per IP within 15-minute window |
+| `SERVERBEE_RATE_LIMIT__REGISTER_MAX` | `10` | Max agent registrations per IP within 15-minute window. Admins can clear an active window from Settings → Rate limits |
 | `SERVERBEE_UPGRADE__RELEASE_BASE_URL` | `https://github.com/ZingerLittleBee/ServerBee/releases` | Base URL for agent upgrade release assets |
 | `SERVERBEE_UPGRADE__LATEST_VERSION_URL` | `""` | Optional custom URL for latest version API. If empty, uses GitHub API |
 | `SERVERBEE_FILE__MAX_UPLOAD_SIZE` | `104857600` | Maximum file upload size in bytes (default 100 MB) |
@@ -279,7 +279,7 @@ Raw metric records are collected every 60 seconds and retained for 7 days by def
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `login_max` | u32 | `5` | Maximum login attempts per rate-limit window |
-| `register_max` | u32 | `3` | Maximum agent registration attempts per rate-limit window |
+| `register_max` | u32 | `10` | Maximum agent registration attempts per rate-limit window. Admins can clear active windows via Settings → Rate limits |
 
 ### `[log]` -- Logging
 

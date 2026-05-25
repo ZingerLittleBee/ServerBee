@@ -141,7 +141,7 @@ Avg-latency cutoffs used to classify network-probe records as `high_latency` / `
 | `SERVERBEE_AUTH__SESSION_TTL` | `auth.session_ttl` | i64 | `86400` | Session token TTL in seconds (default 24h) |
 | `SERVERBEE_AUTH__SECURE_COOKIE` | `auth.secure_cookie` | bool | `true` | Set `Secure` flag on session cookies. Set `false` only for development without HTTPS |
 | `SERVERBEE_RATE_LIMIT__LOGIN_MAX` | `rate_limit.login_max` | u32 | `5` | Maximum login attempts per IP within 15-minute window |
-| `SERVERBEE_RATE_LIMIT__REGISTER_MAX` | `rate_limit.register_max` | u32 | `3` | Maximum agent registrations per IP within 15-minute window |
+| `SERVERBEE_RATE_LIMIT__REGISTER_MAX` | `rate_limit.register_max` | u32 | `10` | Maximum agent registrations per IP within 15-minute window. Admins can clear active windows via Settings → Rate limits |
 | `SERVERBEE_UPGRADE__RELEASE_BASE_URL` | `upgrade.release_base_url` | string | `https://github.com/ZingerLittleBee/ServerBee/releases` | Base URL for agent upgrade release assets |
 | `SERVERBEE_UPGRADE__LATEST_VERSION_URL` | `upgrade.latest_version_url` | string | `""` | Optional custom URL for latest version API. If empty, uses GitHub API |
 | `SERVERBEE_FILE__MAX_UPLOAD_SIZE` | `file.max_upload_size` | u64 | `104857600` (100 MB) | Maximum file upload size in bytes |

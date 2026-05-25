@@ -132,12 +132,26 @@ async fn main() -> anyhow::Result<()> {
             );
         }
         tracing::info!("No token found, registering...");
-        let (server_id, token) = register::register_agent(&config, &machine_fingerprint).await?;
-        tracing::info!("Registration successful (server_id={server_id})");
-        if let Err(e) = register::save_token(&token) {
-            tracing::warn!("Failed to save token: {e}");
+        match register::register_agent_with_backoff(&config, &machine_fingerprint).await {
+            Ok((server_id, token)) => {
+                tracing::info!("Registration successful (server_id={server_id})");
+                if let Err(e) = register::save_token(&token) {
+                    tracing::warn!("Failed to save token: {e}");
+                }
+                config.token = token;
+            }
+            Err(register::RegisterError::PermanentAuth(msg)) => {
+                eprintln!(
+                    "Permanent registration failure: {msg}\n\
+                     The enrollment code is invalid, expired, or already used. \
+                     Generate a fresh one in the server UI and update \
+                     `enrollment_code` in agent.toml (or SERVERBEE_ENROLLMENT_CODE), \
+                     then restart the agent."
+                );
+                std::process::exit(register::EXIT_CODE_PERMANENT_AUTH_FAILURE);
+            }
+            Err(e) => anyhow::bail!("Registration failed after retries: {e}"),
         }
-        config.token = token;
     }
 
     // Start the security pipeline before connecting; it owns a long-lived

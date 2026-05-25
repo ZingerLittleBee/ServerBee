@@ -20,6 +20,7 @@ pub mod network_probe;
 pub mod notification;
 pub mod oauth;
 pub mod ping;
+pub mod rate_limit;
 pub mod server;
 pub mod server_group;
 pub mod server_recovery;
@@ -114,6 +115,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                         .merge(geoip::write_router())
                         .merge(asn::write_router())
                         .merge(maintenance_api::router())
+                        .merge(rate_limit::router())
                         .merge(security::write_router())
                         .merge(firewall::write_router())
                         .merge(status_page::write_router())
