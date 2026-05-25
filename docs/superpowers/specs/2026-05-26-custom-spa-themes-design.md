@@ -80,7 +80,7 @@ These constraints keep v1 implementable in one development cycle. The security m
 | Column | Type | Notes |
 |---|---|---|
 | `id` | INTEGER PRIMARY KEY AUTOINCREMENT | Internal numeric ID |
-| `uuid` | TEXT NOT NULL UNIQUE | UUIDv7, used in URLs / API |
+| `uuid` | TEXT NOT NULL UNIQUE | UUIDv4, used in URLs / API. Matches workspace `uuid` crate feature set (`Cargo.toml:23` enables only `v4`). Time-ordering is not needed because `uploaded_at` already provides it. |
 | `manifest_id` | TEXT NOT NULL | `manifest.id` from package; multiple rows can share this (version history) |
 | `name` | TEXT NOT NULL | From `manifest.name`, HTML-stripped, ≤ 64 chars |
 | `version` | TEXT NOT NULL | semver from `manifest.version` |
@@ -151,10 +151,11 @@ The package may only contain files whose extension is in the whitelist (Section 
   "homepage": "https://acme.example.com",
   "description": "Branded dashboard for Acme.",
   "entry": "index.html",
-  "min_serverbee_version": "1.0.0",
   "preview": "preview.png"
 }
 ```
+
+`min_serverbee_version` is intentionally omitted from this example. Authors should leave it unset unless they actually depend on a newer feature, because semver treats a release like `1.0.0` as **greater** than a prerelease like `1.0.0-alpha.3`. Setting `"min_serverbee_version": "1.0.0"` would reject the theme on the current `1.0.0-alpha.3` workspace builds. The starter template ships with the field commented out and a note explaining this gotcha.
 
 | Field | Required | Constraint |
 |---|---|---|
@@ -188,9 +189,20 @@ The package may only contain files whose extension is in the whitelist (Section 
 POST /api/settings/spa-themes (multipart/form-data, field: package)
     │
     ├─ route-level: DefaultBodyLimit::max(25 * 1024 * 1024)
-    │  ↑ REQUIRED. Axum Multipart's default is 2 MB; without this layer the
-    │    25 MB cap is unreachable and uploads silently truncate. Mirror the
-    │    pattern at crates/server/src/router/api/file.rs:133.
+    │  ↑ REQUIRED. Axum Multipart's default is 2 MB; without this layer
+    │    uploads > 2 MB are rejected by the extractor with HTTP 413 before
+    │    the handler runs. Mirror the pattern at
+    │    crates/server/src/router/api/file.rs:133.
+    │
+    ├─ Custom extractor: `SpaThemeUpload` wraps `Multipart` and implements
+    │  `FromRequest`. On `MultipartRejection`, it converts the rejection into
+    │  `AppError::Domain { status: 413, code: "UPLOAD_TOO_LARGE", ... }`
+    │  for payload-too-large, or appropriate codes for other rejection kinds
+    │  (`INVALID_MULTIPART`, etc.). This is what makes the stable error
+    │  contract in §4.1 actually returnable for body-limit cases — without
+    │  it, the default Axum 413 response body would not match the JSON
+    │  contract that tests and the frontend depend on.
+    │
     ├─ require_admin middleware
     │
     ▼
@@ -295,7 +307,7 @@ Stable code set (used by frontend i18n and integration tests):
 
 ### 4.2 What we deliberately do NOT do
 
-- **No HTML/JS scanning, no AST analysis.** CSP is the only enforcement boundary. Scanning is high cost, low signal, and creates a false sense of security.
+- **No HTML/JS scanning, no AST analysis.** Themes are admin-installed and trusted (Section 1 trust model). Scanning would imply an enforcement boundary that does not exist — a malicious admin can already write whatever code they want. CSP is defense-in-depth, not enforcement, and scanning the code that runs inside the trust boundary adds cost without adding a real security property.
 - **No virus scanning.** Out of scope for a frontend asset pipeline.
 - **No automatic theme activation on upload.** Admin must explicitly activate via a second action (prevents "upload a broken theme by accident → site is down").
 
@@ -331,7 +343,7 @@ On server start, after migrations:
 
 ### 5.3 Activation flow
 
-Activation is a global, irreversible-without-recovery commit. There is no per-tab "stay on default" — cookies are origin-scoped, not tab-scoped, so any attempt to make activation tab-local would be a lie. Instead, the UI's safety net is the **preview** mechanism (Section 6.4): admin previews via `?theme=preview:<uuid>` first, then activates.
+Activation is a global, irreversible-without-recovery commit. There is no per-tab "stay on default" — cookies are origin-scoped, not tab-scoped, so any attempt to make activation tab-local would be a lie. Instead, the UI's safety net is the **preview** mechanism (Section 6.3): admin previews via `?theme=preview:<uuid>` first, then exits preview, then activates. Note that preview is itself browser-wide (see Section 6.3 for the honest scope statement), so the recommended flow uses incognito or a separate browser profile when the admin needs to keep the management UI live during a long review.
 
 ```
 PUT /api/settings/active-spa-theme  { theme_id: <uuid> | null }
@@ -352,7 +364,7 @@ PUT /api/settings/active-spa-theme  { theme_id: <uuid> | null }
    - 200 with { activated_uuid }
 ```
 
-The admin's current tab continues to show whatever it was showing until the next request to a root-serving path. Reloading their tab will pick up the new theme. If they instead want to verify the new theme before committing site-wide, they should use preview first (Section 6.4).
+The admin's current tab continues to show whatever it was showing until the next request to a root-serving path. Reloading their tab will pick up the new theme. If they instead want to verify the new theme before committing site-wide, they should use preview first (Section 6.3).
 
 ### 5.4 Serve path
 
@@ -426,17 +438,33 @@ To exit recovery: visit `?theme=default` and click "Exit recovery" (which calls 
 
 Admin-only. Serves the specified theme for the current request **without** changing `ACTIVE_SPA_THEME_KEY`. The handler also sets `Set-Cookie: sb_preview_theme=<uuid>; Path=/; Max-Age=900; SameSite=Strict` so SPA client-side navigation within the preview tab continues to serve that theme.
 
-This is the safety net replacing the previous (broken) "tab-local default" idea. Flow:
+**Honest scope: this cookie is browser-wide (origin-scoped), not tab-local.** Cookies have no per-tab dimension; any attempt to claim otherwise would mislead. As a consequence, while preview is active:
+
+- Every root-serving request from any tab in the same browser profile (after the first one that sets the cookie) sees the previewed theme.
+- The default-SPA management tab, if reloaded, will also flip into the preview theme. This is by design and the UI must surface it loudly.
+
+The mitigated UX workflow:
 
 1. Admin uploads theme `<uuid>`
-2. Admin clicks "Preview" → new tab opens to `/?theme=preview:<uuid>`
-3. Admin browses the theme, validates it works
-4. Admin returns to the default-SPA tab and clicks "Activate" → global active flips
-5. The preview cookie expires in 15 minutes; or admin can manually clear it by visiting `?theme=active` or `?theme=default`
+2. Admin clicks "Preview" → confirmation dialog explains: "Preview is browser-wide for 15 minutes. Open the new tab, do your review, then exit preview before activating."
+3. Click-through → new tab opens to `/?theme=preview:<uuid>`. A persistent banner inside the served theme (added by the preview handler as a small injected script — see § 6.6) shows `Preview mode · expires in MM:SS · [Exit preview]`.
+4. Admin reviews the theme. If satisfied, clicks **Exit preview** in the banner (or in the management tab if it's still on the default SPA — admin must use a separate browser/incognito if they need to keep the management UI live during a long review).
+5. Exiting preview clears `sb_preview_theme` and reloads to the default SPA. Admin is back in the management UI.
+6. Admin clicks "Activate" in the management UI → global active flips.
 
-The preview cookie does not need `HttpOnly`. It only affects which theme is served; the actual session cookie is separate.
+Auto-expiry: the 15-minute `Max-Age` is an upper bound on how long an abandoned preview stays sticky. Admin can shorten this manually with **Exit preview** at any time. Visiting `?theme=active` or `?theme=default` also clears it (Section 6.5).
 
-Validator note: only admins can set the preview cookie. The handler checks the request's session before serving a preview theme; non-admins get the active theme (or default) regardless of the query string.
+Validator note: only admins can set or have the cookie honored. The serve handler ignores `sb_preview_theme` for non-admin sessions and falls through to active/default.
+
+### 6.6 Preview-mode banner injection
+
+When the serve handler decides to render a preview theme (Section 6.5 step 2 or 5), it appends a small `<script>` tag just before `</body>` of the served HTML — only for top-level navigation requests, not asset responses. The script renders a fixed-position banner showing remaining time and an Exit preview button that:
+
+```js
+fetch('/__system/clear-preview', { method: 'POST' }).then(() => location.reload())
+```
+
+Themes cannot suppress this banner. The injection is content-type aware: only modifies responses with `Content-Type: text/html` and only when the cookie or query indicates preview mode. The injected snippet is short (under 1 KB) and has its own `nonce` in the CSP header for that response, since `'unsafe-inline'` is already on for themes.
 
 ### 6.4 `/__system/*` reserved prefix
 
@@ -499,7 +527,9 @@ A new top section `CustomSpaThemeSection` lives in `apps/web/src/routes/_authed/
 - `ActivateSpaThemeDialog` — confirmation modal with checkbox gate; copy includes recovery URL
 - `SpaThemeDetailsDrawer` — right drawer with full manifest, file list, audit history, package download
 
-The "Preview" action on each card opens `/?theme=preview:<uuid>` in a new tab (Section 6.3). This is the safety-net flow: admin previews → returns to the management tab on the default SPA → clicks Activate. No post-activation modal is needed because the admin has already validated the theme via preview.
+The "Preview" action on each card opens a confirmation dialog first that explicitly states: *"Preview is browser-wide for up to 15 minutes — any tab in this browser that reloads `/` will see the preview theme until you exit. If you need the management UI live during preview, use a separate browser or incognito window."* On confirm, it opens `/?theme=preview:<uuid>` in a new tab.
+
+The preview banner inside the served theme (Section 6.6) gives the admin an always-visible exit. After exiting preview, the management tab resumes on the default SPA and the admin can click "Activate" with confidence. No post-activation modal is needed.
 
 ### 8.2 API hooks (in `apps/web/src/api/spa-themes.ts`)
 
@@ -628,7 +658,7 @@ Fixture packages live under `crates/server/tests/fixtures/spa_themes/`.
 - [ ] Delete active theme rejected with HTTP 409 `THEME_IN_USE`
 - [ ] Zip-slip fixture rejected with `ZIP_SLIP` error code
 - [ ] Zip-bomb fixture rejected with `ZIP_BOMB` error code
-- [ ] Upload > 25 MB rejected with `UPLOAD_TOO_LARGE` (not silently truncated)
+- [ ] Upload > 25 MB rejected with HTTP 413 and JSON body `{"error":{"code":"UPLOAD_TOO_LARGE", ...}}` (verifies the custom extractor maps `MultipartRejection`, not Axum's default text body)
 - [ ] CSP headers present on theme responses (verified in DevTools); absent on default SPA
 - [ ] Theme with `base: '/'` reloads correctly at deep SPA paths (e.g. `/servers/abc`)
 - [ ] Version upgrade: v1.0 → v1.1 succeeds and does not auto-activate
