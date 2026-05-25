@@ -60,15 +60,20 @@ export interface UnlockResultDto {
 }
 
 export interface IpQualitySnapshotData {
+  abuse_email: string | null
   as_org: string | null
   asn: string | null
+  asn_abuser_score: number | null
   checked_at: string
   city: string | null
   country: string | null
   ip: string
   ip_type: string
+  is_abuser: boolean
   is_hosting: boolean
+  is_mobile: boolean
   is_proxy: boolean
+  is_tor: boolean
   is_vpn: boolean
   region: string | null
   risk_level: string

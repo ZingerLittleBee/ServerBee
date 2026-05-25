@@ -29,6 +29,10 @@
   "card_proxy": "Proxy",
   "card_vpn": "VPN",
   "card_hosting": "Hosting",
+  "card_tor": "Tor",
+  "card_abuser": "Known abuser",
+  "card_mobile": "Mobile network",
+  "card_asn_score": "ASN risk",
 
   "ip_type_residential": "Residential",
   "ip_type_datacenter": "Datacenter",

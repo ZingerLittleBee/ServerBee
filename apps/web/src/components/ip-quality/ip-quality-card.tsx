@@ -83,6 +83,9 @@ export function IpQualityCard({ ipQuality, serverName, className }: Props) {
           <Badge variant="secondary">{ipTypeLabel}</Badge>
         </div>
         {asLabel && <FieldRow label={t('card_asn')} value={asLabel} />}
+        {ipQuality.asn_abuser_score != null && (
+          <FieldRow label={t('card_asn_score')} value={String(ipQuality.asn_abuser_score)} />
+        )}
         {location && <FieldRow label={t('card_location')} value={location} />}
         <div className="flex flex-wrap gap-1.5 pt-1">
           {ipQuality.is_proxy && (
@@ -101,9 +104,24 @@ export function IpQualityCard({ ipQuality, serverName, className }: Props) {
               {t('card_vpn')}
             </Badge>
           )}
+          {ipQuality.is_tor && (
+            <Badge className="border border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-300" variant="outline">
+              {t('card_tor')}
+            </Badge>
+          )}
+          {ipQuality.is_abuser && (
+            <Badge className="border border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-300" variant="outline">
+              {t('card_abuser')}
+            </Badge>
+          )}
           {ipQuality.is_hosting && (
             <Badge className="border border-muted-foreground/30 bg-muted text-muted-foreground" variant="outline">
               {t('card_hosting')}
+            </Badge>
+          )}
+          {ipQuality.is_mobile && (
+            <Badge className="border border-muted-foreground/30 bg-muted text-muted-foreground" variant="outline">
+              {t('card_mobile')}
             </Badge>
           )}
         </div>

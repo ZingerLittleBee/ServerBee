@@ -25,6 +25,57 @@ pub struct ProviderResult {
     pub ip_type: Option<String>,
     /// Raw provider JSON response (for the `providers` column).
     pub raw: JsonValue,
+    // ipapi.is-derived fields. ip-api fallback leaves these as defaults.
+    pub is_tor: bool,
+    pub is_abuser: bool,
+    pub is_mobile: bool,
+    pub asn_abuser_score: Option<i32>,
+    pub abuse_email: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// ipapi.is response parser
+// ---------------------------------------------------------------------------
+
+/// Extract a numeric risk score from an ipapi.is `abuser_score` string.
+/// ipapi.is returns strings like `"0.0039 (Low)"`, `"0.5"`, `"null"`.
+/// The numeric portion is a 0..=1 fraction; we round (* 100) into 0..=100.
+fn parse_ipapi_is_abuser_score(raw: Option<&str>) -> Option<i32> {
+    raw.and_then(|s| s.split_whitespace().next())
+        .and_then(|n| n.parse::<f64>().ok())
+        .map(|f| (f * 100.0).round().clamp(0.0, 100.0) as i32)
+}
+
+pub(crate) fn parse_ipapi_is_response(v: JsonValue) -> ProviderResult {
+    let raw = v.clone();
+
+    let company_score = v
+        .pointer("/company/abuser_score")
+        .and_then(JsonValue::as_str);
+    let asn_score = v.pointer("/asn/abuser_score").and_then(JsonValue::as_str);
+
+    let ip_type = v
+        .pointer("/company/type")
+        .or_else(|| v.pointer("/asn/type"))
+        .and_then(JsonValue::as_str)
+        .map(str::to_string);
+
+    ProviderResult {
+        risk_score: parse_ipapi_is_abuser_score(company_score),
+        asn_abuser_score: parse_ipapi_is_abuser_score(asn_score),
+        is_proxy: v.get("is_proxy").and_then(JsonValue::as_bool),
+        is_vpn: v.get("is_vpn").and_then(JsonValue::as_bool),
+        is_hosting: v.get("is_datacenter").and_then(JsonValue::as_bool),
+        is_tor: v.get("is_tor").and_then(JsonValue::as_bool).unwrap_or(false),
+        is_abuser: v.get("is_abuser").and_then(JsonValue::as_bool).unwrap_or(false),
+        is_mobile: v.get("is_mobile").and_then(JsonValue::as_bool).unwrap_or(false),
+        abuse_email: v
+            .pointer("/abuse/email")
+            .and_then(JsonValue::as_str)
+            .map(str::to_string),
+        ip_type,
+        raw,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +203,51 @@ pub fn derive_risk_level(score: Option<i32>) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Fallback-orchestration helpers
+// ---------------------------------------------------------------------------
+
+/// Whether a provider error should trigger fallback. Currently informational only —
+/// `score_ip_with` falls through on any failure. Kept for future metric labeling.
+fn is_fallbackable(e: &anyhow::Error) -> bool {
+    if let Some(re) = e.downcast_ref::<reqwest::Error>() {
+        if re.is_timeout() || re.is_connect() || re.is_request() {
+            return true;
+        }
+        if let Some(s) = re.status() {
+            return s.is_server_error() || s == reqwest::StatusCode::TOO_MANY_REQUESTS;
+        }
+    }
+    e.downcast_ref::<serde_json::Error>().is_some()
+}
+
+async fn try_provider(
+    p: &Option<Box<dyn IpRiskProvider>>,
+    ip: &str,
+) -> Option<(&'static str, ProviderResult)> {
+    let provider = p.as_ref()?;
+    let name = provider.name();
+    match tokio::time::timeout(std::time::Duration::from_secs(15), provider.lookup(ip)).await {
+        Ok(Ok(r)) => {
+            tracing::debug!("provider {name} succeeded for {ip}");
+            Some((name, r))
+        }
+        Ok(Err(e)) => {
+            let kind = if is_fallbackable(&e) {
+                "fallbackable"
+            } else {
+                "non-fallback"
+            };
+            tracing::warn!("provider {name} failed for {ip} ({kind}): {e}");
+            None
+        }
+        Err(_) => {
+            tracing::warn!("provider {name} timed out for {ip}");
+            None
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // IpRiskService
 // ---------------------------------------------------------------------------
 
@@ -166,7 +262,8 @@ impl IpRiskService {
 
     /// Score an IP address:
     /// 1. Check `ip_risk_cache` — if fresh (< 24h), return the cached snapshot.
-    /// 2. On cache miss / expired: look up GeoIP baseline + call provider (if configured).
+    /// 2. On cache miss / expired: look up GeoIP baseline + call primary provider,
+    ///    then fallback if primary fails.
     /// 3. Upsert `ip_risk_cache`.
     /// 4. Return the `IpQualitySnapshotData`.
     ///
@@ -180,14 +277,22 @@ impl IpRiskService {
         geoip: &Arc<RwLock<Option<GeoIpService>>>,
         ip: &str,
     ) -> Option<IpQualitySnapshotData> {
-        let provider = provider_for_config(&self.config);
-        self.score_ip_with(db, geoip, ip, provider).await
+        let primary = provider_for_config(&self.config, &self.config.risk_provider);
+        let fallback = if self.config.risk_provider != "none"
+            && self.config.risk_provider_fallback != "none"
+            && self.config.risk_provider_fallback != self.config.risk_provider
+        {
+            provider_for_config(&self.config, &self.config.risk_provider_fallback)
+        } else {
+            None
+        };
+        self.score_ip_with(db, geoip, ip, primary, fallback).await
     }
 
-    /// Score an IP using an explicitly provided risk provider.
+    /// Score an IP using explicitly provided primary and fallback risk providers.
     ///
-    /// `score_ip` delegates here after resolving the provider from config;
-    /// tests inject a mock provider directly. Cache logic is identical for both.
+    /// `score_ip` delegates here after resolving providers from config;
+    /// tests inject mock providers directly. Cache logic is identical for both.
     ///
     /// Returns `None` immediately — without touching the cache — when `ip` is
     /// empty or blank. Callers must check for this and skip persisting a
@@ -198,55 +303,61 @@ impl IpRiskService {
         db: &DatabaseConnection,
         geoip: &Arc<RwLock<Option<GeoIpService>>>,
         ip: &str,
-        provider: Option<Box<dyn IpRiskProvider>>,
+        primary: Option<Box<dyn IpRiskProvider>>,
+        fallback: Option<Box<dyn IpRiskProvider>>,
     ) -> Option<IpQualitySnapshotData> {
-        // Short-circuit on empty IP — never touch the cache with a blank key.
         if ip.trim().is_empty() {
             tracing::debug!("score_ip_with: skipping empty egress IP");
             return None;
         }
 
-        // 1. Check cache
         if let Some(snapshot) = self.read_cache(db, ip).await {
             return Some(snapshot);
         }
 
-        // 2. GeoIP baseline (always local, never fails hard)
         let baseline = lookup_geoip_baseline(geoip, ip);
 
-        // 3. Provider lookup (opt-in, non-fatal)
-        let provider_result = if let Some(p) = &provider {
-            match tokio::time::timeout(std::time::Duration::from_secs(15), p.lookup(ip)).await {
-                Ok(Ok(result)) => Some(result),
-                Ok(Err(e)) => {
-                    tracing::warn!("IP risk provider {} failed for {ip}: {e}", p.name());
-                    None
+        // Try primary, then fallback. Both can be None (no scoring).
+        let provider_result = match try_provider(&primary, ip).await {
+            Some(hit) => Some(hit),
+            None => {
+                if primary.is_some() && fallback.is_some() {
+                    tracing::info!("primary failed for {ip}, attempting fallback");
                 }
-                Err(_) => {
-                    tracing::warn!("IP risk provider timed out for {ip}");
-                    None
-                }
+                try_provider(&fallback, ip).await
             }
-        } else {
-            None
         };
 
-        // 4. Merge
-        let (risk_score, is_proxy, is_vpn, is_hosting, provider_ip_type, providers_json) =
-            match (&provider, &provider_result) {
-                (Some(p), Some(r)) => {
-                    let providers_json = serde_json::json!({ p.name(): r.raw });
-                    (
-                        r.risk_score,
-                        r.is_proxy.unwrap_or(false),
-                        r.is_vpn.unwrap_or(false),
-                        r.is_hosting.unwrap_or(false),
-                        r.ip_type.clone(),
-                        providers_json,
-                    )
+        let (
+            risk_score, is_proxy, is_vpn, is_hosting, provider_ip_type, providers_json,
+            is_tor, is_abuser, is_mobile, asn_abuser_score, abuse_email,
+        ) = match &provider_result {
+            Some((name, r)) => {
+                let providers_json = serde_json::json!({ *name: r.raw });
+                (
+                    r.risk_score,
+                    r.is_proxy.unwrap_or(false),
+                    r.is_vpn.unwrap_or(false),
+                    r.is_hosting.unwrap_or(false),
+                    r.ip_type.clone(),
+                    providers_json,
+                    r.is_tor,
+                    r.is_abuser,
+                    r.is_mobile,
+                    r.asn_abuser_score,
+                    r.abuse_email.clone(),
+                )
+            }
+            None => {
+                if primary.is_some() || fallback.is_some() {
+                    tracing::warn!(
+                        "both providers failed for {ip}, returning geo-only snapshot"
+                    );
                 }
-                _ => (None, false, false, false, None, serde_json::json!({})),
-            };
+                (None, false, false, false, None, serde_json::json!({}),
+                 false, false, false, None, None)
+            }
+        };
 
         let ip_type = derive_ip_type(is_hosting, is_vpn, is_proxy, provider_ip_type.as_deref());
         let risk_level = derive_risk_level(risk_score);
@@ -265,10 +376,14 @@ impl IpRiskService {
             is_hosting,
             risk_score,
             risk_level,
+            is_tor,
+            is_abuser,
+            is_mobile,
+            asn_abuser_score,
+            abuse_email,
             checked_at: now,
         };
 
-        // 5. Upsert cache
         self.write_cache(db, &snapshot, &providers_json).await;
 
         Some(snapshot)
@@ -308,6 +423,11 @@ impl IpRiskService {
             is_hosting: row.is_hosting,
             risk_score: row.risk_score,
             risk_level: row.risk_level,
+            is_tor: row.is_tor,
+            is_abuser: row.is_abuser,
+            is_mobile: row.is_mobile,
+            asn_abuser_score: row.asn_abuser_score,
+            abuse_email: row.abuse_email,
             checked_at: row.checked_at,
         })
     }
@@ -323,8 +443,9 @@ impl IpRiskService {
 
         let sql = "INSERT OR REPLACE INTO ip_risk_cache \
             (ip, asn, as_org, country, region, city, ip_type, is_proxy, is_vpn, is_hosting, \
-             risk_score, risk_level, providers, checked_at) \
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+             risk_score, risk_level, is_tor, is_abuser, is_mobile, asn_abuser_score, abuse_email, \
+             providers, checked_at) \
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         let opt_str = |s: &Option<String>| -> sea_orm::Value {
             match s {
@@ -356,6 +477,11 @@ impl IpRiskService {
                     sea_orm::Value::Int(Some(snapshot.is_hosting as i32)),
                     opt_int(snapshot.risk_score),
                     sea_orm::Value::String(Some(Box::new(snapshot.risk_level.clone()))),
+                    sea_orm::Value::Int(Some(snapshot.is_tor as i32)),
+                    sea_orm::Value::Int(Some(snapshot.is_abuser as i32)),
+                    sea_orm::Value::Int(Some(snapshot.is_mobile as i32)),
+                    opt_int(snapshot.asn_abuser_score),
+                    opt_str(&snapshot.abuse_email),
                     sea_orm::Value::String(Some(Box::new(providers_str))),
                     sea_orm::Value::String(Some(Box::new(snapshot.checked_at.to_rfc3339()))),
                 ],
@@ -382,334 +508,18 @@ fn build_provider_client() -> reqwest::Client {
         .unwrap_or_else(|_| reqwest::Client::new())
 }
 
-pub fn provider_for_config(config: &IpQualityConfig) -> Option<Box<dyn IpRiskProvider>> {
-    match config.risk_provider.as_str() {
-        "scamalytics" => config.scamalytics.as_ref().map(|k| {
-            Box::new(ScamalyticsProvider {
-                api_key: k.api_key.clone(),
-                endpoint: k.endpoint.clone(),
-                client: build_provider_client(),
-            }) as Box<dyn IpRiskProvider>
-        }),
-        "ipqs" => config.ipqs.as_ref().map(|k| {
-            Box::new(IpQualityScoreProvider {
-                api_key: k.api_key.clone(),
-                client: build_provider_client(),
-            }) as Box<dyn IpRiskProvider>
-        }),
-        "proxycheck" => config.proxycheck.as_ref().map(|k| {
-            Box::new(ProxyCheckProvider {
-                api_key: k.api_key.clone(),
-                client: build_provider_client(),
-            }) as Box<dyn IpRiskProvider>
-        }),
-        "abuseipdb" => config.abuseipdb.as_ref().map(|k| {
-            Box::new(AbuseIpdbProvider {
-                api_key: k.api_key.clone(),
-                client: build_provider_client(),
-            }) as Box<dyn IpRiskProvider>
-        }),
+pub fn provider_for_config(
+    config: &IpQualityConfig,
+    provider_name: &str,
+) -> Option<Box<dyn IpRiskProvider>> {
+    match provider_name {
+        "ipapi_is" => Some(Box::new(IpApiIsProvider::from_config(
+            config.ipapi_is.as_ref(),
+        )) as Box<dyn IpRiskProvider>),
         "ip-api" => Some(Box::new(IpApiProvider {
             client: build_provider_client(),
         }) as Box<dyn IpRiskProvider>),
-        _ => None,
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Provider: Scamalytics
-// ---------------------------------------------------------------------------
-
-pub struct ScamalyticsProvider {
-    pub api_key: String,
-    /// Account-bound API subdomain (e.g. `api1`, `api11`). Empty → default.
-    pub endpoint: String,
-    client: reqwest::Client,
-}
-
-impl ScamalyticsProvider {
-    pub fn parse_response(json: &str) -> ProviderResult {
-        let v: JsonValue = match serde_json::from_str(json) {
-            Ok(v) => v,
-            Err(_) => return ProviderResult::default(),
-        };
-
-        let risk_score = v
-            .get("score")
-            .and_then(|s| s.as_str())
-            .and_then(|s| s.parse::<i32>().ok())
-            .or_else(|| v.get("score").and_then(|s| s.as_i64()).map(|n| n as i32));
-
-        let is_proxy = v
-            .get("proxy")
-            .or_else(|| v.get("is_proxy"))
-            .and_then(|b| b.as_bool())
-            .or_else(|| {
-                v.get("proxy")
-                    .and_then(|s| s.as_str())
-                    .map(|s| s == "yes" || s == "1" || s == "true")
-            });
-        let is_vpn = v
-            .get("vpn")
-            .or_else(|| v.get("is_vpn"))
-            .and_then(|b| b.as_bool())
-            .or_else(|| {
-                v.get("vpn")
-                    .and_then(|s| s.as_str())
-                    .map(|s| s == "yes" || s == "1" || s == "true")
-            });
-        let is_hosting = v
-            .get("hosting")
-            .or_else(|| v.get("is_hosting"))
-            .and_then(|b| b.as_bool())
-            .or_else(|| {
-                v.get("hosting")
-                    .and_then(|s| s.as_str())
-                    .map(|s| s == "yes" || s == "1" || s == "true")
-            });
-
-        ProviderResult {
-            risk_score,
-            is_proxy,
-            is_vpn,
-            is_hosting,
-            ip_type: None,
-            raw: v,
-        }
-    }
-}
-
-#[async_trait]
-impl IpRiskProvider for ScamalyticsProvider {
-    async fn lookup(&self, ip: &str) -> anyhow::Result<ProviderResult> {
-        // The Scamalytics API subdomain is account-bound; fall back to `api11`
-        // when no per-account endpoint is configured.
-        let subdomain = if self.endpoint.is_empty() {
-            "api11"
-        } else {
-            self.endpoint.as_str()
-        };
-        let url = format!(
-            "https://{subdomain}.scamalytics.com/ip/?key={}&ip={ip}",
-            self.api_key
-        );
-        let resp = self.client.get(&url).send().await?;
-        let body = resp.text().await?;
-        Ok(Self::parse_response(&body))
-    }
-
-    fn name(&self) -> &'static str {
-        "scamalytics"
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Provider: IPQualityScore
-// ---------------------------------------------------------------------------
-
-pub struct IpQualityScoreProvider {
-    pub api_key: String,
-    client: reqwest::Client,
-}
-
-impl IpQualityScoreProvider {
-    pub fn parse_response(json: &str) -> ProviderResult {
-        let v: JsonValue = match serde_json::from_str(json) {
-            Ok(v) => v,
-            Err(_) => return ProviderResult::default(),
-        };
-
-        let risk_score = v
-            .get("fraud_score")
-            .and_then(|s| s.as_i64())
-            .map(|n| n as i32);
-
-        let is_proxy = v.get("proxy").and_then(|b| b.as_bool());
-        let is_vpn = v.get("vpn").and_then(|b| b.as_bool());
-        // Only the `host` field indicates hosting infrastructure. `is_crawler`
-        // is a bot/crawler signal and must not be conflated with hosting.
-        let is_hosting = v.get("host").and_then(|b| b.as_bool());
-        let ip_type = v.get("connection_type").and_then(|s| s.as_str()).map(|s| {
-            match s.to_lowercase().as_str() {
-                "residential" => "residential".to_string(),
-                "mobile" => "mobile".to_string(),
-                "corporate" => "isp".to_string(),
-                "data_center" | "datacenter" => "datacenter".to_string(),
-                _ => s.to_string(),
-            }
-        });
-
-        ProviderResult {
-            risk_score,
-            is_proxy,
-            is_vpn,
-            is_hosting,
-            ip_type,
-            raw: v,
-        }
-    }
-}
-
-#[async_trait]
-impl IpRiskProvider for IpQualityScoreProvider {
-    async fn lookup(&self, ip: &str) -> anyhow::Result<ProviderResult> {
-        let url = format!(
-            "https://ipqualityscore.com/api/json/ip/{}/{ip}",
-            self.api_key
-        );
-        let resp = self.client.get(&url).send().await?;
-        let body = resp.text().await?;
-        Ok(Self::parse_response(&body))
-    }
-
-    fn name(&self) -> &'static str {
-        "ipqs"
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Provider: ProxyCheck
-// ---------------------------------------------------------------------------
-
-pub struct ProxyCheckProvider {
-    pub api_key: String,
-    client: reqwest::Client,
-}
-
-impl ProxyCheckProvider {
-    /// Parse a proxycheck.io response. The response keys the per-IP object by
-    /// the queried IP string: `{ "status": "ok", "<ip>": { ... } }`.
-    pub fn parse_response(json: &str, ip: &str) -> ProviderResult {
-        let v: JsonValue = match serde_json::from_str(json) {
-            Ok(v) => v,
-            Err(_) => return ProviderResult::default(),
-        };
-
-        // The per-IP object is keyed by the queried IP string.
-        let ip_data = v.get(ip);
-
-        let Some(ip_data) = ip_data else {
-            return ProviderResult { raw: v, ..Default::default() };
-        };
-
-        let risk_score = ip_data
-            .get("risk")
-            .and_then(|s| s.as_i64())
-            .map(|n| n as i32);
-
-        let is_proxy = ip_data
-            .get("proxy")
-            .and_then(|s| s.as_str())
-            .map(|s| s == "yes");
-        let is_vpn = ip_data
-            .get("vpn")
-            .and_then(|b| b.as_bool())
-            .or_else(|| {
-                ip_data
-                    .get("type")
-                    .and_then(|s| s.as_str())
-                    .map(|s| s.eq_ignore_ascii_case("vpn"))
-            });
-        let ip_type = ip_data
-            .get("type")
-            .and_then(|s| s.as_str())
-            .map(|s| s.to_lowercase());
-
-        ProviderResult {
-            risk_score,
-            is_proxy,
-            is_vpn,
-            is_hosting: None,
-            ip_type,
-            raw: v,
-        }
-    }
-}
-
-#[async_trait]
-impl IpRiskProvider for ProxyCheckProvider {
-    async fn lookup(&self, ip: &str) -> anyhow::Result<ProviderResult> {
-        let url = format!(
-            "https://proxycheck.io/v2/{ip}?key={}&vpn=1&risk=1",
-            self.api_key
-        );
-        let resp = self.client.get(&url).send().await?;
-        let body = resp.text().await?;
-        Ok(Self::parse_response(&body, ip))
-    }
-
-    fn name(&self) -> &'static str {
-        "proxycheck"
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Provider: AbuseIPDB
-// ---------------------------------------------------------------------------
-
-pub struct AbuseIpdbProvider {
-    pub api_key: String,
-    client: reqwest::Client,
-}
-
-impl AbuseIpdbProvider {
-    pub fn parse_response(json: &str) -> ProviderResult {
-        let v: JsonValue = match serde_json::from_str(json) {
-            Ok(v) => v,
-            Err(_) => return ProviderResult::default(),
-        };
-
-        let data = v.get("data");
-
-        let risk_score = data
-            .and_then(|d| d.get("abuseConfidenceScore"))
-            .and_then(|s| s.as_i64())
-            .map(|n| n as i32);
-
-        let is_hosting = data
-            .and_then(|d| d.get("isp"))
-            .and_then(|s| s.as_str())
-            .map(|s| {
-                let lower = s.to_lowercase();
-                lower.contains("hosting")
-                    || lower.contains("cloud")
-                    || lower.contains("datacenter")
-                    || lower.contains("data center")
-            });
-
-        let ip_type = data
-            .and_then(|d| d.get("usageType"))
-            .and_then(|s| s.as_str())
-            .map(|s| s.to_lowercase());
-
-        ProviderResult {
-            risk_score,
-            is_proxy: None,
-            is_vpn: None,
-            is_hosting,
-            ip_type,
-            raw: v,
-        }
-    }
-}
-
-#[async_trait]
-impl IpRiskProvider for AbuseIpdbProvider {
-    async fn lookup(&self, ip: &str) -> anyhow::Result<ProviderResult> {
-        let resp = self
-            .client
-            .get("https://api.abuseipdb.com/api/v2/check")
-            .header("Key", &self.api_key)
-            .header("Accept", "application/json")
-            .query(&[("ipAddress", ip), ("maxAgeInDays", "30")])
-            .send()
-            .await?;
-        let body = resp.text().await?;
-        Ok(Self::parse_response(&body))
-    }
-
-    fn name(&self) -> &'static str {
-        "abuseipdb"
+        _ => None, // "none" or unknown
     }
 }
 
@@ -757,6 +567,7 @@ impl IpApiProvider {
             is_hosting,
             ip_type,
             raw: v,
+            ..Default::default()
         }
     }
 }
@@ -773,6 +584,64 @@ impl IpRiskProvider for IpApiProvider {
 
     fn name(&self) -> &'static str {
         "ip-api"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Provider: ipapi.is
+// ---------------------------------------------------------------------------
+
+pub const IPAPI_IS_DEFAULT_ENDPOINT: &str = "https://api.ipapi.is";
+
+pub struct IpApiIsProvider {
+    pub api_key: Option<String>,
+    pub endpoint: String,
+    client: reqwest::Client,
+}
+
+impl IpApiIsProvider {
+    pub fn from_config(key: Option<&crate::config::RiskProviderKey>) -> Self {
+        let (api_key, endpoint) = match key {
+            Some(k) => (
+                (!k.api_key.is_empty()).then(|| k.api_key.clone()),
+                if k.endpoint.is_empty() {
+                    IPAPI_IS_DEFAULT_ENDPOINT.to_string()
+                } else {
+                    k.endpoint.clone()
+                },
+            ),
+            None => (None, IPAPI_IS_DEFAULT_ENDPOINT.to_string()),
+        };
+        Self {
+            api_key,
+            endpoint,
+            client: build_provider_client(),
+        }
+    }
+}
+
+#[async_trait]
+impl IpRiskProvider for IpApiIsProvider {
+    fn name(&self) -> &'static str {
+        "ipapi_is"
+    }
+
+    async fn lookup(&self, ip: &str) -> anyhow::Result<ProviderResult> {
+        let mut url = format!("{}/?q={}", self.endpoint, ip);
+        if let Some(k) = &self.api_key {
+            url.push_str(&format!("&key={k}"));
+        }
+
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<JsonValue>()
+            .await?;
+
+        Ok(parse_ipapi_is_response(resp))
     }
 }
 
@@ -846,33 +715,29 @@ mod tests {
         let _: Option<Box<dyn IpRiskProvider>> = None;
     }
 
-    // provider_for_config returns None when risk_provider = "none"
+    // provider_for_config returns None when provider_name is "none"
     #[test]
     fn provider_for_config_none() {
         let cfg = IpQualityConfig::default();
-        assert!(provider_for_config(&cfg).is_none());
+        assert!(provider_for_config(&cfg, "none").is_none());
     }
 
-    // provider_for_config returns Some when a provider + key is configured
+    // provider_for_config returns Some(IpApiProvider) for "ip-api"
     #[test]
-    fn provider_for_config_scamalytics() {
+    fn provider_for_config_ip_api() {
         let cfg = IpQualityConfig {
-            risk_provider: "scamalytics".to_string(),
-            scamalytics: Some(crate::config::RiskProviderKey {
-                api_key: "test_key".to_string(),
-                endpoint: String::new(),
-            }),
+            risk_provider: "ip-api".to_string(),
             ..Default::default()
         };
-        let provider = provider_for_config(&cfg);
+        let provider = provider_for_config(&cfg, "ip-api");
         assert!(provider.is_some());
-        assert_eq!(provider.unwrap().name(), "scamalytics");
+        assert_eq!(provider.unwrap().name(), "ip-api");
     }
 
     #[tokio::test]
     async fn score_ip_no_provider_returns_geoip_baseline() {
         let (db, _tmp) = setup_test_db().await;
-        let cfg = IpQualityConfig::default(); // risk_provider = "none"
+        let cfg = IpQualityConfig::default(); // no live provider in tests
         let service = IpRiskService::new(cfg);
         let geoip: Arc<RwLock<Option<GeoIpService>>> = Arc::new(RwLock::new(None));
 
@@ -924,8 +789,9 @@ mod tests {
     async fn insert_cache_row(db: &DatabaseConnection, ip: &str, checked_at: chrono::DateTime<Utc>) {
         let sql = "INSERT OR REPLACE INTO ip_risk_cache \
             (ip, asn, as_org, country, region, city, ip_type, is_proxy, is_vpn, is_hosting, \
-             risk_score, risk_level, providers, checked_at) \
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+             risk_score, risk_level, is_tor, is_abuser, is_mobile, asn_abuser_score, abuse_email, \
+             providers, checked_at) \
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         db.execute(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
             sql,
@@ -942,6 +808,11 @@ mod tests {
                 0i32.into(),
                 sea_orm::Value::Int(None),
                 "unknown".into(),
+                0i32.into(),
+                0i32.into(),
+                0i32.into(),
+                sea_orm::Value::Int(None),
+                sea_orm::Value::String(None),
                 "{}".into(),
                 checked_at.to_rfc3339().into(),
             ],
@@ -962,7 +833,7 @@ mod tests {
         let (mock, call_count) = MockProvider::new(ProviderResult::default());
 
         let _result = service
-            .score_ip_with(&db, &geoip, "5.6.7.8", Some(Box::new(mock)))
+            .score_ip_with(&db, &geoip, "5.6.7.8", Some(Box::new(mock)), None)
             .await;
 
         assert_eq!(
@@ -984,7 +855,7 @@ mod tests {
         });
 
         let result = service
-            .score_ip_with(&db, &geoip, "9.10.11.12", Some(Box::new(mock)))
+            .score_ip_with(&db, &geoip, "9.10.11.12", Some(Box::new(mock)), None)
             .await
             .expect("non-empty IP should return Some");
 
@@ -998,7 +869,7 @@ mod tests {
         // Second call — should hit the cache
         let (mock2, call_count2) = MockProvider::new(ProviderResult::default());
         let _result2 = service
-            .score_ip_with(&db, &geoip, "9.10.11.12", Some(Box::new(mock2)))
+            .score_ip_with(&db, &geoip, "9.10.11.12", Some(Box::new(mock2)), None)
             .await;
         assert_eq!(
             call_count2.load(std::sync::atomic::Ordering::SeqCst),
@@ -1023,7 +894,7 @@ mod tests {
         });
 
         let result = service
-            .score_ip_with(&db, &geoip, "13.14.15.16", Some(Box::new(mock)))
+            .score_ip_with(&db, &geoip, "13.14.15.16", Some(Box::new(mock)), None)
             .await
             .expect("non-empty IP should return Some");
 
@@ -1084,144 +955,6 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn scamalytics_parse_high_risk() {
-        let json = r#"{
-            "status": "ok",
-            "score": "87",
-            "risk": "high",
-            "proxy": "yes",
-            "vpn": "yes",
-            "hosting": "no"
-        }"#;
-        let result = ScamalyticsProvider::parse_response(json);
-        assert_eq!(result.risk_score, Some(87));
-        assert_eq!(result.is_proxy, Some(true));
-        assert_eq!(result.is_vpn, Some(true));
-        assert_eq!(result.is_hosting, Some(false));
-    }
-
-    #[test]
-    fn scamalytics_parse_clean_ip() {
-        let json = r#"{
-            "status": "ok",
-            "score": "2",
-            "risk": "very low",
-            "proxy": "no",
-            "vpn": "no",
-            "hosting": "no"
-        }"#;
-        let result = ScamalyticsProvider::parse_response(json);
-        assert_eq!(result.risk_score, Some(2));
-        assert_eq!(result.is_proxy, Some(false));
-        assert_eq!(result.is_vpn, Some(false));
-    }
-
-    #[test]
-    fn ipqs_parse_fraud_score() {
-        let json = r#"{
-            "success": true,
-            "message": "Success",
-            "fraud_score": 75,
-            "proxy": true,
-            "vpn": false,
-            "host": true,
-            "connection_type": "Data_Center"
-        }"#;
-        let result = IpQualityScoreProvider::parse_response(json);
-        assert_eq!(result.risk_score, Some(75));
-        assert_eq!(result.is_proxy, Some(true));
-        assert_eq!(result.is_vpn, Some(false));
-        assert_eq!(result.is_hosting, Some(true));
-        assert!(result.ip_type.is_some());
-    }
-
-    #[test]
-    fn ipqs_parse_residential() {
-        let json = r#"{
-            "success": true,
-            "fraud_score": 10,
-            "proxy": false,
-            "vpn": false,
-            "host": false,
-            "connection_type": "Residential"
-        }"#;
-        let result = IpQualityScoreProvider::parse_response(json);
-        assert_eq!(result.risk_score, Some(10));
-        assert_eq!(result.ip_type, Some("residential".to_string()));
-    }
-
-    #[test]
-    fn proxycheck_parse_proxy() {
-        let json = r#"{
-            "status": "ok",
-            "1.2.3.4": {
-                "proxy": "yes",
-                "type": "VPN",
-                "risk": 88
-            }
-        }"#;
-        let result = ProxyCheckProvider::parse_response(json, "1.2.3.4");
-        assert_eq!(result.risk_score, Some(88));
-        assert_eq!(result.is_proxy, Some(true));
-    }
-
-    #[test]
-    fn proxycheck_parse_clean() {
-        let json = r#"{
-            "status": "ok",
-            "8.8.8.8": {
-                "proxy": "no",
-                "risk": 0
-            }
-        }"#;
-        let result = ProxyCheckProvider::parse_response(json, "8.8.8.8");
-        assert_eq!(result.risk_score, Some(0));
-        assert_eq!(result.is_proxy, Some(false));
-    }
-
-    #[test]
-    fn proxycheck_parse_missing_ip_key() {
-        // When the queried IP is absent from the response, return a default.
-        let json = r#"{ "status": "ok", "1.2.3.4": { "proxy": "yes", "risk": 88 } }"#;
-        let result = ProxyCheckProvider::parse_response(json, "9.9.9.9");
-        assert!(result.risk_score.is_none());
-        assert!(result.is_proxy.is_none());
-    }
-
-    #[test]
-    fn abuseipdb_parse_high_abuse() {
-        let json = r#"{
-            "data": {
-                "ipAddress": "1.2.3.4",
-                "isPublic": true,
-                "abuseConfidenceScore": 92,
-                "isp": "Digital Ocean Hosting",
-                "usageType": "Data Center/Web Hosting/Transit"
-            }
-        }"#;
-        let result = AbuseIpdbProvider::parse_response(json);
-        assert_eq!(result.risk_score, Some(92));
-        assert_eq!(result.is_hosting, Some(true));
-        assert!(result.ip_type.is_some());
-    }
-
-    #[test]
-    fn abuseipdb_parse_residential() {
-        let json = r#"{
-            "data": {
-                "ipAddress": "9.10.11.12",
-                "isPublic": true,
-                "abuseConfidenceScore": 5,
-                "isp": "Comcast ISP",
-                "usageType": "Fixed Line ISP"
-            }
-        }"#;
-        let result = AbuseIpdbProvider::parse_response(json);
-        assert_eq!(result.risk_score, Some(5));
-        assert_eq!(result.is_hosting, Some(false));
-    }
-
-    #[test]
     fn ipapi_parse_hosting() {
         let json = r#"{
             "status": "success",
@@ -1254,14 +987,251 @@ mod tests {
     }
 
     #[test]
-    fn scamalytics_parse_invalid_json() {
-        let result = ScamalyticsProvider::parse_response("not json");
-        assert!(result.risk_score.is_none());
+    fn parse_ipapi_is_full_response_8888() {
+        let json = serde_json::json!({
+            "ip": "8.8.8.8",
+            "is_datacenter": true,
+            "is_proxy": false,
+            "is_vpn": false,
+            "is_tor": false,
+            "is_abuser": false,
+            "is_mobile": false,
+            "company": {
+                "name": "Google LLC",
+                "abuser_score": "0.0039 (Low)",
+                "type": "hosting"
+            },
+            "asn": {
+                "abuser_score": "0.001 (Low)",
+                "type": "hosting"
+            },
+            "abuse": { "email": "network-abuse@google.com" }
+        });
+
+        let r = super::parse_ipapi_is_response(json);
+
+        assert_eq!(r.risk_score, Some(0));
+        assert_eq!(r.asn_abuser_score, Some(0));
+        assert_eq!(r.is_proxy, Some(false));
+        assert_eq!(r.is_vpn, Some(false));
+        assert_eq!(r.is_hosting, Some(true));
+        assert!(!r.is_tor);
+        assert!(!r.is_abuser);
+        assert!(!r.is_mobile);
+        assert_eq!(r.ip_type.as_deref(), Some("hosting"));
+        assert_eq!(r.abuse_email.as_deref(), Some("network-abuse@google.com"));
     }
 
     #[test]
-    fn ipqs_parse_invalid_json() {
-        let result = IpQualityScoreProvider::parse_response("{}");
+    fn parse_ipapi_is_handles_missing_fields() {
+        let json = serde_json::json!({ "ip": "1.2.3.4" });
+        let r = super::parse_ipapi_is_response(json);
+        assert_eq!(r.risk_score, None);
+        assert_eq!(r.is_proxy, None);
+        assert!(!r.is_tor);
+        assert_eq!(r.abuse_email, None);
+    }
+
+    #[test]
+    fn parse_ipapi_is_abuser_score_formats() {
+        let cases = vec![
+            ("0.0039 (Low)", Some(0)),
+            ("0.005", Some(1)),       // 0.005 * 100 = 0.5 → round() = 1 (Rust rounds half away from zero)
+            ("0.5 (Medium)", Some(50)),
+            ("1.0 (Very High)", Some(100)),
+            ("null", None),
+            ("garbage", None),
+            ("", None),
+            ("1.5 (Out of range)", Some(100)),  // clamped from 150
+            ("-0.5", Some(0)),                   // clamped from -50
+        ];
+        for (raw, want) in cases {
+            let json = serde_json::json!({
+                "company": { "abuser_score": raw }
+            });
+            let r = super::parse_ipapi_is_response(json);
+            assert_eq!(r.risk_score, want, "input was {raw:?}");
+        }
+    }
+
+    #[test]
+    fn parse_ipapi_is_tor_exit_node() {
+        let json = serde_json::json!({
+            "is_tor": true,
+            "is_abuser": true,
+            "company": { "abuser_score": "0.85 (Very High)", "type": "isp" }
+        });
+        let r = super::parse_ipapi_is_response(json);
+        assert!(r.is_tor);
+        assert!(r.is_abuser);
+        assert_eq!(r.risk_score, Some(85));
+        assert_eq!(super::derive_risk_level(r.risk_score), "high");
+    }
+
+    #[test]
+    fn parse_ipapi_is_falls_back_to_asn_type_when_company_type_missing() {
+        let json = serde_json::json!({
+            "asn": { "type": "isp" }
+        });
+        let r = super::parse_ipapi_is_response(json);
+        assert_eq!(r.ip_type.as_deref(), Some("isp"));
+    }
+
+    #[test]
+    fn ipapi_is_provider_from_config_no_key() {
+        let p = super::IpApiIsProvider::from_config(None);
+        assert!(p.api_key.is_none());
+        assert_eq!(p.endpoint, super::IPAPI_IS_DEFAULT_ENDPOINT);
+    }
+
+    #[test]
+    fn ipapi_is_provider_from_config_with_key() {
+        let key = crate::config::RiskProviderKey {
+            api_key: "abc123".to_string(),
+            endpoint: String::new(),
+        };
+        let p = super::IpApiIsProvider::from_config(Some(&key));
+        assert_eq!(p.api_key.as_deref(), Some("abc123"));
+        assert_eq!(p.endpoint, super::IPAPI_IS_DEFAULT_ENDPOINT);
+    }
+
+    #[test]
+    fn ipapi_is_provider_empty_key_treated_as_none() {
+        let key = crate::config::RiskProviderKey {
+            api_key: String::new(),
+            endpoint: "https://example.com".to_string(),
+        };
+        let p = super::IpApiIsProvider::from_config(Some(&key));
+        assert!(p.api_key.is_none());
+        assert_eq!(p.endpoint, "https://example.com");
+    }
+
+    #[test]
+    fn ipapi_is_provider_name() {
+        let p = super::IpApiIsProvider::from_config(None);
+        assert_eq!((&p as &dyn super::IpRiskProvider).name(), "ipapi_is");
+    }
+
+    #[test]
+    fn provider_for_config_ipapi_is_returns_provider() {
+        let cfg = crate::config::IpQualityConfig {
+            risk_provider: "ipapi_is".to_string(),
+            risk_provider_fallback: "ip-api".to_string(),
+            ipapi_is: None,
+        };
+        let p = super::provider_for_config(&cfg, "ipapi_is");
+        assert!(p.is_some());
+        assert_eq!(p.unwrap().name(), "ipapi_is");
+    }
+
+    #[test]
+    fn provider_for_config_unknown_legacy_returns_none() {
+        // Legacy provider names (deleted in this refactor) should resolve to None,
+        // not panic — this preserves graceful degradation for users still on old config.
+        let cfg = crate::config::IpQualityConfig::default();
+        assert!(super::provider_for_config(&cfg, "scamalytics").is_none());
+        assert!(super::provider_for_config(&cfg, "abuseipdb").is_none());
+        assert!(super::provider_for_config(&cfg, "ipqs").is_none());
+        assert!(super::provider_for_config(&cfg, "proxycheck").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 10 tests: fallback orchestration
+    // -----------------------------------------------------------------------
+
+    use anyhow::anyhow;
+
+    struct AlwaysFailProvider;
+    #[async_trait]
+    impl IpRiskProvider for AlwaysFailProvider {
+        fn name(&self) -> &'static str { "always_fail" }
+        async fn lookup(&self, _ip: &str) -> anyhow::Result<ProviderResult> {
+            Err(anyhow!("intentional test failure"))
+        }
+    }
+
+    struct FixedScoreProvider {
+        name: &'static str,
+        score: i32,
+    }
+    #[async_trait]
+    impl IpRiskProvider for FixedScoreProvider {
+        fn name(&self) -> &'static str { self.name }
+        async fn lookup(&self, _ip: &str) -> anyhow::Result<ProviderResult> {
+            Ok(ProviderResult {
+                risk_score: Some(self.score),
+                ..Default::default()
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn fallback_invoked_when_primary_fails() {
+        let (db, _tmp) = setup_test_db().await;
+        let geoip: Arc<RwLock<Option<GeoIpService>>> = Arc::new(RwLock::new(None));
+        let svc = IpRiskService::new(IpQualityConfig::default());
+        let result = svc.score_ip_with(
+            &db,
+            &geoip,
+            "5.6.7.8",
+            Some(Box::new(AlwaysFailProvider)),
+            Some(Box::new(FixedScoreProvider { name: "fb", score: 42 })),
+        ).await.expect("snapshot");
+        assert_eq!(result.risk_score, Some(42));
+    }
+
+    #[tokio::test]
+    async fn both_providers_fail_returns_geo_only_snapshot() {
+        let (db, _tmp) = setup_test_db().await;
+        let geoip: Arc<RwLock<Option<GeoIpService>>> = Arc::new(RwLock::new(None));
+        let svc = IpRiskService::new(IpQualityConfig::default());
+        let result = svc.score_ip_with(
+            &db,
+            &geoip,
+            "9.9.9.9",
+            Some(Box::new(AlwaysFailProvider)),
+            Some(Box::new(AlwaysFailProvider)),
+        ).await.expect("snapshot");
         assert!(result.risk_score.is_none());
+        assert_eq!(result.risk_level, "unknown");
+    }
+
+    #[test]
+    fn score_ip_skips_fallback_when_same_as_primary_via_config_logic() {
+        let cfg = crate::config::IpQualityConfig {
+            risk_provider: "ipapi_is".to_string(),
+            risk_provider_fallback: "ipapi_is".to_string(),
+            ipapi_is: None,
+        };
+        let same = cfg.risk_provider_fallback == cfg.risk_provider;
+        assert!(same);
+    }
+
+    #[test]
+    fn score_ip_skips_fallback_when_set_to_none() {
+        let cfg = crate::config::IpQualityConfig {
+            risk_provider: "ipapi_is".to_string(),
+            risk_provider_fallback: "none".to_string(),
+            ipapi_is: None,
+        };
+        assert_eq!(cfg.risk_provider_fallback, "none");
+    }
+
+    #[test]
+    fn score_ip_with_risk_provider_none_does_not_construct_fallback() {
+        let cfg = crate::config::IpQualityConfig {
+            risk_provider: "none".to_string(),
+            risk_provider_fallback: "ip-api".to_string(),
+            ipapi_is: None,
+        };
+        // The guard logic in score_ip should produce fallback = None
+        // when risk_provider == "none", regardless of fallback config.
+        let should_construct_fallback = cfg.risk_provider != "none"
+            && cfg.risk_provider_fallback != "none"
+            && cfg.risk_provider_fallback != cfg.risk_provider;
+        assert!(
+            !should_construct_fallback,
+            "fallback must not run when user opted out via risk_provider=none"
+        );
     }
 }

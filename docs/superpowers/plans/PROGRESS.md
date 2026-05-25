@@ -1206,3 +1206,36 @@ DELETE /api/maintenances/:id           删除维护窗口
 - `SERVERBEE_FILE__MAX_UPLOAD_SIZE` — 文件上传大小限制，默认 100MB
 
 **新增集成测试:** `test_security_headers_present` — 验证 4 个安全响应头存在
+
+### IP Quality ipapi.is Provider Refactor
+
+**分支**: `auckland-v1`
+**日期**: 2026-05-25
+**设计文档**: `docs/superpowers/specs/2026-05-25-ip-quality-ipapi-is-design.md`
+**实现计划**: `docs/superpowers/plans/2026-05-25-ip-quality-ipapi-is.md`
+**状态**: **实现中**
+
+| Task | 名称 | 状态 |
+|------|------|------|
+| T1 | Server: Migration — `ip_quality_snapshot` 新增 5 列 (risk_score, is_tor, is_abuser, is_mobile, asn_abuser_score, abuse_email) | **done** |
+| T2 | Server: 扩展 `ip_quality_snapshot` entity Model 新字段 | **done** |
+| T3 | Common: 扩展协议 `IpQualitySnapshotData` DTO 新字段 | **done** |
+| T4 | Server: `write_cache` SQL 持久化新列 | **done** |
+| T5 | Server: 扩展 `ProviderResult` struct 含新字段 | **done** |
+| T6 | Server: TDD `parse_ipapi_is_response` 单元测试 | **done** |
+| T7 | Server: `IpApiIsProvider` struct + trait 实现 | **done** |
+| T8 | Server: 更新 `IpQualityConfig` 默认值，删除旧 provider 字段 | **done** |
+| T9 | Server: 重构 `provider_for_config` 按名称解析 provider | **done** |
+| T10 | Server: fallback 编排 (primary 失败 → 降级 ip-api.com) | **done** |
+| T11 | Server: 删除 Scamalytics / IPQS / ProxyCheck / AbuseIPDB 旧实现 | **done** |
+| T12 | Frontend: 类型扩展 + 新 badge 渲染 + i18n key | **done** |
+| T13 | Docs: 更新 ENV.md + configuration.mdx (en + cn) | **done** |
+| T14 | Docs: 进度跟踪 + spec postscript + 手动验证文档 | **done** |
+| T15 | 全量验证: cargo test + clippy + typecheck + vitest + build | *pending* |
+| T16 | Deploy to test VPS + run manual checklist | *pending* |
+
+**变更摘要:**
+- 零配置默认: `api.ipapi.is` 作为主 provider，`ip-api.com` 作为降级
+- 新增 5 个高价值字段: `risk_score`, `is_tor`, `is_abuser`, `is_mobile`, `asn_abuser_score`, `abuse_email`
+- 删除 4 个需要付费 API key 的旧 provider 实现
+- `SERVERBEE_IP_QUALITY__RISK_PROVIDER` 新默认值 `ipapi_is`（替代 `none`）

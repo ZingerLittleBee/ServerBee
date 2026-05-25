@@ -36,6 +36,10 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
+    for w in config.ip_quality.validate_warnings() {
+        tracing::warn!("{w}");
+    }
+
     // Ensure data dir exists
     let data_dir = &config.server.data_dir;
     std::fs::create_dir_all(data_dir)?;

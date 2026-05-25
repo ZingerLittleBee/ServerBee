@@ -379,20 +379,58 @@ pub struct RiskProviderKey {
 /// Configuration for the `[ip_quality]` section.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct IpQualityConfig {
+    /// Primary risk provider. Default: `ipapi_is`. Accepted: `none`, `ipapi_is`, `ip-api`.
     #[serde(default = "default_risk_provider")]
     pub risk_provider: String,
+
+    /// Fallback provider triggered when the primary fails. Default: `ip-api`.
+    /// Set to `none` to disable fallback. Accepted: same as `risk_provider`.
+    #[serde(default = "default_risk_provider_fallback")]
+    pub risk_provider_fallback: String,
+
+    /// Optional API key + endpoint override for ipapi.is. When omitted, the provider
+    /// calls `https://api.ipapi.is` anonymously (1000/day per source IP).
     #[serde(default)]
-    pub scamalytics: Option<RiskProviderKey>,
-    #[serde(default)]
-    pub ipqs: Option<RiskProviderKey>,
-    #[serde(default)]
-    pub proxycheck: Option<RiskProviderKey>,
-    #[serde(default)]
-    pub abuseipdb: Option<RiskProviderKey>,
+    pub ipapi_is: Option<RiskProviderKey>,
+}
+
+impl IpQualityConfig {
+    /// Returns warnings for misconfigured provider names. Should be called once
+    /// at startup; results are intended for `tracing::warn!`.
+    pub fn validate_warnings(&self) -> Vec<String> {
+        const VALID: &[&str] = &["none", "ipapi_is", "ip-api"];
+        let mut warnings = Vec::new();
+
+        if !VALID.contains(&self.risk_provider.as_str()) {
+            warnings.push(format!(
+                "unknown risk_provider '{}', no provider will be used",
+                self.risk_provider
+            ));
+        }
+        if !VALID.contains(&self.risk_provider_fallback.as_str()) {
+            warnings.push(format!(
+                "unknown risk_provider_fallback '{}', no fallback will be used",
+                self.risk_provider_fallback
+            ));
+        }
+        if self.risk_provider_fallback != "none"
+            && self.risk_provider_fallback == self.risk_provider
+        {
+            warnings.push(
+                "risk_provider_fallback matches risk_provider, ignoring fallback".to_string(),
+            );
+        }
+
+        warnings
+    }
 }
 
 fn default_risk_provider() -> String {
-    "none".to_string()
+    "ipapi_is".to_string()
+}
+
+fn default_risk_provider_fallback() -> String {
+    "ip-api".to_string()
 }
 
 /// Accept either a TOML sequence (`["a", "b"]`) or a comma-separated string
@@ -652,15 +690,40 @@ mod tests {
     }
 
     #[test]
-    fn ip_quality_config_from_env() {
+    fn ip_quality_default_provider_is_ipapi_is() {
+        // Default config (no env vars, empty TOML) should pick ipapi_is + ip-api fallback.
+        // Default::default() leaves Strings empty, so we exercise the serde defaults:
+        let cfg: IpQualityConfig = toml::from_str("").unwrap();
+        assert_eq!(cfg.risk_provider, "ipapi_is");
+        assert_eq!(cfg.risk_provider_fallback, "ip-api");
+    }
+
+    #[test]
+    fn ip_quality_config_from_env_with_ipapi_is_key() {
         figment::Jail::expect_with(|jail| {
-            jail.set_env("SERVERBEE_IP_QUALITY__RISK_PROVIDER", "scamalytics");
-            jail.set_env("SERVERBEE_IP_QUALITY__SCAMALYTICS__API_KEY", "k_test");
+            jail.set_env("SERVERBEE_IP_QUALITY__IPAPI_IS__API_KEY", "test-key-xyz");
             let cfg: AppConfig = figment::Figment::new()
+                .merge(figment::providers::Toml::string(""))
                 .merge(figment::providers::Env::prefixed("SERVERBEE_").split("__"))
-                .extract()?;
-            assert_eq!(cfg.ip_quality.risk_provider, "scamalytics");
-            assert_eq!(cfg.ip_quality.scamalytics.unwrap().api_key, "k_test");
+                .extract()
+                .unwrap();
+            let key = cfg.ip_quality.ipapi_is.expect("ipapi_is config present");
+            assert_eq!(key.api_key, "test-key-xyz");
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn ip_quality_legacy_provider_env_vars_silently_ignored() {
+        figment::Jail::expect_with(|jail| {
+            jail.set_env("SERVERBEE_IP_QUALITY__SCAMALYTICS__API_KEY", "ignored");
+            jail.set_env("SERVERBEE_IP_QUALITY__ABUSEIPDB__API_KEY", "ignored");
+            let cfg: AppConfig = figment::Figment::new()
+                .merge(figment::providers::Toml::string(""))
+                .merge(figment::providers::Env::prefixed("SERVERBEE_").split("__"))
+                .extract()
+                .unwrap();
+            assert_eq!(cfg.ip_quality.risk_provider, "ipapi_is");
             Ok(())
         });
     }
@@ -689,6 +752,53 @@ mod tests {
             assert!((cfg.network_probe.very_high_latency_ms - 600.0).abs() < f64::EPSILON);
             Ok(())
         });
+    }
+
+    #[test]
+    fn validate_warnings_clean_for_defaults() {
+        let cfg = IpQualityConfig {
+            risk_provider: "ipapi_is".to_string(),
+            risk_provider_fallback: "ip-api".to_string(),
+            ipapi_is: None,
+        };
+        assert!(cfg.validate_warnings().is_empty());
+    }
+
+    #[test]
+    fn validate_warnings_unknown_primary() {
+        let cfg = IpQualityConfig {
+            risk_provider: "scamalytics".to_string(),
+            risk_provider_fallback: "ip-api".to_string(),
+            ipapi_is: None,
+        };
+        let warnings = cfg.validate_warnings();
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("unknown risk_provider 'scamalytics'")));
+    }
+
+    #[test]
+    fn validate_warnings_duplicate_fallback() {
+        let cfg = IpQualityConfig {
+            risk_provider: "ipapi_is".to_string(),
+            risk_provider_fallback: "ipapi_is".to_string(),
+            ipapi_is: None,
+        };
+        let warnings = cfg.validate_warnings();
+        assert!(warnings.iter().any(|w| w.contains("matches risk_provider")));
+    }
+
+    #[test]
+    fn validate_warnings_fallback_none_does_not_trigger_duplicate_check() {
+        // risk_provider = "none" AND risk_provider_fallback = "none" should NOT
+        // warn about duplicate — both being "none" is the legitimate "fully off" mode.
+        let cfg = IpQualityConfig {
+            risk_provider: "none".to_string(),
+            risk_provider_fallback: "none".to_string(),
+            ipapi_is: None,
+        };
+        let warnings = cfg.validate_warnings();
+        assert!(!warnings.iter().any(|w| w.contains("matches risk_provider")));
     }
 
     #[test]

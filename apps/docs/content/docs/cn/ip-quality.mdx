@@ -93,27 +93,38 @@ Agent 在以下情况运行检测：
 
 | 提供商 | 值 | 说明 |
 |--------|-----|------|
-| 不使用（默认）| `none` | 仅 GeoIP 元数据，无风险评分 |
-| Scamalytics | `scamalytics` | 需要 API Key。接口子域名与账号绑定（`api1`、`api11` 等）|
-| IPQualityScore | `ipqs` | 需要 API Key |
-| proxycheck.io | `proxycheck` | 需要 API Key |
-| AbuseIPDB | `abuseipdb` | 需要 API Key |
-| ip-api.com | `ip-api` | **免费版仅限非商业用途，接口为 HTTP（非 HTTPS）。生产环境使用前请仔细阅读其服务条款。** 无需 API Key |
+| ipapi.is（默认）| `ipapi_is` | 每个源 IP 每天约 1000 次免费请求。可选付费 API Key 提升配额。|
+| ip-api.com（兜底）| `ip-api` | **免费版仅限非商业用途，接口为 HTTP（非 HTTPS）。** 无需 API Key。仅提供地理位置和代理标记，无风险评分。|
+| 禁用 | `none` | 仅 GeoIP 元数据，无风险评分。|
 
-<Callout type="warn">
-`ip-api`（ip-api.com）免费版仅限非商业用途，其 API 接口为 HTTP 而非 HTTPS。生产环境使用前，请先阅读其[服务条款](https://ip-api.com/docs/legal)。商业用途请购买商业授权或改用其他提供商。
-</Callout>
+**默认行为**（无需任何配置）：Server 使用 `ipapi_is` 作为主提供商，`ip-api` 作为主提供商失败时的自动兜底。无需 API Key 即可开箱即用。
 
-以 Scamalytics 为例配置：
+若需使用 ipapi.is 的 API Key 以获取更高配额：
 
 ```toml
 [ip_quality]
-risk_provider = "scamalytics"
+risk_provider = "ipapi_is"
+risk_provider_fallback = "ip-api"  # 默认值；设为 "none" 可禁用兜底
 
-[ip_quality.scamalytics]
+[ip_quality.ipapi_is]
 api_key = "your_api_key"
-endpoint = "api1"   # Scamalytics 账号绑定的 API 子域名，留空使用默认值
+# endpoint = "https://api.ipapi.is"  # 可选；自托管实例时可覆盖默认接口
 ```
+
+若需完全关闭风险评分：
+
+```toml
+[ip_quality]
+risk_provider = "none"
+```
+
+<Callout type="warn">
+`ip-api`（ip-api.com）免费版仅限非商业用途，其 API 接口为 HTTP 而非 HTTPS。生产环境使用前，请先阅读其[服务条款](https://ip-api.com/docs/legal)。
+</Callout>
+
+<Callout type="info">
+**从旧版配置迁移？** 旧有提供商名称（`scamalytics`、`ipqs`、`proxycheck`、`abuseipdb`）已不再支持。如果您的 `server.toml` 或环境变量中仍引用这些名称，Server 启动时会输出警告日志并静默跳过风险评分。请将 `risk_provider` 更新为 `ipapi_is`（或设为 `none` 关闭评分）。
+</Callout>
 
 完整配置参考：[配置 → IP 质量检测](/cn/docs/configuration)。
 

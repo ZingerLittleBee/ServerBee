@@ -107,21 +107,18 @@ Tier-2 guardrail for the firewall blocklist feature. CIDRs / IPs listed here are
 |---------------------|----------|------|---------|-------------|
 | `SERVERBEE_FIREWALL__ALLOW_LIST` | `firewall.allow_list` | string[] | `[]` | CIDRs / IPs the server refuses to insert into `block_list`. Tier-2 guardrail. Tier 1 (loopback + RFC 1918 + link-local + multicast + unspecified) is hard-coded and always applied |
 
-### IP Quality (Optional)
+### IP Quality
 
-Configure the optional third-party IP risk scoring provider. If no provider is configured, the server uses only the local GeoIP database for IP metadata; `risk_score` and `risk_level` will be `null`/`unknown`.
+Default risk-scoring works out of the box via [ipapi.is](https://ipapi.is) (no API key required, ~1000 requests/day per source IP). On primary failure the server falls back to [ip-api.com](https://ip-api.com), which provides geo + proxy/hosting flags but no risk score.
 
 | Environment Variable | TOML Key | Type | Default | Description |
 |---------------------|----------|------|---------|-------------|
-| `SERVERBEE_IP_QUALITY__RISK_PROVIDER` | `ip_quality.risk_provider` | string | `"none"` | Active risk provider. One of: `none`, `scamalytics`, `ipqs`, `proxycheck`, `abuseipdb`, `ip-api`. **`ip-api` is HTTP-only and free-tier is non-commercial use only** |
-| `SERVERBEE_IP_QUALITY__SCAMALYTICS__API_KEY` | `ip_quality.scamalytics.api_key` | string | - | Scamalytics API key. Required when `risk_provider = "scamalytics"` |
-| `SERVERBEE_IP_QUALITY__SCAMALYTICS__ENDPOINT` | `ip_quality.scamalytics.endpoint` | string | `""` | Scamalytics account-bound API subdomain (e.g. `api1`, `api11`). Leave empty to use the default |
-| `SERVERBEE_IP_QUALITY__IPQS__API_KEY` | `ip_quality.ipqs.api_key` | string | - | IPQualityScore API key. Required when `risk_provider = "ipqs"` |
-| `SERVERBEE_IP_QUALITY__IPQS__ENDPOINT` | `ip_quality.ipqs.endpoint` | string | `""` | IPQualityScore endpoint override. Leave empty to use the default |
-| `SERVERBEE_IP_QUALITY__PROXYCHECK__API_KEY` | `ip_quality.proxycheck.api_key` | string | - | proxycheck.io API key. Required when `risk_provider = "proxycheck"` |
-| `SERVERBEE_IP_QUALITY__PROXYCHECK__ENDPOINT` | `ip_quality.proxycheck.endpoint` | string | `""` | proxycheck.io endpoint override. Leave empty to use the default |
-| `SERVERBEE_IP_QUALITY__ABUSEIPDB__API_KEY` | `ip_quality.abuseipdb.api_key` | string | - | AbuseIPDB API key. Required when `risk_provider = "abuseipdb"` |
-| `SERVERBEE_IP_QUALITY__ABUSEIPDB__ENDPOINT` | `ip_quality.abuseipdb.endpoint` | string | `""` | AbuseIPDB endpoint override. Leave empty to use the default |
+| `SERVERBEE_IP_QUALITY__RISK_PROVIDER` | `ip_quality.risk_provider` | string | `"ipapi_is"` | Primary risk provider. One of: `none`, `ipapi_is`, `ip-api`. |
+| `SERVERBEE_IP_QUALITY__RISK_PROVIDER_FALLBACK` | `ip_quality.risk_provider_fallback` | string | `"ip-api"` | Fallback provider triggered on primary failure. Set to `none` to disable. |
+| `SERVERBEE_IP_QUALITY__IPAPI_IS__API_KEY` | `ip_quality.ipapi_is.api_key` | string | - | Optional. Configure for higher per-account rate limits. |
+| `SERVERBEE_IP_QUALITY__IPAPI_IS__ENDPOINT` | `ip_quality.ipapi_is.endpoint` | string | `https://api.ipapi.is` | Override for self-hosted mirrors or testing. |
+
+**Migration from older versions:** Earlier releases supported four paid providers (Scamalytics, IPQualityScore, ProxyCheck, AbuseIPDB) configured via `SERVERBEE_IP_QUALITY__{SCAMALYTICS,IPQS,PROXYCHECK,ABUSEIPDB}__*`. These env vars are silently ignored. To restore equivalent functionality, fork or vendor the provider implementation from a tag prior to 2026-05-25.
 
 ### Network Probe Anomaly Thresholds
 

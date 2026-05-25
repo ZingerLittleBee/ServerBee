@@ -29,6 +29,10 @@
   "card_proxy": "代理",
   "card_vpn": "VPN",
   "card_hosting": "主机托管",
+  "card_tor": "Tor 出口",
+  "card_abuser": "已知滥用",
+  "card_mobile": "移动网络",
+  "card_asn_score": "ASN 风险",
 
   "ip_type_residential": "住宅",
   "ip_type_datacenter": "数据中心",

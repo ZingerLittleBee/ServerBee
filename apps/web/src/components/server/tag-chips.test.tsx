@@ -3,14 +3,18 @@ import { describe, expect, it } from 'vitest'
 import { TagChips } from './tag-chips'
 
 describe('TagChips', () => {
-  it('renders nothing when tags is undefined', () => {
+  it('renders invisible placeholder when tags is undefined', () => {
     const { container } = render(<TagChips tags={undefined} />)
-    expect(container.firstChild).toBeNull()
+    const div = container.firstChild as HTMLElement
+    expect(div).not.toBeNull()
+    expect(div.getAttribute('aria-hidden')).toBe('true')
   })
 
-  it('renders nothing when tags is empty', () => {
+  it('renders invisible placeholder when tags is empty', () => {
     const { container } = render(<TagChips tags={[]} />)
-    expect(container.firstChild).toBeNull()
+    const div = container.firstChild as HTMLElement
+    expect(div).not.toBeNull()
+    expect(div.getAttribute('aria-hidden')).toBe('true')
   })
 
   it('renders each tag as a chip', () => {
