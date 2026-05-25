@@ -19,6 +19,7 @@ import { CapabilitiesDialog } from '@/components/server/capabilities-dialog'
 import { CostInsightBar } from '@/components/server/cost-insight-bar'
 import { DiskIoChart } from '@/components/server/disk-io-chart'
 import { MetricsChart } from '@/components/server/metrics-chart'
+import { RecoverAgentDialog } from '@/components/server/recover-agent-dialog'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
 import { TrafficCard } from '@/components/server/traffic-card'
@@ -127,6 +128,7 @@ function ServerActionButtons({
   isOnline,
   liveHydrated,
   onEditOpen,
+  onRecoverOpen,
   serverWithCaps,
   terminalEnabled
 }: {
@@ -137,6 +139,7 @@ function ServerActionButtons({
   isOnline: boolean
   liveHydrated: boolean
   onEditOpen: () => void
+  onRecoverOpen: () => void
   serverWithCaps: ServerResponse & ServerWithCaps
   terminalEnabled: boolean
 }) {
@@ -152,13 +155,7 @@ function ServerActionButtons({
       </Button>
       <CapabilitiesDialog server={serverWithCaps} />
       {isAdmin && liveHydrated && !isOnline && (
-        <Button
-          onClick={() => {
-            /* TODO: T16 — wire to new Recover Agent dialog */
-          }}
-          size="sm"
-          variant="outline"
-        >
+        <Button onClick={onRecoverOpen} size="sm" variant="outline">
           {t('detail_recover_agent', { defaultValue: 'Recover Agent' })}
         </Button>
       )}
@@ -389,6 +386,7 @@ export function ServerDetailPage() {
   const { id } = Route.useParams()
   const { range: rangeParam } = Route.useSearch()
   const [editOpen, setEditOpen] = useState(false)
+  const [recoverOpen, setRecoverOpen] = useState(false)
   const { user } = useAuth()
   const { data: latestAgentVersion } = useQuery<{ version?: string | null }>({
     queryKey: ['agent', 'latest-version'],
@@ -618,6 +616,7 @@ export function ServerDetailPage() {
               isOnline={isOnline}
               liveHydrated={liveHydrated}
               onEditOpen={() => setEditOpen(true)}
+              onRecoverOpen={() => setRecoverOpen(true)}
               serverWithCaps={serverWithCaps}
               terminalEnabled={terminalEnabled}
             />
@@ -704,6 +703,16 @@ export function ServerDetailPage() {
       </Tabs>
 
       <ServerEditDialog onClose={() => setEditOpen(false)} open={editOpen} server={server} />
+      <RecoverAgentDialog
+        onOpenChange={setRecoverOpen}
+        open={recoverOpen}
+        server={{
+          id: server.id,
+          name: server.name,
+          capabilities: server.capabilities,
+          outstanding_enrollment: server.outstanding_enrollment ?? null
+        }}
+      />
     </div>
   )
 }

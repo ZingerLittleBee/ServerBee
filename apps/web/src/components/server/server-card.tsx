@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { MoreHorizontal, RefreshCw, Trash2 } from 'lucide-react'
+import { MoreHorizontal, RefreshCw, RotateCcw, Trash2 } from 'lucide-react'
 import { memo, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -24,6 +24,7 @@ import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
 import { api } from '@/lib/api-client'
 import type { OutstandingEnrollmentSummary, ServerCostOverview } from '@/lib/api-schema'
+import { CAP_DEFAULT } from '@/lib/capabilities'
 import { isLatencyFailure } from '@/lib/network-latency-constants'
 import { latencyColorClass, type NetworkServerSummary } from '@/lib/network-types'
 import { computeTrafficQuota } from '@/lib/traffic'
@@ -32,6 +33,7 @@ import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import { CostFootnote } from './cost-footnote'
 import { NetworkSquareGrid } from './network-square-grid'
 import { NetworkTargetBreakdown } from './network-target-breakdown'
+import { RecoverAgentDialog } from './recover-agent-dialog'
 import { RegenerateCodeDialog } from './regenerate-code-dialog'
 import { buildServerCardNetworkState, type ServerCardTooltipTarget } from './server-card-network-data'
 import { StatusBadge } from './status-badge'
@@ -308,6 +310,58 @@ function PendingActionMenu({ serverId, serverName }: PendingActionMenuProps) {
   )
 }
 
+interface RecoverActionMenuProps {
+  server: ServerMetrics
+}
+
+function RecoverActionMenu({ server }: RecoverActionMenuProps) {
+  const { t } = useTranslation(['servers'])
+  const [recoverOpen, setRecoverOpen] = useState(false)
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              aria-label={t('servers:recover_agent.title')}
+              onClick={(e) => e.stopPropagation()}
+              size="icon-sm"
+              variant="ghost"
+            />
+          }
+        >
+          <MoreHorizontal aria-hidden="true" className="size-3.5" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation()
+              setRecoverOpen(true)
+            }}
+          >
+            <RotateCcw aria-hidden="true" className="size-3.5" />
+            {t('servers:recover_agent.title')}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {recoverOpen && (
+        <RecoverAgentDialog
+          onOpenChange={setRecoverOpen}
+          open={recoverOpen}
+          server={{
+            id: server.id,
+            name: server.name,
+            capabilities: server.capabilities ?? CAP_DEFAULT,
+            outstanding_enrollment: server.outstanding_enrollment ?? null
+          }}
+        />
+      )}
+    </>
+  )
+}
+
 const ServerCardInner = ({
   server,
   trafficEntry,
@@ -376,7 +430,11 @@ const ServerCardInner = ({
         <div className="flex items-center gap-1.5">
           <UpgradeJobBadge job={upgradeJob} />
           <StatusBadge status={status} />
-          {isPending && <PendingActionMenu serverId={server.id} serverName={server.name} />}
+          {isPending ? (
+            <PendingActionMenu serverId={server.id} serverName={server.name} />
+          ) : (
+            <RecoverActionMenu server={server} />
+          )}
         </div>
       </div>
 

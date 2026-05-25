@@ -58,6 +58,10 @@ vi.mock('@/components/server/server-edit-dialog', () => ({
   ServerEditDialog: () => null
 }))
 
+vi.mock('@/components/server/recover-agent-dialog', () => ({
+  RecoverAgentDialog: () => null
+}))
+
 vi.mock('@/components/server/status-badge', () => ({
   StatusBadge: () => <div>online</div>
 }))
