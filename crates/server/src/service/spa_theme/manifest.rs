@@ -32,6 +32,11 @@ pub const MAX_NAME: usize = 64;
 pub const MAX_AUTHOR: usize = 64;
 pub const MAX_DESCRIPTION: usize = 500;
 
+fn id_regex() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(ID_REGEX).expect("static regex"))
+}
+
 impl ThemeManifest {
     /// Parse manifest JSON bytes and validate every field. `running_version`
     /// is the server's semver (used for min_serverbee_version check).
@@ -53,8 +58,7 @@ impl ThemeManifest {
             });
         }
 
-        let re = regex::Regex::new(ID_REGEX).expect("static regex");
-        if !re.is_match(&m.id) {
+        if !id_regex().is_match(&m.id) {
             return Err(SpaThemeError::InvalidManifest {
                 field: "id",
                 reason: format!("must match {ID_REGEX}"),

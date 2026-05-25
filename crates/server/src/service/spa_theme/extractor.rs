@@ -90,10 +90,22 @@ pub fn extract(zip_bytes: &[u8]) -> Result<ExtractedPackage, SpaThemeError> {
             return Err(SpaThemeError::TotalSizeExceeded { size: total, limit: MAX_TOTAL_BYTES });
         }
 
-        let mut buf = Vec::with_capacity(size as usize);
-        entry
+        // Defense-in-depth: the `size` above comes from the zip header and may lie.
+        // Cap the actual read at MAX_FILE_BYTES + 1 so a crafted archive that
+        // declares a small size but contains huge data cannot grow the buffer
+        // unbounded. If the truncated read exceeds MAX_FILE_BYTES, reject.
+        let mut buf = Vec::with_capacity(size.min(MAX_FILE_BYTES) as usize);
+        let mut limited = (&mut entry).take(MAX_FILE_BYTES + 1);
+        limited
             .read_to_end(&mut buf)
             .map_err(|e| SpaThemeError::InvalidMultipart(format!("read {normalized}: {e}")))?;
+        if buf.len() as u64 > MAX_FILE_BYTES {
+            return Err(SpaThemeError::FileTooLarge {
+                entry: normalized,
+                size: buf.len() as u64,
+                limit: MAX_FILE_BYTES,
+            });
+        }
 
         if normalized == "manifest.json" {
             manifest_bytes = Some(buf.clone());
@@ -262,16 +274,15 @@ mod tests {
     }
 
     #[test]
-    fn rejects_duplicate_entries() {
-        // zip v2 prevents writing duplicate filenames and deduplicates on read,
-        // so we verify the DuplicateEntry variant exists and maps correctly, then
-        // confirm that a malformed zip (which is what a would-be duplicate archive
-        // looks like after raw patching) produces InvalidMultipart — the accepted
-        // outcome in the original plan assertion.
-        //
-        // Build a zip, then corrupt its central directory record count to claim
-        // one extra entry — this forces zip to return an error (InvalidArchive)
-        // which our extractor maps to InvalidMultipart.
+    fn duplicate_entry_variant_exists_and_invalid_zip_handled() {
+        // Coverage gap: the production `seen.insert` guard in extract() is not
+        // exercised here because zip v2 prevents writing duplicate filenames and
+        // silently deduplicates on read, so we cannot construct an archive that
+        // makes by_index() yield the same name twice. The DuplicateEntry variant
+        // remains in the extractor as defense-in-depth for future library swaps
+        // or raw-zip inputs. This test verifies (a) the variant maps correctly
+        // and (b) malformed zip bytes produce InvalidMultipart — the accepted
+        // fallback in the original plan assertion.
         let buf = {
             let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::<u8>::new()));
             let opts = zip::write::SimpleFileOptions::default();
@@ -281,13 +292,39 @@ mod tests {
             w.write_all(b"{}").unwrap();
             w.finish().unwrap().into_inner()
         };
-        // Verify the DuplicateEntry variant is reachable and correct (unit check).
         let dup_err = SpaThemeError::DuplicateEntry { entry: "a.html".into() };
         assert_eq!(dup_err.code(), "DUPLICATE_ENTRY");
-        // Verify corrupt bytes are rejected as InvalidMultipart.
         let err = extract(b"PK not a real zip").unwrap_err();
         assert!(matches!(err, SpaThemeError::InvalidMultipart(_)));
-        // Verify the valid zip extracts without error (sanity check).
         extract(&buf).expect("valid zip must succeed");
+    }
+
+    #[test]
+    fn rejects_zip_bomb() {
+        // Highly compressible: 5MB of zeros compresses to ~5KB → ratio ~1000x.
+        let zeros = vec![0u8; MAX_FILE_BYTES as usize];
+        let zip = build_zip(&[("bomb.js", &zeros), ("manifest.json", b"{}")]);
+        let err = extract(&zip).unwrap_err();
+        assert!(matches!(err, SpaThemeError::ZipBomb { .. }));
+    }
+
+    #[test]
+    fn rejects_symlink() {
+        // Build a zip with a real symlink entry via zip v2's add_symlink().
+        // SimpleFileOptions::unix_permissions() masks with 0o777 and normalize()
+        // forces S_IFREG for regular files, so the only way to produce an entry
+        // with S_IFLNK set is the dedicated add_symlink() API.
+        use zip::write::SimpleFileOptions;
+        let mut buf = Vec::new();
+        {
+            let mut w = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            let opts = SimpleFileOptions::default();
+            w.add_symlink("link.html", "target.html", opts).unwrap();
+            w.start_file("manifest.json", opts).unwrap();
+            std::io::Write::write_all(&mut w, b"{}").unwrap();
+            w.finish().unwrap();
+        }
+        let err = extract(&buf).unwrap_err();
+        assert!(matches!(err, SpaThemeError::SymlinkNotAllowed { .. }));
     }
 }
