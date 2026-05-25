@@ -213,6 +213,7 @@ impl AppState {
         let traceroute_enricher =
             crate::service::traceroute_enrich::TracerouteEnricher::new().with_asn(asn_arc.clone());
         let active_spa_theme = crate::service::spa_theme::loaded::new_slot();
+        crate::service::spa_theme::SpaThemeService::load_on_startup(&db, &active_spa_theme).await;
         Ok(Arc::new(Self {
             db,
             agent_manager,

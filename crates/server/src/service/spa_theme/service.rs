@@ -7,6 +7,7 @@ use crate::error::AppError;
 use crate::service::config::ConfigService;
 use crate::service::spa_theme::error::SpaThemeError;
 use crate::service::spa_theme::extractor;
+use crate::service::spa_theme::loaded::LoadedTheme;
 use crate::service::spa_theme::manifest::ThemeManifest;
 
 pub const ACTIVE_SPA_THEME_KEY: &str = "active_spa_theme_uuid";
@@ -160,10 +161,10 @@ impl SpaThemeService {
             .map_err(|_| SpaThemeError::InvalidManifest { field: "version", reason: "invalid semver".into() })?;
         let mut best: Option<(semver::Version, spa_theme::Model)> = None;
         for r in rows {
-            if let Ok(v) = semver::Version::parse(&r.version) {
-                if best.as_ref().map(|(b, _)| &v > b).unwrap_or(true) {
-                    best = Some((v, r));
-                }
+            if let Ok(v) = semver::Version::parse(&r.version)
+                && best.as_ref().map(|(b, _)| &v > b).unwrap_or(true)
+            {
+                best = Some((v, r));
             }
         }
         let (latest_v, latest_row) = match best { Some(b) => b, None => return Ok(None) };
@@ -174,6 +175,63 @@ impl SpaThemeService {
             return Err(SpaThemeError::VersionExists { manifest_id: manifest.id.clone(), version: uploaded.to_string() }.into());
         }
         Ok(Some(UpgradeOf { previous_uuid: latest_row.uuid, previous_version: latest_v.to_string() }))
+    }
+}
+
+impl SpaThemeService {
+    /// Set the active theme (uuid). None deactivates.
+    pub async fn set_active(
+        db: &DatabaseConnection,
+        slot: &crate::service::spa_theme::loaded::ActiveSpaThemeSlot,
+        uuid: Option<&str>,
+    ) -> Result<Option<String>, AppError> {
+        match uuid {
+            None => {
+                ConfigService::set(db, ACTIVE_SPA_THEME_KEY, "").await?;
+                slot.store(std::sync::Arc::new(None));
+                Ok(None)
+            }
+            Some(u) => {
+                let row = Self::get(db, u).await?;
+                let loaded = Self::load_row(&row)?;
+                ConfigService::set(db, ACTIVE_SPA_THEME_KEY, u).await?;
+                slot.store(std::sync::Arc::new(Some(loaded)));
+                Ok(Some(u.to_string()))
+            }
+        }
+    }
+
+    pub async fn active_uuid(db: &DatabaseConnection) -> Result<Option<String>, AppError> {
+        Ok(ConfigService::get(db, ACTIVE_SPA_THEME_KEY)
+            .await?
+            .filter(|s| !s.is_empty()))
+    }
+
+    pub fn load_row(row: &spa_theme::Model) -> Result<LoadedTheme, AppError> {
+        let extracted = crate::service::spa_theme::extractor::extract(&row.package_data)
+            .map_err(|e| AppError::Internal(format!("re-extract stored theme: {e}")))?;
+        let manifest: ThemeManifest = serde_json::from_str(&row.manifest_json)
+            .map_err(|e| AppError::Internal(format!("manifest json: {e}")))?;
+        Ok(LoadedTheme::from_extracted(row.uuid.clone(), manifest, extracted.files))
+    }
+
+    /// Called on server startup. If active uuid stored but row missing or zip broken,
+    /// log warning and leave slot empty (fall back to default SPA).
+    pub async fn load_on_startup(
+        db: &DatabaseConnection,
+        slot: &crate::service::spa_theme::loaded::ActiveSpaThemeSlot,
+    ) {
+        match Self::active_uuid(db).await {
+            Ok(Some(u)) => match Self::get(db, &u).await {
+                Ok(row) => match Self::load_row(&row) {
+                    Ok(loaded) => slot.store(std::sync::Arc::new(Some(loaded))),
+                    Err(e) => tracing::warn!("active SPA theme {u} failed to load: {e}; falling back to default"),
+                },
+                Err(_) => tracing::warn!("active SPA theme {u} not found; falling back to default"),
+            },
+            Ok(None) => {}
+            Err(e) => tracing::warn!("read active spa theme key failed: {e}"),
+        }
     }
 }
 
@@ -275,5 +333,37 @@ mod tests {
         ConfigService::set(&db, ACTIVE_SPA_THEME_KEY, &m.uuid).await.unwrap();
         let err = SpaThemeService::delete(&db, &m.uuid).await.unwrap_err();
         if let AppError::Domain { code, .. } = err { assert_eq!(code, "THEME_IN_USE"); } else { panic!() }
+    }
+
+    #[tokio::test]
+    async fn set_active_loads_into_slot() {
+        let db = db().await; ensure_user(&db, "u1").await;
+        let (m, _) = SpaThemeService::upload(&db, zip_of(manifest_json("a", "1.0.0")), "u1").await.unwrap();
+        let slot = crate::service::spa_theme::loaded::new_slot();
+        SpaThemeService::set_active(&db, &slot, Some(&m.uuid)).await.unwrap();
+        let loaded = slot.load();
+        assert!(loaded.as_ref().is_some());
+        let theme = loaded.as_ref().as_ref().unwrap();
+        assert_eq!(theme.uuid, m.uuid);
+        assert!(theme.entry_html().is_some());
+    }
+
+    #[tokio::test]
+    async fn set_none_deactivates() {
+        let db = db().await; ensure_user(&db, "u1").await;
+        let (m, _) = SpaThemeService::upload(&db, zip_of(manifest_json("a", "1.0.0")), "u1").await.unwrap();
+        let slot = crate::service::spa_theme::loaded::new_slot();
+        SpaThemeService::set_active(&db, &slot, Some(&m.uuid)).await.unwrap();
+        SpaThemeService::set_active(&db, &slot, None).await.unwrap();
+        assert!(slot.load().is_none());
+    }
+
+    #[tokio::test]
+    async fn startup_load_with_dangling_key_falls_back() {
+        let db = db().await;
+        ConfigService::set(&db, ACTIVE_SPA_THEME_KEY, "does-not-exist").await.unwrap();
+        let slot = crate::service::spa_theme::loaded::new_slot();
+        SpaThemeService::load_on_startup(&db, &slot).await;
+        assert!(slot.load().is_none());
     }
 }
