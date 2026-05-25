@@ -394,6 +394,37 @@ pub struct IpQualityConfig {
     pub ipapi_is: Option<RiskProviderKey>,
 }
 
+impl IpQualityConfig {
+    /// Returns warnings for misconfigured provider names. Should be called once
+    /// at startup; results are intended for `tracing::warn!`.
+    pub fn validate_warnings(&self) -> Vec<String> {
+        const VALID: &[&str] = &["none", "ipapi_is", "ip-api"];
+        let mut warnings = Vec::new();
+
+        if !VALID.contains(&self.risk_provider.as_str()) {
+            warnings.push(format!(
+                "unknown risk_provider '{}', no provider will be used",
+                self.risk_provider
+            ));
+        }
+        if !VALID.contains(&self.risk_provider_fallback.as_str()) {
+            warnings.push(format!(
+                "unknown risk_provider_fallback '{}', no fallback will be used",
+                self.risk_provider_fallback
+            ));
+        }
+        if self.risk_provider_fallback != "none"
+            && self.risk_provider_fallback == self.risk_provider
+        {
+            warnings.push(
+                "risk_provider_fallback matches risk_provider, ignoring fallback".to_string(),
+            );
+        }
+
+        warnings
+    }
+}
+
 fn default_risk_provider() -> String {
     "ipapi_is".to_string()
 }
@@ -721,6 +752,53 @@ mod tests {
             assert!((cfg.network_probe.very_high_latency_ms - 600.0).abs() < f64::EPSILON);
             Ok(())
         });
+    }
+
+    #[test]
+    fn validate_warnings_clean_for_defaults() {
+        let cfg = IpQualityConfig {
+            risk_provider: "ipapi_is".to_string(),
+            risk_provider_fallback: "ip-api".to_string(),
+            ipapi_is: None,
+        };
+        assert!(cfg.validate_warnings().is_empty());
+    }
+
+    #[test]
+    fn validate_warnings_unknown_primary() {
+        let cfg = IpQualityConfig {
+            risk_provider: "scamalytics".to_string(),
+            risk_provider_fallback: "ip-api".to_string(),
+            ipapi_is: None,
+        };
+        let warnings = cfg.validate_warnings();
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("unknown risk_provider 'scamalytics'")));
+    }
+
+    #[test]
+    fn validate_warnings_duplicate_fallback() {
+        let cfg = IpQualityConfig {
+            risk_provider: "ipapi_is".to_string(),
+            risk_provider_fallback: "ipapi_is".to_string(),
+            ipapi_is: None,
+        };
+        let warnings = cfg.validate_warnings();
+        assert!(warnings.iter().any(|w| w.contains("matches risk_provider")));
+    }
+
+    #[test]
+    fn validate_warnings_fallback_none_does_not_trigger_duplicate_check() {
+        // risk_provider = "none" AND risk_provider_fallback = "none" should NOT
+        // warn about duplicate — both being "none" is the legitimate "fully off" mode.
+        let cfg = IpQualityConfig {
+            risk_provider: "none".to_string(),
+            risk_provider_fallback: "none".to_string(),
+            ipapi_is: None,
+        };
+        let warnings = cfg.validate_warnings();
+        assert!(!warnings.iter().any(|w| w.contains("matches risk_provider")));
     }
 
     #[test]
