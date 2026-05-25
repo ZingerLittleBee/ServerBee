@@ -661,39 +661,6 @@ impl Reporter {
                     }
                 });
             }
-            ServerMessage::RebindIdentity {
-                job_id,
-                target_server_id,
-                token,
-            } => {
-                tracing::info!(
-                    "Rebinding identity for job_id={job_id} to target_server_id={target_server_id}"
-                );
-
-                if let Err(write_err) = register::save_token(&token) {
-                    tracing::warn!(
-                        "Failed to persist rebind token for job_id={job_id}: {write_err}"
-                    );
-                    let failed = AgentMessage::RebindIdentityFailed {
-                        job_id: job_id.clone(),
-                        error: write_err.to_string(),
-                    };
-                    let json = serde_json::to_string(&failed)?;
-                    if let Err(send_err) = write.send(Message::Text(json.into())).await {
-                        tracing::warn!(
-                            "Failed to send RebindIdentityFailed for job_id={job_id}: {send_err}"
-                        );
-                    }
-                    return Ok(ServerMessageOutcome::Continue);
-                }
-
-                self.config.token = token;
-                let ack = AgentMessage::RebindIdentityAck { job_id };
-                let json = serde_json::to_string(&ack)?;
-                write.send(Message::Text(json.into())).await?;
-                write.send(Message::Close(None)).await?;
-                return Ok(ServerMessageOutcome::Reconnect);
-            }
             ServerMessage::Ack { msg_id } => {
                 tracing::debug!("Received Ack for msg_id={msg_id}");
             }
