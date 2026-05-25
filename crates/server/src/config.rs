@@ -179,7 +179,7 @@ impl Default for RetentionConfig {
 pub struct RateLimitConfig {
     #[serde(default = "default_5")]
     pub login_max: u32,
-    #[serde(default = "default_3")]
+    #[serde(default = "default_10")]
     pub register_max: u32,
 }
 
@@ -187,7 +187,7 @@ impl Default for RateLimitConfig {
     fn default() -> Self {
         Self {
             login_max: default_5(),
-            register_max: default_3(),
+            register_max: default_10(),
         }
     }
 }
@@ -547,8 +547,8 @@ fn default_5() -> u32 {
     5
 }
 
-fn default_3() -> u32 {
-    3
+fn default_10() -> u32 {
+    10
 }
 
 fn default_30() -> u32 {
