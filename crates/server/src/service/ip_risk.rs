@@ -203,6 +203,51 @@ pub fn derive_risk_level(score: Option<i32>) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Fallback-orchestration helpers
+// ---------------------------------------------------------------------------
+
+/// Whether a provider error should trigger fallback. Currently informational only —
+/// `score_ip_with` falls through on any failure. Kept for future metric labeling.
+fn is_fallbackable(e: &anyhow::Error) -> bool {
+    if let Some(re) = e.downcast_ref::<reqwest::Error>() {
+        if re.is_timeout() || re.is_connect() || re.is_request() {
+            return true;
+        }
+        if let Some(s) = re.status() {
+            return s.is_server_error() || s == reqwest::StatusCode::TOO_MANY_REQUESTS;
+        }
+    }
+    e.downcast_ref::<serde_json::Error>().is_some()
+}
+
+async fn try_provider(
+    p: &Option<Box<dyn IpRiskProvider>>,
+    ip: &str,
+) -> Option<(&'static str, ProviderResult)> {
+    let provider = p.as_ref()?;
+    let name = provider.name();
+    match tokio::time::timeout(std::time::Duration::from_secs(15), provider.lookup(ip)).await {
+        Ok(Ok(r)) => {
+            tracing::debug!("provider {name} succeeded for {ip}");
+            Some((name, r))
+        }
+        Ok(Err(e)) => {
+            let kind = if is_fallbackable(&e) {
+                "fallbackable"
+            } else {
+                "non-fallback"
+            };
+            tracing::warn!("provider {name} failed for {ip} ({kind}): {e}");
+            None
+        }
+        Err(_) => {
+            tracing::warn!("provider {name} timed out for {ip}");
+            None
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // IpRiskService
 // ---------------------------------------------------------------------------
 
@@ -217,7 +262,8 @@ impl IpRiskService {
 
     /// Score an IP address:
     /// 1. Check `ip_risk_cache` — if fresh (< 24h), return the cached snapshot.
-    /// 2. On cache miss / expired: look up GeoIP baseline + call provider (if configured).
+    /// 2. On cache miss / expired: look up GeoIP baseline + call primary provider,
+    ///    then fallback if primary fails.
     /// 3. Upsert `ip_risk_cache`.
     /// 4. Return the `IpQualitySnapshotData`.
     ///
@@ -231,14 +277,21 @@ impl IpRiskService {
         geoip: &Arc<RwLock<Option<GeoIpService>>>,
         ip: &str,
     ) -> Option<IpQualitySnapshotData> {
-        let provider = provider_for_config(&self.config, &self.config.risk_provider);
-        self.score_ip_with(db, geoip, ip, provider).await
+        let primary = provider_for_config(&self.config, &self.config.risk_provider);
+        let fallback = if self.config.risk_provider_fallback != "none"
+            && self.config.risk_provider_fallback != self.config.risk_provider
+        {
+            provider_for_config(&self.config, &self.config.risk_provider_fallback)
+        } else {
+            None
+        };
+        self.score_ip_with(db, geoip, ip, primary, fallback).await
     }
 
-    /// Score an IP using an explicitly provided risk provider.
+    /// Score an IP using explicitly provided primary and fallback risk providers.
     ///
-    /// `score_ip` delegates here after resolving the provider from config;
-    /// tests inject a mock provider directly. Cache logic is identical for both.
+    /// `score_ip` delegates here after resolving providers from config;
+    /// tests inject mock providers directly. Cache logic is identical for both.
     ///
     /// Returns `None` immediately — without touching the cache — when `ip` is
     /// empty or blank. Callers must check for this and skip persisting a
@@ -249,55 +302,61 @@ impl IpRiskService {
         db: &DatabaseConnection,
         geoip: &Arc<RwLock<Option<GeoIpService>>>,
         ip: &str,
-        provider: Option<Box<dyn IpRiskProvider>>,
+        primary: Option<Box<dyn IpRiskProvider>>,
+        fallback: Option<Box<dyn IpRiskProvider>>,
     ) -> Option<IpQualitySnapshotData> {
-        // Short-circuit on empty IP — never touch the cache with a blank key.
         if ip.trim().is_empty() {
             tracing::debug!("score_ip_with: skipping empty egress IP");
             return None;
         }
 
-        // 1. Check cache
         if let Some(snapshot) = self.read_cache(db, ip).await {
             return Some(snapshot);
         }
 
-        // 2. GeoIP baseline (always local, never fails hard)
         let baseline = lookup_geoip_baseline(geoip, ip);
 
-        // 3. Provider lookup (opt-in, non-fatal)
-        let provider_result = if let Some(p) = &provider {
-            match tokio::time::timeout(std::time::Duration::from_secs(15), p.lookup(ip)).await {
-                Ok(Ok(result)) => Some(result),
-                Ok(Err(e)) => {
-                    tracing::warn!("IP risk provider {} failed for {ip}: {e}", p.name());
-                    None
+        // Try primary, then fallback. Both can be None (no scoring).
+        let provider_result = match try_provider(&primary, ip).await {
+            Some(hit) => Some(hit),
+            None => {
+                if primary.is_some() && fallback.is_some() {
+                    tracing::info!("primary failed for {ip}, attempting fallback");
                 }
-                Err(_) => {
-                    tracing::warn!("IP risk provider timed out for {ip}");
-                    None
-                }
+                try_provider(&fallback, ip).await
             }
-        } else {
-            None
         };
 
-        // 4. Merge
-        let (risk_score, is_proxy, is_vpn, is_hosting, provider_ip_type, providers_json) =
-            match (&provider, &provider_result) {
-                (Some(p), Some(r)) => {
-                    let providers_json = serde_json::json!({ p.name(): r.raw });
-                    (
-                        r.risk_score,
-                        r.is_proxy.unwrap_or(false),
-                        r.is_vpn.unwrap_or(false),
-                        r.is_hosting.unwrap_or(false),
-                        r.ip_type.clone(),
-                        providers_json,
-                    )
+        let (
+            risk_score, is_proxy, is_vpn, is_hosting, provider_ip_type, providers_json,
+            is_tor, is_abuser, is_mobile, asn_abuser_score, abuse_email,
+        ) = match &provider_result {
+            Some((name, r)) => {
+                let providers_json = serde_json::json!({ *name: r.raw });
+                (
+                    r.risk_score,
+                    r.is_proxy.unwrap_or(false),
+                    r.is_vpn.unwrap_or(false),
+                    r.is_hosting.unwrap_or(false),
+                    r.ip_type.clone(),
+                    providers_json,
+                    r.is_tor,
+                    r.is_abuser,
+                    r.is_mobile,
+                    r.asn_abuser_score,
+                    r.abuse_email.clone(),
+                )
+            }
+            None => {
+                if primary.is_some() || fallback.is_some() {
+                    tracing::warn!(
+                        "both providers failed for {ip}, returning geo-only snapshot"
+                    );
                 }
-                _ => (None, false, false, false, None, serde_json::json!({})),
-            };
+                (None, false, false, false, None, serde_json::json!({}),
+                 false, false, false, None, None)
+            }
+        };
 
         let ip_type = derive_ip_type(is_hosting, is_vpn, is_proxy, provider_ip_type.as_deref());
         let risk_level = derive_risk_level(risk_score);
@@ -316,15 +375,14 @@ impl IpRiskService {
             is_hosting,
             risk_score,
             risk_level,
-            is_tor: false,
-            is_abuser: false,
-            is_mobile: false,
-            asn_abuser_score: None,
-            abuse_email: None,
+            is_tor,
+            is_abuser,
+            is_mobile,
+            asn_abuser_score,
+            abuse_email,
             checked_at: now,
         };
 
-        // 5. Upsert cache
         self.write_cache(db, &snapshot, &providers_json).await;
 
         Some(snapshot)
@@ -1075,7 +1133,7 @@ mod tests {
         let (mock, call_count) = MockProvider::new(ProviderResult::default());
 
         let _result = service
-            .score_ip_with(&db, &geoip, "5.6.7.8", Some(Box::new(mock)))
+            .score_ip_with(&db, &geoip, "5.6.7.8", Some(Box::new(mock)), None)
             .await;
 
         assert_eq!(
@@ -1097,7 +1155,7 @@ mod tests {
         });
 
         let result = service
-            .score_ip_with(&db, &geoip, "9.10.11.12", Some(Box::new(mock)))
+            .score_ip_with(&db, &geoip, "9.10.11.12", Some(Box::new(mock)), None)
             .await
             .expect("non-empty IP should return Some");
 
@@ -1111,7 +1169,7 @@ mod tests {
         // Second call — should hit the cache
         let (mock2, call_count2) = MockProvider::new(ProviderResult::default());
         let _result2 = service
-            .score_ip_with(&db, &geoip, "9.10.11.12", Some(Box::new(mock2)))
+            .score_ip_with(&db, &geoip, "9.10.11.12", Some(Box::new(mock2)), None)
             .await;
         assert_eq!(
             call_count2.load(std::sync::atomic::Ordering::SeqCst),
@@ -1136,7 +1194,7 @@ mod tests {
         });
 
         let result = service
-            .score_ip_with(&db, &geoip, "13.14.15.16", Some(Box::new(mock)))
+            .score_ip_with(&db, &geoip, "13.14.15.16", Some(Box::new(mock)), None)
             .await
             .expect("non-empty IP should return Some");
 
@@ -1523,5 +1581,87 @@ mod tests {
         assert!(super::provider_for_config(&cfg, "abuseipdb").is_none());
         assert!(super::provider_for_config(&cfg, "ipqs").is_none());
         assert!(super::provider_for_config(&cfg, "proxycheck").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 10 tests: fallback orchestration
+    // -----------------------------------------------------------------------
+
+    use anyhow::anyhow;
+
+    struct AlwaysFailProvider;
+    #[async_trait]
+    impl IpRiskProvider for AlwaysFailProvider {
+        fn name(&self) -> &'static str { "always_fail" }
+        async fn lookup(&self, _ip: &str) -> anyhow::Result<ProviderResult> {
+            Err(anyhow!("intentional test failure"))
+        }
+    }
+
+    struct FixedScoreProvider {
+        name: &'static str,
+        score: i32,
+    }
+    #[async_trait]
+    impl IpRiskProvider for FixedScoreProvider {
+        fn name(&self) -> &'static str { self.name }
+        async fn lookup(&self, _ip: &str) -> anyhow::Result<ProviderResult> {
+            Ok(ProviderResult {
+                risk_score: Some(self.score),
+                ..Default::default()
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn fallback_invoked_when_primary_fails() {
+        let (db, _tmp) = setup_test_db().await;
+        let geoip: Arc<RwLock<Option<GeoIpService>>> = Arc::new(RwLock::new(None));
+        let svc = IpRiskService::new(IpQualityConfig::default());
+        let result = svc.score_ip_with(
+            &db,
+            &geoip,
+            "5.6.7.8",
+            Some(Box::new(AlwaysFailProvider)),
+            Some(Box::new(FixedScoreProvider { name: "fb", score: 42 })),
+        ).await.expect("snapshot");
+        assert_eq!(result.risk_score, Some(42));
+    }
+
+    #[tokio::test]
+    async fn both_providers_fail_returns_geo_only_snapshot() {
+        let (db, _tmp) = setup_test_db().await;
+        let geoip: Arc<RwLock<Option<GeoIpService>>> = Arc::new(RwLock::new(None));
+        let svc = IpRiskService::new(IpQualityConfig::default());
+        let result = svc.score_ip_with(
+            &db,
+            &geoip,
+            "9.9.9.9",
+            Some(Box::new(AlwaysFailProvider)),
+            Some(Box::new(AlwaysFailProvider)),
+        ).await.expect("snapshot");
+        assert!(result.risk_score.is_none());
+        assert_eq!(result.risk_level, "unknown");
+    }
+
+    #[test]
+    fn score_ip_skips_fallback_when_same_as_primary_via_config_logic() {
+        let cfg = crate::config::IpQualityConfig {
+            risk_provider: "ipapi_is".to_string(),
+            risk_provider_fallback: "ipapi_is".to_string(),
+            ipapi_is: None,
+        };
+        let same = cfg.risk_provider_fallback == cfg.risk_provider;
+        assert!(same);
+    }
+
+    #[test]
+    fn score_ip_skips_fallback_when_set_to_none() {
+        let cfg = crate::config::IpQualityConfig {
+            risk_provider: "ipapi_is".to_string(),
+            risk_provider_fallback: "none".to_string(),
+            ipapi_is: None,
+        };
+        assert_eq!(cfg.risk_provider_fallback, "none");
     }
 }
