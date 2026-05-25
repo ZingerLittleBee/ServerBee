@@ -237,6 +237,16 @@ pub struct IpQualitySnapshotData {
     pub is_hosting: bool,
     pub risk_score: Option<i32>,
     pub risk_level: String,
+    #[serde(default)]
+    pub is_tor: bool,
+    #[serde(default)]
+    pub is_abuser: bool,
+    #[serde(default)]
+    pub is_mobile: bool,
+    #[serde(default)]
+    pub asn_abuser_score: Option<i32>,
+    #[serde(default)]
+    pub abuse_email: Option<String>,
     pub checked_at: DateTime<Utc>,
 }
 
@@ -2048,6 +2058,11 @@ mod tests {
                 is_hosting: true,
                 risk_score: Some(42),
                 risk_level: "medium".to_string(),
+                is_tor: false,
+                is_abuser: false,
+                is_mobile: false,
+                asn_abuser_score: None,
+                abuse_email: None,
                 checked_at,
             }),
         };

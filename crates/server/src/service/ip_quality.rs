@@ -140,6 +140,11 @@ fn snapshot_model_to_dto(m: ip_quality_snapshot::Model) -> IpQualitySnapshotData
         is_hosting: m.is_hosting,
         risk_score: m.risk_score,
         risk_level: m.risk_level,
+        is_tor: m.is_tor,
+        is_abuser: m.is_abuser,
+        is_mobile: m.is_mobile,
+        asn_abuser_score: m.asn_abuser_score,
+        abuse_email: m.abuse_email,
         checked_at: m.checked_at,
     }
 }
@@ -1444,6 +1449,11 @@ mod tests {
             is_hosting: false,
             risk_score: None,
             risk_level: "unknown".to_string(),
+            is_tor: false,
+            is_abuser: false,
+            is_mobile: false,
+            asn_abuser_score: None,
+            abuse_email: None,
             checked_at: now,
         };
 
@@ -1485,6 +1495,11 @@ mod tests {
             is_hosting: false,
             risk_score: None,
             risk_level: "unknown".to_string(),
+            is_tor: false,
+            is_abuser: false,
+            is_mobile: false,
+            asn_abuser_score: None,
+            abuse_email: None,
             checked_at: now,
         };
 
@@ -1506,6 +1521,11 @@ mod tests {
             is_hosting: true,
             risk_score: Some(75),
             risk_level: "high".to_string(),
+            is_tor: false,
+            is_abuser: false,
+            is_mobile: false,
+            asn_abuser_score: None,
+            abuse_email: None,
             checked_at: now,
         };
 

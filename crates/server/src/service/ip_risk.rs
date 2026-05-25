@@ -265,6 +265,11 @@ impl IpRiskService {
             is_hosting,
             risk_score,
             risk_level,
+            is_tor: false,
+            is_abuser: false,
+            is_mobile: false,
+            asn_abuser_score: None,
+            abuse_email: None,
             checked_at: now,
         };
 
@@ -308,6 +313,11 @@ impl IpRiskService {
             is_hosting: row.is_hosting,
             risk_score: row.risk_score,
             risk_level: row.risk_level,
+            is_tor: false,
+            is_abuser: false,
+            is_mobile: false,
+            asn_abuser_score: None,
+            abuse_email: None,
             checked_at: row.checked_at,
         })
     }
